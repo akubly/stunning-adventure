@@ -217,6 +217,47 @@ The unreliable sessionEnd hook is a solid argument FOR a platform layer, not jus
 
 ---
 
+### 2026-03-29T01-31-29: Open Items Resolved
+
+**Author:** Aaron (via Copilot)  
+**Type:** Architecture  
+**Status:** Active
+
+**Curator Event Processing:**
+- Curator tracks unprocessed events via event_log table status flags
+- INSERT cost is minimal in SQLite (indexed by session_id)
+- Curator runs continuously in sidecar; no session-time restrictions needed
+- Event batching via trigger-based cascades reduces individual INSERT overhead
+
+**Decision Alternatives Requirement:**
+- Require explicit listing of considered alternatives in all architecture decisions
+- Document why alternatives were ruled out (not "no alternatives exist")
+- Closes tension between comprehensive consideration and decision velocity
+
+**Rationale:** Ensures decision quality and provides future context for design evolution.
+
+---
+
+### 2026-03-29T01-35-11: Round 5 Seeds — Dual Environment + Sidecar Storage
+
+**Author:** Aaron (via Copilot)  
+**Type:** Architecture  
+**Status:** Active
+
+**Three New Design Requirements:**
+
+1. **DUAL ENVIRONMENT:** Platform must work equally in corporate/controlled environments (Windows OS monorepo, limited MCP/plugins) AND personal/open environments (many 3rd-party plugins). Different constraint sets, equal effectiveness.
+
+2. **SIDECAR STORAGE:** At work, don't commit platform artifacts to work repo. Design external/sidecar storage location that keeps platform state separate from repo state. Enable multi-repo, multi-environment workflows.
+
+3. **COPILOT SDK EXPLORATION:** Beyond artifact validation, what else is possible? Full capability audit needed.
+
+**Rationale:** Real-world deployment constraints from Aaron's professional work. Platform must be environment-aware and location-aware.
+
+**Impact:** Drives R5 brainstorm focus (dual environments, sidecar-as-platform, SDK deep dive).
+
+---
+
 ### 2026-03-29T08-25-00: Brainstorm Round 4 Convergence — Composable Toolkit Architecture
 
 **Author:** Graham Knight (Lead), Roger Wilco, Rosella Chen, Gabriel Knight, Valanice Chen  
@@ -266,6 +307,73 @@ The unreliable sessionEnd hook is a solid argument FOR a platform layer, not jus
 **Rationale:** R4 synthesizes team input (recon, R3 decisions, Aaron's directives) into coherent, integrated architecture.
 
 **Impact:** Architecture converged and validated. Ready for implementation sprint.
+
+---
+
+### 2026-03-30T09-00-00: Brainstorm Round 5 Convergence — Sidecar Architecture + Dual Environments
+
+**Author:** Graham Knight (Lead), Roger Wilco, Rosella Chen, Gabriel Knight, Valanice Chen  
+**Type:** Architecture  
+**Status:** Active
+
+**Converged Decisions (R5 Outcomes):**
+
+1. **Sidecar-as-Platform Architecture**
+   - Stateless CLI + Stateful Sidecar + Foundation Layer
+   - Environment context flows through sidecar lifecycle
+   - JSON-RPC contract between CLI and sidecar
+   - Foundation layer handles environment abstraction
+
+2. **Dual Environment Profiles**
+   - Corporate: Org-scoped, audit-logged, read-only repos
+   - Local: User-scoped, no restrictions
+   - Sandbox: Ephemeral test data, no persistence
+   - Sensitivity tagging (4-level cascade) propagates through all operations
+
+3. **Sidecar Data Layer (knowledge.db)**
+   - User-local placement: `%LOCALAPPDATA%\Copilot\sidecar\knowledge.db`
+   - 8-table core schema with trigger-based event bus
+   - Slugified repo keys for safe serialization
+   - WAL mode for concurrent sidecar access
+   - Double-locked export with integrity guarantees
+   - No Git LFS; no cloud sync in R5
+
+4. **Copilot SDK as MCP Server**
+   - 8-tool intelligence server (semantic search, decision support, artifact validation, RCA, environment inspection, etc.)
+   - BYOK (Bring Your Own Key) escape hatch for corporate environments
+   - Private LLM endpoints in corporate; fail-safe fallback
+   - Capability registry for runtime tool discovery
+
+5. **Corporate Compliance Patterns**
+   - Read-Only Repo Adapter: Clone without write access
+   - Pre-Commit as Portable Enforcement: Hooks travel with sidecar, not embedded in repos
+   - Split Curator Mode: Corporate (read-only) vs. Local (full validation)
+   - Audit logging built into sidecar event bus
+
+6. **Narrative-First UX**
+   - "Commute not switch" metaphor for environment transitions
+   - Environment location explicit in chat context and status bar
+   - Sensitivity explained in natural language ("corporate-only" vs. codes)
+   - Privacy decisions framed as choices, not constraints
+
+7. **Critical Decisions Validated**
+   - Sidecar independence from squad (non-negotiable)
+   - Environment as first-class architecture concern
+   - User-local data only (no system-wide installation)
+   - MCP as integration standard (non-negotiable)
+   - BYOK as primary corporate pattern
+   - WAL-mode concurrency for sidecar required
+   - Sensitivity tagging mandatory, not optional
+
+**Alternatives Considered:**
+- **Cloud sync instead of user-local:** Rejected — corporate compliance, offline capability, privacy
+- **System-wide installation:** Rejected — corporate policy conflicts, isolation concerns
+- **REST API instead of MCP:** Rejected — MCP is vendor-neutral standard, better portability
+- **Auto-enforcement of constraints:** Rejected — humans make policy decisions, RCA informs guardrails
+
+**Rationale:** R5 synthesizes R4 architecture with Aaron's dual-environment requirements and real-world deployment constraints.
+
+**Impact:** Sidecar becomes first-class platform component. Ready for R6 implementation sprint. No blocking issues.
 
 ---
 
