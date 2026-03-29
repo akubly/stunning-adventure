@@ -10,6 +10,8 @@ out/
 __pycache__/
 *.pyc
 *.pyo
+*.tsbuildinfo
+coverage/
 
 # Environment files
 .env
