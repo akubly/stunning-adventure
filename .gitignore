@@ -10,6 +10,8 @@ out/
 __pycache__/
 *.pyc
 *.pyo
+*.tsbuildinfo
+coverage/
 
 # Environment files
 .env
@@ -34,3 +36,10 @@ logs/
 # Temporary files
 tmp/
 temp/
+# Squad: ignore runtime state (logs, inbox, sessions)
+.squad/orchestration-log/
+.squad/log/
+.squad/decisions/inbox/
+.squad/sessions/
+# Squad: SubSquad activation file (local to this machine)
+.squad-workstream

@@ -1,0 +1,96 @@
+/**
+ * postToolUse hook entry point.
+ *
+ * Reads Copilot CLI hook JSON from stdin and logs the tool event
+ * to knowledge.db via the Archivist.
+ *
+ * Designed to be called from a PowerShell wrapper:
+ *   $hookData | node dist/hooks/postToolUse.js
+ */
+
+import { getDb, closeDb } from '../db/index.js';
+import { startSession, recordToolUse, recordError } from '../agents/archivist.js';
+import { slugifyRepoKey } from '../config/repo.js';
+import { execSync } from 'node:child_process';
+
+interface HookInput {
+  toolName: string;
+  toolArgs?: Record<string, unknown>;
+  toolResult?: {
+    resultType?: string;
+    textResultForLlm?: string;
+  };
+  cwd?: string;
+}
+
+function getRepoKey(cwd?: string): string {
+  try {
+    const remote = execSync('git remote get-url origin', {
+      cwd: cwd ?? process.cwd(),
+      encoding: 'utf-8',
+      timeout: 2000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    return slugifyRepoKey(remote);
+  } catch {
+    return 'unknown_repo';
+  }
+}
+
+function getBranch(cwd?: string): string | undefined {
+  try {
+    return execSync('git branch --show-current', {
+      cwd: cwd ?? process.cwd(),
+      encoding: 'utf-8',
+      timeout: 2000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function main(): Promise<void> {
+  let raw = '';
+  for await (const chunk of process.stdin) {
+    raw += chunk;
+  }
+
+  if (!raw.trim()) {
+    process.exit(0);
+  }
+
+  let hookData: HookInput;
+  try {
+    hookData = JSON.parse(raw);
+  } catch {
+    process.exit(0);
+  }
+
+  try {
+    getDb();
+
+    const repoKey = getRepoKey(hookData.cwd);
+    const branch = getBranch(hookData.cwd);
+    const sessionId = startSession(repoKey, branch);
+
+    if (hookData.toolResult?.resultType === 'failure') {
+      recordError(sessionId, 'tool_failure', `${hookData.toolName} failed`, {
+        tool: hookData.toolName,
+        args: hookData.toolArgs ?? {},
+        result: hookData.toolResult?.textResultForLlm ?? '',
+      });
+    } else {
+      recordToolUse(sessionId, hookData.toolName, hookData.toolArgs ?? {}, {
+        resultType: hookData.toolResult?.resultType ?? 'unknown',
+      });
+    }
+
+    closeDb();
+  } catch {
+    // Fail open — hooks must never break the user's workflow
+    process.exit(0);
+  }
+}
+
+main();

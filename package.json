@@ -1,0 +1,51 @@
+{
+  "name": "@akubly/cairn",
+  "version": "0.1.0",
+  "description": "Cairn — an agentic software engineering platform. Built stone by stone. Showing the way.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "cairn": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "lint": "eslint src/",
+    "clean": "rimraf dist coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT",
+  "author": "akubly",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/akubly/stunning-adventure.git"
+  },
+  "keywords": [
+    "cairn",
+    "agentic",
+    "copilot",
+    "software-engineering",
+    "cli"
+  ],
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.5.0",
+    "@typescript-eslint/eslint-plugin": "^8.57.2",
+    "@typescript-eslint/parser": "^8.57.2",
+    "eslint": "^10.1.0",
+    "prettier": "^3.8.1",
+    "rimraf": "^6.1.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.57.2",
+    "vitest": "^4.1.2"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.8.0"
+  }
+}
