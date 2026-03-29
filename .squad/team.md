@@ -18,6 +18,7 @@
 | Gabriel | Infrastructure | `.squad/agents/gabriel/charter.md` | ✅ Active |
 | Scribe | Session Logger | `.squad/agents/scribe/charter.md` | 📋 Silent |
 | Ralph | Work Monitor | `.squad/agents/ralph/charter.md` | 🔄 Monitor |
+| Valanice | UX / Human Factors | `.squad/agents/valanice/charter.md` | ✅ Active |
 
 ## Project Context
 

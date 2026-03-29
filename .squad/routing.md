@@ -14,6 +14,7 @@ How to decide who handles what.
 | Testing | Roger | Write tests, find edge cases, verify fixes |
 | Scope & priorities | Graham | What to build next, trade-offs, decisions |
 | Session logging | Scribe | Automatic — never needs routing |
+| UX / Human Factors | Valanice | Review experience, personalization UX, engagement patterns, attention management |
 
 ## Issue Routing
 
@@ -47,4 +48,5 @@ How to decide who handles what.
 | Backend, APIs, data layer | Roger | — |
 | SDK, extensions, integrations | Rosella | — |
 | DevOps, CI/CD, tooling | Gabriel | — |
+| UX / Human Factors | Valanice | — |
 

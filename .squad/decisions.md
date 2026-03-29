@@ -126,6 +126,41 @@ The Copilot extensibility ecosystem has three distinct SDK layers. The team need
 
 **Full Report:** `.squad/agents/gabriel/recon-infra-and-practices.md`
 
+### 2026-03-28T23-32-36: User Directives — Round 3 Course Corrections
+
+**Author:** Aaron (via Copilot)  
+**Type:** Platform Direction  
+**Status:** Active
+
+1. **Squad Decoupling** — squad is a 3rd-party solution/CLI plugin — not part of our platform. Decouple naming/concepts.
+2. **Personalization First-Class** — BYO plugins, interop with other agentic systems (plan mode, squad, SA), personalization as feature-set.
+3. **Track Everything** — First principle: "create the best output." Don't arbitrarily cap features like teach-back. Track /skip everywhere.
+4. **Memory Alternatives** — Memory MCP is primitive — explore better alternatives, possibly build our own.
+5. **Curator Agent** — Need a dedicated curator/custodian agent — always working, processing errors, insights, pruning knowledge.
+6. **Agent Identity Pragmatism** — Identity is NOT about reinventing squad — focus on natural language interactions. Identity as deep concern only if intentional.
+7. **Balance Complexity** — Keep manageable and effective; forward-thinking without over-complicating.
+8. **RCA-Driven Guardrails** — RCAs should inform future human guardrail decisions, not hard-coded rules.
+
+**Rationale:** Foundational constraints for platform design, emerging from professional plugin work and multi-agent orchestration experience.
+
+**Impact:** All architectural decisions in Round 3 aligned to these directives.
+
+---
+
+### 2026-03-29T00-15-58: User Insight — Queryable Session State
+
+**Author:** Aaron (via Copilot)  
+**Type:** UX Requirement  
+**Status:** Active
+
+The platform should support queryable session state. Humans should be able to ask "Have we done a review yet? Have we run the tests?" and get an instant answer.
+
+**Rationale:** Real need from Aaron's professional plugin work. Humans need to orient themselves within a workflow at any time without reconstructing state from logs.
+
+**Impact:** Drives design of knowledge.db schema, skip tracking, preference cascade (Roger's Round 3 contribution).
+
+---
+
 ## Governance
 
 - All meaningful changes require team consensus

@@ -35,6 +35,12 @@
       "persistent_name": "Ralph",
       "universe": "Sierra On-Line Adventure Games",
       "status": "active"
+    },
+    "valanice": {
+      "created_at": "2026-03-28T06:21:47.368Z",
+      "persistent_name": "Valanice",
+      "universe": "Sierra On-Line Adventure Games",
+      "status": "active"
     }
   }
 }
