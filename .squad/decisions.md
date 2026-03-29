@@ -161,6 +161,114 @@ The platform should support queryable session state. Humans should be able to as
 
 ---
 
+### 2026-03-29T00-30-44: Architectural Decision — Platform vs. Pure Plugins
+
+**Author:** Aaron (via Copilot)  
+**Type:** Architecture  
+**Status:** Active
+
+The unreliable sessionEnd hook is a solid argument FOR a platform layer, not just standalone plugins. Something needs to initiate subagent/background tasks reliably and specifically when it's most valuable. Pure plugins can't orchestrate their own lifecycle — they need a coordinator that understands timing, sequencing, and reliability.
+
+**Rationale:** Aaron's response to the Graham vs. Rosella debate. This settles the R3 tension: we DO need some degree of platform, not just a bag of plugins. The platform's job is reliable orchestration of when things run.
+
+**Impact:** Validates 3-layer architecture (R4 outcome). Platform orchestrator ≠ platform runtime.
+
+---
+
+### 2026-03-29T00-47-40: Architectural Decisions + R4 Direction
+
+**Author:** Aaron (via Copilot)  
+**Type:** Platform Direction  
+**Status:** Active
+
+**Eight Sub-Decisions:**
+
+1. **Squad Independence (Non-negotiable)** — NO dependency on squad. Must work independently. Must also coexist peacefully — no collisions.
+2. **Simplicity Means Elegant Composability** — Not simplicity for simplicity's sake. R3 over-corrected. Sum greater than parts, emergent complexity from simple interactions.
+3. **First Thought Wrong is Foundational** — Already in Aaron's existing gates. Devil's advocate is core, not optional.
+4. **Rename Scribe (Squad Collision)** — Candidates: Archivist, Secretary, Registrar, Annalist. (Resolution: Chronicler, from Valanice's narrative principle)
+5. **Explore SQLite-in-Git Viability** — For knowledge.db (vector search, mapping/linking).
+6. **Linter vs. Compiler Distinction** — What sets them apart in our plan?
+7. **CLI Namespace Clarification** — What is it, how would we implement it?
+8. **Peopleware Foundation** — Seed next brainstorm round with organizational intelligence: DeMarco & Lister.
+
+**Rationale:** Course correction on R3's over-simplification. Aaron wants elegant emergent complexity, not stripped-down minimalism.
+
+**Impact:** Drives R4 focus on architecture convergence, Peopleware foundations, naming clarity.
+
+---
+
+### 2026-03-29T01-04-09: R4 Additional Inputs
+
+**Author:** Aaron (via Copilot)  
+**Type:** Architecture  
+**Status:** Active
+
+**Four Sub-Decisions:**
+
+1. **Git LFS for knowledge.db** — Explore as alternative to user-local-only. (Resolution: Git LFS rejected; user-local primary + optional JSON export)
+2. **Squad Subsystem Leverage** — Do NOT depend on squad subsystems even when present. Too risky (what if squad goes away?). Painful to mirror, but independence is non-negotiable.
+3. **Naming: Registrar Feels Off** — Archivist is closer. Recorder almost right. Still open. (Resolution: Chronicler, validated in R4)
+4. **Artifact Validation Model** — Prompt + artifact → LLM → compare response against expected response. Scored on correctness vectors. Copilot SDK provides controlled LLM access.
+
+**Rationale:** Architectural clarifications before full R4 fan-out.
+
+**Impact:** Validated in R4 as 5-stage bundler with LLM-as-judge validation (5 correctness vectors).
+
+---
+
+### 2026-03-29T08-25-00: Brainstorm Round 4 Convergence — Composable Toolkit Architecture
+
+**Author:** Graham Knight (Lead), Roger Wilco, Rosella Chen, Gabriel Knight, Valanice Chen  
+**Type:** Architecture  
+**Status:** Active
+
+**Converged Decisions (R4 Outcomes):**
+
+1. **3-Layer Composable Toolkit Architecture**
+   - Layer 1: Primitive agents (Curator, Compiler)
+   - Layer 2: Assemblers (Plugin Manager, Session Store adapters)
+   - Layer 3: User-facing experiences (CLI, marketplace UI, hooks)
+   - Foundation: SQLite-as-platform (knowledge.db as durable contract)
+
+2. **2-Agent Core**
+   - Curator: Always-running knowledge custodian, error processor, artifact validator
+   - Compiler: Compiles BYO plugins (TypeScript, Python, Go) to executable agents/skills
+
+3. **SQLite Convergence**
+   - Event bus via SQLite INSERT → trigger architecture
+   - 8-table core schema (sessions, preferences, skip_breadcrumbs, artifacts, errors, event_log, plugin_registry, knowledge_index)
+   - User-local knowledge.db (primary); optional JSON export for interop
+   - Git LFS rejected; Git-based sync deferred
+
+4. **5-Stage Bundler Pipeline** (Plugin Dev)
+   - Parse → Compile → Validate → Package → Distribute
+   - .cpkg output format (ZIP + manifest + hash)
+   - LLM-as-judge validation (Copilot SDK) with 5 correctness vectors
+
+5. **Curator Full Specification** (Infrastructure)
+   - 4 triggers: event bus, periodic check, session completion, user request
+   - 5-stage RCA pipeline (Detect → Categorize → Root Cause → Prescribe → Enforce)
+   - Peopleware guard-rails: authority bright line (humans decide, not auto-enforce)
+   - RCA informs guardrails, not hard-coded rules
+
+6. **Narrative-First UX** (Human Factors)
+   - "Narrate work not worker" — organize UX around what's happening
+   - Queryable state design — humans ask "Have we done X?" in natural language
+   - Chronicler naming recommendation (replaces Scribe; avoids squad collision)
+   - Error-as-narrative taxonomy (what happened → why → what to do next)
+
+7. **Technical Clarifications**
+   - **Linter vs. Compiler:** Linters report problems; Compiler produces executables
+   - **CLI Namespace:** Scoped commands (e.g., `/skill discover`, `/agent list`) map to Compiler product types
+   - **Squad Independence:** NO squad subsystem leverage; independence non-negotiable
+
+**Rationale:** R4 synthesizes team input (recon, R3 decisions, Aaron's directives) into coherent, integrated architecture.
+
+**Impact:** Architecture converged and validated. Ready for implementation sprint.
+
+---
+
 ## Governance
 
 - All meaningful changes require team consensus
