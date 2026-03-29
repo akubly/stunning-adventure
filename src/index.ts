@@ -15,6 +15,19 @@ export { createSession, endSession, getActiveSession } from './db/sessions.js';
 export { logEvent, getUnprocessedEvents } from './db/events.js';
 export { getPreference, setPreference } from './db/preferences.js';
 export { recordSkip, getSkips } from './db/skipBreadcrumbs.js';
+export { getLastProcessedEventId, advanceCursor } from './db/curatorState.js';
+
+// Agents
+export {
+  startSession as startArchivistSession,
+  stopSession as stopArchivistSession,
+  recordToolUse,
+  recordError,
+  recordSkipEvent,
+  catchUpPreviousSession,
+} from './agents/archivist.js';
+export { getSessionSummary, hasEventOccurred, findEvents } from './agents/sessionState.js';
+export { scrubSecrets } from './agents/secretScrubber.js';
 
 // Types
 export type {
@@ -26,3 +39,4 @@ export type {
   CairnError,
   CairnEvent,
 } from './types/index.js';
+export type { SessionSummary } from './agents/sessionState.js';

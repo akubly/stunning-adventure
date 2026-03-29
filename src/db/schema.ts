@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { migration001 } from './migrations/001-initial.js';
+import { migration002 } from './migrations/002-curator-state.js';
 
 export interface Migration {
   version: number;
@@ -7,7 +8,7 @@ export interface Migration {
   up: (db: Database.Database) => void;
 }
 
-const migrations: Migration[] = [migration001];
+const migrations: Migration[] = [migration001, migration002];
 
 export function applyMigrations(db: Database.Database): void {
   db.exec(`
