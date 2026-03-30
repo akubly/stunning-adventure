@@ -409,7 +409,7 @@ export function getCuratorStatus(): CuratorStatus {
   return {
     lastProcessedEventId: cursorRow?.last_processed_event_id ?? 0,
     lastRunAt: cursorRow?.last_run_at ?? null,
-    totalInsights: activeCount + staleCount + prunedCount,
+    totalInsights: Object.values(counts).reduce((a, b) => a + b, 0),
     activeInsights: activeCount,
     staleInsights: staleCount,
     prunedInsights: prunedCount,

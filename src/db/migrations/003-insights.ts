@@ -7,12 +7,12 @@ export const migration003: Migration = {
     db.exec(`
       CREATE TABLE insights (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        pattern_type TEXT NOT NULL,
+        pattern_type TEXT NOT NULL CHECK (pattern_type IN ('recurring_error', 'error_sequence', 'skip_frequency')),
         title TEXT NOT NULL,
         description TEXT NOT NULL,
         evidence TEXT NOT NULL DEFAULT '[]',
-        confidence REAL NOT NULL DEFAULT 0.0,
-        status TEXT NOT NULL DEFAULT 'active',
+        confidence REAL NOT NULL DEFAULT 0.0 CHECK (confidence >= 0.0 AND confidence <= 1.0),
+        status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'stale', 'pruned')),
         occurrence_count INTEGER NOT NULL DEFAULT 1,
         prescription TEXT,
         first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
