@@ -383,12 +383,15 @@ export function getCuratorStatus(): CuratorStatus {
 
   const counts = countInsightsByStatus();
 
+  const activeCount = counts['active'] ?? 0;
+  const staleCount = counts['stale'] ?? 0;
+
   return {
     lastProcessedEventId: cursorRow?.last_processed_event_id ?? 0,
     lastRunAt: cursorRow?.last_run_at ?? null,
-    totalInsights: Object.values(counts).reduce((a, b) => a + b, 0),
-    activeInsights: counts['active'] ?? 0,
-    staleInsights: counts['stale'] ?? 0,
+    totalInsights: activeCount + staleCount,
+    activeInsights: activeCount,
+    staleInsights: staleCount,
   };
 }
 
@@ -398,6 +401,8 @@ function updateLastRunTimestamp(): void {
   db.prepare(
     `INSERT OR IGNORE INTO curator_state (id, last_processed_event_id) VALUES (1, 0)`,
   ).run();
-  db.prepare("UPDATE curator_state SET last_run_at = datetime('now') WHERE id = 1").run();
+  db.prepare(
+    "UPDATE curator_state SET last_run_at = datetime('now'), updated_at = datetime('now') WHERE id = 1",
+  ).run();
 }
 
