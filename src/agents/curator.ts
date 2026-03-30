@@ -164,7 +164,7 @@ function detectRecurringErrors(events: CairnEvent[]): DetectionResult {
 
     const category = (group.payload.category as string) ?? 'unknown';
     const message = (group.payload.message as string) ?? '';
-    const normMessage = message.replace(/\s+/g, ' ').trim().slice(0, 80);
+    const normMessage = message.replace(/\s+/g, ' ').trim().slice(0, 120);
     const title = `Recurring ${category}: ${normMessage}`;
     const description = `"${message.slice(0, 200)}" occurred ${group.events.length} times in this batch`;
     const evidence = group.events.map((e) => e.id);

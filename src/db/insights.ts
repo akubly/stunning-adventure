@@ -4,6 +4,19 @@ import type { Insight, PatternType, InsightStatus } from '../types/index.js';
 /** Maximum number of event IDs retained in an insight's evidence array. */
 const MAX_EVIDENCE_IDS = 50;
 
+/** Safely parse a JSON evidence column into a number array. */
+function parseEvidence(raw: unknown): number[] {
+  if (typeof raw !== 'string') return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((v): v is number => typeof v === 'number');
+}
+
 /** Create a new insight. Returns the new insight id. */
 export function createInsight(
   patternType: PatternType,
@@ -14,12 +27,13 @@ export function createInsight(
   prescription?: string,
 ): number {
   const db = getDb();
+  const cappedEvidence = evidence.slice(-MAX_EVIDENCE_IDS);
   const result = db
     .prepare(
       `INSERT INTO insights (pattern_type, title, description, evidence, confidence, prescription)
        VALUES (?, ?, ?, ?, ?, ?)`,
     )
-    .run(patternType, title, description, JSON.stringify(evidence), confidence, prescription ?? null);
+    .run(patternType, title, description, JSON.stringify(cappedEvidence), confidence, prescription ?? null);
   return Number(result.lastInsertRowid);
 }
 
@@ -36,10 +50,7 @@ export function reinforceInsight(
 
   if (!existing) return;
 
-  const parsed = JSON.parse(existing.evidence);
-  const prior = Array.isArray(parsed) && parsed.every((x) => typeof x === 'number')
-    ? (parsed as number[])
-    : [];
+  const prior = parseEvidence(existing.evidence);
   // Keep most recent IDs to prevent unbounded growth
   const merged = [...prior, ...newEvidence].slice(-MAX_EVIDENCE_IDS);
 
@@ -114,13 +125,12 @@ export function setInsightStatus(insightId: number, status: InsightStatus): void
 }
 
 function mapRow(row: Record<string, unknown>): Insight {
-  const rawEvidence = JSON.parse(row.evidence as string);
   return {
     id: row.id as number,
     patternType: row.pattern_type as PatternType,
     title: row.title as string,
     description: row.description as string,
-    evidence: Array.isArray(rawEvidence) ? rawEvidence : [],
+    evidence: parseEvidence(row.evidence),
     confidence: row.confidence as number,
     status: row.status as InsightStatus,
     occurrenceCount: row.occurrence_count as number,
