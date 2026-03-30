@@ -385,13 +385,15 @@ export function getCuratorStatus(): CuratorStatus {
 
   const activeCount = counts['active'] ?? 0;
   const staleCount = counts['stale'] ?? 0;
+  const prunedCount = counts['pruned'] ?? 0;
 
   return {
     lastProcessedEventId: cursorRow?.last_processed_event_id ?? 0,
     lastRunAt: cursorRow?.last_run_at ?? null,
-    totalInsights: activeCount + staleCount,
+    totalInsights: activeCount + staleCount + prunedCount,
     activeInsights: activeCount,
     staleInsights: staleCount,
+    prunedInsights: prunedCount,
   };
 }
 

@@ -102,4 +102,5 @@ export interface CuratorStatus {
   totalInsights: number;
   activeInsights: number;
   staleInsights: number;
+  prunedInsights: number;
 }

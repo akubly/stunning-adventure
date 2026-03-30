@@ -63,15 +63,15 @@ export function reinforceInsight(
          occurrence_count = occurrence_count + ?,
          status = 'active',
          last_seen_at = datetime('now')
-     WHERE id = ? AND status != 'pruned'`,
+     WHERE id = ?`,
   ).run(JSON.stringify(merged), confidence, occurrenceDelta, insightId);
 }
 
-/** Find an existing non-pruned insight by pattern type and title (for deduplication). */
+/** Find an existing insight by pattern type and title (for deduplication). Includes all statuses. */
 export function getInsightByPattern(patternType: PatternType, title: string): Insight | undefined {
   const db = getDb();
   const row = db
-    .prepare("SELECT * FROM insights WHERE pattern_type = ? AND title = ? AND status != 'pruned'")
+    .prepare('SELECT * FROM insights WHERE pattern_type = ? AND title = ?')
     .get(patternType, title) as Record<string, unknown> | undefined;
 
   return row ? mapRow(row) : undefined;
