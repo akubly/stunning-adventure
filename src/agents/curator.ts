@@ -58,10 +58,24 @@ function parsePayload(event: CairnEvent): ParsedPayload {
   }
 }
 
+/** Safely coerce an unknown payload value to a string. */
+function safeString(value: unknown, fallback: string = ''): string {
+  if (typeof value === 'string') return value;
+  if (value != null) return String(value);
+  return fallback;
+}
+
+/** Parse a SQLite datetime string into milliseconds. Returns NaN guard on failure. */
+function parseTimestamp(sqliteDatetime: string): number {
+  // SQLite datetime('now') produces 'YYYY-MM-DD HH:MM:SS' — append 'Z' for UTC
+  const ms = new Date(sqliteDatetime.includes('T') ? sqliteDatetime : sqliteDatetime + 'Z').getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
 /** Build a deduplication key for an error event. */
 function errorKey(payload: ParsedPayload): string {
-  const category = (payload.category as string) ?? 'unknown';
-  const message = (payload.message as string) ?? '';
+  const category = safeString(payload.category, 'unknown');
+  const message = safeString(payload.message);
   // Normalise whitespace and truncate for grouping
   const normMessage = message.replace(/\s+/g, ' ').trim().slice(0, 120);
   return `${category}::${normMessage}`;
@@ -162,8 +176,8 @@ function detectRecurringErrors(events: CairnEvent[]): DetectionResult {
   for (const [, group] of errorGroups) {
     if (group.events.length < RECURRING_ERROR_THRESHOLD) continue;
 
-    const category = (group.payload.category as string) ?? 'unknown';
-    const message = (group.payload.message as string) ?? '';
+    const category = safeString(group.payload.category, 'unknown');
+    const message = safeString(group.payload.message);
     const normMessage = message.replace(/\s+/g, ' ').trim().slice(0, 120);
     const title = `Recurring ${category}: ${normMessage}`;
     const description = `"${message.slice(0, 200)}" occurred ${group.events.length} times in this batch`;
@@ -218,13 +232,13 @@ function detectErrorSequences(events: CairnEvent[]): DetectionResult {
 
       if (precedingEvent.eventType === 'error') continue;
 
-      // Check time window
-      const errorTime = new Date(errorEvent.createdAt).getTime();
-      const precedingTime = new Date(precedingEvent.createdAt).getTime();
-      if (errorTime - precedingTime > SEQUENCE_WINDOW_MS) continue;
+      // Check time window — parseTimestamp handles SQLite datetime safely
+      const errorTime = parseTimestamp(errorEvent.createdAt);
+      const precedingTime = parseTimestamp(precedingEvent.createdAt);
+      if (errorTime - precedingTime > SEQUENCE_WINDOW_MS || errorTime - precedingTime < 0) continue;
 
       const errorPayload = parsePayload(errorEvent);
-      const errorCat = (errorPayload.category as string) ?? 'unknown';
+      const errorCat = safeString(errorPayload.category, 'unknown');
       const seqKey = `${precedingEvent.eventType} → ${errorCat}`;
 
       const existing = sequenceCounts.get(seqKey);
@@ -278,7 +292,7 @@ function detectSkipFrequency(events: CairnEvent[]): DetectionResult {
   for (const event of events) {
     if (event.eventType !== 'skip') continue;
     const payload = parsePayload(event);
-    const what = (payload.whatSkipped as string) ?? 'unknown';
+    const what = safeString(payload.whatSkipped, 'unknown');
 
     const group = skipGroups.get(what);
     if (group) {
