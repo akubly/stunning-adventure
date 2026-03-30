@@ -50,11 +50,15 @@ interface ParsedPayload {
   [key: string]: unknown;
 }
 
-function parsePayload(event: CairnEvent): ParsedPayload {
+function parsePayload(event: CairnEvent): ParsedPayload | null {
   try {
-    return JSON.parse(event.payload) as ParsedPayload;
+    const parsed = JSON.parse(event.payload);
+    if (parsed && typeof parsed === 'object') {
+      return parsed as ParsedPayload;
+    }
+    return null;
   } catch {
-    return {};
+    return null;
   }
 }
 
@@ -180,6 +184,7 @@ function detectRecurringErrors(events: CairnEvent[]): DetectionResult {
   for (const event of events) {
     if (event.eventType !== 'error') continue;
     const payload = parsePayload(event);
+    if (!payload) continue;
     const key = errorKey(payload);
 
     const group = errorGroups.get(key);
@@ -256,6 +261,7 @@ function detectErrorSequences(events: CairnEvent[]): DetectionResult {
       if (errorTime - precedingTime > SEQUENCE_WINDOW_MS || errorTime - precedingTime < 0) continue;
 
       const errorPayload = parsePayload(errorEvent);
+      if (!errorPayload) continue;
       const errorCat = safeString(errorPayload.category, 'unknown');
       const seqKey = `${precedingEvent.eventType} → ${errorCat}`;
 
@@ -311,6 +317,7 @@ function detectSkipFrequency(events: CairnEvent[]): DetectionResult {
   for (const event of events) {
     if (event.eventType !== 'skip') continue;
     const payload = parsePayload(event);
+    if (!payload) continue;
     const what = safeString(payload.whatSkipped, 'unknown');
 
     const group = skipGroups.get(what);

@@ -471,8 +471,10 @@ describe('full curate cycle', () => {
       "INSERT INTO event_log (session_id, event_type, payload) VALUES (?, 'error', 'not-json')",
     ).run(sessionId);
 
-    // Should not throw
+    // Should not throw, and malformed events should not create insights
     const result = curate();
     expect(result.eventsProcessed).toBe(2);
+    expect(result.insightsCreated).toBe(0);
+    expect(getInsights('active')).toHaveLength(0);
   });
 });
