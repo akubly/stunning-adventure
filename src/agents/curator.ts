@@ -90,17 +90,20 @@ function errorKey(payload: ParsedPayload): string {
   return `${category}::${normMessage}`;
 }
 
-/** Truncate a string for display, appending a short hash suffix when truncated. */
+/** Truncate a string for display, appending a hash suffix when truncated. */
 function truncateWithHash(value: string, maxLen: number): string {
   if (value.length <= maxLen) return value;
-  // Simple DJB2 hash for disambiguation
+  // DJB2 hash — 8-char base36 suffix for collision resistance
   let hash = 5381;
   for (let i = 0; i < value.length; i++) {
     hash = ((hash << 5) + hash + value.charCodeAt(i)) | 0;
   }
-  const suffix = (hash >>> 0).toString(36).slice(0, 4);
-  return `${value.slice(0, maxLen - 5)}…${suffix}`;
+  const suffix = (hash >>> 0).toString(36).padStart(8, '0').slice(0, 8);
+  return `${value.slice(0, maxLen - 9)}…${suffix}`;
 }
+
+/** Maximum events to process per batch to bound memory and transaction time. */
+const BATCH_SIZE = 1000;
 
 // ---------------------------------------------------------------------------
 // Core pipeline
@@ -113,52 +116,59 @@ export interface CurateResult {
 }
 
 /**
- * Main entry point: process all unprocessed events, detect patterns,
- * store insights, and advance the cursor.
+ * Main entry point: process unprocessed events in bounded batches,
+ * detect patterns, store insights, and advance the cursor.
  *
- * All insight writes and cursor advancement are wrapped in a single
- * transaction to prevent evidence inflation on crash-and-retry.
+ * Each batch is wrapped in a transaction. Loops until caught up.
  */
 export function curate(): CurateResult {
-  const cursor = getLastProcessedEventId();
-  const events = getUnprocessedEvents(cursor);
+  let totalProcessed = 0;
+  let totalCreated = 0;
+  let totalReinforced = 0;
 
-  if (events.length === 0) {
-    updateLastRunTimestamp();
-    return { eventsProcessed: 0, insightsCreated: 0, insightsReinforced: 0 };
+  // Process in batches to bound memory usage
+  let hasMore = true;
+  while (hasMore) {
+    const cursor = getLastProcessedEventId();
+    const events = getUnprocessedEvents(cursor, BATCH_SIZE);
+
+    if (events.length === 0) break;
+
+    let insightsCreated = 0;
+    let insightsReinforced = 0;
+
+    const db = getDb();
+    db.transaction(() => {
+      const errorResult = detectRecurringErrors(events);
+      insightsCreated += errorResult.created;
+      insightsReinforced += errorResult.reinforced;
+
+      const sequenceResult = detectErrorSequences(events);
+      insightsCreated += sequenceResult.created;
+      insightsReinforced += sequenceResult.reinforced;
+
+      const skipResult = detectSkipFrequency(events);
+      insightsCreated += skipResult.created;
+      insightsReinforced += skipResult.reinforced;
+
+      const lastEvent = events[events.length - 1];
+      advanceCursor(lastEvent.id);
+    })();
+
+    totalProcessed += events.length;
+    totalCreated += insightsCreated;
+    totalReinforced += insightsReinforced;
+
+    // If we got fewer than BATCH_SIZE, we're caught up
+    if (events.length < BATCH_SIZE) hasMore = false;
   }
-
-  let insightsCreated = 0;
-  let insightsReinforced = 0;
-
-  const db = getDb();
-  db.transaction(() => {
-    // Pass 1: Recurring error detection
-    const errorResult = detectRecurringErrors(events);
-    insightsCreated += errorResult.created;
-    insightsReinforced += errorResult.reinforced;
-
-    // Pass 2: Error sequence detection (partitioned by session)
-    const sequenceResult = detectErrorSequences(events);
-    insightsCreated += sequenceResult.created;
-    insightsReinforced += sequenceResult.reinforced;
-
-    // Pass 3: Skip frequency detection
-    const skipResult = detectSkipFrequency(events);
-    insightsCreated += skipResult.created;
-    insightsReinforced += skipResult.reinforced;
-
-    // Advance cursor to the last processed event
-    const lastEvent = events[events.length - 1];
-    advanceCursor(lastEvent.id);
-  })();
 
   updateLastRunTimestamp();
 
   return {
-    eventsProcessed: events.length,
-    insightsCreated,
-    insightsReinforced,
+    eventsProcessed: totalProcessed,
+    insightsCreated: totalCreated,
+    insightsReinforced: totalReinforced,
   };
 }
 
