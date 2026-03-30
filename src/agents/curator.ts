@@ -65,20 +65,37 @@ function safeString(value: unknown, fallback: string = ''): string {
   return fallback;
 }
 
-/** Parse a SQLite datetime string into milliseconds. Returns NaN guard on failure. */
+/** Parse a SQLite datetime string into milliseconds. Returns NaN on failure. */
 function parseTimestamp(sqliteDatetime: string): number {
-  // SQLite datetime('now') produces 'YYYY-MM-DD HH:MM:SS' — append 'Z' for UTC
-  const ms = new Date(sqliteDatetime.includes('T') ? sqliteDatetime : sqliteDatetime + 'Z').getTime();
-  return Number.isFinite(ms) ? ms : 0;
+  if (!sqliteDatetime) return NaN;
+  // SQLite datetime('now') produces 'YYYY-MM-DD HH:MM:SS' — normalise to ISO-8601 UTC
+  const isoString =
+    sqliteDatetime.includes('T') || sqliteDatetime.endsWith('Z')
+      ? sqliteDatetime
+      : sqliteDatetime.replace(' ', 'T') + 'Z';
+  const ms = Date.parse(isoString);
+  return Number.isFinite(ms) ? ms : NaN;
 }
 
-/** Build a deduplication key for an error event. */
+/** Build a deduplication key for an error event. Uses full normalised message. */
 function errorKey(payload: ParsedPayload): string {
   const category = safeString(payload.category, 'unknown');
   const message = safeString(payload.message);
-  // Normalise whitespace and truncate for grouping
-  const normMessage = message.replace(/\s+/g, ' ').trim().slice(0, 120);
+  // Normalise whitespace; no truncation here — errorKey is only used as a Map key
+  const normMessage = message.replace(/\s+/g, ' ').trim();
   return `${category}::${normMessage}`;
+}
+
+/** Truncate a string for display, appending a short hash suffix when truncated. */
+function truncateWithHash(value: string, maxLen: number): string {
+  if (value.length <= maxLen) return value;
+  // Simple DJB2 hash for disambiguation
+  let hash = 5381;
+  for (let i = 0; i < value.length; i++) {
+    hash = ((hash << 5) + hash + value.charCodeAt(i)) | 0;
+  }
+  const suffix = (hash >>> 0).toString(36).slice(0, 4);
+  return `${value.slice(0, maxLen - 5)}…${suffix}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -178,8 +195,8 @@ function detectRecurringErrors(events: CairnEvent[]): DetectionResult {
 
     const category = safeString(group.payload.category, 'unknown');
     const message = safeString(group.payload.message);
-    const normMessage = message.replace(/\s+/g, ' ').trim().slice(0, 120);
-    const title = `Recurring ${category}: ${normMessage}`;
+    const normMessage = message.replace(/\s+/g, ' ').trim();
+    const title = `Recurring ${category}: ${truncateWithHash(normMessage, 120)}`;
     const description = `"${message.slice(0, 200)}" occurred ${group.events.length} times in this batch`;
     const evidence = group.events.map((e) => e.id);
     // Recurring errors reach full confidence at 5 occurrences (stricter
@@ -189,10 +206,10 @@ function detectRecurringErrors(events: CairnEvent[]): DetectionResult {
 
     const existing = getInsightByPattern('recurring_error', title);
     if (existing) {
-      reinforceInsight(existing.id, evidence, Math.max(existing.confidence, confidence));
+      reinforceInsight(existing.id, evidence, Math.max(existing.confidence, confidence), group.events.length);
       reinforced++;
     } else {
-      createInsight('recurring_error', title, description, evidence, confidence, prescription);
+      createInsight('recurring_error', title, description, evidence, confidence, prescription, group.events.length);
       created++;
     }
   }
@@ -235,6 +252,7 @@ function detectErrorSequences(events: CairnEvent[]): DetectionResult {
       // Check time window — parseTimestamp handles SQLite datetime safely
       const errorTime = parseTimestamp(errorEvent.createdAt);
       const precedingTime = parseTimestamp(precedingEvent.createdAt);
+      if (isNaN(errorTime) || isNaN(precedingTime)) continue;
       if (errorTime - precedingTime > SEQUENCE_WINDOW_MS || errorTime - precedingTime < 0) continue;
 
       const errorPayload = parsePayload(errorEvent);
@@ -269,10 +287,11 @@ function detectErrorSequences(events: CairnEvent[]): DetectionResult {
         existingInsight.id,
         data.evidence,
         Math.max(existingInsight.confidence, confidence),
+        data.count,
       );
       reinforced++;
     } else {
-      createInsight('error_sequence', title, description, data.evidence, confidence, prescription);
+      createInsight('error_sequence', title, description, data.evidence, confidence, prescription, data.count);
       created++;
     }
   }
@@ -313,10 +332,10 @@ function detectSkipFrequency(events: CairnEvent[]): DetectionResult {
 
     const existing = getInsightByPattern('skip_frequency', title);
     if (existing) {
-      reinforceInsight(existing.id, evidence, Math.max(existing.confidence, confidence));
+      reinforceInsight(existing.id, evidence, Math.max(existing.confidence, confidence), group.events.length);
       reinforced++;
     } else {
-      createInsight('skip_frequency', title, description, evidence, confidence, prescription);
+      createInsight('skip_frequency', title, description, evidence, confidence, prescription, group.events.length);
       created++;
     }
   }

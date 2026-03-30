@@ -25,15 +25,16 @@ export function createInsight(
   evidence: number[],
   confidence: number,
   prescription?: string,
+  occurrenceCount: number = 1,
 ): number {
   const db = getDb();
   const cappedEvidence = evidence.slice(-MAX_EVIDENCE_IDS);
   const result = db
     .prepare(
-      `INSERT INTO insights (pattern_type, title, description, evidence, confidence, prescription)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO insights (pattern_type, title, description, evidence, confidence, prescription, occurrence_count)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(patternType, title, description, JSON.stringify(cappedEvidence), confidence, prescription ?? null);
+    .run(patternType, title, description, JSON.stringify(cappedEvidence), confidence, prescription ?? null, occurrenceCount);
   return Number(result.lastInsertRowid);
 }
 
@@ -42,6 +43,7 @@ export function reinforceInsight(
   insightId: number,
   newEvidence: number[],
   confidence: number,
+  occurrenceDelta: number = 1,
 ): void {
   const db = getDb();
   const existing = db
@@ -58,10 +60,10 @@ export function reinforceInsight(
     `UPDATE insights
      SET evidence = ?,
          confidence = ?,
-         occurrence_count = occurrence_count + 1,
+         occurrence_count = occurrence_count + ?,
          last_seen_at = datetime('now')
      WHERE id = ?`,
-  ).run(JSON.stringify(merged), confidence, insightId);
+  ).run(JSON.stringify(merged), confidence, occurrenceDelta, insightId);
 }
 
 /** Find an existing insight by pattern type and title (for deduplication). */

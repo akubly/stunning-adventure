@@ -244,7 +244,8 @@ describe('recurring error detection', () => {
     expect(result.insightsReinforced).toBeGreaterThanOrEqual(1);
 
     const insight = getInsightByPattern('recurring_error', 'Recurring test: assertion failed');
-    expect(insight!.occurrenceCount).toBe(2);
+    // Batch 1 created with count=2, batch 2 reinforced with delta=2 → total 4
+    expect(insight!.occurrenceCount).toBe(4);
   });
 
   it('should group errors by category+message', () => {
