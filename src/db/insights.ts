@@ -24,8 +24,8 @@ export function createInsight(
   description: string,
   evidence: number[],
   confidence: number,
-  prescription?: string,
   occurrenceCount: number = 1,
+  prescription?: string,
 ): number {
   const db = getDb();
   const cappedEvidence = evidence.slice(-MAX_EVIDENCE_IDS);

@@ -214,7 +214,7 @@ function detectRecurringErrors(events: CairnEvent[]): DetectionResult {
       reinforceInsight(existing.id, evidence, Math.max(existing.confidence, confidence), group.events.length);
       reinforced++;
     } else {
-      createInsight('recurring_error', title, description, evidence, confidence, prescription, group.events.length);
+      createInsight('recurring_error', title, description, evidence, confidence, group.events.length, prescription);
       created++;
     }
   }
@@ -242,8 +242,15 @@ function detectErrorSequences(events: CairnEvent[]): DetectionResult {
     }
   }
 
+  interface SequenceData {
+    count: number;
+    evidence: number[];
+    precedingType: string;
+    errorCategory: string;
+  }
+
   // Build sequence pairs within each session
-  const sequenceCounts = new Map<string, { count: number; evidence: number[] }>();
+  const sequenceCounts = new Map<string, SequenceData>();
 
   for (const [, sessionEvents] of bySession) {
     for (let i = 1; i < sessionEvents.length; i++) {
@@ -299,7 +306,7 @@ function detectErrorSequences(events: CairnEvent[]): DetectionResult {
       );
       reinforced++;
     } else {
-      createInsight('error_sequence', title, description, data.evidence, confidence, prescription, data.count);
+      createInsight('error_sequence', title, description, data.evidence, confidence, data.count, prescription);
       created++;
     }
   }
@@ -344,7 +351,7 @@ function detectSkipFrequency(events: CairnEvent[]): DetectionResult {
       reinforceInsight(existing.id, evidence, Math.max(existing.confidence, confidence), group.events.length);
       reinforced++;
     } else {
-      createInsight('skip_frequency', title, description, evidence, confidence, prescription, group.events.length);
+      createInsight('skip_frequency', title, description, evidence, confidence, group.events.length, prescription);
       created++;
     }
   }

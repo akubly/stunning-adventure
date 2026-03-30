@@ -38,6 +38,7 @@ describe('insights DAL', () => {
       'Build errors happen a lot',
       [1, 2, 3],
       0.6,
+      1,
       'Fix your build',
     );
     expect(id).toBeGreaterThan(0);
@@ -131,6 +132,7 @@ describe('insights DAL', () => {
       'desc',
       [1],
       0.5,
+      1,
       'Check token expiration',
     );
 
