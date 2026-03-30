@@ -204,12 +204,13 @@ function detectRecurringErrors(events: CairnEvent[]): DetectionResult {
     const title = `Recurring ${category}: ${truncateWithHash(normMessage, 120)}`;
     const description = `Recurring "${message.slice(0, 200)}" error in category "${category}"`;
     const evidence = group.events.map((e) => e.id);
-    // Recurring errors reach full confidence at 5 occurrences (stricter
-    // than sequences/skips at 4) to reduce false positives on noisy categories.
-    const confidence = Math.min(1.0, group.events.length / 5);
     const prescription = prescribeForRecurringError(category);
 
     const existing = getInsightByPattern('recurring_error', title);
+    // Confidence grows with total occurrences across all batches (reaches 1.0 at 5)
+    const totalOccurrences = (existing?.occurrenceCount ?? 0) + group.events.length;
+    const confidence = Math.min(1.0, totalOccurrences / 5);
+
     if (existing) {
       reinforceInsight(existing.id, evidence, Math.max(existing.confidence, confidence), group.events.length);
       reinforced++;
@@ -292,11 +293,13 @@ function detectErrorSequences(events: CairnEvent[]): DetectionResult {
 
     const title = `Sequence: ${seqKey}`;
     const description = `"${data.precedingType}" is frequently followed by a "${data.errorCategory}" error`;
-    // Sequences and skips reach full confidence at 4 occurrences.
-    const confidence = Math.min(1.0, data.count / 4);
     const prescription = `Consider adding a check or guard between the "${data.precedingType}" step and the operation that causes the "${data.errorCategory}" error.`;
 
     const existingInsight = getInsightByPattern('error_sequence', title);
+    // Confidence grows with total occurrences across all batches (reaches 1.0 at 4)
+    const totalCount = (existingInsight?.occurrenceCount ?? 0) + data.count;
+    const confidence = Math.min(1.0, totalCount / 4);
+
     if (existingInsight) {
       reinforceInsight(
         existingInsight.id,
@@ -343,10 +346,13 @@ function detectSkipFrequency(events: CairnEvent[]): DetectionResult {
     const title = `Frequently skipped: ${what}`;
     const description = `"${what}" has been frequently skipped across sessions`;
     const evidence = group.events.map((e) => e.id);
-    const confidence = Math.min(1.0, group.events.length / 4);
     const prescription = `The "${what}" guardrail is being skipped frequently. Consider whether it's too strict, poorly timed, or if there's a workflow issue causing habitual bypasses.`;
 
     const existing = getInsightByPattern('skip_frequency', title);
+    // Confidence grows with total occurrences across all batches (reaches 1.0 at 4)
+    const totalOccurrences = (existing?.occurrenceCount ?? 0) + group.events.length;
+    const confidence = Math.min(1.0, totalOccurrences / 4);
+
     if (existing) {
       reinforceInsight(existing.id, evidence, Math.max(existing.confidence, confidence), group.events.length);
       reinforced++;
