@@ -202,7 +202,7 @@ function detectRecurringErrors(events: CairnEvent[]): DetectionResult {
     const message = safeString(group.payload.message);
     const normMessage = message.replace(/\s+/g, ' ').trim();
     const title = `Recurring ${category}: ${truncateWithHash(normMessage, 120)}`;
-    const description = `"${message.slice(0, 200)}" occurred ${group.events.length} times in this batch`;
+    const description = `Recurring "${message.slice(0, 200)}" error in category "${category}"`;
     const evidence = group.events.map((e) => e.id);
     // Recurring errors reach full confidence at 5 occurrences (stricter
     // than sequences/skips at 4) to reduce false positives on noisy categories.
@@ -273,6 +273,8 @@ function detectErrorSequences(events: CairnEvent[]): DetectionResult {
         sequenceCounts.set(seqKey, {
           count: 1,
           evidence: [precedingEvent.id, errorEvent.id],
+          precedingType: precedingEvent.eventType,
+          errorCategory: errorCat,
         });
       }
     }
@@ -282,10 +284,10 @@ function detectErrorSequences(events: CairnEvent[]): DetectionResult {
     if (data.count < SEQUENCE_THRESHOLD) continue;
 
     const title = `Sequence: ${seqKey}`;
-    const description = `Pattern "${seqKey}" detected ${data.count} times`;
+    const description = `"${data.precedingType}" is frequently followed by a "${data.errorCategory}" error`;
     // Sequences and skips reach full confidence at 4 occurrences.
     const confidence = Math.min(1.0, data.count / 4);
-    const prescription = `Consider adding a check or guard between the "${seqKey.split(' → ')[0]}" step and the operation that causes the "${seqKey.split(' → ')[1]}" error.`;
+    const prescription = `Consider adding a check or guard between the "${data.precedingType}" step and the operation that causes the "${data.errorCategory}" error.`;
 
     const existingInsight = getInsightByPattern('error_sequence', title);
     if (existingInsight) {
@@ -332,7 +334,7 @@ function detectSkipFrequency(events: CairnEvent[]): DetectionResult {
     if (group.events.length < SKIP_FREQUENCY_THRESHOLD) continue;
 
     const title = `Frequently skipped: ${what}`;
-    const description = `"${what}" was skipped ${group.events.length} times in this batch`;
+    const description = `"${what}" has been frequently skipped across sessions`;
     const evidence = group.events.map((e) => e.id);
     const confidence = Math.min(1.0, group.events.length / 4);
     const prescription = `The "${what}" guardrail is being skipped frequently. Consider whether it's too strict, poorly timed, or if there's a workflow issue causing habitual bypasses.`;

@@ -108,7 +108,7 @@ export function markStaleInsights(olderThan: string): number {
   const result = db
     .prepare(
       `UPDATE insights SET status = 'stale'
-       WHERE status = 'active' AND last_seen_at < ?`,
+       WHERE status = 'active' AND datetime(last_seen_at) < datetime(?)`,
     )
     .run(olderThan);
   return result.changes;
