@@ -10,15 +10,18 @@ export function logEvent(sessionId: string, eventType: string, payload: object):
   return Number(result.lastInsertRowid);
 }
 
-/** Cursor-based retrieval: return all events with id > lastProcessedId. */
-export function getUnprocessedEvents(lastProcessedId: number): CairnEvent[] {
+/** Cursor-based retrieval: return events with id > lastProcessedId. */
+export function getUnprocessedEvents(lastProcessedId: number, limit?: number): CairnEvent[] {
   const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT id, event_type, payload, session_id, created_at
-       FROM event_log WHERE id > ? ORDER BY id ASC`,
-    )
-    .all(lastProcessedId) as Array<Record<string, unknown>>;
+  const hasLimit = limit !== undefined && limit > 0;
+  const sql = hasLimit
+    ? `SELECT id, event_type, payload, session_id, created_at
+       FROM event_log WHERE id > ? ORDER BY id ASC LIMIT ?`
+    : `SELECT id, event_type, payload, session_id, created_at
+       FROM event_log WHERE id > ? ORDER BY id ASC`;
+  const rows = (hasLimit
+    ? db.prepare(sql).all(lastProcessedId, limit)
+    : db.prepare(sql).all(lastProcessedId)) as Array<Record<string, unknown>>;
 
   return rows.map((row) => ({
     id: row.id as number,

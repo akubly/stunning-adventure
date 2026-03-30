@@ -62,7 +62,7 @@ describe('database initialization', () => {
     const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
       version: number;
     };
-    expect(row.version).toBe(2);
+    expect(row.version).toBe(3);
   });
 });
 
@@ -180,6 +180,29 @@ describe('event log', () => {
     expect(event.eventType).toBe('test_event');
     expect(event.sessionId).toBe(sessionId);
     expect(event.createdAt).toBeDefined();
+  });
+
+  it('should respect limit parameter', () => {
+    logEvent(sessionId, 'e1', { n: 1 });
+    logEvent(sessionId, 'e2', { n: 2 });
+    logEvent(sessionId, 'e3', { n: 3 });
+
+    const limited = getUnprocessedEvents(0, 2);
+    expect(limited).toHaveLength(2);
+    expect(limited[0].eventType).toBe('e1');
+    expect(limited[1].eventType).toBe('e2');
+
+    // Without limit returns all
+    const all = getUnprocessedEvents(0);
+    expect(all).toHaveLength(3);
+  });
+
+  it('should treat limit of 0 as no limit', () => {
+    logEvent(sessionId, 'e1', { n: 1 });
+    logEvent(sessionId, 'e2', { n: 2 });
+
+    const result = getUnprocessedEvents(0, 0);
+    expect(result).toHaveLength(2);
   });
 });
 
@@ -344,7 +367,7 @@ describe('schema migration', () => {
     const before = db.prepare('SELECT COUNT(*) as count FROM schema_version').get() as {
       count: number;
     };
-    expect(before.count).toBe(2);
+    expect(before.count).toBe(3);
 
     // Re-run should be a no-op
     applyMigrations(db);
@@ -352,7 +375,7 @@ describe('schema migration', () => {
     const after = db.prepare('SELECT COUNT(*) as count FROM schema_version').get() as {
       count: number;
     };
-    expect(after.count).toBe(2);
+    expect(after.count).toBe(3);
   });
 
   it('should record migration description', () => {

@@ -9,14 +9,6 @@
 export { getCairnDir, getKnowledgeDbPath, getPluginsDir, getConfigPath } from './config/paths.js';
 export { slugifyRepoKey } from './config/repo.js';
 
-// Database
-export { getDb, closeDb } from './db/index.js';
-export { createSession, endSession, getActiveSession } from './db/sessions.js';
-export { logEvent, getUnprocessedEvents } from './db/events.js';
-export { getPreference, setPreference } from './db/preferences.js';
-export { recordSkip, getSkips } from './db/skipBreadcrumbs.js';
-export { getLastProcessedEventId, advanceCursor } from './db/curatorState.js';
-
 // Agents
 export {
   startSession as startArchivistSession,
@@ -28,6 +20,29 @@ export {
 } from './agents/archivist.js';
 export { getSessionSummary, hasEventOccurred, findEvents } from './agents/sessionState.js';
 export { scrubSecrets } from './agents/secretScrubber.js';
+export {
+  curate,
+  getCuratorStatus,
+  AGENT_NAME as CURATOR_AGENT_NAME,
+} from './agents/curator.js';
+
+// Database (low-level — prefer agent APIs above)
+export { getDb, closeDb } from './db/index.js';
+export { createSession, endSession, getActiveSession } from './db/sessions.js';
+export { logEvent, getUnprocessedEvents } from './db/events.js';
+export { getPreference, setPreference } from './db/preferences.js';
+export { recordSkip, getSkips } from './db/skipBreadcrumbs.js';
+export { getLastProcessedEventId, advanceCursor } from './db/curatorState.js';
+export {
+  createInsight,
+  reinforceInsight,
+  getInsightByPattern,
+  getInsights,
+  countInsightsByStatus,
+  markStaleInsights,
+  deletePrunedInsights,
+  setInsightStatus,
+} from './db/insights.js';
 
 // Types
 export type {
@@ -38,5 +53,10 @@ export type {
   SkipBreadcrumb,
   CairnError,
   CairnEvent,
+  PatternType,
+  InsightStatus,
+  Insight,
+  CuratorStatus,
 } from './types/index.js';
 export type { SessionSummary } from './agents/sessionState.js';
+export type { CurateResult } from './agents/curator.js';
