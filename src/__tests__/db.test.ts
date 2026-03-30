@@ -181,6 +181,29 @@ describe('event log', () => {
     expect(event.sessionId).toBe(sessionId);
     expect(event.createdAt).toBeDefined();
   });
+
+  it('should respect limit parameter', () => {
+    logEvent(sessionId, 'e1', { n: 1 });
+    logEvent(sessionId, 'e2', { n: 2 });
+    logEvent(sessionId, 'e3', { n: 3 });
+
+    const limited = getUnprocessedEvents(0, 2);
+    expect(limited).toHaveLength(2);
+    expect(limited[0].eventType).toBe('e1');
+    expect(limited[1].eventType).toBe('e2');
+
+    // Without limit returns all
+    const all = getUnprocessedEvents(0);
+    expect(all).toHaveLength(3);
+  });
+
+  it('should treat limit of 0 as no limit', () => {
+    logEvent(sessionId, 'e1', { n: 1 });
+    logEvent(sessionId, 'e2', { n: 2 });
+
+    const result = getUnprocessedEvents(0, 0);
+    expect(result).toHaveLength(2);
+  });
 });
 
 // ---------------------------------------------------------------------------

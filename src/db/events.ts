@@ -13,12 +13,13 @@ export function logEvent(sessionId: string, eventType: string, payload: object):
 /** Cursor-based retrieval: return events with id > lastProcessedId. */
 export function getUnprocessedEvents(lastProcessedId: number, limit?: number): CairnEvent[] {
   const db = getDb();
-  const sql = limit
+  const hasLimit = limit !== undefined && limit > 0;
+  const sql = hasLimit
     ? `SELECT id, event_type, payload, session_id, created_at
        FROM event_log WHERE id > ? ORDER BY id ASC LIMIT ?`
     : `SELECT id, event_type, payload, session_id, created_at
        FROM event_log WHERE id > ? ORDER BY id ASC`;
-  const rows = (limit
+  const rows = (hasLimit
     ? db.prepare(sql).all(lastProcessedId, limit)
     : db.prepare(sql).all(lastProcessedId)) as Array<Record<string, unknown>>;
 

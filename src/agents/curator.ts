@@ -126,6 +126,10 @@ export function curate(): CurateResult {
   let totalCreated = 0;
   let totalReinforced = 0;
 
+  // Track the last event per session across batches so sequence detection
+  // can find pairs that straddle batch boundaries.
+  const lastEventPerSession = new Map<string, CairnEvent>();
+
   // Process in batches to bound memory usage
   let hasMore = true;
   while (hasMore) {
@@ -143,7 +147,7 @@ export function curate(): CurateResult {
       insightsCreated += errorResult.created;
       insightsReinforced += errorResult.reinforced;
 
-      const sequenceResult = detectErrorSequences(events);
+      const sequenceResult = detectErrorSequences(events, lastEventPerSession);
       insightsCreated += sequenceResult.created;
       insightsReinforced += sequenceResult.reinforced;
 
@@ -154,6 +158,11 @@ export function curate(): CurateResult {
       const lastEvent = events[events.length - 1];
       advanceCursor(lastEvent.id);
     })();
+
+    // Update last-event-per-session for next batch's boundary detection
+    for (const event of events) {
+      lastEventPerSession.set(event.sessionId, event);
+    }
 
     totalProcessed += events.length;
     totalCreated += insightsCreated;
@@ -241,19 +250,25 @@ function detectRecurringErrors(events: CairnEvent[]): DetectionResult {
  * Detect error sequences: find cases where a specific event type
  * is consistently followed by an error within the time window.
  * Events are partitioned by session to avoid cross-session false positives.
+ * Accepts carryover events from the previous batch to detect boundary-straddling pairs.
  */
-function detectErrorSequences(events: CairnEvent[]): DetectionResult {
+function detectErrorSequences(
+  events: CairnEvent[],
+  lastEventPerSession: Map<string, CairnEvent> = new Map(),
+): DetectionResult {
   let created = 0;
   let reinforced = 0;
 
-  // Partition events by session for accurate adjacency detection
+  // Partition events by session, prepending carryover from previous batch
   const bySession = new Map<string, CairnEvent[]>();
   for (const event of events) {
     const list = bySession.get(event.sessionId);
     if (list) {
       list.push(event);
     } else {
-      bySession.set(event.sessionId, [event]);
+      // Prepend the carryover event (if any) so boundary pairs are detected
+      const carryover = lastEventPerSession.get(event.sessionId);
+      bySession.set(event.sessionId, carryover ? [carryover, event] : [event]);
     }
   }
 
