@@ -473,7 +473,7 @@ Natural language searchable query of user's sidecar history. "What have I learne
 **Author:** Graham Knight (Lead)  
 **Type:** Architecture  
 **Status:** Implemented  
-**Date:** 2025-07-19
+**Implemented:** 2025-07-19
 
 ## Decision
 
@@ -504,7 +504,7 @@ postToolUse (record.ps1 → postToolUse.ts)
 ## Files
 
 - `src/hooks/sessionStart.ts` — Node.js entry point
-- `C:\Users\akubl\.copilot\hooks\cairn-archivist\curate.ps1` — PowerShell wrapper
+- `~/.copilot/hooks/cairn-archivist/curate.ps1` — PowerShell wrapper
 - `src/__tests__/sessionStart.test.ts` — 8 tests covering fast/slow path, isolation, idempotency
 
 ## Verification
