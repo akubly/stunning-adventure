@@ -21,22 +21,24 @@ describe('runSessionStart', () => {
     getDb(':memory:');
   });
 
-  it('should return fastPath true when an active session exists', () => {
+  it('should return fastPath true when a recent active session exists', () => {
     createSession('org_repo', 'main');
-    expect(getActiveSession('org_repo')).toBeDefined();
+    // Log a recent event so the session is considered "fresh"
+    const session = getActiveSession('org_repo')!;
+    logEvent(session.id, 'session_start', { repoKey: 'org_repo' });
 
     const result = runSessionStart('org_repo');
     expect(result.fastPath).toBe(true);
 
     // Active session should still be there, untouched
-    const session = getActiveSession('org_repo');
-    expect(session).toBeDefined();
-    expect(session!.status).toBe('active');
+    const after = getActiveSession('org_repo');
+    expect(after).toBeDefined();
+    expect(after!.status).toBe('active');
   });
 
   it('should not call catchUp or curate on fast path', () => {
     const sessionId = createSession('org_repo', 'main');
-    // Log an event so we can verify curator didn't run
+    // Log a recent event to keep session fresh
     logEvent(sessionId, 'tool_use', { tool: 'grep' });
 
     const result = runSessionStart('org_repo');
@@ -51,15 +53,32 @@ describe('runSessionStart', () => {
     expect(cursorRow?.last_processed_event_id ?? 0).toBe(0);
   });
 
-  it('should take fast path when a stale active session exists (postToolUse resumes it)', () => {
-    createSession('org_repo', 'main');
+  it('should detect and recover a stale (orphaned) active session', () => {
+    // Create a session and backdate its start and last event to simulate an
+    // orphan left behind by a crashed Copilot process.
+    const sessionId = createSession('org_repo', 'main');
+    logEvent(sessionId, 'session_start', { repoKey: 'org_repo' });
+
+    const db = getDb();
+    const staleTime = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    db.prepare("UPDATE sessions SET started_at = ? WHERE id = ?").run(staleTime, sessionId);
+    db.prepare("UPDATE event_log SET created_at = ? WHERE session_id = ?").run(staleTime, sessionId);
 
     const result = runSessionStart('org_repo');
-    // Active session exists → fast path (postToolUse will resume it)
-    expect(result.fastPath).toBe(true);
+    expect(result.fastPath).toBe(false);
+
+    // The orphan session should now be marked as crashed
+    const row = db.prepare("SELECT status FROM sessions WHERE id = ?").get(sessionId) as { status: string };
+    expect(row.status).toBe('crashed');
+
+    // A session_crash_detected event should have been logged
+    const crashEvent = db
+      .prepare("SELECT id FROM event_log WHERE session_id = ? AND event_type = 'session_crash_detected'")
+      .get(sessionId);
+    expect(crashEvent).toBeDefined();
   });
 
-  it('should run catchUp and curator when no active session exists', () => {
+  it('should run curator when no active session exists', () => {
     // Create events attached to a completed session
     const sessionId = createSession('org_repo', 'main');
     logEvent(sessionId, 'error', { category: 'build', message: 'fail 1' });
@@ -83,8 +102,9 @@ describe('runSessionStart', () => {
   });
 
   it('should not affect sessions from other repos on slow path', () => {
-    // Active session on repo A
+    // Active session on repo A (with recent event so it's not stale)
     const repoAId = createSession('repo_a', 'main');
+    logEvent(repoAId, 'session_start', { repoKey: 'repo_a' });
 
     // Hook fires for repo B (no active session for repo B)
     const result = runSessionStart('repo_b');
@@ -95,18 +115,6 @@ describe('runSessionStart', () => {
     const repoASession = getActiveSession('repo_a');
     expect(repoASession).toBeDefined();
     expect(repoASession!.id).toBe(repoAId);
-  });
-
-  it('should recover crashed session for the same repo when hook triggers slow path', () => {
-    // This scenario can't happen via runSessionStart alone because if there's
-    // an active session, we hit fast path. But catchUpPreviousSession is
-    // called independently — tested in archivist.test.ts.
-    // Verify that after slow path, no session is created
-    const result = runSessionStart('fresh_repo');
-    expect(result.fastPath).toBe(false);
-
-    // No session should exist — sessionStart doesn't create sessions
-    expect(getActiveSession('fresh_repo')).toBeUndefined();
   });
 
   it('should not create a new session (postToolUse owns session creation)', () => {
@@ -126,10 +134,11 @@ describe('runSessionStart', () => {
     const r2 = runSessionStart('org_repo');
     expect(r2.fastPath).toBe(false);
 
-    // Now simulate postToolUse creating a session
-    createSession('org_repo', 'main');
+    // Now simulate postToolUse creating a session with a recent event
+    const sid = createSession('org_repo', 'main');
+    logEvent(sid, 'session_start', { repoKey: 'org_repo' });
 
-    // Third call: fast path
+    // Third call: fast path (session is fresh)
     const r3 = runSessionStart('org_repo');
     expect(r3.fastPath).toBe(true);
   });

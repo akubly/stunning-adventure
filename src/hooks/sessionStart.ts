@@ -1,10 +1,10 @@
 /**
  * preToolUse hook entry point — session-start gate.
  *
- * Fires on every tool call via the preToolUse hook. Fast path: if an active
- * session already exists for this repo, exits immediately (~O(1) SELECT).
+ * Fires on every tool call via the preToolUse hook. Fast path: if a
+ * *recent* active session exists for this repo, exits immediately (~O(1)).
  *
- * On first tool call (no active session):
+ * When no recent session exists (first tool call, or orphan from a crash):
  *   1. Recover any crashed previous session (catchUpPreviousSession)
  *   2. Run the Curator pipeline (curate) — processes unprocessed events
  *   3. Exit — postToolUse will create the new session
@@ -14,10 +14,10 @@
 
 import { getDb, closeDb } from '../db/index.js';
 import { getActiveSession } from '../db/sessions.js';
+import { getLastEventTime } from '../db/events.js';
 import { catchUpPreviousSession } from '../agents/archivist.js';
 import { curate } from '../agents/curator.js';
-import { slugifyRepoKey } from '../config/repo.js';
-import { execSync } from 'node:child_process';
+import { getRepoKey } from './gitContext.js';
 
 interface HookInput {
   toolName: string;
@@ -25,32 +25,35 @@ interface HookInput {
   cwd?: string;
 }
 
-function getRepoKey(cwd?: string): string {
-  try {
-    const remote = execSync('git remote get-url origin', {
-      cwd: cwd ?? process.cwd(),
-      encoding: 'utf-8',
-      timeout: 2000,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
-    return slugifyRepoKey(remote);
-  } catch {
-    return 'unknown_repo';
-  }
+/**
+ * Threshold (ms) beyond which an active session with no recent events
+ * is considered orphaned from a previous Copilot run.
+ *
+ * During normal use postToolUse fires every few seconds, keeping the
+ * session's last event well within this window.
+ */
+const STALE_SESSION_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+
+function isStaleSession(session: { id: string; startedAt: string }): boolean {
+  const lastEvent = getLastEventTime(session.id);
+  const referenceTime = lastEvent ?? session.startedAt;
+  const ageMs = Date.now() - new Date(referenceTime).getTime();
+  return ageMs > STALE_SESSION_THRESHOLD_MS;
 }
 
 /**
  * Core session-start logic, separated from stdin plumbing for testability.
  *
- * Returns `{ fastPath: true }` when an active session already exists (no work done).
- * Returns `{ fastPath: false }` after running crash recovery + curator.
+ * Returns `{ fastPath: true }` when a recent active session exists (no work).
+ * Returns `{ fastPath: false }` after crash recovery + curator pipeline.
  */
 export function runSessionStart(repoKey: string): { fastPath: boolean } {
   const existing = getActiveSession(repoKey);
-  if (existing) {
+  if (existing && !isStaleSession(existing)) {
     return { fastPath: true };
   }
 
+  // Either no active session or the active session is stale (orphan).
   catchUpPreviousSession(repoKey);
   curate();
   return { fastPath: false };
@@ -71,15 +74,24 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
+  let dbOpened = false;
   try {
     getDb();
+    dbOpened = true;
     const repoKey = getRepoKey(hookData!.cwd);
     runSessionStart(repoKey);
-    closeDb();
   } catch {
     // Fail open — hooks must never break the user's workflow
+  } finally {
+    if (dbOpened) closeDb();
+    process.exit(0);
   }
-  process.exit(0);
 }
 
-main();
+// Only run CLI entrypoint when executed as a script, not when imported.
+const isScript =
+  process.argv[1] &&
+  import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}`;
+if (isScript) {
+  main();
+}

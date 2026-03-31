@@ -10,8 +10,7 @@
 
 import { getDb, closeDb } from '../db/index.js';
 import { startSession, recordToolUse, recordError } from '../agents/archivist.js';
-import { slugifyRepoKey } from '../config/repo.js';
-import { execSync } from 'node:child_process';
+import { getRepoKey, getBranch } from './gitContext.js';
 
 interface HookInput {
   toolName: string;
@@ -21,33 +20,6 @@ interface HookInput {
     textResultForLlm?: string;
   };
   cwd?: string;
-}
-
-function getRepoKey(cwd?: string): string {
-  try {
-    const remote = execSync('git remote get-url origin', {
-      cwd: cwd ?? process.cwd(),
-      encoding: 'utf-8',
-      timeout: 2000,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
-    return slugifyRepoKey(remote);
-  } catch {
-    return 'unknown_repo';
-  }
-}
-
-function getBranch(cwd?: string): string | undefined {
-  try {
-    return execSync('git branch --show-current', {
-      cwd: cwd ?? process.cwd(),
-      encoding: 'utf-8',
-      timeout: 2000,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim() || undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 async function main(): Promise<void> {
@@ -93,4 +65,10 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+// Only run CLI entrypoint when executed as a script, not when imported.
+const isScript =
+  process.argv[1] &&
+  import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}`;
+if (isScript) {
+  main();
+}

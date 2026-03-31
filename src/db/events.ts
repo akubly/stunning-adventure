@@ -10,6 +10,15 @@ export function logEvent(sessionId: string, eventType: string, payload: object):
   return Number(result.lastInsertRowid);
 }
 
+/** Return the ISO timestamp of the most recent event for a session, or undefined. */
+export function getLastEventTime(sessionId: string): string | undefined {
+  const db = getDb();
+  const row = db
+    .prepare('SELECT MAX(created_at) AS last_at FROM event_log WHERE session_id = ?')
+    .get(sessionId) as { last_at: string | null } | undefined;
+  return row?.last_at ?? undefined;
+}
+
 /** Cursor-based retrieval: return events with id > lastProcessedId. */
 export function getUnprocessedEvents(lastProcessedId: number, limit?: number): CairnEvent[] {
   const db = getDb();
