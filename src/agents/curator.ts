@@ -19,6 +19,7 @@ import {
   countInsightsByStatus,
 } from '../db/insights.js';
 import type { CairnEvent, CuratorStatus } from '../types/index.js';
+import { parseSqliteDateToMs } from '../utils/timestamps.js';
 
 export const AGENT_NAME = 'curator';
 export const AGENT_DESCRIPTION = 'Knowledge custodian, error processor, RCA pipeline';
@@ -71,14 +72,7 @@ function safeString(value: unknown, fallback: string = ''): string {
 
 /** Parse a SQLite datetime string into milliseconds. Returns NaN on failure. */
 function parseTimestamp(sqliteDatetime: string): number {
-  if (!sqliteDatetime) return NaN;
-  // SQLite datetime('now') produces 'YYYY-MM-DD HH:MM:SS' — normalise to ISO-8601 UTC
-  const isoString =
-    sqliteDatetime.includes('T') || sqliteDatetime.endsWith('Z')
-      ? sqliteDatetime
-      : sqliteDatetime.replace(' ', 'T') + 'Z';
-  const ms = Date.parse(isoString);
-  return Number.isFinite(ms) ? ms : NaN;
+  return parseSqliteDateToMs(sqliteDatetime) ?? NaN;
 }
 
 /** Build a deduplication key for an error event. Uses full normalised message. */

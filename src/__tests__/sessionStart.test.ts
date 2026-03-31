@@ -60,7 +60,8 @@ describe('runSessionStart', () => {
     logEvent(sessionId, 'session_start', { repoKey: 'org_repo' });
 
     const db = getDb();
-    const staleTime = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const staleDate = new Date(Date.now() - 5 * 60 * 1000);
+    const staleTime = staleDate.toISOString().slice(0, 19).replace('T', ' ');
     db.prepare("UPDATE sessions SET started_at = ? WHERE id = ?").run(staleTime, sessionId);
     db.prepare("UPDATE event_log SET created_at = ? WHERE session_id = ?").run(staleTime, sessionId);
 

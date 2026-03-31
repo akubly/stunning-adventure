@@ -12,12 +12,15 @@
  * Fail-open: any error exits with code 0. Hooks must never break the user.
  */
 
+import path from 'node:path';
+import url from 'node:url';
 import { getDb, closeDb } from '../db/index.js';
 import { getActiveSession } from '../db/sessions.js';
 import { getLastEventTime } from '../db/events.js';
 import { catchUpPreviousSession } from '../agents/archivist.js';
 import { curate } from '../agents/curator.js';
 import { getRepoKey } from './gitContext.js';
+import { parseSqliteDateToMs } from '../utils/timestamps.js';
 
 interface HookInput {
   toolName: string;
@@ -37,7 +40,10 @@ const STALE_SESSION_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
 function isStaleSession(session: { id: string; startedAt: string }): boolean {
   const lastEvent = getLastEventTime(session.id);
   const referenceTime = lastEvent ?? session.startedAt;
-  const ageMs = Date.now() - new Date(referenceTime).getTime();
+  const referenceMs = parseSqliteDateToMs(referenceTime);
+  // Fail-safe: if we can't parse, treat session as NOT stale (avoid false orphan detection)
+  if (referenceMs === null) return false;
+  const ageMs = Date.now() - referenceMs;
   return ageMs > STALE_SESSION_THRESHOLD_MS;
 }
 
@@ -91,7 +97,7 @@ async function main(): Promise<void> {
 // Only run CLI entrypoint when executed as a script, not when imported.
 const isScript =
   process.argv[1] &&
-  import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}`;
+  import.meta.url === url.pathToFileURL(path.resolve(process.argv[1])).href;
 if (isScript) {
   main();
 }

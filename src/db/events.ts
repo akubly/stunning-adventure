@@ -10,7 +10,8 @@ export function logEvent(sessionId: string, eventType: string, payload: object):
   return Number(result.lastInsertRowid);
 }
 
-/** Return the ISO timestamp of the most recent event for a session, or undefined. */
+/** Return the timestamp of the most recent event for a session, or undefined.
+ *  The value is in SQLite datetime format (`YYYY-MM-DD HH:MM:SS` UTC). */
 export function getLastEventTime(sessionId: string): string | undefined {
   const db = getDb();
   const row = db
