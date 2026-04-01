@@ -41,8 +41,10 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
+  let dbOpened = false;
   try {
     getDb();
+    dbOpened = true;
 
     const repoKey = getRepoKey(hookData.cwd);
     const branch = getBranch(hookData.cwd);
@@ -59,10 +61,10 @@ async function main(): Promise<void> {
         resultType: hookData.toolResult?.resultType ?? 'unknown',
       });
     }
-
-    closeDb();
   } catch {
     // Fail open — hooks must never break the user's workflow
+  } finally {
+    if (dbOpened) closeDb();
     process.exit(0);
   }
 }
