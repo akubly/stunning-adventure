@@ -13,11 +13,17 @@
  */
 export function parseSqliteDateToMs(sqliteDatetime: string | undefined | null): number | null {
   if (!sqliteDatetime) return null;
-  // SQLite datetime('now') → 'YYYY-MM-DD HH:MM:SS'; normalise to ISO-8601 UTC
-  const normalized =
-    sqliteDatetime.includes('T') || sqliteDatetime.endsWith('Z')
-      ? sqliteDatetime
-      : sqliteDatetime.replace(' ', 'T') + 'Z';
+  let normalized = sqliteDatetime.trim();
+  // SQLite datetime('now') uses a space separator; convert to ISO-8601 'T'
+  if (normalized.includes(' ')) {
+    normalized = normalized.replace(' ', 'T');
+  }
+  // Only append 'Z' when there is no explicit timezone indicator
+  const hasExplicitTimezone =
+    /[Zz]$/.test(normalized) || /[+-]\d{2}(:?\d{2})?$/.test(normalized);
+  if (!hasExplicitTimezone) {
+    normalized += 'Z';
+  }
   const ms = Date.parse(normalized);
   return Number.isFinite(ms) ? ms : null;
 }

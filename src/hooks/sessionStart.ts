@@ -41,8 +41,11 @@ function isStaleSession(session: { id: string; startedAt: string }): boolean {
   const lastEvent = getLastEventTime(session.id);
   const referenceTime = lastEvent ?? session.startedAt;
   const referenceMs = parseSqliteDateToMs(referenceTime);
-  // Fail-safe: if we can't parse, treat session as NOT stale (avoid false orphan detection)
-  if (referenceMs === null) return false;
+  // Fail-safe toward recovery: if we can't parse the timestamp, treat the
+  // session as stale so crash recovery runs. A false-positive (recovering a
+  // live session) is correctable; a false-negative (ignoring an orphan with a
+  // garbage timestamp) leaves the session permanently stuck on the fast path.
+  if (referenceMs === null) return true;
   const ageMs = Date.now() - referenceMs;
   return ageMs > STALE_SESSION_THRESHOLD_MS;
 }
@@ -84,6 +87,12 @@ async function main(): Promise<void> {
   try {
     getDb();
     dbOpened = true;
+    // getRepoKey() shells out to `git remote get-url origin` (~10ms on
+    // Windows). This runs before the fast-path DB check because
+    // getActiveSession() requires a repo-scoped key. The cost is acceptable:
+    // node startup + DB open (~400ms) dominate the hook budget, making the
+    // 10ms git call negligible. Restructuring to avoid it (CWD-based keys,
+    // repo-agnostic pre-checks) would add complexity for marginal gain.
     const repoKey = getRepoKey(hookData!.cwd);
     runSessionStart(repoKey);
   } catch {
