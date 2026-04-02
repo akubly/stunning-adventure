@@ -538,7 +538,7 @@ postToolUse (record.ps1 → postToolUse.ts)
 - list_insights: Active insights with prescriptions
 - get_session: Event counts and session summary
 - search_events: Filtered event list by pattern
-- un_curate: Manual curator run
+- run_curate: Manual curator run
 - check_event: Boolean query — has event occurred?
 
 **Naming Convention:** Unprefixed verb_noun format. MCP host adds server prefix (cairn-). Eliminates stutter.
