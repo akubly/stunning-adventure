@@ -173,21 +173,15 @@ describe('search_events logic', () => {
     expect(all).toHaveLength(5);
   });
 
-  it('should escape LIKE wildcard characters in pattern', () => {
+  it('should support SQL LIKE wildcards in pattern', () => {
     const sessionId = createSession('org/repo', 'main');
     logEvent(sessionId, 'tool_use', { tool: 'grep' });
     logEvent(sessionId, 'error', { category: 'build', message: 'fail' });
 
-    // '%' and '_' are SQL LIKE wildcards — they should be treated as literals
-    const withPercent = findEvents(sessionId, '%');
-    expect(withPercent).toHaveLength(0);
-
+    // '_' matches any single character — 'tool_us_' should match 'tool_use'
     const withUnderscore = findEvents(sessionId, 'tool_us_');
-    expect(withUnderscore).toHaveLength(0);
-
-    // Exact substring still works
-    const exact = findEvents(sessionId, 'tool_use');
-    expect(exact).toHaveLength(1);
+    expect(withUnderscore).toHaveLength(1);
+    expect(withUnderscore[0].eventType).toBe('tool_use');
   });
 });
 

@@ -194,10 +194,12 @@ server.registerTool(
   {
     title: 'Search Events',
     description:
-      'Search for events in a session by event type pattern. ' +
-      'Matches event types containing the pattern as a substring (e.g. "error" matches "error", ' +
-      '"tool" matches "tool_use"). Returns matching events in chronological order, ' +
-      'up to the specified limit. Use this to find specific activity within a session.',
+      'Search for events in a session by event type pattern using SQL LIKE matching. ' +
+      'The pattern is wrapped in wildcards, so "error" matches any type containing "error" ' +
+      'and "tool" matches "tool_use". You can also use SQL LIKE wildcards: ' +
+      '"%" matches any sequence of characters and "_" matches any single character. ' +
+      'Returns matching events in chronological order, up to the specified limit. ' +
+      'Use this to find specific activity within a session.',
     inputSchema: {
       session_id: z.string().describe('The session UUID to search within.'),
       type_pattern: z
@@ -205,7 +207,7 @@ server.registerTool(
         .trim()
         .min(1)
         .describe(
-          'Substring to match against event types. Must be non-empty. Examples: "error", "tool", "skip", "session".',
+          'Pattern to match against event types. Supports SQL LIKE wildcards (% = any chars, _ = single char). Must be non-empty. Examples: "error", "tool", "skip", "session".',
         ),
       limit: z
         .number()
