@@ -46,3 +46,11 @@
 - **Adding a migration bumps test assertions**: db.test.ts hard-codes the expected migration count and max schema_version. Always update both assertions when adding a new migration.
 - **`ORDER BY col DESC LIMIT 1` > `MAX(col)` with a composite index**: When a compound index like `(session_id, created_at)` exists, `ORDER BY created_at DESC LIMIT 1` is a single B-tree seek. `MAX()` can't always leverage the index as efficiently.
 - **`dbOpened` + `finally` is the canonical DB cleanup pattern**: Both `sessionStart.ts` and `postToolUse.ts` now use this pattern. Any future hook entry points that call `getDb()` should follow suit.
+
+### 2026-04-02: Phase 5 Decision — MCP Server and verb_noun Tool Naming
+
+- **Phase 5 is the MCP Server, not CLI.** Aaron agreed with Graham's prior decision (session cec99d3e) to skip CLI and go straight to MCP. Primary consumer is a Copilot agent, not a human at terminal. One presentation layer (MCP) eliminates CLI as dead code after MCP ships.
+- **Tool naming: verb_noun, unprefixed.** Tools use imperative format (get_status, list_insights, search_events, run_curate, check_event). MCP host adds server prefix automatically (cairn-). Eliminates naming stutter. Aligns with CLI conventions (git status, npm list).
+- **Verb taxonomy for predictable agent behavior:** get (single object) | list (collection) | search (query with filters) | run (side effect) | check (boolean). Verbs enable LLM agents to infer the right invocation pattern.
+- **6 tools ship in Phase 5:** Status, insights, session summary, event search, curator run, event check. Each answers one natural question.
+- **Team consensus reached:** Roger endorsed naming, Valanice added vocabulary contract insight (verbs establish semantic contracts), Graham finalized spec. Ready for implementation.

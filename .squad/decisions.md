@@ -513,3 +513,71 @@ postToolUse (record.ps1 → postToolUse.ts)
 - ESLint clean
 - TypeScript compiles without errors
 
+
+---
+
+### 2026-04-02T04-58-00: Phase 5 — MCP Server (Cairn Conversational Intelligence)
+
+**Author:** Graham Knight (Lead)  
+**Type:** Architecture / Roadmap  
+**Status:** Ready for Implementation  
+**Date:** 2026-04-02  
+**Supersedes:** graham-phase5-recommendation.md (CLI-first approach withdrawn)
+
+**Decision:** Phase 5 is the MCP Server. Build Cairn as an MCP server that exposes knowledge directly into Copilot conversation. Skip the CLI.
+
+**Rationale:**
+- Primary consumer is an agent (where Aaron works), not a human at terminal
+- One presentation layer (MCP) vs. two (CLI + MCP)
+- Query APIs already validated through ad-hoc scripts
+- Design surface not materially different: 6 operations with schema definitions
+- MCP eliminates CLI as "dead code on arrival" after MCP ships
+
+**6 MCP Tools (verb_noun naming):**
+- get_status: Current session state and curator health
+- list_insights: Active insights with prescriptions
+- get_session: Event counts and session summary
+- search_events: Filtered event list by pattern
+- un_curate: Manual curator run
+- check_event: Boolean query — has event occurred?
+
+**Naming Convention:** Unprefixed verb_noun format. MCP host adds server prefix (cairn-). Eliminates stutter.
+
+**Team Composition:**
+- Roger (Platform Dev): MCP SDK integration
+- Valanice (UX): Tool descriptions and verb taxonomy
+- Graham (Lead): Schema review and registration design
+
+**Package Changes:**
+- New dependencies: @modelcontextprotocol/sdk, zod
+- New bin entry: cairn-mcp → dist/mcp/server.js
+- MCP registration: .copilot/mcp-config.json
+
+**Status:** Architecture finalized. Ready for implementation.
+
+---
+
+### 2026-04-02T04-58-32: User Directive — MCP Tool Naming Convention
+
+**Author:** Aaron (via Copilot)  
+**Type:** Design / Naming  
+**Status:** Active
+
+Use verb_noun naming for MCP tool names (e.g., get_status, list_insights), not noun_verb. Tool names should be short and unprefixed — the MCP host adds the server name prefix automatically.
+
+**Rationale:**
+- Natural language alignment: "get the status" → get_status
+- Better LLM tool selection: agent sees verb matching user phrasing
+- Eliminates naming stutter: cairn-get_status vs cairn-status_get
+- Aligns with CLI conventions (git status, npm list)
+
+**Verb Taxonomy:**
+- get: Retrieve single composite object
+- list: Return collection with optional filters
+- search: Query with multiple filter parameters
+- run: Execute side-effecting action
+- check: Boolean/existence query
+
+**Impact:** Governs Phase 5 MCP tool naming. Improves agent behavior predictability.
+
+**Status:** Finalized. Incorporated into Phase 5 spec.

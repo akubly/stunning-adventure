@@ -58,6 +58,40 @@ Conducted deep research into GitHub Copilot's full extensibility landscape. Key 
 
 **Outcome:** Graham's plugin architecture, Roger's SDK choices, and Rosella's marketplace strategy are now mutually informed and aligned. Gabriel's infrastructure recommendations provide the structural foundation for all three.
 
+### 2026-03-31: Phase 5 Recommendation — REVISED: MCP Server (Not CLI)
+
+**Assessment trigger:** PR #9 (Phase 4, session-start hook) merged. Aaron asked "what's next?"
+
+**Initial recommendation (wrong):** CLI Experience Layer with 5 subcommands. This contradicted my own prior analysis from the PR #9 session where I agreed with Aaron that CLI is YAGNI — "Nobody's going to open a separate terminal to run `cairn insights` when the answer is one chat message away."
+
+**Correction:** Aaron flagged the inconsistency. He was right. In session `cec99d3e` (PR #9 planning), I explicitly recommended "PR #4 (hook) → then straight to B (MCP server). Skip A unless you want a polished CLI for its own sake." My Phase 5 CLI recommendation was a regression from my own prior analysis.
+
+**Root cause of my error:** I defaulted to "simplest thing first" heuristic without checking whether that heuristic had already been evaluated and rejected. The simplicity heuristic is wrong here because the *consumer* of Cairn's data is an agent (Copilot), not a human at a terminal. MCP is the direct path to the actual user.
+
+**Revised decision:** Phase 5 = MCP Server. 6 tools over existing query APIs. Two new dependencies (`@modelcontextprotocol/sdk`, `zod`). Roger implements, Valanice consults on tool descriptions (narrative-first).
+
+**Key files for Phase 5:**
+- New: `src/mcp/server.ts` (entry point: McpServer + StdioServerTransport)
+- New: `src/mcp/tools/` directory (status.ts, insights.ts, session.ts, events.ts, curate.ts, check.ts)
+- New: `src/__tests__/mcp.test.ts`
+- Update: `.copilot/mcp-config.json` (add cairn server registration)
+- Update: `package.json` (add bin entry for MCP server, new deps)
+- Decision doc: `.squad/decisions/inbox/graham-phase5-mcp.md`
+
+**Lesson:** Always check prior session decisions before making new recommendations. "First thought might be wrong" applies to my own recommendations too — including ones I make by forgetting prior analysis.
+
+### MCP Tool Naming Convention: Unprefixed verb_noun
+
+**Decision:** Cairn MCP tools use unprefixed `verb_noun` names (e.g., `get_status`, `list_insights`, `search_events`), not `cairn_`-prefixed names.
+
+**Two rationale pillars:**
+
+1. **No prefix — the host adds one.** MCP hosts automatically prepend a server-name prefix (e.g., `cairn-get_status`). Adding `cairn_` to the tool name itself produces stuttering like `cairn-cairn_status`. Keep tool names short; let the host handle namespacing.
+
+2. **verb_noun reads as intent.** The verb maps to operation semantics: `get` (single retrieval), `list` (collection), `search` (filtered query), `run` (side-effecting action), `check` (boolean/existence). This natural-language form improves LLM tool selection — the agent sees an imperative that matches how a human would phrase the question.
+
+**Resulting tool names:** `get_status`, `list_insights`, `get_session`, `search_events`, `run_curate`, `check_event`.
+
 ### 2026-03-30: Post-PR#3 Roadmap Assessment — Pipeline Complete, Visibility Gap
 
 **Observation:** After PRs 1–3 plus the uncommitted sessionStart hook, Cairn's data pipeline is functionally complete but entirely invisible. Archivist records events, Curator detects patterns and generates insights, hooks fire on every tool call — but `cli.ts` just prints a version string. There is no user-facing surface to see what Cairn knows.
