@@ -465,3 +465,51 @@ Natural language searchable query of user's sidecar history. "What have I learne
 - All meaningful changes require team consensus
 - Document architectural decisions here
 - Keep history focused on work, decisions focused on direction
+
+---
+### 2026-03-31T06-38-00: Session-Start Hook (preToolUse Gate) - IMPLEMENTED
+# Decision: Session-Start Hook (preToolUse Gate)
+
+**Author:** Graham Knight (Lead)  
+**Type:** Architecture  
+**Status:** Implemented  
+**Implemented:** 2025-07-19
+
+## Decision
+
+Wire a `preToolUse` hook that runs crash recovery (`catchUpPreviousSession`) and curator pattern detection (`curate()`) on the first tool call of each session, gated by an active-session check.
+
+## Architecture
+
+```
+preToolUse (curate.ps1 → sessionStart.ts)
+  ├─ Active session exists? → EXIT (fast path, ~O(1))
+  └─ No active session → catchUpPreviousSession() → curate() → EXIT
+
+postToolUse (record.ps1 → postToolUse.ts)
+  └─ startSession() → recordToolUse/recordError()
+```
+
+**Responsibility split:** preToolUse handles housekeeping (recovery, curation). postToolUse handles session lifecycle and event recording. They never conflict because preToolUse never creates sessions.
+
+## Trade-offs
+
+| Factor | Choice | Alternative | Why |
+|--------|--------|-------------|-----|
+| Testability | Extract `runSessionStart(repoKey)` as pure function | Test via stdin mocking | Direct function testing is faster, simpler, no process spawning |
+| Performance | Active-session gate via indexed SELECT | Time-based debounce | SELECT is deterministic; debounce has edge cases on session boundaries |
+| closeDb() ownership | `main()` calls closeDb, not core function | Core function manages lifecycle | Avoids killing in-memory DB during tests; matches singleton pattern |
+| Crash recovery scope | Per-repo only | Global (all repos) | Cross-repo recovery would slow the hook and risk false positives |
+
+## Files
+
+- `src/hooks/sessionStart.ts` — Node.js entry point
+- `~/.copilot/hooks/cairn-archivist/curate.ps1` — PowerShell wrapper
+- `src/__tests__/sessionStart.test.ts` — 8 tests covering fast/slow path, isolation, idempotency
+
+## Verification
+
+- 116 tests pass (108 baseline + 8 new)
+- ESLint clean
+- TypeScript compiles without errors
+
