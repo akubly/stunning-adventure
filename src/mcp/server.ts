@@ -41,6 +41,23 @@ const server = new McpServer(
 );
 
 // ---------------------------------------------------------------------------
+// Response helpers
+// ---------------------------------------------------------------------------
+
+/** Wrap a value as a pretty-printed JSON text response. */
+function jsonText(content: unknown) {
+  return { content: [{ type: 'text' as const, text: JSON.stringify(content, null, 2) }] };
+}
+
+/** Wrap an error as a JSON error response with isError flag. */
+function jsonError(err: unknown) {
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
+    isError: true,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Tool: get_status
 // ---------------------------------------------------------------------------
 
@@ -68,19 +85,9 @@ server.registerTool(
       const curatorStatus = getCuratorStatus();
       const session = repo_key ? getActiveSession(repo_key) : undefined;
 
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify({ session: session ?? null, curator: curatorStatus }, null, 2),
-          },
-        ],
-      };
+      return jsonText({ session: session ?? null, curator: curatorStatus });
     } catch (err: unknown) {
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
-        isError: true,
-      };
+      return jsonError(err);
     }
   },
 );
@@ -115,19 +122,9 @@ server.registerTool(
       const insights = getInsights(status as InsightStatus | undefined);
       const counts = countInsightsByStatus();
 
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify({ counts, insights }, null, 2),
-          },
-        ],
-      };
+      return jsonText({ counts, insights });
     } catch (err: unknown) {
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
-        isError: true,
-      };
+      return jsonError(err);
     }
   },
 );
@@ -157,30 +154,12 @@ server.registerTool(
       const summary = getSessionSummary(session_id);
 
       if (!summary) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({ error: `Session '${session_id}' not found.` }),
-            },
-          ],
-          isError: true,
-        };
+        return jsonError(`Session '${session_id}' not found.`);
       }
 
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(summary, null, 2),
-          },
-        ],
-      };
+      return jsonText(summary);
     } catch (err: unknown) {
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
-        isError: true,
-      };
+      return jsonError(err);
     }
   },
 );
@@ -224,32 +203,14 @@ server.registerTool(
       ensureDb();
 
       if (!sessionExists(session_id)) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({ error: `Session '${session_id}' not found.` }),
-            },
-          ],
-          isError: true,
-        };
+        return jsonError(`Session '${session_id}' not found.`);
       }
 
       const events = findEvents(session_id, type_pattern, limit);
 
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify({ count: events.length, events }, null, 2),
-          },
-        ],
-      };
+      return jsonText({ count: events.length, events });
     } catch (err: unknown) {
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
-        isError: true,
-      };
+      return jsonError(err);
     }
   },
 );
@@ -278,19 +239,9 @@ server.registerTool(
 
       const result = curate();
 
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(result, null, 2),
-          },
-        ],
-      };
+      return jsonText(result);
     } catch (err: unknown) {
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
-        isError: true,
-      };
+      return jsonError(err);
     }
   },
 );
@@ -320,32 +271,14 @@ server.registerTool(
       ensureDb();
 
       if (!sessionExists(session_id)) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({ error: `Session '${session_id}' not found.` }),
-            },
-          ],
-          isError: true,
-        };
+        return jsonError(`Session '${session_id}' not found.`);
       }
 
       const occurred = hasEventOccurred(session_id, event_type);
 
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify({ event_type, occurred }),
-          },
-        ],
-      };
+      return jsonText({ event_type, occurred });
     } catch (err: unknown) {
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
-        isError: true,
-      };
+      return jsonError(err);
     }
   },
 );

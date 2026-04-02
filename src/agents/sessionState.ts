@@ -93,7 +93,10 @@ export function hasEventOccurred(sessionId: string, eventType: string): boolean 
   return row !== undefined;
 }
 
-/** Search events by type pattern (e.g., 'review', 'test'). Supports SQL LIKE wildcards. */
+/**
+ * Search events by type pattern (e.g., 'review', 'test'). Supports SQL LIKE wildcards.
+ * @param limit Maximum number of events to return (default 100, max 500).
+ */
 export function findEvents(sessionId: string, typePattern: string, limit = 100): CairnEvent[] {
   const db = getDb();
   const rows = db
