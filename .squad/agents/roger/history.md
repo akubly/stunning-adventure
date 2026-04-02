@@ -104,8 +104,7 @@
 - **Fixes applied:** `sessionState.ts` (LIMIT clause), `server.ts` (schema tightening + limit passthrough + wildcard-aware description), `mcp.test.ts` (+2 tests for limit and wildcard support). 136/136 tests pass, clean build, zero lint issues.
 - **Comment 7 (wrapper test coverage) definitively deferred** by Graham.
 
-### PR #10 Round 4: Response Helper Extraction & JSDoc Fix
+### PR #10 Round 4: JSDoc Fix & Deferred Refactor
 
-- **`jsonText()` / `jsonError()` are the canonical MCP response helpers.** All 6 tool handlers now use these instead of inline `{ content: [{ type: 'text', text: JSON.stringify(...) }] }` boilerplate. Net result: −100 lines, +36 lines. Any future tools should use these helpers.
-- **`jsonError()` works for both catch blocks and validation errors.** Pass an Error from catch or a plain string for "not found" — `String(err)` handles both. No need for separate helper variants.
 - **JSDoc `@param limit` added to `findEvents()`** — documents default 100, max 500. Review comment pointed out the parameter was undocumented after the Round 3 changes added it.
+- **Response helper extraction (jsonText/jsonError) deferred.** Graham ruled it's a valid refactor but no behavioral impact — save for a follow-up PR. Don't mix refactors into a feature PR unless they carry behavioral weight.
