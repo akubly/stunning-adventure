@@ -210,3 +210,40 @@ Conducted deep research into GitHub Copilot's full extensibility landscape. Key 
 - **Binary corruption in markdown is invisible.** A bare CR (0x0d) looks like `\r` in some contexts, renders as a line break in others, and silently eats the next character in markdown viewers. Always use `repr()` or hex dumps when debugging "missing character" issues in docs.
 - **Duplicate reviewer comments indicate high-signal findings.** Comments 1 & 3 were duplicates — the reviewer flagged the same issue at two code locations. When an automated reviewer says the same thing twice, it's probably right.
 - **"Test the wrapper" is architecturally correct but strategically premature.** When wrappers are thin delegation layers, the ROI of wrapper tests is low. When wrapper logic grows (retry, caching, auth), that's when to extract and test. Log the advice, don't act yet.
+
+### 2026-04-02: Worktree Support Assessment
+
+**Trigger:** Aaron asked whether Cairn should track a feature request for git worktree support.
+
+**Finding: Session collision is real.** `repoKey` is derived solely from `git remote get-url origin` via `slugifyRepoKey()` in `src/config/repo.ts`. All worktrees of the same repo produce identical repoKeys (e.g., `org_repo`). Sessions are looked up by `repoKey` alone (`getActiveSession(repoKey)` in `src/db/sessions.ts`). The `branch` field is stored as metadata but does NOT participate in session lookup. Two simultaneous Copilot sessions in different worktrees of the same repo would collide — `getActiveSession` returns `ORDER BY started_at DESC LIMIT 1`, so the second session would either hijack or race with the first.
+
+**knowledge.db is fine.** The sidecar DB is user-local and repo-keyed internally. All worktrees sharing one DB is correct behavior — you want cross-branch knowledge accumulation. WAL mode handles concurrent reads. The issue is session isolation, not data isolation.
+
+**Recommendation:** File as a GitHub issue. Not urgent (single-worktree use is the common case today), but the collision is a real bug that will bite Squad users since the coordinator creates worktrees per issue. The fix is scoped: include worktree identity (path or branch) in the session key, not the repoKey itself.
+
+**Suggested issue title:** `Worktree support: session collision when same repo has multiple active worktrees`
+
+### 2026-04-02: Worktree-Aware Architecture Design — Issue #11
+
+**Trigger:** Aaron's challenge — "are we setting our agents up for success with the appropriate intelligence to make *use* of the power of git worktrees?"
+
+**Design produced:** Session identity = `repo_key + workdir`. Workdir (`git rev-parse --show-toplevel`) is the session discriminator, not branch.
+
+**Key architectural insights:**
+
+1. **Workdir is stable identity; branch is not.** Branch can change mid-session (checkout), but the worktree path is immutable for the session's lifetime. Identity must be stable. Branch is metadata, not key.
+
+2. **Shared DB is a feature, not a bug.** The instinct to "isolate" worktrees with separate databases would destroy the cross-worktree intelligence that makes the platform valuable. The shared knowledge.db enables "what happened in worktree A?" queries from worktree B. Session isolation fixes correctness; data sharing enables intelligence.
+
+3. **NOW/NEXT/LATER phasing for platform capabilities.** The immediate bug fix (session isolation) is separable from the platform play (cross-worktree intelligence). Designed three phases:
+   - NOW: Session isolation + context enrichment (migration, lookup, hooks, MCP context)
+   - NEXT: Cross-worktree queries (list_sessions tool, cross-worktree event search)
+   - LATER: Lifecycle hooks, coordination signals, panoramic views
+
+4. **Aaron's pattern: "Don't just fix it, make it a capability."** The bug was a session collision. Aaron's push was to think beyond the fix — what does worktree-awareness enable? This is a recurring leadership pattern: use a bug as a forcing function for architectural thinking.
+
+**Artifacts produced:**
+- GitHub issue #11 (implementation scope with full task list)
+- Decision document: `.squad/decisions/inbox/graham-worktree-design.md`
+
+**Files affected by implementation:** `src/db/migrations/005-workdir.ts`, `src/hooks/gitContext.ts`, `src/db/sessions.ts`, `src/agents/archivist.ts`, `src/hooks/postToolUse.ts`, `src/hooks/sessionStart.ts`, `src/types/index.ts`, `src/agents/sessionState.ts`, `src/mcp/server.ts`
