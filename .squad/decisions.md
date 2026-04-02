@@ -581,3 +581,23 @@ Use verb_noun naming for MCP tool names (e.g., get_status, list_insights), not n
 **Impact:** Governs Phase 5 MCP tool naming. Improves agent behavior predictability.
 
 **Status:** Finalized. Incorporated into Phase 5 spec.
+
+---
+
+### 2026-04-02T05-05-00: MCP Server: Tool Logic Tested via Backing APIs
+
+**Author:** Roger (Platform Dev)  
+**Type:** Implementation / Testing  
+**Status:** Active
+
+**Decision:** MCP tool tests validate the backing query functions directly (getSessionSummary, getCuratorStatus, findEvents, etc.) rather than testing through the MCP stdio transport layer.
+
+**Rationale:**
+- The MCP SDK owns transport correctness (JSON-RPC, schema validation). Testing through stdio would be integration-testing the SDK, not our logic.
+- Direct function tests are fast (~25ms for all 19), deterministic, and use in-memory SQLite.
+- If the SDK breaks transport, their tests catch it. If we break query logic, our tests catch it.
+- Future: if we add tool-level middleware (auth, rate limiting), those get their own test layer.
+
+**Impact:** Sets testing convention for all future MCP tools — test the logic, not the plumbing.
+
+**Status:** Implemented. All 19 tests pass; 134 total tests green.

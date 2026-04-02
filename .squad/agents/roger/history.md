@@ -54,3 +54,13 @@
 - **Verb taxonomy for predictable agent behavior:** get (single object) | list (collection) | search (query with filters) | run (side effect) | check (boolean). Verbs enable LLM agents to infer the right invocation pattern.
 - **6 tools ship in Phase 5:** Status, insights, session summary, event search, curator run, event check. Each answers one natural question.
 - **Team consensus reached:** Roger endorsed naming, Valanice added vocabulary contract insight (verbs establish semantic contracts), Graham finalized spec. Ready for implementation.
+
+### Phase 5 Implementation: MCP Server
+
+- **MCP SDK v1.29 uses `McpServer` (high-level) + `StdioServerTransport`.** Import from `@modelcontextprotocol/sdk/server/mcp.js` and `@modelcontextprotocol/sdk/server/stdio.js`. The older `Server` class is low-level — `McpServer` handles tool registration, schema validation, and JSON-RPC dispatch.
+- **`registerTool()` is the current API.** The older `.tool()` method is deprecated. `registerTool(name, config, callback)` takes `{ title, description, inputSchema, annotations }` in config. `inputSchema` accepts a Zod v4 raw shape (plain object of Zod schemas), NOT a `z.object()` — the SDK wraps it internally.
+- **Tool callbacks are async.** Return `{ content: [{ type: 'text', text: string }] }`. For errors, add `isError: true`.
+- **DB singleton must be bootstrapped.** Call `getDb()` before any query function — the singleton pattern means first call initializes. In MCP context there's no hook entry point doing this, so each handler calls `ensureDb()`.
+- **Zod v4 import is just `import { z } from 'zod'`.** The SDK's `zod-compat` layer handles v3/v4 detection automatically. No special imports needed.
+- **6 tools registered:** `get_status`, `list_insights`, `get_session`, `search_events`, `run_curate`, `check_event`. All unprefixed verb_noun. `run_curate` uses `annotations: { readOnlyHint: false }` to signal side effects.
+- **Tests validate tool-backing logic, not transport.** Testing the query functions directly is more reliable than standing up a stdio server in tests. 19 tests cover all 6 tool paths.

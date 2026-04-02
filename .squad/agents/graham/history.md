@@ -10,6 +10,26 @@
 
 <!-- Append learnings below -->
 
+### 2026-04-02: Phase 5 Complete — MCP Server Implementation
+
+**Agent:** Roger (Platform Dev)  
+**Outcome:** Delivered src/mcp/server.ts with 6 tools (get_status, list_insights, get_session, search_events, run_curate, check_event), full test suite (19 tests in src/__tests__/mcp.test.ts), and updated package.json with MCP dependencies.
+
+**Quality metrics:**
+- 134 total tests pass (all phases)
+- Clean compile
+- Zero lint issues
+
+**Key learning:** Test MCP tool backing functions directly, not the MCP SDK's stdio transport. SDK owns transport; our tests own query logic. This sets convention for all future MCP tools.
+
+**Cross-team impact:**
+- All existing sessions remain queryable through legacy hooks
+- MCP server augments (not replaces) event log
+- No breaking changes
+- Ready for Phase 6 coordination
+
+**Decision logged:** 2026-04-02T05-05 — MCP Server: Tool Logic Tested via Backing APIs (archived in decisions.md)
+
 ### 2026-03-31: PR #9 Review Fix — Stale Session Heuristic for Crash Recovery
 
 - **Bug pattern:** When a hook function has an early-return guard (`if (session) return`) that prevents crash-recovery code from running on the exact condition (active orphan session) that triggers crash recovery, the recovery path becomes dead code. The guard and the recovery check both key off the same signal (active session exists).
