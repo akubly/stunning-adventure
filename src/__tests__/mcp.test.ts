@@ -1,9 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { getDb, closeDb } from '../db/index.js';
-import { createSession } from '../db/sessions.js';
+import { createSession, getActiveSession } from '../db/sessions.js';
 import { logEvent } from '../db/events.js';
 import { getInsights } from '../db/insights.js';
-import { getActiveSession } from '../db/sessions.js';
 import { curate, getCuratorStatus } from '../agents/curator.js';
 import {
   getSessionSummary,
