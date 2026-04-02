@@ -189,3 +189,24 @@ Conducted deep research into GitHub Copilot's full extensibility landscape. Key 
 **Cross-team context:** Decision merged (graham-mcp-import-guard.md → decisions.md). Roger's implementation quality was high — no unexpected issues in re-review. Test strategy (backing APIs, not transport) sets convention for future MCP tools.
 
 **Next gate:** Awaiting Aaron's merge approval. Phase 6 scope TBD (coordination orchestration).
+
+### 2026-04-02: PR #10 Review Triage — Cloud Copilot Reviewer Comments
+
+**Review type:** External PR review triage (GitHub cloud Copilot reviewer)
+**PR:** #10 (Phase 5 MCP server)
+**Comments triaged:** 4
+
+**Triage results:**
+
+1. **Comments 1 & 3 (PR description tool name mismatch):** VALID. PR description listed aspirational tool names from early planning (`get_session_history`, `search_knowledge`, `get_decision_context`, `suggest_next_action`) that never matched the implemented tools (`get_session`, `search_events`, `run_curate`, `check_event`). Two tools matched (`get_status`, `list_insights`), four didn't. **Fixed:** Updated PR description via `gh pr edit` to reflect actual implementation. Comments 1 & 3 were duplicates.
+
+2. **Comment 2 (backslash in decisions.md):** VALID. Line 541 had `\run_curate` where `\r` was a bare carriage return byte (0x0d), not a literal backslash. Rendered as `un_curate` in most viewers. **Fixed:** Replaced bare CR byte with letter 'r' via binary-precise edit. Committed to branch.
+
+3. **Comment 4 (test coverage for MCP wrapper logic):** VALID concern, INTENTIONAL gap. The reviewer suggested extracting per-tool handlers for unit testing wrapper behavior (session-not-found, error shaping, ensureDb). This is architecturally sound advice, but we made a deliberate convention decision: test backing functions, not protocol wrappers. The MCP SDK owns transport; our tests own query logic. **Action:** No fix now. Filed as follow-up consideration for when wrapper complexity grows.
+
+**PR review triage patterns learned:**
+
+- **Aspirational PR descriptions rot.** When PR descriptions are written during planning and tools get renamed during implementation, the description becomes a liability. Write PR descriptions AFTER implementation, or update them as part of the merge checklist.
+- **Binary corruption in markdown is invisible.** A bare CR (0x0d) looks like `\r` in some contexts, renders as a line break in others, and silently eats the next character in markdown viewers. Always use `repr()` or hex dumps when debugging "missing character" issues in docs.
+- **Duplicate reviewer comments indicate high-signal findings.** Comments 1 & 3 were duplicates — the reviewer flagged the same issue at two code locations. When an automated reviewer says the same thing twice, it's probably right.
+- **"Test the wrapper" is architecturally correct but strategically premature.** When wrappers are thin delegation layers, the ROI of wrapper tests is low. When wrapper logic grows (retry, caching, auth), that's when to extract and test. Log the advice, don't act yet.
