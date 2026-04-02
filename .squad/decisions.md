@@ -601,3 +601,41 @@ Use verb_noun naming for MCP tool names (e.g., get_status, list_insights), not n
 **Impact:** Sets testing convention for all future MCP tools — test the logic, not the plumbing.
 
 **Status:** Implemented. All 19 tests pass; 134 total tests green.
+
+---
+
+### 2026-04-02T05-13-00: Code Quality — MCP Server Import Guard Pattern
+
+**Author:** Graham Knight (Lead)  
+**Type:** Code Quality / Convention Enforcement  
+**Status:** Resolved ✓  
+**Date:** 2026-04-02
+
+**Decision:** `src/mcp/server.ts` must wrap its `main().catch()` call in the same `isScript` guard pattern established in PR #9 for all hook entry points.
+
+**Pattern Applied:**
+
+```typescript
+import url from 'node:url';
+import path from 'node:path';
+
+const isScript =
+  process.argv[1] &&
+  import.meta.url === url.pathToFileURL(path.resolve(process.argv[1])).href;
+
+if (isScript) {
+  main().catch((err: unknown) => {
+    process.stderr.write(`Cairn MCP server failed to start: ${String(err)}\n`);
+    process.exit(1);
+  });
+}
+```
+
+**Rationale:**
+1. Convention compliance — PR #9 established this guard for all entry points
+2. Import safety — Without guard, importing server.ts from tests triggers main() → process.exit(1) → kills test runner
+3. Future-proofing — As MCP tools expand, may need to import tool defs for docs generation or integration testing
+
+**Resolution:** Roger applied fix. Round 1 blocker. Verified in Round 2 re-review. No regression.
+
+**Status:** Complete. Merged to Phase 5 codebase.

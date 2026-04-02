@@ -64,3 +64,34 @@
 - **Zod v4 import is just `import { z } from 'zod'`.** The SDK's `zod-compat` layer handles v3/v4 detection automatically. No special imports needed.
 - **6 tools registered:** `get_status`, `list_insights`, `get_session`, `search_events`, `run_curate`, `check_event`. All unprefixed verb_noun. `run_curate` uses `annotations: { readOnlyHint: false }` to signal side effects.
 - **Tests validate tool-backing logic, not transport.** Testing the query functions directly is more reliable than standing up a stdio server in tests. 19 tests cover all 6 tool paths.
+
+### Phase 5 Post-Review: Graham's APPROVE WITH CONDITIONS (Findings 1-5)
+
+- **`isScript` guard applied to `server.ts`** — same pattern from PR #9 (`url.pathToFileURL(path.resolve(process.argv[1])).href`). Prevents `main().catch()` from firing when the module is imported by tests or other code.
+- **Defensive try/catch in every tool handler** — all 6 handlers now wrap their bodies in try/catch, returning `{ isError: true }` with a JSON error message on failure. Error behavior is explicit, not dependent on SDK internals.
+- **Session existence validation for `search_events` and `check_event`** — added lightweight `sessionExists()` to `sessionState.ts`. Both tools now return `isError: true` with "session not found" for nonexistent session IDs, consistent with `get_session`. Real sessions with no matching events still return normal empty results.
+- **Version read from `package.json`** — replaced hardcoded `'0.1.0'` with `createRequire(import.meta.url)('../../package.json').version`. Single source of truth.
+- **`readOnlyHint: true` annotations** — added to all 5 read-only tools (`get_status`, `list_insights`, `get_session`, `search_events`, `check_event`). `run_curate` already had `readOnlyHint: false`.
+- **Finding #6 (MCP config entry) deferred** — deployment config, not code. Will handle separately.
+
+### 2026-04-02: Phase 5 Complete — PR #10 Opened
+
+**Deliverable:** src/mcp/server.ts with 6 tools, 19-test suite, updated package.json  
+**Status:** PR #10 at https://github.com/akubly/stunning-adventure/pull/10  
+**Quality:** 134/134 tests pass, clean build, zero lint issues
+
+**Execution timeline:**
+- 05:13Z — Graham Round 1 review: APPROVE WITH CONDITIONS (5 findings)
+- 05:16Z — Applied all 5 fixes; 134 tests pass, no regression
+- 05:22Z — Graham Round 2 re-review: APPROVE (no new issues)
+- 05:28Z — Commit, push, opened PR #10
+
+**Key findings from implementation:**
+- Zod v4 import pattern simplified by SDK's zod-compat layer
+- DB singleton needs explicit ensureDb() in MCP context (no hook entry point)
+- Tool-backing API testing strategy (19 tests) is faster and clearer than stdio transport testing
+- Error shape `{ error: String(err), isError: true }` handles non-Error exceptions gracefully
+
+**Review cycle quality:** Graham's 5 specific findings were all implemented cleanly in one pass. No rework needed. Pattern: precise review findings → single-pass fixes → fast approval.
+
+**Next phase:** Awaiting merge. Phase 6 coordination orchestration scope TBD.

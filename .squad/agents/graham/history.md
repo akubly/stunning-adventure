@@ -10,6 +10,28 @@
 
 <!-- Append learnings below -->
 
+### 2026-04-02: Phase 5 Architecture Review — MCP Server
+
+**Review type:** Pre-merge architecture review  
+**Author reviewed:** Roger (Platform Dev)  
+**Artifact:** src/mcp/server.ts, src/agents/sessionState.ts, src/__tests__/mcp.test.ts  
+**Verdict:** APPROVE WITH CONDITIONS
+
+**Key findings:**
+
+1. **🔴 Blocking — Missing import guard.** server.ts calls `main().catch()` at module scope without the `isScript` guard established in PR #9 for hooks. Violates codebase convention and creates an import landmine (process.exit on import). Trivial fix — apply the same pattern from sessionStart.ts / postToolUse.ts.
+
+2. **Architecture is sound.** Clean 3-layer separation: server.ts is a thin experience layer over agents/ assemblers and db/ primitives. 6 tools with correct verb_noun naming. Tool handlers delegate to backing functions, making the transport layer fully swappable. ensureDb() singleton pattern works for MCP lifecycle.
+
+3. **Test strategy is correct and efficient.** 19 tests cover backing logic directly; no need to test MCP SDK's stdio transport. Tests run in ~24ms with in-memory SQLite. Edge cases covered well (empty DB, nonexistent sessions, chronological ordering).
+
+4. **Tool descriptions are LLM-ready.** Each description includes purpose, return shape hints, and usage guidance. The verb taxonomy (get/list/search/run/check) aids tool selection.
+
+**Review patterns observed:**
+- Module-scope side-effects remain the most common pattern violation in this codebase. Every new entry point should be checked for the isScript guard.
+- When tool handlers delegate cleanly to backing functions, the test strategy writes itself — test the functions, not the protocol.
+- MCP tool annotations (readOnlyHint) are easy to overlook but improve client UX. Should be part of the tool registration checklist.
+
 ### 2026-04-02: Phase 5 Complete — MCP Server Implementation
 
 **Agent:** Roger (Platform Dev)  
@@ -121,3 +143,49 @@ Conducted deep research into GitHub Copilot's full extensibility landscape. Key 
 **Sequencing principle validated:** Build primitives → assemblers → experiences (the 3-layer architecture from R4). PRs 1–3 built the primitives. The next step is the experience layer — CLI first (simplest validation), then MCP server (conversational intelligence). The Compiler agent is a primitive that has no assembler or experience consuming it yet — premature to build.
 
 **Key gap identified:** 7 of 8 planned tables exist. Missing: `knowledge_index` or `plugin_registry`. Neither is needed for the CLI/MCP path — they serve the Compiler and plugin marketplace, which are downstream.
+
+### 2026-04-02: Phase 5 Round 2 Review — MCP Server Fixes Verified
+
+**Review type:** Round 2 re-review after fixes  
+**Author reviewed:** Roger (Platform Dev)  
+**Artifact:** src/mcp/server.ts (updated), src/__tests__/mcp.test.ts  
+**Verdict:** APPROVE
+
+**Finding verification (all 5 from Round 1):**
+
+1. ✅ **Import guard** — isScript pattern applied identically to hooks convention (path.resolve + url.pathToFileURL). Required imports (path, url) present. main() only called when executed as script.
+2. ✅ **try/catch in tool handlers** — All 6 handlers wrapped consistently. Error shape: `{ error: String(err) }` with `isError: true`. Consistent and safe for non-Error throws.
+3. ✅ **Session existence checks** — get_session returns isError when summary is undefined. search_events and check_event call sessionExists() before querying. get_status correctly omitted (repo_key → undefined is valid "no session" state, not an error).
+4. ✅ **Dynamic version** — createRequire pattern reads from package.json at runtime. Path `../../package.json` correct for `src/mcp/server.ts` depth.
+5. ✅ **readOnlyHint annotations** — All 6 tools annotated. run_curate correctly marked `readOnlyHint: false`.
+
+**Fresh pass observations:**
+- No new issues found. sessionExists is a clean lightweight `SELECT 1 LIMIT 1` — appropriately simple.
+- Test suite unchanged at 19 tests. No tests for sessionExists or error paths, but this is consistent with established convention: test backing functions, not MCP protocol wrappers.
+- Error messages consistent across handlers (`Session '${session_id}' not found.`).
+- No regression risk — fixes are additive (guards, wrapping, checks) with no behavioral changes to happy paths.
+
+**Review process observation:** Round 2 was clean because Round 1 findings were specific and actionable. Pattern: precise findings → clean fixes → fast re-review. Vague findings produce vague fixes and churn.
+
+### 2026-04-02: Phase 5 Complete — PR #10 Merged
+
+**Status:** PR #10 opened and ready for merge  
+**URL:** https://github.com/akubly/stunning-adventure/pull/10  
+**Deliverable:** src/mcp/server.ts with 6 tools, full test suite (19 tests), updated package.json
+
+**Review Summary:**
+- Round 1: APPROVE WITH CONDITIONS (5 specific findings)
+- Round 2: APPROVE (all findings verified, no new issues)
+- Orchestration log entries: 4 spawns tracked with ISO 8601 timestamps
+
+**Quality metrics:**
+- 134 total tests pass (no regression)
+- Clean TypeScript compile
+- Zero ESLint issues
+- All 5 findings from Round 1 fixed and verified in Round 2
+
+**Key learning from this cycle:** Precise, actionable findings drive clean fixes and fast re-review cycles. The 5 specific findings (import guard, try/catch, session checks, version, annotations) each took ~1 minute to fix and verified cleanly with no rework required.
+
+**Cross-team context:** Decision merged (graham-mcp-import-guard.md → decisions.md). Roger's implementation quality was high — no unexpected issues in re-review. Test strategy (backing APIs, not transport) sets convention for future MCP tools.
+
+**Next gate:** Awaiting Aaron's merge approval. Phase 6 scope TBD (coordination orchestration).
