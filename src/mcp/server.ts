@@ -195,20 +195,29 @@ server.registerTool(
     title: 'Search Events',
     description:
       'Search for events in a session by event type pattern. ' +
-      'Matches event types containing the pattern (e.g. "error" matches "error", ' +
-      '"tool" matches "tool_use"). Returns matching events in chronological order. ' +
-      'Use this to find specific activity within a session.',
+      'Matches event types containing the pattern as a substring (e.g. "error" matches "error", ' +
+      '"tool" matches "tool_use"). Returns matching events in chronological order, ' +
+      'up to the specified limit. Use this to find specific activity within a session.',
     inputSchema: {
       session_id: z.string().describe('The session UUID to search within.'),
       type_pattern: z
         .string()
+        .trim()
+        .min(1)
         .describe(
-          'Substring to match against event types. Examples: "error", "tool", "skip", "session".',
+          'Substring to match against event types. Must be non-empty. Examples: "error", "tool", "skip", "session".',
         ),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(500)
+        .default(100)
+        .describe('Maximum number of events to return (1–500, default 100).'),
     },
     annotations: { readOnlyHint: true },
   },
-  async ({ session_id, type_pattern }) => {
+  async ({ session_id, type_pattern, limit }) => {
     try {
       ensureDb();
 
@@ -224,7 +233,7 @@ server.registerTool(
         };
       }
 
-      const events = findEvents(session_id, type_pattern);
+      const events = findEvents(session_id, type_pattern, limit);
 
       return {
         content: [

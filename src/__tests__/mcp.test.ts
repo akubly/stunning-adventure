@@ -159,6 +159,36 @@ describe('search_events logic', () => {
     expect(events).toHaveLength(2);
     expect(events[0].id).toBeLessThan(events[1].id);
   });
+
+  it('should respect the limit parameter', () => {
+    const sessionId = createSession('org/repo', 'main');
+    for (let i = 0; i < 5; i++) {
+      logEvent(sessionId, 'error', { category: 'build', message: `fail ${i}` });
+    }
+
+    const limited = findEvents(sessionId, 'error', 3);
+    expect(limited).toHaveLength(3);
+
+    const all = findEvents(sessionId, 'error');
+    expect(all).toHaveLength(5);
+  });
+
+  it('should escape LIKE wildcard characters in pattern', () => {
+    const sessionId = createSession('org/repo', 'main');
+    logEvent(sessionId, 'tool_use', { tool: 'grep' });
+    logEvent(sessionId, 'error', { category: 'build', message: 'fail' });
+
+    // '%' and '_' are SQL LIKE wildcards — they should be treated as literals
+    const withPercent = findEvents(sessionId, '%');
+    expect(withPercent).toHaveLength(0);
+
+    const withUnderscore = findEvents(sessionId, 'tool_us_');
+    expect(withUnderscore).toHaveLength(0);
+
+    // Exact substring still works
+    const exact = findEvents(sessionId, 'tool_use');
+    expect(exact).toHaveLength(1);
+  });
 });
 
 // ---------------------------------------------------------------------------

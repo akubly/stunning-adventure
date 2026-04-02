@@ -93,14 +93,20 @@ export function hasEventOccurred(sessionId: string, eventType: string): boolean 
   return row !== undefined;
 }
 
+/** Escape SQL LIKE wildcard characters so the pattern is treated as a literal substring. */
+function escapeLikePattern(pattern: string): string {
+  return pattern.replace(/[%_\\]/g, '\\$&');
+}
+
 /** Search events by type pattern (e.g., 'review', 'test'). */
-export function findEvents(sessionId: string, typePattern: string): CairnEvent[] {
+export function findEvents(sessionId: string, typePattern: string, limit = 100): CairnEvent[] {
   const db = getDb();
+  const escaped = escapeLikePattern(typePattern);
   const rows = db
     .prepare(
-      'SELECT id, event_type, payload, session_id, created_at FROM event_log WHERE session_id = ? AND event_type LIKE ? ORDER BY id ASC',
+      "SELECT id, event_type, payload, session_id, created_at FROM event_log WHERE session_id = ? AND event_type LIKE ? ESCAPE '\\' ORDER BY id ASC LIMIT ?",
     )
-    .all(sessionId, `%${typePattern}%`) as Array<Record<string, unknown>>;
+    .all(sessionId, `%${escaped}%`, limit) as Array<Record<string, unknown>>;
 
   return rows.map((row) => ({
     id: row.id as number,
