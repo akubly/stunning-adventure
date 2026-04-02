@@ -95,3 +95,17 @@
 **Review cycle quality:** Graham's 5 specific findings were all implemented cleanly in one pass. No rework needed. Pattern: precise review findings → single-pass fixes → fast approval.
 
 **Next phase:** Awaiting merge. Phase 6 coordination orchestration scope TBD.
+
+### PR #10 Round 3: search_events Hardening (Review Comments)
+
+- **Empty LIKE patterns dump entire tables.** An empty `type_pattern` becomes `LIKE '%%'`, matching everything. Always validate non-empty input at the schema level (`.trim().min(1)` in Zod).
+- **Unbounded result sets need a limit parameter.** Added `limit` (default 100, max 500) to `findEvents()` and the `search_events` tool schema. Always cap query results that surface to external consumers.
+- **LIKE wildcards are a feature, not a bug.** Graham's correction: don't escape `%` and `_` — LIKE wildcard support is strictly more useful for LLM callers. Document the capability in the tool description instead of restricting it. Lesson: when the consumer is an LLM, expressive power > strict safety, as long as the query is parameterized (no injection risk).
+- **Fixes applied:** `sessionState.ts` (LIMIT clause), `server.ts` (schema tightening + limit passthrough + wildcard-aware description), `mcp.test.ts` (+2 tests for limit and wildcard support). 136/136 tests pass, clean build, zero lint issues.
+- **Comment 7 (wrapper test coverage) definitively deferred** by Graham.
+
+### PR #10 Round 4: Response Helper Extraction & JSDoc Fix
+
+- **`jsonText()` / `jsonError()` are the canonical MCP response helpers.** All 6 tool handlers now use these instead of inline `{ content: [{ type: 'text', text: JSON.stringify(...) }] }` boilerplate. Net result: −100 lines, +36 lines. Any future tools should use these helpers.
+- **`jsonError()` works for both catch blocks and validation errors.** Pass an Error from catch or a plain string for "not found" — `String(err)` handles both. No need for separate helper variants.
+- **JSDoc `@param limit` added to `findEvents()`** — documents default 100, max 500. Review comment pointed out the parameter was undocumented after the Round 3 changes added it.
