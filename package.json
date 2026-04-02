@@ -6,14 +6,16 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "cairn": "dist/cli.js"
+    "cairn": "dist/cli.js",
+    "cairn-mcp": "dist/mcp/server.js"
   },
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
     "lint": "eslint src/",
     "clean": "rimraf dist coverage",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "mcp": "node dist/mcp/server.js"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -46,6 +48,8 @@
     "vitest": "^4.1.2"
   },
   "dependencies": {
-    "better-sqlite3": "^12.8.0"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^12.8.0",
+    "zod": "^4.3.6"
   }
 }

@@ -77,6 +77,13 @@ export function getSessionSummary(sessionId: string): SessionSummary | undefined
   };
 }
 
+/** Lightweight check: does a session with this ID exist? */
+export function sessionExists(sessionId: string): boolean {
+  const db = getDb();
+  const row = db.prepare('SELECT 1 FROM sessions WHERE id = ? LIMIT 1').get(sessionId);
+  return row !== undefined;
+}
+
 /** Check whether a specific event type has occurred in this session. */
 export function hasEventOccurred(sessionId: string, eventType: string): boolean {
   const db = getDb();
@@ -86,14 +93,18 @@ export function hasEventOccurred(sessionId: string, eventType: string): boolean 
   return row !== undefined;
 }
 
-/** Search events by type pattern (e.g., 'review', 'test'). */
-export function findEvents(sessionId: string, typePattern: string): CairnEvent[] {
+/**
+ * Search events by type pattern (e.g., 'review', 'test'). Supports SQL LIKE wildcards.
+ * @param limit Maximum number of events to return (default 100, max 500).
+ */
+export function findEvents(sessionId: string, typePattern: string, limit = 100): CairnEvent[] {
+  const clampedLimit = Math.min(Math.max(limit, 1), 500);
   const db = getDb();
   const rows = db
     .prepare(
-      'SELECT id, event_type, payload, session_id, created_at FROM event_log WHERE session_id = ? AND event_type LIKE ? ORDER BY id ASC',
+      'SELECT id, event_type, payload, session_id, created_at FROM event_log WHERE session_id = ? AND event_type LIKE ? ORDER BY id ASC LIMIT ?',
     )
-    .all(sessionId, `%${typePattern}%`) as Array<Record<string, unknown>>;
+    .all(sessionId, `%${typePattern}%`, clampedLimit) as Array<Record<string, unknown>>;
 
   return rows.map((row) => ({
     id: row.id as number,
