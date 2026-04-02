@@ -377,8 +377,139 @@ The unreliable sessionEnd hook is a solid argument FOR a platform layer, not jus
 
 ---
 
+### 2026-03-29T01-53-50: Final Brainstorm Decisions Before Planning
+
+**Author:** Aaron (via Copilot)  
+**Type:** Architecture  
+**Status:** Active
+
+1. **Auto-Roam Personal Profile** — Option to sync personal sidecar via akubly/.copilot repo. Personal profile is portable.
+2. **Profile Default** — Personal is the DEFAULT. Corporate is a deliberate FORK at the repo level — the repo declares "I'm corporate" rather than the user declaring "I'm at work."
+3. **BYOK Strategy** — Design for it, but not a key requirement now. Standard Copilot SDK models are the primary path.
+4. **All 10 SDK Use Cases Approved** — Embeddings, classification, summarization, conflict resolution, panel calibration, NL queries, devil's advocate, teach-back, auto-test-gen, predictive error prevention.
+5. **Archivist Naming** — Confirmed as the logging agent name.
+
+**Rationale:** Closes all R5 follow-up questions. Architecture is complete and ready for planning.
+
+---
+
+### 2026-03-29T01-56-52: Corporate Deployment Model Clarification
+
+**Author:** Aaron (via Copilot)  
+**Type:** Architecture  
+**Status:** Active
+
+Corporate is NOT a profile switch — it's a FORKED DERIVATIVE of the core platform. The core platform IS the personal version. The corporate fork adds enforcement/restrictions on top.
+
+**Implications:**
+- Don't design profiles or detection
+- Design ONE core platform (personal/open)
+- Corporate fork inherits everything and adds constraints
+- Two codebases (or one with a build flag), not one codebase with runtime profiles
+
+**Sidecar Location:** Open to suggestions other than ~/.copilot (e.g., %LOCALAPPDATA%).
+
+**Rationale:** Fundamental deployment model decision. Simpler core; corporate concerns are a separate build target.
+
+---
+
+### 2026-03-29T02-00-09: Platform Naming + Sierra Casting Notes
+
+**Author:** Aaron (via Copilot)  
+**Type:** Product Identity  
+**Status:** Active
+
+1. **Platform Naming** — Codename is "Stunning Adventure" (random GitHub suggestion that stuck). Need a real product name.
+2. **Sidecar Location** — Subdirectory of ~/.copilot is acceptable. %LOCALAPPDATA% also compelling.
+3. **Sierra Casting** — Consider Larry Laffer, Iceman, Sonny Bonds, and/or Two Guys from Andromeda for future hires.
+
+**Rationale:** Product identity shapes the namespace, CLI, docs, and community perception.
+
+---
+
+### 2026-03-29T02-05-48: Vision Statement Seeds + HTML Knowledge Visualizer Backlog
+
+**Author:** Aaron (via Copilot)  
+**Type:** Product Vision  
+**Status:** Active
+
+**Vision Seeds:**
+- Upfront and honest about human limitations — help people help themselves
+- Agentic humanity — treating agents as individuals, natural interactions
+- Self-reflection and growth — the platform (and human) get better over time
+- Not about optimizing agents — about getting the BEST from humans
+
+**Backlog: HTML Knowledge Visualizer**
+- Generate pretty HTML read-outs: conversation history, session timelines, agent diaries, project knowledge
+- A living dashboard/portal of everything Cairn knows, rendered beautifully
+- Think: every possible perspective on the knowledgebase presented beautifully
+
+**Rationale:** Killer feature for knowledge accessibility and user engagement.
+
+---
+
+### 2026-03-29T02-06-25: Natural Language Search Over Sidecar History
+
+**Author:** Aaron (via Copilot)  
+**Type:** Feature Requirement  
+**Status:** Active
+
+Natural language searchable query of user's sidecar history. "What have I learned about auth?" searches across all repos, all sessions, all knowledge — powered by the copilot-intelligence MCP server's embed_text + query_knowledge tools.
+
+**Rationale:** The sidecar accumulates knowledge over time. Natural language search is the killer UX feature — it's the Archivist's query interface.
+
+---
+
 ## Governance
 
 - All meaningful changes require team consensus
 - Document architectural decisions here
 - Keep history focused on work, decisions focused on direction
+
+---
+### 2026-03-31T06-38-00: Session-Start Hook (preToolUse Gate) - IMPLEMENTED
+# Decision: Session-Start Hook (preToolUse Gate)
+
+**Author:** Graham Knight (Lead)  
+**Type:** Architecture  
+**Status:** Implemented  
+**Implemented:** 2025-07-19
+
+## Decision
+
+Wire a `preToolUse` hook that runs crash recovery (`catchUpPreviousSession`) and curator pattern detection (`curate()`) on the first tool call of each session, gated by an active-session check.
+
+## Architecture
+
+```
+preToolUse (curate.ps1 → sessionStart.ts)
+  ├─ Active session exists? → EXIT (fast path, ~O(1))
+  └─ No active session → catchUpPreviousSession() → curate() → EXIT
+
+postToolUse (record.ps1 → postToolUse.ts)
+  └─ startSession() → recordToolUse/recordError()
+```
+
+**Responsibility split:** preToolUse handles housekeeping (recovery, curation). postToolUse handles session lifecycle and event recording. They never conflict because preToolUse never creates sessions.
+
+## Trade-offs
+
+| Factor | Choice | Alternative | Why |
+|--------|--------|-------------|-----|
+| Testability | Extract `runSessionStart(repoKey)` as pure function | Test via stdin mocking | Direct function testing is faster, simpler, no process spawning |
+| Performance | Active-session gate via indexed SELECT | Time-based debounce | SELECT is deterministic; debounce has edge cases on session boundaries |
+| closeDb() ownership | `main()` calls closeDb, not core function | Core function manages lifecycle | Avoids killing in-memory DB during tests; matches singleton pattern |
+| Crash recovery scope | Per-repo only | Global (all repos) | Cross-repo recovery would slow the hook and risk false positives |
+
+## Files
+
+- `src/hooks/sessionStart.ts` — Node.js entry point
+- `~/.copilot/hooks/cairn-archivist/curate.ps1` — PowerShell wrapper
+- `src/__tests__/sessionStart.test.ts` — 8 tests covering fast/slow path, isolation, idempotency
+
+## Verification
+
+- 116 tests pass (108 baseline + 8 new)
+- ESLint clean
+- TypeScript compiles without errors
+

@@ -8,10 +8,11 @@
  *   $hookData | node dist/hooks/postToolUse.js
  */
 
+import path from 'node:path';
+import url from 'node:url';
 import { getDb, closeDb } from '../db/index.js';
 import { startSession, recordToolUse, recordError } from '../agents/archivist.js';
-import { slugifyRepoKey } from '../config/repo.js';
-import { execSync } from 'node:child_process';
+import { getRepoKey, getBranch } from './gitContext.js';
 
 interface HookInput {
   toolName: string;
@@ -21,33 +22,6 @@ interface HookInput {
     textResultForLlm?: string;
   };
   cwd?: string;
-}
-
-function getRepoKey(cwd?: string): string {
-  try {
-    const remote = execSync('git remote get-url origin', {
-      cwd: cwd ?? process.cwd(),
-      encoding: 'utf-8',
-      timeout: 2000,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
-    return slugifyRepoKey(remote);
-  } catch {
-    return 'unknown_repo';
-  }
-}
-
-function getBranch(cwd?: string): string | undefined {
-  try {
-    return execSync('git branch --show-current', {
-      cwd: cwd ?? process.cwd(),
-      encoding: 'utf-8',
-      timeout: 2000,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim() || undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 async function main(): Promise<void> {
@@ -67,8 +41,10 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
+  let dbOpened = false;
   try {
     getDb();
+    dbOpened = true;
 
     const repoKey = getRepoKey(hookData.cwd);
     const branch = getBranch(hookData.cwd);
@@ -85,12 +61,18 @@ async function main(): Promise<void> {
         resultType: hookData.toolResult?.resultType ?? 'unknown',
       });
     }
-
-    closeDb();
   } catch {
     // Fail open — hooks must never break the user's workflow
+  } finally {
+    if (dbOpened) closeDb();
     process.exit(0);
   }
 }
 
-main();
+// Only run CLI entrypoint when executed as a script, not when imported.
+const isScript =
+  process.argv[1] &&
+  import.meta.url === url.pathToFileURL(path.resolve(process.argv[1])).href;
+if (isScript) {
+  main();
+}

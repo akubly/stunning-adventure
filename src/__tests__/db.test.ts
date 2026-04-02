@@ -62,7 +62,7 @@ describe('database initialization', () => {
     const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
       version: number;
     };
-    expect(row.version).toBe(3);
+    expect(row.version).toBe(4);
   });
 });
 
@@ -367,7 +367,7 @@ describe('schema migration', () => {
     const before = db.prepare('SELECT COUNT(*) as count FROM schema_version').get() as {
       count: number;
     };
-    expect(before.count).toBe(3);
+    expect(before.count).toBe(4);
 
     // Re-run should be a no-op
     applyMigrations(db);
@@ -375,7 +375,7 @@ describe('schema migration', () => {
     const after = db.prepare('SELECT COUNT(*) as count FROM schema_version').get() as {
       count: number;
     };
-    expect(after.count).toBe(3);
+    expect(after.count).toBe(4);
   });
 
   it('should record migration description', () => {
