@@ -77,6 +77,13 @@ export function getSessionSummary(sessionId: string): SessionSummary | undefined
   };
 }
 
+/** Lightweight check: does a session with this ID exist? */
+export function sessionExists(sessionId: string): boolean {
+  const db = getDb();
+  const row = db.prepare('SELECT 1 FROM sessions WHERE id = ? LIMIT 1').get(sessionId);
+  return row !== undefined;
+}
+
 /** Check whether a specific event type has occurred in this session. */
 export function hasEventOccurred(sessionId: string, eventType: string): boolean {
   const db = getDb();
