@@ -181,3 +181,11 @@ $raw | node $hookScript 2>$null
 - **`$PSScriptRoot` relative path for repo checkout fallback.** Scripts at `.github/hooks/cairn/` navigate `..\..\..` to reach `dist/hooks/`. Works regardless of where the repo is cloned.
 - **hooks.json uses repo-relative paths.** The `powershell` field references `.github/hooks/cairn/*.ps1` — Copilot resolves these from repo root.
 - **Fail-open pattern preserved.** `$ErrorActionPreference = 'SilentlyContinue'`, outer try/catch, and unconditional `exit 0` ensure hooks never break the user.
+
+### Phase 6: npm Publish Preparation
+
+- **`files` whitelist > `.npmignore`** — The `files` array in package.json is a positive-list approach: only listed paths get published. Safer than `.npmignore` because new directories (like `.squad/`) are excluded by default. No `.npmignore` file needed.
+- **Published contents:** `dist/`, `.github/hooks/`, `.github/plugin/`, plus auto-included `README.md`, `LICENSE`, `package.json`. 66 files, 27.2 kB compressed.
+- **`prepublishOnly: "npm run build"`** ensures `dist/` is always fresh before publish. Standard npm lifecycle hook.
+- **Added keywords:** `copilot-plugin`, `mcp`, `model-context-protocol` for npm discoverability. Added `homepage` field pointing to GitHub readme.
+- **Verification:** 136/136 tests pass, clean build, clean lint, `npm pack --dry-run` confirms no source, tests, or squad state in tarball.
