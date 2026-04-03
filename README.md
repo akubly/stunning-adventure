@@ -72,7 +72,15 @@ Six tools expose Cairn's knowledge base to Copilot conversations. Tool names fol
 npm install @akubly/cairn
 ```
 
-Copilot CLI plugin packaging is in progress (Phase 6). Once shipped, Cairn will be installable directly as a Copilot CLI plugin with hooks and MCP server configured automatically.
+For development or pre-publish use:
+
+```bash
+git clone https://github.com/akubly/stunning-adventure.git
+cd stunning-adventure
+npm install && npm run build && npm link
+```
+
+Then register the MCP server in `~/.copilot/mcp-config.json` — see [Plugin Packaging](#plugin-packaging) for details.
 
 ## Usage
 

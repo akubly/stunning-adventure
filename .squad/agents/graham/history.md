@@ -242,6 +242,17 @@ Conducted deep research into GitHub Copilot's full extensibility landscape. Key 
 **Missing in Codebase (Priority):**
 - P0: No MCP registration mechanism
 - P0: No cairn install command
+
+### 2026-04-03: PR #12 Review Comment Fixes
+
+**Task:** Address 3 Copilot PR reviewer comments on PR #12.
+
+**Fixes applied:**
+1. **decisions.md line 720** — Removed stray CR byte (`0x0D`) before `un_curate` that rendered as `\run_curate`. Replaced with correct `run_curate`.
+2. **README.md Installation section** — Added clone + `npm link` path for pre-publish development use alongside `npm install @akubly/cairn`. Added MCP config registration pointer.
+3. **rosella/history.md** — Corrected tool names from `get_events, get_insights, record_event, insert_insights` to actual names `get_status, list_insights, get_session, search_events, run_curate, check_event`. Fixed MCP server entry from `cairn-mcp` binary to `node dist/mcp/server.js`.
+
+**Verification:** TypeScript compiled clean, 136/136 tests passed.
 - P1: No plugin.json manifest
 - P1: Hook scripts not in repo
 - P2: No uninstall command

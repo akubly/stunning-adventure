@@ -71,7 +71,8 @@
 
 4. **`.github/plugin/.mcp.json`** (new)
    - MCP server declaration for plugin context
-   - Declares 6 tools: get_status, get_events, search_events, get_insights, record_event, insert_insights
+   - Declares 6 tools: get_status, list_insights, get_session, search_events, run_curate, check_event
+   - MCP server runs via `node dist/mcp/server.js`
    - Status: ✅ Created
 
 **Coordination Notes:**
@@ -99,7 +100,7 @@
 
 **Files created:**
 1. `.github/plugin/plugin.json` — Plugin manifest with `hooks` → `hooks.json` and `mcpServers` → `.mcp.json`. Metadata: name, version, description, author, license, keywords. Follows the canonical format from Graham's recon (agents/skills optional — Cairn's value is MCP + hooks, not agent definitions).
-2. `.github/plugin/.mcp.json` — Registers `cairn` MCP server via `cairn-mcp` binary (stdio transport). Works after `npm link` or global install.
+2. `.github/plugin/.mcp.json` — Registers `cairn` MCP server via `node dist/mcp/server.js` (stdio transport). Works after clone + build or `npm link`.
 3. `.github/plugin/hooks.json` — Declares preToolUse (sessionStart.js) and postToolUse (postToolUse.js) hooks with 10s timeout. Uses `node dist/hooks/...` commands cross-platform. Roger's wrapper scripts can override these later.
 4. `.github/plugin/marketplace.json` — Makes this repo a plugin marketplace source with cairn as the single listed plugin.
 5. `.copilot/mcp-config.json` — Replaced EXAMPLE entry with real cairn MCP server using `node dist/mcp/server.js` (works in clone context without global install).
