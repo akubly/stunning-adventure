@@ -499,6 +499,185 @@ postToolUse (record.ps1 → postToolUse.ts)
 | Testability | Extract `runSessionStart(repoKey)` as pure function | Test via stdin mocking | Direct function testing is faster, simpler, no process spawning |
 | Performance | Active-session gate via indexed SELECT | Time-based debounce | SELECT is deterministic; debounce has edge cases on session boundaries |
 | closeDb() ownership | `main()` calls closeDb, not core function | Core function manages lifecycle | Avoids killing in-memory DB during tests; matches singleton pattern |
+
+---
+
+## Phase 6 Decisions (2026-04-02)
+
+### 2026-04-02: Phase 6 Roadmap Assessment — Option C (Plugin Packaging) Chosen
+
+**Author:** Graham Knight (Lead / Architect), Aaron (Decision)  
+**Date:** 2026-04-02  
+**Type:** Roadmap  
+**Status:** Accepted
+
+Graham presented three Phase 6 options:
+1. **Option A: Worktree-Aware Sessions (Issue #11)** — correctness bug fix, small-medium effort, low risk
+2. **Option B: Compiler Agent MVP** — no consumers yet, speculative, high risk
+3. **Option C: Distribution & Polish** — safe but ships known worktree collision bug
+
+**Graham's Recommendation:** Option A. Correctness before distribution.
+
+**Aaron's Choice:** Option C (Plugin Packaging).
+
+**Rationale:** Plugin infrastructure enables distribution immediately. Worktree support (Option A) deferred to Phase 7 after installation commands are built and tested.
+
+**Outcome:** Rosella and Roger executed plugin packaging blueprint concurrently. Plugin infrastructure now in place.
+
+**Full Reports:**
+- `.squad/decisions/inbox/graham-phase6-assessment.md`
+- `.squad/decisions/inbox/graham-worktree-design.md`
+
+---
+
+### 2026-04-02: Installation Architecture — npm link + cairn install Strategy
+
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-04-02  
+**Type:** Architecture  
+**Status:** Active
+
+Four installation surfaces identified:
+1. **MCP Server Registration** — `~/.copilot/mcp-config.json` (❌ not registered)
+2. **Hook Installation** — `~/.copilot/hooks/cairn/` (⚠️ manually installed, hardcoded paths)
+3. **Binary/Module Availability** — npm global bin directory (❌ not linked)
+4. **Database Initialization** — `~/.cairn/knowledge.db` (✅ working)
+
+**Three Implementation Options:**
+- **Option A: `npm link` + `cairn install`** — Dev-friendly symlink + custom installer ✅ RECOMMENDED
+- **Option B: `npm install -g`** — Independent but requires re-run per code change
+- **Option C: Plugin Install via Copilot CLI** — Correct long-term but premature for "first consumer"
+
+**Recommendation:** Option A. Minimal path to "it works on my machine" while building toward plugin distribution.
+
+**Missing in Codebase (P0/P1 priority):**
+- No MCP server registration mechanism
+- Hook path resolution fragile (PS1 two-tier fallback)
+- No `cairn install` command
+- No plugin.json manifest
+- Hook scripts not in npm package
+- hooks.json not in npm package
+
+**Implementation Sequence:**
+1. **Right now:** `npm link` + manual MCP config → Cairn works
+2. **Next PR:** Move hook scripts into repo, build `cairn install`, fix path resolution (Rosella + Roger executing)
+3. **After:** `plugin.json`, marketplace registration (in progress)
+
+**Full Report:** `.squad/decisions/inbox/graham-install-architecture.md`
+
+---
+
+### 2026-04-02: Plugin Packaging Blueprint — Comprehensive Distribution Architecture
+
+**Author:** Rosella Chen (Plugin Dev)  
+**Date:** 2026-04-02  
+**Type:** Architecture  
+**Status:** In Progress
+
+**Core Design:**
+- `plugin.json` manifest (Claude Code spec format)
+- `marketplace.json` for marketplace integration
+- `.github/hooks/cairn/hooks.json` for hook declaration
+- PowerShell wrapper scripts (`curate.ps1`, `record.ps1`)
+- Installation flow: `npm install -g @akubly/cairn` → `cairn install`
+- Custom install script (`src/install.ts`) handles MCP registration + hook installation
+
+**Gap Analysis:**
+- Plugin format lacks native MCP server registration — custom install script required
+- Plugin format lacks native hook installation — custom install script required
+- Cross-platform: PowerShell ✅ Windows-first, bash 🔄 deferred to Phase 7
+- Version migration: future concern
+
+**Priority Checklist:**
+- **P0:** install.ts, hooks.json, PS1 wrappers (in progress)
+- **P1:** plugin.json ✅, marketplace.json ✅, CLI modifications, mcp-config.json
+- **P2:** uninstall.ts, documentation
+- **P3:** bash wrappers
+
+**What "Installed" Looks Like After `cairn install`:**
+```
+~/.copilot/
+├── hooks/cairn/
+│   ├── hooks.json        ← Copilot CLI reads this
+│   ├── curate.ps1        ← preToolUse → Node.js
+│   └── record.ps1        ← postToolUse → Node.js
+├── mcp-config.json       ← Contains "cairn" MCP server entry
+
+~/.cairn/
+├── hook/
+│   ├── sessionStart.mjs   ← Compiled hook entry point
+│   └── postToolUse.mjs    ← Compiled hook entry point
+├── knowledge.db          ← Already exists
+└── version.txt           ← Installed version marker
+```
+
+**Full Report:** `.squad/decisions/inbox/rosella-plugin-packaging.md`
+
+---
+
+### 2026-04-02: hooks.json Ownership — Plugin Manifest, Not Wrapper Script
+
+**Author:** Rosella Chen (Plugin Dev)  
+**Date:** 2026-04-02  
+**Type:** Coordination  
+**Status:** Active
+
+`hooks.json` is a **plugin manifest file** (Rosella's domain), not a wrapper script (Roger's domain).
+
+**Responsibility Split:**
+- **Rosella:** hooks.json declares which hook events Cairn handles and what commands to run (plugin context)
+- **Roger:** PowerShell wrappers are user-level installation at `~/.copilot/hooks/`
+
+**Impact:**
+- Roger: Be aware `.github/plugin/hooks.json` exists. Your wrapper scripts handle the `~/.copilot/hooks/` user-level install path.
+- Both paths should ultimately invoke the same Node.js entry points.
+
+**Full Report:** `.squad/decisions/inbox/rosella-hooks-json-ownership.md`
+
+---
+
+### 2026-04-02: Hook Wrapper Scripts — Two-Tier Path Resolution Design
+
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-04-02  
+**Type:** Implementation  
+**Status:** In Progress
+
+**Files Created:**
+- `.github/hooks/cairn/hooks.json` — Hook type registration
+- `.github/hooks/cairn/curate.ps1` — preToolUse wrapper → sessionStart.js
+- `.github/hooks/cairn/record.ps1` — postToolUse wrapper → postToolUse.js
+
+**Design Pattern: Two-Tier Path Resolution**
+
+1. **Primary:** `~/.cairn/hook/{sessionStart|postToolUse}.mjs` (after user-level install)
+2. **Fallback:** Relative path from repo `dist/hooks/{sessionStart|postToolUse}.js` (dev mode)
+
+**Behavior:**
+- Fail-open: silently exit if paths don't resolve
+- Read stdin, pipe to node process
+- Suppress stderr
+- Idempotent: safe to run multiple times
+- Portable: uses $PSScriptRoot relative paths
+
+**Example Resolution (curate.ps1):**
+```powershell
+$hookScript = Join-Path $env:USERPROFILE '.cairn' 'hook' 'sessionStart.mjs'
+if (-not (Test-Path $hookScript)) {
+    $hookScript = Join-Path $PSScriptRoot '..\..\..\..' 'dist' 'hooks' 'sessionStart.js'
+    if (-not (Test-Path $hookScript)) { exit 0 }
+}
+$raw | node $hookScript 2>$null
+```
+
+**Status:**
+- Portable across repo layouts ✅
+- Ready for `cairn install` to copy to `~/.copilot/hooks/cairn/` ✅
+- Bash equivalents 🔄 deferred
+
+**Next Steps:**
+- `src/install.ts` will copy these scripts to user-level hooks directory
+- `src/cli.ts` will route `cairn install` command to installer
 | Crash recovery scope | Per-repo only | Global (all repos) | Cross-repo recovery would slow the hook and risk false positives |
 
 ## Files

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [{
+      "type": "command",
+      "powershell": ".github/hooks/cairn/curate.ps1",
+      "timeoutSec": 10,
+      "comment": "Cairn Curator: crash recovery + pattern detection"
+    }],
+    "postToolUse": [{
+      "type": "command",
+      "powershell": ".github/hooks/cairn/record.ps1",
+      "timeoutSec": 5,
+      "comment": "Cairn Archivist: logs tool usage to knowledge.db"
+    }]
+  }
+}

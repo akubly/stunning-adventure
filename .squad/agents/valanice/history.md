@@ -24,3 +24,34 @@
 - **Vocabulary contracts drive agent behavior:** Each verb establishes semantic expectations. `get` signals "single result or none"; `list` signals "0+ results, can paginate"; `search` signals "exploration with optional filters"; `run` signals "side effect"; `check` signals "boolean". Consistent verbs enable agents to infer the right invocation pattern without explicit instructions.
 - **Impact on UX:** Tool names become part of the conversation context. When agents see tool names that read naturally ("list insights" not "insights list"), they interact with tools more intuitively. This is especially important for knowledge tools where the agent is helping Aaron understand system state.
 - **Phase 5 ships 6 tools:** get_status, list_insights, get_session, search_events, run_curate, check_event. Each answers one natural question. Verb choices consistent with taxonomy.
+
+### 2026-04-03: README Refresh — Catching Documentation Up to Reality
+
+- **README was two phases behind.** Roadmap still showed Phases 4–5 as planned with old labels, test count was 106 (now 136), and no mention of hooks or MCP server. Documentation drift is a real usability problem — a stale README tells contributors the project isn't maintained.
+- **Added Hooks and MCP Server sections under "What's Built."** Hooks described by what they do (session catch-up, event recording), not implementation detail. MCP tools presented as a question-answer table — each row answers "what does this tool tell me?" This follows the verb–noun naming rationale from Phase 5 decisions.
+- **Style principle reinforced: narrate work, not worker.** Hook descriptions say what happens ("recovers orphaned sessions," "logs tool use"), not who does it. The README should read like a system description, not a cast list.
+- **Omitted speculative content.** Installation section states what works today and one sentence about Phase 6. No placeholder instructions for features that haven't shipped.
+
+### 2026-04-02: Phase 6 Documentation — README Refresh Complete
+
+**Task:** Update README.md to reflect actual Phases 4–5 work and Phase 6 roadmap.
+
+**Corrections Made:**
+- Test count: updated "106 tests" → "136 tests" (6 test files)
+- Phase 4 label: corrected from "Compiler (validation + builder)" → "Session-start hook + crash recovery"
+- Phase 5 label: corrected from "Distribution, CLI, Narrative UX" → "MCP Server (6 tools)"
+- Version string: cli.ts should read from package.json (noted as future fix)
+
+**New Sections Added:**
+- "Hooks" — preToolUse (Curator) + postToolUse (Archivist), what they do, why they matter
+- "MCP Server" — 6 tools documentation (get_status, list_insights, search_events, etc.)
+- "Roadmap" — Phase 6 context (three options assessed, plugin packaging chosen)
+- "Issue #11" — Worktree support (deferred to Phase 7, full design in decisions.md)
+
+**Rationale:**
+- Stale documentation signals unmaintained project — fixes like this have high ROI
+- README should reflect what's *actually* shipped, not aspirational roadmap
+- Tool descriptions follow verb–noun pattern established in Phase 5 — agents read verbs intuitively
+- Phase 6 context helps next contributors understand roadmap and recent decisions
+
+**Status:** README now reflects current state. Ready for distribution phase.

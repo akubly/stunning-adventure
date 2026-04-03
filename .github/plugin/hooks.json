@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "node dist/hooks/sessionStart.js",
+        "powershell": "node dist/hooks/sessionStart.js",
+        "timeoutSec": 10
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "bash": "node dist/hooks/postToolUse.js",
+        "powershell": "node dist/hooks/postToolUse.js",
+        "timeoutSec": 5
+      }
+    ]
+  }
+}

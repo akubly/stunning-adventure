@@ -188,6 +188,49 @@ Conducted deep research into GitHub Copilot's full extensibility landscape. Key 
 
 **Cross-team context:** Decision merged (graham-mcp-import-guard.md → decisions.md). Roger's implementation quality was high — no unexpected issues in re-review. Test strategy (backing APIs, not transport) sets convention for future MCP tools.
 
+### 2026-04-02: Phase 6 Roadmap Assessment — Three Options
+
+**Task:** Architect's analysis of Phase 6 paths forward.
+
+**Context:** Phase 5 (MCP Server + PR #10 merge) complete. Aaron asks: "What's next?"
+
+**Assessment:** Three options evaluated:
+1. **Option A: Worktree-Aware Sessions (Issue #11)** — Fix session collision bug. Correctness before features. Small-medium effort, low risk. **Recommended by Graham.**
+2. **Option B: Compiler Agent MVP** — Plugin validation framework. Speculative, no consumers yet. Large effort, high risk.
+3. **Option C: Distribution & Polish** — Plugin packaging, npm publish, README refresh. Safe, unblocks external users. Ships known worktree collision bug.
+
+**Decision:** Aaron chose Option C (Plugin Packaging). Graham's recommendation for Option A stands as architecture decision record.
+
+**Outcome:** Rosella and Roger executed plugin packaging blueprint in parallel. Plugin infrastructure (plugin.json, marketplace.json, hooks.json, hook wrappers) now in place. Worktree support (Option A) deferred to Phase 7 after installation commands proven.
+
+**Documentation:** Full assessment in .squad/decisions.md (Phase 6 section).
+
+### 2026-04-02: Installation Architecture Assessment
+
+**Task:** Map all installation surfaces for "making Cairn installable on Aaron's machine."
+
+**Four Surfaces Identified:**
+1. MCP Server Registration — `~/.copilot/mcp-config.json` (❌ not registered)
+2. Hook Installation — `~/.copilot/hooks/cairn/` (⚠️ manually installed, hardcoded paths)
+3. Binary/Module Availability — npm global bin (❌ not linked)
+4. Database Initialization — `~/.cairn/knowledge.db` (✅ working)
+
+**Three Implementation Strategies:**
+- **Option A: npm link + cairn install** ✅ Recommended
+- **Option B: npm install -g** — Less dev-friendly
+- **Option C: Plugin install via Copilot CLI** — Premature for "first consumer"
+
+**Missing in Codebase (Priority):**
+- P0: No MCP registration mechanism
+- P0: No cairn install command
+- P1: No plugin.json manifest
+- P1: Hook scripts not in repo
+- P2: No uninstall command
+
+**Recommendation:** Option A. Minimal path to "it works" while building toward distribution. Detailed analysis in decisions.md.
+
+**Cross-team impact:** Architecture informs Roger and Rosella's plugin packaging execution.
+
 **Next gate:** Awaiting Aaron's merge approval. Phase 6 scope TBD (coordination orchestration).
 
 ### 2026-04-02: PR #10 Review Triage — Cloud Copilot Reviewer Comments
@@ -247,3 +290,55 @@ Conducted deep research into GitHub Copilot's full extensibility landscape. Key 
 - Decision document: `.squad/decisions/inbox/graham-worktree-design.md`
 
 **Files affected by implementation:** `src/db/migrations/005-workdir.ts`, `src/hooks/gitContext.ts`, `src/db/sessions.ts`, `src/agents/archivist.ts`, `src/hooks/postToolUse.ts`, `src/hooks/sessionStart.ts`, `src/types/index.ts`, `src/agents/sessionState.ts`, `src/mcp/server.ts`
+
+### 2026-04-02: Phase 6 Assessment — Post-MCP Roadmap
+
+**Trigger:** Phase 5 (MCP Server, PR #10) merged. Aaron asked "What's next?"
+
+**Current state inventory:**
+- 136 tests passing across 6 test files
+- 22 source files, 7 DB tables, 4 migrations, 6 MCP tools
+- End-to-end pipeline operational: hooks → Archivist → event_log → Curator → insights → MCP
+- CLI is a stub (prints version). Compiler is a 2-line placeholder.
+
+**Vision vs. reality delta:** Core data pipeline is complete. Remaining brainstorm items are either horizontal expansion (worktrees, distribution) or vertical features (Compiler, sidecar, corporate). Horizontal has clear ROI now; vertical needs consumers first.
+
+**Three options evaluated:**
+1. **Worktree-Aware Sessions (Issue #11)** — correctness bug fix, already designed, small-medium/low-risk
+2. **Compiler Agent MVP** — no consumers yet, large/high-risk, violates own "primitives need assemblers" principle
+3. **Distribution & Polish** — npm publish + README, but ships with known session collision bug
+
+**Recommendation:** Option A — Worktree support. Fix correctness before features. Then distribute as Phase 7.
+
+**Key insight reapplied:** The same anti-YAGNI principle that redirected Phase 5 from CLI to MCP applies here: don't build the Compiler until there are plugins to compile. Build what's needed now, not what's architecturally next on a diagram.
+
+**README staleness flagged:** Test count wrong (106 → 136), roadmap phases mislabeled (Phase 4 says "Compiler" but was actually session hook), hooks and MCP server not mentioned in "What's Built" section. Should be fixed in a housekeeping PR regardless of Phase 6 choice.
+
+**Decision document:** `.squad/decisions/inbox/graham-phase6-assessment.md`
+
+### 2026-04-02: Installation Architecture Assessment — First Consumer
+
+**Trigger:** Aaron asked how to make Cairn installable on his machine as a Copilot CLI plugin/marketplace.
+
+**Key finding: 3 of 4 installation surfaces are broken or missing.**
+
+1. ✅ **Database** — Self-bootstrapping. `getDb()` auto-creates `~/.cairn/knowledge.db`. Already working (958KB populated).
+2. ❌ **MCP server** — Not registered in user-level `~/.copilot/mcp-config.json`. Server works (6 tools, tested), but Copilot can't discover it. Fix: add one JSON entry.
+3. ⚠️ **Hooks** — Installed manually on Aaron's machine. Work via hardcoded fallback path (`D:\git\stunning-adventure\dist\hooks\*.js`). Primary resolution path (`~/.cairn/hook/`) was never created. Not portable.
+4. ❌ **Binaries** — `npm link` never run. `cairn-mcp` not on PATH. MCP config can't reference it by name.
+
+**Strategy recommendation:** `npm link` + `cairn install` CLI command. npm link puts binaries on PATH. `cairn install` automates MCP registration, hook installation, and directory setup. The CLI stub (`src/cli.ts`) becomes the installer.
+
+**Architecture irony identified:** We said "CLI is YAGNI" for querying Cairn (use MCP). But CLI is exactly right for *installing* Cairn — different consumer (human at terminal), different UX. The anti-YAGNI principle doesn't apply to install/setup commands.
+
+**Six gaps catalogued:**
+1. No MCP registration mechanism
+2. Hook path resolution hardcoded and fragile
+3. No `cairn install` command
+4. No `plugin.json` manifest
+5. Hook wrapper scripts (PS1) not in repo — only on Aaron's machine
+6. `hooks.json` not in repo
+
+**Implementation order:** (1) npm link + manual MCP config now, (2) `cairn install` + repo hook scripts in next PR, (3) plugin.json + marketplace later.
+
+**Decision document:** `.squad/decisions/inbox/graham-install-architecture.md`

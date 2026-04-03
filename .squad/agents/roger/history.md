@@ -83,6 +83,41 @@
 **Execution timeline:**
 - 05:13Z — Graham Round 1 review: APPROVE WITH CONDITIONS (5 findings)
 - 05:16Z — Applied all 5 fixes; 134 tests pass, no regression
+
+### 2026-04-02: Phase 6 Hook Wrapper Scripts — PowerShell Implementation
+
+**Task:** Create portable PowerShell hook wrappers for plugin distribution.
+
+**Deliverable:**
+- `.github/hooks/cairn/hooks.json` — Hook registration (coordination with Rosella)
+- `.github/hooks/cairn/curate.ps1` — preToolUse wrapper
+- `.github/hooks/cairn/record.ps1` — postToolUse wrapper
+
+**Design: Two-Tier Path Resolution**
+
+Both scripts implement fail-open pattern with portable path resolution:
+1. **Primary:** `~/.cairn/hook/{sessionStart|postToolUse}.mjs` (after user-level install)
+2. **Fallback:** Relative `$PSScriptRoot` path to repo `dist/hooks/` (dev mode)
+
+**Implementation Pattern:**
+```powershell
+$hookScript = Join-Path $env:USERPROFILE '.cairn' 'hook' 'sessionStart.mjs'
+if (-not (Test-Path $hookScript)) {
+    $hookScript = Join-Path $PSScriptRoot '..\..\..\..' 'dist' 'hooks' 'sessionStart.js'
+    if (-not (Test-Path $hookScript)) { exit 0 }
+}
+$raw | node $hookScript 2>$null
+```
+
+**Key Design Decisions:**
+- Use $PSScriptRoot (not absolute paths) for repo layout portability
+- Suppress stderr (2>$null) — hooks fail silently if node entry point fails
+- Exit 0 on missing paths — fail-open principle
+- Check $env:USERPROFILE path first — installed takes precedence over dev
+
+**Status:** Ready for `src/install.ts` to copy to `~/.copilot/hooks/cairn/`. Bash wrappers (curate.sh, record.sh) deferred to Phase 7.
+
+**Cross-team coordination:** Confirmed hooks.json ownership with Rosella (plugin manifest, her domain). These scripts are implementation detail of user-level hook installation (Roger's domain).
 - 05:22Z — Graham Round 2 re-review: APPROVE (no new issues)
 - 05:28Z — Commit, push, opened PR #10
 
@@ -108,3 +143,11 @@
 
 - **JSDoc `@param limit` added to `findEvents()`** — documents default 100, max 500. Review comment pointed out the parameter was undocumented after the Round 3 changes added it.
 - **Response helper extraction (jsonText/jsonError) deferred.** Graham ruled it's a valid refactor but no behavioral impact — save for a follow-up PR. Don't mix refactors into a feature PR unless they carry behavioral weight.
+
+### Portable Hook Wrappers — `.github/hooks/cairn/`
+
+- **3-step resolution replaces hardcoded paths.** User override (`~/.cairn/hook/`) → npm global install (`npm root -g`) → `$PSScriptRoot` relative fallback. Eliminates machine-specific absolute paths.
+- **`npm root -g` is the portable discovery mechanism.** ~50ms cost is acceptable within the 500ms hook budget. Only runs when user override isn't found.
+- **`$PSScriptRoot` relative path for repo checkout fallback.** Scripts at `.github/hooks/cairn/` navigate `..\..\..` to reach `dist/hooks/`. Works regardless of where the repo is cloned.
+- **hooks.json uses repo-relative paths.** The `powershell` field references `.github/hooks/cairn/*.ps1` — Copilot resolves these from repo root.
+- **Fail-open pattern preserved.** `$ErrorActionPreference = 'SilentlyContinue'`, outer try/catch, and unconditional `exit 0` ensure hooks never break the user.
