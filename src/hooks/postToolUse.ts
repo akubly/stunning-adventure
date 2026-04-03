@@ -10,6 +10,7 @@
 
 import path from 'node:path';
 import url from 'node:url';
+import fs from 'node:fs';
 import { getDb, closeDb } from '../db/index.js';
 import { startSession, recordToolUse, recordError } from '../agents/archivist.js';
 import { getRepoKey, getBranch } from './gitContext.js';
@@ -72,7 +73,7 @@ async function main(): Promise<void> {
 // Only run CLI entrypoint when executed as a script, not when imported.
 const isScript =
   process.argv[1] &&
-  import.meta.url === url.pathToFileURL(path.resolve(process.argv[1])).href;
+  import.meta.url === url.pathToFileURL(fs.realpathSync(path.resolve(process.argv[1]))).href;
 if (isScript) {
   main();
 }

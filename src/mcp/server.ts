@@ -10,6 +10,7 @@
 
 import path from 'node:path';
 import url from 'node:url';
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -369,9 +370,11 @@ async function main(): Promise<void> {
 }
 
 // Only run when executed as a script, not when imported.
+// Use fs.realpathSync to handle npm link symlinks — import.meta.url
+// resolves to the real path, but process.argv[1] may be a symlink.
 const isScript =
   process.argv[1] &&
-  import.meta.url === url.pathToFileURL(path.resolve(process.argv[1])).href;
+  import.meta.url === url.pathToFileURL(fs.realpathSync(path.resolve(process.argv[1]))).href;
 if (isScript) {
   main().catch((err: unknown) => {
     process.stderr.write(`Cairn MCP server failed to start: ${String(err)}\n`);
