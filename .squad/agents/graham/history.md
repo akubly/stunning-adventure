@@ -8,7 +8,26 @@
 
 ## Learnings
 
-<!-- Append learnings below -->
+### Core Learning Archive (Pre-Phase 6)
+
+**Key insights from Rounds 1–5 brainstorm:**
+- Copilot extensibility has three SDK layers: CLI SDK (embedding), Extensions SDK (distribution), Engine SDK (custom agents). MCP is the universal tool protocol.
+- Plugin architecture: seven-layer composition model with plugin.json as distribution unit.
+- Marketplace standardization: awesome-copilot is dominant center (170+ agents, 240+ skills, 55+ plugins). SKILL.md is cross-platform standard.
+- Prior infrastructure reuse: 7 directly portable patterns from Aaron's previous work (knowledge taxonomy, persona review, workflow gates, skill template, tool guards, observability schema, multi-source code review).
+- Architecture foundation: four-layer data pipeline (primitives → assemblers → experiences → CLI), session-scoped context model, SQLite knowledge.db with migrations.
+
+**Code patterns established:**
+- isScript guard at module scope: prevent process.exit during import
+- Timestamp parsing: SQLite datetime format must normalize to ISO-8601 before parsing
+- DB cleanup: dbOpened + finally pattern ensures safe DB closure in hooks
+- Test strategy: test backing functions, not transport protocols
+- Tool naming: verb_noun convention (get, list, search, run, check) aids LLM selection
+- Error handling: fail-open principle for observability (silent failures preferred over blocking)
+
+**Rounds 1–5 learnings tracked in previous history entries (archived).**
+
+<!-- Append new learnings below -->
 
 ### 2026-04-02: Phase 5 Architecture Review — MCP Server
 

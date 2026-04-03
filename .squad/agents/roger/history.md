@@ -8,7 +8,37 @@
 
 ## Learnings
 
-<!-- Append learnings below -->
+### Core Learning Archive (Pre-Phase 6)
+
+**Copilot SDK & Extensibility Landscape:**
+- Three SDK layers: CLI SDK (embedding), Extensions SDK (distribution, SSE streaming), Engine SDK (custom agents).
+- MCP (Model Context Protocol) is the universal tool integration standard across all three layers.
+- Extensions have two patterns: Skillsets (lightweight REST, GitHub handles AI) vs Agents (full control).
+- MCP config locations: `.vscode/mcp.json` (workspace), `~/.copilot/mcp-config.json` (user), `.copilot/mcp.json` (repo).
+- Auth evolution: X-GitHub-Token → OIDC signature verification.
+- Copilot CLI SDK supports BYOK (Bring Your Own Key) for OpenAI, Azure, Anthropic.
+
+**Code Patterns Established:**
+- SQLite datetime normalization: `YYYY-MM-DD HH:MM:SS` → ISO-8601 before parsing (T separator + Z suffix).
+- `parseSqliteDateToMs()` shared utility in src/utils/timestamps.ts.
+- `isScript` guard pattern: `url.pathToFileURL(path.resolve(process.argv[1])).href` for reliable module scope detection.
+- DB cleanup: `dbOpened` + `finally` is canonical pattern for hook entry points.
+- Git cost in hooks acceptable (~10ms) because Node startup + DB open (~400ms) dominate budget.
+- Migration assertions: db.test.ts must update both expected migration count and max schema_version on migration addition.
+
+**MCP Server Implementation:**
+- `McpServer` (high-level) + `StdioServerTransport` from SDK v1.29.
+- `registerTool(name, config, callback)` with `{ title, description, inputSchema, annotations }`.
+- `inputSchema` takes Zod v4 raw shape (plain object), not `z.object()`.
+- Tool callbacks async, return `{ content: [{ type: 'text', text: string }] }`.
+- DB singleton pattern: call `ensureDb()` in each handler.
+- Verb taxonomy: get (single) | list (collection) | search (query) | run (side effect) | check (boolean).
+- 6 tools: get_status, list_insights, get_session, search_events, run_curate, check_event. All unprefixed verb_noun.
+- Test backing functions, not transport.
+
+**Rounds 1–5 learnings tracked in previous history entries (archived).**
+
+<!-- Append new learnings below -->
 
 ### 2026-03-28: Copilot SDK & Platform Extensibility Recon
 
