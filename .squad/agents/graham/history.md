@@ -361,3 +361,21 @@ Conducted deep research into GitHub Copilot's full extensibility landscape. Key 
 **Implementation order:** (1) npm link + manual MCP config now, (2) `cairn install` + repo hook scripts in next PR, (3) plugin.json + marketplace later.
 
 **Decision document:** `.squad/decisions/inbox/graham-install-architecture.md`
+
+### 2026-04-02: Phase 6 Code Review — Plugin Packaging + isScript Fix
+
+**Review type:** Pre-commit code review (PR #12)  
+**Artifacts:** `.copilot/mcp-config.json`, `.github/plugin/.mcp.json`, `src/mcp/server.ts`, `src/hooks/sessionStart.ts`, `src/hooks/postToolUse.ts`  
+**Verdict:** APPROVE
+
+**Key findings:**
+
+1. **🟡 `.github/plugin/.mcp.json` distribution path regression.** Changed from `cairn-mcp` (npm bin command, works from any CWD) to `node dist/mcp/server.js` (requires CWD = package dir). The bin command is correct for plugin distribution; direct node invocation is correct for repo-level config. Since plugin install isn't functional yet, not blocking. Track: revert to `cairn-mcp` before `cairn install` ships.
+
+2. **isScript symlink fix is correct and well-executed.** `fs.realpathSync()` added to all 3 entry points identically. Root cause: ESM `import.meta.url` resolves through symlinks but `process.argv[1]` preserves them. `realpathSync` normalizes the comparison. Pattern is consistent, tests pass, no edge case risk (argv[1] always exists when the file is running).
+
+3. **All validation gates pass.** TypeScript clean, 136/136 tests, ESLint clean.
+
+**Review pattern learned:** When a bug fix (isScript) removes the need for a workaround (direct node invocation), check whether the workaround was also applied elsewhere. The `.mcp.json` change was a workaround that should have been reverted once the root cause fix landed.
+
+**Branch:** `squad/phase6-plugin-packaging` → PR #12
