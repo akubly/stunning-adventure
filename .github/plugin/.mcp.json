@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "cairn": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "--package", "@akubly/cairn", "cairn-mcp"]
+    }
+  }
+}

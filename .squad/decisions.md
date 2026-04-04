@@ -499,6 +499,183 @@ postToolUse (record.ps1 → postToolUse.ts)
 | Testability | Extract `runSessionStart(repoKey)` as pure function | Test via stdin mocking | Direct function testing is faster, simpler, no process spawning |
 | Performance | Active-session gate via indexed SELECT | Time-based debounce | SELECT is deterministic; debounce has edge cases on session boundaries |
 | closeDb() ownership | `main()` calls closeDb, not core function | Core function manages lifecycle | Avoids killing in-memory DB during tests; matches singleton pattern |
+
+---
+
+## Phase 6 Decisions (2026-04-02)
+
+### 2026-04-02: Phase 6 Roadmap Assessment — Option C (Plugin Packaging) Chosen
+
+**Author:** Graham Knight (Lead / Architect), Aaron (Decision)  
+**Date:** 2026-04-02  
+**Type:** Roadmap  
+**Status:** Accepted
+
+Graham presented three Phase 6 options:
+1. **Option A: Worktree-Aware Sessions (Issue #11)** — correctness bug fix, small-medium effort, low risk
+2. **Option B: Compiler Agent MVP** — no consumers yet, speculative, high risk
+3. **Option C: Distribution & Polish** — safe but ships known worktree collision bug
+
+**Graham's Recommendation:** Option A. Correctness before distribution.
+
+**Aaron's Choice:** Option C (Plugin Packaging).
+
+**Rationale:** Plugin infrastructure enables distribution immediately. Worktree support (Option A) deferred to Phase 7 after installation commands are built and tested.
+
+**Outcome:** Rosella and Roger executed plugin packaging blueprint concurrently. Plugin infrastructure now in place.
+
+**Full Reports:** *(merged inline above)*
+
+---
+
+### 2026-04-02: Installation Architecture — npm link + cairn install Strategy
+
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-04-02  
+**Type:** Architecture  
+**Status:** Active
+
+Four installation surfaces identified:
+1. **MCP Server Registration** — `~/.copilot/mcp-config.json` (❌ not registered)
+2. **Hook Installation** — `~/.copilot/hooks/cairn/` (⚠️ manually installed, hardcoded paths)
+3. **Binary/Module Availability** — npm global bin directory (❌ not linked)
+4. **Database Initialization** — `~/.cairn/knowledge.db` (✅ working)
+
+**Three Implementation Options:**
+- **Option A: `npm link` + `cairn install`** — Dev-friendly symlink + custom installer ✅ RECOMMENDED
+- **Option B: `npm install -g`** — Independent but requires re-run per code change
+- **Option C: Plugin Install via Copilot CLI** — Correct long-term but premature for "first consumer"
+
+**Recommendation:** Option A. Minimal path to "it works on my machine" while building toward plugin distribution.
+
+**Missing in Codebase (P0/P1 priority):**
+- No MCP server registration mechanism
+- Hook path resolution fragile (PS1 two-tier fallback)
+- No `cairn install` command
+- No plugin.json manifest
+- Hook scripts not in npm package
+- hooks.json not in npm package
+
+**Implementation Sequence:**
+1. **Right now:** `npm link` + manual MCP config → Cairn works
+2. **Next PR:** Move hook scripts into repo, build `cairn install`, fix path resolution (Rosella + Roger executing)
+3. **After:** `plugin.json`, marketplace registration (in progress)
+
+**Full Report:** *(merged inline above)*
+
+---
+
+### 2026-04-02: Plugin Packaging Blueprint — Comprehensive Distribution Architecture
+
+**Author:** Rosella Chen (Plugin Dev)  
+**Date:** 2026-04-02  
+**Type:** Architecture  
+**Status:** In Progress
+
+**Core Design:**
+- `plugin.json` manifest (Claude Code spec format)
+- `marketplace.json` for marketplace integration
+- `.github/hooks/cairn/hooks.json` for hook declaration
+- PowerShell wrapper scripts (`curate.ps1`, `record.ps1`)
+- Installation flow: `npm install -g @akubly/cairn` → `cairn install`
+- Custom install script (`src/install.ts`) handles MCP registration + hook installation
+
+**Gap Analysis:**
+- Plugin format lacks native MCP server registration — custom install script required
+- Plugin format lacks native hook installation — custom install script required
+- Cross-platform: PowerShell ✅ Windows-first, bash 🔄 deferred to Phase 7
+- Version migration: future concern
+
+**Priority Checklist:**
+- **P0:** install.ts, hooks.json, PS1 wrappers (in progress)
+- **P1:** plugin.json ✅, marketplace.json ✅, CLI modifications, mcp-config.json
+- **P2:** uninstall.ts, documentation
+- **P3:** bash wrappers
+
+**What "Installed" Looks Like After `cairn install`:**
+```
+~/.copilot/
+├── hooks/cairn/
+│   ├── hooks.json        ← Copilot CLI reads this
+│   ├── curate.ps1        ← preToolUse → Node.js
+│   └── record.ps1        ← postToolUse → Node.js
+├── mcp-config.json       ← Contains "cairn" MCP server entry
+
+~/.cairn/
+├── hook/
+│   ├── sessionStart.mjs   ← Compiled hook entry point
+│   └── postToolUse.mjs    ← Compiled hook entry point
+├── knowledge.db          ← Already exists
+└── version.txt           ← Installed version marker
+```
+
+**Full Report:** *(merged inline above)*
+
+---
+
+### 2026-04-02: hooks.json Ownership — Plugin Manifest, Not Wrapper Script
+
+**Author:** Rosella Chen (Plugin Dev)  
+**Date:** 2026-04-02  
+**Type:** Coordination  
+**Status:** Active
+
+`hooks.json` is a **plugin manifest file** (Rosella's domain), not a wrapper script (Roger's domain).
+
+**Responsibility Split:**
+- **Rosella:** hooks.json declares which hook events Cairn handles and what commands to run (plugin context)
+- **Roger:** PowerShell wrappers are user-level installation at `~/.copilot/hooks/`
+
+**Impact:**
+- Roger: Be aware `.github/plugin/hooks.json` exists. Your wrapper scripts handle the `~/.copilot/hooks/` user-level install path.
+- Both paths should ultimately invoke the same Node.js entry points.
+
+**Full Report:** *(merged inline above)*
+
+---
+
+### 2026-04-02: Hook Wrapper Scripts — Two-Tier Path Resolution Design
+
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-04-02  
+**Type:** Implementation  
+**Status:** In Progress
+
+**Files Created:**
+- `.github/hooks/cairn/hooks.json` — Hook type registration
+- `.github/hooks/cairn/curate.ps1` — preToolUse wrapper → sessionStart.js
+- `.github/hooks/cairn/record.ps1` — postToolUse wrapper → postToolUse.js
+
+**Design Pattern: Two-Tier Path Resolution**
+
+1. **Primary:** `~/.cairn/hook/{sessionStart|postToolUse}.mjs` (after user-level install)
+2. **Fallback:** Relative path from repo `dist/hooks/{sessionStart|postToolUse}.js` (dev mode)
+
+**Behavior:**
+- Fail-open: silently exit if paths don't resolve
+- Read stdin, pipe to node process
+- Suppress stderr
+- Idempotent: safe to run multiple times
+- Portable: uses $PSScriptRoot relative paths
+
+**Example Resolution (curate.ps1):**
+```powershell
+$hookScript = Join-Path $env:USERPROFILE '.cairn' 'hook' 'sessionStart.mjs'
+if (-not (Test-Path $hookScript)) {
+    $hookScript = Join-Path $PSScriptRoot '..\..\..\..' 'dist' 'hooks' 'sessionStart.js'
+    if (-not (Test-Path $hookScript)) { exit 0 }
+}
+$raw | node $hookScript 2>$null
+```
+
+**Status:**
+- Portable across repo layouts ✅
+- Ready for `cairn install` to copy to `~/.copilot/hooks/cairn/` ✅
+- Bash equivalents 🔄 deferred
+
+**Next Steps:**
+- `src/install.ts` will copy these scripts to user-level hooks directory
+- `src/cli.ts` will route `cairn install` command to installer
 | Crash recovery scope | Per-repo only | Global (all repos) | Cross-repo recovery would slow the hook and risk false positives |
 
 ## Files
@@ -513,6 +690,74 @@ postToolUse (record.ps1 → postToolUse.ts)
 - ESLint clean
 - TypeScript compiles without errors
 
+
+---
+
+### 2026-04-02T04-58-00: Phase 5 — MCP Server (Cairn Conversational Intelligence)
+
+**Author:** Graham Knight (Lead)  
+**Type:** Architecture / Roadmap  
+**Status:** Ready for Implementation  
+**Date:** 2026-04-02  
+**Supersedes:** graham-phase5-recommendation.md (CLI-first approach withdrawn)
+
+**Decision:** Phase 5 is the MCP Server. Build Cairn as an MCP server that exposes knowledge directly into Copilot conversation. Skip the CLI.
+
+**Rationale:**
+- Primary consumer is an agent (where Aaron works), not a human at terminal
+- One presentation layer (MCP) vs. two (CLI + MCP)
+- Query APIs already validated through ad-hoc scripts
+- Design surface not materially different: 6 operations with schema definitions
+- MCP eliminates CLI as "dead code on arrival" after MCP ships
+
+**6 MCP Tools (verb_noun naming):**
+- get_status: Current session state and curator health
+- list_insights: Active insights with prescriptions
+- get_session: Event counts and session summary
+- search_events: Filtered event list by pattern
+- run_curate: Manual curator run
+- check_event: Boolean query — has event occurred?
+
+**Naming Convention:** Unprefixed verb_noun format. MCP host adds server prefix (cairn-). Eliminates stutter.
+
+**Team Composition:**
+- Roger (Platform Dev): MCP SDK integration
+- Valanice (UX): Tool descriptions and verb taxonomy
+- Graham (Lead): Schema review and registration design
+
+**Package Changes:**
+- New dependencies: @modelcontextprotocol/sdk, zod
+- New bin entry: cairn-mcp → dist/mcp/server.js
+- MCP registration: .copilot/mcp-config.json
+
+**Status:** Architecture finalized. Ready for implementation.
+
+---
+
+### 2026-04-02T04-58-32: User Directive — MCP Tool Naming Convention
+
+**Author:** Aaron (via Copilot)  
+**Type:** Design / Naming  
+**Status:** Active
+
+Use verb_noun naming for MCP tool names (e.g., get_status, list_insights), not noun_verb. Tool names should be short and unprefixed — the MCP host adds the server name prefix automatically.
+
+**Rationale:**
+- Natural language alignment: "get the status" → get_status
+- Better LLM tool selection: agent sees verb matching user phrasing
+- Eliminates naming stutter: cairn-get_status vs cairn-status_get
+- Aligns with CLI conventions (git status, npm list)
+
+**Verb Taxonomy:**
+- get: Retrieve single composite object
+- list: Return collection with optional filters
+- search: Query with multiple filter parameters
+- run: Execute side-effecting action
+- check: Boolean/existence query
+
+**Impact:** Governs Phase 5 MCP tool naming. Improves agent behavior predictability.
+
+**Status:** Finalized. Incorporated into Phase 5 spec.
 
 ---
 
@@ -639,3 +884,215 @@ if (isScript) {
 **Resolution:** Roger applied fix. Round 1 blocker. Verified in Round 2 re-review. No regression.
 
 **Status:** Complete. Merged to Phase 5 codebase.
+
+---
+
+### 2026-04-04T06-24-00: CLI Extensions Investigation — Round 3 Correction
+
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-04-04  
+**Requested by:** Aaron  
+**Type:** Research / Backlog Investigation  
+**Status:** Complete — Decision Point for Aaron
+
+---
+
+## ⚠️ Correction Notice
+
+**Rounds 1 & 2 incorrectly concluded that CLI extensions don't exist.** They do.
+
+The extension system is a fully implemented but undocumented feature of the
+Copilot CLI, discovered from `@github/copilot-sdk` source and validated by
+community reverse-engineering ([htek.dev guide][1]). My initial search missed it
+because:
+
+1. No official GitHub documentation (not on docs.github.com)
+2. No `.github/extensions/` directory exists in any repo I checked
+3. CLI `/help` doesn't mention extensions
+4. SDK type definitions are terse
+
+**Lesson learned:** "No documentation" ≠ "doesn't exist." When investigating
+undocumented features, inspect SDK source code, type definitions, and community
+guides — not just official docs.
+
+---
+
+## Executive Summary
+
+**CLI extensions are real, production-ready, and architecturally compelling for
+Cairn.** They run as persistent Node.js child processes, communicate via
+JSON-RPC over stdio, and can register custom tools AND lifecycle hooks in a
+single unified process. This directly addresses three pain points in Cairn's
+current architecture:
+
+1. **400ms MCP startup overhead** — Extensions run persistent, keep DB open
+2. **PS1 hook wrapper fragility** — Unified process eliminates separate hook pipeline  
+3. **Hooks-vs-tools split** — Single process handles both
+
+**However, extensions have a critical distribution limitation:** file-copy only,
+no plugin/marketplace support. MCP remains the universal integration standard.
+
+### Recommendation
+
+**Build an extension as a development spike. Keep MCP as the distribution path.**
+
+Three-phase approach:
+
+| Phase | Action | Effort |
+|-------|--------|--------|
+| **Spike** | Build `.github/extensions/cairn/extension.mjs`. Validate persistent DB + unified hooks + tool registration. | 1-2 sessions |
+| **Validate** | Run extension alongside MCP for a week. Compare reliability, performance, DX. | 1 week |
+| **Decide** | Based on results: extension as primary CLI surface (keep MCP for universal), or extension not worth dual maintenance. | Decision point |
+
+**Why spike first, not commit:**
+
+1. Hook overwrite bug (#2076) could be showstopper if Aaron uses other extensions
+2. Native module resolution via `createRequire` from `.github/extensions/` is untested
+3. Undocumented feature — need to verify behavior matches community guide on CLI 1.0.18
+
+---
+
+## What CLI Extensions Actually Are
+
+### Architecture
+
+Extensions are separate Node.js child processes forked by the Copilot CLI,
+communicating over JSON-RPC via stdio:
+
+```
+┌──────────────────┐   JSON-RPC / stdio   ┌───────────────────┐
+│  Copilot CLI      │ ◄──────────────────► │  Extension Process │
+│  (parent)         │                      │  (forked child)    │
+│                   │                      │                    │
+│  • Discovers exts │                      │  • Registers tools │
+│  • Forks children │                      │  • Registers hooks │
+│  • Routes calls   │                      │  • Persists state  │
+└──────────────────┘                      └───────────────────┘
+```
+
+### Lifecycle
+
+1. **Discovery** — CLI scans `.github/extensions/` (project) and
+   `~/.copilot/extensions/` (user) for subdirectories containing `extension.mjs`
+2. **Launch** — Each extension forked as child process. `@github/copilot-sdk`
+   auto-resolved by CLI (no npm install needed for SDK)
+3. **Connection** — Extension calls `joinSession()`, establishing JSON-RPC link
+4. **Registration** — Tools and hooks declared in session config registered immediately
+5. **Lifecycle** — Reloaded on `/clear`. Stopped on CLI exit (SIGTERM, SIGKILL after 5s)
+
+### Key Capabilities
+
+| Capability | Description |
+|------------|-------------|
+| **Custom tools** | Full JSON Schema parameters + async handler functions |
+| **6 lifecycle hooks** | onSessionStart, onUserPromptSubmitted, onPreToolUse, onPostToolUse, onErrorOccurred, onSessionEnd |
+| **Persistent state** | In-memory state lives across tool calls within session |
+| **Hot reload** | `extensions_reload` makes changes available mid-session |
+| **Event subscription** | `session.on()` for 10+ event types |
+| **Permission control** | preToolUse can allow, deny, or modify tool arguments |
+| **Context injection** | Hooks return `additionalContext` injected into conversation |
+| **Programmatic messaging** | `session.send()` and `session.sendAndWait()` |
+| **Error recovery** | onErrorOccurred can retry, skip, or abort |
+
+### Verified on This Machine
+
+- **CLI version:** 1.0.18
+- **`@github/copilot-sdk`:** Found in squad-cli's node_modules
+  - `extension.d.ts` / `extension.js` — confirmed
+  - `CopilotClient`, `defineTool`, `approveAll` — confirmed
+  - `Tool`, `ToolHandler`, `ToolInvocation` types — confirmed
+- **`~/.copilot/extensions/`:** Does not exist yet (no extensions installed)
+
+---
+
+## Trade-Off Analysis: Extension vs MCP for Cairn
+
+| Dimension | MCP Server (current) | CLI Extension |
+|-----------|---------------------|---------------|
+| **Process model** | New process per tool call | Persistent child process for session |
+| **Tool registration** | MCP protocol (JSON-RPC) | SDK `tools` array at session join |
+| **Startup overhead** | ~400ms per invocation | Once at session start, then zero |
+| **State management** | Stateless (DB reopened each call) | Persistent in-memory (DB open once) |
+| **Hook integration** | Separate system (hooks.json + PS1) | Unified in same process |
+| **Distribution** | npm + mcp-config.json + plugin | File-copy only (.mjs to directory) |
+| **Cross-platform** | Any MCP host (VS Code, coding agent) | **CLI-only** |
+| **Dependencies** | npm handles full dep chain | SDK auto-resolved; others need npm |
+| **Hot reload** | `mcp_reload` or restart | `extensions_reload` mid-session |
+| **Documentation** | Official GitHub docs | **Undocumented** (community only) |
+| **Stability** | Stable, well-tested | Undocumented; gotchas exist |
+| **Plugin/marketplace** | Yes | **No** |
+
+### What Cairn Gains from Extension
+
+1. **Persistent DB connection.** Currently every MCP tool call opens knowledge.db,
+   runs a query, closes. An extension opens it once and keeps it open. For a
+   session with 200+ tool calls, this eliminates ~80 seconds of startup overhead.
+
+2. **Unified hooks + tools.** Currently Cairn has two separate surfaces:
+   - Hooks: `hooks.json` → PS1 wrappers → node
+   - Tools: `mcp/server.ts` via MCP protocol
+   
+   An extension collapses to one process.
+
+3. **No PS1 wrappers.** The entire `record.ps1` → `curate.ps1` pipeline
+   disappears. This is our #1 cross-platform fragility point.
+
+4. **Event subscription.** `session.on('tool.execution_complete', ...)` gives
+   richer observability than postToolUse hooks.
+
+### What Cairn Loses from Extension-Only
+
+1. **VS Code / coding agent support.** Extensions are CLI-only. MCP works everywhere.
+
+2. **Plugin distribution.** No `copilot plugin install`. No marketplace
+   discoverability. File-copy only.
+
+3. **Native module distribution.** `better-sqlite3` doesn't auto-resolve. For
+   project-level extensions, repo's `node_modules` available. For user-level
+   distribution, npm install still needed.
+
+4. **Stability guarantees.** Undocumented = no deprecation policy. Could change
+   without notice.
+
+### Known Gotchas
+
+| Gotcha | Severity | Impact on Cairn |
+|--------|----------|----------------|
+| **.mjs only** — no TypeScript | Low | Must compile to .mjs. Build already exists. |
+| **State resets on `/clear`** | Medium | DB + in-memory state lost. Must re-open on reload. |
+| **Hook overwrite bug (#2076)** | High | If other extensions have hooks, only last-loaded fires. Cairn's could be silently dropped. |
+| **Tool name collisions** | Medium | Silent failure if another extension uses same name. Use prefix. |
+| **stdout reserved for JSON-RPC** | Low | Must use `session.log()`, not `console.log()`. |
+| **Undocumented** | Medium | No official support. API could change. |
+
+---
+
+## Decision Options for Aaron
+
+### Option A: Spike the Extension (Recommended)
+1-2 sessions of effort. If successful, gain persistent DB, unified hooks+tools,
+eliminate PS1 wrappers. Risk: undocumented feature, hook overwrite bug, native
+module resolution on all platforms.
+
+### Option B: Skip Extensions
+Current MCP + hooks architecture works well. 400ms startup tolerable. PS1
+wrappers are fragile but functional. Focus effort on npm publish and worktree
+support instead.
+
+### Option C: Extension-Only (Not Recommended)
+Drop MCP entirely. Loses VS Code support, coding agent support, plugin
+distribution. Too much portability sacrifice.
+
+---
+
+## References
+
+- [htek.dev: Copilot CLI Extensions Complete Guide](https://htek.dev/articles/github-copilot-cli-extensions-complete-guide/)
+- [Copilot CLI Plugin Reference](https://docs.github.com/en/copilot/reference/cli-plugin-reference)
+- [Creating Plugins](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-creating)
+- [About CLI Plugins](https://docs.github.com/en/copilot/concepts/agents/copilot-cli/about-cli-plugins)
+- Internal: Phase 5 MCP Server (src/mcp/server.ts)
+- Internal: Phase 6 Plugin Infrastructure (`.github/plugin/*`)
+- CLI version verified: 1.0.18
+- `@github/copilot-sdk` verified in squad-cli's node_modules
+

@@ -1,0 +1,24 @@
+{
+  "name": "cairn-marketplace",
+  "description": "Plugin marketplace for Cairn — agentic software engineering platform.",
+  "owner": {
+    "name": "akubly",
+    "url": "https://github.com/akubly"
+  },
+  "plugins": [
+    {
+      "name": "cairn",
+      "description": "Session tracking, knowledge curation, and context engineering via MCP tools and lifecycle hooks.",
+      "version": "0.1.0",
+      "source": ".",
+      "keywords": [
+        "cairn",
+        "agentic",
+        "mcp",
+        "hooks",
+        "session-tracking"
+      ],
+      "license": "MIT"
+    }
+  ]
+}

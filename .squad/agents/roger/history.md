@@ -8,7 +8,37 @@
 
 ## Learnings
 
-<!-- Append learnings below -->
+### Core Learning Archive (Pre-Phase 6)
+
+**Copilot SDK & Extensibility Landscape:**
+- Three SDK layers: CLI SDK (embedding), Extensions SDK (distribution, SSE streaming), Engine SDK (custom agents).
+- MCP (Model Context Protocol) is the universal tool integration standard across all three layers.
+- Extensions have two patterns: Skillsets (lightweight REST, GitHub handles AI) vs Agents (full control).
+- MCP config locations: `.vscode/mcp.json` (workspace), `~/.copilot/mcp-config.json` (user), `.copilot/mcp.json` (repo).
+- Auth evolution: X-GitHub-Token → OIDC signature verification.
+- Copilot CLI SDK supports BYOK (Bring Your Own Key) for OpenAI, Azure, Anthropic.
+
+**Code Patterns Established:**
+- SQLite datetime normalization: `YYYY-MM-DD HH:MM:SS` → ISO-8601 before parsing (T separator + Z suffix).
+- `parseSqliteDateToMs()` shared utility in src/utils/timestamps.ts.
+- `isScript` guard pattern: `url.pathToFileURL(path.resolve(process.argv[1])).href` for reliable module scope detection.
+- DB cleanup: `dbOpened` + `finally` is canonical pattern for hook entry points.
+- Git cost in hooks acceptable (~10ms) because Node startup + DB open (~400ms) dominate budget.
+- Migration assertions: db.test.ts must update both expected migration count and max schema_version on migration addition.
+
+**MCP Server Implementation:**
+- `McpServer` (high-level) + `StdioServerTransport` from SDK v1.29.
+- `registerTool(name, config, callback)` with `{ title, description, inputSchema, annotations }`.
+- `inputSchema` takes Zod v4 raw shape (plain object), not `z.object()`.
+- Tool callbacks async, return `{ content: [{ type: 'text', text: string }] }`.
+- DB singleton pattern: call `ensureDb()` in each handler.
+- Verb taxonomy: get (single) | list (collection) | search (query) | run (side effect) | check (boolean).
+- 6 tools: get_status, list_insights, get_session, search_events, run_curate, check_event. All unprefixed verb_noun.
+- Test backing functions, not transport.
+
+**Rounds 1–5 learnings tracked in previous history entries (archived).**
+
+<!-- Append new learnings below -->
 
 ### 2026-03-28: Copilot SDK & Platform Extensibility Recon
 
@@ -83,6 +113,41 @@
 **Execution timeline:**
 - 05:13Z — Graham Round 1 review: APPROVE WITH CONDITIONS (5 findings)
 - 05:16Z — Applied all 5 fixes; 134 tests pass, no regression
+
+### 2026-04-02: Phase 6 Hook Wrapper Scripts — PowerShell Implementation
+
+**Task:** Create portable PowerShell hook wrappers for plugin distribution.
+
+**Deliverable:**
+- `.github/hooks/cairn/hooks.json` — Hook registration (coordination with Rosella)
+- `.github/hooks/cairn/curate.ps1` — preToolUse wrapper
+- `.github/hooks/cairn/record.ps1` — postToolUse wrapper
+
+**Design: Two-Tier Path Resolution**
+
+Both scripts implement fail-open pattern with portable path resolution:
+1. **Primary:** `~/.cairn/hook/{sessionStart|postToolUse}.mjs` (after user-level install)
+2. **Fallback:** Relative `$PSScriptRoot` path to repo `dist/hooks/` (dev mode)
+
+**Implementation Pattern:**
+```powershell
+$hookScript = Join-Path $env:USERPROFILE '.cairn' 'hook' 'sessionStart.mjs'
+if (-not (Test-Path $hookScript)) {
+    $hookScript = Join-Path $PSScriptRoot '..\..\..\..' 'dist' 'hooks' 'sessionStart.js'
+    if (-not (Test-Path $hookScript)) { exit 0 }
+}
+$raw | node $hookScript 2>$null
+```
+
+**Key Design Decisions:**
+- Use $PSScriptRoot (not absolute paths) for repo layout portability
+- Suppress stderr (2>$null) — hooks fail silently if node entry point fails
+- Exit 0 on missing paths — fail-open principle
+- Check $env:USERPROFILE path first — installed takes precedence over dev
+
+**Status:** Ready for `src/install.ts` to copy to `~/.copilot/hooks/cairn/`. Bash wrappers (curate.sh, record.sh) deferred to Phase 7.
+
+**Cross-team coordination:** Confirmed hooks.json ownership with Rosella (plugin manifest, her domain). These scripts are implementation detail of user-level hook installation (Roger's domain).
 - 05:22Z — Graham Round 2 re-review: APPROVE (no new issues)
 - 05:28Z — Commit, push, opened PR #10
 
@@ -108,3 +173,19 @@
 
 - **JSDoc `@param limit` added to `findEvents()`** — documents default 100, max 500. Review comment pointed out the parameter was undocumented after the Round 3 changes added it.
 - **Response helper extraction (jsonText/jsonError) deferred.** Graham ruled it's a valid refactor but no behavioral impact — save for a follow-up PR. Don't mix refactors into a feature PR unless they carry behavioral weight.
+
+### Portable Hook Wrappers — `.github/hooks/cairn/`
+
+- **3-step resolution replaces hardcoded paths.** User override (`~/.cairn/hook/`) → npm global install (`npm root -g`) → `$PSScriptRoot` relative fallback. Eliminates machine-specific absolute paths.
+- **`npm root -g` is the portable discovery mechanism.** ~50ms cost is acceptable within the 500ms hook budget. Only runs when user override isn't found.
+- **`$PSScriptRoot` relative path for repo checkout fallback.** Scripts at `.github/hooks/cairn/` navigate `..\..\..` to reach `dist/hooks/`. Works regardless of where the repo is cloned.
+- **hooks.json uses repo-relative paths.** The `powershell` field references `.github/hooks/cairn/*.ps1` — Copilot resolves these from repo root.
+- **Fail-open pattern preserved.** `$ErrorActionPreference = 'SilentlyContinue'`, outer try/catch, and unconditional `exit 0` ensure hooks never break the user.
+
+### Phase 6: npm Publish Preparation
+
+- **`files` whitelist > `.npmignore`** — The `files` array in package.json is a positive-list approach: only listed paths get published. Safer than `.npmignore` because new directories (like `.squad/`) are excluded by default. No `.npmignore` file needed.
+- **Published contents:** `dist/`, `.github/hooks/`, `.github/plugin/`, plus auto-included `README.md`, `LICENSE`, `package.json`. 66 files, 27.2 kB compressed.
+- **`prepublishOnly: "npm run build"`** ensures `dist/` is always fresh before publish. Standard npm lifecycle hook.
+- **Added keywords:** `copilot-plugin`, `mcp`, `model-context-protocol` for npm discoverability. Added `homepage` field pointing to GitHub readme.
+- **Verification:** 136/136 tests pass, clean build, clean lint, `npm pack --dry-run` confirms no source, tests, or squad state in tarball.

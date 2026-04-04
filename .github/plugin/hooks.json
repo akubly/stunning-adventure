@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "powershell": ".github/hooks/cairn/curate.ps1",
+        "timeoutSec": 10
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "powershell": ".github/hooks/cairn/record.ps1",
+        "timeoutSec": 5
+      }
+    ]
+  }
+}

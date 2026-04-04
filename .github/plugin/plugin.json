@@ -1,0 +1,23 @@
+{
+  "name": "cairn",
+  "description": "Cairn — agentic software engineering platform. Session tracking, knowledge curation, and context engineering via MCP tools and lifecycle hooks.",
+  "version": "0.1.0",
+  "author": {
+    "name": "akubly",
+    "url": "https://github.com/akubly"
+  },
+  "repository": "https://github.com/akubly/stunning-adventure",
+  "license": "MIT",
+  "keywords": [
+    "cairn",
+    "agentic",
+    "copilot",
+    "mcp",
+    "session-tracking",
+    "knowledge-curation",
+    "context-engineering",
+    "hooks"
+  ],
+  "hooks": "hooks.json",
+  "mcpServers": ".mcp.json"
+}

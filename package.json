@@ -9,13 +9,19 @@
     "cairn": "dist/cli.js",
     "cairn-mcp": "dist/mcp/server.js"
   },
+  "files": [
+    "dist/",
+    ".github/hooks/",
+    ".github/plugin/"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
     "lint": "eslint src/",
     "clean": "rimraf dist coverage",
     "typecheck": "tsc --noEmit",
-    "mcp": "node dist/mcp/server.js"
+    "mcp": "node dist/mcp/server.js",
+    "prepublishOnly": "npm run build && npm run test && npm run lint"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -26,10 +32,14 @@
     "type": "git",
     "url": "https://github.com/akubly/stunning-adventure.git"
   },
+  "homepage": "https://github.com/akubly/stunning-adventure#readme",
   "keywords": [
     "cairn",
     "agentic",
     "copilot",
+    "copilot-plugin",
+    "mcp",
+    "model-context-protocol",
     "software-engineering",
     "cli"
   ],
