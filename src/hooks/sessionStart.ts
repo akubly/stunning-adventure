@@ -12,9 +12,6 @@
  * Fail-open: any error exits with code 0. Hooks must never break the user.
  */
 
-import path from 'node:path';
-import url from 'node:url';
-import fs from 'node:fs';
 import { getDb, closeDb } from '../db/index.js';
 import { getActiveSession } from '../db/sessions.js';
 import { getLastEventTime } from '../db/events.js';
@@ -22,6 +19,7 @@ import { catchUpPreviousSession } from '../agents/archivist.js';
 import { curate } from '../agents/curator.js';
 import { getRepoKey } from './gitContext.js';
 import { parseSqliteDateToMs } from '../utils/timestamps.js';
+import { checkIsScript } from '../utils/isScript.js';
 
 interface HookInput {
   toolName: string;
@@ -105,17 +103,7 @@ async function main(): Promise<void> {
 }
 
 // Only run CLI entrypoint when executed as a script, not when imported.
-let resolvedArgv: string | undefined;
-const argv1 = process.argv[1];
-if (argv1) {
-  const resolvedPath = path.resolve(argv1);
-  try {
-    resolvedArgv = url.pathToFileURL(fs.realpathSync(resolvedPath)).href;
-  } catch {
-    resolvedArgv = url.pathToFileURL(resolvedPath).href;
-  }
-}
-const isScript = resolvedArgv !== undefined && import.meta.url === resolvedArgv;
+const isScript = checkIsScript(import.meta.url);
 if (isScript) {
   main();
 }

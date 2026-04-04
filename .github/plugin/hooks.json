@@ -4,16 +4,14 @@
     "preToolUse": [
       {
         "type": "command",
-        "bash": "node dist/hooks/sessionStart.js",
-        "powershell": "node dist/hooks/sessionStart.js",
+        "powershell": ".github/hooks/cairn/curate.ps1",
         "timeoutSec": 10
       }
     ],
     "postToolUse": [
       {
         "type": "command",
-        "bash": "node dist/hooks/postToolUse.js",
-        "powershell": "node dist/hooks/postToolUse.js",
+        "powershell": ".github/hooks/cairn/record.ps1",
         "timeoutSec": 5
       }
     ]

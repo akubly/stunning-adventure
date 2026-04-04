@@ -8,12 +8,10 @@
  *   $hookData | node dist/hooks/postToolUse.js
  */
 
-import path from 'node:path';
-import url from 'node:url';
-import fs from 'node:fs';
 import { getDb, closeDb } from '../db/index.js';
 import { startSession, recordToolUse, recordError } from '../agents/archivist.js';
 import { getRepoKey, getBranch } from './gitContext.js';
+import { checkIsScript } from '../utils/isScript.js';
 
 interface HookInput {
   toolName: string;
@@ -71,17 +69,7 @@ async function main(): Promise<void> {
 }
 
 // Only run CLI entrypoint when executed as a script, not when imported.
-let resolvedArgv: string | undefined;
-const argv1 = process.argv[1];
-if (argv1) {
-  const resolvedPath = path.resolve(argv1);
-  try {
-    resolvedArgv = url.pathToFileURL(fs.realpathSync(resolvedPath)).href;
-  } catch {
-    resolvedArgv = url.pathToFileURL(resolvedPath).href;
-  }
-}
-const isScript = resolvedArgv !== undefined && import.meta.url === resolvedArgv;
+const isScript = checkIsScript(import.meta.url);
 if (isScript) {
   main();
 }

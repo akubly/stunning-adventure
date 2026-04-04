@@ -8,9 +8,6 @@
  * MCP host (e.g. Copilot CLI, VS Code).
  */
 
-import path from 'node:path';
-import url from 'node:url';
-import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -28,6 +25,7 @@ import {
 } from '../agents/sessionState.js';
 
 import type { InsightStatus } from '../types/index.js';
+import { checkIsScript } from '../utils/isScript.js';
 
 // ---------------------------------------------------------------------------
 // Server setup
@@ -370,17 +368,7 @@ async function main(): Promise<void> {
 }
 
 // Only run when executed as a script, not when imported.
-let resolvedArgv: string | undefined;
-const argv1 = process.argv[1];
-if (argv1) {
-  const resolvedPath = path.resolve(argv1);
-  try {
-    resolvedArgv = url.pathToFileURL(fs.realpathSync(resolvedPath)).href;
-  } catch {
-    resolvedArgv = url.pathToFileURL(resolvedPath).href;
-  }
-}
-const isScript = resolvedArgv !== undefined && import.meta.url === resolvedArgv;
+const isScript = checkIsScript(import.meta.url);
 if (isScript) {
   main().catch((err: unknown) => {
     process.stderr.write(`Cairn MCP server failed to start: ${String(err)}\n`);
