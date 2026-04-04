@@ -80,7 +80,7 @@ cd stunning-adventure
 npm install && npm run build && npm link
 ```
 
-Then register the MCP server in `~/.copilot/mcp-config.json` — see [Plugin Packaging](#plugin-packaging) for details.
+Then register the MCP server — see [Plugin Packaging](#plugin-packaging) for config options.
 
 ## Usage
 
@@ -117,6 +117,14 @@ npm run lint      # ESLint
 npm run typecheck # tsc --noEmit
 npm run mcp       # Start the MCP server (requires build first)
 ```
+
+## Plugin Packaging
+
+Cairn ships as a Copilot CLI plugin. The manifests in `.github/plugin/` declare hooks, MCP tools, and metadata so the CLI can wire everything automatically on install.
+
+**MCP config** can live in two places — repo-scoped (`.copilot/mcp-config.json`, checked into the project) or user-scoped (`~/.copilot/mcp-config.json`, personal overrides). Repo-scoped config is picked up automatically when working inside the repo; user-scoped config applies globally.
+
+For local development, `npm link` + the repo-scoped config is enough. For global use, copy the server entry to your user-scoped config.
 
 ## Roadmap
 
