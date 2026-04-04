@@ -391,19 +391,30 @@ Conducted deep research into GitHub Copilot's full extensibility landscape. Key 
 
 **Branch:** `squad/phase6-plugin-packaging` → PR #12
 
-### 2026-04-03: CLI Extensions Investigation — "Extensions" Don't Exist
+### 2026-04-03: CLI Extensions Investigation — CORRECTED
 
 **Trigger:** Aaron asked whether Copilot CLI "extensions" (`.github/extensions/`, `extensions_manage`) could replace Cairn's MCP server as a simpler tool registration mechanism.
 
-**Key finding: "Extensions" is not a Copilot CLI concept.** Exhaustive research confirms no `.github/extensions/` convention, no `extensions_manage` or `extensions_reload` commands, no `~/.copilot/extensions/` directory. The term maps to either: (1) the deprecated GitHub App-based "Copilot Extensions" (sunset Nov 2025), or (2) the Plugin system, which is the CLI's distribution mechanism.
+**⚠️ Round 1 was wrong.** Initial investigation concluded extensions don't exist. They do. Extensions are a fully implemented but undocumented feature: persistent Node.js child processes communicating via JSON-RPC, capable of registering custom tools AND lifecycle hooks. Confirmed via `@github/copilot-sdk` source (found in squad-cli's node_modules) and community reverse-engineering ([htek.dev guide](https://htek.dev/articles/github-copilot-cli-extensions-complete-guide/)).
 
-**Critical architectural fact: MCP is the sole tool registration protocol.** Of the seven extensibility layers (Instructions, Skills, Agents, Hooks, MCP, Plugins, ACP), only MCP servers can register tools that appear in the agent's tool list with structured schemas. Skills inject instructions but don't register tools. Agents define personas but use existing tools. There is no alternative to MCP for Cairn's 6 tools.
+**Investigation methodology failure:** Searched official docs, CLI help, and directory conventions — all negative. Should have inspected SDK source code and type definitions directly. "No documentation" ≠ "doesn't exist." Future investigations must be artifact-centric, not documentation-centric.
 
-**Plugin ≠ replacement, Plugin = distribution wrapper.** A plugin can bundle an `.mcp.json` that auto-configures the MCP server on `copilot plugin install`. This is exactly what Phase 6 already built (`.github/plugin/.mcp.json`). The plugin system wraps MCP, it doesn't replace it.
+**What extensions offer Cairn:**
+1. **Persistent DB connection** — open knowledge.db once per session, not per tool call (~400ms savings × 200+ calls/session)
+2. **Unified hooks + tools** — one process replaces MCP server + hooks.json + PS1 wrappers + sessionStart.ts + postToolUse.ts
+3. **No PS1 wrappers** — the entire record.ps1/curate.ps1 pipeline disappears
+4. **Event subscription** — `session.on()` for richer observability than postToolUse hooks
 
-**Portability trade-off identified:** Plugins are CLI-specific. VS Code and GitHub.com coding agent don't use the plugin system but do support MCP. Recommendation: maintain both paths — raw `mcp-config.json` for universal compatibility, plugin for CLI convenience.
+**What extensions cost:**
+1. **CLI-only** — VS Code, coding agent, other MCP hosts can't use them
+2. **No plugin/marketplace** — file-copy distribution only. plugin.json has no `extensions` field (verified: zero of 15 installed plugins reference extensions)
+3. **Undocumented** — no official GitHub docs, no deprecation policy
+4. **Hook overwrite bug (#2076)** — if multiple extensions register hooks, only last-loaded fires
+5. **Native module distribution** — better-sqlite3 needs npm install regardless
 
-**Backlog item suggested:** "Package Cairn as a Copilot CLI Plugin" (Phase 7+, low priority). Bundle MCP server + optional cairn-analyst agent + session-review skill in a plugin. Not urgent — we're our own first consumer and manual config works.
+**Architectural recommendation:** Build BOTH. Extension as primary CLI surface (persistent state, unified hooks+tools). MCP as universal distribution path (VS Code, coding agent, plugin install). Backing functions are already factored for this (Phase 5 convention: test backing functions, not transport). Two thin transport layers, shared core.
+
+**Phased approach suggested:** Spike (1-2 sessions) → Validate (1 week) → Decide. Don't commit until hook overwrite bug and native module resolution are verified on our CLI version (1.0.18).
 
 **Decision document:** `.squad/decisions/inbox/graham-cli-extensions-investigation.md`
 
@@ -420,3 +431,5 @@ Aaron asked three targeted follow-ups about delivery vehicles, npm vs plugin, an
 3. **Infrastructure is already built.** Phase 6 created all four required files (plugin.json, marketplace.json, hooks.json, .mcp.json). The only change needed is the `.mcp.json` command path after npm publish. This is ~30 minutes of work, not a separate phase.
 
 4. **Revised priority.** Plugin distribution upgraded from "Low (Phase 7+)" to "Medium (part of npm publish work)." It's a configuration change, not a development effort.
+
+5. **Plugins cannot bundle extensions.** No `extensions` field in plugin.json schema. Extensions and plugins are architecturally separate with no bridging mechanism. Extensions are file-copy to `.github/extensions/` or `~/.copilot/extensions/` only.
