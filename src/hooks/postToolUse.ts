@@ -71,14 +71,17 @@ async function main(): Promise<void> {
 }
 
 // Only run CLI entrypoint when executed as a script, not when imported.
-// realpathSync can throw (ENOENT/EINVAL) for non-file argv like `node -e`.
-let resolvedArgv: string;
-try {
-  resolvedArgv = url.pathToFileURL(fs.realpathSync(path.resolve(process.argv[1]))).href;
-} catch {
-  resolvedArgv = url.pathToFileURL(path.resolve(process.argv[1])).href;
+let resolvedArgv: string | undefined;
+const argv1 = process.argv[1];
+if (argv1) {
+  const resolvedPath = path.resolve(argv1);
+  try {
+    resolvedArgv = url.pathToFileURL(fs.realpathSync(resolvedPath)).href;
+  } catch {
+    resolvedArgv = url.pathToFileURL(resolvedPath).href;
+  }
 }
-const isScript = process.argv[1] && import.meta.url === resolvedArgv;
+const isScript = resolvedArgv !== undefined && import.meta.url === resolvedArgv;
 if (isScript) {
   main();
 }
