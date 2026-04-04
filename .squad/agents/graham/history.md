@@ -390,3 +390,33 @@ Conducted deep research into GitHub Copilot's full extensibility landscape. Key 
 **Review pattern learned:** When a bug fix (isScript) removes the need for a workaround (direct node invocation), check whether the workaround was also applied elsewhere. The `.mcp.json` change was a workaround that should have been reverted once the root cause fix landed.
 
 **Branch:** `squad/phase6-plugin-packaging` → PR #12
+
+### 2026-04-03: CLI Extensions Investigation — "Extensions" Don't Exist
+
+**Trigger:** Aaron asked whether Copilot CLI "extensions" (`.github/extensions/`, `extensions_manage`) could replace Cairn's MCP server as a simpler tool registration mechanism.
+
+**Key finding: "Extensions" is not a Copilot CLI concept.** Exhaustive research confirms no `.github/extensions/` convention, no `extensions_manage` or `extensions_reload` commands, no `~/.copilot/extensions/` directory. The term maps to either: (1) the deprecated GitHub App-based "Copilot Extensions" (sunset Nov 2025), or (2) the Plugin system, which is the CLI's distribution mechanism.
+
+**Critical architectural fact: MCP is the sole tool registration protocol.** Of the seven extensibility layers (Instructions, Skills, Agents, Hooks, MCP, Plugins, ACP), only MCP servers can register tools that appear in the agent's tool list with structured schemas. Skills inject instructions but don't register tools. Agents define personas but use existing tools. There is no alternative to MCP for Cairn's 6 tools.
+
+**Plugin ≠ replacement, Plugin = distribution wrapper.** A plugin can bundle an `.mcp.json` that auto-configures the MCP server on `copilot plugin install`. This is exactly what Phase 6 already built (`.github/plugin/.mcp.json`). The plugin system wraps MCP, it doesn't replace it.
+
+**Portability trade-off identified:** Plugins are CLI-specific. VS Code and GitHub.com coding agent don't use the plugin system but do support MCP. Recommendation: maintain both paths — raw `mcp-config.json` for universal compatibility, plugin for CLI convenience.
+
+**Backlog item suggested:** "Package Cairn as a Copilot CLI Plugin" (Phase 7+, low priority). Bundle MCP server + optional cairn-analyst agent + session-review skill in a plugin. Not urgent — we're our own first consumer and manual config works.
+
+**Decision document:** `.squad/decisions/inbox/graham-cli-extensions-investigation.md`
+
+#### Follow-Up: Distribution Mechanics (same session)
+
+Aaron asked three targeted follow-ups about delivery vehicles, npm vs plugin, and the `marketplace add` → `plugin install` flow.
+
+**Key new findings:**
+
+1. **Plugin install ≠ npm install.** Verified empirically: zero installed plugins on this machine have `node_modules/`. Plugin install clones Markdown/JSON assets. It does NOT run `npm install` or compile native modules. npm publish remains non-negotiable for Cairn's MCP server (better-sqlite3 is a native C++ addon).
+
+2. **The `npx -y` bridge pattern.** Every MCP server on Aaron's machine uses `npx -y @package/name` in its config — this auto-installs from npm on first invocation. After npm publish, Cairn's `.mcp.json` should switch from `node dist/mcp/server.js` to `npx -y --package=@akubly/cairn cairn-mcp`. This makes plugin install self-sufficient: it registers the MCP config, npx handles the npm dependency chain.
+
+3. **Infrastructure is already built.** Phase 6 created all four required files (plugin.json, marketplace.json, hooks.json, .mcp.json). The only change needed is the `.mcp.json` command path after npm publish. This is ~30 minutes of work, not a separate phase.
+
+4. **Revised priority.** Plugin distribution upgraded from "Low (Phase 7+)" to "Medium (part of npm publish work)." It's a configuration change, not a development effort.

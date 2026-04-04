@@ -886,3 +886,379 @@ if (isScript) {
 **Resolution:** Roger applied fix. Round 1 blocker. Verified in Round 2 re-review. No regression.
 
 **Status:** Complete. Merged to Phase 5 codebase.
+
+---
+
+# Investigation: Can Cairn Replace MCP with a Copilot CLI "Extension"?
+
+**Author:** Graham (Lead / Architect)  
+**Date:** 2026-04-03  
+**Requested by:** Aaron  
+**Type:** Research / Backlog Investigation  
+**Status:** Complete — No action recommended at this time
+
+---
+
+## Executive Summary
+
+**"Extensions" do not exist as a Copilot CLI concept.** The term maps to one of
+two things: (1) the deprecated GitHub App-based "Copilot Extensions" (sunset
+Nov 2025), or (2) the **Plugin** system, which is the CLI's packaging and
+distribution mechanism. Neither can replace Cairn's MCP server.
+
+**The critical finding: there is no way to register custom tools in Copilot CLI
+without MCP.** MCP is the sole tool registration protocol. Skills inject
+instructions, agents define personas, hooks provide lifecycle events — but only
+MCP servers add tools to the agent's tool list. This is by design in the
+extensibility hierarchy.
+
+**However,** the Plugin system offers a significantly better *distribution*
+story than raw MCP configuration. This is worth pursuing as a Phase 7+ item to
+wrap the existing MCP server in a plugin package.
+
+---
+
+## Research Findings
+
+### 1. What Are "Copilot CLI Extensions"?
+
+**They don't exist.** Exhaustive investigation confirms:
+
+- No `.github/extensions/` directory convention exists in any Copilot
+  documentation
+- No `extensions_manage` or `extensions_reload` commands exist in the CLI
+  (checked `/help` output and official docs)
+- No `~/.copilot/extensions/` directory exists on this machine
+- The term "extension" in the Copilot ecosystem refers exclusively to the
+  **deprecated GitHub App-based Copilot Extensions** (sunset Nov 10, 2025)
+
+**What Aaron likely observed:** The CLI's tool list shows MCP-provided tools
+with server-prefixed names (e.g., `cairn-get_status`). These look like
+"extension-provided tools" but are standard MCP tools with host-applied
+namespacing.
+
+### 2. The Copilot CLI Extensibility Hierarchy
+
+The CLI has seven extensibility layers, each with a distinct purpose:
+
+| Layer | Purpose | Registers Tools? |
+|-------|---------|:-:|
+| **Custom Instructions** | Behavioral guidance (Markdown) | ❌ |
+| **Skills** | Task-specific workflows (SKILL.md + scripts) | ❌ |
+| **Custom Agents** | Personas with tool filtering (.agent.md) | ❌ (uses existing) |
+| **Hooks** | Lifecycle events (shell commands) | ❌ |
+| **MCP Servers** | External tool registration | ✅ **Only mechanism** |
+| **Plugins** | Distribution packaging (bundles all above) | Via bundled MCP |
+| **ACP** | Expose agent as service | N/A (outbound) |
+
+**Key insight:** Skills can run scripts (via the shell tool), but this is
+fundamentally different from registering tools. A skill script runs when the
+skill is invoked and follows the skill's instructions. An MCP tool appears in
+the agent's tool list, has a schema, and can be selected by the LLM
+autonomously based on description matching. Cairn needs the latter — the agent
+must be able to call `get_status` or `check_event` without being explicitly
+told to invoke a skill.
+
+### 3. The Plugin System — Distribution, Not Replacement
+
+Plugins are the correct answer to a *different* question: "How do we make Cairn
+easier to install?" Currently, Cairn requires manual `mcp-config.json` editing:
+
+```json
+{
+  "servers": {
+    "cairn": {
+      "command": "cairn-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+A plugin would handle this automatically. Here's what Cairn-as-a-plugin would
+look like:
+
+```
+stunning-adventure/
+├── plugin.json              # Plugin manifest
+├── .mcp.json                # Auto-configures MCP server
+├── agents/                  # Optional: Cairn-aware agent personas
+│   └── cairn-analyst.agent.md
+├── skills/                  # Optional: Cairn-related skills
+│   └── session-review/
+│       └── SKILL.md
+└── dist/                    # Built MCP server code
+```
+
+**plugin.json:**
+
+```json
+{
+  "name": "cairn",
+  "description": "Agentic session observability — pattern discovery from event streams",
+  "version": "0.1.0",
+  "author": { "name": "akubly" },
+  "license": "MIT",
+  "mcpServers": ".mcp.json"
+}
+```
+
+**.mcp.json:**
+
+```json
+{
+  "servers": {
+    "cairn": {
+      "command": "node",
+      "args": ["dist/mcp/server.js"]
+    }
+  }
+}
+```
+
+**Installation would be:** `copilot plugin install akubly/stunning-adventure`
+— one command, no manual config editing.
+
+### 4. Trade-Off Analysis: MCP Server vs Plugin-Wrapped MCP
+
+| Dimension | Raw MCP Server (current) | Plugin-Wrapped MCP |
+|-----------|-------------------------|-------------------|
+| **Process model** | Separate stdio process | Same (plugin bundles MCP config) |
+| **Tool registration** | Native MCP protocol | Same (plugin → .mcp.json → MCP) |
+| **Startup overhead** | ~400ms per invocation | Same (still MCP under the hood) |
+| **Installation** | Manual mcp-config.json edit | `copilot plugin install` (one command) |
+| **Uninstallation** | Manual config edit | `copilot plugin uninstall cairn` |
+| **Distribution** | npm + manual config | GitHub repo or marketplace |
+| **Cross-platform** | Stdin forwarding issues on Windows | Same (still MCP) |
+| **State management** | DB connection per invocation | Same |
+| **Bundled extras** | Tools only | Can include agents, skills, hooks |
+| **Portability** | Works in any MCP host | CLI-only (VS Code doesn't use plugins) |
+| **Marketplace discoverability** | None | Listed in plugin marketplaces |
+
+### 5. Can Cairn's 6 Tools Work Without MCP?
+
+**No.** Each tool requires:
+
+| Tool | Why MCP is required |
+|------|-------------------|
+| `get_status` | Agent needs to call it autonomously when checking session state |
+| `list_insights` | Agent needs schema-driven filtering (status parameter) |
+| `get_session` | Agent needs to pass session_id parameter with validation |
+| `search_events` | Complex input schema (session_id, type_pattern, limit) |
+| `run_curate` | Triggers side effects (DB writes) — must be a registered tool |
+| `check_event` | Boolean query — agent selects based on tool description matching |
+
+Skills could *instruct* the agent to run a script that calls these functions,
+but this would be fragile, untyped, and require the agent to construct shell
+commands rather than call structured tools. It would regress the clean
+transport-agnostic architecture we established in Phase 5.
+
+---
+
+## Follow-Up: Aaron's Distribution Questions (2026-04-03)
+
+### Q1: What's the delivery vehicle for "CLI extensions"? How do users install them?
+
+**"Extensions" don't exist. The delivery vehicle is Plugins.**
+
+Plugins are installed via `copilot plugin install` and stored as git repo
+clones in `~/.copilot/installed-plugins/`. On this machine:
+
+```
+~/.copilot/installed-plugins/
+└── awesome-copilot/           ← marketplace namespace
+    ├── context-engineering/    ← full repo clone
+    ├── polyglot-test-agent/
+    ├── partners/              ← agents (terraform, neo4j, etc.)
+    └── [12 more plugins]
+```
+
+**What plugins contain:** Markdown-based assets — `.agent.md` files, `SKILL.md`
+files, `hooks.json`, `.mcp.json`. No compiled code, no `node_modules`, no
+native binaries. They're documentation-weight, not software-weight.
+
+**How MCP servers work in plugins:** Two patterns observed in the wild:
+
+1. **Plugin-level `.mcp.json`** — file in plugin root declares MCP servers.
+   The CLI merges these into the user's MCP config at install time. Example:
+   our `.github/plugin/.mcp.json`.
+
+2. **Agent-level inline MCP** — `.agent.md` frontmatter declares
+   `mcp-servers:` with inline config. Example from the installed terraform
+   agent:
+   ```yaml
+   mcp-servers:
+     terraform:
+       type: 'local'
+       command: 'docker'
+       args: ['run', '-i', '--rm', 'hashicorp/terraform-mcp-server:latest']
+   ```
+
+**In both cases, the MCP server binary must already be available.** The plugin
+doesn't install it — it just tells Copilot where to find it. The terraform
+agent uses Docker. Other servers use `npx -y` for auto-install from npm.
+
+### Q2: How does "extension" distribution compare to npm publish?
+
+**They're complementary, not competing. npm publish is still required.**
+
+Plugin install and npm publish serve different installation surfaces:
+
+| What gets installed | Plugin install | npm publish |
+|--------------------|:-:|:-:|
+| Agent definitions (.agent.md) | ✅ | ❌ |
+| Skills (SKILL.md) | ✅ | ❌ |
+| Hooks (hooks.json) | ✅ | ❌ |
+| MCP server registration (.mcp.json) | ✅ | ❌ |
+| Compiled JS code (dist/) | ❌ | ✅ |
+| Native modules (better-sqlite3) | ❌ | ✅ |
+| npm dependencies | ❌ | ✅ |
+| Binaries on PATH (cairn-mcp) | ❌ | ✅ |
+
+**Key evidence:** No installed plugin on this machine has `node_modules/`. Zero.
+Plugin install clones the repo's Markdown/JSON assets. It does NOT run
+`npm install`, does NOT compile native modules, does NOT handle dependencies.
+
+**This means `npm publish @akubly/cairn` is non-negotiable.** The plugin system
+cannot deliver Cairn's MCP server on its own because it can't install
+`better-sqlite3` (native C++ addon requiring compilation) or
+`@modelcontextprotocol/sdk`.
+
+#### The `npx -y` Bridge Pattern
+
+There IS an elegant way to make plugin install self-sufficient: **use `npx -y`
+in the `.mcp.json`**. This is exactly what every other MCP server on Aaron's
+machine does:
+
+```json
+// memory server — auto-installs from npm on first use
+{ "command": "npx", "args": ["-y", "@modelcontextprotocol/server-memory"] }
+
+// sequential-thinking — same pattern
+{ "command": "npx", "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"] }
+```
+
+**For Cairn, after npm publish, the plugin's `.mcp.json` should become:**
+
+```json
+{
+  "mcpServers": {
+    "cairn": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@akubly/cairn", "mcp"]
+    }
+  }
+}
+```
+
+Or, since we export a `cairn-mcp` bin entry:
+
+```json
+{
+  "mcpServers": {
+    "cairn": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "--package=@akubly/cairn", "cairn-mcp"]
+    }
+  }
+}
+```
+
+**With this pattern, `copilot plugin install` becomes a one-command setup:**
+it registers the MCP config, and `npx -y` handles npm installation on first
+tool invocation. No separate `npm install -g` step needed.
+
+**Trade-off:** First invocation pays ~5-10s `npx` install penalty. Subsequent
+invocations use the npx cache. The `npm install -g` path avoids this penalty
+and is better for the "power user" flow.
+
+### Q3: Can we deliver via `marketplace add` → `plugin install`?
+
+**Yes, and we already have the infrastructure built.**
+
+Phase 6 created all four required files in `.github/plugin/`:
+
+| File | Status | Purpose |
+|------|:------:|---------|
+| `plugin.json` | ✅ Built | Manifest (name, version, hooks, mcpServers) |
+| `marketplace.json` | ✅ Built | Marketplace listing (single plugin: cairn) |
+| `hooks.json` | ✅ Built | preToolUse → sessionStart.js, postToolUse → postToolUse.js |
+| `.mcp.json` | ⚠️ Needs update | Currently `node dist/mcp/server.js` (relative path) |
+
+**The complete install flow would be:**
+
+```bash
+# Step 1: Register Cairn's marketplace (one-time)
+copilot plugin marketplace add akubly/stunning-adventure
+
+# Step 2: Install the plugin
+copilot plugin install cairn@cairn-marketplace
+```
+
+This installs agents, skills, hooks, and MCP registration. The MCP server
+itself resolves via `npx -y @akubly/cairn` (after npm publish).
+
+**What still needs to happen before this works end-to-end:**
+
+1. **npm publish `@akubly/cairn`** — makes the package available for `npx -y`
+2. **Update `.github/plugin/.mcp.json`** — change from `node dist/mcp/server.js`
+   to `npx -y --package=@akubly/cairn cairn-mcp`
+3. **Test the full flow** — `marketplace add` → `plugin install` → MCP tools
+   appear in agent tool list
+
+**What does NOT need to happen:** No new infrastructure. The plugin system,
+marketplace manifest, hooks config, and MCP config are all in place from
+Phase 6. This is a configuration change, not a development effort.
+
+---
+
+## Revised Recommendation
+
+### npm publish is the prerequisite. Plugin install is the distribution layer on top.
+
+The original recommendation stands — don't pursue "extensions" (they don't
+exist). But Aaron's follow-up questions reveal the distribution story is
+**closer to ready than previously assessed:**
+
+1. **npm publish is the critical next step** — not for distribution to end
+   users, but because it's what makes `npx -y` work, which is what makes
+   plugin install self-sufficient for MCP servers.
+
+2. **The `.mcp.json` update is trivial** — one line change from relative path
+   to `npx -y @akubly/cairn`. Do this immediately after npm publish.
+
+3. **Plugin install becomes the "golden path"** — one command, zero manual
+   config. npm publish is an implementation detail invisible to the installer.
+
+4. **Keep raw MCP config as the universal path** — VS Code, GitHub.com coding
+   agent, and other MCP hosts don't use the plugin system. Document both:
+   - Quick: `copilot plugin install akubly/stunning-adventure`
+   - Universal: Add cairn entry to `mcp-config.json`
+
+### Updated priority
+
+> **Title:** Publish to npm + Activate Plugin Distribution  
+> **Priority:** Medium (part of npm publish work, not a separate phase)  
+> **Description:** After `npm publish @akubly/cairn`, update
+> `.github/plugin/.mcp.json` to use `npx -y` pattern. Test full
+> `marketplace add` → `plugin install` flow. Document both installation paths
+> in README. This is ~30 minutes of work once npm publish lands.
+
+---
+
+## References
+
+- [Copilot CLI Plugin Reference](https://docs.github.com/en/copilot/reference/cli-plugin-reference)
+- [Creating Plugins](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-creating)
+- [Finding and Installing Plugins](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-finding-installing)
+- [Comparing CLI Features](https://docs.github.com/en/copilot/concepts/agents/copilot-cli/comparing-cli-features)
+- [About CLI Plugins](https://docs.github.com/en/copilot/concepts/agents/copilot-cli/about-cli-plugins)
+- [About Agent Skills](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills)
+- Internal: `.squad/agents/graham/recon-copilot-docs.md` (extensibility hierarchy)
+- Internal: Phase 5 MCP Server (src/mcp/server.ts)
+- Internal: Phase 6 Plugin Infrastructure (`.github/plugin/*`)
+- Empirical: `~/.copilot/installed-plugins/` structure on this machine
+- Empirical: `~/.copilot/mcp-config.json` — all 5 MCP servers use npx or absolute paths
+
