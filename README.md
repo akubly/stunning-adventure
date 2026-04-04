@@ -122,6 +122,20 @@ npm run mcp       # Start the MCP server (requires build first)
 
 Cairn ships as a Copilot CLI plugin. The manifests in `.github/plugin/` declare hooks, MCP tools, and metadata so the CLI can wire everything automatically on install.
 
+The `.github/plugin/.mcp.json` manifest uses `npx` so the MCP server works immediately after plugin install — no local build step required:
+
+```json
+{
+  "mcpServers": {
+    "cairn": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "--package", "@akubly/cairn", "cairn-mcp"]
+    }
+  }
+}
+```
+
 **MCP config** can live in two places — repo-scoped (`.copilot/mcp-config.json`, checked into the project) or user-scoped (`~/.copilot/mcp-config.json`, personal overrides). Repo-scoped config is picked up automatically when working inside the repo; user-scoped config applies globally.
 
 For local development, `npm link` + the repo-scoped config is enough. For global use, copy the server entry to your user-scoped config.

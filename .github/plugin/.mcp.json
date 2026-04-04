@@ -2,8 +2,8 @@
   "mcpServers": {
     "cairn": {
       "type": "stdio",
-      "command": "node",
-      "args": ["dist/mcp/server.js"]
+      "command": "npx",
+      "args": ["-y", "--package", "@akubly/cairn", "cairn-mcp"]
     }
   }
 }
