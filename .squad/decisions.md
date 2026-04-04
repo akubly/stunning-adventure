@@ -524,9 +524,7 @@ Graham presented three Phase 6 options:
 
 **Outcome:** Rosella and Roger executed plugin packaging blueprint concurrently. Plugin infrastructure now in place.
 
-**Full Reports:**
-- `.squad/decisions/inbox/graham-phase6-assessment.md`
-- `.squad/decisions/inbox/graham-worktree-design.md`
+**Full Reports:** *(merged inline above)*
 
 ---
 
@@ -563,7 +561,7 @@ Four installation surfaces identified:
 2. **Next PR:** Move hook scripts into repo, build `cairn install`, fix path resolution (Rosella + Roger executing)
 3. **After:** `plugin.json`, marketplace registration (in progress)
 
-**Full Report:** `.squad/decisions/inbox/graham-install-architecture.md`
+**Full Report:** *(merged inline above)*
 
 ---
 
@@ -611,7 +609,7 @@ Four installation surfaces identified:
 └── version.txt           ← Installed version marker
 ```
 
-**Full Report:** `.squad/decisions/inbox/rosella-plugin-packaging.md`
+**Full Report:** *(merged inline above)*
 
 ---
 
@@ -632,7 +630,7 @@ Four installation surfaces identified:
 - Roger: Be aware `.github/plugin/hooks.json` exists. Your wrapper scripts handle the `~/.copilot/hooks/` user-level install path.
 - Both paths should ultimately invoke the same Node.js entry points.
 
-**Full Report:** `.squad/decisions/inbox/rosella-hooks-json-ownership.md`
+**Full Report:** *(merged inline above)*
 
 ---
 
