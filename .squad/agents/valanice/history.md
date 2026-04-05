@@ -55,3 +55,33 @@
 - Phase 6 context helps next contributors understand roadmap and recent decisions
 
 **Status:** README now reflects current state. Ready for distribution phase.
+
+### 2026-04-05: Phase 6 Complete — Documentation Supports Plugin Distribution
+
+**Phase 6 Outcome:** ✅ COMPLETE
+
+**Final Documentation State:**
+- ✅ Phases section corrected (Phase 4: session-start hook, Phase 5: MCP server, Phase 6: plugin packaging)
+- ✅ Test count accurate (136 tests across 6 files)
+- ✅ "What's Built" section includes Hooks and MCP Server with use-case narratives
+- ✅ Roadmap updated to reflect Phase 6 completion and Phase 7 preview
+- ✅ No speculative content; forward guidance honest about next steps
+
+**Documentation Patterns Reinforced:**
+- Describe what the system DOES, not who built it (narrate work, not worker)
+- Tool documentation follows verb–noun pattern (agent reads verbs intuitively)
+- State what's actually shipped; one sentence on forward plan
+- Omit placeholder instructions for unshipped features (stale docs signal unmaintained project)
+
+**README as System Contract:**
+- Contributors read README first; stale README signals project entropy
+- Test counts, phase labels, and shipping status carry credibility weight
+- Verb–noun naming (from Phase 5 decisions) deserves explanation in user-facing docs
+
+**Phase 6 Specific Fixes:**
+- Added "Hooks" section explaining preToolUse (Curator) and postToolUse (Archivist) lifecycle
+- Added "MCP Server" section with each tool's purpose (structured as q/a: what does this tool tell me?)
+- Corrected Phase 4 label from "Compiler" (aspirational) to "Session-start hook" (actual)
+- Added Phase 6 roadmap context explaining plugin packaging decision vs alternatives
+
+**Status:** Documentation now matches implementation reality. Supports Phase 7 onboarding for installation command development and distribution work.

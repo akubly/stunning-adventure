@@ -112,3 +112,37 @@
 - Repo-level mcp-config.json uses `node` + `args` instead of `cairn-mcp` binary since cloners may not have it globally installed.
 
 **Build/test verification:** TypeScript compiled clean, all 136 tests passed.
+
+### 2026-04-05: Phase 6 Complete — Plugin Packaging Shipped
+
+**Phase 6 Outcome:** ✅ COMPLETE
+
+**Final Deliverables:**
+- ✅ plugin.json: Complete plugin manifest with metadata, version sync, keywords
+- ✅ marketplace.json: Self-referential marketplace source for this repo
+- ✅ hooks.json: Hook registration (preToolUse/postToolUse) with timeouts
+- ✅ .mcp.json: MCP server registration for plugin context
+- ✅ Coordinated with Roger on hook wrapper scripts (curate.ps1, record.ps1)
+- ✅ Reviewed by Graham; all comments addressed in PR #12 (5 iterations)
+- ✅ npm published as @akubly/cairn@0.1.0
+
+**Key Decisions in Phase 6:**
+- hooks.json is a **plugin manifest file** (Rosella's domain) separate from wrapper scripts (Roger's domain)
+- Used \
+ode dist/hooks/...\ commands in hooks.json for cross-platform compatibility
+- marketplace.json as self-referential source enables immediate plugin discovery in Copilot CLI
+- MCP server config deferred npx pattern until after npm publish (resolved in Phase 6)
+
+**Packaging Compliance:**
+- All manifests follow canonical formats from awesome-copilot ecosystem
+- Version in plugin.json synced with package.json (0.1.0)
+- Keywords aligned with ecosystem (plugin, marketplace, mcp, hooks)
+- No breaking changes to existing plugin contracts
+
+**Cross-Team Coordination Notes:**
+- Roger's hook wrappers are implementation detail of user-level installation
+- Graham's code review confirmed manifest compliance and MCP registration
+- Valanice's README refresh documented the new plugin infrastructure
+- npm publish by Roger completed the distribution pipeline
+
+**Status:** Plugin packaging infrastructure complete. All entry points operational. Ready for Phase 7 (CLI installation commands, worktree support, awesome-copilot submission).

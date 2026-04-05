@@ -1,36 +1,40 @@
 ---
-updated_at: 2026-04-04T06:24:00Z
-focus_area: Phase 6 PR #12 open. Phase 7 Backlog evaluation
+updated_at: 2026-04-05T06:08:00Z
+focus_area: Phase 6 COMPLETE. Phase 7 Planning
 active_issues:
-  - "PR #12 — Phase 6 Plugin Packaging (open, awaiting merge)"
+  - "Phase 6 Complete: Plugin packaging shipped, npm published"
   - "#11 — Worktree-aware sessions (deferred to Phase 7)"
-  - "CLI extension prototype evaluation (pending Aaron decision)"
+  - "CLI extension prototype spike (Phase 7 exploratory)"
 ---
 
 # What We're Focused On
 
-**Phase 6: Plugin Packaging Infrastructure** — COMPLETE
+**Phase 6: Plugin Packaging Infrastructure** — ✅ COMPLETE & SHIPPED
 
-Cairn's plugin infrastructure complete. isScript symlink fix applied. PR #12 open for merge.
+@akubly/cairn@0.1.0 published to npm. Plugin infrastructure fully operational.
 
-**Completed:**
+**Completed in Phase 6:**
 - ✅ Plugin manifests (plugin.json, marketplace.json)
 - ✅ Hook declarations (hooks.json)
-- ✅ PowerShell wrapper scripts (curate.ps1, record.ps1)
-- ✅ Architecture assessment (installation surfaces, strategies)
-- ✅ README refresh (test counts, phase labels, MCP/hooks docs)
-- ✅ Install script (src/install.ts) — copies hooks, registers MCP server
-- ✅ CLI commands (src/cli.ts) — cairn install/uninstall/status
-- ✅ isScript symlink fix
-- ✅ Code review & validation (build, tests, lint all passing)
-- ✅ Graham investigation: CLI extensions DO exist (undocumented), architecturally compelling
+- ✅ PowerShell hook wrappers (curate.ps1, record.ps1)
+- ✅ Installation architecture assessment (repo vs user scope, custom install needed)
+- ✅ README refresh (test counts: 106→136, phase labels, MCP/hooks docs)
+- ✅ MCP configuration debugging (3 cycles: stdio args, npm wrappers, symlink resolution)
+- ✅ isScript guard extraction to shared utility (checkIsScript in src/utils/)
+- ✅ Code review 5 cycles (21 total comments, all resolved)
+- ✅ Extensions investigation (extensions ARE real, architecturally significant)
+- ✅ npm publish: @akubly/cairn@0.1.0 (globally installable)
 
-**Current:**
-- 🔄 PR #12 — Phase 6 Plugin Packaging — APPROVED (awaiting merge)
+**Quality Metrics:**
+- ✅ 134/134 tests passing
+- ✅ Clean TypeScript build
+- ✅ Zero lint violations
+- ✅ PR #12 merged
+- ✅ Package published and verified on npm
 
 **Backlog for Phase 7:**
-- 🔄 **CLI extension prototype spike** (DECISION POINT) — Evaluate as MCP alternative. Addresses startup overhead + hook fragility + unified tools+hooks. Decision: Spike (Option A), Skip (Option B), or Extension-only (Option C, not recommended). [More: decisions.md § 2026-04-04]
-- 🔄 npm publish to @akubly/cairn (critical for plugin distribution)
-- 🔄 Worktree support (Issue #11) — session isolation by workdir
-- 🔄 Bash wrappers for macOS/Linux
-- 🔄 awesome-copilot submission
+- 🔄 **CLI extension prototype spike** — Evaluate extensions vs. MCP for Phase 8. Compare startup, state persistence, hook integration. Success criteria: working daemon, performance comparison, migration cost estimate. [Task backlog]
+- 🔄 Worktree support (Issue #11) — session isolation by working directory
+- 🔄 Bash wrappers for macOS/Linux (curate.sh, record.sh)
+- 🔄 awesome-copilot submission & plugin registry integration
+- 🔄 Installation UX refinements (Phase 6 feedback incorporation)

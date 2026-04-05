@@ -433,3 +433,45 @@ Aaron asked three targeted follow-ups about delivery vehicles, npm vs plugin, an
 4. **Revised priority.** Plugin distribution upgraded from "Low (Phase 7+)" to "Medium (part of npm publish work)." It's a configuration change, not a development effort.
 
 5. **Plugins cannot bundle extensions.** No `extensions` field in plugin.json schema. Extensions and plugins are architecturally separate with no bridging mechanism. Extensions are file-copy to `.github/extensions/` or `~/.copilot/extensions/` only.
+
+### 2026-04-05: Phase 6 Complete — Plugin Packaging Shipped & npm Publish
+
+**Phase 6 Outcome:** ✅ COMPLETE AND SHIPPED
+
+**Deliverables:**
+1. ✅ Plugin infrastructure (plugin.json, marketplace.json, hooks.json, .mcp.json)
+2. ✅ PowerShell hook wrappers (curate.ps1, record.ps1) with two-tier path resolution
+3. ✅ README refresh (test counts 106→136, phase labels corrected, hooks/MCP documentation)
+4. ✅ MCP configuration debugging (3 cycles: stdio args, npm wrappers, symlink resolution)
+5. ✅ isScript guard extraction to shared utility (src/utils/isScript.ts)
+6. ✅ Code review 5 cycles (21 total comments, all resolved)
+7. ✅ @akubly/cairn@0.1.0 published to npm
+
+**PR #12 Review Process:**
+- Round 1: 3 comments (CR byte, README clarity, broken refs) → Fixed
+- Round 2: 3 comments (hooks.json spec, prepublishOnly gates, more refs) → Fixed
+- Round 3+: Additional refinements (realpathSync safety, argv[1] guard, isScript extraction)
+- Final status: 21 total comments across all cycles, all resolved, approved and merged
+
+**MCP Configuration Debugging:**
+- **Cycle 1:** Changed `.copilot/mcp-config.json` from `cairn-mcp` binary (didn't exist) to `node dist/mcp/server.js`
+- **Cycle 2:** npm link created symlinks; isScript guard failed; switched to direct node invocation
+- **Cycle 3:** fs.realpathSync could crash; added try/catch with fail-open semantics
+
+**Quality Metrics:**
+- 134/134 tests passing (final)
+- Clean TypeScript build
+- Zero lint violations
+- All validation gates: build, test, lint, manifest, MCP registration, package.json
+
+**Key Learning:** Plugin ecosystem maturity issues — specs emerging, manual review necessary despite tooling. Five comment rounds on plugin packaging suggests complexity exceeds initial estimate. Code review burden higher for ecosystem artifacts than core code.
+
+**Backlog for Phase 7:**
+- CLI extension prototype spike (real evaluation, not skip decision)
+- Worktree support (#11)
+- Bash wrappers (macOS/Linux)
+- awesome-copilot submission
+
+**Lesson Applied:** Extensions investigation showed importance of artifact-centric investigation (inspect SDK source, type defs) vs documentation-centric (which leads to false negatives). This pattern will inform Phase 7 research tasks.
+
+**Critical Cross-Team Observation:** Installation architecture revealed three surfaces were broken (MCP registration missing, hooks hardcoded, binaries not on PATH). Phase 6 fixed manifests but still needs Phase 7 CLI implementation (cairn install/uninstall) for end-to-end automation. Plugin distribution requires this before it's production-ready.
