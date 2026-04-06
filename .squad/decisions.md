@@ -1096,3 +1096,314 @@ distribution. Too much portability sacrifice.
 - CLI version verified: 1.0.18
 - `@github/copilot-sdk` verified in squad-cli's node_modules
 
+---
+
+## Phase 7 Decisions (2026-04-06) — Prescriber Planning Session
+
+### 2026-04-06: Prescriber Architecture — Design & Phased Implementation Plan
+
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-04-06  
+**Type:** Architecture  
+**Status:** Proposal — awaiting team review
+
+**Decision:** The Prescriber closes the feedback loop from pattern detection (Curator) through actionable recommendations (Prescriber) to user-approved changes. It is Cairn's third core agent.
+
+**Architecture Positioning:**
+```
+Events → Insights → Prescriptions → Human Approval → Applied Changes
+  ↑                                                        │
+  └────────── disposition events ──────────────────────────┘
+```
+
+**Core Design Decisions:**
+
+1. **MCP-Only Generation (V1)** — Prescription generation is not in the preToolUse hot path. MCP tools trigger generation on-demand. No hook wrappers needed.
+
+2. **Notification Hint (V1.1)** — Single lightweight query to preToolUse: write `pending_prescriptions_count` to `prescriber_state` table (<5ms). MCP tools surface notification proactively.
+
+3. **Performance Budget** — Hook cost breakdown (Windows p50):
+   - Fast path: ~410ms (session exists, exit)
+   - Slow path: ~460ms + curate (up to 3s cap)
+   - Safety margin: 6.2s for other plugins
+   - Total: within 10s timeout
+
+4. **Data Model: `prescriptions` Table (Migration 005)** — 7-state lifecycle: generated → presented → {approved, rejected} → applying → {applied, failed}. Plus expired for abandoned prescriptions.
+
+5. **Artifact Topology: In-Memory, Ephemeral** — Scanned at Prescriber startup, not persisted. Passed to prescription generator as input. Covers user-level (~/.copilot), project-level (.github), and plugin scopes.
+
+6. **MCP Tool Surface: 4 Tools**
+   - `list_prescriptions` — list pending, filtered by status, insight_id
+   - `get_prescription` — full detail: insight context, proposed change, confidence
+   - `decide_prescription` — apply, reject, dismiss with reason
+   - `generate_prescriptions` — explicit trigger, optional force re-generation
+
+7. **No Separate Hook** — Prescriber doesn't register new hooks. All logic in MCP. Event recording flows through existing Archivist's `logEvent()` path.
+
+**Phased Implementation:**
+- **V1:** MCP tools only, pending prescriptions
+- **V1.1:** DB-persisted notification hint, `get_status` integration
+- **V2:** File write capability, fingerprint drift detection, apply-action implementation
+- **V3:** Conflict resolution, multi-prescription logic, growth tracking
+
+**Open Questions for Team Discussion:**
+1. Curation time budget (3s) — hardcoded or configurable?
+2. Artifact topology discovery/caching — filesystem I/O strategy in MCP context?
+3. Prescription deduplication — one per insight or multiple?
+4. Compiler integration timing — validate before apply (V1) or after-verify (V2)?
+5. Conflicting prescriptions — detection and resolution mechanism?
+
+**Full Report:** `.squad/decisions/inbox/graham-prescriber-architecture.md`
+
+---
+
+### 2026-04-06: Prescriber Data Model & Integration Points
+
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-04-06  
+**Type:** Technical / Data Model  
+**Status:** Proposal — awaiting team review
+
+**Decision:** Comprehensive data model for prescriptions with 7-state lifecycle, artifact topology discovery, and integration points to Curator and Archivist.
+
+**Key Decisions:**
+
+1. **`prescriptions` Table Schema (Migration 005)**
+   - Lifecycle states: generated, presented, accepted, rejected, applied, failed, expired
+   - Tracks insight source, target path, proposed content, confidence, user disposition
+   - Includes fingerprint for drift detection before apply
+   - Timestamps for each lifecycle transition
+
+2. **`prescriber_state` Table** — Single row tracking `last_generated_at`, `pending_count`, updated_at. Enables MCP notifications without expensive COUNT query on every call.
+
+3. **Artifact Topology: In-Memory Discovery** — Pure function `scanTopology()`, no persistence. Scans four phases:
+   - User-level: `~/.copilot/` (instructions, agents, skills, hooks, MCP config)
+   - Project-level: `.github/` (same types)
+   - Installed plugins: `~/.cairn/plugins/`
+   - Marketplace metadata: read-only reference
+
+4. **Per-Type Resolution Rules** — Additive for instructions/hooks (all merge), first-found for agents/skills/commands, last-wins for MCP servers. Conflict detection by logical identity (agent name, skill name, MCP server key), not file path.
+
+5. **TypeScript Types** — Complete type definitions for `Prescription`, `PrescriptionStatus`, `PrescriptionType`, `ArtifactType`, `ArtifactScope`, `DiscoveredArtifact`, `ArtifactTopology`.
+
+6. **Integration with Curator & Archivist**
+   - Prescriber reads insights via `getInsights('active')` from existing DAL
+   - Records lifecycle events via `logEvent()` (existing Archivist path)
+   - No new event infrastructure needed
+   - Disposition feedback flows back to Curator through `prescription_applied` events
+
+7. **Session-Based Cleanup** — At session start, expire prescriptions stuck in generated/presented status (abandoned from prior sessions).
+
+8. **MCP Tool Surface** — Two tools: `list_prescriptions` (read-only), `resolve_prescription` (side-effecting: accept/reject/redirect). All decisions logged as events.
+
+**New DB Module:** `src/db/prescriptions.ts` with CRUD functions and query helpers.
+
+**Open Questions for Team:**
+1. Compiler validation timing — before apply or after?
+2. Prescription generation strategy — one per insight or multiple?
+3. Hook budget impact — topology scan + generation must fit in remaining budget
+4. Plugin ownership convention — how plugins declare owned files
+5. MCP tool granularity — keep 2 tools or split resolve into 3?
+
+**Full Report:** `.squad/decisions/inbox/roger-prescriber-datamodel.md`
+
+---
+
+### 2026-04-06: Prescriber Plugin Architecture & Artifact Discovery
+
+**Author:** Rosella Chen (Plugin Dev)  
+**Date:** 2026-04-06  
+**Type:** Architecture / Plugin Design  
+**Status:** Proposal — awaiting team review
+
+**Decision:** Artifact discovery mechanism for the Prescriber, enabling it to understand the CLI artifact topology and apply prescriptions to the right locations.
+
+**Key Decisions:**
+
+1. **Four-Phase Discovery** — Scan sequence:
+   - **Phase 1 (User-level):** `~/.copilot/` — instructions, agents, skills, hooks, MCP config
+   - **Phase 2 (Project-level):** `.github/` — instructions, agents, skills, hooks, MCP config, plugin manifests
+   - **Phase 3 (Plugins):** `~/.copilot/installed-plugins/` — plugin manifests, agents, skills, commands
+   - **Phase 4 (Marketplace):** `~/.copilot/marketplace-cache/` — reference only, not active
+
+2. **Per-Type Resolution Rules** — Critical insight from critique: each artifact type resolves differently
+   - **Instructions, Hooks:** Additive (all sources merged)
+   - **Agents, Skills, Commands:** First-found wins (logical identity determines conflict)
+   - **MCP servers:** Last-wins (later configs override)
+   - Identity is by logical name (from file frontmatter), not path
+
+3. **Conflict Detection by Logical Identity** — Two files at different paths can conflict if they define the same agent/skill name. Prescriber must detect and report these.
+
+4. **In-Memory Ephemeral Topology** — Not persisted to DB. Scanned fresh at Prescriber startup. Held in memory as `ArtifactTopology`. No caching strategy yet (deferred to V2).
+
+5. **TypeScript Data Structures:**
+   - `DiscoveredArtifact` — path, artifactType, scope, logicalId, ownerPlugin, checksum, lastModified
+   - `ArtifactConflict` — logicalId, artifactType, conflicting paths
+   - `ArtifactTopology` — collection of artifacts + scan timestamp
+
+6. **Scanner Implementation** — Pure function, no side effects. Inputs: homedir, projectRoot, pluginsDir. Returns snapshot of topology.
+
+**Design Principles:**
+- Simple in V1: glob for known paths, classify by location
+- No deep parsing of file contents
+- Plugin ownership by directory structure, not content inspection
+- Conflicts are data — surface them for human decision
+
+**Open Questions for Team:**
+1. Caching strategy — how to avoid repeated filesystem scans?
+2. Conflict resolution — should Prescriber suggest which to keep?
+3. Plugin manifest versioning — how to handle stale plugin metadata?
+4. Discovery scope expansion — future phases (system plugins, marketplace)?
+5. Fingerprinting — checksum and lastModified for drift detection on apply?
+
+**Full Report:** `.squad/decisions/inbox/rosella-prescriber-plugin.md`
+
+---
+
+### 2026-04-06: Prescriber UX Design — Interaction, Attention, and Growth
+
+**Author:** Valanice Chen (UX / Human Factors)  
+**Date:** 2026-04-06  
+**Type:** UX / Design  
+**Status:** Proposal — awaiting team review
+
+**Decision:** Prescriber interaction model framed as a coaching relationship, not a notification system. Design for human attention scarcity and decision fatigue.
+
+**Core Philosophy:**
+> "Coaches don't nag at the door; they wait for the right moment, say one important thing, and make it easy to act."
+
+**Key Decisions:**
+
+1. **Timing: Natural Pause, Not Session Start**
+   - Wrong moment: Session start (cognitive task-switching cost)
+   - Right moment: After first success, breathing point
+   - Implementation: MCP tools only; consuming agent decides when to surface
+   - Max 1 proactive prescription per session
+
+2. **Format: The Coaching Note** — Prescription presented in natural conversation:
+   ```
+   📋 Cairn noticed a pattern:
+   **Pattern:** [title] — seen [N] times over [timeframe]
+   **What's happening:** [observation]
+   **Suggestion:** [prescription]
+   **Where:** [target location]
+   **Confidence:** [high/medium] based on [evidence]
+   ```
+
+3. **Batching: 1 Proactive, Rest On-Demand**
+   - Top priority, high confidence → Proactive (max 1/session)
+   - Other pending → On-demand via `list_prescriptions`
+   - Low confidence (<0.5) → Only via explicit query
+
+4. **Priority Scoring** — Determines which single prescription gets proactive surfacing:
+   ```
+   priority = confidence × recency_weight × availability_factor
+   ```
+   - `confidence` — 0.0–1.0 from Curator
+   - `recency_weight` — 1.0 (last 5 sessions) → 0.5 (over 20 sessions)
+   - `availability_factor` — dampened by prior rejection, resets after cooldown
+   - Ties broken by occurrence count
+
+5. **7-State Prescription Lifecycle** — Every state intentional, prevents notification graveyard:
+   - **pending** → (human sees it) → **previewed**
+   - → {**approved**, **deferred**, **dismissed**, **expired**} (terminal)
+   - → (if approved) → **applying** → {**applied**, **failed**} (terminal)
+
+6. **Human Approval Flow** — Not automatic. Explicit decisions recorded, feed back to growth tracking:
+   - Accept → Preview → Apply (with fingerprint check) → Success/Failure
+   - Reject → Record reason → Adjust confidence
+   - Defer → Cooldown period → Recompute priority
+   - Dismiss → Deducted from confidence, adjust availability_factor
+
+7. **Growth Tracking** — Learn from human decisions:
+   - Track rejection patterns ("user always rejects hook prescriptions")
+   - Adjust confidence based on acceptance rate
+   - Recompute priority scores with human feedback
+   - Implement cooldown period to avoid re-suggesting rejected insights
+
+**Anti-Patterns Addressed:**
+- Notification graveyard (too many pending)
+- Decision fatigue (too many choices at once)
+- Context switching costs (wrong timing)
+- Ignored feedback (no learning from rejections)
+
+**Open Questions for Team:**
+1. Preference signals — how do UX signals (defer, dismiss) feed back?
+2. Notification frequency cap — max proactive per session/day?
+3. LLM re-ranking — should consuming agent re-rank priorities?
+4. Session continuity — carry over deferred from previous session?
+
+**Full Report:** `.squad/decisions/inbox/valanice-prescriber-ux.md`
+
+---
+
+### 2026-04-06: Prescriber Infrastructure Analysis — Hook Performance & MCP Tools
+
+**Author:** Gabriel Knight (Infrastructure)  
+**Date:** 2026-04-06  
+**Type:** Infrastructure / Performance  
+**Status:** Proposal — awaiting team review
+
+**Decision:** Performance analysis of preToolUse hook, MCP tool design, and infrastructure requirements for Prescriber without impacting existing budgets.
+
+**Key Findings:**
+
+1. **preToolUse Hook Cost Breakdown (Windows p50)**
+   - PowerShell startup + stdin: ~100ms
+   - Node.js cold start + ESM: ~200ms
+   - SQLite open + WAL + migrations: ~100ms
+   - `git remote get-url origin`: ~10ms
+   - Fast path (fresh session): <5ms
+   - Slow path (crash recovery): ~50ms
+   - **Curate():** Unbounded (loops until caught up)
+
+2. **Critical Finding: Curation Cost Is Unbounded** — `curate()` processes batches but loops until cursor is current. After idle periods, could be thousands of events with no time cap. Gets killed by 10s timeout, silently fails.
+
+3. **Recommendation: Add 3-Second Hard Budget to `curate()`** — Check elapsed time after each batch. If >3s, persist cursor and return partial results. Resume on next invocation.
+
+4. **Prescriber Must NOT Run in preToolUse Hot Path** — Reasons:
+   - No remaining budget after Node startup + curation
+   - Prescription generation is expensive (1-2s minimum)
+   - Fail-open makes timeouts invisible to users
+   - 10s timeout shared across plugins (if others register hooks)
+
+5. **MCP Tool Surface: 4 New Tools**
+   - `list_prescriptions` (read-only) — list with optional filters
+   - `get_prescription` (read-only) — full detail with insight context
+   - `decide_prescription` (side-effecting) — apply/reject/dismiss
+   - `generate_prescriptions` (side-effecting) — explicit trigger
+
+6. **Notification Hint Strategy** — After `curate()`, write single indexed query to `prescriber_state` (count pending prescriptions). MCP tools read and surface in responses. Total: <10ms.
+
+7. **No New Hook Wrappers Needed** — Prescriber doesn't register hooks. All logic in MCP. Event recording flows through existing Archivist. Only modification: `sessionStart.ts` adds notification hint check.
+
+8. **hooks.json: No Changes** — Existing hooks.json is unchanged. Prescriber integrates as MCP tools, not hook slots.
+
+**Performance Budget Proposal (10s total):**
+| Phase | Budget | Guard |
+|-------|--------|-------|
+| PowerShell + stdin | 200ms | Fixed |
+| Node.js + ESM | 300ms | Fixed |
+| SQLite + WAL + migrations | 150ms | One-time per process |
+| `git remote get-url origin` | 50ms | p99 |
+| **Fast path total** | **700ms** | Exit here if fresh |
+| Crash recovery | 100ms | Single transaction |
+| **Curation (capped)** | **3,000ms** | **New: hard time budget** |
+| Prescription hint check | 10ms | Single indexed query |
+| **Safety margin** | **6,190ms** | For other plugins + tail |
+
+**Build & Test Infrastructure:**
+- New files: `src/agents/prescriber.ts`, `src/db/prescriptions.ts`, `src/db/migrations/005-prescriptions.ts`, `src/__tests__/prescriber.test.ts`
+- Tests: Unit tests (`:memory:` SQLite), integration tests for MCP tools
+- CI: No changes — vitest, npm run build, eslint all pick up new files
+- Publish: Ships as part of `@akubly/cairn`, no separate package
+
+**Open Questions for Team:**
+1. Curation time budget configurability (3s hardcoded vs. preference)?
+2. Artifact topology discovery caching strategy?
+3. Prescription deduplication logic?
+4. Compiler validation before apply (V1) or after (V2)?
+5. Conflicting prescriptions detection and handling?
+
+**Full Report:** `.squad/decisions/inbox/gabriel-prescriber-hooks.md`
+

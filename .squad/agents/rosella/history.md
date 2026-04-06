@@ -146,3 +146,32 @@ ode dist/hooks/...\ commands in hooks.json for cross-platform compatibility
 - npm publish by Roger completed the distribution pipeline
 
 **Status:** Plugin packaging infrastructure complete. All entry points operational. Ready for Phase 7 (CLI installation commands, worktree support, awesome-copilot submission).
+
+### 2026-07-26: Prescriber Plugin Architecture — Artifact Discovery Design
+
+**Task:** Design the Prescriber's artifact discovery mechanism, "play nice" topology, and plugin self-hosting strategy.
+
+**Key Architecture Decisions:**
+
+1. **Per-type resolution rules** — Copilot CLI resolves each artifact type differently (instructions=additive, agents/skills=first-found, MCP=last-wins, hooks=additive). Discovery must model per-type precedence, not a single global scope chain. Conflicts are by logical identity (agent name, skill name, MCP server key), not file path.
+
+2. **Managed-writes-only provenance** — Instead of a full universal provenance table, the Prescriber tracks only files it creates/modifies in a `managed_artifacts` table. Plugin ownership for marketplace artifacts is inferred from `~/.copilot/installed-plugins/<source>/<plugin>/` path structure.
+
+3. **Safe defaults for unknown ownership** — When the Prescriber can't determine who owns a file, it NEVER modifies it in place. Instead, it generates Cairn-owned sidecar files (e.g., `cairn-prescribed.instructions.md`) and queues for human approval.
+
+4. **Single orchestrator hook** — The Prescriber extends the existing `preToolUse` entry point (`sessionStart.ts`) to call `prescribe()` after `curate()`, rather than registering a separate hook. This guarantees execution order.
+
+5. **Cache-first discovery** — Cold scan touches ~50 filesystem paths (<200ms). Results cached in `knowledge.db` with 5-min TTL. The preToolUse hook reads from cache; full rediscovery only when stale.
+
+6. **Three Prescriber MCP tools** — `list_prescriptions`, `apply_prescription`, `reject_prescription` for conversational interaction.
+
+**Real-world filesystem observations (Aaron's machine):**
+- `~/.copilot/hooks/` has 11 hook directories, each self-describing via hooks.json
+- `~/.copilot/installed-plugins/awesome-copilot/` contains 8 sub-plugins
+- `~/.copilot/marketplace-cache/` has 4 cached marketplace sources
+- `~/.copilot/skills/` has persona-review and shared utilities
+- `~/.copilot/mcp-config.json` registers 3+ MCP servers (memory, sequential-thinking, etc.)
+
+**Critical insight from critic review:** Hook directory names encode ownership (e.g., `cairn-archivist` → owned by `cairn`). This is the strongest ownership signal available without a registry.
+
+**Deliverable:** `.squad/decisions/inbox/rosella-prescriber-plugin.md`

@@ -475,3 +475,39 @@ Aaron asked three targeted follow-ups about delivery vehicles, npm vs plugin, an
 **Lesson Applied:** Extensions investigation showed importance of artifact-centric investigation (inspect SDK source, type defs) vs documentation-centric (which leads to false negatives). This pattern will inform Phase 7 research tasks.
 
 **Critical Cross-Team Observation:** Installation architecture revealed three surfaces were broken (MCP registration missing, hooks hardcoded, binaries not on PATH). Phase 6 fixed manifests but still needs Phase 7 CLI implementation (cairn install/uninstall) for end-to-end automation. Plugin distribution requires this before it's production-ready.
+
+### 2026-04-03: Phase 6 Architecture — Prescriber Design
+
+**Type:** Architecture design session
+**Artifact:** .squad/decisions/inbox/graham-prescriber-architecture.md
+
+**Key architecture decisions:**
+
+1. **Prescriber as built-in agent behind plugin interface** — No plugin system exists yet, so build as src/agents/prescriber.ts with a PrescriberPlugin interface. MCP tools and hooks call through the interface, not directly to implementation. One level of indirection now; pays off at extraction time.
+
+2. **Conditional prescribe in preToolUse** — prescribe() runs ONLY when curate() reports new/reinforced insights. Zero cost on the common path (no new patterns). 500ms hard cap on prescribe() execution.
+
+3. **add_instruction as sole MVP type** — Append text to instruction files. Safe (additive), observable (idempotent markers), reversible (delete marked block). Silently skip insights that need unsupported prescription types.
+
+4. **Safe apply mechanics** — Idempotent markers (<!-- cairn:prescription:ID -->), file hash verification at apply time, atomic writes (temp + rename), state machine with pplying intermediate state for crash recovery.
+
+5. **4-tool MCP surface** — list_prescriptions, get_prescription (preview/diff), apply_prescription, dismiss_prescription. Preview tool is essential UX — don't skip it.
+
+6. **Deferred Compiler** — Instruction additions are markdown, no syntax to validate. Human approval gate + idempotent markers provide sufficient safety for MVP.
+
+**Critic feedback incorporated:**
+- Added pplying/pply_failed states for crash safety
+- Added content_hash, ile_hash_before, pply_marker fields for idempotency
+- Added supersedes_id for prescription lineage tracking
+- Made prescribe() conditional on curate() results (not unconditional)
+- Added get_prescription preview tool (was missing from initial 3-tool plan)
+
+**Key file paths for Phase 6:**
+- src/agents/prescriber.ts — Core agent
+- src/agents/prescriptionGenerators.ts — Pattern→prescription mapping
+- src/discovery/artifacts.ts — Convention-based artifact scanner
+- src/db/prescriptions.ts — Prescription CRUD
+- src/db/migrations/005-prescriptions.ts — Schema
+- src/mcp/server.ts — 4 new tools added here
+
+**Naming collision noted:** insights.prescription (static text advice) vs prescriptions table (concrete actions). Document clearly; rename insight column to ecommendation in Phase 6D.

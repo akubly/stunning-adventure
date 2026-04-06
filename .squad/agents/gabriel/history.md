@@ -37,3 +37,26 @@
 **Rosella (Plugin Dev)** surveyed plugin marketplaces and found awesome-copilot as gravitational center (170+ agents, 240+ skills, 55+ plugins). Identified three canonical formats: `.agent.md`, `SKILL.md` (agentskills.io open standard), `plugin.json` (Claude Code spec). Recommends integrating with awesome-copilot rather than building custom marketplace.
 
 **Outcome:** Gabriel's 7 directly reusable patterns from prior infrastructure now inform all three specialists. Knowledge taxonomy is an innovation to preserve and extend. Skill template pattern validates Rosella's SKILL.md standardization. Workflow gates and anti-anchoring discipline become foundational team practices. Context engineering and context replication from community best practices align with how Squad already works and how Aaron's infrastructure was designed.
+
+### 2026-04-05 — Prescriber Infrastructure Analysis
+
+**Key Architecture Decisions:**
+- Prescriber MUST NOT generate prescriptions in the preToolUse hot path. The 10s budget is already consumed by Node startup (~400ms) + unbounded curation. MCP-only trigger is the right call.
+- `curate()` has no time cap — it loops until caught up. This is a pre-existing risk that becomes critical with any additional preToolUse work. Recommended 3s hard cap with cursor persistence.
+- Prescriptions need their own table separate from `insights.prescription` (static text hints). Clear ownership: Curator writes insights, Prescriber writes prescriptions.
+- MCP surface: 4 new tools (list_prescriptions, get_prescription, decide_prescription, generate_prescriptions). `decide_prescription` combines apply/reject/dismiss into one tool with action enum — every disposition becomes a Curator event.
+- No new hook wrappers or hooks.json changes needed. Prescriber lives entirely in MCP server process.
+- Ships as part of @akubly/cairn, not separate package. Shared DB singleton, no extra deps.
+
+**Key File Paths:**
+- `src/hooks/sessionStart.ts` — preToolUse entry point, fast-path logic, stale session detection
+- `src/agents/curator.ts` — unbounded curate() loop at line 129, batch size 1000
+- `src/mcp/server.ts` — MCP tool registration, 6 existing tools
+- `.github/hooks/cairn/curate.ps1` — PowerShell wrapper with 3-tier script resolution
+- `.github/hooks/cairn/hooks.json` — hook declarations (10s preToolUse, 5s postToolUse)
+- `.github/plugin/plugin.json` — plugin manifest, references hooks.json + .mcp.json
+
+**Performance Insight:**
+- preToolUse end-to-end fast path: ~410ms (PowerShell + Node + SQLite + git). Slow path adds crash recovery (~50ms) + curation (unbounded).
+- Hooks share timeout across all plugins. No per-plugin allocation. Plugins must self-budget.
+- MCP server has no timeout constraint — runs as long-lived subprocess. Ideal for expensive operations.

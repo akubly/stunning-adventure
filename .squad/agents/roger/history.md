@@ -242,3 +242,16 @@ ode dist/mcp/server.js\)
 **Key Learning:** Debugging MCP config revealed complexity in module entry point patterns across stdio servers, npm binaries, symlinks, and filesystem permissions. Best practice: always use direct node invocation for development/distribution contexts where CWD is unknown. npm bin commands are for user-installed CLI tools only.
 
 **Handoff:** npm package published and available for install. MCP configuration stabilized with direct node pattern. Phase 6 shipping gates satisfied (build clean, tests pass, lint clean, publication successful). Ready for Phase 7 (CLI extension spike, worktree support, installation automation).
+
+### 2026-04-05: Prescriber Data Model Design (Phase 7 Planning)
+
+- **Prescriptions table (migration 005):** `prescriptions` with FK to `insights(id)`, CHECK constraints on `type` (6 artifact types), `target_scope` (4 scopes), `status` (7 lifecycle states). Indexes on `insight_id` and `status`.
+- **Lifecycle states:** `generated → presented → accepted → applied` (happy path), plus `rejected`, `failed`, `expired`. Dropped `redirected` as a status — user redirect is `accepted` + `override_target_path`. Simpler state machine.
+- **One live prescription per insight:** Invariant enforced transactionally (check before INSERT). Prevents duplicate/conflicting prescriptions. Abandoned in-flight rows expire on next session start.
+- **No separate prescription_events table:** Reuse `event_log` via archivist's `logEvent()`. All prescription events carry `prescription_id` in payload for correlation across retry attempts.
+- **Apply-time drift detection:** `target_fingerprint` column stores hash of target file at generation time. Re-checked before apply; fail safely on mismatch. Prevents writing stale modifications.
+- **Artifact topology is in-memory, not persisted:** Ephemeral filesystem scan via `scanTopology()`. No caching in DB — topology is stale the moment it's written. Scanner is a pure function taking homedir, projectRoot, pluginsDir.
+- **Insight closure:** The Prescriber does NOT modify insight status. Curator owns insight lifecycle. Applied prescriptions log events that the Curator processes on its next run; if the error pattern stops recurring, the insight decays naturally.
+- **Integration points:** `getUnprescribedInsights()` uses NOT EXISTS subquery (excludes insights with live or applied prescriptions). Rejected/failed prescriptions don't block re-prescription.
+- **New DB module:** `src/db/prescriptions.ts` with CRUD operations. New MCP tools: `list_prescriptions`, `resolve_prescription`.
+- **Key file:** `.squad/decisions/inbox/roger-prescriber-datamodel.md` — full proposal with SQL, TypeScript types, integration map, and open questions.
