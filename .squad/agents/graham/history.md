@@ -511,3 +511,24 @@ Aaron asked three targeted follow-ups about delivery vehicles, npm vs plugin, an
 - src/mcp/server.ts — 4 new tools added here
 
 **Naming collision noted:** insights.prescription (static text advice) vs prescriptions table (concrete actions). Document clearly; rename insight column to ecommendation in Phase 6D.
+
+### 2026-04-06: Prescriber Final Plan — Aaron's 6 Decisions Incorporated
+
+**Type:** Architecture finalization
+**Outcome:** Produced definitive implementation plan (`.squad/decisions/inbox/graham-prescriber-final-plan.md`)
+
+**Aaron's 6 binding decisions and their architectural implications:**
+
+1. **DP1 — Hybrid Trigger (C1):** preToolUse chains prescribe() after curate() when insights change + run_curate MCP tool chains prescribe() automatically. No separate generate_prescriptions tool. Implication: curate() needs `insightsChanged` return flag; both trigger paths share the same prescribe() call. curate() capped at 3s.
+
+2. **DP2 — 8-State Lifecycle:** generated, accepted, rejected, deferred, applied, failed, expired, suppressed. Original 7-state from architecture doc expanded to 8 by adding `suppressed`. No `presented`, `superseded`, or `applying` micro-states.
+
+3. **DP3 — 4 New MCP Tools (10 total):** list_prescriptions, get_prescription, resolve_prescription, show_growth. Plus run_curate extended. resolve_prescription is unified with disposition enum (accept/reject/defer).
+
+4. **DP4 — Full 4-Phase Scanner:** User, project, plugins, marketplace. Per-artifact-type resolution rules, conflict detection, ownership tracking. SQLite cache with 5-min TTL.
+
+5. **DP5 — All 10 UX Principles:** Full Valanice spec from day one. Every MCP tool response must reflect UX principles. 7 preference keys via existing cascade.
+
+6. **DP6 — managed_artifacts + Sidecars:** Sidecar instruction files, not user-owned file modification. managed_artifacts table with rollback + drift detection.
+
+**Plan structure:** 6 sub-phases (7A-7F), 15 new files, 7 modified, ~115 new tests (target ~250 total). Critical path: 7A -> 7B -> 7D -> 7F.
