@@ -158,10 +158,7 @@ describe('prescriber wiring on slow path', () => {
     vi.restoreAllMocks();
   });
 
-  it('should call prescribe() when curate produces new insights', async () => {
-    const { prescribe } = await import('../agents/prescriber.js');
-    const spy = vi.spyOn({ prescribe }, 'prescribe');
-
+  it('should call prescribe() when curate produces new insights', () => {
     // Create events that will generate insights (recurring errors)
     const sessionId = createSession('org_repo', 'main');
     logEvent(sessionId, 'error', { category: 'build', message: 'fail' });
@@ -172,16 +169,31 @@ describe('prescriber wiring on slow path', () => {
     db.prepare("UPDATE sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?")
       .run(sessionId);
 
+    // Capture prescription state before
+    const before = db
+      .prepare('SELECT pending_count FROM prescriber_state WHERE id = 1')
+      .get() as { pending_count: number } | undefined;
+    const pendingBefore = before?.pending_count ?? 0;
+
     runSessionStart('org_repo');
 
-    // Can't spy on the actual import, but we verify the wiring via side effects:
     // Curator should have processed those events and created insights
     const cursorRow = db
       .prepare('SELECT last_processed_event_id FROM curator_state WHERE id = 1')
       .get() as { last_processed_event_id: number } | undefined;
     expect(cursorRow!.last_processed_event_id).toBeGreaterThan(0);
-    // No error thrown — prescribe() ran successfully (stub returns { prescriptionsGenerated: 0 })
-    spy.mockRestore();
+
+    // Verify prescribe() actually ran by checking DB side effects:
+    // prescriptions should exist and pending_count should have increased
+    const rxCount = db
+      .prepare("SELECT COUNT(*) as cnt FROM prescriptions WHERE status = 'generated'")
+      .get() as { cnt: number };
+    expect(rxCount.cnt).toBeGreaterThan(0);
+
+    const after = db
+      .prepare('SELECT pending_count FROM prescriber_state WHERE id = 1')
+      .get() as { pending_count: number } | undefined;
+    expect(after!.pending_count).toBeGreaterThan(pendingBefore);
   });
 
   it('should not throw when prescribe() fails (fail-open)', async () => {
