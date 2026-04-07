@@ -79,3 +79,13 @@
 
 **Files Modified:** curator.ts, sessionStart.ts, server.ts, curator.test.ts, sessionStart.test.ts, mcp.test.ts
 **Files Created:** prescriber.ts
+
+### 2026-04-08 — Fix sessionStart prescriber wiring test
+
+**Problem:** Cloud reviewer flagged that `vi.spyOn({ prescribe }, 'prescribe')` in the "should call prescribe() when curate produces new insights" test was spying on a throwaway wrapper object, not the actual import used by `runSessionStart()`. The spy could never observe real calls — the test was passing vacuously.
+
+**Fix:** Replaced the ineffective spy with direct DB side-effect assertions. After `runSessionStart()`, the test now verifies:
+1. Prescriptions rows exist in the `prescriptions` table with status `'generated'`
+2. `pending_count` in `prescriber_state` increased
+
+**Learning:** When testing module-internal call chains in ESM (where you can't intercept the import binding), assert on observable side effects (DB state, file output) rather than trying to spy on re-exported functions through wrapper objects.

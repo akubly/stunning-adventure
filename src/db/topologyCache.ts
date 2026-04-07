@@ -32,5 +32,11 @@ export function getCachedTopology(ttlMs: number = DEFAULT_TTL_MS): ArtifactTopol
   const scannedAtMs = parseSqliteDateToMs(row.scanned_at) ?? new Date(row.scanned_at).getTime();
   if (isNaN(scannedAtMs) || Date.now() - scannedAtMs > ttlMs) return null;
 
-  return JSON.parse(row.topology_json) as ArtifactTopology;
+  try {
+    return JSON.parse(row.topology_json) as ArtifactTopology;
+  } catch {
+    // Corrupted cache — clear the row and treat as a miss
+    db.prepare('DELETE FROM topology_cache WHERE id = 1').run();
+    return null;
+  }
 }

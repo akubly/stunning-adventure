@@ -184,6 +184,14 @@ export function applyPrescription(
   let existingContent: string | null = null;
   if (fs.existsSync(targetPath)) {
     existingContent = fs.readFileSync(targetPath, 'utf8');
+
+    // Refuse to overwrite a non-managed file (fail closed)
+    if (!existingArtifact && !existingContent.startsWith(MANAGED_HEADER)) {
+      return {
+        success: false,
+        error: `Refusing to overwrite ${targetPath} — file exists and is not a managed sidecar`,
+      };
+    }
   }
 
   // 6. Build new content
@@ -194,42 +202,61 @@ export function applyPrescription(
     prescription.proposedChange,
   );
 
-  // 7. Write file (ensure parent dirs exist)
-  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-  fs.writeFileSync(targetPath, newContent, 'utf8');
+  // 7-11. Write file + DB updates wrapped in try/catch with best-effort rollback
+  try {
+    // 7. Write file (ensure parent dirs exist)
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, newContent, 'utf8');
 
-  // 8. Compute checksum
-  const checksum = sha256(newContent);
+    // 8. Compute checksum
+    const checksum = sha256(newContent);
 
-  // 9. Track in managed_artifacts
-  // If path already tracked (appending), remove old entry first (UNIQUE constraint)
-  if (existingArtifact) {
-    removeManagedArtifact(targetPath);
-  }
+    // 9. Track in managed_artifacts
+    // If path already tracked (appending), remove old entry first (UNIQUE constraint)
+    if (existingArtifact) {
+      removeManagedArtifact(targetPath);
+    }
 
-  trackManagedArtifact({
-    path: targetPath,
-    artifactType: 'instruction',
-    scope: prescription.artifactScope ?? 'user',
-    prescriptionId,
-    originalChecksum: existingContent !== null ? sha256(existingContent) : undefined,
-    currentChecksum: checksum,
-    rollbackContent: existingContent ?? undefined,
-  });
-
-  // 10. Update prescription status
-  updatePrescriptionStatus(prescriptionId, 'applied');
-
-  // 11. Log event
-  if (opts.sessionId) {
-    logEvent(opts.sessionId, 'prescription_applied', {
-      prescriptionId,
+    trackManagedArtifact({
       path: targetPath,
-      checksum,
+      artifactType: 'instruction',
+      scope: prescription.artifactScope ?? 'user',
+      prescriptionId,
+      originalChecksum: existingContent !== null ? sha256(existingContent) : undefined,
+      currentChecksum: checksum,
+      rollbackContent: existingContent ?? undefined,
     });
-  }
 
-  return { success: true, path: targetPath, checksum };
+    // 10. Update prescription status
+    updatePrescriptionStatus(prescriptionId, 'applied');
+
+    // 11. Log event
+    if (opts.sessionId) {
+      logEvent(opts.sessionId, 'prescription_applied', {
+        prescriptionId,
+        path: targetPath,
+        checksum,
+      });
+    }
+
+    return { success: true, path: targetPath, checksum };
+  } catch (err) {
+    // Best-effort rollback of file write
+    try {
+      if (existingContent !== null) {
+        fs.writeFileSync(targetPath, existingContent, 'utf8');
+      } else if (fs.existsSync(targetPath)) {
+        fs.unlinkSync(targetPath);
+      }
+    } catch {
+      // Rollback itself failed — nothing more we can do
+    }
+
+    return {
+      success: false,
+      error: `Apply failed: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
 }
 
 /**

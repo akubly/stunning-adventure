@@ -2,9 +2,10 @@
  * Artifact Discovery Scanner
  *
  * Pure-function scanner that maps the Copilot CLI installation topology.
- * Discovers artifacts across four scopes (user, project, plugin, marketplace),
+ * Discovers artifacts across three scopes — user, project, and plugin —
  * computes checksums, extracts logical identities, assigns resolution rules,
- * and detects conflicts.
+ * and detects conflicts. Marketplace metadata is scanned as read-only
+ * reference data within the plugin scope and excluded from conflict detection.
  *
  * No side effects beyond reading the filesystem.
  */
@@ -189,9 +190,12 @@ function scanUserLevel(homedir: string): DiscoveredArtifact[] {
     if (mcpStat) {
       try {
         const config = JSON.parse(mcpContent) as Record<string, unknown>;
-        const servers = (config.mcpServers ?? config.servers ?? config) as Record<string, unknown>;
+        const servers = (
+          config.mcpServers ?? config.servers ?? config
+        ) as Record<string, unknown>;
         for (const key of Object.keys(servers)) {
-          if (key === 'mcpServers' || key === 'servers') continue;
+          // Skip the container key itself when iterating the top-level config
+          if (servers === config && (key === 'mcpServers' || key === 'servers')) continue;
           artifacts.push(
             makeArtifact(mcpConfigPath, 'mcp_server', 'user', key, JSON.stringify(servers[key]), mcpStat),
           );
@@ -279,9 +283,12 @@ function scanProjectLevel(projectRoot: string): DiscoveredArtifact[] {
     if (!mcpStat) continue;
     try {
       const config = JSON.parse(mcpContent) as Record<string, unknown>;
-      const servers = (config.mcpServers ?? config.servers ?? config) as Record<string, unknown>;
+      const servers = (
+        config.mcpServers ?? config.servers ?? config
+      ) as Record<string, unknown>;
       for (const key of Object.keys(servers)) {
-        if (key === 'mcpServers' || key === 'servers') continue;
+        // Skip the container key itself when iterating the top-level config
+        if (servers === config && (key === 'mcpServers' || key === 'servers')) continue;
         artifacts.push(
           makeArtifact(mcpPath, 'mcp_server', 'project', key, JSON.stringify(servers[key]), mcpStat),
         );
