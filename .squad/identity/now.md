@@ -22,9 +22,9 @@ Building Cairn's third core agent: the Prescriber. Closes the feedback loop from
 - DP6: managed_artifacts table + sidecar instruction files + rollback
 
 **Sub-phases:**
-- 🔲 **7A** — Data Foundation (Roger): schema, types, DAL, preferences
-- 🔲 **7B** — Artifact Discovery (Rosella): 4-phase scanner + cache
-- 🔲 **7C** — Infrastructure (Gabriel): curate() 3s cap + trigger wiring
+- ✅ **7A** — Data Foundation (Roger): schema, types, DAL, preferences
+- 🚧 **7B** — Artifact Discovery (Rosella): 4-phase scanner + cache
+- 🚧 **7C** — Infrastructure (Gabriel): curate() 3s cap + trigger wiring
 - 🔲 **7D** — Prescription Engine (Roger): core agent, state machine, priority scoring
 - 🔲 **7E** — Apply Engine (Rosella): sidecar writing, rollback, drift detection
 - 🔲 **7F** — MCP Tools + UX (Roger + Valanice): 4 new tools + growth tracking
@@ -32,8 +32,8 @@ Building Cairn's third core agent: the Prescriber. Closes the feedback loop from
 **Dependencies:** 7A first → 7B ∥ 7C → 7D ∥ 7E → 7F (final integration)
 
 **Quality Baseline:**
-- 134/134 tests passing
-- Target: ~250 tests after Phase 7 (~115 new)
+- 181/181 tests passing (↑ 42 from 7A)
+- Target: ~250 tests after Phase 7 (~70 remaining)
 - Clean TypeScript build, zero lint violations
 
 **Execution Plan:** `.squad/decisions/inbox/graham-prescriber-final-plan.md`

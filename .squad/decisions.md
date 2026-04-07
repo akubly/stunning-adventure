@@ -2272,6 +2272,44 @@ npm run build && npm run test
 Instead of modifying user-owned files:
 - Write `cairn-prescribed.instructions.md` (configurable prefix via `prescriber.sidecar_prefix`)
 - CLI's scoped instructions convention automatically merges sidecar with user instructions
+
+---
+
+### 2026-04-06: Automatic `pending_count` Synchronization
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical  
+**Status:** Active  
+**Phase:** 7A — Data Foundation
+
+The `prescriber_state.pending_count` field tracks how many prescriptions are in 'generated' status. Every DAL function that changes prescription status (create, updateStatus, defer, suppress, unsuppress, expire) also updates `pending_count`.
+
+**Rationale:**
+- Prevents stale counts. Alternative of requiring manual sync puts burden on callers.
+- Cost: one extra UPDATE per status change on a singleton table (negligible overhead)
+- Benefit: counters always fresh, callers never forget to sync
+
+**Impact:** Phase 7D (Prescription Engine) and 7F (MCP tools) can read `pending_count` from `prescriber_state` without worrying about staleness.
+
+---
+
+### 2026-04-06: `detectDrift()` Returns `undefined` for Missing Paths
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical  
+**Status:** Active  
+**Phase:** 7A — Data Foundation
+
+When checking drift on a path that isn't tracked, `detectDrift()` returns `undefined` rather than throwing an error.
+
+**Rationale:**
+- Consistent with existing `getPrescription()` / `getManagedArtifact()` patterns in codebase.
+- Callers can distinguish three cases:
+  - `undefined` → path not tracked
+  - `{ drifted: false }` → tracked, no drift detected
+  - `{ drifted: true }` → tracked, content changed
+
+**Impact:** Phase 7E (Apply Engine) should check for `undefined` before acting on drift results.
 - Each sidecar file is wholly owned by Prescriber — safe to overwrite/delete
 - Multiple prescriptions to same scope append sections to same sidecar file
 

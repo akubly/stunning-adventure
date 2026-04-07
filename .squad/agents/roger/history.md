@@ -194,6 +194,31 @@ $raw | node $hookScript 2>$null
 
 **Phase 6 Outcome:** ✅ COMPLETE AND SHIPPED
 
+### 2026-04-06: Phase 7A — Data Foundation
+
+**Phase 7A Outcome:** ✅ COMPLETE
+
+**What was built:**
+- Migration 005: `prescriptions` table with 8-state lifecycle (generated→accepted→applied/failed, +rejected/deferred/expired/suppressed) and `prescriber_state` singleton table for session counting and pending tracking.
+- Migration 006: `managed_artifacts` table with unique path constraint, rollback content, and drift detection via checksum comparison.
+- DAL module `src/db/prescriptions.ts`: 12 functions — CRUD, priority retrieval, expiration (7-day window), deferral with session-based cooldown, suppression/unsuppression, session counter.
+- DAL module `src/db/managedArtifacts.ts`: 6 functions — track, get, list, update checksum, remove, detect drift.
+- Types appended to `src/types/index.ts`: PrescriptionStatus, PrescriptionDisposition, ArtifactType, ArtifactScope, ResolutionRule, Prescription, ManagedArtifact, DiscoveredArtifact, ArtifactConflict, ArtifactTopology, TopologyCache, GrowthSummary.
+- 42 new tests in `src/__tests__/prescriptions.test.ts` covering all CRUD operations, status constraints, filter/listing, priority ordering, expiration, deferral, suppression, session counting, managed artifact CRUD, drift detection, unique path constraint, and prescriber preference infrastructure.
+
+**Patterns followed:**
+- Migration export pattern matching existing 001–004 migrations (named export, Migration type, version numbering).
+- DAL `mapRow` pattern from insights.ts (snake_case→camelCase, null→undefined).
+- `getDb()` singleton — never opened own connection.
+- Test patterns from db.test.ts (beforeEach/afterEach with closeDb/getDb(':memory:'), describe blocks).
+- Updated db.test.ts: bumped expected migration count (4→6), max schema_version (4→6), added table presence checks.
+
+**Decisions made:**
+- `prescriber_state.pending_count` is kept in sync automatically by every prescription status change (create, update, defer, suppress, unsuppress, expire). This avoids stale counts without requiring manual synchronization from callers.
+- `detectDrift()` returns `undefined` for non-existent paths rather than throwing, consistent with the `getPrescription()` / `getManagedArtifact()` undefined-on-miss pattern.
+
+**Test baseline:** 181/181 (139 existing + 42 new). Clean build, clean lint.
+
 **Deliverables (Roger's domain):**
 1. ✅ npm packaging configuration (files whitelist, prepublishOnly, keywords)
 2. ✅ Scoped package release (@akubly/cairn@0.1.0)
