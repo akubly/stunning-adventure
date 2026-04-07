@@ -319,8 +319,8 @@ describe('deferred resurfacing', () => {
       status: 'deferred' as PrescriptionStatus,
       deferUntilSession: 5,
     } as Prescription;
-    // currentSession + 1 >= 5 → true when currentSession = 4
-    expect(shouldResurface(rx, 4)).toBe(true);
+    // currentSession >= 5 → true when currentSession = 5
+    expect(shouldResurface(rx, 5)).toBe(true);
   });
 
   it('shouldResurface returns false when cooldown not met', () => {
@@ -328,7 +328,7 @@ describe('deferred resurfacing', () => {
       status: 'deferred' as PrescriptionStatus,
       deferUntilSession: 10,
     } as Prescription;
-    // currentSession + 1 = 6 < 10 → false
+    // currentSession = 5 < 10 → false
     expect(shouldResurface(rx, 5)).toBe(false);
   });
 

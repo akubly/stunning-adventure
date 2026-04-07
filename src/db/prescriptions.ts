@@ -125,7 +125,8 @@ export function listPrescriptions(filters?: {
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-  const limit = filters?.limit ? `LIMIT ${filters.limit}` : '';
+  const limit = filters?.limit ? 'LIMIT ?' : '';
+  if (filters?.limit) params.push(filters.limit);
 
   const rows = db
     .prepare(`SELECT * FROM prescriptions ${where} ORDER BY priority_score DESC ${limit}`)

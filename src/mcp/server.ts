@@ -15,7 +15,7 @@ import { z } from 'zod';
 
 import { getDb } from '../db/index.js';
 import { getActiveSession } from '../db/sessions.js';
-import { getInsights, getInsight, countInsightsByStatus } from '../db/insights.js';
+import { getInsights, getInsight, getInsightsByIds, countInsightsByStatus } from '../db/insights.js';
 import { curate, getCuratorStatus } from '../agents/curator.js';
 import { prescribe, checkAutoSuppress } from '../agents/prescriber.js';
 import { applyPrescription } from '../agents/applier.js';
@@ -53,12 +53,19 @@ const server = new McpServer(
 // UX helpers (DP5)
 // ---------------------------------------------------------------------------
 
-/** Proactive hint counter — max 1 per MCP server process lifecycle. */
+/**
+ * Proactive hint counter — max 1 per session.
+ * Tracks which session (by sessions_since_install) last showed a hint,
+ * so the counter resets across session boundaries even if the MCP server
+ * process is long-lived.
+ */
 let proactiveHintsShown = 0;
+let proactiveHintSessionGeneration: number | undefined;
 
 /** For testing: reset the proactive hint counter. */
 export function resetProactiveHintCounter(): void {
   proactiveHintsShown = 0;
+  proactiveHintSessionGeneration = undefined;
 }
 
 /** Convert numeric confidence to user-facing words (DP5 #5). */
@@ -444,6 +451,11 @@ server.registerTool(
       // Proactive hint: max 1 per session, only when unviewed generated prescriptions exist
       let proactive_hint: string | undefined;
       const generatedCount = counts['generated'] ?? 0;
+      const currentSessionGen = getSessionsSinceInstall();
+      if (proactiveHintSessionGeneration !== currentSessionGen) {
+        proactiveHintsShown = 0;
+        proactiveHintSessionGeneration = currentSessionGen;
+      }
       if (generatedCount > 0 && proactiveHintsShown === 0) {
         proactive_hint =
           generatedCount === 1
@@ -630,9 +642,30 @@ server.registerTool(
       }
 
       if (disposition === 'accept') {
-        // Accept → apply
+        // Accept → apply (wrap in try/catch so exceptions don't leave status stuck)
         updatePrescriptionStatus(prescription_id, 'accepted');
-        const applyResult = applyPrescription(prescription_id);
+        let applyResult: { success: boolean; error?: string; path?: string };
+        try {
+          applyResult = applyPrescription(prescription_id);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          updatePrescriptionStatus(prescription_id, 'failed');
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify({
+                  prescription_id,
+                  disposition: 'accept',
+                  result: 'failed',
+                  message: `❌ Apply threw an exception: ${message}`,
+                  rollback_available: false,
+                }),
+              },
+            ],
+            isError: true,
+          };
+        }
 
         if (!applyResult.success) {
           updatePrescriptionStatus(prescription_id, 'failed');
@@ -739,11 +772,14 @@ server.registerTool(
   },
 );
 
-/** Simple ordinal helper for deferral messages. */
+/** Ordinal suffix helper (handles 11-13 and 1/2/3 endings). */
 function ordinal(n: number): string {
-  if (n === 1) return '1st';
-  if (n === 2) return '2nd';
-  if (n === 3) return '3rd';
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  const mod10 = n % 10;
+  if (mod10 === 1) return `${n}st`;
+  if (mod10 === 2) return `${n}nd`;
+  if (mod10 === 3) return `${n}rd`;
   return `${n}th`;
 }
 
@@ -784,13 +820,16 @@ server.registerTool(
       const acceptedTotal = accepted + applied; // accepted or already applied
 
       // Resolved patterns: prescriptions that were applied, whose insight is now stale
+      // Batch-fetch all referenced insights in one query to avoid N+1
       const appliedPrescriptions = listPrescriptions({ status: 'applied' });
       const resolvedPatterns: string[] = [];
       const seenInsights = new Set<number>();
+      const uniqueInsightIds = [...new Set(appliedPrescriptions.map((p) => p.insightId))];
+      const insightMap = getInsightsByIds(uniqueInsightIds);
       for (const p of appliedPrescriptions) {
         if (seenInsights.has(p.insightId)) continue;
         seenInsights.add(p.insightId);
-        const insight = getInsight(p.insightId);
+        const insight = insightMap.get(p.insightId);
         if (insight && insight.status === 'stale') {
           resolvedPatterns.push(`${insight.title} — resolved after applying prescription`);
         } else if (insight) {

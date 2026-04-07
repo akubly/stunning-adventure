@@ -67,6 +67,10 @@ export function runSessionStart(repoKey: string): { fastPath: boolean } {
   catchUpPreviousSession(repoKey);
   const curateResult = curate();
 
+  // Increment session counter BEFORE prescribe() so shouldResurface()
+  // sees the correct session number without needing an off-by-one hack.
+  incrementSessionCounter();
+
   // Chain prescribe() when insights changed (DP1 hybrid trigger)
   if (curateResult.insightsChanged) {
     try {
@@ -75,9 +79,6 @@ export function runSessionStart(repoKey: string): { fastPath: boolean } {
       // Fail-open — prescriber errors must not break session start
     }
   }
-
-  // Track sessions for deferral cooldown (DP5 #6)
-  incrementSessionCounter();
 
   return { fastPath: false };
 }

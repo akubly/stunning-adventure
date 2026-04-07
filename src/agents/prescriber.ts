@@ -85,13 +85,15 @@ export function computePriority(
 
 /**
  * Check whether a deferred prescription should resurface.
- * Uses currentSession + 1 to compensate for the session counter
- * being incremented AFTER prescribe() in sessionStart.
+ * Compares directly against the current session counter — the caller
+ * is responsible for incrementing the counter before calling prescribe().
+ * (sessionStart increments first; MCP run_curate does not increment,
+ * which is correct because no new session has started.)
  */
 export function shouldResurface(prescription: Prescription, currentSession: number): boolean {
   if (prescription.status !== 'deferred') return false;
   if (prescription.deferUntilSession === undefined) return true;
-  return (currentSession + 1) >= prescription.deferUntilSession;
+  return currentSession >= prescription.deferUntilSession;
 }
 
 /**
@@ -362,15 +364,19 @@ function generatePrescription(
   const { title, rationale, proposedChange } = generator(insight);
   const { targetPath, artifactScope } = computeTargetPath(topology, prefix);
 
-  // Compute how many sessions since this insight was last seen
-  // (use 0 as default — insight is fresh)
-  const sessionsAgo = 0; // Fresh insights get full recency weight
+  // MVP simplification: sessionsAgo and priorRejections are hardcoded.
+  // For new prescriptions, the insight was just reinforced (sessionsAgo=0 is accurate).
+  // priorRejections=0 is correct because this is a fresh prescription from a new insight.
+  // Future: compute real sessionsAgo from insight.lastSeenAt vs current session,
+  // and look up prior rejection count from prescription history.
+  const sessionsAgo = 0;
+  const priorRejections = 0;
 
   const priorityScore = computePriority(
     insight.confidence,
     insight.lastSeenAt,
     sessionsAgo,
-    0, // No prior rejections for new prescriptions
+    priorRejections,
   );
 
   const prescriptionId = createPrescription({

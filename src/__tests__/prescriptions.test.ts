@@ -72,7 +72,7 @@ describe('prescriptions migration', () => {
     expect(row.pending_count).toBe(0);
   });
 
-  it('should record schema version 6', () => {
+  it('should record schema version 7', () => {
     const db = getDb();
     const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
       version: number;

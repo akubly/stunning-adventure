@@ -98,6 +98,22 @@ export function getInsights(status?: InsightStatus): Insight[] {
   return rows.map(mapRow);
 }
 
+/** Get multiple insights by their ids in a single query. */
+export function getInsightsByIds(ids: number[]): Map<number, Insight> {
+  if (ids.length === 0) return new Map();
+  const db = getDb();
+  const placeholders = ids.map(() => '?').join(', ');
+  const rows = db
+    .prepare(`SELECT * FROM insights WHERE id IN (${placeholders})`)
+    .all(...ids) as Array<Record<string, unknown>>;
+  const map = new Map<number, Insight>();
+  for (const row of rows) {
+    const insight = mapRow(row);
+    map.set(insight.id, insight);
+  }
+  return map;
+}
+
 /** Count insights grouped by status. Uses SQL aggregation — does not load rows. */
 export function countInsightsByStatus(): Record<string, number> {
   const db = getDb();
