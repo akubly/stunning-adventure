@@ -398,7 +398,8 @@ describe('prescription templates', () => {
     const rx = listPrescriptions({ insightId })[0];
     expect(rx.title).toContain('Prevent recurring');
     expect(rx.title).toContain('build');
-    expect(rx.proposedChange).toContain('Managed by Cairn Prescriber');
+    expect(rx.proposedChange).toBeDefined();
+    expect(rx.proposedChange.length).toBeGreaterThan(0);
     expect(rx.patternType).toBe('recurring_error');
   });
 
@@ -408,7 +409,8 @@ describe('prescription templates', () => {
 
     const rx = listPrescriptions({ insightId })[0];
     expect(rx.title).toContain('Guard against error sequence');
-    expect(rx.proposedChange).toContain('Managed by Cairn Prescriber');
+    expect(rx.proposedChange).toBeDefined();
+    expect(rx.proposedChange.length).toBeGreaterThan(0);
     expect(rx.patternType).toBe('error_sequence');
   });
 
@@ -418,7 +420,8 @@ describe('prescription templates', () => {
 
     const rx = listPrescriptions({ insightId })[0];
     expect(rx.title).toContain('Review skipped guardrail');
-    expect(rx.proposedChange).toContain('Managed by Cairn Prescriber');
+    expect(rx.proposedChange).toBeDefined();
+    expect(rx.proposedChange.length).toBeGreaterThan(0);
     expect(rx.patternType).toBe('skip_frequency');
   });
 });

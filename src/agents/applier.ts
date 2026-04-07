@@ -68,6 +68,11 @@ function sha256(content: string): string {
   return createHash('sha256').update(content, 'utf8').digest('hex');
 }
 
+/** Validate sidecar prefix to prevent path traversal. */
+function isValidPrefix(prefix: string): boolean {
+  return /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(prefix);
+}
+
 function resolveSidecarPath(
   scope: ArtifactScope | undefined,
   prefix: string,
@@ -147,6 +152,9 @@ export function applyPrescription(
 
   // 3. Resolve sidecar path
   const prefix = getPreference('prescriber.sidecar_prefix') ?? DEFAULT_SIDECAR_PREFIX;
+  if (!isValidPrefix(prefix)) {
+    return { success: false, error: `Invalid sidecar prefix '${prefix}' — must be alphanumeric with dashes/underscores` };
+  }
   const targetPath = resolveSidecarPath(prescription.artifactScope, prefix, opts);
   if (!targetPath) {
     return { success: false, error: 'Cannot resolve target path for scope' };
@@ -154,7 +162,14 @@ export function applyPrescription(
 
   // 4. Check for drift if file is already tracked
   const existingArtifact = getManagedArtifact(targetPath);
-  if (existingArtifact && fs.existsSync(targetPath)) {
+  if (existingArtifact) {
+    if (!fs.existsSync(targetPath)) {
+      // Tracked file was deleted — this is drift
+      return {
+        success: false,
+        error: `Drift detected on ${targetPath} — file was deleted but still tracked in managed artifacts`,
+      };
+    }
     const currentContent = fs.readFileSync(targetPath, 'utf8');
     const diskChecksum = sha256(currentContent);
     if (existingArtifact.currentChecksum && diskChecksum !== existingArtifact.currentChecksum) {

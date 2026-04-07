@@ -1,0 +1,12 @@
+fix(prescriber): Code review fixes — security, correctness, performance
+
+Graham's Phase 7 code review: 7 issues fixed.
+- Security: path traversal validation in discovery scanner
+- Correctness: sidecar double-formatting, project-scope discovery path
+- Reliability: drift detection for deleted files, topology cache wiring
+- Performance: N+1 query in show_growth batched
+- Consistency: ISO UTC timestamps standardized
+
+316 tests passing, clean build, clean lint.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>

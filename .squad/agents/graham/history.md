@@ -344,6 +344,30 @@ Conducted deep research into GitHub Copilot's full extensibility landscape. Key 
 
 **README staleness flagged:** Test count wrong (106 → 136), roadmap phases mislabeled (Phase 4 says "Compiler" but was actually session hook), hooks and MCP server not mentioned in "What's Built" section. Should be fixed in a housekeeping PR regardless of Phase 6 choice.
 
+### 2026-04-03: Phase 7 Code Review — Prescriber Implementation
+
+**Review type:** Full code review with fixes  
+**Scope:** 18 new files, 7 modified files, 316 tests  
+**Verdict:** APPROVE (blocking issues fixed inline)
+
+**Key findings fixed:**
+
+1. **Double-formatted sidecar content** — Prescriber templates wrapped proposedChange in full sidecar format, then Applier wrapped it again. Applied files would have been malformed. Fix: prescriber stores plain instruction text only; applier owns all formatting.
+
+2. **Project-scope topology never scanned** — `scanTopology()` was called without `projectRoot`, so `.github/` artifacts were invisible to the prescriber. Fix: pass `process.cwd()`.
+
+3. **Path traversal via sidecar_prefix** — Unvalidated prefix in `path.join()` could escape managed directories. Fix: alphanumeric + dash/underscore validation.
+
+4. **Topology cache dead code** — `cacheTopology()` was never called outside tests. Fix: cache after successful scan.
+
+5. **Missing-file drift bypass** — Deleted tracked files weren't detected as drift. Fix: fail when tracked artifact exists but file doesn't.
+
+**Review patterns observed:**
+- When two components both format the same output (prescriber generates content, applier writes files), the write-side should own formatting. Formatting should happen exactly once at the boundary closest to output.
+- Path construction from user-configurable inputs needs validation against traversal. This applies to any `path.join(base, userInput)` pattern.
+- Cache layers that are never populated are worse than no cache — they add complexity without benefit and obscure the actual performance path.
+- End-to-end integration tests (prescribe → accept → apply → verify file content) would have caught the double-formatting bug. Unit tests on each component individually passed but the composition was broken.
+
 **Decision document:** `.squad/decisions/inbox/graham-phase6-assessment.md`
 
 ### 2026-04-02: Installation Architecture Assessment — First Consumer

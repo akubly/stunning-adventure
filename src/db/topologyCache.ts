@@ -1,4 +1,5 @@
 import { getDb } from './index.js';
+import { parseSqliteDateToMs } from '../utils/timestamps.js';
 import type { ArtifactTopology } from '../types/index.js';
 
 /** Default cache TTL: 5 minutes */
@@ -28,8 +29,8 @@ export function getCachedTopology(ttlMs: number = DEFAULT_TTL_MS): ArtifactTopol
 
   if (!row) return null;
 
-  const scannedAtMs = new Date(row.scanned_at).getTime();
-  if (Date.now() - scannedAtMs > ttlMs) return null;
+  const scannedAtMs = parseSqliteDateToMs(row.scanned_at) ?? new Date(row.scanned_at).getTime();
+  if (isNaN(scannedAtMs) || Date.now() - scannedAtMs > ttlMs) return null;
 
   return JSON.parse(row.topology_json) as ArtifactTopology;
 }

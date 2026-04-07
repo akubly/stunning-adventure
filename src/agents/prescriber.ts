@@ -28,7 +28,7 @@ import {
   suppressPrescription,
   updatePrescriptionStatus,
 } from '../db/prescriptions.js';
-import { getCachedTopology } from '../db/topologyCache.js';
+import { getCachedTopology, cacheTopology } from '../db/topologyCache.js';
 import { scanTopology } from './discovery.js';
 import type {
   Insight,
@@ -115,7 +115,7 @@ export function checkAutoSuppress(prescriptionId: number, deferCount: number): b
 // Prescription templates
 // ---------------------------------------------------------------------------
 
-function generateForRecurringError(insight: Insight, prefix: string): {
+function generateForRecurringError(insight: Insight): {
   title: string;
   rationale: string;
   proposedChange: string;
@@ -124,15 +124,12 @@ function generateForRecurringError(insight: Insight, prefix: string): {
   return {
     title: `Prevent recurring ${category} errors`,
     rationale: `${insight.description} (observed ${insight.occurrenceCount} times, confidence ${(insight.confidence * 100).toFixed(0)}%)`,
-    proposedChange: buildSidecarContent(
-      prefix,
-      `Prevent recurring ${category} errors`,
+    proposedChange:
       insight.prescription ?? `Watch for and prevent "${category}" errors. ${insight.description}`,
-    ),
   };
 }
 
-function generateForErrorSequence(insight: Insight, prefix: string): {
+function generateForErrorSequence(insight: Insight): {
   title: string;
   rationale: string;
   proposedChange: string;
@@ -140,15 +137,12 @@ function generateForErrorSequence(insight: Insight, prefix: string): {
   return {
     title: `Guard against error sequence: ${insight.title.replace('Sequence: ', '')}`,
     rationale: `${insight.description} (observed ${insight.occurrenceCount} times, confidence ${(insight.confidence * 100).toFixed(0)}%)`,
-    proposedChange: buildSidecarContent(
-      prefix,
-      `Guard against error sequence`,
+    proposedChange:
       insight.prescription ?? `Add a verification step to prevent this error sequence. ${insight.description}`,
-    ),
   };
 }
 
-function generateForSkipFrequency(insight: Insight, prefix: string): {
+function generateForSkipFrequency(insight: Insight): {
   title: string;
   rationale: string;
   proposedChange: string;
@@ -156,24 +150,9 @@ function generateForSkipFrequency(insight: Insight, prefix: string): {
   return {
     title: `Review skipped guardrail: ${insight.title.replace('Frequently skipped: ', '')}`,
     rationale: `${insight.description} (observed ${insight.occurrenceCount} times, confidence ${(insight.confidence * 100).toFixed(0)}%)`,
-    proposedChange: buildSidecarContent(
-      prefix,
-      `Review skipped guardrail`,
+    proposedChange:
       insight.prescription ?? `Review whether this frequently-skipped guardrail is still relevant. ${insight.description}`,
-    ),
   };
-}
-
-function buildSidecarContent(prefix: string, heading: string, body: string): string {
-  return [
-    `<!-- Managed by Cairn Prescriber. Do not edit manually. -->`,
-    ``,
-    `## ${heading}`,
-    ``,
-    body,
-    ``,
-    `---`,
-  ].join('\n');
 }
 
 function extractCategory(title: string, _patternType: PatternType): string {
@@ -185,7 +164,7 @@ function extractCategory(title: string, _patternType: PatternType): string {
 
 const GENERATORS: Record<
   PatternType,
-  (insight: Insight, prefix: string) => { title: string; rationale: string; proposedChange: string }
+  (insight: Insight) => { title: string; rationale: string; proposedChange: string }
 > = {
   recurring_error: generateForRecurringError,
   error_sequence: generateForErrorSequence,
@@ -292,6 +271,8 @@ export function prescribe(): PrescribeResult {
   // --- Step 2: Resurface deferred prescriptions past cooldown ---
   const currentSession = getSessionsSinceInstall();
   const deferred = listPrescriptions({ status: 'deferred' });
+  const activeInsights = getInsights('active');
+  const topology = getTopology();
 
   for (const rx of deferred) {
     if (!shouldResurface(rx, currentSession)) continue;
@@ -305,18 +286,14 @@ export function prescribe(): PrescribeResult {
     });
 
     // Re-generate from the same insight (if insight is still active)
-    const insights = getInsights('active');
-    const sourceInsight = insights.find((i) => i.id === rx.insightId);
+    const sourceInsight = activeInsights.find((i) => i.id === rx.insightId);
     if (!sourceInsight) continue;
 
     // Generate new prescription from the same insight
-    const topology = getTopology();
-    generatePrescription(sourceInsight, topology, prefix, minConfidence, currentSession);
+    generatePrescription(sourceInsight, topology, prefix, minConfidence);
   }
 
   // --- Step 3: Generate new prescriptions from active insights ---
-  const activeInsights = getInsights('active');
-  const topology = getTopology();
 
   let generated = 0;
   const sessionId = findActiveSessionId();
@@ -333,7 +310,6 @@ export function prescribe(): PrescribeResult {
       topology,
       prefix,
       minConfidence,
-      currentSession,
     );
 
     if (prescriptionId !== null) {
@@ -362,7 +338,9 @@ function getTopology(): ArtifactTopology | null {
   if (cached) return cached;
 
   try {
-    return scanTopology(os.homedir());
+    const topology = scanTopology(os.homedir(), process.cwd());
+    cacheTopology(topology);
+    return topology;
   } catch {
     return null;
   }
@@ -377,12 +355,11 @@ function generatePrescription(
   topology: ArtifactTopology | null,
   prefix: string,
   _minConfidence: number,
-  _currentSession: number,
 ): number | null {
   const generator = GENERATORS[insight.patternType];
   if (!generator) return null;
 
-  const { title, rationale, proposedChange } = generator(insight, prefix);
+  const { title, rationale, proposedChange } = generator(insight);
   const { targetPath, artifactScope } = computeTargetPath(topology, prefix);
 
   // Compute how many sessions since this insight was last seen
@@ -396,9 +373,6 @@ function generatePrescription(
     0, // No prior rejections for new prescriptions
   );
 
-  const recencyWeight = Math.min(1.0, Math.max(0.5, 1.0 - (sessionsAgo - 5) * (0.5 / 15)));
-  const availabilityFactor = 1.0; // No prior rejections
-
   const prescriptionId = createPrescription({
     insightId: insight.id,
     patternType: insight.patternType,
@@ -410,8 +384,8 @@ function generatePrescription(
     artifactScope,
     confidence: insight.confidence,
     priorityScore,
-    recencyWeight,
-    availabilityFactor,
+    recencyWeight: Math.min(1.0, Math.max(0.5, 1.0 - (sessionsAgo - 5) * (0.5 / 15))),
+    availabilityFactor: 1.0,
   });
 
   return prescriptionId;
