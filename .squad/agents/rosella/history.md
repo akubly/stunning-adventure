@@ -205,3 +205,41 @@ ode dist/hooks/...\ commands in hooks.json for cross-platform compatibility
 - Project MCP scanning independent of `.github/` directory existence
 
 **Dogfood gate:** Build ✅ | 232 tests ✅ | Lint ✅
+
+### 2026-07-27: Phase 7E — Apply Engine + Managed Artifacts
+
+**Task:** Build the Apply Engine that makes prescriptions actionable — sidecar file writing, rollback, and drift detection.
+
+**Deliverables:**
+
+1. **`src/agents/applier.ts`** — Three core functions:
+   - `applyPrescription(id, opts?)` — Loads accepted prescription, resolves sidecar path by scope (user→`~/.copilot/`, project→`.github/`), checks for drift, reads existing content for rollback, writes/appends sidecar file with markdown header, computes SHA-256 checksum, tracks in managed_artifacts, updates status to 'applied', logs event.
+   - `rollbackPrescription(id, opts?)` — Finds managed artifact, restores rollback_content or deletes file if new, removes from managed_artifacts, updates status to 'failed', logs event.
+   - `checkDrift(path)` — Reads actual file on disk, computes SHA-256, compares to stored current_checksum. Returns undefined for untracked paths.
+
+2. **`src/__tests__/applier.test.ts`** — 24 tests covering:
+   - User-scope and project-scope sidecar creation
+   - Rollback content storage (undefined for new files, string for existing)
+   - SHA-256 checksum computation and storage
+   - Managed artifact tracking (type, scope, prescription linkage)
+   - Status lifecycle (accepted→applied, applied→failed on rollback)
+   - Rejection of non-accepted prescriptions
+   - Rejection of missing prescriptions
+   - Event logging (prescription_applied, prescription_rolled_back)
+   - Sidecar markdown format validation (managed header, prescription sections, separators)
+   - Configurable sidecar prefix via `prescriber.sidecar_prefix` preference
+   - Drift detection before apply (blocks on checksum mismatch)
+   - Multi-prescription append (single managed header, multiple sections)
+   - Rollback content for appended prescriptions (stores pre-append file state)
+   - Rollback restores content or deletes new file
+   - Rollback removes managed_artifact entry
+   - Drift detection: clean, drifted, deleted file, untracked path
+
+**Key decisions:**
+- Used `null/undefined` for rollback_content to distinguish "new file" from "empty file" (critic recommendation)
+- `checkDrift()` does file-based comparison (reads actual disk SHA-256 vs stored checksum), NOT the DAL's DB-only `detectDrift()`
+- When appending to existing sidecar (UNIQUE path constraint), removes old managed_artifact row and re-tracks with latest prescription — rollback only supports LIFO (latest writer)
+- Preference key is namespaced `prescriber.sidecar_prefix` (matches existing prescriber.ts pattern)
+- Apply blocks on drift detection — if sidecar was manually edited after last write, apply fails with descriptive error
+
+**Dogfood gate:** Build ✅ | 294 tests ✅ | Lint ✅

@@ -3148,3 +3148,69 @@ The Prescriber is complete when:
 18. ✅ Clean build, clean lint
 19. ✅ Dogfooded: Aaron has accepted ≥1 real prescription
 
+
+---
+
+## Phase 7D Decisions — Roger
+
+### recencyWeight Capped at 1.0
+
+The spec formula Math.max(0.5, 1.0 - (sessionsAgo - 5) * (0.5 / 15)) produces values >1.0 when sessionsAgo < 5. Added Math.min(1.0, ...) to match the spec description "1.0 within 5 sessions, decays to 0.5 by 20 sessions."
+
+**Impact:** Priority scores are bounded [0, 1.0] as expected. No bonus for very recent insights.
+
+### Event Logging is Fail-Soft
+
+logEvent() requires a FK-valid session ID. The prescriber looks up the most recent active session from the DB. If none exists (e.g., during sessionStart before the new session is created), event logging is silently skipped.
+
+**Rationale:** Prescriber runs in two contexts: (1) sessionStart (before new session exists) and (2) MCP run_curate (session may exist). Logging is informational, not critical. Fail-soft is consistent with the project's fail-open philosophy.
+
+**Impact:** Phase 7F tools that read prescription events should be aware that some prescription_generated events may be missing for prescriptions generated during session startup.
+
+### shouldResurface Compensates for Session Counter Timing
+
+incrementSessionCounter() runs AFTER prescribe() in sessionStart.ts. The shouldResurface() function uses currentSession + 1 >= deferUntilSession to compensate, so deferral cooldowns are honored correctly.
+
+**Impact:** Deferral cooldowns are accurate. Phase 7F should use the same shouldResurface() function if needed.
+
+### Rejected Prescriptions Block Re-Prescription
+
+'rejected' is added to the set of statuses that prevent generating a new prescription from the same insight. An insight with a rejected prescription won't be re-prescribed until the rejected prescription is manually expired or the insight itself changes.
+
+**Rationale:** Rejected is terminal per the spec. Without this, rejected insights would get re-prescribed on every prescribe() run, spamming the user.
+
+**Impact:** If a user rejects a prescription but later wants to reconsider, they'll need to explicitly re-enable (possibly via unsuppress or manual expiration in Phase 7F).
+
+### checkAutoSuppress Exported for Phase 7F
+
+The auto-suppression check (deferCount >= threshold → suppress) is exported as checkAutoSuppress(prescriptionId, deferCount). Phase 7F's resolve_prescription MCP tool should call this after each deferral.
+
+**Impact:** Phase 7F must call checkAutoSuppress() after deferPrescription() in the defer flow.
+
+---
+
+## Phase 7E Decisions — Rosella
+
+### LIFO Rollback for Multi-Prescription Sidecars
+
+**Context:** managed_artifacts has UNIQUE(path). Multiple prescriptions can append to the same sidecar file, but only one row can exist per path.
+
+**Decision:** When appending, remove the old managed_artifact row and re-track with the latest prescription's ID. Rollback only supports the latest writer (LIFO). Rolling back a middle prescription in a multi-append stack is not supported in this phase.
+
+**Rationale:** The existing schema supports this cleanly. Full multi-level undo would require a separate history table — overkill for Phase 7E scope. If needed later, we add a managed_artifact_history table.
+
+### File-Based Drift Detection
+
+**Context:** The DAL's detectDrift() compares original_checksum vs current_checksum in the DB only — it doesn't read disk.
+
+**Decision:** checkDrift() in applier.ts reads the actual file, computes SHA-256, and compares to stored current_checksum. This is the on-disk drift check. The DAL function is for DB-internal consistency.
+
+**Rationale:** Users need to know if someone hand-edited the sidecar file. That requires a disk read, not a DB lookup.
+
+### Apply Blocks on Drift
+
+**Context:** Should pplyPrescription proceed if the sidecar has drifted since last write?
+
+**Decision:** Block with error. The user must resolve drift before new content is applied.
+
+**Rationale:** Silently overwriting user edits violates the "safe defaults" principle from DP6. The user should explicitly acknowledge changes before Cairn writes again.

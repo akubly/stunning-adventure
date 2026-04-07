@@ -213,6 +213,24 @@ $raw | node $hookScript 2>$null
 - Test patterns from db.test.ts (beforeEach/afterEach with closeDb/getDb(':memory:'), describe blocks).
 - Updated db.test.ts: bumped expected migration count (4→6), max schema_version (4→6), added table presence checks.
 
+### 2026-04-06: Phase 7D — Prescription Engine
+
+**What was built:**
+- Full Prescriber agent `src/agents/prescriber.ts` replacing Gabriel's Phase 7C stub. 8 exported functions: `prescribe()`, `computePriority()`, `shouldResurface()`, `checkAutoSuppress()`, plus constants and types.
+- Template-based prescription generation for all 3 pattern types (recurring_error, error_sequence, skip_frequency).
+- Priority scoring: `confidence × recencyWeight × availabilityFactor` with min(1.0) cap on recencyWeight.
+- Session cleanup: expires stale generated prescriptions (>7 days), resurfaces deferred past cooldown, auto-suppresses after threshold deferrals.
+- Idempotent: skips insights with any active prescription (generated/accepted/rejected/applied/suppressed).
+- 38 new tests in `src/__tests__/prescriber.test.ts` covering generation, idempotency, priority, all 8 state transitions, deferral resurfacing, suppression, templates, target paths, events, expiration, and re-prescription.
+
+**Design decisions:**
+- **Event logging fail-soft**: `logEvent` requires FK-valid sessionId. Prescriber looks up any active session; skips logging if none found. This handles the sessionStart case where prescribe() runs before the new session is created.
+- **recencyWeight cap**: Spec formula produces >1.0 for sessionsAgo < 5. Added `Math.min(1.0, ...)` to match spec description "1.0 within 5 sessions."
+- **Off-by-one compensation**: `shouldResurface` uses `currentSession + 1 >= deferUntilSession` because `incrementSessionCounter()` runs after `prescribe()` in sessionStart.
+- **Scope defaulting**: Target path defaults to user scope (`~/.copilot/`). Project scope selected only when topology shows existing project-level instructions.
+- **Rejected = blocking**: Added 'rejected' to ACTIVE_STATUSES so rejected insights don't get re-prescribed (terminal state).
+- **Auto-suppression exported**: `checkAutoSuppress()` exported for Phase 7F MCP tools to call after deferral; also checked during resurface flow.
+
 **Decisions made:**
 - `prescriber_state.pending_count` is kept in sync automatically by every prescription status change (create, update, defer, suppress, unsuppress, expire). This avoids stale counts without requiring manual synchronization from callers.
 - `detectDrift()` returns `undefined` for non-existent paths rather than throwing, consistent with the `getPrescription()` / `getManagedArtifact()` undefined-on-miss pattern.
