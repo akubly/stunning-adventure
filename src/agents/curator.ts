@@ -99,6 +99,9 @@ function truncateWithHash(value: string, maxLen: number): string {
 /** Maximum events to process per batch to bound memory and transaction time. */
 const BATCH_SIZE = 1000;
 
+/** Soft time cap (ms) for curate() — checked between batches. */
+export const TIME_BUDGET_MS = 3000;
+
 // ---------------------------------------------------------------------------
 // Core pipeline
 // ---------------------------------------------------------------------------
@@ -107,6 +110,8 @@ export interface CurateResult {
   eventsProcessed: number;
   insightsCreated: number;
   insightsReinforced: number;
+  capped: boolean;
+  insightsChanged: boolean;
 }
 
 /**
@@ -116,9 +121,11 @@ export interface CurateResult {
  * Each batch is wrapped in a transaction. Loops until caught up.
  */
 export function curate(): CurateResult {
+  const startTime = Date.now();
   let totalProcessed = 0;
   let totalCreated = 0;
   let totalReinforced = 0;
+  let capped = false;
 
   // Track the last event per session across batches so sequence detection
   // can find pairs that straddle batch boundaries.
@@ -163,7 +170,13 @@ export function curate(): CurateResult {
     totalReinforced += insightsReinforced;
 
     // If we got fewer than BATCH_SIZE, we're caught up
-    if (events.length < BATCH_SIZE) hasMore = false;
+    if (events.length < BATCH_SIZE) {
+      hasMore = false;
+    } else if (Date.now() - startTime > TIME_BUDGET_MS) {
+      // Time budget exhausted — persist cursor (already done in txn) and stop
+      capped = true;
+      hasMore = false;
+    }
   }
 
   updateLastRunTimestamp();
@@ -172,6 +185,8 @@ export function curate(): CurateResult {
     eventsProcessed: totalProcessed,
     insightsCreated: totalCreated,
     insightsReinforced: totalReinforced,
+    capped,
+    insightsChanged: totalCreated > 0 || totalReinforced > 0,
   };
 }
 

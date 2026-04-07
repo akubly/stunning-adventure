@@ -2410,6 +2410,119 @@ Changed from flat `{ eventsProcessed, insightsCreated, insightsReinforced }` to 
 
 ---
 
+## Phase 7F Decisions — Roger Wilco (Final Phase)
+
+### 2026-04-07T05-43: State Guard on resolve_prescription
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical  
+**Phase:** 7F — MCP Tools + UX  
+**Status:** Active
+
+Only prescriptions in `generated` status can be resolved. Attempting to resolve a prescription in any other state returns an error. This prevents lifecycle corruption (e.g., re-rejecting an already-applied prescription).
+
+**Rationale:** State machine integrity. A prescription in 'accepted' or 'applied' state has already transitioned through the decision point. Allowing re-resolution would create ambiguous audit trails and potential conflicts with apply operations.
+
+**Impact:** MCP tool `resolve_prescription` validates state before calling transition. User-friendly error messages guide users to check prescription status before attempting resolution.
+
+---
+
+### 2026-04-07T05-43: Accept Failure Handling
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical  
+**Phase:** 7F — MCP Tools + UX  
+**Status:** Active
+
+When `applyPrescription()` fails after `updatePrescriptionStatus(id, 'accepted')`, the tool explicitly marks the prescription as `failed`. This prevents prescriptions stuck in `accepted` state with no applied artifact.
+
+**Rationale:** Application failures are real (write permissions, file conflicts, network errors). Rather than leaving prescriptions in a limbo state, explicit failure marking ensures prescriber can move on and offer retry/alternative options in next cycle.
+
+**Decision:** Fail-soft transition: accepted → failed (with error context logged).
+
+**Impact:** Audit trail is clear. Downstream tools (`show_growth`, `list_prescriptions`) can distinguish "not applied yet" (accepted) from "tried and failed" (failed).
+
+---
+
+### 2026-04-07T05-43: Proactive Hint Counter — Process Lifetime
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Design  
+**Phase:** 7F — MCP Tools + UX  
+**Status:** Active
+
+Used a module-level `proactiveHintsShown` counter (reset per process lifecycle) rather than DB-based tracking. MCP server processes are short-lived, so this is sufficient for "max 1 per session" and avoids unnecessary DB writes.
+
+**Rationale:** MCP server spawns per CLI invocation (typically seconds to minutes). Database writes for every hint shown add latency. Module-level counter is sufficient for the constraint ("max 1 proactive hint per session"). If Cairn scales to long-running daemons, revisit with persistent tracking.
+
+**Decision:** No DB write; counter reset on process exit.
+
+**Impact:** UX principle "max 1 proactive hint per session" is enforced cheaply. Faster response times. No database cleanup needed.
+
+---
+
+### 2026-04-07T05-43: Exported UX Helpers for Testing
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Design  
+**Phase:** 7F — MCP Tools + UX  
+**Status:** Active
+
+Exported `confidenceToWords()` and `resetProactiveHintCounter()` from server.ts to enable unit testing of UX formatting without requiring MCP transport.
+
+**Rationale:** Testing UX strings ("high confidence", "medium confidence", etc.) shouldn't require full MCP setup. Exported helpers decouple UX logic from transport. Matches pattern in other layers (DAL functions exported for testing, not just via HTTP).
+
+**Decision:** Public exports for all UX helper functions.
+
+**Impact:** Faster unit tests, better UX coverage, clearer public API for future extensions.
+
+---
+
+### 2026-04-07T05-43: Added getInsight(id) to Insights DAL
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical  
+**Phase:** 7F — MCP Tools + UX  
+**Status:** Active
+
+The `get_prescription` tool needs insight context (title, description, origin pattern), but no single-insight lookup existed. Added `getInsight(id: number): Insight | undefined` to `src/db/insights.ts`.
+
+**Rationale:** `get_prescription` returns prescription metadata + rich insight context (why this recommendation exists, what pattern triggered it). Without single-insight lookup, tool would need to query all insights and filter — O(n) cost. Single-insight DAL function is O(1).
+
+**Decision:** Backward-compatible addition; no changes to existing insight functions.
+
+**Impact:** `get_prescription` response is fast and rich. Audit trail clear (which insight drove which prescription).
+
+---
+
+### 2026-04-07T05-43: show_growth Resolved Patterns as Heuristic
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Design  
+**Phase:** 7F — MCP Tools + UX  
+**Status:** Active
+
+"Applied prescription + insight is stale" is presented as a heuristic, not definitive proof of resolution. The insight status table lacks a "resolved because of prescription" signal, so this is the best available proxy.
+
+**Rationale:** True resolution proof would require end-to-end tracking: insight → prescription → application → user verification → pattern disappears. That's complex. The heuristic ("we applied a fix, and the insight is no longer triggering new alerts") is good enough for growth tracking, with caveat that it's heuristic-based.
+
+**Decision:** Present with confidence language: "This pattern appears resolved" rather than "This pattern is resolved." Let users verify.
+
+**Impact:** `show_growth` tool is transparent about evidence quality. Users build trust in recommendations. Future phases can add deeper resolution proof if needed.
+
+---
+
+## Phase 7F Summary
+
+- 4 new MCP tools registered (10 total: Cairn ecosystem complete)
+- run_curate description updated to reflect new tools
+- 22 new tests (316 total)
+- All dogfood gates passed: build ✅, test ✅, lint ✅
+- All 10 UX principles integrated
+- Prescriber ready for production use
+
+---
+
 ### 2026-04-07 Phase 7C: `incrementSessionCounter()` Unconditional on Slow Path
 
 **Author:** Gabriel (Infrastructure)  

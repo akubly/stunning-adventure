@@ -15,8 +15,18 @@ import { z } from 'zod';
 
 import { getDb } from '../db/index.js';
 import { getActiveSession } from '../db/sessions.js';
-import { getInsights, countInsightsByStatus } from '../db/insights.js';
+import { getInsights, getInsight, countInsightsByStatus } from '../db/insights.js';
 import { curate, getCuratorStatus } from '../agents/curator.js';
+import { prescribe, checkAutoSuppress } from '../agents/prescriber.js';
+import { applyPrescription } from '../agents/applier.js';
+import {
+  listPrescriptions,
+  getPrescription,
+  countPrescriptionsByStatus,
+  deferPrescription,
+  updatePrescriptionStatus,
+  getSessionsSinceInstall,
+} from '../db/prescriptions.js';
 import {
   getSessionSummary,
   sessionExists,
@@ -24,7 +34,7 @@ import {
   findEvents,
 } from '../agents/sessionState.js';
 
-import type { InsightStatus } from '../types/index.js';
+import type { InsightStatus, PrescriptionStatus } from '../types/index.js';
 import { checkIsScript } from '../utils/isScript.js';
 
 // ---------------------------------------------------------------------------
@@ -38,6 +48,30 @@ const server = new McpServer(
   { name: 'cairn', version: pkg.version },
   { capabilities: { tools: {} } },
 );
+
+// ---------------------------------------------------------------------------
+// UX helpers (DP5)
+// ---------------------------------------------------------------------------
+
+/** Proactive hint counter — max 1 per MCP server process lifecycle. */
+let proactiveHintsShown = 0;
+
+/** For testing: reset the proactive hint counter. */
+export function resetProactiveHintCounter(): void {
+  proactiveHintsShown = 0;
+}
+
+/** Convert numeric confidence to user-facing words (DP5 #5). */
+export function confidenceToWords(confidence: number): string {
+  if (confidence >= 0.7) return 'high';
+  if (confidence >= 0.4) return 'medium';
+  return 'emerging';
+}
+
+const VALID_PRESCRIPTION_STATUSES = [
+  'generated', 'accepted', 'rejected', 'deferred',
+  'applied', 'failed', 'expired', 'suppressed',
+] as const;
 
 // ---------------------------------------------------------------------------
 // Tool: get_status
@@ -265,7 +299,8 @@ server.registerTool(
       'Trigger the curator to process unprocessed events and discover patterns. ' +
       'The curator scans the event stream for recurring errors, error sequences, ' +
       'and skip frequency, then creates or reinforces insights with prescriptions. ' +
-      'Returns the number of events processed and insights created or reinforced. ' +
+      'Also generates new prescriptions when insights are created or reinforced. ' +
+      'Returns combined curation and prescription results. ' +
       'Use this when you want fresh analysis of recent activity.',
     annotations: {
       readOnlyHint: false,
@@ -277,11 +312,21 @@ server.registerTool(
 
       const result = curate();
 
+      // Chain prescribe() when insights changed (DP1 hybrid trigger)
+      let prescribeResult = null;
+      if (result.insightsChanged) {
+        try {
+          prescribeResult = prescribe();
+        } catch {
+          // Partial success — curate succeeded, prescribe failed
+        }
+      }
+
       return {
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify(result, null, 2),
+            text: JSON.stringify({ curate: result, prescriptions: prescribeResult }, null, 2),
           },
         ],
       };
@@ -337,6 +382,478 @@ server.registerTool(
           {
             type: 'text' as const,
             text: JSON.stringify({ event_type, occurred }),
+          },
+        ],
+      };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: list_prescriptions
+// ---------------------------------------------------------------------------
+
+server.registerTool(
+  'list_prescriptions',
+  {
+    title: 'List Prescriptions',
+    description:
+      'List improvement suggestions that Cairn has generated from observed patterns. ' +
+      'For reviewing improvement suggestions based on recurring patterns. ' +
+      'Filter by lifecycle status or omit to see all. ' +
+      'Use this after curation has run to see what suggestions are available.',
+    inputSchema: {
+      status: z
+        .enum(VALID_PRESCRIPTION_STATUSES)
+        .optional()
+        .describe('Filter by lifecycle status. Omit to see all.'),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(50)
+        .default(10)
+        .describe('Maximum results to return.'),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ status, limit }) => {
+    try {
+      ensureDb();
+
+      const prescriptions = listPrescriptions({
+        status: status as PrescriptionStatus | undefined,
+        limit,
+      });
+      const counts = countPrescriptionsByStatus();
+
+      const summaries = prescriptions.map((p) => ({
+        id: p.id,
+        title: p.title,
+        status: p.status,
+        confidence_level: confidenceToWords(p.confidence),
+        pattern: p.patternType,
+        target: p.targetPath,
+      }));
+
+      // Proactive hint: max 1 per session, only when unviewed generated prescriptions exist
+      let proactive_hint: string | undefined;
+      const generatedCount = counts['generated'] ?? 0;
+      if (generatedCount > 0 && proactiveHintsShown === 0) {
+        proactive_hint =
+          generatedCount === 1
+            ? 'You have 1 new suggestion ready for review.'
+            : `You have ${generatedCount} new suggestions ready for review.`;
+        proactiveHintsShown++;
+      }
+
+      const response: Record<string, unknown> = {
+        counts,
+        prescriptions: summaries,
+      };
+      if (proactive_hint) {
+        response.proactive_hint = proactive_hint;
+      }
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify(response, null, 2),
+          },
+        ],
+      };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: get_prescription
+// ---------------------------------------------------------------------------
+
+server.registerTool(
+  'get_prescription',
+  {
+    title: 'Get Prescription',
+    description:
+      'Get full detail on a specific improvement suggestion. ' +
+      'For reviewing the observation, rationale, and proposed change before deciding. ' +
+      'Shows what Cairn has noticed and what it suggests, with a diff preview. ' +
+      'Use this to understand a suggestion before accepting, rejecting, or deferring it.',
+    inputSchema: {
+      prescription_id: z
+        .number()
+        .int()
+        .positive()
+        .describe('The prescription ID to retrieve.'),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ prescription_id }) => {
+    try {
+      ensureDb();
+
+      const prescription = getPrescription(prescription_id);
+      if (!prescription) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({ error: `Prescription ${prescription_id} not found.` }),
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      // Fetch insight context
+      const insight = getInsight(prescription.insightId);
+
+      // Observation framing (DP5 #4): observation not judgment
+      const occurrences = insight?.occurrenceCount ?? 0;
+      const observation = insight
+        ? `Cairn has noticed ${insight.patternType.replace('_', ' ')} patterns recurring ${occurrences} time${occurrences === 1 ? '' : 's'}.`
+        : prescription.rationale;
+
+      // Diff preview from proposed change
+      const diffLines = prescription.proposedChange
+        .split('\n')
+        .filter((line) => !line.startsWith('<!--') && line.trim().length > 0)
+        .map((line) => `+ ${line}`);
+      const diff_preview = diffLines.join('\n');
+
+      const response = {
+        id: prescription.id,
+        title: prescription.title,
+        pattern: {
+          type: prescription.patternType,
+          insight_title: insight?.title ?? 'Unknown pattern',
+          occurrences: insight?.occurrenceCount ?? 0,
+          first_seen: insight?.firstSeenAt?.split(' ')[0] ?? 'unknown',
+          last_seen: insight?.lastSeenAt?.split(' ')[0] ?? 'unknown',
+        },
+        observation,
+        suggestion: prescription.rationale,
+        where: prescription.targetPath,
+        confidence_level: confidenceToWords(prescription.confidence),
+        diff_preview,
+        actions: ['accept', 'reject', 'defer'],
+      };
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify(response, null, 2),
+          },
+        ],
+      };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: resolve_prescription
+// ---------------------------------------------------------------------------
+
+server.registerTool(
+  'resolve_prescription',
+  {
+    title: 'Resolve Prescription',
+    description:
+      'Accept, reject, or defer an improvement suggestion. ' +
+      'Rejection requires no additional fields — the simplest action. ' +
+      'Acceptance applies the suggestion to a sidecar instruction file. ' +
+      'Deferral postpones the suggestion with a session cooldown. ' +
+      'Use this after reviewing a suggestion with get_prescription.',
+    inputSchema: {
+      prescription_id: z
+        .number()
+        .int()
+        .positive()
+        .describe('The prescription to act on.'),
+      disposition: z
+        .enum(['accept', 'reject', 'defer'])
+        .describe('How to resolve this prescription.'),
+      reason: z
+        .string()
+        .optional()
+        .describe('Optional reason for rejection or deferral.'),
+    },
+    annotations: { readOnlyHint: false },
+  },
+  async ({ prescription_id, disposition, reason }) => {
+    try {
+      ensureDb();
+
+      // Guard: prescription must exist and be in actionable state
+      const prescription = getPrescription(prescription_id);
+      if (!prescription) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({ error: `Prescription ${prescription_id} not found.` }),
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      if (prescription.status !== 'generated') {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({
+                error: `Prescription ${prescription_id} is '${prescription.status}' — only 'generated' prescriptions can be resolved.`,
+              }),
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      if (disposition === 'accept') {
+        // Accept → apply
+        updatePrescriptionStatus(prescription_id, 'accepted');
+        const applyResult = applyPrescription(prescription_id);
+
+        if (!applyResult.success) {
+          updatePrescriptionStatus(prescription_id, 'failed');
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify({
+                  prescription_id,
+                  disposition: 'accept',
+                  result: 'failed',
+                  message: `❌ Failed to apply: ${applyResult.error}`,
+                  rollback_available: false,
+                }),
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({
+                prescription_id,
+                disposition: 'accept',
+                result: 'applied',
+                message: `✅ Applied to ${applyResult.path}`,
+                rollback_available: true,
+              }),
+            },
+          ],
+        };
+      }
+
+      if (disposition === 'reject') {
+        updatePrescriptionStatus(prescription_id, 'rejected', {
+          dispositionReason: reason,
+        });
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({
+                prescription_id,
+                disposition: 'reject',
+                result: 'rejected',
+                message: '👍 Noted — this suggestion has been dismissed.',
+              }),
+            },
+          ],
+        };
+      }
+
+      // disposition === 'defer'
+      deferPrescription(prescription_id, reason, 3);
+
+      // Re-read to get updated defer count
+      const updated = getPrescription(prescription_id);
+      const deferCount = updated?.deferCount ?? 1;
+
+      // Check auto-suppress threshold
+      const wasSuppressed = checkAutoSuppress(prescription_id, deferCount);
+
+      if (wasSuppressed) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({
+                prescription_id,
+                disposition: 'defer',
+                result: 'suppressed',
+                message: `This is the ${ordinal(deferCount)} time this has been deferred. Cairn will stop suggesting this pattern.`,
+                defer_count: deferCount,
+              }),
+            },
+          ],
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              prescription_id,
+              disposition: 'defer',
+              result: 'deferred',
+              message: `⏳ Deferred — will resurface in a few sessions.`,
+              defer_count: deferCount,
+            }),
+          },
+        ],
+      };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
+        isError: true,
+      };
+    }
+  },
+);
+
+/** Simple ordinal helper for deferral messages. */
+function ordinal(n: number): string {
+  if (n === 1) return '1st';
+  if (n === 2) return '2nd';
+  if (n === 3) return '3rd';
+  return `${n}th`;
+}
+
+// ---------------------------------------------------------------------------
+// Tool: show_growth
+// ---------------------------------------------------------------------------
+
+server.registerTool(
+  'show_growth',
+  {
+    title: 'Show Growth',
+    description:
+      'Show how patterns have been resolved over time. ' +
+      'For reviewing improvement trends — leads with wins, not problems. ' +
+      'Displays resolved patterns, active suggestions, and cumulative stats. ' +
+      'Use this to see how Cairn has helped improve your workflow.',
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+  },
+  async () => {
+    try {
+      ensureDb();
+
+      const counts = countPrescriptionsByStatus();
+      const totalSessions = getSessionsSinceInstall();
+
+      // Compute stats
+      const applied = counts['applied'] ?? 0;
+      const accepted = counts['accepted'] ?? 0;
+      const rejected = counts['rejected'] ?? 0;
+      const deferred = counts['deferred'] ?? 0;
+      const failed = counts['failed'] ?? 0;
+      const total =
+        (counts['generated'] ?? 0) + accepted + rejected + deferred +
+        applied + failed + (counts['expired'] ?? 0) + (counts['suppressed'] ?? 0);
+
+      const resolved = accepted + rejected + applied + failed;
+      const acceptedTotal = accepted + applied; // accepted or already applied
+
+      // Resolved patterns: prescriptions that were applied, whose insight is now stale
+      const appliedPrescriptions = listPrescriptions({ status: 'applied' });
+      const resolvedPatterns: string[] = [];
+      const seenInsights = new Set<number>();
+      for (const p of appliedPrescriptions) {
+        if (seenInsights.has(p.insightId)) continue;
+        seenInsights.add(p.insightId);
+        const insight = getInsight(p.insightId);
+        if (insight && insight.status === 'stale') {
+          resolvedPatterns.push(`${insight.title} — resolved after applying prescription`);
+        } else if (insight) {
+          resolvedPatterns.push(`${insight.title} — prescription applied`);
+        }
+      }
+
+      // Active patterns: prescriptions in 'generated' status
+      const generatedPrescriptions = listPrescriptions({ status: 'generated' });
+      const activePatterns: string[] = [];
+      const seenActive = new Set<number>();
+      for (const p of generatedPrescriptions) {
+        if (seenActive.has(p.insightId)) continue;
+        seenActive.add(p.insightId);
+        activePatterns.push(`${p.title} — 1 suggestion pending`);
+      }
+
+      // Acceptance rate in natural language
+      const acceptanceRateDisplay =
+        resolved > 0
+          ? `${acceptedTotal} of ${resolved} resolved`
+          : 'No prescriptions resolved yet';
+
+      // Trend: observational, not judgmental
+      let trend: string;
+      if (total === 0) {
+        trend = 'No prescriptions yet — Cairn is still learning your patterns.';
+      } else if (applied > 0 && resolvedPatterns.length > 0) {
+        trend = `You're building good habits — ${resolvedPatterns.length} pattern${resolvedPatterns.length === 1 ? '' : 's'} resolved so far.`;
+      } else if (applied > 0) {
+        trend = 'Prescriptions are being applied — patterns should start resolving soon.';
+      } else {
+        trend = 'Cairn is observing your workflow and generating suggestions.';
+      }
+
+      // Summary paragraph
+      const summary =
+        totalSessions > 0
+          ? `Over ${totalSessions} session${totalSessions === 1 ? '' : 's'}, Cairn has helped resolve ${resolvedPatterns.length} recurring pattern${resolvedPatterns.length === 1 ? '' : 's'}.`
+          : `Cairn has generated ${total} prescription${total === 1 ? '' : 's'} so far.`;
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify(
+              {
+                summary,
+                resolved_patterns: resolvedPatterns,
+                active_patterns: activePatterns,
+                stats: {
+                  total_prescriptions: total,
+                  accepted: acceptedTotal,
+                  applied,
+                  rejected,
+                  deferred,
+                  acceptance_rate_display: acceptanceRateDisplay,
+                },
+                trend,
+              },
+              null,
+              2,
+            ),
           },
         ],
       };

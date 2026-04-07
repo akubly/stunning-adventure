@@ -17,6 +17,8 @@ import { getActiveSession } from '../db/sessions.js';
 import { getLastEventTime } from '../db/events.js';
 import { catchUpPreviousSession } from '../agents/archivist.js';
 import { curate } from '../agents/curator.js';
+import { prescribe } from '../agents/prescriber.js';
+import { incrementSessionCounter } from '../db/prescriptions.js';
 import { getRepoKey } from './gitContext.js';
 import { parseSqliteDateToMs } from '../utils/timestamps.js';
 import { checkIsScript } from '../utils/isScript.js';
@@ -63,7 +65,20 @@ export function runSessionStart(repoKey: string): { fastPath: boolean } {
 
   // Either no active session or the active session is stale (orphan).
   catchUpPreviousSession(repoKey);
-  curate();
+  const curateResult = curate();
+
+  // Chain prescribe() when insights changed (DP1 hybrid trigger)
+  if (curateResult.insightsChanged) {
+    try {
+      prescribe();
+    } catch {
+      // Fail-open — prescriber errors must not break session start
+    }
+  }
+
+  // Track sessions for deferral cooldown (DP5 #6)
+  incrementSessionCounter();
+
   return { fastPath: false };
 }
 

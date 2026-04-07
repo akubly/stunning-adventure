@@ -42,6 +42,9 @@ describe('database initialization', () => {
     expect(names).toContain('errors');
     expect(names).toContain('event_log');
     expect(names).toContain('schema_version');
+    expect(names).toContain('prescriptions');
+    expect(names).toContain('prescriber_state');
+    expect(names).toContain('managed_artifacts');
   });
 
   it('should enable WAL mode for file-based databases', () => {
@@ -62,7 +65,7 @@ describe('database initialization', () => {
     const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
       version: number;
     };
-    expect(row.version).toBe(4);
+    expect(row.version).toBe(7);
   });
 });
 
@@ -367,7 +370,7 @@ describe('schema migration', () => {
     const before = db.prepare('SELECT COUNT(*) as count FROM schema_version').get() as {
       count: number;
     };
-    expect(before.count).toBe(4);
+    expect(before.count).toBe(7);
 
     // Re-run should be a no-op
     applyMigrations(db);
@@ -375,7 +378,7 @@ describe('schema migration', () => {
     const after = db.prepare('SELECT COUNT(*) as count FROM schema_version').get() as {
       count: number;
     };
-    expect(after.count).toBe(4);
+    expect(after.count).toBe(7);
   });
 
   it('should record migration description', () => {

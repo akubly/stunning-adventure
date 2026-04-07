@@ -40,6 +40,18 @@
 
 <!-- Append new learnings below -->
 
+### Phase 7F: MCP Tools + UX + Growth (Final Phase)
+
+- **4 new MCP tools registered:** `list_prescriptions`, `get_prescription`, `resolve_prescription`, `show_growth` — bringing total to 10 tools.
+- **Module-level proactive hint counter** works well for "max 1 per MCP server process lifecycle" — no need for DB-based tracking since MCP server processes are short-lived.
+- **State guards on resolve_prescription** are essential: only `generated` prescriptions should be resolvable. Without guards, callers could corrupt lifecycle semantics by re-resolving terminal states.
+- **Accept flow must handle apply failure:** `applyPrescription()` returns `{ success: false }` on failure but doesn't set the status to `failed` — the caller (MCP tool) must explicitly call `updatePrescriptionStatus(id, 'failed')`.
+- **Defer flow re-read pattern:** After `deferPrescription()`, the in-memory object is stale. Must re-read via `getPrescription()` to get accurate `deferCount` before checking auto-suppress threshold.
+- **Resolved patterns are heuristic:** "applied prescription + insight is stale" is a proxy for resolution, not proof. The show_growth tool presents this honestly.
+- **Exported helpers for testing:** `confidenceToWords()` and `resetProactiveHintCounter()` are exported from server.ts so tests can validate UX formatting and counter behavior without transport.
+- **Added `getInsight(id)` to insights DAL** — was missing from the DAL despite being needed by `get_prescription` for insight context lookup.
+- **Test count:** 294 → 316 (22 new tests for Phase 7F).
+
 ### 2026-03-28: Copilot SDK & Platform Extensibility Recon
 
 - **Three SDK layers exist:** (1) `@github/copilot-sdk` — embed the full Copilot agentic engine in any app via JSON-RPC to CLI server mode (TS, Python, Go, .NET, Java). Technical Preview. (2) `@copilot-extensions/preview-sdk` — build Copilot Chat extensions as GitHub Apps with SSE response streaming. Alpha but semver-safe. (3) `@github/copilot-engine-sdk` — build custom engines for the coding agent platform with platform events, git ops, and MCP. Very early.

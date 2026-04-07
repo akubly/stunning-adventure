@@ -3,6 +3,9 @@ import { migration001 } from './migrations/001-initial.js';
 import { migration002 } from './migrations/002-curator-state.js';
 import { migration003 } from './migrations/003-insights.js';
 import { migration004 } from './migrations/004-event-log-index.js';
+import { migration005 } from './migrations/005-prescriptions.js';
+import { migration006 } from './migrations/006-managed-artifacts.js';
+import { migration007 } from './migrations/007-topology-cache.js';
 
 export interface Migration {
   version: number;
@@ -10,7 +13,7 @@ export interface Migration {
   up: (db: Database.Database) => void;
 }
 
-const migrations: Migration[] = [migration001, migration002, migration003, migration004];
+const migrations: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007];
 
 export function applyMigrations(db: Database.Database): void {
   db.exec(`
