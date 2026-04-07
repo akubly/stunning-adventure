@@ -1,0 +1,22 @@
+docs(squad): Phase 7B/7C complete — 7D/7E launching in parallel
+
+- Phase 7B (Rosella): Artifact Discovery Scanner complete
+  discovery.ts (4-phase), topologyCache.ts, migration 007, 36 tests
+  Tests: 181→232
+
+- Phase 7C (Gabriel): Infrastructure + trigger wiring complete
+  curator.ts (3s cap), sessionStart/server wiring, prescriber.ts stub, 15 tests
+  Tests: 232 passing baseline
+
+- Merged 8 decisions from 7B/7C into decisions.md
+  Rosella: marketplace scope, dual MCP paths, .github/ independence, plugin naming
+  Gabriel: soft time cap, capped flag behavior, run_curate output shape, counter precision
+
+- Updated identity/now.md:
+  7B ✅ complete, 7C ✅ complete
+  7D 🚧 in progress (Roger), 7E 🚧 in progress (Rosella)
+  Test baseline: 232/232 (target: 250 by EOL)
+
+- Created orchestration log and session summary in .squad/
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>

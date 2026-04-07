@@ -2298,6 +2298,134 @@ The `prescriber_state.pending_count` field tracks how many prescriptions are in 
 **Author:** Roger Wilco (Platform Dev)  
 **Type:** Technical  
 **Status:** Active  
+
+---
+
+### 2026-04-07 Phase 7B: Marketplace Artifacts Excluded from Conflict Detection
+
+**Author:** Rosella (Plugin Dev)  
+**Type:** Technical  
+**Phase:** 7B — Artifact Discovery  
+**Status:** Active
+
+Marketplace artifacts are included in `ArtifactTopology.artifacts` for completeness, but excluded from conflict detection. Marketplace is read-only reference data, not active artifacts.
+
+**Rationale:**
+- Prevents stale cache data from triggering false conflicts with installed plugins.
+- `ArtifactScope` type only has `user | project | plugin` — no `marketplace` variant.
+
+**Impact:** Downstream consumers (Prescriber, 7D onwards) should treat marketplace-scope artifacts as informational, not actionable.
+
+---
+
+### 2026-04-07 Phase 7B: Dual MCP Config Path Support
+
+**Author:** Rosella (Plugin Dev)  
+**Type:** Technical  
+**Phase:** 7B — Artifact Discovery  
+**Status:** Active
+
+Scan both `.copilot/mcp.json` and `.copilot/mcp-config.json` for project-level MCP discovery. This repo and Aaron's machine use `.copilot/mcp-config.json`; spec references `.copilot/mcp.json`.
+
+**Decision:** If both exist, artifacts from both are included. Duplicates surface as conflicts via `last_wins` resolution.
+
+**Impact:** Discovery works on both reference configuration paths without preference.
+
+---
+
+### 2026-04-07 Phase 7B: Project MCP Scanning Independent of .github/
+
+**Author:** Rosella (Plugin Dev)  
+**Type:** Technical  
+**Phase:** 7B — Artifact Discovery  
+**Status:** Active
+
+Project MCP config lives at `.copilot/` (project root), not under `.github/`. A project could have MCP servers configured without any `.github/` directory.
+
+**Decision:** Scan `.copilot/` MCP config independently of `.github/` existence. The `.github/` guard only gates instruction/agent/skill/extension scanning.
+
+**Impact:** MCP discovery is not blocked by `.github/` absence.
+
+---
+
+### 2026-04-07 Phase 7B: Plugin ownerPlugin from manifest name
+
+**Author:** Rosella (Plugin Dev)  
+**Type:** Technical  
+**Phase:** 7B — Artifact Discovery  
+**Status:** Active
+
+Plugin directory names may differ from the plugin's declared name in `plugin.json`.
+
+**Decision:** Use `plugin.json` `name` field as canonical `ownerPlugin`, falling back to directory name only on parse failure.
+
+**Impact:** Attribution aligns with plugin's self-declared identity, not filesystem layout.
+
+---
+
+### 2026-04-07 Phase 7C: Time Cap is Soft (Between-Batch Check)
+
+**Author:** Gabriel (Infrastructure)  
+**Type:** Technical  
+**Phase:** 7C — Infrastructure  
+**Status:** Active
+
+The 3-second TIME_BUDGET_MS is checked between batches, not mid-batch. A single batch of 1000 events runs to completion before the check fires.
+
+**Rationale:** Interrupting a batch mid-transaction would leave cursor and insights inconsistent. Between-batch checking is safe and predictable.
+
+**Trade-off:** Curate() can exceed 3s if one batch is slow. Reducing BATCH_SIZE would tighten the cap but increase transaction overhead.
+
+**Impact:** Callers should expect variable latency up to BATCH_SIZE completion time + 3s.
+
+---
+
+### 2026-04-07 Phase 7C: `capped` Flag Set Only When Full Batches Remain
+
+**Author:** Gabriel (Infrastructure)  
+**Type:** Technical  
+**Phase:** 7C — Infrastructure  
+**Status:** Active
+
+The `capped` flag is set only when full batches remain after the time cap fires. If the last batch is partial (`events.length < BATCH_SIZE`), `capped` is `false` even if elapsed > TIME_BUDGET_MS.
+
+**Rationale:** "Capped" means "work remains but we stopped" — not "we happened to be slow." Distinguishes between "caught up" and "gave up early."
+
+**Impact:** Consumers can trust `capped: true` to mean "call curate() again later." A `false` `capped` with a high elapsed time means all work finished despite slowness.
+
+---
+
+### 2026-04-07 Phase 7C: MCP `run_curate` Output Shape is Breaking
+
+**Author:** Gabriel (Infrastructure)  
+**Type:** Technical  
+**Phase:** 7C — Infrastructure  
+**Status:** Active
+
+Changed from flat `{ eventsProcessed, insightsCreated, insightsReinforced }` to nested `{ curate: {...}, prescriptions: {...} | null }`. This is per the Phase 7C spec.
+
+**Decision:** No backward compatibility wrapper.
+
+**Impact:** Any MCP client parsing run_curate output directly will need updating. Since Cairn is pre-1.0 and the only consumer is the Copilot agent, this is acceptable.
+
+---
+
+### 2026-04-07 Phase 7C: `incrementSessionCounter()` Unconditional on Slow Path
+
+**Author:** Gabriel (Infrastructure)  
+**Type:** Technical  
+**Phase:** 7C — Infrastructure  
+**Status:** Active
+
+The spec says "On slow path (new session), increment." There is a theoretical edge case where multiple slow-path calls happen before postToolUse creates a session, which could double-increment.
+
+**Decision:** Unconditional increment. In practice, edge case is rare: postToolUse fires immediately after preToolUse.
+
+**Alternative Considered:** Add a one-shot guard. Rejected for complexity — the counter is used for deferral cooldown, which tolerates ±1 inaccuracy.
+
+**Impact:** Session counter may be ±1 inaccurate in rare cases. Negligible effect on deferral cooldown behavior.
+
+---
 **Phase:** 7A — Data Foundation
 
 When checking drift on a path that isn't tracked, `detectDrift()` returns `undefined` rather than throwing an error.

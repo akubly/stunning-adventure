@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-04-06T09:00:00Z
+updated_at: 2026-04-07T05:18:00Z
 focus_area: Phase 7 — Prescriber Implementation
 active_issues:
   - "Phase 7: Prescriber implementation (6 sub-phases, 7A–7F)"
@@ -23,17 +23,17 @@ Building Cairn's third core agent: the Prescriber. Closes the feedback loop from
 
 **Sub-phases:**
 - ✅ **7A** — Data Foundation (Roger): schema, types, DAL, preferences
-- 🚧 **7B** — Artifact Discovery (Rosella): 4-phase scanner + cache
-- 🚧 **7C** — Infrastructure (Gabriel): curate() 3s cap + trigger wiring
-- 🔲 **7D** — Prescription Engine (Roger): core agent, state machine, priority scoring
-- 🔲 **7E** — Apply Engine (Rosella): sidecar writing, rollback, drift detection
+- ✅ **7B** — Artifact Discovery (Rosella): 4-phase scanner + cache
+- ✅ **7C** — Infrastructure (Gabriel): curate() 3s cap + trigger wiring
+- 🚧 **7D** — Prescription Engine (Roger): core agent, state machine, priority scoring
+- 🚧 **7E** — Apply Engine (Rosella): sidecar writing, rollback, drift detection
 - 🔲 **7F** — MCP Tools + UX (Roger + Valanice): 4 new tools + growth tracking
 
 **Dependencies:** 7A first → 7B ∥ 7C → 7D ∥ 7E → 7F (final integration)
 
 **Quality Baseline:**
-- 181/181 tests passing (↑ 42 from 7A)
-- Target: ~250 tests after Phase 7 (~70 remaining)
+- 232/232 tests passing (↑ 51 from 7A)
+- Target: ~250 tests after Phase 7 (~18 remaining)
 - Clean TypeScript build, zero lint violations
 
 **Execution Plan:** `.squad/decisions/inbox/graham-prescriber-final-plan.md`
@@ -43,3 +43,4 @@ Building Cairn's third core agent: the Prescriber. Closes the feedback loop from
 - Worktree support (Issue #11)
 - Bash wrappers for macOS/Linux
 - awesome-copilot submission
+

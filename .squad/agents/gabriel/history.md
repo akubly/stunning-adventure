@@ -60,3 +60,22 @@
 - preToolUse end-to-end fast path: ~410ms (PowerShell + Node + SQLite + git). Slow path adds crash recovery (~50ms) + curation (unbounded).
 - Hooks share timeout across all plugins. No per-plugin allocation. Plugins must self-budget.
 - MCP server has no timeout constraint — runs as long-lived subprocess. Ideal for expensive operations.
+
+### 2026-04-07 — Phase 7C: Curate Cap + Trigger Wiring
+
+**Delivered:**
+- 3-second soft time cap on `curate()` batch loop (TIME_BUDGET_MS=3000, checked between batches)
+- Extended `CurateResult` with `capped` and `insightsChanged` flags
+- Hybrid trigger wiring: preToolUse slow path and MCP `run_curate` both chain `prescribe()` when insights change
+- Prescriber stub (`src/agents/prescriber.ts`) — returns `{ prescriptionsGenerated: 0 }`, ready for Roger's Phase 7D
+- Session counter increment on slow path for deferral cooldown (DP5 #6)
+- Fail-open: prescribe() failures are caught in both preToolUse and MCP paths
+- 15 new tests (41 curator, 11 sessionStart, 23 MCP) — all passing
+
+**Key Decisions:**
+- Time cap check goes AFTER `events.length < BATCH_SIZE` — a partial final batch means "caught up", not "capped". This prevents false `capped: true` on the last batch.
+- MCP `run_curate` output shape changed to `{ curate: result, prescriptions: prescribeResult }` — breaking change per spec. Prescriber errors return `null` prescriptions (partial success).
+- `incrementSessionCounter()` is unconditional on slow path. In practice, double-increments are rare because postToolUse creates a session immediately after preToolUse, making subsequent calls fast-path.
+
+**Files Modified:** curator.ts, sessionStart.ts, server.ts, curator.test.ts, sessionStart.test.ts, mcp.test.ts
+**Files Created:** prescriber.ts

@@ -175,3 +175,33 @@ ode dist/hooks/...\ commands in hooks.json for cross-platform compatibility
 **Critical insight from critic review:** Hook directory names encode ownership (e.g., `cairn-archivist` → owned by `cairn`). This is the strongest ownership signal available without a registry.
 
 **Deliverable:** `.squad/decisions/inbox/rosella-prescriber-plugin.md`
+
+### 2026-07-26: Phase 7B — Artifact Discovery Scanner
+
+**Task:** Build the 4-phase artifact scanner and SQLite-backed topology cache.
+
+**Deliverables:**
+
+1. **`src/agents/discovery.ts`** — Pure function `scanTopology(homedir, projectRoot?, pluginsDir?)` with:
+   - Phase 1: User-level (`~/.copilot/`) — instructions, agents, skills, hooks, MCP config
+   - Phase 2: Project-level (`.github/` + `.copilot/`) — instructions, agents, skills, extensions, MCP config
+   - Phase 3: Installed plugins — manifests, agents, skills with ownerPlugin attribution
+   - Phase 4: Marketplace metadata — read-only reference, excluded from conflict detection
+   - SHA-256 checksums via `node:crypto`
+   - YAML frontmatter parsing for agent names, heading extraction for skills
+   - Per-type resolution rules: additive (instruction/hook), first_found (agent/skill/command/plugin_manifest), last_wins (mcp_server)
+   - Conflict detection for non-additive types with same logical ID
+
+2. **`src/db/topologyCache.ts`** — Cache DAL with `cacheTopology()` and `getCachedTopology(ttlMs?)`, 5-minute default TTL
+
+3. **`src/db/migrations/007-topology-cache.ts`** — Single-row `topology_cache` table (id=1 CHECK constraint)
+
+4. **`src/__tests__/discovery.test.ts`** — 36 tests covering all phases, conflicts, checksums, cache TTL, identity extraction, missing dirs, duration tracking
+
+**Key decisions:**
+- Scanned `.copilot/mcp-config.json` AND `.copilot/mcp.json` for project MCP (critic caught that real repo uses `mcp-config.json`)
+- Marketplace artifacts included in topology but excluded from conflict detection (they're reference-only)
+- Used `plugin.json` `name` field for ownerPlugin, fallback to directory name (critic recommendation)
+- Project MCP scanning independent of `.github/` directory existence
+
+**Dogfood gate:** Build ✅ | 232 tests ✅ | Lint ✅
