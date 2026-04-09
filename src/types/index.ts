@@ -224,5 +224,6 @@ export interface GrowthSummary {
   acceptanceRate: number;
   resolvedPatterns: string[];
   activePatterns: string[];
-  trend: 'improving' | 'stable' | 'declining';
+  trendDirection: 'improving' | 'stable' | 'declining';
+  trendMessage: string;
 }

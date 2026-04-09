@@ -853,16 +853,21 @@ server.registerTool(
           ? `${acceptedTotal} of ${resolved} resolved`
           : 'No prescriptions resolved yet';
 
-      // Trend: observational, not judgmental
-      let trend: string;
+      // Trend: direction enum + observational message
+      let trendDirection: 'improving' | 'stable' | 'declining';
+      let trendMessage: string;
       if (total === 0) {
-        trend = 'No prescriptions yet — Cairn is still learning your patterns.';
+        trendDirection = 'stable';
+        trendMessage = 'No prescriptions yet — Cairn is still learning your patterns.';
       } else if (applied > 0 && resolvedPatterns.length > 0) {
-        trend = `You're building good habits — ${resolvedPatterns.length} pattern${resolvedPatterns.length === 1 ? '' : 's'} resolved so far.`;
+        trendDirection = 'improving';
+        trendMessage = `You're building good habits — ${resolvedPatterns.length} pattern${resolvedPatterns.length === 1 ? '' : 's'} resolved so far.`;
       } else if (applied > 0) {
-        trend = 'Prescriptions are being applied — patterns should start resolving soon.';
+        trendDirection = 'improving';
+        trendMessage = 'Prescriptions are being applied — patterns should start resolving soon.';
       } else {
-        trend = 'Cairn is observing your workflow and generating suggestions.';
+        trendDirection = 'stable';
+        trendMessage = 'Cairn is observing your workflow and generating suggestions.';
       }
 
       // Summary paragraph
@@ -888,7 +893,8 @@ server.registerTool(
                   deferred,
                   acceptance_rate_display: acceptanceRateDisplay,
                 },
-                trend,
+                trend_direction: trendDirection,
+                trend_message: trendMessage,
               },
               null,
               2,
