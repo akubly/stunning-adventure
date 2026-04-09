@@ -11,7 +11,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { getPrescription, updatePrescriptionStatus } from '../db/prescriptions.js';
 import {
-  trackManagedArtifact,
+  upsertManagedArtifact,
   getManagedArtifact,
   listManagedArtifacts,
   removeManagedArtifact,
@@ -211,13 +211,8 @@ export function applyPrescription(
     // 8. Compute checksum
     const checksum = sha256(newContent);
 
-    // 9. Track in managed_artifacts
-    // If path already tracked (appending), remove old entry first (UNIQUE constraint)
-    if (existingArtifact) {
-      removeManagedArtifact(targetPath);
-    }
-
-    trackManagedArtifact({
+    // 9. Track in managed_artifacts (atomic upsert avoids delete+insert gap)
+    upsertManagedArtifact({
       path: targetPath,
       artifactType: 'instruction',
       scope: prescription.artifactScope ?? 'user',

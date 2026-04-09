@@ -59,6 +59,38 @@ export function trackManagedArtifact(fields: TrackManagedArtifactFields): number
   return Number(result.lastInsertRowid);
 }
 
+/** Insert or update a managed artifact atomically by path. Returns the artifact id. */
+export function upsertManagedArtifact(fields: TrackManagedArtifactFields): number {
+  const db = getDb();
+  const result = db
+    .prepare(
+      `INSERT INTO managed_artifacts
+        (path, artifact_type, logical_id, scope, prescription_id,
+         original_checksum, current_checksum, rollback_content)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(path) DO UPDATE SET
+         artifact_type = excluded.artifact_type,
+         logical_id = excluded.logical_id,
+         scope = excluded.scope,
+         prescription_id = excluded.prescription_id,
+         original_checksum = excluded.original_checksum,
+         current_checksum = excluded.current_checksum,
+         rollback_content = excluded.rollback_content,
+         updated_at = datetime('now')`,
+    )
+    .run(
+      fields.path,
+      fields.artifactType,
+      fields.logicalId ?? null,
+      fields.scope,
+      fields.prescriptionId,
+      fields.originalChecksum ?? null,
+      fields.currentChecksum ?? null,
+      fields.rollbackContent ?? null,
+    );
+  return Number(result.lastInsertRowid);
+}
+
 /** Get a managed artifact by its file path. */
 export function getManagedArtifact(path: string): ManagedArtifact | undefined {
   const db = getDb();
