@@ -230,13 +230,17 @@ export function applyPrescription(
     // 10. Update prescription status
     updatePrescriptionStatus(prescriptionId, 'applied');
 
-    // 11. Log event
-    if (opts.sessionId) {
-      logEvent(opts.sessionId, 'prescription_applied', {
-        prescriptionId,
-        path: targetPath,
-        checksum,
-      });
+    // 11. Log event (fail-soft — apply already succeeded)
+    try {
+      if (opts.sessionId) {
+        logEvent(opts.sessionId, 'prescription_applied', {
+          prescriptionId,
+          path: targetPath,
+          checksum,
+        });
+      }
+    } catch {
+      // Logging failure must not undo a successful apply
     }
 
     return { success: true, path: targetPath, checksum };
@@ -296,13 +300,17 @@ export function rollbackPrescription(
   // 5. Update prescription status
   updatePrescriptionStatus(prescriptionId, 'failed');
 
-  // 6. Log event
-  if (opts.sessionId) {
-    logEvent(opts.sessionId, 'prescription_rolled_back', {
-      prescriptionId,
-      path: artifact.path,
-      restored: artifact.rollbackContent !== undefined,
-    });
+  // 6. Log event (fail-soft — rollback already succeeded)
+  try {
+    if (opts.sessionId) {
+      logEvent(opts.sessionId, 'prescription_rolled_back', {
+        prescriptionId,
+        path: artifact.path,
+        restored: artifact.rollbackContent !== undefined,
+      });
+    }
+  } catch {
+    // Logging failure must not mask a successful rollback
   }
 
   return { success: true, restored: artifact.rollbackContent !== undefined };
