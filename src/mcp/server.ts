@@ -36,6 +36,7 @@ import {
 
 import type { InsightStatus, PrescriptionStatus } from '../types/index.js';
 import { checkIsScript } from '../utils/isScript.js';
+import { getPreference } from '../db/preferences.js';
 
 // ---------------------------------------------------------------------------
 // Server setup
@@ -723,7 +724,8 @@ server.registerTool(
       }
 
       // disposition === 'defer'
-      deferPrescription(prescription_id, reason, 3);
+      const deferSessions = parseInt(getPreference('prescriber.defer_sessions') ?? '3', 10) || 3;
+      deferPrescription(prescription_id, reason, deferSessions);
 
       // Re-read to get updated defer count
       const updated = getPrescription(prescription_id);
@@ -757,7 +759,7 @@ server.registerTool(
               prescription_id,
               disposition: 'defer',
               result: 'deferred',
-              message: `⏳ Deferred — will resurface in a few sessions.`,
+              message: `⏳ Deferred — will resurface after ${deferSessions} session${deferSessions === 1 ? '' : 's'}.`,
               defer_count: deferCount,
             }),
           },
