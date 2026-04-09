@@ -194,7 +194,7 @@ function computeTargetPath(
     );
     if (hasProjectInstruction) {
       return {
-        targetPath: path.join('.github', filename),
+        targetPath: path.join(process.cwd(), '.github', filename),
         artifactScope: 'project',
       };
     }
