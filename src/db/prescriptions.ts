@@ -145,7 +145,8 @@ export function updatePrescriptionStatus(
   const sets = ['status = ?'];
   const params: unknown[] = [status];
 
-  if (status === 'accepted' || status === 'rejected' || status === 'deferred') {
+  if (status === 'accepted' || status === 'rejected' || status === 'deferred'
+      || status === 'expired' || status === 'suppressed') {
     sets.push("resolved_at = COALESCE(?, datetime('now'))");
     params.push(fields?.resolvedAt ?? null);
   }
@@ -202,7 +203,7 @@ export function expireAbandonedPrescriptions(): number {
   const db = getDb();
   const result = db
     .prepare(
-      `UPDATE prescriptions SET status = 'expired'
+      `UPDATE prescriptions SET status = 'expired', resolved_at = datetime('now')
        WHERE status = 'generated'
          AND datetime(generated_at) < datetime('now', '-7 days')`,
     )

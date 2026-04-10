@@ -14,7 +14,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 
 import { getDb } from '../db/index.js';
-import { getActiveSession } from '../db/sessions.js';
+import { getActiveSession, getMostRecentActiveSession } from '../db/sessions.js';
 import { getInsights, getInsight, getInsightsByIds, countInsightsByStatus } from '../db/insights.js';
 import { curate, getCuratorStatus } from '../agents/curator.js';
 import { prescribe, checkAutoSuppress } from '../agents/prescriber.js';
@@ -645,9 +645,12 @@ server.registerTool(
       if (disposition === 'accept') {
         // Accept → apply (wrap in try/catch so exceptions don't leave status stuck)
         updatePrescriptionStatus(prescription_id, 'accepted');
+        const activeSession = getMostRecentActiveSession();
         let applyResult: { success: boolean; error?: string; path?: string };
         try {
-          applyResult = applyPrescription(prescription_id);
+          applyResult = applyPrescription(prescription_id, {
+            sessionId: activeSession?.id,
+          });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           updatePrescriptionStatus(prescription_id, 'failed');
@@ -724,7 +727,8 @@ server.registerTool(
       }
 
       // disposition === 'defer'
-      const deferSessions = parseInt(getPreference('prescriber.defer_sessions') ?? '3', 10) || 3;
+      const n = Number.parseInt(getPreference('prescriber.defer_sessions') ?? '3', 10);
+      const deferSessions = Number.isFinite(n) && n >= 0 ? n : 3;
       deferPrescription(prescription_id, reason, deferSessions);
 
       // Re-read to get updated defer count
