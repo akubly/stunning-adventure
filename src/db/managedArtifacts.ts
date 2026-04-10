@@ -59,12 +59,11 @@ export function trackManagedArtifact(fields: TrackManagedArtifactFields): number
   return Number(result.lastInsertRowid);
 }
 
-/** Insert or update a managed artifact atomically by path. Returns the artifact id. */
-export function upsertManagedArtifact(fields: TrackManagedArtifactFields): number {
+/** Insert or update a managed artifact atomically by path. */
+export function upsertManagedArtifact(fields: TrackManagedArtifactFields): void {
   const db = getDb();
-  const result = db
-    .prepare(
-      `INSERT INTO managed_artifacts
+  db.prepare(
+    `INSERT INTO managed_artifacts
         (path, artifact_type, logical_id, scope, prescription_id,
          original_checksum, current_checksum, rollback_content)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -77,18 +76,16 @@ export function upsertManagedArtifact(fields: TrackManagedArtifactFields): numbe
          current_checksum = excluded.current_checksum,
          rollback_content = excluded.rollback_content,
          updated_at = datetime('now')`,
-    )
-    .run(
-      fields.path,
-      fields.artifactType,
-      fields.logicalId ?? null,
-      fields.scope,
-      fields.prescriptionId,
-      fields.originalChecksum ?? null,
-      fields.currentChecksum ?? null,
-      fields.rollbackContent ?? null,
-    );
-  return Number(result.lastInsertRowid);
+  ).run(
+    fields.path,
+    fields.artifactType,
+    fields.logicalId ?? null,
+    fields.scope,
+    fields.prescriptionId,
+    fields.originalChecksum ?? null,
+    fields.currentChecksum ?? null,
+    fields.rollbackContent ?? null,
+  );
 }
 
 /** Get a managed artifact by its file path. */

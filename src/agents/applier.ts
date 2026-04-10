@@ -282,15 +282,23 @@ export function rollbackPrescription(
     // Had prior content — restore it
     fs.mkdirSync(path.dirname(artifact.path), { recursive: true });
     fs.writeFileSync(artifact.path, artifact.rollbackContent, 'utf8');
+
+    // Keep the managed_artifacts entry so drift detection still works
+    const restoredChecksum = sha256(artifact.rollbackContent);
+    upsertManagedArtifact({
+      path: artifact.path,
+      artifactType: artifact.artifactType,
+      scope: artifact.scope,
+      prescriptionId: artifact.prescriptionId,
+      currentChecksum: restoredChecksum,
+    });
   } else {
-    // New file — delete it
+    // New file — delete it and remove tracking
     if (fs.existsSync(artifact.path)) {
       fs.unlinkSync(artifact.path);
     }
+    removeManagedArtifact(artifact.path);
   }
-
-  // 4. Remove from managed_artifacts
-  removeManagedArtifact(artifact.path);
 
   // 5. Update prescription status
   updatePrescriptionStatus(prescriptionId, 'failed');

@@ -311,7 +311,7 @@ describe('rollbackPrescription', () => {
     expect(fs.existsSync(sidecarPath)).toBe(false);
   });
 
-  it('should remove managed_artifact entry on rollback', () => {
+  it('should remove managed_artifact entry on new-file rollback', () => {
     const id = seedPrescription({ artifactScope: 'user' });
     applyPrescription(id, { homedir: tmpDir });
     const sidecarPath = path.join(tmpDir, '.copilot', 'cairn-prescribed.instructions.md');
@@ -319,6 +319,24 @@ describe('rollbackPrescription', () => {
     expect(getManagedArtifact(sidecarPath)).toBeDefined();
     rollbackPrescription(id);
     expect(getManagedArtifact(sidecarPath)).toBeUndefined();
+  });
+
+  it('should keep managed_artifact tracked after restore rollback', () => {
+    // Apply two prescriptions so rollback restores prior content
+    const id1 = seedPrescription({ artifactScope: 'user', title: 'First' });
+    const r1 = applyPrescription(id1, { homedir: tmpDir });
+    const firstContent = fs.readFileSync(r1.path!, 'utf8');
+
+    const id2 = seedPrescription({ artifactScope: 'user', title: 'Second' });
+    applyPrescription(id2, { homedir: tmpDir });
+
+    // Rollback second — should restore first content AND keep tracking
+    rollbackPrescription(id2);
+
+    const artifact = getManagedArtifact(r1.path!);
+    expect(artifact).toBeDefined();
+    const expectedChecksum = createHash('sha256').update(firstContent, 'utf8').digest('hex');
+    expect(artifact!.currentChecksum).toBe(expectedChecksum);
   });
 
   it('should update prescription status to failed', () => {
