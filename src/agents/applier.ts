@@ -261,9 +261,11 @@ export function applyPrescription(
 /**
  * Rollback a previously applied prescription.
  *
- * If the sidecar was new (no rollback content), the file is deleted.
- * If there was prior content, it is restored. The managed_artifact entry
- * is removed and the prescription status moves to 'failed'.
+ * If the sidecar was new (no rollback content), the file is deleted and the
+ * managed_artifact entry is removed.
+ * If there was prior content, it is restored and the managed_artifact entry
+ * is retained/updated so drift detection continues to work. The prescription
+ * status then moves to 'failed'.
  */
 export function rollbackPrescription(
   prescriptionId: number,
