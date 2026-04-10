@@ -826,7 +826,7 @@ server.registerTool(
 
       // Resolved patterns: prescriptions that were applied, whose insight is now stale
       // Batch-fetch all referenced insights in one query to avoid N+1
-      const appliedPrescriptions = listPrescriptions({ status: 'applied' });
+      const appliedPrescriptions = listPrescriptions({ status: 'applied', limit: 100 });
       const resolvedPatterns: string[] = [];
       const seenInsights = new Set<number>();
       const uniqueInsightIds = [...new Set(appliedPrescriptions.map((p) => p.insightId))];
@@ -843,7 +843,7 @@ server.registerTool(
       }
 
       // Active patterns: prescriptions in 'generated' status
-      const generatedPrescriptions = listPrescriptions({ status: 'generated' });
+      const generatedPrescriptions = listPrescriptions({ status: 'generated', limit: 100 });
       const activePatterns: string[] = [];
       const seenActive = new Set<number>();
       for (const p of generatedPrescriptions) {
@@ -888,8 +888,8 @@ server.registerTool(
             text: JSON.stringify(
               {
                 summary,
-                resolved_patterns: resolvedPatterns,
-                active_patterns: activePatterns,
+                resolved_patterns: resolvedPatterns.slice(0, 10),
+                active_patterns: activePatterns.slice(0, 10),
                 stats: {
                   total_prescriptions: total,
                   accepted,
