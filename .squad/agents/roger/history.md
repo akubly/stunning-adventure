@@ -52,6 +52,16 @@
 - **Added `getInsight(id)` to insights DAL** — was missing from the DAL despite being needed by `get_prescription` for insight context lookup.
 - **Test count:** 294 → 316 (22 new tests for Phase 7F).
 
+### PR #13 Review Fixes
+
+- **applyPrescription try/catch:** Must wrap in try/catch, not just check `{ success: false }`. Exceptions leave status stuck at 'accepted' otherwise. Both return-based and exception-based failure paths need 'failed' transition.
+- **Proactive hint counter is per-session, not per-process:** Track `proactiveHintSessionGeneration` alongside the counter, reset when `getSessionsSinceInstall()` changes. Avoids stale counter in long-lived MCP servers.
+- **N+1 batch pattern:** Added `getInsightsByIds()` to insights DAL — collects unique IDs, one `WHERE id IN (...)` query, map results in-memory. Standard batch-fetch pattern for DAL.
+- **ordinal() edge cases:** 11/12/13 are 'th' (not 'st/nd/rd'). Must check `% 100` before `% 10`.
+- **SQL parameterization:** Never interpolate user-supplied values (including LIMIT) directly into SQL strings. Always use bound parameters.
+- **shouldResurface off-by-one:** The `+1` compensation hack broke when prescribe() was called from MCP `run_curate` (no session increment). Fix: remove the hack, reorder sessionStart to increment counter BEFORE calling prescribe().
+- **MVP simplification docs:** When hardcoding values intentionally, document WHY in the code so future readers don't assume it's a bug.
+
 ### 2026-03-28: Copilot SDK & Platform Extensibility Recon
 
 - **Three SDK layers exist:** (1) `@github/copilot-sdk` — embed the full Copilot agentic engine in any app via JSON-RPC to CLI server mode (TS, Python, Go, .NET, Java). Technical Preview. (2) `@copilot-extensions/preview-sdk` — build Copilot Chat extensions as GitHub Apps with SSE response streaming. Alpha but semver-safe. (3) `@github/copilot-engine-sdk` — build custom engines for the coding agent platform with platform events, git ops, and MCP. Very early.

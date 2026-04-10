@@ -819,7 +819,6 @@ server.registerTool(
         applied + failed + (counts['expired'] ?? 0) + (counts['suppressed'] ?? 0);
 
       const resolved = accepted + rejected + applied + failed;
-      const acceptedTotal = accepted + applied; // accepted or already applied
 
       // Resolved patterns: prescriptions that were applied, whose insight is now stale
       // Batch-fetch all referenced insights in one query to avoid N+1
@@ -852,7 +851,7 @@ server.registerTool(
       // Acceptance rate in natural language
       const acceptanceRateDisplay =
         resolved > 0
-          ? `${acceptedTotal} of ${resolved} resolved`
+          ? `${accepted + applied} of ${resolved} resolved`
           : 'No prescriptions resolved yet';
 
       // Trend: direction enum + observational message
@@ -889,7 +888,7 @@ server.registerTool(
                 active_patterns: activePatterns,
                 stats: {
                   total_prescriptions: total,
-                  accepted: acceptedTotal,
+                  accepted,
                   applied,
                   rejected,
                   deferred,

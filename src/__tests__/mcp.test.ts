@@ -560,10 +560,9 @@ describe('show_growth logic', () => {
     const accepted = counts['accepted'] ?? 0;
     const rejected = counts['rejected'] ?? 0;
     const resolved = applied + accepted + rejected;
-    const acceptedTotal = applied + accepted;
 
     // Natural language format: "X of Y resolved"
-    const display = `${acceptedTotal} of ${resolved} resolved`;
+    const display = `${accepted + applied} of ${resolved} resolved`;
     expect(display).toBe('1 of 2 resolved');
   });
 
