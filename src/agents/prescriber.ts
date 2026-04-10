@@ -49,6 +49,14 @@ const DEFAULT_SUPPRESS_THRESHOLD = 3;
 const DEFAULT_SIDECAR_PREFIX = 'cairn-prescribed';
 const DEFAULT_MIN_CONFIDENCE = 0.3;
 
+/**
+ * Validate sidecar prefix to prevent path traversal — mirrors applier validation.
+ * Must start with alphanumeric, followed by alphanumeric/dash/underscore.
+ */
+export function isValidSidecarPrefix(prefix: string): boolean {
+  return /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(prefix);
+}
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -261,8 +269,10 @@ function hasActivePrescription(insightId: number): boolean {
  *    generate, score, persist, and log
  */
 export function prescribe(): PrescribeResult {
-  // Read configurable values
-  const prefix = getPreference('prescriber.sidecar_prefix') ?? DEFAULT_SIDECAR_PREFIX;
+  // Read configurable values — validate prefix to avoid generating
+  // prescriptions that the Apply Engine will always reject.
+  const rawPrefix = getPreference('prescriber.sidecar_prefix') ?? DEFAULT_SIDECAR_PREFIX;
+  const prefix = isValidSidecarPrefix(rawPrefix) ? rawPrefix : DEFAULT_SIDECAR_PREFIX;
   const minConfidence = parseFloat(
     getPreference('prescriber.min_confidence') ?? String(DEFAULT_MIN_CONFIDENCE),
   );

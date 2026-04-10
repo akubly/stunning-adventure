@@ -607,10 +607,14 @@ server.registerTool(
         .string()
         .optional()
         .describe('Optional reason for rejection or deferral.'),
+      repo_key: z
+        .string()
+        .optional()
+        .describe('Repository key to scope session lookup. Uses repo-scoped session instead of global most-recent.'),
     },
     annotations: { readOnlyHint: false },
   },
-  async ({ prescription_id, disposition, reason }) => {
+  async ({ prescription_id, disposition, reason, repo_key }) => {
     try {
       ensureDb();
 
@@ -645,7 +649,11 @@ server.registerTool(
       if (disposition === 'accept') {
         // Accept → apply (wrap in try/catch so exceptions don't leave status stuck)
         updatePrescriptionStatus(prescription_id, 'accepted');
-        const activeSession = getMostRecentActiveSession();
+        // Prefer repo-scoped session; fall back to global most-recent
+        // when no repo context is available (may misattribute events).
+        const activeSession = repo_key
+          ? getActiveSession(repo_key)
+          : getMostRecentActiveSession();
         let applyResult: { success: boolean; error?: string; path?: string };
         try {
           applyResult = applyPrescription(prescription_id, {
