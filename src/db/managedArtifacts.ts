@@ -69,12 +69,12 @@ export function upsertManagedArtifact(fields: TrackManagedArtifactFields): void 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(path) DO UPDATE SET
          artifact_type = excluded.artifact_type,
-         logical_id = excluded.logical_id,
+         logical_id = COALESCE(excluded.logical_id, managed_artifacts.logical_id),
          scope = excluded.scope,
          prescription_id = excluded.prescription_id,
-         original_checksum = excluded.original_checksum,
-         current_checksum = excluded.current_checksum,
-         rollback_content = excluded.rollback_content,
+         original_checksum = COALESCE(excluded.original_checksum, managed_artifacts.original_checksum),
+         current_checksum = COALESCE(excluded.current_checksum, managed_artifacts.current_checksum),
+         rollback_content = COALESCE(excluded.rollback_content, managed_artifacts.rollback_content),
          updated_at = datetime('now')`,
   ).run(
     fields.path,
