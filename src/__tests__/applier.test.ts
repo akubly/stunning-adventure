@@ -30,6 +30,7 @@ function seedPrescription(overrides: {
   status?: string;
   title?: string;
   proposedChange?: string;
+  targetPath?: string;
 }): number {
   const id = createPrescription({
     insightId,
@@ -39,6 +40,7 @@ function seedPrescription(overrides: {
     proposedChange: overrides.proposedChange ?? 'Add error handler',
     artifactType: 'instruction',
     artifactScope: overrides.artifactScope ?? 'user',
+    targetPath: overrides.targetPath,
   });
   // Move to accepted unless overridden
   if (overrides.status !== 'generated') {
@@ -213,6 +215,56 @@ describe('applyPrescription', () => {
     const result = applyPrescription(id2, { homedir: tmpDir });
     expect(result.success).toBe(false);
     expect(result.error).toContain('Drift detected');
+  });
+
+  it('should use persisted targetPath when available', () => {
+    const expectedPath = path.join(tmpDir, '.copilot', 'custom-name.instructions.md');
+    const id = seedPrescription({
+      artifactScope: 'user',
+      targetPath: expectedPath,
+    });
+    const result = applyPrescription(id, { homedir: tmpDir });
+
+    expect(result.success).toBe(true);
+    expect(result.path).toBe(expectedPath);
+    expect(fs.existsSync(expectedPath)).toBe(true);
+  });
+
+  it('should use persisted targetPath even when sidecar prefix changes', () => {
+    const expectedPath = path.join(tmpDir, '.copilot', 'original-prefix.instructions.md');
+    const id = seedPrescription({
+      artifactScope: 'user',
+      targetPath: expectedPath,
+    });
+    // Change the prefix — should NOT affect apply because targetPath is persisted
+    setPreference('prescriber.sidecar_prefix', 'different-prefix', 'user');
+    const result = applyPrescription(id, { homedir: tmpDir });
+
+    expect(result.success).toBe(true);
+    expect(result.path).toBe(expectedPath);
+    expect(result.path).not.toContain('different-prefix');
+  });
+
+  it('should reject persisted targetPath outside allowed sidecar directories', () => {
+    const id = seedPrescription({
+      artifactScope: 'user',
+      targetPath: path.join(tmpDir, 'outside', 'evil.instructions.md'),
+    });
+    const result = applyPrescription(id, { homedir: tmpDir });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('outside allowed sidecar directories');
+  });
+
+  it('should reject non-absolute persisted targetPath', () => {
+    const id = seedPrescription({
+      artifactScope: 'user',
+      targetPath: '.copilot/relative.instructions.md',
+    });
+    const result = applyPrescription(id, { homedir: tmpDir });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('must be absolute');
   });
 });
 

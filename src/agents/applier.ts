@@ -73,6 +73,32 @@ function isValidPrefix(prefix: string): boolean {
   return /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(prefix);
 }
 
+/** Validate that a persisted target path is within allowed sidecar directories. */
+function isAllowedSidecarPath(
+  targetPath: string,
+  opts: ApplyOptions,
+): boolean {
+  if (!path.isAbsolute(targetPath)) return false;
+
+  const resolved = path.resolve(targetPath);
+
+  if (!path.basename(resolved).endsWith('.instructions.md')) return false;
+
+  // user-scope sidecar: <homedir>/.copilot/
+  const home = opts.homedir ?? process.env.HOME ?? process.env.USERPROFILE ?? '';
+  if (home) {
+    const userSidecarDir = path.resolve(home, '.copilot');
+    if (resolved.startsWith(userSidecarDir + path.sep)) return true;
+  }
+
+  // project-scope sidecar: <projectRoot>/.github/
+  const projectRoot = opts.projectRoot ?? process.cwd();
+  const projectSidecarDir = path.resolve(projectRoot, '.github');
+  if (resolved.startsWith(projectSidecarDir + path.sep)) return true;
+
+  return false;
+}
+
 function resolveSidecarPath(
   scope: ArtifactScope | undefined,
   prefix: string,
@@ -150,12 +176,29 @@ export function applyPrescription(
     };
   }
 
-  // 3. Resolve sidecar path
-  const prefix = getPreference('prescriber.sidecar_prefix') ?? DEFAULT_SIDECAR_PREFIX;
-  if (!isValidPrefix(prefix)) {
-    return { success: false, error: `Invalid sidecar prefix '${prefix}' — must be alphanumeric with dashes/underscores` };
+  // 3. Resolve sidecar path — prefer persisted targetPath (matches preview)
+  let targetPath: string | undefined;
+
+  if (prescription.targetPath) {
+    if (!path.isAbsolute(prescription.targetPath)) {
+      return { success: false, error: `Persisted target path must be absolute: '${prescription.targetPath}'` };
+    }
+    if (!isAllowedSidecarPath(prescription.targetPath, opts)) {
+      return {
+        success: false,
+        error: `Target path '${prescription.targetPath}' is outside allowed sidecar directories`,
+      };
+    }
+    targetPath = prescription.targetPath;
+  } else {
+    // Backward compat: recompute when targetPath was not persisted
+    const prefix = getPreference('prescriber.sidecar_prefix') ?? DEFAULT_SIDECAR_PREFIX;
+    if (!isValidPrefix(prefix)) {
+      return { success: false, error: `Invalid sidecar prefix '${prefix}' — must be alphanumeric with dashes/underscores` };
+    }
+    targetPath = resolveSidecarPath(prescription.artifactScope, prefix, opts);
   }
-  const targetPath = resolveSidecarPath(prescription.artifactScope, prefix, opts);
+
   if (!targetPath) {
     return { success: false, error: 'Cannot resolve target path for scope' };
   }
