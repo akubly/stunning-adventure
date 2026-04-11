@@ -328,13 +328,16 @@ export function rollbackPrescription(
     fs.mkdirSync(path.dirname(artifact.path), { recursive: true });
     fs.writeFileSync(artifact.path, artifact.rollbackContent, 'utf8');
 
-    // Keep the managed_artifacts entry so drift detection still works
+    // Keep the managed_artifacts entry so drift detection still works.
+    // Clear prescriptionId: after rollback the restored content doesn't
+    // belong to the rolled-back prescription (nor necessarily to any single
+    // active one), so we mark it as restored/orphaned.
     const restoredChecksum = sha256(artifact.rollbackContent);
     upsertManagedArtifact({
       path: artifact.path,
       artifactType: artifact.artifactType,
       scope: artifact.scope,
-      prescriptionId: artifact.prescriptionId,
+      prescriptionId: null,
       currentChecksum: restoredChecksum,
     });
   } else {

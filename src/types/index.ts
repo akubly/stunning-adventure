@@ -167,7 +167,7 @@ export interface ManagedArtifact {
   artifactType: ArtifactType;
   logicalId?: string;
   scope: ArtifactScope;
-  prescriptionId: number;
+  prescriptionId: number | null;
   originalChecksum?: string;
   currentChecksum?: string;
   rollbackContent?: string;

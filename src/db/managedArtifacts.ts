@@ -12,7 +12,7 @@ function mapRow(row: Record<string, unknown>): ManagedArtifact {
     artifactType: row.artifact_type as ArtifactType,
     logicalId: (row.logical_id as string | null) ?? undefined,
     scope: row.scope as ArtifactScope,
-    prescriptionId: row.prescription_id as number,
+    prescriptionId: (row.prescription_id as number | null),
     originalChecksum: (row.original_checksum as string | null) ?? undefined,
     currentChecksum: (row.current_checksum as string | null) ?? undefined,
     rollbackContent: (row.rollback_content as string | null) ?? undefined,
@@ -30,7 +30,7 @@ export interface TrackManagedArtifactFields {
   artifactType: ArtifactType;
   logicalId?: string;
   scope: ArtifactScope;
-  prescriptionId: number;
+  prescriptionId: number | null;
   originalChecksum?: string;
   currentChecksum?: string;
   rollbackContent?: string;

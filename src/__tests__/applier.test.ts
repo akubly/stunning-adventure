@@ -389,6 +389,9 @@ describe('rollbackPrescription', () => {
     expect(artifact).toBeDefined();
     const expectedChecksum = createHash('sha256').update(firstContent, 'utf8').digest('hex');
     expect(artifact!.currentChecksum).toBe(expectedChecksum);
+    // After rollback, prescriptionId is cleared — the restored content is
+    // orphaned rather than owned by the rolled-back prescription.
+    expect(artifact!.prescriptionId).toBeNull();
   });
 
   it('should update prescription status to failed', () => {
