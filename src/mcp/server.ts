@@ -629,7 +629,8 @@ server.registerTool(
         };
       }
 
-      if (prescription.status !== 'generated') {
+      // Allow 'accepted' through for crash-recovery retry (idempotent accept+apply)
+      if (prescription.status !== 'generated' && !(disposition === 'accept' && prescription.status === 'accepted')) {
         return {
           content: [
             {
@@ -645,7 +646,9 @@ server.registerTool(
 
       if (disposition === 'accept') {
         // Accept → apply (wrap in try/catch so exceptions don't leave status stuck)
-        updatePrescriptionStatus(prescription_id, 'accepted');
+        if (prescription.status !== 'accepted') {
+          updatePrescriptionStatus(prescription_id, 'accepted');
+        }
         // Prefer repo-scoped session; fall back to global most-recent
         // when no repo context is available (may misattribute events).
         const activeSession = repo_key
