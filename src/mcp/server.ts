@@ -34,7 +34,8 @@ import {
   findEvents,
 } from '../agents/sessionState.js';
 
-import type { InsightStatus, PrescriptionStatus } from '../types/index.js';
+import type { GrowthSummary, InsightStatus, PrescriptionStatus } from '../types/index.js';
+import { PRESCRIPTION_STATUSES } from '../types/index.js';
 import { checkIsScript } from '../utils/isScript.js';
 import { getPreference } from '../db/preferences.js';
 
@@ -76,10 +77,6 @@ export function confidenceToWords(confidence: number): string {
   return 'emerging';
 }
 
-const VALID_PRESCRIPTION_STATUSES = [
-  'generated', 'accepted', 'rejected', 'deferred',
-  'applied', 'failed', 'expired', 'suppressed',
-] as const;
 
 // ---------------------------------------------------------------------------
 // Tool: get_status
@@ -417,7 +414,7 @@ server.registerTool(
       'Use this after curation has run to see what suggestions are available.',
     inputSchema: {
       status: z
-        .enum(VALID_PRESCRIPTION_STATUSES)
+        .enum(PRESCRIPTION_STATUSES)
         .optional()
         .describe('Filter by lifecycle status. Omit to see all.'),
       limit: z
@@ -889,25 +886,41 @@ server.registerTool(
           ? `Over ${totalSessions} session${totalSessions === 1 ? '' : 's'}, Cairn has helped resolve ${resolvedPatterns.length} recurring pattern${resolvedPatterns.length === 1 ? '' : 's'}.`
           : `Cairn has generated ${total} prescription${total === 1 ? '' : 's'} so far.`;
 
+      const growth: GrowthSummary = {
+        summary,
+        resolvedPatterns: resolvedPatterns.slice(0, 10),
+        activePatterns: activePatterns.slice(0, 10),
+        stats: {
+          totalPrescriptions: total,
+          accepted,
+          applied,
+          rejected,
+          deferred,
+          acceptanceRateDisplay,
+        },
+        trendDirection,
+        trendMessage,
+      };
+
       return {
         content: [
           {
             type: 'text' as const,
             text: JSON.stringify(
               {
-                summary,
-                resolved_patterns: resolvedPatterns.slice(0, 10),
-                active_patterns: activePatterns.slice(0, 10),
+                summary: growth.summary,
+                resolved_patterns: growth.resolvedPatterns,
+                active_patterns: growth.activePatterns,
                 stats: {
-                  total_prescriptions: total,
-                  accepted,
-                  applied,
-                  rejected,
-                  deferred,
-                  acceptance_rate_display: acceptanceRateDisplay,
+                  total_prescriptions: growth.stats.totalPrescriptions,
+                  accepted: growth.stats.accepted,
+                  applied: growth.stats.applied,
+                  rejected: growth.stats.rejected,
+                  deferred: growth.stats.deferred,
+                  acceptance_rate_display: growth.stats.acceptanceRateDisplay,
                 },
-                trend_direction: trendDirection,
-                trend_message: trendMessage,
+                trend_direction: growth.trendDirection,
+                trend_message: growth.trendMessage,
               },
               null,
               2,

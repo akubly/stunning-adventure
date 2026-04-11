@@ -110,15 +110,11 @@ export interface CuratorStatus {
 // ---------------------------------------------------------------------------
 
 /** 8-state prescription lifecycle (DP2) */
-export type PrescriptionStatus =
-  | 'generated'
-  | 'accepted'
-  | 'rejected'
-  | 'deferred'
-  | 'applied'
-  | 'failed'
-  | 'expired'
-  | 'suppressed';
+export const PRESCRIPTION_STATUSES = [
+  'generated', 'accepted', 'rejected', 'deferred',
+  'applied', 'failed', 'expired', 'suppressed',
+] as const;
+export type PrescriptionStatus = typeof PRESCRIPTION_STATUSES[number];
 
 /** Disposition actions for resolve_prescription (DP3) */
 export type PrescriptionDisposition = 'accept' | 'reject' | 'defer';
@@ -216,16 +212,16 @@ export interface TopologyCache {
 /** Growth tracking summary for show_growth MCP tool (DP5) */
 export interface GrowthSummary {
   summary: string;
-  resolved_patterns: string[];
-  active_patterns: string[];
+  resolvedPatterns: string[];
+  activePatterns: string[];
   stats: {
-    total_prescriptions: number;
+    totalPrescriptions: number;
     accepted: number;
     applied: number;
     rejected: number;
     deferred: number;
-    acceptance_rate_display: string;
+    acceptanceRateDisplay: string;
   };
-  trend_direction: 'improving' | 'stable' | 'declining';
-  trend_message: string;
+  trendDirection: 'improving' | 'stable' | 'declining';
+  trendMessage: string;
 }
