@@ -70,6 +70,14 @@ export interface PrescribeResult {
 // ---------------------------------------------------------------------------
 
 /**
+ * Recency weight: 1.0 within 5 sessions, linearly decays to 0.5 by 20 sessions.
+ * Shared by computePriority() and generatePrescription() to avoid formula drift.
+ */
+export function computeRecencyWeight(sessionsAgo: number): number {
+  return Math.min(1.0, Math.max(0.5, 1.0 - (sessionsAgo - 5) * (0.5 / 15)));
+}
+
+/**
  * Compute priority score for a prescription.
  *
  * Formula: confidence × recencyWeight × availabilityFactor
@@ -82,7 +90,7 @@ export function computePriority(
   sessionsAgo: number,
   priorRejections: number,
 ): number {
-  const recencyWeight = Math.min(1.0, Math.max(0.5, 1.0 - (sessionsAgo - 5) * (0.5 / 15)));
+  const recencyWeight = computeRecencyWeight(sessionsAgo);
   const availabilityFactor = Math.max(0.1, 1.0 - priorRejections * 0.3);
   return confidence * recencyWeight * availabilityFactor;
 }
@@ -289,6 +297,9 @@ export function prescribe(): PrescribeResult {
   const activeInsights = getInsights('active');
   const topology = getTopology();
 
+  let generated = 0;
+  const sessionId = findActiveSessionId();
+
   for (const rx of deferred) {
     if (!shouldResurface(rx, currentSession)) continue;
 
@@ -305,13 +316,23 @@ export function prescribe(): PrescribeResult {
     if (!sourceInsight) continue;
 
     // Generate new prescription from the same insight
-    generatePrescription(sourceInsight, topology, prefix, minConfidence);
+    const prescriptionId = generatePrescription(sourceInsight, topology, prefix, minConfidence);
+
+    if (prescriptionId !== null) {
+      generated++;
+
+      if (sessionId) {
+        logEvent(sessionId, 'prescription_generated', {
+          prescriptionId,
+          insightId: sourceInsight.id,
+          patternType: sourceInsight.patternType,
+          resurfaced: true,
+        });
+      }
+    }
   }
 
   // --- Step 3: Generate new prescriptions from active insights ---
-
-  let generated = 0;
-  const sessionId = findActiveSessionId();
 
   for (const insight of activeInsights) {
     // Skip low-confidence insights
@@ -403,7 +424,7 @@ function generatePrescription(
     artifactScope,
     confidence: insight.confidence,
     priorityScore,
-    recencyWeight: Math.min(1.0, Math.max(0.5, 1.0 - (sessionsAgo - 5) * (0.5 / 15))),
+    recencyWeight: computeRecencyWeight(sessionsAgo),
     availabilityFactor: 1.0,
   });
 
