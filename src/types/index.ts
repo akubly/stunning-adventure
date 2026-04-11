@@ -202,13 +202,6 @@ export interface ArtifactTopology {
   scanDurationMs: number;
 }
 
-/** Cached topology entry in SQLite (DP4: 5-min TTL) */
-export interface TopologyCache {
-  topology: ArtifactTopology;
-  cachedAt: number;
-  ttlMs: number;
-}
-
 /** Growth tracking summary for show_growth MCP tool (DP5) */
 export interface GrowthSummary {
   summary: string;

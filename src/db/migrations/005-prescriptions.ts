@@ -10,7 +10,7 @@ export const migration005: Migration = {
 
         -- Source
         insight_id INTEGER NOT NULL REFERENCES insights(id),
-        pattern_type TEXT NOT NULL,
+        pattern_type TEXT NOT NULL CHECK (pattern_type IN ('recurring_error', 'error_sequence', 'skip_frequency')),
 
         -- Content
         title TEXT NOT NULL,

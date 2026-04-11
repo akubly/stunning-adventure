@@ -250,8 +250,9 @@ const ACTIVE_STATUSES = new Set([
 ]);
 
 /**
- * Check whether an insight already has an active prescription
- * (one that isn't expired or failed). Prevents duplicate generation.
+ * Returns true if the insight has any non-terminal prescription (blocks new
+ * generation to prevent duplicates). Terminal states that allow
+ * re-generation: expired, failed.
  */
 function hasActivePrescription(insightId: number): boolean {
   const existing = listPrescriptions({ insightId });
