@@ -110,10 +110,11 @@ export function shouldResurface(prescription: Prescription, currentSession: numb
  * Exported for Phase 7F (resolve_prescription MCP tool).
  */
 export function checkAutoSuppress(prescriptionId: number, deferCount: number): boolean {
-  const threshold = parseInt(
+  const parsed = parseInt(
     getPreference('prescriber.suppress_threshold') ?? String(DEFAULT_SUPPRESS_THRESHOLD),
     10,
   );
+  const threshold = Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_SUPPRESS_THRESHOLD;
   if (deferCount >= threshold) {
     suppressPrescription(prescriptionId);
     return true;
@@ -243,6 +244,7 @@ const ACTIVE_STATUSES = new Set([
   'generated',
   'accepted',
   'rejected',
+  'deferred',
   'applied',
   'suppressed',
 ]);

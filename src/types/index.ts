@@ -215,15 +215,17 @@ export interface TopologyCache {
 
 /** Growth tracking summary for show_growth MCP tool (DP5) */
 export interface GrowthSummary {
-  totalPrescriptions: number;
-  accepted: number;
-  rejected: number;
-  deferred: number;
-  applied: number;
-  failed: number;
-  acceptanceRate: number;
-  resolvedPatterns: string[];
-  activePatterns: string[];
-  trendDirection: 'improving' | 'stable' | 'declining';
-  trendMessage: string;
+  summary: string;
+  resolved_patterns: string[];
+  active_patterns: string[];
+  stats: {
+    total_prescriptions: number;
+    accepted: number;
+    applied: number;
+    rejected: number;
+    deferred: number;
+    acceptance_rate_display: string;
+  };
+  trend_direction: 'improving' | 'stable' | 'declining';
+  trend_message: string;
 }
