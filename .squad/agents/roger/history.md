@@ -40,6 +40,28 @@
 
 <!-- Append new learnings below -->
 
+### Phase 7F: MCP Tools + UX + Growth (Final Phase)
+
+- **4 new MCP tools registered:** `list_prescriptions`, `get_prescription`, `resolve_prescription`, `show_growth` — bringing total to 10 tools.
+- **Module-level proactive hint counter** works well for "max 1 per MCP server process lifecycle" — no need for DB-based tracking since MCP server processes are short-lived.
+- **State guards on resolve_prescription** are essential: only `generated` prescriptions should be resolvable. Without guards, callers could corrupt lifecycle semantics by re-resolving terminal states.
+- **Accept flow must handle apply failure:** `applyPrescription()` returns `{ success: false }` on failure but doesn't set the status to `failed` — the caller (MCP tool) must explicitly call `updatePrescriptionStatus(id, 'failed')`.
+- **Defer flow re-read pattern:** After `deferPrescription()`, the in-memory object is stale. Must re-read via `getPrescription()` to get accurate `deferCount` before checking auto-suppress threshold.
+- **Resolved patterns are heuristic:** "applied prescription + insight is stale" is a proxy for resolution, not proof. The show_growth tool presents this honestly.
+- **Exported helpers for testing:** `confidenceToWords()` and `resetProactiveHintCounter()` are exported from server.ts so tests can validate UX formatting and counter behavior without transport.
+- **Added `getInsight(id)` to insights DAL** — was missing from the DAL despite being needed by `get_prescription` for insight context lookup.
+- **Test count:** 294 → 316 (22 new tests for Phase 7F).
+
+### PR #13 Review Fixes
+
+- **applyPrescription try/catch:** Must wrap in try/catch, not just check `{ success: false }`. Exceptions leave status stuck at 'accepted' otherwise. Both return-based and exception-based failure paths need 'failed' transition.
+- **Proactive hint counter is per-session, not per-process:** Track `proactiveHintSessionGeneration` alongside the counter, reset when `getSessionsSinceInstall()` changes. Avoids stale counter in long-lived MCP servers.
+- **N+1 batch pattern:** Added `getInsightsByIds()` to insights DAL — collects unique IDs, one `WHERE id IN (...)` query, map results in-memory. Standard batch-fetch pattern for DAL.
+- **ordinal() edge cases:** 11/12/13 are 'th' (not 'st/nd/rd'). Must check `% 100` before `% 10`.
+- **SQL parameterization:** Never interpolate user-supplied values (including LIMIT) directly into SQL strings. Always use bound parameters.
+- **shouldResurface off-by-one:** The `+1` compensation hack broke when prescribe() was called from MCP `run_curate` (no session increment). Fix: remove the hack, reorder sessionStart to increment counter BEFORE calling prescribe().
+- **MVP simplification docs:** When hardcoding values intentionally, document WHY in the code so future readers don't assume it's a bug.
+
 ### 2026-03-28: Copilot SDK & Platform Extensibility Recon
 
 - **Three SDK layers exist:** (1) `@github/copilot-sdk` — embed the full Copilot agentic engine in any app via JSON-RPC to CLI server mode (TS, Python, Go, .NET, Java). Technical Preview. (2) `@copilot-extensions/preview-sdk` — build Copilot Chat extensions as GitHub Apps with SSE response streaming. Alpha but semver-safe. (3) `@github/copilot-engine-sdk` — build custom engines for the coding agent platform with platform events, git ops, and MCP. Very early.
@@ -194,6 +216,49 @@ $raw | node $hookScript 2>$null
 
 **Phase 6 Outcome:** ✅ COMPLETE AND SHIPPED
 
+### 2026-04-06: Phase 7A — Data Foundation
+
+**Phase 7A Outcome:** ✅ COMPLETE
+
+**What was built:**
+- Migration 005: `prescriptions` table with 8-state lifecycle (generated→accepted→applied/failed, +rejected/deferred/expired/suppressed) and `prescriber_state` singleton table for session counting and pending tracking.
+- Migration 006: `managed_artifacts` table with unique path constraint, rollback content, and drift detection via checksum comparison.
+- DAL module `src/db/prescriptions.ts`: 12 functions — CRUD, priority retrieval, expiration (7-day window), deferral with session-based cooldown, suppression/unsuppression, session counter.
+- DAL module `src/db/managedArtifacts.ts`: 6 functions — track, get, list, update checksum, remove, detect drift.
+- Types appended to `src/types/index.ts`: PrescriptionStatus, PrescriptionDisposition, ArtifactType, ArtifactScope, ResolutionRule, Prescription, ManagedArtifact, DiscoveredArtifact, ArtifactConflict, ArtifactTopology, TopologyCache, GrowthSummary.
+- 42 new tests in `src/__tests__/prescriptions.test.ts` covering all CRUD operations, status constraints, filter/listing, priority ordering, expiration, deferral, suppression, session counting, managed artifact CRUD, drift detection, unique path constraint, and prescriber preference infrastructure.
+
+**Patterns followed:**
+- Migration export pattern matching existing 001–004 migrations (named export, Migration type, version numbering).
+- DAL `mapRow` pattern from insights.ts (snake_case→camelCase, null→undefined).
+- `getDb()` singleton — never opened own connection.
+- Test patterns from db.test.ts (beforeEach/afterEach with closeDb/getDb(':memory:'), describe blocks).
+- Updated db.test.ts: bumped expected migration count (4→6), max schema_version (4→6), added table presence checks.
+
+### 2026-04-06: Phase 7D — Prescription Engine
+
+**What was built:**
+- Full Prescriber agent `src/agents/prescriber.ts` replacing Gabriel's Phase 7C stub. 8 exported functions: `prescribe()`, `computePriority()`, `shouldResurface()`, `checkAutoSuppress()`, plus constants and types.
+- Template-based prescription generation for all 3 pattern types (recurring_error, error_sequence, skip_frequency).
+- Priority scoring: `confidence × recencyWeight × availabilityFactor` with min(1.0) cap on recencyWeight.
+- Session cleanup: expires stale generated prescriptions (>7 days), resurfaces deferred past cooldown, auto-suppresses after threshold deferrals.
+- Idempotent: skips insights with any active prescription (generated/accepted/rejected/applied/suppressed).
+- 38 new tests in `src/__tests__/prescriber.test.ts` covering generation, idempotency, priority, all 8 state transitions, deferral resurfacing, suppression, templates, target paths, events, expiration, and re-prescription.
+
+**Design decisions:**
+- **Event logging fail-soft**: `logEvent` requires FK-valid sessionId. Prescriber looks up any active session; skips logging if none found. This handles the sessionStart case where prescribe() runs before the new session is created.
+- **recencyWeight cap**: Spec formula produces >1.0 for sessionsAgo < 5. Added `Math.min(1.0, ...)` to match spec description "1.0 within 5 sessions."
+- **Off-by-one compensation**: `shouldResurface` uses `currentSession + 1 >= deferUntilSession` because `incrementSessionCounter()` runs after `prescribe()` in sessionStart.
+- **Scope defaulting**: Target path defaults to user scope (`~/.copilot/`). Project scope selected only when topology shows existing project-level instructions.
+- **Rejected = blocking**: Added 'rejected' to ACTIVE_STATUSES so rejected insights don't get re-prescribed (terminal state).
+- **Auto-suppression exported**: `checkAutoSuppress()` exported for Phase 7F MCP tools to call after deferral; also checked during resurface flow.
+
+**Decisions made:**
+- `prescriber_state.pending_count` is kept in sync automatically by every prescription status change (create, update, defer, suppress, unsuppress, expire). This avoids stale counts without requiring manual synchronization from callers.
+- `detectDrift()` returns `undefined` for non-existent paths rather than throwing, consistent with the `getPrescription()` / `getManagedArtifact()` undefined-on-miss pattern.
+
+**Test baseline:** 181/181 (139 existing + 42 new). Clean build, clean lint.
+
 **Deliverables (Roger's domain):**
 1. ✅ npm packaging configuration (files whitelist, prepublishOnly, keywords)
 2. ✅ Scoped package release (@akubly/cairn@0.1.0)
@@ -242,3 +307,16 @@ ode dist/mcp/server.js\)
 **Key Learning:** Debugging MCP config revealed complexity in module entry point patterns across stdio servers, npm binaries, symlinks, and filesystem permissions. Best practice: always use direct node invocation for development/distribution contexts where CWD is unknown. npm bin commands are for user-installed CLI tools only.
 
 **Handoff:** npm package published and available for install. MCP configuration stabilized with direct node pattern. Phase 6 shipping gates satisfied (build clean, tests pass, lint clean, publication successful). Ready for Phase 7 (CLI extension spike, worktree support, installation automation).
+
+### 2026-04-05: Prescriber Data Model Design (Phase 7 Planning)
+
+- **Prescriptions table (migration 005):** `prescriptions` with FK to `insights(id)`, CHECK constraints on `type` (6 artifact types), `target_scope` (4 scopes), `status` (7 lifecycle states). Indexes on `insight_id` and `status`.
+- **Lifecycle states:** `generated → presented → accepted → applied` (happy path), plus `rejected`, `failed`, `expired`. Dropped `redirected` as a status — user redirect is `accepted` + `override_target_path`. Simpler state machine.
+- **One live prescription per insight:** Invariant enforced transactionally (check before INSERT). Prevents duplicate/conflicting prescriptions. Abandoned in-flight rows expire on next session start.
+- **No separate prescription_events table:** Reuse `event_log` via archivist's `logEvent()`. All prescription events carry `prescription_id` in payload for correlation across retry attempts.
+- **Apply-time drift detection:** `target_fingerprint` column stores hash of target file at generation time. Re-checked before apply; fail safely on mismatch. Prevents writing stale modifications.
+- **Artifact topology is in-memory, not persisted:** Ephemeral filesystem scan via `scanTopology()`. No caching in DB — topology is stale the moment it's written. Scanner is a pure function taking homedir, projectRoot, pluginsDir.
+- **Insight closure:** The Prescriber does NOT modify insight status. Curator owns insight lifecycle. Applied prescriptions log events that the Curator processes on its next run; if the error pattern stops recurring, the insight decays naturally.
+- **Integration points:** `getUnprescribedInsights()` uses NOT EXISTS subquery (excludes insights with live or applied prescriptions). Rejected/failed prescriptions don't block re-prescription.
+- **New DB module:** `src/db/prescriptions.ts` with CRUD operations. New MCP tools: `list_prescriptions`, `resolve_prescription`.
+- **Key file:** `.squad/decisions/inbox/roger-prescriber-datamodel.md` — full proposal with SQL, TypeScript types, integration map, and open questions.

@@ -1096,3 +1096,2265 @@ distribution. Too much portability sacrifice.
 - CLI version verified: 1.0.18
 - `@github/copilot-sdk` verified in squad-cli's node_modules
 
+---
+
+## Phase 7 Decisions (2026-04-06) — Prescriber Planning Session
+
+### 2026-04-06: Prescriber Architecture — Design & Phased Implementation Plan
+
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-04-06  
+**Type:** Architecture  
+**Status:** Proposal — awaiting team review
+
+**Decision:** The Prescriber closes the feedback loop from pattern detection (Curator) through actionable recommendations (Prescriber) to user-approved changes. It is Cairn's third core agent.
+
+**Architecture Positioning:**
+```
+Events → Insights → Prescriptions → Human Approval → Applied Changes
+  ↑                                                        │
+  └────────── disposition events ──────────────────────────┘
+```
+
+**Core Design Decisions:**
+
+1. **MCP-Only Generation (V1)** — Prescription generation is not in the preToolUse hot path. MCP tools trigger generation on-demand. No hook wrappers needed.
+
+2. **Notification Hint (V1.1)** — Single lightweight query to preToolUse: write `pending_prescriptions_count` to `prescriber_state` table (<5ms). MCP tools surface notification proactively.
+
+3. **Performance Budget** — Hook cost breakdown (Windows p50):
+   - Fast path: ~410ms (session exists, exit)
+   - Slow path: ~460ms + curate (up to 3s cap)
+   - Safety margin: 6.2s for other plugins
+   - Total: within 10s timeout
+
+4. **Data Model: `prescriptions` Table (Migration 005)** — 7-state lifecycle: generated → presented → {approved, rejected} → applying → {applied, failed}. Plus expired for abandoned prescriptions.
+
+5. **Artifact Topology: In-Memory, Ephemeral** — Scanned at Prescriber startup, not persisted. Passed to prescription generator as input. Covers user-level (~/.copilot), project-level (.github), and plugin scopes.
+
+6. **MCP Tool Surface: 4 Tools**
+   - `list_prescriptions` — list pending, filtered by status, insight_id
+   - `get_prescription` — full detail: insight context, proposed change, confidence
+   - `decide_prescription` — apply, reject, dismiss with reason
+   - `generate_prescriptions` — explicit trigger, optional force re-generation
+
+7. **No Separate Hook** — Prescriber doesn't register new hooks. All logic in MCP. Event recording flows through existing Archivist's `logEvent()` path.
+
+**Phased Implementation:**
+- **V1:** MCP tools only, pending prescriptions
+- **V1.1:** DB-persisted notification hint, `get_status` integration
+- **V2:** File write capability, fingerprint drift detection, apply-action implementation
+- **V3:** Conflict resolution, multi-prescription logic, growth tracking
+
+**Open Questions for Team Discussion:**
+1. Curation time budget (3s) — hardcoded or configurable?
+2. Artifact topology discovery/caching — filesystem I/O strategy in MCP context?
+3. Prescription deduplication — one per insight or multiple?
+4. Compiler integration timing — validate before apply (V1) or after-verify (V2)?
+5. Conflicting prescriptions — detection and resolution mechanism?
+
+**Full Report:** `.squad/decisions/inbox/graham-prescriber-architecture.md`
+
+---
+
+### 2026-04-06: Prescriber Data Model & Integration Points
+
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-04-06  
+**Type:** Technical / Data Model  
+**Status:** Proposal — awaiting team review
+
+**Decision:** Comprehensive data model for prescriptions with 7-state lifecycle, artifact topology discovery, and integration points to Curator and Archivist.
+
+**Key Decisions:**
+
+1. **`prescriptions` Table Schema (Migration 005)**
+   - Lifecycle states: generated, presented, accepted, rejected, applied, failed, expired
+   - Tracks insight source, target path, proposed content, confidence, user disposition
+   - Includes fingerprint for drift detection before apply
+   - Timestamps for each lifecycle transition
+
+2. **`prescriber_state` Table** — Single row tracking `last_generated_at`, `pending_count`, updated_at. Enables MCP notifications without expensive COUNT query on every call.
+
+3. **Artifact Topology: In-Memory Discovery** — Pure function `scanTopology()`, no persistence. Scans four phases:
+   - User-level: `~/.copilot/` (instructions, agents, skills, hooks, MCP config)
+   - Project-level: `.github/` (same types)
+   - Installed plugins: `~/.cairn/plugins/`
+   - Marketplace metadata: read-only reference
+
+4. **Per-Type Resolution Rules** — Additive for instructions/hooks (all merge), first-found for agents/skills/commands, last-wins for MCP servers. Conflict detection by logical identity (agent name, skill name, MCP server key), not file path.
+
+5. **TypeScript Types** — Complete type definitions for `Prescription`, `PrescriptionStatus`, `PrescriptionType`, `ArtifactType`, `ArtifactScope`, `DiscoveredArtifact`, `ArtifactTopology`.
+
+6. **Integration with Curator & Archivist**
+   - Prescriber reads insights via `getInsights('active')` from existing DAL
+   - Records lifecycle events via `logEvent()` (existing Archivist path)
+   - No new event infrastructure needed
+   - Disposition feedback flows back to Curator through `prescription_applied` events
+
+7. **Session-Based Cleanup** — At session start, expire prescriptions stuck in generated/presented status (abandoned from prior sessions).
+
+8. **MCP Tool Surface** — Two tools: `list_prescriptions` (read-only), `resolve_prescription` (side-effecting: accept/reject/redirect). All decisions logged as events.
+
+**New DB Module:** `src/db/prescriptions.ts` with CRUD functions and query helpers.
+
+**Open Questions for Team:**
+1. Compiler validation timing — before apply or after?
+2. Prescription generation strategy — one per insight or multiple?
+3. Hook budget impact — topology scan + generation must fit in remaining budget
+4. Plugin ownership convention — how plugins declare owned files
+5. MCP tool granularity — keep 2 tools or split resolve into 3?
+
+**Full Report:** `.squad/decisions/inbox/roger-prescriber-datamodel.md`
+
+---
+
+### 2026-04-06: Prescriber Plugin Architecture & Artifact Discovery
+
+**Author:** Rosella Chen (Plugin Dev)  
+**Date:** 2026-04-06  
+**Type:** Architecture / Plugin Design  
+**Status:** Proposal — awaiting team review
+
+**Decision:** Artifact discovery mechanism for the Prescriber, enabling it to understand the CLI artifact topology and apply prescriptions to the right locations.
+
+**Key Decisions:**
+
+1. **Four-Phase Discovery** — Scan sequence:
+   - **Phase 1 (User-level):** `~/.copilot/` — instructions, agents, skills, hooks, MCP config
+   - **Phase 2 (Project-level):** `.github/` — instructions, agents, skills, hooks, MCP config, plugin manifests
+   - **Phase 3 (Plugins):** `~/.copilot/installed-plugins/` — plugin manifests, agents, skills, commands
+   - **Phase 4 (Marketplace):** `~/.copilot/marketplace-cache/` — reference only, not active
+
+2. **Per-Type Resolution Rules** — Critical insight from critique: each artifact type resolves differently
+   - **Instructions, Hooks:** Additive (all sources merged)
+   - **Agents, Skills, Commands:** First-found wins (logical identity determines conflict)
+   - **MCP servers:** Last-wins (later configs override)
+   - Identity is by logical name (from file frontmatter), not path
+
+3. **Conflict Detection by Logical Identity** — Two files at different paths can conflict if they define the same agent/skill name. Prescriber must detect and report these.
+
+4. **In-Memory Ephemeral Topology** — Not persisted to DB. Scanned fresh at Prescriber startup. Held in memory as `ArtifactTopology`. No caching strategy yet (deferred to V2).
+
+5. **TypeScript Data Structures:**
+   - `DiscoveredArtifact` — path, artifactType, scope, logicalId, ownerPlugin, checksum, lastModified
+   - `ArtifactConflict` — logicalId, artifactType, conflicting paths
+   - `ArtifactTopology` — collection of artifacts + scan timestamp
+
+6. **Scanner Implementation** — Pure function, no side effects. Inputs: homedir, projectRoot, pluginsDir. Returns snapshot of topology.
+
+**Design Principles:**
+- Simple in V1: glob for known paths, classify by location
+- No deep parsing of file contents
+- Plugin ownership by directory structure, not content inspection
+- Conflicts are data — surface them for human decision
+
+**Open Questions for Team:**
+1. Caching strategy — how to avoid repeated filesystem scans?
+2. Conflict resolution — should Prescriber suggest which to keep?
+3. Plugin manifest versioning — how to handle stale plugin metadata?
+4. Discovery scope expansion — future phases (system plugins, marketplace)?
+5. Fingerprinting — checksum and lastModified for drift detection on apply?
+
+**Full Report:** `.squad/decisions/inbox/rosella-prescriber-plugin.md`
+
+---
+
+### 2026-04-06: Prescriber UX Design — Interaction, Attention, and Growth
+
+**Author:** Valanice Chen (UX / Human Factors)  
+**Date:** 2026-04-06  
+**Type:** UX / Design  
+**Status:** Proposal — awaiting team review
+
+**Decision:** Prescriber interaction model framed as a coaching relationship, not a notification system. Design for human attention scarcity and decision fatigue.
+
+**Core Philosophy:**
+> "Coaches don't nag at the door; they wait for the right moment, say one important thing, and make it easy to act."
+
+**Key Decisions:**
+
+1. **Timing: Natural Pause, Not Session Start**
+   - Wrong moment: Session start (cognitive task-switching cost)
+   - Right moment: After first success, breathing point
+   - Implementation: MCP tools only; consuming agent decides when to surface
+   - Max 1 proactive prescription per session
+
+2. **Format: The Coaching Note** — Prescription presented in natural conversation:
+   ```
+   📋 Cairn noticed a pattern:
+   **Pattern:** [title] — seen [N] times over [timeframe]
+   **What's happening:** [observation]
+   **Suggestion:** [prescription]
+   **Where:** [target location]
+   **Confidence:** [high/medium] based on [evidence]
+   ```
+
+3. **Batching: 1 Proactive, Rest On-Demand**
+   - Top priority, high confidence → Proactive (max 1/session)
+   - Other pending → On-demand via `list_prescriptions`
+   - Low confidence (<0.5) → Only via explicit query
+
+4. **Priority Scoring** — Determines which single prescription gets proactive surfacing:
+   ```
+   priority = confidence × recency_weight × availability_factor
+   ```
+   - `confidence` — 0.0–1.0 from Curator
+   - `recency_weight` — 1.0 (last 5 sessions) → 0.5 (over 20 sessions)
+   - `availability_factor` — dampened by prior rejection, resets after cooldown
+   - Ties broken by occurrence count
+
+5. **7-State Prescription Lifecycle** — Every state intentional, prevents notification graveyard:
+   - **pending** → (human sees it) → **previewed**
+   - → {**approved**, **deferred**, **dismissed**, **expired**} (terminal)
+   - → (if approved) → **applying** → {**applied**, **failed**} (terminal)
+
+6. **Human Approval Flow** — Not automatic. Explicit decisions recorded, feed back to growth tracking:
+   - Accept → Preview → Apply (with fingerprint check) → Success/Failure
+   - Reject → Record reason → Adjust confidence
+   - Defer → Cooldown period → Recompute priority
+   - Dismiss → Deducted from confidence, adjust availability_factor
+
+7. **Growth Tracking** — Learn from human decisions:
+   - Track rejection patterns ("user always rejects hook prescriptions")
+   - Adjust confidence based on acceptance rate
+   - Recompute priority scores with human feedback
+   - Implement cooldown period to avoid re-suggesting rejected insights
+
+**Anti-Patterns Addressed:**
+- Notification graveyard (too many pending)
+- Decision fatigue (too many choices at once)
+- Context switching costs (wrong timing)
+- Ignored feedback (no learning from rejections)
+
+**Open Questions for Team:**
+1. Preference signals — how do UX signals (defer, dismiss) feed back?
+2. Notification frequency cap — max proactive per session/day?
+3. LLM re-ranking — should consuming agent re-rank priorities?
+4. Session continuity — carry over deferred from previous session?
+
+**Full Report:** `.squad/decisions/inbox/valanice-prescriber-ux.md`
+
+---
+
+### 2026-04-06: Prescriber Infrastructure Analysis — Hook Performance & MCP Tools
+
+**Author:** Gabriel Knight (Infrastructure)  
+**Date:** 2026-04-06  
+**Type:** Infrastructure / Performance  
+**Status:** Proposal — awaiting team review
+
+**Decision:** Performance analysis of preToolUse hook, MCP tool design, and infrastructure requirements for Prescriber without impacting existing budgets.
+
+**Key Findings:**
+
+1. **preToolUse Hook Cost Breakdown (Windows p50)**
+   - PowerShell startup + stdin: ~100ms
+   - Node.js cold start + ESM: ~200ms
+   - SQLite open + WAL + migrations: ~100ms
+   - `git remote get-url origin`: ~10ms
+   - Fast path (fresh session): <5ms
+   - Slow path (crash recovery): ~50ms
+   - **Curate():** Unbounded (loops until caught up)
+
+2. **Critical Finding: Curation Cost Is Unbounded** — `curate()` processes batches but loops until cursor is current. After idle periods, could be thousands of events with no time cap. Gets killed by 10s timeout, silently fails.
+
+3. **Recommendation: Add 3-Second Hard Budget to `curate()`** — Check elapsed time after each batch. If >3s, persist cursor and return partial results. Resume on next invocation.
+
+4. **Prescriber Must NOT Run in preToolUse Hot Path** — Reasons:
+   - No remaining budget after Node startup + curation
+   - Prescription generation is expensive (1-2s minimum)
+   - Fail-open makes timeouts invisible to users
+   - 10s timeout shared across plugins (if others register hooks)
+
+5. **MCP Tool Surface: 4 New Tools**
+   - `list_prescriptions` (read-only) — list with optional filters
+   - `get_prescription` (read-only) — full detail with insight context
+   - `decide_prescription` (side-effecting) — apply/reject/dismiss
+   - `generate_prescriptions` (side-effecting) — explicit trigger
+
+6. **Notification Hint Strategy** — After `curate()`, write single indexed query to `prescriber_state` (count pending prescriptions). MCP tools read and surface in responses. Total: <10ms.
+
+7. **No New Hook Wrappers Needed** — Prescriber doesn't register hooks. All logic in MCP. Event recording flows through existing Archivist. Only modification: `sessionStart.ts` adds notification hint check.
+
+8. **hooks.json: No Changes** — Existing hooks.json is unchanged. Prescriber integrates as MCP tools, not hook slots.
+
+**Performance Budget Proposal (10s total):**
+| Phase | Budget | Guard |
+|-------|--------|-------|
+| PowerShell + stdin | 200ms | Fixed |
+| Node.js + ESM | 300ms | Fixed |
+| SQLite + WAL + migrations | 150ms | One-time per process |
+| `git remote get-url origin` | 50ms | p99 |
+| **Fast path total** | **700ms** | Exit here if fresh |
+| Crash recovery | 100ms | Single transaction |
+| **Curation (capped)** | **3,000ms** | **New: hard time budget** |
+| Prescription hint check | 10ms | Single indexed query |
+| **Safety margin** | **6,190ms** | For other plugins + tail |
+
+**Build & Test Infrastructure:**
+- New files: `src/agents/prescriber.ts`, `src/db/prescriptions.ts`, `src/db/migrations/005-prescriptions.ts`, `src/__tests__/prescriber.test.ts`
+- Tests: Unit tests (`:memory:` SQLite), integration tests for MCP tools
+- CI: No changes — vitest, npm run build, eslint all pick up new files
+- Publish: Ships as part of `@akubly/cairn`, no separate package
+
+**Open Questions for Team:**
+1. Curation time budget configurability (3s hardcoded vs. preference)?
+2. Artifact topology discovery caching strategy?
+3. Prescription deduplication logic?
+4. Compiler validation before apply (V1) or after (V2)?
+5. Conflicting prescriptions detection and handling?
+
+**Full Report:** `.squad/decisions/inbox/gabriel-prescriber-hooks.md`
+
+
+---
+
+### 2026-04-06T07:38: Decision Point 1 — Prescriber Trigger Architecture
+
+**By:** Aaron Kubly (via Copilot)  
+**Type:** Architecture  
+**Status:** Active
+
+**What:** Hybrid (C1): Prescriber generates prescriptions automatically at session start (conditional in preToolUse, chaining after curate() when insights change) AND via MCP (run_curate chains prescribe() automatically when it finds new insights). Prerequisites: cap curate() at 3s. No separate generate_prescriptions tool — run_curate handles both.
+
+**Why:** Session boundary is the right batch point for pattern detection. postToolUse is too soon (incomplete data). preToolUse-as-session-start gives full event corpus. MCP path enables mid-session "what did we learn?" queries. Extending run_curate rather than adding a new tool follows principle of least surprise and keeps the two trigger paths symmetrical.
+
+**Impact:** Phase 7C (Trigger Architecture). Binds run_curate chaining and preToolUse conditional logic.
+
+
+---
+
+### 2026-04-06T07:45: Decision Point 2 — Prescription State Machine
+
+**By:** Aaron Kubly (via Copilot)  
+**Type:** Architecture  
+**Status:** Active
+
+**What:** 8-state lifecycle: generated → accepted → applied | failed; generated → rejected; generated → deferred (resurfaces after cooldown); generated → expired (session cleanup); generated → suppressed (after 3 deferrals). Re-prescription after insight reinforcement handled by expiring old + generating new. Deferred has configurable cooldown (default 3 sessions). Rejected is terminal with optional freeform reason. Suppressed is reversible via MCP.
+
+**Why:** Balances crash safety (accepted→applied/failed distinction) with UX needs (deferred prevents notification graveyard, suppression answers "should I stop asking?") without over-engineering (dropped transient micro-states like approved/applying and instrumentation-heavy states like presented).
+
+**Impact:** Phase 7A (schema definition), Phase 7D (state transitions). Defines the core prescription lifecycle.
+
+
+---
+
+### 2026-04-06T07:50: Decision Point 3 — MCP Tool Surface
+
+**By:** Aaron Kubly (via Copilot)  
+**Type:** API  
+**Status:** Active
+
+**What:** 4 new MCP tools: list_prescriptions (read-only, filter by status), get_prescription (read-only, full detail + diff preview), esolve_prescription (write, unified action with disposition enum: accept/reject/defer/suppress), show_growth (read-only, growth summary and trends). Accept disposition triggers apply logic inline. Follows existing naming convention (get_*, list_*). Total MCP tools: 10 (6 existing + 4 new).
+
+**Why:** Unified resolve tool is cleaner than split apply+dismiss — 8-state machine has 4 dispositions, one tool handles all without adding surface area for each. show_growth embedded in MVP (not deferred) per DP5. Naming follows existing convention for consistency.
+
+**Impact:** Phase 7F (MCP Tools). Defines complete user-facing API.
+
+
+---
+
+### 2026-04-06T07:55: Decision Point 4 — Artifact Discovery Scope
+
+**By:** Aaron Kubly (via Copilot)  
+**Type:** Architecture  
+**Status:** Active
+
+**What:** Build Rosella's full 4-phase artifact discovery scanner for MVP: user-level (~/.copilot/), project-level (.github/), installed plugins, marketplace metadata. Includes per-artifact-type resolution rules, conflict detection, ownership tracking via path heuristics, checksum + mtime for drift detection. Cache with 5-minute TTL in SQLite artifact_cache table.
+
+**Why:** Aaron chose the full scanner over simple constants, investing in a real understanding of the CLI installation topology from day one rather than building a throwaway stub. Enables Prescriber to write safe, correct sidecars and managed_artifacts entries.
+
+**Impact:** Phase 7B (Artifact Discovery). Powers Phase 7E (Safety & Rollback).
+
+
+---
+
+### 2026-04-06T08:00: Decision Point 5 — UX Principles (Full Set)
+
+**By:** Aaron Kubly (via Copilot)  
+**Type:** Product  
+**Status:** Active
+
+**What:** Adopt ALL of Valanice's 10 UX principles for MVP:
+
+1. Rejection easier than acceptance (design constraint on resolve_prescription)
+2. Max 1 proactive prescription per session (counter in list_prescriptions)
+3. Present after first success, not at the door (guidance in tool descriptions)
+4. Observation framing, not judgment (copy/tone in rationale field)
+5. Confidence in words, not numbers (formatting in get_prescription)
+6. Deferral cooldown — 3 sessions default, configurable via prescriber.defer_sessions
+7. No streaks, lead with wins — growth tracking uses cumulative trends, resolved patterns first
+8. Suppression after 3 deferrals — "should I stop asking?" with reversible suppression
+9. Priority scoring — confidence × recency_weight × availability_factor
+10. Configurable preference surface — 7 preference keys using existing preferences cascade
+
+**Why:** Aaron chose full UX investment from day one rather than building minimal stubs. Includes show_growth MCP tool and suppressed state.
+
+**Impact:** Phase 7A (preferences), Phase 7D (scoring and state transitions), Phase 7F (formatting and show_growth).
+
+
+---
+
+### 2026-04-06T08:05: Decision Point 6 — managed_artifacts Table & Sidecar Strategy
+
+**By:** Aaron Kubly (via Copilot)  
+**Type:** Architecture  
+**Status:** Active
+
+**What:** Include managed_artifacts table tracking Prescriber-written files (path, artifact_type, logical_id, scope, original_checksum, prescription_id, rollback_content). Use sidecar instruction files (e.g., cairn-prescribed.instructions.md) instead of modifying user-owned instruction files. Rollback enabled by storing original file state. Drift detection via checksum comparison.
+
+**Why:** Completes the safety model — Prescriber knows what it wrote, can undo it, detects manual edits. Sidecar approach respects the CLI's scoped instructions convention and avoids touching user-owned files. Aligns with full scanner (DP4) and full UX (DP5) investment.
+
+**Impact:** Phase 7A (schema), Phase 7E (engine and rollback). Enables safe, auditable artifact mutations.
+
+
+---
+
+### 2026-04-06: Prescriber Implementation Plan — FINAL
+
+# Prescriber Implementation Plan — FINAL
+
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-04-06  
+**Status:** APPROVED — Ready for execution  
+**Baseline:** 134 tests, 24 source files, 4 migrations, 6 MCP tools
+
+---
+
+## Executive Summary
+
+The Prescriber is Cairn's third core agent. It closes the feedback loop:
+**Events → Insights → Prescriptions → Human Approval → Applied Changes → Growth Tracking**.
+
+Aaron made 6 binding decisions that chose depth on every dimension. This plan
+incorporates all 6 into a 6-phase implementation (7A–7F) with explicit
+dependencies, ownership, dogfood gates, and file manifests.
+
+### Decision Incorporation Map
+
+| Decision | Summary | Primary Impact |
+|----------|---------|----------------|
+| DP1 | Hybrid trigger: preToolUse chains + run_curate chains | Phase 7C |
+| DP2 | 8-state lifecycle | Phase 7A (schema), 7D (transitions) |
+| DP3 | 4 new MCP tools (10 total) | Phase 7F |
+| DP4 | Full 4-phase artifact scanner with SQLite cache | Phase 7B |
+| DP5 | All 10 UX principles | Phase 7A (prefs), 7D (scoring), 7F (formatting) |
+| DP6 | managed_artifacts table + sidecar strategy | Phase 7A (schema), 7E (engine) |
+
+---
+
+## Phase 7A — Data Foundation
+
+**Goal:** Establish the schema, types, DAL, and preference surface that every subsequent phase builds on.
+
+**Owner:** Roger (Platform Dev)  
+**Dependencies:** None (first phase)  
+**Estimated new tests:** ~25
+
+### Deliverables
+
+#### Migration 005: `prescriptions` + `prescriber_state`
+
+**File:** `src/db/migrations/005-prescriptions.ts`
+
+```sql
+CREATE TABLE prescriptions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+  -- Source
+  insight_id INTEGER NOT NULL REFERENCES insights(id),
+  pattern_type TEXT NOT NULL,
+
+  -- Content
+  title TEXT NOT NULL,
+  rationale TEXT NOT NULL,
+  proposed_change TEXT NOT NULL,
+  target_path TEXT,
+  artifact_type TEXT,
+  artifact_scope TEXT CHECK (artifact_scope IN ('user', 'project', 'plugin')),
+
+  -- Lifecycle (DP2: 8 states)
+  status TEXT NOT NULL DEFAULT 'generated'
+    CHECK (status IN (
+      'generated', 'accepted', 'rejected', 'deferred',
+      'applied', 'failed', 'expired', 'suppressed'
+    )),
+
+  -- Scoring (DP5: priority formula)
+  confidence REAL NOT NULL DEFAULT 0.0
+    CHECK (confidence >= 0.0 AND confidence <= 1.0),
+  priority_score REAL NOT NULL DEFAULT 0.0,
+  recency_weight REAL NOT NULL DEFAULT 1.0,
+  availability_factor REAL NOT NULL DEFAULT 1.0,
+
+  -- Disposition tracking
+  disposition_reason TEXT,
+  defer_count INTEGER NOT NULL DEFAULT 0,
+  defer_until_session INTEGER,
+
+  -- Timestamps
+  generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  resolved_at TEXT,
+  applied_at TEXT,
+  expires_at TEXT
+);
+
+CREATE INDEX idx_prescriptions_status ON prescriptions(status);
+CREATE INDEX idx_prescriptions_insight ON prescriptions(insight_id);
+CREATE INDEX idx_prescriptions_priority ON prescriptions(status, priority_score DESC);
+
+CREATE TABLE prescriber_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  last_generated_at TEXT,
+  pending_count INTEGER NOT NULL DEFAULT 0,
+  sessions_since_install INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+INSERT INTO prescriber_state (id) VALUES (1);
+```
+
+#### Migration 006: `managed_artifacts`
+
+**File:** `src/db/migrations/006-managed-artifacts.ts`
+
+```sql
+CREATE TABLE managed_artifacts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  path TEXT NOT NULL,
+  artifact_type TEXT NOT NULL,
+  logical_id TEXT,
+  scope TEXT NOT NULL CHECK (scope IN ('user', 'project', 'plugin')),
+  prescription_id INTEGER NOT NULL REFERENCES prescriptions(id),
+  original_checksum TEXT,
+  current_checksum TEXT,
+  rollback_content TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE UNIQUE INDEX idx_managed_artifacts_path ON managed_artifacts(path);
+CREATE INDEX idx_managed_artifacts_prescription ON managed_artifacts(prescription_id);
+```
+
+#### DAL Modules
+
+**File:** `src/db/prescriptions.ts`
+
+Functions:
+- `createPrescription(fields) → id`
+- `getPrescription(id) → Prescription | undefined`
+- `listPrescriptions(filters: { status?, insightId?, limit? }) → Prescription[]`
+- `updatePrescriptionStatus(id, status, fields?) → void`
+- `getTopPrescription() → Prescription | undefined` (highest priority, generated status)
+- `countPrescriptionsByStatus() → Record<string, number>`
+- `expireAbandonedPrescriptions() → number` (generated older than 7 days → expired)
+- `deferPrescription(id, reason?, sessionCount?) → void`
+- `suppressPrescription(id) → void` (after 3 deferrals)
+- `unsuppressPrescription(id) → void`
+- `getSessionsSinceInstall() → number`
+- `incrementSessionCounter() → void`
+
+**File:** `src/db/managedArtifacts.ts`
+
+Functions:
+- `trackManagedArtifact(fields) → id`
+- `getManagedArtifact(path) → ManagedArtifact | undefined`
+- `listManagedArtifacts(prescriptionId?) → ManagedArtifact[]`
+- `updateArtifactChecksum(path, checksum) → void`
+- `removeManagedArtifact(path) → void`
+- `detectDrift(path) → { drifted: boolean, expected: string, actual: string }`
+
+#### Preference Keys (DP5 #10)
+
+Register 7 preference keys in the existing `preferences` table cascade:
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `prescriber.enabled` | boolean | `true` | Master on/off |
+| `prescriber.max_proactive` | integer | `1` | Max proactive per session (DP5 #2) |
+| `prescriber.defer_sessions` | integer | `3` | Deferral cooldown sessions (DP5 #6) |
+| `prescriber.suppress_threshold` | integer | `3` | Deferrals before suppression (DP5 #8) |
+| `prescriber.min_confidence` | float | `0.3` | Below this, never proactive |
+| `prescriber.auto_apply` | boolean | `false` | Skip human confirmation (power user) |
+| `prescriber.sidecar_prefix` | string | `cairn-prescribed` | Sidecar filename prefix (DP6) |
+
+#### Type Definitions
+
+**File:** `src/types/index.ts` (append)
+
+```typescript
+// ---------------------------------------------------------------------------
+// Prescriber types (Phase 7)
+// ---------------------------------------------------------------------------
+
+/** 8-state prescription lifecycle (DP2) */
+export type PrescriptionStatus =
+  | 'generated'
+  | 'accepted'
+  | 'rejected'
+  | 'deferred'
+  | 'applied'
+  | 'failed'
+  | 'expired'
+  | 'suppressed';
+
+/** Disposition actions for resolve_prescription (DP3) */
+export type PrescriptionDisposition = 'accept' | 'reject' | 'defer';
+
+/** Artifact types discovered by the scanner */
+export type ArtifactType =
+  | 'instruction'
+  | 'agent'
+  | 'skill'
+  | 'hook'
+  | 'mcp_server'
+  | 'plugin_manifest'
+  | 'command';
+
+/** Scope of an artifact in the CLI topology */
+export type ArtifactScope = 'user' | 'project' | 'plugin';
+
+/** Resolution strategy per artifact type */
+export type ResolutionRule = 'additive' | 'first_found' | 'last_wins';
+
+/** A prescription generated from a Curator insight */
+export interface Prescription {
+  id: number;
+  insightId: number;
+  patternType: PatternType;
+  title: string;
+  rationale: string;
+  proposedChange: string;
+  targetPath?: string;
+  artifactType?: ArtifactType;
+  artifactScope?: ArtifactScope;
+  status: PrescriptionStatus;
+  confidence: number;
+  priorityScore: number;
+  recencyWeight: number;
+  availabilityFactor: number;
+  dispositionReason?: string;
+  deferCount: number;
+  deferUntilSession?: number;
+  generatedAt: string;
+  resolvedAt?: string;
+  appliedAt?: string;
+  expiresAt?: string;
+}
+
+/** A file managed by the Prescriber (DP6) */
+export interface ManagedArtifact {
+  id: number;
+  path: string;
+  artifactType: ArtifactType;
+  logicalId?: string;
+  scope: ArtifactScope;
+  prescriptionId: number;
+  originalChecksum?: string;
+  currentChecksum?: string;
+  rollbackContent?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A discovered artifact in the CLI topology (DP4) */
+export interface DiscoveredArtifact {
+  path: string;
+  artifactType: ArtifactType;
+  scope: ArtifactScope;
+  logicalId: string;
+  ownerPlugin?: string;
+  checksum: string;
+  lastModified: number;
+  resolutionRule: ResolutionRule;
+}
+
+/** Conflict between artifacts at different paths with the same logical identity */
+export interface ArtifactConflict {
+  logicalId: string;
+  artifactType: ArtifactType;
+  artifacts: DiscoveredArtifact[];
+}
+
+/** Complete snapshot of the CLI artifact topology (DP4) */
+export interface ArtifactTopology {
+  artifacts: DiscoveredArtifact[];
+  conflicts: ArtifactConflict[];
+  scannedAt: string;
+  scanDurationMs: number;
+}
+
+/** Cached topology entry in SQLite (DP4: 5-min TTL) */
+export interface TopologyCache {
+  topology: ArtifactTopology;
+  cachedAt: number;
+  ttlMs: number;
+}
+
+/** Growth tracking summary for show_growth MCP tool (DP5) */
+export interface GrowthSummary {
+  totalPrescriptions: number;
+  accepted: number;
+  rejected: number;
+  deferred: number;
+  applied: number;
+  failed: number;
+  acceptanceRate: number;
+  resolvedPatterns: string[];
+  activePatterns: string[];
+  trend: 'improving' | 'stable' | 'declining';
+}
+```
+
+#### Test Coverage
+
+**File:** `src/__tests__/prescriptions.test.ts`
+
+- Migration applies cleanly
+- CRUD for prescriptions (create, read, update status)
+- Status constraint validation (8 valid states)
+- Prescription listing with filters (by status, by insight)
+- Priority-ordered retrieval
+- Expiration of abandoned prescriptions
+- Deferral with cooldown tracking
+- Suppression after 3 deferrals
+- Unsuppression
+- Session counter increment
+- managed_artifacts CRUD
+- managed_artifacts drift detection (checksum mismatch)
+- Unique path constraint on managed_artifacts
+- Preference key defaults
+
+### Dogfood Gate
+
+```bash
+npm run build && npm run test && npm run lint
+# All 134 existing tests pass
+# ~25 new tests pass
+# Migration 005 + 006 apply on fresh DB
+# Prescriptions can be created, queried, status-transitioned
+# managed_artifacts can be tracked and drift-detected
+```
+
+---
+
+## Phase 7B — Artifact Discovery Scanner
+
+**Goal:** Build the 4-phase artifact discovery scanner that maps the CLI installation topology, with SQLite-backed caching.
+
+**Owner:** Rosella (Plugin Dev)  
+**Dependencies:** Phase 7A (types: `DiscoveredArtifact`, `ArtifactTopology`, `ArtifactConflict`)  
+**Estimated new tests:** ~20
+
+### Deliverables
+
+**File:** `src/agents/discovery.ts`
+
+#### Scanner Architecture
+
+Pure function `scanTopology(homedir, projectRoot?, pluginsDir?) → ArtifactTopology`:
+
+1. **Phase 1 — User-level** (`~/.copilot/`):
+   - `instructions.md` → instruction artifact
+   - `agents/*.agent.md` → agent artifacts
+   - `skills/*/SKILL.md` → skill artifacts
+   - `hooks/*` → hook artifacts
+   - MCP config files → mcp_server artifacts
+
+2. **Phase 2 — Project-level** (`.github/`):
+   - `copilot-instructions.md` → instruction artifact
+   - `agents/*.agent.md` → agent artifacts
+   - `skills/*/SKILL.md` → skill artifacts
+   - `extensions/*.ts` → hook artifacts
+   - `.copilot/mcp.json` → mcp_server artifacts
+
+3. **Phase 3 — Installed plugins** (`~/.copilot/installed-plugins/` or `pluginsDir`):
+   - `*/plugin.json` → plugin_manifest artifact
+   - `*/agents/*.agent.md` → agent artifacts (ownerPlugin set)
+   - `*/skills/*/SKILL.md` → skill artifacts (ownerPlugin set)
+
+4. **Phase 4 — Marketplace metadata** (`~/.copilot/marketplace-cache/`):
+   - Read-only reference data, not active artifacts
+   - Included for completeness in topology snapshot
+
+#### Resolution Rules
+
+Per artifact type, applied during conflict detection:
+
+| Artifact Type | Resolution | Conflict Meaning |
+|---------------|------------|------------------|
+| instruction | additive | All merge — no conflicts |
+| hook | additive | All merge — no conflicts |
+| agent | first_found | Same name at different scopes — shadow warning |
+| skill | first_found | Same name at different scopes — shadow warning |
+| command | first_found | Same name at different scopes — shadow warning |
+| mcp_server | last_wins | Later config overrides earlier |
+| plugin_manifest | first_found | Same plugin ID at different locations |
+
+#### Caching (DP4: 5-minute TTL)
+
+**File:** `src/db/topologyCache.ts`
+
+- `cacheTopology(topology: ArtifactTopology) → void` (serialize to SQLite blob)
+- `getCachedTopology(ttlMs?: number) → ArtifactTopology | null` (null if expired)
+- Default TTL: 300,000ms (5 minutes)
+- Storage: JSON blob in a `topology_cache` table (added in migration 005, single-row)
+
+Add to migration 005:
+```sql
+CREATE TABLE topology_cache (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  topology_json TEXT NOT NULL,
+  scanned_at TEXT NOT NULL DEFAULT (datetime('now')),
+  scan_duration_ms INTEGER NOT NULL DEFAULT 0
+);
+```
+
+#### Logical Identity Extraction
+
+- Agents: parse YAML frontmatter `name:` field from `.agent.md`
+- Skills: parse `# ` heading from `SKILL.md`
+- MCP servers: key from JSON config object
+- Plugins: `name` from `plugin.json`
+- Instructions/hooks: filename-based identity (no logical conflict possible for additive types)
+
+#### Test Coverage
+
+**File:** `src/__tests__/discovery.test.ts`
+
+- Scan empty directory → empty topology
+- Scan user-level artifacts (instructions, agents, skills)
+- Scan project-level artifacts
+- Scan plugin artifacts with ownerPlugin attribution
+- Conflict detection: same agent name at user + project scope
+- Resolution rule assignment per artifact type
+- Checksum computation for discovered files
+- Cache write + read within TTL
+- Cache miss after TTL expiry
+- Logical identity extraction from agent frontmatter
+- Logical identity extraction from skill heading
+- Mixed topology with all 4 phases
+- Graceful handling of missing directories
+- Scan duration tracking
+
+### Dogfood Gate
+
+```bash
+npm run build && npm run test
+# Scanner discovers artifacts in Aaron's real ~/.copilot/ directory
+# Topology includes user agents, skills, project instructions
+# Cache serves topology within TTL, refreshes after expiry
+# Conflicts detected for duplicate agent names
+```
+
+---
+
+## Phase 7C — Infrastructure: Curate Cap + Trigger Wiring
+
+**Goal:** Add the 3-second time cap to `curate()` and wire the hybrid trigger so prescriptions generate automatically when insights change.
+
+**Owner:** Gabriel (Infrastructure)  
+**Dependencies:** Phase 7A (prescriptions DAL for `prescribe()` call)  
+**Estimated new tests:** ~10
+
+### Deliverables
+
+#### Curate Time Cap
+
+**File:** `src/agents/curator.ts` (modify)
+
+In the `curate()` function's batch loop, add elapsed time check:
+
+```typescript
+export function curate(): CurateResult {
+  const startTime = Date.now();
+  const TIME_BUDGET_MS = 3000; // DP1: 3-second hard cap
+  // ...existing batch loop...
+  while (hasMore) {
+    // ...existing batch processing...
+    // After advancing cursor:
+    if (Date.now() - startTime > TIME_BUDGET_MS) {
+      hasMore = false; // Persist cursor, return partial results
+    }
+  }
+  // ...
+}
+```
+
+Return shape extended:
+
+```typescript
+export interface CurateResult {
+  eventsProcessed: number;
+  insightsCreated: number;
+  insightsReinforced: number;
+  capped: boolean;           // NEW: true if time budget exhausted
+  insightsChanged: boolean;  // NEW: true if any created or reinforced
+}
+```
+
+#### Trigger Wiring — preToolUse Path (DP1)
+
+**File:** `src/hooks/sessionStart.ts` (modify)
+
+In `runSessionStart()`, after `curate()` on the slow path:
+
+```typescript
+export function runSessionStart(repoKey: string): { fastPath: boolean } {
+  // ...existing logic...
+  catchUpPreviousSession(repoKey);
+  const curateResult = curate();
+
+  // DP1: Chain prescribe() when insights changed
+  if (curateResult.insightsChanged) {
+    prescribe();  // imported from src/agents/prescriber.ts
+  }
+
+  return { fastPath: false };
+}
+```
+
+#### Trigger Wiring — MCP Path (DP1)
+
+**File:** `src/mcp/server.ts` (modify `run_curate` tool)
+
+```typescript
+// run_curate handler — after curate(), chain prescribe()
+const result = curate();
+let prescribeResult = null;
+if (result.insightsChanged) {
+  prescribeResult = prescribe();
+}
+return {
+  content: [{
+    type: 'text',
+    text: JSON.stringify({ curate: result, prescriptions: prescribeResult }, null, 2)
+  }]
+};
+```
+
+#### Session Counter (DP5 #6: deferral cooldown)
+
+**File:** `src/hooks/sessionStart.ts` (modify)
+
+On slow path (new session), increment `prescriber_state.sessions_since_install`:
+
+```typescript
+incrementSessionCounter(); // from src/db/prescriptions.ts
+```
+
+#### Test Coverage
+
+**File:** `src/__tests__/curator.test.ts` (modify + add)
+
+- Curate respects 3-second time budget (mock Date.now)
+- Curate returns `capped: true` when budget exhausted
+- Curate returns `insightsChanged: true` when insights created/reinforced
+- Curate returns `insightsChanged: false` when no pattern matches
+- Cursor persisted correctly after time-capped partial run
+- Next curate() call resumes from persisted cursor
+
+**File:** `src/__tests__/sessionStart.test.ts` (modify + add)
+
+- prescribe() called when curate produces new insights
+- prescribe() not called when curate produces no changes
+- Session counter incremented on slow path
+- prescribe() failure doesn't break session start (fail-open)
+
+### Dogfood Gate
+
+```bash
+npm run build && npm run test
+# curate() completes in <3s even with 10,000+ unprocessed events
+# preToolUse chains prescribe() on session start when insights exist
+# run_curate MCP tool returns combined curate + prescribe results
+# Session counter tracks total sessions for deferral cooldown
+```
+
+---
+
+## Phase 7D — Prescription Engine
+
+**Goal:** Build the core Prescriber agent that transforms Curator insights into concrete, prioritized prescriptions.
+
+**Owner:** Roger (Platform Dev)  
+**Dependencies:** Phase 7A (DAL), Phase 7B (topology scanner)  
+**Estimated new tests:** ~25
+
+### Deliverables
+
+**File:** `src/agents/prescriber.ts`
+
+```typescript
+export const AGENT_NAME = 'prescriber';
+export const AGENT_DESCRIPTION = 'Translates insights into actionable prescriptions';
+```
+
+#### Core Functions
+
+`prescribe() → PrescribeResult`
+- Get active insights via `getInsights('active')`
+- Get topology via `getCachedTopology()` or `scanTopology()`
+- For each insight without a current `generated` prescription:
+  - Generate prescription (insight → concrete change)
+  - Compute target path from topology
+  - Compute priority score
+  - Persist via `createPrescription()`
+- Log `prescription_generated` event via Archivist
+- Return summary of generated prescriptions
+
+#### Prescription Generation Strategy
+
+Map insight pattern types to prescription types:
+
+| Insight Pattern | Prescription Strategy |
+|-----------------|----------------------|
+| `recurring_error` | Sidecar instruction to prevent the error category |
+| `error_sequence` | Sidecar instruction with guard step between trigger and error |
+| `skip_frequency` | Sidecar instruction reviewing guardrail relevance |
+
+Concrete change generation (rule-based, no LLM):
+- Template-based: each pattern type has a prescription template
+- Target: sidecar instruction file (`{prefix}.instructions.md`) in appropriate scope
+- Content: Markdown instruction block with context from insight
+
+#### Priority Scoring (DP5 #9)
+
+```typescript
+function computePriority(
+  confidence: number,
+  lastSeenAt: string,
+  sessionsAgo: number,
+  priorRejections: number
+): number {
+  // recency_weight: 1.0 within 5 sessions, decays to 0.5 by 20 sessions
+  const recencyWeight = Math.max(0.5, 1.0 - (sessionsAgo - 5) * (0.5 / 15));
+
+  // availability_factor: dampened by prior rejections, min 0.1
+  const availabilityFactor = Math.max(0.1, 1.0 - priorRejections * 0.3);
+
+  return confidence * recencyWeight * availabilityFactor;
+}
+```
+
+#### State Machine Transitions (DP2)
+
+```
+generated ──accept──→ accepted ──apply──→ applied
+                                └──fail──→ failed
+generated ──reject──→ rejected (terminal, reason stored)
+generated ──defer───→ deferred (cooldown, resurfaces after N sessions)
+generated ──expire──→ expired (session cleanup)
+generated ──suppress→ suppressed (after 3 deferrals, reversible)
+deferred  ──resurface→ generated (after cooldown, new priority)
+suppressed──unsuppress→ generated (manual reactivation)
+```
+
+#### Deferred Cooldown Logic (DP5 #6)
+
+```typescript
+function shouldResurface(prescription: Prescription, currentSession: number): boolean {
+  if (prescription.status !== 'deferred') return false;
+  if (!prescription.deferUntilSession) return true;
+  return currentSession >= prescription.deferUntilSession;
+}
+```
+
+On resurface: expire old prescription, generate new one from same insight (DP2: "re-prescription after insight reinforcement handled by expiring old + generating new").
+
+#### Suppression Logic (DP5 #8)
+
+After 3 deferrals of prescriptions from the same insight, auto-suppress:
+```typescript
+if (prescription.deferCount >= suppressThreshold) {
+  suppressPrescription(prescription.id);
+  // Log event: prescription_suppressed
+}
+```
+
+Suppression is reversible via `unsuppressPrescription()`.
+
+#### Session Cleanup
+
+At prescribe() start, expire stale prescriptions:
+- `generated` status older than 7 days → `expired`
+- `deferred` past cooldown → resurface (expire + regenerate)
+
+#### Test Coverage
+
+**File:** `src/__tests__/prescriber.test.ts`
+
+- prescribe() generates prescriptions from active insights
+- prescribe() skips insights that already have generated prescriptions
+- prescribe() computes priority scores correctly
+- Priority ordering: higher confidence × recency wins
+- State transition: generated → accepted
+- State transition: generated → rejected (with reason)
+- State transition: generated → deferred (with cooldown)
+- State transition: accepted → applied
+- State transition: accepted → failed
+- State transition: generated → expired (cleanup)
+- State transition: generated → suppressed (after 3 deferrals)
+- State transition: suppressed → generated (unsuppress)
+- Deferred prescriptions resurface after cooldown sessions
+- Suppression threshold configurable via preference
+- Prescription template for recurring_error insight
+- Prescription template for error_sequence insight
+- Prescription template for skip_frequency insight
+- Target path computed from topology scope
+- Sidecar filename uses configured prefix
+- prescribe() records events via Archivist
+- prescribe() is idempotent (no duplicates)
+- prescribe() handles empty insights list
+- prescribe() handles missing topology gracefully
+- Expiration of abandoned prescriptions
+- Re-prescription: expired old + generated new from same insight
+
+### Dogfood Gate
+
+```bash
+npm run build && npm run test
+# prescribe() generates prescriptions from Aaron's real insights
+# Priority scoring ranks high-confidence recent insights first
+# Deferral cooldown prevents re-surfacing within 3 sessions
+# State transitions enforce the 8-state machine
+# Events logged for each prescription lifecycle change
+```
+
+---
+
+## Phase 7E — Apply Engine + Managed Artifacts
+
+**Goal:** Build the sidecar file writing, rollback, and drift detection system that makes prescriptions actionable.
+
+**Owner:** Rosella (Plugin Dev)  
+**Dependencies:** Phase 7A (managed_artifacts DAL), Phase 7B (topology for target resolution)  
+**Estimated new tests:** ~15
+
+### Deliverables
+
+**File:** `src/agents/applier.ts`
+
+#### Core Functions
+
+`applyPrescription(prescriptionId: number) → ApplyResult`
+1. Load prescription from DB
+2. Validate status is `accepted`
+3. Resolve target path:
+   - User scope → `~/.copilot/{prefix}.instructions.md`
+   - Project scope → `.github/{prefix}.instructions.md`
+   - Plugin scope → plugin's local override directory
+4. Check for drift if file exists (checksum comparison)
+5. Read existing content (for rollback)
+6. Write sidecar file with prescription content
+7. Compute new checksum
+8. Track in `managed_artifacts` table
+9. Update prescription status → `applied`
+10. Log `prescription_applied` event
+
+`rollbackPrescription(prescriptionId: number) → RollbackResult`
+1. Find managed artifact by prescription_id
+2. If `rollback_content` exists, restore it
+3. If no rollback content (new file), delete the file
+4. Remove from `managed_artifacts`
+5. Update prescription status → `failed` (or new status if we add one)
+6. Log `prescription_rolled_back` event
+
+`checkDrift(path: string) → DriftResult`
+1. Read current file checksum
+2. Compare to `current_checksum` in managed_artifacts
+3. Return `{ drifted: boolean, expected, actual }`
+
+#### Sidecar Strategy (DP6)
+
+Instead of modifying user-owned files:
+- Write `cairn-prescribed.instructions.md` (configurable prefix via `prescriber.sidecar_prefix`)
+- CLI's scoped instructions convention automatically merges sidecar with user instructions
+
+---
+
+### 2026-04-06: Automatic `pending_count` Synchronization
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical  
+**Status:** Active  
+**Phase:** 7A — Data Foundation
+
+The `prescriber_state.pending_count` field tracks how many prescriptions are in 'generated' status. Every DAL function that changes prescription status (create, updateStatus, defer, suppress, unsuppress, expire) also updates `pending_count`.
+
+**Rationale:**
+- Prevents stale counts. Alternative of requiring manual sync puts burden on callers.
+- Cost: one extra UPDATE per status change on a singleton table (negligible overhead)
+- Benefit: counters always fresh, callers never forget to sync
+
+**Impact:** Phase 7D (Prescription Engine) and 7F (MCP tools) can read `pending_count` from `prescriber_state` without worrying about staleness.
+
+---
+
+### 2026-04-06: `detectDrift()` Returns `undefined` for Missing Paths
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical  
+**Status:** Active  
+
+---
+
+### 2026-04-07 Phase 7B: Marketplace Artifacts Excluded from Conflict Detection
+
+**Author:** Rosella (Plugin Dev)  
+**Type:** Technical  
+**Phase:** 7B — Artifact Discovery  
+**Status:** Active
+
+Marketplace artifacts are included in `ArtifactTopology.artifacts` for completeness, but excluded from conflict detection. Marketplace is read-only reference data, not active artifacts.
+
+**Rationale:**
+- Prevents stale cache data from triggering false conflicts with installed plugins.
+- `ArtifactScope` type only has `user | project | plugin` — no `marketplace` variant.
+
+**Impact:** Downstream consumers (Prescriber, 7D onwards) should treat marketplace-scope artifacts as informational, not actionable.
+
+---
+
+### 2026-04-07 Phase 7B: Dual MCP Config Path Support
+
+**Author:** Rosella (Plugin Dev)  
+**Type:** Technical  
+**Phase:** 7B — Artifact Discovery  
+**Status:** Active
+
+Scan both `.copilot/mcp.json` and `.copilot/mcp-config.json` for project-level MCP discovery. This repo and Aaron's machine use `.copilot/mcp-config.json`; spec references `.copilot/mcp.json`.
+
+**Decision:** If both exist, artifacts from both are included. Duplicates surface as conflicts via `last_wins` resolution.
+
+**Impact:** Discovery works on both reference configuration paths without preference.
+
+---
+
+### 2026-04-07 Phase 7B: Project MCP Scanning Independent of .github/
+
+**Author:** Rosella (Plugin Dev)  
+**Type:** Technical  
+**Phase:** 7B — Artifact Discovery  
+**Status:** Active
+
+Project MCP config lives at `.copilot/` (project root), not under `.github/`. A project could have MCP servers configured without any `.github/` directory.
+
+**Decision:** Scan `.copilot/` MCP config independently of `.github/` existence. The `.github/` guard only gates instruction/agent/skill/extension scanning.
+
+**Impact:** MCP discovery is not blocked by `.github/` absence.
+
+---
+
+### 2026-04-07 Phase 7B: Plugin ownerPlugin from manifest name
+
+**Author:** Rosella (Plugin Dev)  
+**Type:** Technical  
+**Phase:** 7B — Artifact Discovery  
+**Status:** Active
+
+Plugin directory names may differ from the plugin's declared name in `plugin.json`.
+
+**Decision:** Use `plugin.json` `name` field as canonical `ownerPlugin`, falling back to directory name only on parse failure.
+
+**Impact:** Attribution aligns with plugin's self-declared identity, not filesystem layout.
+
+---
+
+### 2026-04-07 Phase 7C: Time Cap is Soft (Between-Batch Check)
+
+**Author:** Gabriel (Infrastructure)  
+**Type:** Technical  
+**Phase:** 7C — Infrastructure  
+**Status:** Active
+
+The 3-second TIME_BUDGET_MS is checked between batches, not mid-batch. A single batch of 1000 events runs to completion before the check fires.
+
+**Rationale:** Interrupting a batch mid-transaction would leave cursor and insights inconsistent. Between-batch checking is safe and predictable.
+
+**Trade-off:** Curate() can exceed 3s if one batch is slow. Reducing BATCH_SIZE would tighten the cap but increase transaction overhead.
+
+**Impact:** Callers should expect variable latency up to BATCH_SIZE completion time + 3s.
+
+---
+
+### 2026-04-07 Phase 7C: `capped` Flag Set Only When Full Batches Remain
+
+**Author:** Gabriel (Infrastructure)  
+**Type:** Technical  
+**Phase:** 7C — Infrastructure  
+**Status:** Active
+
+The `capped` flag is set only when full batches remain after the time cap fires. If the last batch is partial (`events.length < BATCH_SIZE`), `capped` is `false` even if elapsed > TIME_BUDGET_MS.
+
+**Rationale:** "Capped" means "work remains but we stopped" — not "we happened to be slow." Distinguishes between "caught up" and "gave up early."
+
+**Impact:** Consumers can trust `capped: true` to mean "call curate() again later." A `false` `capped` with a high elapsed time means all work finished despite slowness.
+
+---
+
+### 2026-04-07 Phase 7C: MCP `run_curate` Output Shape is Breaking
+
+**Author:** Gabriel (Infrastructure)  
+**Type:** Technical  
+**Phase:** 7C — Infrastructure  
+**Status:** Active
+
+Changed from flat `{ eventsProcessed, insightsCreated, insightsReinforced }` to nested `{ curate: {...}, prescriptions: {...} | null }`. This is per the Phase 7C spec.
+
+**Decision:** No backward compatibility wrapper.
+
+**Impact:** Any MCP client parsing run_curate output directly will need updating. Since Cairn is pre-1.0 and the only consumer is the Copilot agent, this is acceptable.
+
+---
+
+## Phase 7F Decisions — Roger Wilco (Final Phase)
+
+### 2026-04-07T05-43: State Guard on resolve_prescription
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical  
+**Phase:** 7F — MCP Tools + UX  
+**Status:** Active
+
+Only prescriptions in `generated` status can be resolved. Attempting to resolve a prescription in any other state returns an error. This prevents lifecycle corruption (e.g., re-rejecting an already-applied prescription).
+
+**Rationale:** State machine integrity. A prescription in 'accepted' or 'applied' state has already transitioned through the decision point. Allowing re-resolution would create ambiguous audit trails and potential conflicts with apply operations.
+
+**Impact:** MCP tool `resolve_prescription` validates state before calling transition. User-friendly error messages guide users to check prescription status before attempting resolution.
+
+---
+
+### 2026-04-07T05-43: Accept Failure Handling
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical  
+**Phase:** 7F — MCP Tools + UX  
+**Status:** Active
+
+When `applyPrescription()` fails after `updatePrescriptionStatus(id, 'accepted')`, the tool explicitly marks the prescription as `failed`. This prevents prescriptions stuck in `accepted` state with no applied artifact.
+
+**Rationale:** Application failures are real (write permissions, file conflicts, network errors). Rather than leaving prescriptions in a limbo state, explicit failure marking ensures prescriber can move on and offer retry/alternative options in next cycle.
+
+**Decision:** Fail-soft transition: accepted → failed (with error context logged).
+
+**Impact:** Audit trail is clear. Downstream tools (`show_growth`, `list_prescriptions`) can distinguish "not applied yet" (accepted) from "tried and failed" (failed).
+
+---
+
+### 2026-04-07T05-43: Proactive Hint Counter — Process Lifetime
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Design  
+**Phase:** 7F — MCP Tools + UX  
+**Status:** Active
+
+Used a module-level `proactiveHintsShown` counter (reset per process lifecycle) rather than DB-based tracking. MCP server processes are short-lived, so this is sufficient for "max 1 per session" and avoids unnecessary DB writes.
+
+**Rationale:** MCP server spawns per CLI invocation (typically seconds to minutes). Database writes for every hint shown add latency. Module-level counter is sufficient for the constraint ("max 1 proactive hint per session"). If Cairn scales to long-running daemons, revisit with persistent tracking.
+
+**Decision:** No DB write; counter reset on process exit.
+
+**Impact:** UX principle "max 1 proactive hint per session" is enforced cheaply. Faster response times. No database cleanup needed.
+
+---
+
+### 2026-04-07T05-43: Exported UX Helpers for Testing
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Design  
+**Phase:** 7F — MCP Tools + UX  
+**Status:** Active
+
+Exported `confidenceToWords()` and `resetProactiveHintCounter()` from server.ts to enable unit testing of UX formatting without requiring MCP transport.
+
+**Rationale:** Testing UX strings ("high confidence", "medium confidence", etc.) shouldn't require full MCP setup. Exported helpers decouple UX logic from transport. Matches pattern in other layers (DAL functions exported for testing, not just via HTTP).
+
+**Decision:** Public exports for all UX helper functions.
+
+**Impact:** Faster unit tests, better UX coverage, clearer public API for future extensions.
+
+---
+
+### 2026-04-07T06-43: Phase 7 Code Review — Prescriber Implementation Approved
+
+**Author:** Graham Knight (Lead/Architect)  
+**Type:** Code Review / Approval  
+**Phase:** 7 — Code Review  
+**Status:** Active
+
+Prescriber implementation (Phase 7) code review completed. All 7 blocking/important issues identified have been fixed inline. Architecture assessed as sound.
+
+**Issues Fixed:**
+
+1. **Path traversal validation** (applier.ts): Added `isValidPrefix()` guard. Blocks escape attempts with `..` or separators.
+2. **Double-formatted sidecar** (prescriber.ts + applier.ts): Removed redundant `buildSidecarContent()` from prescriber. Applier is now sole formatter.
+3. **Project-scope discovery failure** (prescriber.ts): Fixed `getTopology()` to pass `process.cwd()` as projectRoot. Phase 2 artifacts now discovered.
+4. **Missing-file drift bypass** (applier.ts): Enhanced drift detection. Fails if tracked sidecar exists in DB but file was manually deleted.
+5. **Topology cache wiring** (prescriber.ts): Connected `getTopology()` → `cacheTopology()`. 5-minute TTL cache now functional.
+6. **Timestamp parsing inconsistency** (topologyCache.ts): Standardized to `parseSqliteDateToMs()` with Date fallback. Aligns with codebase convention.
+7. **N+1 query in deferral loop** (prescriber.ts): Hoisted `getInsights('active')` and topology fetch above loop. Single fetch for batch processing.
+
+**Validation:**
+- Build: Clean (tsc)
+- Tests: 316/316 passing
+- Lint: Clean (eslint)
+- Regressions: 0
+
+**Decision:** Phase 7 APPROVED. Ready for merge.
+
+**Impact:** All critical issues resolved. Architecture sound, test coverage thorough. Prescriber implementation ready for production integration.
+
+---
+
+### 2026-04-07T05-43: Added getInsight(id) to Insights DAL
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical  
+**Phase:** 7F — MCP Tools + UX  
+**Status:** Active
+
+The `get_prescription` tool needs insight context (title, description, origin pattern), but no single-insight lookup existed. Added `getInsight(id: number): Insight | undefined` to `src/db/insights.ts`.
+
+**Rationale:** `get_prescription` returns prescription metadata + rich insight context (why this recommendation exists, what pattern triggered it). Without single-insight lookup, tool would need to query all insights and filter — O(n) cost. Single-insight DAL function is O(1).
+
+**Decision:** Backward-compatible addition; no changes to existing insight functions.
+
+**Impact:** `get_prescription` response is fast and rich. Audit trail clear (which insight drove which prescription).
+
+---
+
+### 2026-04-07T05-43: show_growth Resolved Patterns as Heuristic
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Design  
+**Phase:** 7F — MCP Tools + UX  
+**Status:** Active
+
+"Applied prescription + insight is stale" is presented as a heuristic, not definitive proof of resolution. The insight status table lacks a "resolved because of prescription" signal, so this is the best available proxy.
+
+**Rationale:** True resolution proof would require end-to-end tracking: insight → prescription → application → user verification → pattern disappears. That's complex. The heuristic ("we applied a fix, and the insight is no longer triggering new alerts") is good enough for growth tracking, with caveat that it's heuristic-based.
+
+**Decision:** Present with confidence language: "This pattern appears resolved" rather than "This pattern is resolved." Let users verify.
+
+**Impact:** `show_growth` tool is transparent about evidence quality. Users build trust in recommendations. Future phases can add deeper resolution proof if needed.
+
+---
+
+## Phase 7F Summary
+
+- 4 new MCP tools registered (10 total: Cairn ecosystem complete)
+- run_curate description updated to reflect new tools
+- 22 new tests (316 total)
+- All dogfood gates passed: build ✅, test ✅, lint ✅
+- All 10 UX principles integrated
+- Prescriber ready for production use
+
+---
+
+### 2026-04-07 Phase 7C: `incrementSessionCounter()` Unconditional on Slow Path
+
+**Author:** Gabriel (Infrastructure)  
+**Type:** Technical  
+**Phase:** 7C — Infrastructure  
+**Status:** Active
+
+The spec says "On slow path (new session), increment." There is a theoretical edge case where multiple slow-path calls happen before postToolUse creates a session, which could double-increment.
+
+**Decision:** Unconditional increment. In practice, edge case is rare: postToolUse fires immediately after preToolUse.
+
+**Alternative Considered:** Add a one-shot guard. Rejected for complexity — the counter is used for deferral cooldown, which tolerates ±1 inaccuracy.
+
+**Impact:** Session counter may be ±1 inaccurate in rare cases. Negligible effect on deferral cooldown behavior.
+
+---
+**Phase:** 7A — Data Foundation
+
+When checking drift on a path that isn't tracked, `detectDrift()` returns `undefined` rather than throwing an error.
+
+**Rationale:**
+- Consistent with existing `getPrescription()` / `getManagedArtifact()` patterns in codebase.
+- Callers can distinguish three cases:
+  - `undefined` → path not tracked
+  - `{ drifted: false }` → tracked, no drift detected
+  - `{ drifted: true }` → tracked, content changed
+
+**Impact:** Phase 7E (Apply Engine) should check for `undefined` before acting on drift results.
+- Each sidecar file is wholly owned by Prescriber — safe to overwrite/delete
+- Multiple prescriptions to same scope append sections to same sidecar file
+
+Sidecar file format:
+```markdown
+<!-- Managed by Cairn Prescriber. Do not edit manually. -->
+<!-- Prescription #{id} — Generated {date} -->
+
+## {Prescription Title}
+
+{Proposed change content}
+
+---
+```
+
+#### Checksum Implementation
+
+SHA-256 of file content, stored as hex string. Used for:
+- Drift detection before apply (warn if file changed since last write)
+- Drift detection on demand (has user manually edited the sidecar?)
+
+#### Test Coverage
+
+**File:** `src/__tests__/applier.test.ts`
+
+- Apply creates sidecar file at correct path
+- Apply creates user-scope sidecar in ~/.copilot/
+- Apply creates project-scope sidecar in .github/
+- Apply stores rollback content
+- Apply computes and stores checksum
+- Apply tracks in managed_artifacts
+- Apply updates prescription status to 'applied'
+- Apply fails if prescription not in 'accepted' status
+- Rollback restores original content
+- Rollback deletes file if no prior content
+- Rollback removes managed_artifact entry
+- Drift detection: clean (no drift)
+- Drift detection: drifted (checksum mismatch)
+- Multiple prescriptions append to same sidecar
+- Sidecar prefix configurable via preference
+
+### Dogfood Gate
+
+```bash
+npm run build && npm run test
+# Accept a real prescription → sidecar file appears at correct location
+# Content is valid markdown with Prescriber header
+# Rollback removes the sidecar file cleanly
+# Drift detected after manual edit of sidecar
+# managed_artifacts table tracks all Prescriber-written files
+```
+
+---
+
+## Phase 7F — MCP Tools + UX + Growth
+
+**Goal:** Register all 4 new MCP tools, modify `run_curate`, and apply Valanice's full UX specification including growth tracking.
+
+**Owner:** Roger (MCP wiring) + Valanice (UX formatting + growth design)  
+**Dependencies:** Phase 7C (trigger wiring), Phase 7D (prescription engine), Phase 7E (apply engine)  
+**Estimated new tests:** ~20
+
+### Deliverables
+
+#### Tool 1: `list_prescriptions` (read-only)
+
+**File:** `src/mcp/server.ts` (add tool registration)
+
+```typescript
+// Zod input schema
+{
+  status: z.enum([
+    'generated', 'accepted', 'rejected', 'deferred',
+    'applied', 'failed', 'expired', 'suppressed'
+  ]).optional()
+    .describe('Filter by lifecycle status. Omit to see all.'),
+  limit: z.number().int().min(1).max(50).default(10)
+    .describe('Maximum results to return.')
+}
+```
+
+Response shape:
+```json
+{
+  "counts": { "generated": 3, "applied": 5, "rejected": 1 },
+  "prescriptions": [
+    {
+      "id": 1,
+      "title": "...",
+      "status": "generated",
+      "confidence_level": "high",
+      "pattern": "recurring_error",
+      "target": "~/.copilot/cairn-prescribed.instructions.md"
+    }
+  ],
+  "proactive_hint": "You have 1 new suggestion ready for review."
+}
+```
+
+UX notes (DP5):
+- `confidence_level` uses words not numbers: "high" (≥0.7), "medium" (0.4–0.7), "emerging" (<0.4)
+- `proactive_hint` only included if unviewed generated prescriptions exist
+- Max 1 proactive suggestion per session (tracked via session-scoped counter)
+
+Annotations: `{ readOnlyHint: true }`
+
+#### Tool 2: `get_prescription` (read-only)
+
+```typescript
+// Zod input schema
+{
+  prescription_id: z.number().int().positive()
+    .describe('The prescription ID to retrieve.')
+}
+```
+
+Response shape:
+```json
+{
+  "id": 1,
+  "title": "Add typecheck guard for recurring type errors",
+  "pattern": {
+    "type": "recurring_error",
+    "insight_title": "Recurring type: Cannot find name 'x'",
+    "occurrences": 12,
+    "first_seen": "2026-03-28",
+    "last_seen": "2026-04-05"
+  },
+  "observation": "Cairn has noticed type errors recurring 12 times over 8 days.",
+  "suggestion": "Add an instruction to always run typecheck before committing.",
+  "where": "~/.copilot/cairn-prescribed.instructions.md",
+  "confidence_level": "high",
+  "diff_preview": "+ ## Typecheck Guard\n+ Always run `npm run typecheck` before committing changes.",
+  "actions": ["accept", "reject", "defer"]
+}
+```
+
+UX notes (DP5):
+- `observation` uses observation framing, not judgment (#4)
+- `confidence_level` in words, not numbers (#5)
+- `diff_preview` shows what will change
+- `actions` array reminds the agent what's possible
+
+Annotations: `{ readOnlyHint: true }`
+
+#### Tool 3: `resolve_prescription` (write)
+
+```typescript
+// Zod input schema
+{
+  prescription_id: z.number().int().positive()
+    .describe('The prescription to act on.'),
+  disposition: z.enum(['accept', 'reject', 'defer'])
+    .describe('How to resolve this prescription.'),
+  reason: z.string().optional()
+    .describe('Optional reason for rejection or deferral.')
+}
+```
+
+State transitions triggered:
+- `accept` → status=accepted → call `applyPrescription()` → applied/failed
+- `reject` → status=rejected, reason stored (terminal)
+- `defer` → status=deferred, `defer_count++`, set `defer_until_session`
+  - If `defer_count >= suppress_threshold`: auto-suppress, return notice
+
+Response shape:
+```json
+{
+  "prescription_id": 1,
+  "disposition": "accept",
+  "result": "applied",
+  "message": "✅ Applied to ~/.copilot/cairn-prescribed.instructions.md",
+  "rollback_available": true
+}
+```
+
+UX notes (DP5):
+- Rejection is the easiest action — just `disposition: "reject"` with no required fields (#1)
+- Acceptance requires explicit confirmation via `disposition: "accept"` (#1)
+- On 3rd deferral: "This is the 3rd time this has been deferred. Should I stop asking about this pattern?" (#8)
+
+Annotations: `{ readOnlyHint: false }`
+
+#### Tool 4: `show_growth` (read-only)
+
+```typescript
+// Zod input schema
+{
+  // No required inputs — shows overall growth summary
+}
+```
+
+Response shape:
+```json
+{
+  "summary": "Over 15 sessions, Cairn has helped resolve 3 recurring patterns.",
+  "resolved_patterns": [
+    "Recurring build errors — resolved after adding typecheck guard",
+    "Skipped test step — resolved after adjusting timing"
+  ],
+  "active_patterns": [
+    "Recurring lint errors — 1 suggestion pending"
+  ],
+  "stats": {
+    "total_prescriptions": 8,
+    "accepted": 5,
+    "applied": 4,
+    "rejected": 2,
+    "deferred": 1,
+    "acceptance_rate_display": "5 of 7 resolved"
+  },
+  "trend": "You're catching patterns faster — 2 resolved this week vs 1 last week."
+}
+```
+
+UX notes (DP5):
+- No streaks, lead with wins (#7)
+- Growth framing: cumulative trends, resolved patterns first
+- `acceptance_rate_display` uses natural language, not percentages
+- `trend` is observational, not judgmental
+
+Annotations: `{ readOnlyHint: true }`
+
+#### `run_curate` Modification
+
+Extend existing tool to return prescription info when insights change (already wired in Phase 7C). Add to tool description:
+
+```
+'Also generates new prescriptions when insights are created or reinforced. '
+'Returns combined curation and prescription results.'
+```
+
+#### MCP Tool Description Standards (DP5)
+
+All tool descriptions include:
+- When to call the tool (timing guidance)
+- "Present after first success, not at the door" (#3) encoded as: tools describe themselves as "for reviewing improvement suggestions" not "for fixing problems"
+
+#### Test Coverage
+
+**File:** `src/__tests__/mcp.test.ts` (add tests for new tools)
+
+- list_prescriptions returns filtered results
+- list_prescriptions with no filter returns all
+- list_prescriptions includes confidence in words
+- list_prescriptions includes proactive hint when prescriptions pending
+- list_prescriptions omits proactive hint when already shown this session
+- get_prescription returns full detail with insight context
+- get_prescription includes diff preview
+- get_prescription returns observation framing (not judgment)
+- get_prescription returns error for nonexistent ID
+- resolve_prescription accept → applies prescription
+- resolve_prescription reject → records reason
+- resolve_prescription defer → increments counter, sets cooldown
+- resolve_prescription defer × 3 → auto-suppression notice
+- resolve_prescription invalid disposition → error
+- show_growth returns cumulative stats
+- show_growth leads with resolved patterns
+- show_growth uses natural language for rates
+- run_curate chains prescribe when insights change
+- run_curate does not chain prescribe when no changes
+- All new tools have correct readOnlyHint annotations
+
+### Dogfood Gate
+
+```bash
+npm run build && npm run test && npm run lint
+# MCP server starts with 10 tools (6 existing + 4 new)
+# list_prescriptions shows Aaron's pending prescriptions
+# get_prescription shows observation-framed detail with diff preview
+# resolve_prescription accept → sidecar file created
+# resolve_prescription reject → terminal, reason stored
+# resolve_prescription defer × 3 → suppression notice
+# show_growth shows cumulative resolved patterns
+# run_curate → curate + prescribe chained
+# All 10 UX principles verifiable in tool output
+```
+
+---
+
+## Consolidated File Manifest
+
+### New Files (15)
+
+| Phase | File | Description |
+|-------|------|-------------|
+| 7A | `src/db/migrations/005-prescriptions.ts` | prescriptions + prescriber_state + topology_cache tables |
+| 7A | `src/db/migrations/006-managed-artifacts.ts` | managed_artifacts table |
+| 7A | `src/db/prescriptions.ts` | Prescriptions DAL |
+| 7A | `src/db/managedArtifacts.ts` | Managed artifacts DAL |
+| 7A | `src/__tests__/prescriptions.test.ts` | Data layer tests |
+| 7B | `src/agents/discovery.ts` | 4-phase artifact scanner |
+| 7B | `src/db/topologyCache.ts` | Topology cache DAL |
+| 7B | `src/__tests__/discovery.test.ts` | Scanner tests |
+| 7C | *(no new files — modifications only)* | |
+| 7D | `src/agents/prescriber.ts` | Core prescription engine |
+| 7D | `src/__tests__/prescriber.test.ts` | Prescription engine tests |
+| 7E | `src/agents/applier.ts` | Apply + rollback engine |
+| 7E | `src/__tests__/applier.test.ts` | Applier tests |
+| 7F | *(no new files — modifications only)* | |
+
+### Modified Files (7)
+
+| Phase | File | Change |
+|-------|------|--------|
+| 7A | `src/types/index.ts` | Add Prescriber types (8-state, topology, growth) |
+| 7A | `src/db/schema.ts` | Register migrations 005 + 006 |
+| 7C | `src/agents/curator.ts` | Add 3s time cap, return insightsChanged flag |
+| 7C | `src/hooks/sessionStart.ts` | Chain prescribe() after curate, increment session counter |
+| 7C | `src/mcp/server.ts` | Extend run_curate to chain prescribe() |
+| 7F | `src/mcp/server.ts` | Register 4 new tools |
+| 7F | `src/__tests__/mcp.test.ts` | Tests for new MCP tools |
+
+### Summary
+
+- **15 new files** (7 source, 1 cache DAL, 2 migrations, 5 test files)
+- **7 modified files**
+- **~115 new tests** (→ ~250 total from 134 baseline)
+- **4 new MCP tools** (→ 10 total from 6)
+- **2 new migrations** (→ 6 total from 4)
+
+---
+
+## Final Data Model — CREATE TABLE Statements
+
+All tables, incorporating all 6 decisions:
+
+### prescriptions (Migration 005)
+
+```sql
+CREATE TABLE prescriptions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+  -- Source: which insight spawned this
+  insight_id INTEGER NOT NULL REFERENCES insights(id),
+  pattern_type TEXT NOT NULL,
+
+  -- Content
+  title TEXT NOT NULL,
+  rationale TEXT NOT NULL,
+  proposed_change TEXT NOT NULL,
+  target_path TEXT,
+  artifact_type TEXT,
+  artifact_scope TEXT CHECK (artifact_scope IN ('user', 'project', 'plugin')),
+
+  -- DP2: 8-state lifecycle
+  status TEXT NOT NULL DEFAULT 'generated'
+    CHECK (status IN (
+      'generated', 'accepted', 'rejected', 'deferred',
+      'applied', 'failed', 'expired', 'suppressed'
+    )),
+
+  -- DP5 #9: Priority scoring
+  confidence REAL NOT NULL DEFAULT 0.0
+    CHECK (confidence >= 0.0 AND confidence <= 1.0),
+  priority_score REAL NOT NULL DEFAULT 0.0,
+  recency_weight REAL NOT NULL DEFAULT 1.0,
+  availability_factor REAL NOT NULL DEFAULT 1.0,
+
+  -- Disposition
+  disposition_reason TEXT,
+  defer_count INTEGER NOT NULL DEFAULT 0,
+  defer_until_session INTEGER,
+
+  -- Timestamps
+  generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  resolved_at TEXT,
+  applied_at TEXT,
+  expires_at TEXT
+);
+
+CREATE INDEX idx_prescriptions_status ON prescriptions(status);
+CREATE INDEX idx_prescriptions_insight ON prescriptions(insight_id);
+CREATE INDEX idx_prescriptions_priority ON prescriptions(status, priority_score DESC);
+```
+
+### prescriber_state (Migration 005)
+
+```sql
+CREATE TABLE prescriber_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  last_generated_at TEXT,
+  pending_count INTEGER NOT NULL DEFAULT 0,
+  sessions_since_install INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+INSERT INTO prescriber_state (id) VALUES (1);
+```
+
+### topology_cache (Migration 005)
+
+```sql
+CREATE TABLE topology_cache (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  topology_json TEXT NOT NULL DEFAULT '{}',
+  scanned_at TEXT NOT NULL DEFAULT (datetime('now')),
+  scan_duration_ms INTEGER NOT NULL DEFAULT 0
+);
+```
+
+### managed_artifacts (Migration 006)
+
+```sql
+CREATE TABLE managed_artifacts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  path TEXT NOT NULL,
+  artifact_type TEXT NOT NULL,
+  logical_id TEXT,
+  scope TEXT NOT NULL CHECK (scope IN ('user', 'project', 'plugin')),
+  prescription_id INTEGER NOT NULL REFERENCES prescriptions(id),
+  original_checksum TEXT,
+  current_checksum TEXT,
+  rollback_content TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE UNIQUE INDEX idx_managed_artifacts_path ON managed_artifacts(path);
+CREATE INDEX idx_managed_artifacts_prescription ON managed_artifacts(prescription_id);
+```
+
+---
+
+## Final Type Definitions
+
+```typescript
+// ---------------------------------------------------------------------------
+// Prescriber types (Phase 7) — append to src/types/index.ts
+// ---------------------------------------------------------------------------
+
+/** DP2: 8-state prescription lifecycle */
+export type PrescriptionStatus =
+  | 'generated'
+  | 'accepted'
+  | 'rejected'
+  | 'deferred'
+  | 'applied'
+  | 'failed'
+  | 'expired'
+  | 'suppressed';
+
+/** DP3: Disposition actions for resolve_prescription */
+export type PrescriptionDisposition = 'accept' | 'reject' | 'defer';
+
+/** Artifact types discovered by the scanner */
+export type ArtifactType =
+  | 'instruction'
+  | 'agent'
+  | 'skill'
+  | 'hook'
+  | 'mcp_server'
+  | 'plugin_manifest'
+  | 'command';
+
+/** Scope of an artifact in the CLI topology */
+export type ArtifactScope = 'user' | 'project' | 'plugin';
+
+/** Resolution strategy per artifact type */
+export type ResolutionRule = 'additive' | 'first_found' | 'last_wins';
+
+/** A prescription generated from a Curator insight */
+export interface Prescription {
+  id: number;
+  insightId: number;
+  patternType: PatternType;
+  title: string;
+  rationale: string;
+  proposedChange: string;
+  targetPath?: string;
+  artifactType?: ArtifactType;
+  artifactScope?: ArtifactScope;
+  status: PrescriptionStatus;
+  confidence: number;
+  priorityScore: number;
+  recencyWeight: number;
+  availabilityFactor: number;
+  dispositionReason?: string;
+  deferCount: number;
+  deferUntilSession?: number;
+  generatedAt: string;
+  resolvedAt?: string;
+  appliedAt?: string;
+  expiresAt?: string;
+}
+
+/** DP6: A file managed by the Prescriber */
+export interface ManagedArtifact {
+  id: number;
+  path: string;
+  artifactType: ArtifactType;
+  logicalId?: string;
+  scope: ArtifactScope;
+  prescriptionId: number;
+  originalChecksum?: string;
+  currentChecksum?: string;
+  rollbackContent?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** DP4: A discovered artifact in the CLI topology */
+export interface DiscoveredArtifact {
+  path: string;
+  artifactType: ArtifactType;
+  scope: ArtifactScope;
+  logicalId: string;
+  ownerPlugin?: string;
+  checksum: string;
+  lastModified: number;
+  resolutionRule: ResolutionRule;
+}
+
+/** Conflict between artifacts with the same logical identity */
+export interface ArtifactConflict {
+  logicalId: string;
+  artifactType: ArtifactType;
+  artifacts: DiscoveredArtifact[];
+}
+
+/** DP4: Complete snapshot of the CLI artifact topology */
+export interface ArtifactTopology {
+  artifacts: DiscoveredArtifact[];
+  conflicts: ArtifactConflict[];
+  scannedAt: string;
+  scanDurationMs: number;
+}
+
+/** DP5: Growth tracking summary */
+export interface GrowthSummary {
+  totalPrescriptions: number;
+  accepted: number;
+  rejected: number;
+  deferred: number;
+  applied: number;
+  failed: number;
+  acceptanceRate: number;
+  resolvedPatterns: string[];
+  activePatterns: string[];
+  trend: 'improving' | 'stable' | 'declining';
+}
+```
+
+---
+
+## Final MCP Tool Specifications
+
+### 10 tools total (6 existing + 4 new)
+
+#### Existing Tools (unchanged except run_curate)
+
+1. `get_status` — Session + curator health
+2. `list_insights` — Pattern-based insights
+3. `get_session` — Session detail
+4. `search_events` — Event search by type pattern
+5. `check_event` — Boolean event occurrence check
+6. `run_curate` — **MODIFIED** (chains prescribe per DP1)
+
+#### New Tool: `list_prescriptions`
+
+```typescript
+server.registerTool('list_prescriptions', {
+  title: 'List Prescriptions',
+  description:
+    'List improvement suggestions the Prescriber has generated from detected patterns. ' +
+    'Filter by lifecycle status or see all. Each result includes confidence level in plain ' +
+    'language and a hint about pending suggestions worth reviewing. ' +
+    'Use this after completing a task to check for improvement opportunities.',
+  inputSchema: {
+    status: z.enum([
+      'generated', 'accepted', 'rejected', 'deferred',
+      'applied', 'failed', 'expired', 'suppressed'
+    ]).optional()
+      .describe('Filter by lifecycle status. Omit to return all statuses.'),
+    limit: z.number().int().min(1).max(50).default(10)
+      .describe('Maximum results to return (default 10).'),
+  },
+  annotations: { readOnlyHint: true },
+}, handler);
+```
+
+#### New Tool: `get_prescription`
+
+```typescript
+server.registerTool('get_prescription', {
+  title: 'Get Prescription',
+  description:
+    'Get full detail about a specific improvement suggestion, including the pattern ' +
+    'that triggered it, what Cairn observed, the suggested change, where it would be ' +
+    'applied, and a diff preview. Use this to understand a suggestion before deciding.',
+  inputSchema: {
+    prescription_id: z.number().int().positive()
+      .describe('The prescription ID to retrieve.'),
+  },
+  annotations: { readOnlyHint: true },
+}, handler);
+```
+
+#### New Tool: `resolve_prescription`
+
+```typescript
+server.registerTool('resolve_prescription', {
+  title: 'Resolve Prescription',
+  description:
+    'Act on an improvement suggestion: accept (applies the change), reject (dismisses ' +
+    'permanently), or defer (revisit later). Rejection is the simplest action — no reason ' +
+    'required. Acceptance applies the change to a sidecar instruction file. ' +
+    'Deferral sets a cooldown before the suggestion resurfaces.',
+  inputSchema: {
+    prescription_id: z.number().int().positive()
+      .describe('The prescription to act on.'),
+    disposition: z.enum(['accept', 'reject', 'defer'])
+      .describe('How to resolve: accept (apply change), reject (dismiss), defer (revisit later).'),
+    reason: z.string().optional()
+      .describe('Optional reason for rejection or deferral. Helps Cairn learn preferences.'),
+  },
+  annotations: { readOnlyHint: false },
+}, handler);
+```
+
+#### New Tool: `show_growth`
+
+```typescript
+server.registerTool('show_growth', {
+  title: 'Show Growth',
+  description:
+    'See a summary of patterns Cairn has helped resolve and overall improvement trends. ' +
+    'Leads with wins — shows resolved patterns first, then active ones. ' +
+    'Uses natural language, not percentages. Use this to reflect on progress.',
+  annotations: { readOnlyHint: true },
+}, handler);
+```
+
+#### Modified Tool: `run_curate` (DP1)
+
+Updated description:
+```typescript
+description:
+  'Trigger the curator to process unprocessed events and discover patterns. ' +
+  'The curator scans the event stream for recurring errors, error sequences, ' +
+  'and skip frequency, then creates or reinforces insights with prescriptions. ' +
+  'Also generates new improvement suggestions when insights are created or reinforced. ' +
+  'Returns the number of events processed, insights discovered, and any new suggestions. ' +
+  'Use this when you want fresh analysis of recent activity.',
+```
+
+---
+
+## Dependency Graph
+
+```
+7A ─────────────────────────────────────────────────┐
+│                                                    │
+├──→ 7B (Artifact Discovery) ──┬──→ 7D (Prescription Engine) ──┐
+│                               │                                │
+├──→ 7C (Infrastructure) ──────┤──→ 7E (Apply Engine) ──────────┤
+│                               │                                │
+└───────────────────────────────┘               7F (MCP + UX) ◄─┘
+```
+
+- **7A** has no dependencies (foundation)
+- **7B, 7C** depend only on 7A (can run in parallel)
+- **7D, 7E** depend on 7A + 7B (can run in parallel after 7B)
+- **7F** depends on 7C + 7D + 7E (final integration phase)
+
+**Critical path:** 7A → 7B → 7D → 7F  
+**Parallel opportunities:** 7B ∥ 7C, then 7D ∥ 7E
+
+---
+
+## Execution Schedule
+
+| Phase | Owner | Depends On | Parallel With | Est. New Tests |
+|-------|-------|------------|---------------|----------------|
+| 7A | Roger | — | — | ~25 |
+| 7B | Rosella | 7A | 7C | ~20 |
+| 7C | Gabriel | 7A | 7B | ~10 |
+| 7D | Roger | 7A, 7B | 7E | ~25 |
+| 7E | Rosella | 7A, 7B | 7D | ~15 |
+| 7F | Roger + Valanice | 7C, 7D, 7E | — | ~20 |
+| **Total** | | | | **~115** |
+
+**Final test count target:** ~250 (134 existing + ~115 new)
+
+---
+
+## Acceptance Criteria
+
+The Prescriber is complete when:
+
+1. ✅ `run_curate` chains `prescribe()` automatically when insights change
+2. ✅ `preToolUse` chains `prescribe()` at session start when insights change
+3. ✅ `curate()` respects 3-second time budget
+4. ✅ 8-state lifecycle enforced in DB and code
+5. ✅ 4 new MCP tools registered and functional
+6. ✅ Full 4-phase artifact scanner with 5-minute SQLite cache
+7. ✅ All 10 UX principles verifiable in tool output
+8. ✅ Sidecar instruction files written (not user-owned files modified)
+9. ✅ managed_artifacts tracks all Prescriber-written files
+10. ✅ Rollback capability functional
+11. ✅ Drift detection via checksum comparison
+12. ✅ 7 preference keys configurable
+13. ✅ Deferral cooldown (3 sessions default)
+14. ✅ Auto-suppression after 3 deferrals
+15. ✅ Growth tracking via `show_growth`
+16. ✅ All existing 134 tests still pass
+17. ✅ ~115 new tests pass
+18. ✅ Clean build, clean lint
+19. ✅ Dogfooded: Aaron has accepted ≥1 real prescription
+
+
+---
+
+## Phase 7D Decisions — Roger
+
+### recencyWeight Capped at 1.0
+
+The spec formula Math.max(0.5, 1.0 - (sessionsAgo - 5) * (0.5 / 15)) produces values >1.0 when sessionsAgo < 5. Added Math.min(1.0, ...) to match the spec description "1.0 within 5 sessions, decays to 0.5 by 20 sessions."
+
+**Impact:** Priority scores are bounded [0, 1.0] as expected. No bonus for very recent insights.
+
+### Event Logging is Fail-Soft
+
+logEvent() requires a FK-valid session ID. The prescriber looks up the most recent active session from the DB. If none exists (e.g., during sessionStart before the new session is created), event logging is silently skipped.
+
+**Rationale:** Prescriber runs in two contexts: (1) sessionStart (before new session exists) and (2) MCP run_curate (session may exist). Logging is informational, not critical. Fail-soft is consistent with the project's fail-open philosophy.
+
+**Impact:** Phase 7F tools that read prescription events should be aware that some prescription_generated events may be missing for prescriptions generated during session startup.
+
+### shouldResurface Compensates for Session Counter Timing
+
+incrementSessionCounter() runs AFTER prescribe() in sessionStart.ts. The shouldResurface() function uses currentSession + 1 >= deferUntilSession to compensate, so deferral cooldowns are honored correctly.
+
+**Impact:** Deferral cooldowns are accurate. Phase 7F should use the same shouldResurface() function if needed.
+
+### Rejected Prescriptions Block Re-Prescription
+
+'rejected' is added to the set of statuses that prevent generating a new prescription from the same insight. An insight with a rejected prescription won't be re-prescribed until the rejected prescription is manually expired or the insight itself changes.
+
+**Rationale:** Rejected is terminal per the spec. Without this, rejected insights would get re-prescribed on every prescribe() run, spamming the user.
+
+**Impact:** If a user rejects a prescription but later wants to reconsider, they'll need to explicitly re-enable (possibly via unsuppress or manual expiration in Phase 7F).
+
+### checkAutoSuppress Exported for Phase 7F
+
+The auto-suppression check (deferCount >= threshold → suppress) is exported as checkAutoSuppress(prescriptionId, deferCount). Phase 7F's resolve_prescription MCP tool should call this after each deferral.
+
+**Impact:** Phase 7F must call checkAutoSuppress() after deferPrescription() in the defer flow.
+
+---
+
+## Phase 7E Decisions — Rosella
+
+### LIFO Rollback for Multi-Prescription Sidecars
+
+**Context:** managed_artifacts has UNIQUE(path). Multiple prescriptions can append to the same sidecar file, but only one row can exist per path.
+
+**Decision:** When appending, remove the old managed_artifact row and re-track with the latest prescription's ID. Rollback only supports the latest writer (LIFO). Rolling back a middle prescription in a multi-append stack is not supported in this phase.
+
+**Rationale:** The existing schema supports this cleanly. Full multi-level undo would require a separate history table — overkill for Phase 7E scope. If needed later, we add a managed_artifact_history table.
+
+### File-Based Drift Detection
+
+**Context:** The DAL's detectDrift() compares original_checksum vs current_checksum in the DB only — it doesn't read disk.
+
+**Decision:** checkDrift() in applier.ts reads the actual file, computes SHA-256, and compares to stored current_checksum. This is the on-disk drift check. The DAL function is for DB-internal consistency.
+
+**Rationale:** Users need to know if someone hand-edited the sidecar file. That requires a disk read, not a DB lookup.
+
+### Apply Blocks on Drift
+
+**Context:** Should pplyPrescription proceed if the sidecar has drifted since last write?
+
+**Decision:** Block with error. The user must resolve drift before new content is applied.
+
+**Rationale:** Silently overwriting user edits violates the "safe defaults" principle from DP6. The user should explicitly acknowledge changes before Cairn writes again.

@@ -1,40 +1,54 @@
 ---
-updated_at: 2026-04-05T06:08:00Z
-focus_area: Phase 6 COMPLETE. Phase 7 Planning
+updated_at: 2026-04-07T05:43:00Z
+focus_area: Phase 8 — Ecosystem & Extensions
 active_issues:
-  - "Phase 6 Complete: Plugin packaging shipped, npm published"
-  - "#11 — Worktree-aware sessions (deferred to Phase 7)"
-  - "CLI extension prototype spike (Phase 7 exploratory)"
+  - "Phase 8: CLI extensions & ecosystem integration (deferred from Phase 7)"
+  - "#11 — Worktree-aware sessions (deferred)"
+  - "awesome-copilot submission (deferred)"
 ---
 
 # What We're Focused On
 
-**Phase 6: Plugin Packaging Infrastructure** — ✅ COMPLETE & SHIPPED
+**Phase 7: Prescriber Implementation** — ✅ COMPLETE
 
-@akubly/cairn@0.1.0 published to npm. Plugin infrastructure fully operational.
+Cairn's third core agent is fully implemented and ready for production use.
 
-**Completed in Phase 6:**
-- ✅ Plugin manifests (plugin.json, marketplace.json)
-- ✅ Hook declarations (hooks.json)
-- ✅ PowerShell hook wrappers (curate.ps1, record.ps1)
-- ✅ Installation architecture assessment (repo vs user scope, custom install needed)
-- ✅ README refresh (test counts: 106→136, phase labels, MCP/hooks docs)
-- ✅ MCP configuration debugging (3 cycles: stdio args, npm wrappers, symlink resolution)
-- ✅ isScript guard extraction to shared utility (checkIsScript in src/utils/)
-- ✅ Code review 5 cycles (21 total comments, all resolved)
-- ✅ Extensions investigation (extensions ARE real, architecturally significant)
-- ✅ npm publish: @akubly/cairn@0.1.0 (globally installable)
+**Phase 7 Summary (All Complete):**
+- ✅ **7A** — Data Foundation (Roger): schema, types, DAL, preferences
+- ✅ **7B** — Artifact Discovery (Rosella): 4-phase scanner + cache
+- ✅ **7C** — Infrastructure (Gabriel): curate() 3s cap + trigger wiring
+- ✅ **7D** — Prescription Engine (Roger): core agent, state machine, priority scoring
+- ✅ **7E** — Apply Engine (Rosella): sidecar writing, rollback, drift detection
+- ✅ **7F** — MCP Tools + UX (Roger + Valanice): 4 new tools + growth tracking
 
-**Quality Metrics:**
-- ✅ 134/134 tests passing
-- ✅ Clean TypeScript build
-- ✅ Zero lint violations
-- ✅ PR #12 merged
-- ✅ Package published and verified on npm
+**Quality Achievement:**
+- 316/316 tests passing (↑ 194 from Phase 6)
+- TypeScript builds clean (strict mode)
+- Zero lint violations
+- All 10 UX principles integrated & tested
+- Hybrid trigger (preToolUse + run_curate) operational
+- Production-ready dogfood gates passed
 
-**Backlog for Phase 7:**
-- 🔄 **CLI extension prototype spike** — Evaluate extensions vs. MCP for Phase 8. Compare startup, state persistence, hook integration. Success criteria: working daemon, performance comparison, migration cost estimate. [Task backlog]
-- 🔄 Worktree support (Issue #11) — session isolation by working directory
-- 🔄 Bash wrappers for macOS/Linux (curate.sh, record.sh)
-- 🔄 awesome-copilot submission & plugin registry integration
-- 🔄 Installation UX refinements (Phase 6 feedback incorporation)
+**Test Progression:**
+- Phase 6 baseline: 122 tests
+- After Phase 7: 316 tests (+194, +159%)
+- Coverage: All core paths, state transitions, UX formatting, edge cases
+
+**Prescriber Implementation Complete:**
+- ✅ 4 new MCP tools (10 total in platform)
+- ✅ 8-state prescription lifecycle
+- ✅ 5-min artifact discovery cache
+- ✅ 3s curate() time cap enforced
+- ✅ Sidecar file management with rollback
+- ✅ Drift detection & recovery
+- ✅ Growth tracking & resolution heuristics
+- ✅ Full test coverage (316 tests)
+
+**Deferred to Phase 8+:**
+- CLI extension prototype spike
+- Worktree support (Issue #11)
+- Bash wrappers for macOS/Linux
+- awesome-copilot submission
+- Vector-based semantic search
+- Performance optimizations
+

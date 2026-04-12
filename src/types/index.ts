@@ -104,3 +104,117 @@ export interface CuratorStatus {
   staleInsights: number;
   prunedInsights: number;
 }
+
+// ---------------------------------------------------------------------------
+// Prescriber types (Phase 7)
+// ---------------------------------------------------------------------------
+
+/** 8-state prescription lifecycle (DP2) */
+export const PRESCRIPTION_STATUSES = [
+  'generated', 'accepted', 'rejected', 'deferred',
+  'applied', 'failed', 'expired', 'suppressed',
+] as const;
+export type PrescriptionStatus = typeof PRESCRIPTION_STATUSES[number];
+
+/** Disposition actions for resolve_prescription (DP3) */
+export type PrescriptionDisposition = 'accept' | 'reject' | 'defer';
+
+/** Artifact types discovered by the scanner */
+export type ArtifactType =
+  | 'instruction'
+  | 'agent'
+  | 'skill'
+  | 'hook'
+  | 'mcp_server'
+  | 'plugin_manifest'
+  | 'command';
+
+/** Scope of an artifact in the CLI topology */
+export type ArtifactScope = 'user' | 'project' | 'plugin';
+
+/** Resolution strategy per artifact type */
+export type ResolutionRule = 'additive' | 'first_found' | 'last_wins';
+
+/** A prescription generated from a Curator insight */
+export interface Prescription {
+  id: number;
+  insightId: number;
+  patternType: PatternType;
+  title: string;
+  rationale: string;
+  proposedChange: string;
+  targetPath?: string;
+  artifactType?: ArtifactType;
+  artifactScope?: ArtifactScope;
+  status: PrescriptionStatus;
+  confidence: number;
+  priorityScore: number;
+  recencyWeight: number;
+  availabilityFactor: number;
+  dispositionReason?: string;
+  deferCount: number;
+  deferUntilSession?: number;
+  generatedAt: string;
+  resolvedAt?: string;
+  appliedAt?: string;
+  expiresAt?: string;
+}
+
+/** A file managed by the Prescriber (DP6) */
+export interface ManagedArtifact {
+  id: number;
+  path: string;
+  artifactType: ArtifactType;
+  logicalId?: string;
+  scope: ArtifactScope;
+  prescriptionId: number | null;
+  originalChecksum?: string;
+  currentChecksum?: string;
+  rollbackContent?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A discovered artifact in the CLI topology (DP4) */
+export interface DiscoveredArtifact {
+  path: string;
+  artifactType: ArtifactType;
+  scope: ArtifactScope;
+  logicalId: string;
+  ownerPlugin?: string;
+  checksum: string;
+  lastModified: number;
+  resolutionRule: ResolutionRule;
+}
+
+/** Conflict between artifacts at different paths with the same logical identity */
+export interface ArtifactConflict {
+  logicalId: string;
+  artifactType: ArtifactType;
+  artifacts: DiscoveredArtifact[];
+}
+
+/** Complete snapshot of the CLI artifact topology (DP4) */
+export interface ArtifactTopology {
+  artifacts: DiscoveredArtifact[];
+  conflicts: ArtifactConflict[];
+  scannedAt: string;
+  scanDurationMs: number;
+}
+
+/** Growth tracking summary for show_growth MCP tool (DP5) */
+export interface GrowthSummary {
+  summary: string;
+  resolvedPatterns: string[];
+  activePatterns: string[];
+  stats: {
+    totalPrescriptions: number;
+    accepted: number;
+    applied: number;
+    rejected: number;
+    deferred: number;
+    acceptanceRateDisplay: string;
+  };
+  trendDirection: 'improving' | 'stable' | 'declining';
+  trendMessage: string;
+}

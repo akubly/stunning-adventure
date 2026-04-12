@@ -28,7 +28,7 @@ export {
 
 // Database (low-level — prefer agent APIs above)
 export { getDb, closeDb } from './db/index.js';
-export { createSession, endSession, getActiveSession } from './db/sessions.js';
+export { createSession, endSession, getActiveSession, getMostRecentActiveSession } from './db/sessions.js';
 export { logEvent, getUnprocessedEvents } from './db/events.js';
 export { getPreference, setPreference } from './db/preferences.js';
 export { recordSkip, getSkips } from './db/skipBreadcrumbs.js';

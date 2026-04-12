@@ -77,6 +77,15 @@ export function getInsightByPattern(patternType: PatternType, title: string): In
   return row ? mapRow(row) : undefined;
 }
 
+/** Get a single insight by id. */
+export function getInsight(id: number): Insight | undefined {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM insights WHERE id = ?').get(id) as
+    | Record<string, unknown>
+    | undefined;
+  return row ? mapRow(row) : undefined;
+}
+
 /** Get all insights, optionally filtered by status. Returns all statuses when omitted. */
 export function getInsights(status?: InsightStatus): Insight[] {
   const db = getDb();
@@ -87,6 +96,22 @@ export function getInsights(status?: InsightStatus): Insight[] {
     Record<string, unknown>
   >;
   return rows.map(mapRow);
+}
+
+/** Get multiple insights by their ids in a single query. */
+export function getInsightsByIds(ids: number[]): Map<number, Insight> {
+  if (ids.length === 0) return new Map();
+  const db = getDb();
+  const placeholders = ids.map(() => '?').join(', ');
+  const rows = db
+    .prepare(`SELECT * FROM insights WHERE id IN (${placeholders})`)
+    .all(...ids) as Array<Record<string, unknown>>;
+  const map = new Map<number, Insight>();
+  for (const row of rows) {
+    const insight = mapRow(row);
+    map.set(insight.id, insight);
+  }
+  return map;
 }
 
 /** Count insights grouped by status. Uses SQL aggregation — does not load rows. */

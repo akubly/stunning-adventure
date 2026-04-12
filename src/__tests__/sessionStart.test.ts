@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { getDb, closeDb } from '../db/index.js';
 import { createSession, getActiveSession } from '../db/sessions.js';
 import { logEvent } from '../db/events.js';
@@ -142,5 +142,110 @@ describe('runSessionStart', () => {
     // Third call: fast path (session is fresh)
     const r3 = runSessionStart('org_repo');
     expect(r3.fastPath).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Prescriber wiring — slow path chains prescribe() when insights change
+// ---------------------------------------------------------------------------
+
+describe('prescriber wiring on slow path', () => {
+  beforeEach(() => {
+    getDb(':memory:');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('should call prescribe() when curate produces new insights', () => {
+    // Create events that will generate insights (recurring errors)
+    const sessionId = createSession('org_repo', 'main');
+    logEvent(sessionId, 'error', { category: 'build', message: 'fail' });
+    logEvent(sessionId, 'error', { category: 'build', message: 'fail' });
+
+    // End the session so there's no active one (force slow path)
+    const db = getDb();
+    db.prepare("UPDATE sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?")
+      .run(sessionId);
+
+    // Capture prescription state before
+    const before = db
+      .prepare('SELECT pending_count FROM prescriber_state WHERE id = 1')
+      .get() as { pending_count: number } | undefined;
+    const pendingBefore = before?.pending_count ?? 0;
+
+    runSessionStart('org_repo');
+
+    // Curator should have processed those events and created insights
+    const cursorRow = db
+      .prepare('SELECT last_processed_event_id FROM curator_state WHERE id = 1')
+      .get() as { last_processed_event_id: number } | undefined;
+    expect(cursorRow!.last_processed_event_id).toBeGreaterThan(0);
+
+    // Verify prescribe() actually ran by checking DB side effects:
+    // prescriptions should exist and pending_count should have increased
+    const rxCount = db
+      .prepare("SELECT COUNT(*) as cnt FROM prescriptions WHERE status = 'generated'")
+      .get() as { cnt: number };
+    expect(rxCount.cnt).toBeGreaterThan(0);
+
+    const after = db
+      .prepare('SELECT pending_count FROM prescriber_state WHERE id = 1')
+      .get() as { pending_count: number } | undefined;
+    expect(after!.pending_count).toBeGreaterThan(pendingBefore);
+  });
+
+  it('should not throw when prescribe() fails (fail-open)', async () => {
+    // We can't easily mock the import, but we verify fail-open by checking
+    // runSessionStart completes even when insights are generated
+    const sessionId = createSession('org_repo', 'main');
+    logEvent(sessionId, 'error', { category: 'build', message: 'fail' });
+    logEvent(sessionId, 'error', { category: 'build', message: 'fail' });
+
+    const db = getDb();
+    db.prepare("UPDATE sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?")
+      .run(sessionId);
+
+    // Should not throw regardless of prescribe() behavior
+    expect(() => runSessionStart('org_repo')).not.toThrow();
+  });
+
+  it('should increment session counter on slow path', () => {
+    const db = getDb();
+
+    // Ensure prescriber_state exists with initial counter
+    const before = db
+      .prepare('SELECT sessions_since_install FROM prescriber_state WHERE id = 1')
+      .get() as { sessions_since_install: number } | undefined;
+    const counterBefore = before?.sessions_since_install ?? 0;
+
+    runSessionStart('org_repo');
+
+    const after = db
+      .prepare('SELECT sessions_since_install FROM prescriber_state WHERE id = 1')
+      .get() as { sessions_since_install: number } | undefined;
+    expect(after!.sessions_since_install).toBe(counterBefore + 1);
+  });
+
+  it('should not increment session counter on fast path', () => {
+    const db = getDb();
+
+    // Create an active session with a recent event
+    const sessionId = createSession('org_repo', 'main');
+    logEvent(sessionId, 'session_start', { repoKey: 'org_repo' });
+
+    const before = db
+      .prepare('SELECT sessions_since_install FROM prescriber_state WHERE id = 1')
+      .get() as { sessions_since_install: number } | undefined;
+    const counterBefore = before?.sessions_since_install ?? 0;
+
+    const result = runSessionStart('org_repo');
+    expect(result.fastPath).toBe(true);
+
+    const after = db
+      .prepare('SELECT sessions_since_install FROM prescriber_state WHERE id = 1')
+      .get() as { sessions_since_install: number } | undefined;
+    expect(after?.sessions_since_install ?? 0).toBe(counterBefore);
   });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { getDb, closeDb } from '../db/index.js';
 import { createSession } from '../db/sessions.js';
 import { logEvent } from '../db/events.js';
@@ -12,7 +12,7 @@ import {
   deletePrunedInsights,
   setInsightStatus,
 } from '../db/insights.js';
-import { curate, getCuratorStatus } from '../agents/curator.js';
+import { curate, getCuratorStatus, TIME_BUDGET_MS } from '../agents/curator.js';
 
 beforeEach(() => {
   closeDb();
@@ -478,5 +478,189 @@ describe('full curate cycle', () => {
     expect(result.eventsProcessed).toBe(2);
     expect(result.insightsCreated).toBe(0);
     expect(getInsights('active')).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CurateResult new fields: capped, insightsChanged
+// ---------------------------------------------------------------------------
+
+describe('curate result fields', () => {
+  let sessionId: string;
+
+  beforeEach(() => {
+    getDb(':memory:');
+    sessionId = createSession('org_repo', 'main');
+  });
+
+  it('should return capped: false and insightsChanged: false when no events', () => {
+    const result = curate();
+    expect(result.capped).toBe(false);
+    expect(result.insightsChanged).toBe(false);
+  });
+
+  it('should return insightsChanged: true when insights are created', () => {
+    logEvent(sessionId, 'error', { category: 'build', message: 'compile failed' });
+    logEvent(sessionId, 'error', { category: 'build', message: 'compile failed' });
+
+    const result = curate();
+    expect(result.insightsCreated).toBeGreaterThanOrEqual(1);
+    expect(result.insightsChanged).toBe(true);
+  });
+
+  it('should return insightsChanged: true when insights are reinforced', () => {
+    // First run creates insights
+    logEvent(sessionId, 'error', { category: 'build', message: 'compile failed' });
+    logEvent(sessionId, 'error', { category: 'build', message: 'compile failed' });
+    curate();
+
+    // Second run reinforces
+    logEvent(sessionId, 'error', { category: 'build', message: 'compile failed' });
+    logEvent(sessionId, 'error', { category: 'build', message: 'compile failed' });
+    const result = curate();
+
+    expect(result.insightsReinforced).toBeGreaterThanOrEqual(1);
+    expect(result.insightsChanged).toBe(true);
+  });
+
+  it('should return insightsChanged: false when no patterns match', () => {
+    logEvent(sessionId, 'tool_use', { tool: 'grep' });
+    logEvent(sessionId, 'tool_use', { tool: 'view' });
+
+    const result = curate();
+    expect(result.insightsChanged).toBe(false);
+  });
+
+  it('should return capped: false when all events are processed normally', () => {
+    logEvent(sessionId, 'tool_use', { tool: 'grep' });
+    logEvent(sessionId, 'tool_use', { tool: 'view' });
+
+    const result = curate();
+    expect(result.capped).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Curate time cap
+// ---------------------------------------------------------------------------
+
+describe('curate time cap', () => {
+  let sessionId: string;
+
+  beforeEach(() => {
+    getDb(':memory:');
+    sessionId = createSession('org_repo', 'main');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('should cap when time budget is exceeded between batches', () => {
+    // Insert more than BATCH_SIZE events so the loop iterates multiple batches
+    const db = getDb();
+    const stmt = db.prepare(
+      "INSERT INTO event_log (session_id, event_type, payload) VALUES (?, 'tool_use', ?)",
+    );
+    // Insert 1001 events — forces 2 batches (1000 + 1)
+    for (let i = 0; i < 1001; i++) {
+      stmt.run(sessionId, JSON.stringify({ tool: `tool-${i}` }));
+    }
+
+    // Mock Date.now to exceed budget after the first batch
+    const realNow = Date.now();
+    let callCount = 0;
+    vi.spyOn(Date, 'now').mockImplementation(() => {
+      callCount++;
+      // First call (startTime capture) returns real time
+      // Second call (budget check after first batch) returns time well over budget
+      if (callCount === 1) return realNow;
+      return realNow + TIME_BUDGET_MS + 1000;
+    });
+
+    const result = curate();
+
+    // Should have processed exactly the first batch (1000 events)
+    expect(result.eventsProcessed).toBe(1000);
+    expect(result.capped).toBe(true);
+  });
+
+  it('should persist cursor after time-capped partial run', () => {
+    const db = getDb();
+    const stmt = db.prepare(
+      "INSERT INTO event_log (session_id, event_type, payload) VALUES (?, 'tool_use', ?)",
+    );
+    for (let i = 0; i < 1001; i++) {
+      stmt.run(sessionId, JSON.stringify({ tool: `tool-${i}` }));
+    }
+
+    const realNow = Date.now();
+    let callCount = 0;
+    vi.spyOn(Date, 'now').mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) return realNow;
+      return realNow + TIME_BUDGET_MS + 1000;
+    });
+
+    curate();
+
+    // Cursor should be at event 1000 (first batch), not 0
+    const cursor = getLastProcessedEventId();
+    expect(cursor).toBeGreaterThan(0);
+  });
+
+  it('should resume from persisted cursor after capped run', () => {
+    const db = getDb();
+    const stmt = db.prepare(
+      "INSERT INTO event_log (session_id, event_type, payload) VALUES (?, 'tool_use', ?)",
+    );
+    for (let i = 0; i < 1001; i++) {
+      stmt.run(sessionId, JSON.stringify({ tool: `tool-${i}` }));
+    }
+
+    // First run: cap after first batch
+    const realNow = Date.now();
+    let callCount = 0;
+    vi.spyOn(Date, 'now').mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) return realNow;
+      return realNow + TIME_BUDGET_MS + 1000;
+    });
+
+    const firstResult = curate();
+    expect(firstResult.eventsProcessed).toBe(1000);
+    expect(firstResult.capped).toBe(true);
+
+    // Restore Date.now for second run
+    vi.restoreAllMocks();
+
+    // Second run: should pick up remaining 1 event
+    const secondResult = curate();
+    expect(secondResult.eventsProcessed).toBe(1);
+    expect(secondResult.capped).toBe(false);
+  });
+
+  it('should not report capped when final batch is partial (caught up)', () => {
+    // Insert exactly BATCH_SIZE events — should complete in one batch, not capped
+    const db = getDb();
+    const stmt = db.prepare(
+      "INSERT INTO event_log (session_id, event_type, payload) VALUES (?, 'tool_use', ?)",
+    );
+    for (let i = 0; i < 500; i++) {
+      stmt.run(sessionId, JSON.stringify({ tool: `tool-${i}` }));
+    }
+
+    // Even if "time is over", a partial batch means caught up, not capped
+    const realNow = Date.now();
+    let callCount = 0;
+    vi.spyOn(Date, 'now').mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) return realNow;
+      return realNow + TIME_BUDGET_MS + 5000;
+    });
+
+    const result = curate();
+    expect(result.eventsProcessed).toBe(500);
+    expect(result.capped).toBe(false);
   });
 });

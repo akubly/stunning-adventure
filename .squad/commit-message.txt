@@ -1,11 +1,24 @@
-Phase 6 Plugin Packaging Review — PR #12 Approved
+docs(squad): Phase 7D/7E complete — 7F (final phase) launching
 
-- Orchestration log: 2026-04-03T07-40-00Z-graham.md
-- Session log: 2026-04-03T07-40-phase6-review-pr.md
-- Updated identity/now.md with Phase 6 completion status
-- PR #12 awaiting merge
+✅ Phase 7D (Prescription Engine) — Roger
+  - prescriber.ts: priority scoring, 8-state lifecycle, state machine
+  - 38 new tests; total 232 → 264 tests
 
-All validation gates passed (build, tests, lint). 
-Code review APPROVED with 1 yellow flag (mcp.json distribution strategy) and 2 green flags (minor notes).
+✅ Phase 7E (Apply Engine) — Rosella
+  - applier.ts: sidecar writing, LIFO rollback, SHA-256 drift detection
+  - 24 new tests; total 264 → 294 tests
+
+🚧 Phase 7F (MCP Tools + UX) — Roger + Valanice [LAUNCHING]
+  - 4 new MCP tools (list/get/resolve_prescriptions + show_growth)
+  - Growth tracking integration + 10 UX principles
+  - Target: ~18 new tests → 312 total
+
+Decision inbox merged and closed:
+  - roger-phase-7d-decisions.md: recencyWeight capping, fail-soft logging, deferral timing, rejection blocking, autoSuppress export
+  - rosella-phase-7e-decisions.md: LIFO rollback strategy, file-based drift detection, apply-blocks-on-drift
+
+Test baseline updated: 232 → 294 passing
+Orchestration log: 2026-04-07T05-30-phase-7de.md
+Session log: 2026-04-07T05-30-phase-7de.md
 
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>

@@ -37,3 +37,55 @@
 **Rosella (Plugin Dev)** surveyed plugin marketplaces and found awesome-copilot as gravitational center (170+ agents, 240+ skills, 55+ plugins). Identified three canonical formats: `.agent.md`, `SKILL.md` (agentskills.io open standard), `plugin.json` (Claude Code spec). Recommends integrating with awesome-copilot rather than building custom marketplace.
 
 **Outcome:** Gabriel's 7 directly reusable patterns from prior infrastructure now inform all three specialists. Knowledge taxonomy is an innovation to preserve and extend. Skill template pattern validates Rosella's SKILL.md standardization. Workflow gates and anti-anchoring discipline become foundational team practices. Context engineering and context replication from community best practices align with how Squad already works and how Aaron's infrastructure was designed.
+
+### 2026-04-05 — Prescriber Infrastructure Analysis
+
+**Key Architecture Decisions:**
+- Prescriber MUST NOT generate prescriptions in the preToolUse hot path. The 10s budget is already consumed by Node startup (~400ms) + unbounded curation. MCP-only trigger is the right call.
+- `curate()` has no time cap — it loops until caught up. This is a pre-existing risk that becomes critical with any additional preToolUse work. Recommended 3s hard cap with cursor persistence.
+- Prescriptions need their own table separate from `insights.prescription` (static text hints). Clear ownership: Curator writes insights, Prescriber writes prescriptions.
+- MCP surface: 4 new tools (list_prescriptions, get_prescription, decide_prescription, generate_prescriptions). `decide_prescription` combines apply/reject/dismiss into one tool with action enum — every disposition becomes a Curator event.
+- No new hook wrappers or hooks.json changes needed. Prescriber lives entirely in MCP server process.
+- Ships as part of @akubly/cairn, not separate package. Shared DB singleton, no extra deps.
+
+**Key File Paths:**
+- `src/hooks/sessionStart.ts` — preToolUse entry point, fast-path logic, stale session detection
+- `src/agents/curator.ts` — unbounded curate() loop at line 129, batch size 1000
+- `src/mcp/server.ts` — MCP tool registration, 6 existing tools
+- `.github/hooks/cairn/curate.ps1` — PowerShell wrapper with 3-tier script resolution
+- `.github/hooks/cairn/hooks.json` — hook declarations (10s preToolUse, 5s postToolUse)
+- `.github/plugin/plugin.json` — plugin manifest, references hooks.json + .mcp.json
+
+**Performance Insight:**
+- preToolUse end-to-end fast path: ~410ms (PowerShell + Node + SQLite + git). Slow path adds crash recovery (~50ms) + curation (unbounded).
+- Hooks share timeout across all plugins. No per-plugin allocation. Plugins must self-budget.
+- MCP server has no timeout constraint — runs as long-lived subprocess. Ideal for expensive operations.
+
+### 2026-04-07 — Phase 7C: Curate Cap + Trigger Wiring
+
+**Delivered:**
+- 3-second soft time cap on `curate()` batch loop (TIME_BUDGET_MS=3000, checked between batches)
+- Extended `CurateResult` with `capped` and `insightsChanged` flags
+- Hybrid trigger wiring: preToolUse slow path and MCP `run_curate` both chain `prescribe()` when insights change
+- Prescriber stub (`src/agents/prescriber.ts`) — returns `{ prescriptionsGenerated: 0 }`, ready for Roger's Phase 7D
+- Session counter increment on slow path for deferral cooldown (DP5 #6)
+- Fail-open: prescribe() failures are caught in both preToolUse and MCP paths
+- 15 new tests (41 curator, 11 sessionStart, 23 MCP) — all passing
+
+**Key Decisions:**
+- Time cap check goes AFTER `events.length < BATCH_SIZE` — a partial final batch means "caught up", not "capped". This prevents false `capped: true` on the last batch.
+- MCP `run_curate` output shape changed to `{ curate: result, prescriptions: prescribeResult }` — breaking change per spec. Prescriber errors return `null` prescriptions (partial success).
+- `incrementSessionCounter()` is unconditional on slow path. In practice, double-increments are rare because postToolUse creates a session immediately after preToolUse, making subsequent calls fast-path.
+
+**Files Modified:** curator.ts, sessionStart.ts, server.ts, curator.test.ts, sessionStart.test.ts, mcp.test.ts
+**Files Created:** prescriber.ts
+
+### 2026-04-08 — Fix sessionStart prescriber wiring test
+
+**Problem:** Cloud reviewer flagged that `vi.spyOn({ prescribe }, 'prescribe')` in the "should call prescribe() when curate produces new insights" test was spying on a throwaway wrapper object, not the actual import used by `runSessionStart()`. The spy could never observe real calls — the test was passing vacuously.
+
+**Fix:** Replaced the ineffective spy with direct DB side-effect assertions. After `runSessionStart()`, the test now verifies:
+1. Prescriptions rows exist in the `prescriptions` table with status `'generated'`
+2. `pending_count` in `prescriber_state` increased
+
+**Learning:** When testing module-internal call chains in ESM (where you can't intercept the import binding), assert on observable side effects (DB state, file output) rather than trying to spy on re-exported functions through wrapper objects.

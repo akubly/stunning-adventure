@@ -45,3 +45,26 @@ export function getActiveSession(repoKey: string): Session | undefined {
     status: row.status as string,
   };
 }
+
+/** Return the most recent active session across all repos, or undefined. */
+export function getMostRecentActiveSession(): Session | undefined {
+  const db = getDb();
+  const row = db
+    .prepare(
+      `SELECT id, repo_key, branch, started_at, ended_at, status
+       FROM sessions WHERE status = 'active'
+       ORDER BY started_at DESC LIMIT 1`,
+    )
+    .get() as Record<string, unknown> | undefined;
+
+  if (!row) return undefined;
+
+  return {
+    id: row.id as string,
+    repoKey: row.repo_key as string,
+    branch: (row.branch as string | null) ?? undefined,
+    startedAt: row.started_at as string,
+    endedAt: (row.ended_at as string | null) ?? undefined,
+    status: row.status as string,
+  };
+}

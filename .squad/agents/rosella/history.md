@@ -146,3 +146,100 @@ ode dist/hooks/...\ commands in hooks.json for cross-platform compatibility
 - npm publish by Roger completed the distribution pipeline
 
 **Status:** Plugin packaging infrastructure complete. All entry points operational. Ready for Phase 7 (CLI installation commands, worktree support, awesome-copilot submission).
+
+### 2026-07-26: Prescriber Plugin Architecture — Artifact Discovery Design
+
+**Task:** Design the Prescriber's artifact discovery mechanism, "play nice" topology, and plugin self-hosting strategy.
+
+**Key Architecture Decisions:**
+
+1. **Per-type resolution rules** — Copilot CLI resolves each artifact type differently (instructions=additive, agents/skills=first-found, MCP=last-wins, hooks=additive). Discovery must model per-type precedence, not a single global scope chain. Conflicts are by logical identity (agent name, skill name, MCP server key), not file path.
+
+2. **Managed-writes-only provenance** — Instead of a full universal provenance table, the Prescriber tracks only files it creates/modifies in a `managed_artifacts` table. Plugin ownership for marketplace artifacts is inferred from `~/.copilot/installed-plugins/<source>/<plugin>/` path structure.
+
+3. **Safe defaults for unknown ownership** — When the Prescriber can't determine who owns a file, it NEVER modifies it in place. Instead, it generates Cairn-owned sidecar files (e.g., `cairn-prescribed.instructions.md`) and queues for human approval.
+
+4. **Single orchestrator hook** — The Prescriber extends the existing `preToolUse` entry point (`sessionStart.ts`) to call `prescribe()` after `curate()`, rather than registering a separate hook. This guarantees execution order.
+
+5. **Cache-first discovery** — Cold scan touches ~50 filesystem paths (<200ms). Results cached in `knowledge.db` with 5-min TTL. The preToolUse hook reads from cache; full rediscovery only when stale.
+
+6. **Three Prescriber MCP tools** — `list_prescriptions`, `apply_prescription`, `reject_prescription` for conversational interaction.
+
+**Real-world filesystem observations (Aaron's machine):**
+- `~/.copilot/hooks/` has 11 hook directories, each self-describing via hooks.json
+- `~/.copilot/installed-plugins/awesome-copilot/` contains 8 sub-plugins
+- `~/.copilot/marketplace-cache/` has 4 cached marketplace sources
+- `~/.copilot/skills/` has persona-review and shared utilities
+- `~/.copilot/mcp-config.json` registers 3+ MCP servers (memory, sequential-thinking, etc.)
+
+**Critical insight from critic review:** Hook directory names encode ownership (e.g., `cairn-archivist` → owned by `cairn`). This is the strongest ownership signal available without a registry.
+
+**Deliverable:** `.squad/decisions/inbox/rosella-prescriber-plugin.md`
+
+### 2026-07-26: Phase 7B — Artifact Discovery Scanner
+
+**Task:** Build the 4-phase artifact scanner and SQLite-backed topology cache.
+
+**Deliverables:**
+
+1. **`src/agents/discovery.ts`** — Pure function `scanTopology(homedir, projectRoot?, pluginsDir?)` with:
+   - Phase 1: User-level (`~/.copilot/`) — instructions, agents, skills, hooks, MCP config
+   - Phase 2: Project-level (`.github/` + `.copilot/`) — instructions, agents, skills, extensions, MCP config
+   - Phase 3: Installed plugins — manifests, agents, skills with ownerPlugin attribution
+   - Phase 4: Marketplace metadata — read-only reference, excluded from conflict detection
+   - SHA-256 checksums via `node:crypto`
+   - YAML frontmatter parsing for agent names, heading extraction for skills
+   - Per-type resolution rules: additive (instruction/hook), first_found (agent/skill/command/plugin_manifest), last_wins (mcp_server)
+   - Conflict detection for non-additive types with same logical ID
+
+2. **`src/db/topologyCache.ts`** — Cache DAL with `cacheTopology()` and `getCachedTopology(ttlMs?)`, 5-minute default TTL
+
+3. **`src/db/migrations/007-topology-cache.ts`** — Single-row `topology_cache` table (id=1 CHECK constraint)
+
+4. **`src/__tests__/discovery.test.ts`** — 36 tests covering all phases, conflicts, checksums, cache TTL, identity extraction, missing dirs, duration tracking
+
+**Key decisions:**
+- Scanned `.copilot/mcp-config.json` AND `.copilot/mcp.json` for project MCP (critic caught that real repo uses `mcp-config.json`)
+- Marketplace artifacts included in topology but excluded from conflict detection (they're reference-only)
+- Used `plugin.json` `name` field for ownerPlugin, fallback to directory name (critic recommendation)
+- Project MCP scanning independent of `.github/` directory existence
+
+**Dogfood gate:** Build ✅ | 232 tests ✅ | Lint ✅
+
+### 2026-07-27: Phase 7E — Apply Engine + Managed Artifacts
+
+**Task:** Build the Apply Engine that makes prescriptions actionable — sidecar file writing, rollback, and drift detection.
+
+**Deliverables:**
+
+1. **`src/agents/applier.ts`** — Three core functions:
+   - `applyPrescription(id, opts?)` — Loads accepted prescription, resolves sidecar path by scope (user→`~/.copilot/`, project→`.github/`), checks for drift, reads existing content for rollback, writes/appends sidecar file with markdown header, computes SHA-256 checksum, tracks in managed_artifacts, updates status to 'applied', logs event.
+   - `rollbackPrescription(id, opts?)` — Finds managed artifact, restores rollback_content or deletes file if new, removes from managed_artifacts, updates status to 'failed', logs event.
+   - `checkDrift(path)` — Reads actual file on disk, computes SHA-256, compares to stored current_checksum. Returns undefined for untracked paths.
+
+2. **`src/__tests__/applier.test.ts`** — 24 tests covering:
+   - User-scope and project-scope sidecar creation
+   - Rollback content storage (undefined for new files, string for existing)
+   - SHA-256 checksum computation and storage
+   - Managed artifact tracking (type, scope, prescription linkage)
+   - Status lifecycle (accepted→applied, applied→failed on rollback)
+   - Rejection of non-accepted prescriptions
+   - Rejection of missing prescriptions
+   - Event logging (prescription_applied, prescription_rolled_back)
+   - Sidecar markdown format validation (managed header, prescription sections, separators)
+   - Configurable sidecar prefix via `prescriber.sidecar_prefix` preference
+   - Drift detection before apply (blocks on checksum mismatch)
+   - Multi-prescription append (single managed header, multiple sections)
+   - Rollback content for appended prescriptions (stores pre-append file state)
+   - Rollback restores content or deletes new file
+   - Rollback removes managed_artifact entry
+   - Drift detection: clean, drifted, deleted file, untracked path
+
+**Key decisions:**
+- Used `null/undefined` for rollback_content to distinguish "new file" from "empty file" (critic recommendation)
+- `checkDrift()` does file-based comparison (reads actual disk SHA-256 vs stored checksum), NOT the DAL's DB-only `detectDrift()`
+- When appending to existing sidecar (UNIQUE path constraint), removes old managed_artifact row and re-tracks with latest prescription — rollback only supports LIFO (latest writer)
+- Preference key is namespaced `prescriber.sidecar_prefix` (matches existing prescriber.ts pattern)
+- Apply blocks on drift detection — if sidecar was manually edited after last write, apply fails with descriptive error
+
+**Dogfood gate:** Build ✅ | 294 tests ✅ | Lint ✅

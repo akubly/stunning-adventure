@@ -85,3 +85,42 @@
 - Added Phase 6 roadmap context explaining plugin packaging decision vs alternatives
 
 **Status:** Documentation now matches implementation reality. Supports Phase 7 onboarding for installation command development and distribution work.
+
+### 2025-07-18: Prescriber UX Design — Interaction, Attention, and Growth
+
+**Task:** Design the complete human-facing interaction model for the Prescriber component (insight → prescription → human disposition → applied change → growth tracking).
+
+**Key Design Decisions:**
+
+1. **Timing: After first success, not at the door.** preToolUse hook generates prescriptions in background; MCP tools expose them. Agent surfaces conversationally after first task success. Max 1 proactive per session. Rationale: session start is when humans are most dismissive — cognitive switching costs are highest at context boundaries.
+
+2. **Rejection easier than acceptance.** Accept requires reading a preview (two-step). Reject/defer is one word. This ensures the path of least resistance for the inattentive human is the safe action (reject), not the risky one (uninformed accept). Rejection reasons are optional and freeform, not structured quizzes.
+
+3. **Explicit prescription state machine.** States: pending → previewed → accepted/rejected/deferred/redirected → applied/dismissed/suppressed/resurfaced. No limbo states. Suppression is explicit and reversible. Prevents notification graveyard.
+
+4. **Growth is pull-only, wins-first.** Growth tracking never surfaces proactively. Resolved patterns shown before active ones. No streaks (anxiety-inducing). Cumulative trends instead ("down 42% over 10 sessions").
+
+5. **Four MCP tools, not six.** `list_prescriptions`, `preview_prescription`, `resolve_prescription`, `show_growth`. Explanation folded into preview (no separate "why" tool). Accept/reject unified under `resolve_prescription` with disposition parameter — cleaner state machine, unified telemetry.
+
+6. **Anti-rubber-stamp via structural design, not friction.** Preview shows actual content changes (diffs), not abstract descriptions. No comprehension quizzes. Success measured by behavioral outcomes (does the pattern recur after acceptance?), not ceremony.
+
+**Critic Feedback Incorporated:**
+- Dropped session-start as primary surfacing trigger → natural pause timing instead
+- Unified apply/dismiss into single `resolve_prescription` tool
+- Made rejection one-step (was originally structured multi-choice → now freeform optional)
+- Dropped streaks from growth tracking (backfire risk for perfectionists)
+- Added explicit state machine (was implicit before)
+- Redirect changed from top-level action to post-accept scope refinement
+
+**Key Files:**
+- `.squad/decisions/inbox/valanice-prescriber-ux.md` — full design document
+- `src/hooks/sessionStart.ts` — where Prescriber trigger integrates (after Curator)
+- `src/mcp/server.ts` — where 4 new MCP tools will be registered
+- `src/db/preferences.ts` — preference cascade for all Prescriber config
+- `src/types/index.ts` — will need Prescription type, PrescriptionDisposition type
+
+**Open Questions Raised:**
+- Artifact modification validation: do we need Compiler agent before applying changes?
+- Plugin artifact discovery: how does Prescriber know what's installed?
+- Conflicting prescription detection
+- Growth tracking scope: repo-scoped or global?

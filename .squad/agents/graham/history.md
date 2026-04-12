@@ -344,6 +344,30 @@ Conducted deep research into GitHub Copilot's full extensibility landscape. Key 
 
 **README staleness flagged:** Test count wrong (106 → 136), roadmap phases mislabeled (Phase 4 says "Compiler" but was actually session hook), hooks and MCP server not mentioned in "What's Built" section. Should be fixed in a housekeeping PR regardless of Phase 6 choice.
 
+### 2026-04-03: Phase 7 Code Review — Prescriber Implementation
+
+**Review type:** Full code review with fixes  
+**Scope:** 18 new files, 7 modified files, 316 tests  
+**Verdict:** APPROVE (blocking issues fixed inline)
+
+**Key findings fixed:**
+
+1. **Double-formatted sidecar content** — Prescriber templates wrapped proposedChange in full sidecar format, then Applier wrapped it again. Applied files would have been malformed. Fix: prescriber stores plain instruction text only; applier owns all formatting.
+
+2. **Project-scope topology never scanned** — `scanTopology()` was called without `projectRoot`, so `.github/` artifacts were invisible to the prescriber. Fix: pass `process.cwd()`.
+
+3. **Path traversal via sidecar_prefix** — Unvalidated prefix in `path.join()` could escape managed directories. Fix: alphanumeric + dash/underscore validation.
+
+4. **Topology cache dead code** — `cacheTopology()` was never called outside tests. Fix: cache after successful scan.
+
+5. **Missing-file drift bypass** — Deleted tracked files weren't detected as drift. Fix: fail when tracked artifact exists but file doesn't.
+
+**Review patterns observed:**
+- When two components both format the same output (prescriber generates content, applier writes files), the write-side should own formatting. Formatting should happen exactly once at the boundary closest to output.
+- Path construction from user-configurable inputs needs validation against traversal. This applies to any `path.join(base, userInput)` pattern.
+- Cache layers that are never populated are worse than no cache — they add complexity without benefit and obscure the actual performance path.
+- End-to-end integration tests (prescribe → accept → apply → verify file content) would have caught the double-formatting bug. Unit tests on each component individually passed but the composition was broken.
+
 **Decision document:** `.squad/decisions/inbox/graham-phase6-assessment.md`
 
 ### 2026-04-02: Installation Architecture Assessment — First Consumer
@@ -475,3 +499,60 @@ Aaron asked three targeted follow-ups about delivery vehicles, npm vs plugin, an
 **Lesson Applied:** Extensions investigation showed importance of artifact-centric investigation (inspect SDK source, type defs) vs documentation-centric (which leads to false negatives). This pattern will inform Phase 7 research tasks.
 
 **Critical Cross-Team Observation:** Installation architecture revealed three surfaces were broken (MCP registration missing, hooks hardcoded, binaries not on PATH). Phase 6 fixed manifests but still needs Phase 7 CLI implementation (cairn install/uninstall) for end-to-end automation. Plugin distribution requires this before it's production-ready.
+
+### 2026-04-03: Phase 6 Architecture — Prescriber Design
+
+**Type:** Architecture design session
+**Artifact:** .squad/decisions/inbox/graham-prescriber-architecture.md
+
+**Key architecture decisions:**
+
+1. **Prescriber as built-in agent behind plugin interface** — No plugin system exists yet, so build as src/agents/prescriber.ts with a PrescriberPlugin interface. MCP tools and hooks call through the interface, not directly to implementation. One level of indirection now; pays off at extraction time.
+
+2. **Conditional prescribe in preToolUse** — prescribe() runs ONLY when curate() reports new/reinforced insights. Zero cost on the common path (no new patterns). 500ms hard cap on prescribe() execution.
+
+3. **add_instruction as sole MVP type** — Append text to instruction files. Safe (additive), observable (idempotent markers), reversible (delete marked block). Silently skip insights that need unsupported prescription types.
+
+4. **Safe apply mechanics** — Idempotent markers (<!-- cairn:prescription:ID -->), file hash verification at apply time, atomic writes (temp + rename), state machine with pplying intermediate state for crash recovery.
+
+5. **4-tool MCP surface** — list_prescriptions, get_prescription (preview/diff), apply_prescription, dismiss_prescription. Preview tool is essential UX — don't skip it.
+
+6. **Deferred Compiler** — Instruction additions are markdown, no syntax to validate. Human approval gate + idempotent markers provide sufficient safety for MVP.
+
+**Critic feedback incorporated:**
+- Added pplying/pply_failed states for crash safety
+- Added content_hash, ile_hash_before, pply_marker fields for idempotency
+- Added supersedes_id for prescription lineage tracking
+- Made prescribe() conditional on curate() results (not unconditional)
+- Added get_prescription preview tool (was missing from initial 3-tool plan)
+
+**Key file paths for Phase 6:**
+- src/agents/prescriber.ts — Core agent
+- src/agents/prescriptionGenerators.ts — Pattern→prescription mapping
+- src/discovery/artifacts.ts — Convention-based artifact scanner
+- src/db/prescriptions.ts — Prescription CRUD
+- src/db/migrations/005-prescriptions.ts — Schema
+- src/mcp/server.ts — 4 new tools added here
+
+**Naming collision noted:** insights.prescription (static text advice) vs prescriptions table (concrete actions). Document clearly; rename insight column to ecommendation in Phase 6D.
+
+### 2026-04-06: Prescriber Final Plan — Aaron's 6 Decisions Incorporated
+
+**Type:** Architecture finalization
+**Outcome:** Produced definitive implementation plan (`.squad/decisions/inbox/graham-prescriber-final-plan.md`)
+
+**Aaron's 6 binding decisions and their architectural implications:**
+
+1. **DP1 — Hybrid Trigger (C1):** preToolUse chains prescribe() after curate() when insights change + run_curate MCP tool chains prescribe() automatically. No separate generate_prescriptions tool. Implication: curate() needs `insightsChanged` return flag; both trigger paths share the same prescribe() call. curate() capped at 3s.
+
+2. **DP2 — 8-State Lifecycle:** generated, accepted, rejected, deferred, applied, failed, expired, suppressed. Original 7-state from architecture doc expanded to 8 by adding `suppressed`. No `presented`, `superseded`, or `applying` micro-states.
+
+3. **DP3 — 4 New MCP Tools (10 total):** list_prescriptions, get_prescription, resolve_prescription, show_growth. Plus run_curate extended. resolve_prescription is unified with disposition enum (accept/reject/defer).
+
+4. **DP4 — Full 4-Phase Scanner:** User, project, plugins, marketplace. Per-artifact-type resolution rules, conflict detection, ownership tracking. SQLite cache with 5-min TTL.
+
+5. **DP5 — All 10 UX Principles:** Full Valanice spec from day one. Every MCP tool response must reflect UX principles. 7 preference keys via existing cascade.
+
+6. **DP6 — managed_artifacts + Sidecars:** Sidecar instruction files, not user-owned file modification. managed_artifacts table with rollback + drift detection.
+
+**Plan structure:** 6 sub-phases (7A-7F), 15 new files, 7 modified, ~115 new tests (target ~250 total). Critical path: 7A -> 7B -> 7D -> 7F.
