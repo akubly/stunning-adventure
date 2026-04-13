@@ -39,12 +39,12 @@ Processes the event stream to detect patterns and generate insights.
 Transforms Curator insights into concrete, prioritized improvement suggestions. Closes the observe→analyze→act loop.
 
 - **Prescription generation** — templates per pattern type (recurring error, error sequence, skip frequency)
-- **Priority scoring** — confidence × recency × availability, so urgent recent patterns surface first
+- **Priority scoring** — currently confidence-based, so higher-confidence patterns are surfaced first
 - **8-state lifecycle** — generated → accepted → applied (or rejected/deferred/expired/suppressed/failed)
 - **Human-in-the-loop** — prescriptions require explicit acceptance before the Apply Engine writes anything
 - **Apply Engine** — writes sidecar `.instructions.md` files with rollback support and drift detection
-- **Auto-suppression** — duplicate prescriptions for the same insight are suppressed automatically
-- **Session-aware deferral** — deferred prescriptions resurface after a configurable number of sessions
+- **Auto-suppression** — prescriptions are suppressed automatically after repeated deferrals reach a configurable threshold; duplicates are prevented by idempotency checks
+- **Session-aware deferral** — deferred prescriptions resurface after a configurable number of sessions until they are accepted, rejected, or auto-suppressed
 
 ### Hooks — *connects to Copilot CLI*
 
@@ -143,7 +143,7 @@ Cairn ships as a Copilot CLI plugin. The manifests in `.github/plugin/` declare 
 | 1b–2 | Archivist + Event Infrastructure | ✅ Done |
 | 3 | Curator + Pattern Detection | ✅ Done |
 | 4 | Session Hooks + Crash Recovery | ✅ Done |
-| 5 | MCP Server — 6 tools | ✅ Done |
+| 5 | MCP Server | ✅ Done |
 | 6 | Plugin Packaging | ✅ Done |
 | 7 | Prescriber — Close the feedback loop | ✅ Done |
 
