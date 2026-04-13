@@ -267,13 +267,27 @@ function parseSections(body: string, lineOffset: number): SkillSection[] {
   let currentSection: SkillSection | null = null;
   const contentLines: string[] = [];
   let inCodeFence = false;
+  let fenceChar: string | null = null;
+  let fenceLen = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // Track fenced code blocks to avoid false heading detection
-    if (line.trimStart().startsWith('```') || line.trimStart().startsWith('~~~')) {
-      inCodeFence = !inCodeFence;
+    // Track fenced code blocks to avoid false heading detection.
+    // Per CommonMark: closing fence must use the same char and be at least as long.
+    const fenceMatch = line.trimStart().match(/^(`{3,}|~{3,})/);
+    if (fenceMatch) {
+      const char = fenceMatch[1][0];
+      const len = fenceMatch[1].length;
+      if (!inCodeFence) {
+        inCodeFence = true;
+        fenceChar = char;
+        fenceLen = len;
+      } else if (char === fenceChar && len >= fenceLen) {
+        inCodeFence = false;
+        fenceChar = null;
+        fenceLen = 0;
+      }
       if (currentSection) contentLines.push(line);
       continue;
     }
