@@ -88,11 +88,15 @@ Ten tools expose Cairn's knowledge base to Copilot conversations. Tool names fol
 
 ## Installation
 
+**As a library:**
+
 ```bash
 npm install @akubly/cairn
 ```
 
-Cairn is also packaged as a Copilot CLI plugin (`.github/plugin/`). The plugin configures hooks and MCP server automatically — no manual wiring required.
+**As a Copilot CLI plugin** (hooks + MCP server, no manual wiring):
+
+Clone this repo and point your Copilot CLI at it. The manifests in `.github/plugin/` configure hooks and the MCP server automatically.
 
 ## Usage
 
@@ -132,9 +136,11 @@ npm run mcp       # Start the MCP server (requires build first)
 
 ## Plugin Packaging
 
-Cairn ships as a Copilot CLI plugin. The manifests in `.github/plugin/` declare hooks, the MCP server, and metadata so the CLI can wire everything automatically on install.
+Cairn supports two MCP setup paths:
 
-**MCP config** can live in two places — repo-scoped (`.copilot/mcp-config.json`, checked into the project) or user-scoped (`~/.copilot/mcp-config.json`, personal overrides). Repo-scoped config is picked up automatically when working inside the repo; user-scoped config applies globally.
+1. **Plugin** (recommended) — the manifests in `.github/plugin/` (including `.mcp.json`) declare hooks, the MCP server, and metadata. The Copilot CLI wires everything automatically on install. No additional config needed.
+
+2. **Manual MCP registration** — if not using the plugin flow, register Cairn's MCP server directly via `.copilot/mcp-config.json` (repo-scoped, checked in) or `~/.copilot/mcp-config.json` (user-scoped, personal overrides).
 
 ## Roadmap
 
