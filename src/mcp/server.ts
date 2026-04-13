@@ -8,6 +8,8 @@
  * MCP host (e.g. Copilot CLI, VS Code).
  */
 
+import path from 'node:path';
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -33,6 +35,8 @@ import {
   hasEventOccurred,
   findEvents,
 } from '../agents/sessionState.js';
+import { parseSkill } from '../agents/skillParser.js';
+import { lintSkill, formatLintSummary } from '../agents/skillLinter.js';
 
 import type { GrowthSummary, InsightStatus, PrescriptionStatus } from '../types/index.js';
 import { PRESCRIPTION_STATUSES } from '../types/index.js';
@@ -930,6 +934,115 @@ server.registerTool(
             ),
           },
         ],
+      };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: lint_skill
+// ---------------------------------------------------------------------------
+
+server.registerTool(
+  'lint_skill',
+  {
+    title: 'Lint Skill',
+    description:
+      'Validate a SKILL.md file for structural correctness. ' +
+      'Checks for required frontmatter fields (name, description, domain, confidence, source), ' +
+      'required sections (Context, Patterns), empty sections, valid confidence values, ' +
+      'and well-formed tool declarations. ' +
+      'Returns structured lint results with severity, rule ID, and suggested fixes. ' +
+      'Use this when authoring or reviewing skill files.',
+    inputSchema: {
+      path: z
+        .string()
+        .describe(
+          'Path to the SKILL.md file, or a directory containing one. ' +
+          'Absolute or relative to the current working directory.',
+        ),
+    },
+    annotations: {
+      readOnlyHint: true,
+    },
+  },
+  async ({ path: skillPath }: { path: string }) => {
+    try {
+      let filePath = skillPath;
+
+      // Resolve relative paths
+      if (!path.isAbsolute(filePath)) {
+        filePath = path.resolve(filePath);
+      }
+
+      // If path is a directory, look for SKILL.md inside it
+      try {
+        const stat = fs.statSync(filePath);
+        if (stat.isDirectory()) {
+          filePath = path.join(filePath, 'SKILL.md');
+        }
+      } catch {
+        // stat failed — let the readFile below produce the error
+      }
+
+      // Read the file
+      let content: string;
+      try {
+        content = fs.readFileSync(filePath, 'utf8');
+      } catch (err: unknown) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ error: `Cannot read file: ${filePath}`, details: String(err) }),
+          }],
+          isError: true,
+        };
+      }
+
+      // Parse and lint
+      const parsed = parseSkill(content);
+      const results = lintSkill(parsed);
+      const summary = formatLintSummary(results);
+
+      // Log a skill_lint event if a session is active
+      try {
+        ensureDb();
+        const repoKey = process.env.CAIRN_REPO_KEY ?? 'unknown';
+        const session = getActiveSession(repoKey);
+        if (session) {
+          const { logEvent } = await import('../db/events.js');
+          logEvent(session.id, 'skill_lint', {
+            path: filePath,
+            skillName: parsed.name,
+            errors: results.filter((r) => r.severity === 'error').length,
+            warnings: results.filter((r) => r.severity === 'warning').length,
+          });
+        }
+      } catch {
+        // Fail-open — event logging must not break the tool
+      }
+
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            path: filePath,
+            skill_name: parsed.name,
+            results: results.map((r) => ({
+              rule: r.rule,
+              severity: r.severity,
+              message: r.message,
+              line: r.line ?? null,
+              fix: r.fix ?? null,
+            })),
+            summary,
+          }, null, 2),
+        }],
       };
     } catch (err: unknown) {
       return {
