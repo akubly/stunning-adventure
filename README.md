@@ -83,6 +83,7 @@ Ten tools expose Cairn's knowledge base to Copilot conversations. Tool names fol
 | `preferences` | Cascading settings (session → user → system) |
 | `skip_breadcrumbs` | Intentional guardrail skip tracking |
 | `curator_state` | Processing cursor (singleton) |
+| `prescriber_state` | Prescriber counters (`sessions_since_install`, `pending_count`) |
 | `topology_cache` | Artifact discovery scan results |
 
 ## Installation
@@ -131,7 +132,7 @@ npm run mcp       # Start the MCP server (requires build first)
 
 ## Plugin Packaging
 
-Cairn ships as a Copilot CLI plugin. The manifests in `.github/plugin/` declare hooks, MCP tools, and metadata so the CLI can wire everything automatically on install.
+Cairn ships as a Copilot CLI plugin. The manifests in `.github/plugin/` declare hooks, the MCP server, and metadata so the CLI can wire everything automatically on install.
 
 **MCP config** can live in two places — repo-scoped (`.copilot/mcp-config.json`, checked into the project) or user-scoped (`~/.copilot/mcp-config.json`, personal overrides). Repo-scoped config is picked up automatically when working inside the repo; user-scoped config applies globally.
 
