@@ -13,7 +13,7 @@ An agentic software engineering platform that serves as a mirror — reflecting 
 
 ## What's Built
 
-Cairn stores all data in `~/.cairn/knowledge.db` (SQLite, WAL mode). Two agents, a hook system, and an MCP server operate on that shared knowledge base:
+Cairn stores all data in `~/.cairn/knowledge.db` (SQLite, WAL mode). Three agents, a hook system, and an MCP server operate on that shared knowledge base:
 
 ### Archivist — *records what happened*
 
@@ -34,16 +34,28 @@ Processes the event stream to detect patterns and generate insights.
 - **Static prescriptions** — actionable advice by error category (build, test, type, lint, auth)
 - **Insight lifecycle** — active → stale → pruned, with evidence tracking and reinforcement
 
+### Prescriber — *closes the feedback loop*
+
+Transforms Curator insights into concrete, prioritized improvement suggestions. Closes the observe→analyze→act loop.
+
+- **Prescription generation** — templates per pattern type (recurring error, error sequence, skip frequency)
+- **Priority scoring** — confidence × recency × availability, so urgent recent patterns surface first
+- **8-state lifecycle** — generated → accepted → applied (or rejected/deferred/expired/suppressed/failed)
+- **Human-in-the-loop** — prescriptions require explicit acceptance before the Apply Engine writes anything
+- **Apply Engine** — writes sidecar `.instructions.md` files with rollback support and drift detection
+- **Auto-suppression** — duplicate prescriptions for the same insight are suppressed automatically
+- **Session-aware deferral** — deferred prescriptions resurface after a configurable number of sessions
+
 ### Hooks — *connects to Copilot CLI*
 
-Copilot CLI hooks wire Cairn into every tool call, fail-open so they never break your workflow.
+Copilot CLI hooks wire Cairn into every tool call, fail-open so they never break your workflow. Hooks are packaged as a Copilot CLI plugin (`.github/plugin/hooks.json`) and also available as PowerShell wrappers (`.github/hooks/cairn/*.ps1`).
 
-- **`preToolUse`** — session catch-up and crash recovery. On first tool call, recovers any orphaned session and runs curation. On subsequent calls, exits immediately (fast path).
+- **`preToolUse`** — session catch-up and crash recovery. On first tool call, recovers any orphaned session, runs curation, and chains the Prescriber when insights change. On subsequent calls, exits immediately (fast path).
 - **`postToolUse`** — event recording. Reads the hook payload from stdin, logs tool use or errors to the active session via the Archivist.
 
 ### MCP Server — *speaks to conversations*
 
-Six tools expose Cairn's knowledge base to Copilot conversations. Tool names follow a verb–noun convention (`get_status`, not `status_get`) so agents can infer behavior from the name alone.
+Ten tools expose Cairn's knowledge base to Copilot conversations. Tool names follow a verb–noun convention (`get_status`, not `status_get`) so agents can infer behavior from the name alone.
 
 | Tool | What it answers |
 |------|----------------|
@@ -53,6 +65,10 @@ Six tools expose Cairn's knowledge base to Copilot conversations. Tool names fol
 | `search_events` | Find events by type pattern within a session |
 | `run_curate` | Trigger the curator to process new events and discover patterns |
 | `check_event` | Has a specific event type occurred? (boolean) |
+| `list_prescriptions` | What improvement suggestions are available? (filterable by status) |
+| `get_prescription` | Full detail on a specific suggestion — rationale, proposed change, diff preview |
+| `resolve_prescription` | Accept, reject, or defer a suggestion |
+| `show_growth` | How have patterns been resolved over time? (trends + stats) |
 
 ### Knowledge Store
 
@@ -61,10 +77,13 @@ Six tools expose Cairn's knowledge base to Copilot conversations. Tool names fol
 | `sessions` | Session lifecycle tracking |
 | `event_log` | Immutable event stream |
 | `insights` | Pattern-based discoveries with evidence and prescriptions |
+| `prescriptions` | Improvement suggestions with 8-state lifecycle |
+| `managed_artifacts` | Files written by the Apply Engine (checksums + rollback) |
 | `errors` | Error records for RCA |
 | `preferences` | Cascading settings (session → user → system) |
 | `skip_breadcrumbs` | Intentional guardrail skip tracking |
 | `curator_state` | Processing cursor (singleton) |
+| `topology_cache` | Artifact discovery scan results |
 
 ## Installation
 
@@ -72,15 +91,7 @@ Six tools expose Cairn's knowledge base to Copilot conversations. Tool names fol
 npm install @akubly/cairn
 ```
 
-For development or pre-publish use:
-
-```bash
-git clone https://github.com/akubly/stunning-adventure.git
-cd stunning-adventure
-npm install && npm run build && npm link
-```
-
-Then register the MCP server — see [Plugin Packaging](#plugin-packaging) for config options.
+Cairn is also packaged as a Copilot CLI plugin (`.github/plugin/`). The plugin configures hooks and MCP server automatically — no manual wiring required.
 
 ## Usage
 
@@ -122,23 +133,7 @@ npm run mcp       # Start the MCP server (requires build first)
 
 Cairn ships as a Copilot CLI plugin. The manifests in `.github/plugin/` declare hooks, MCP tools, and metadata so the CLI can wire everything automatically on install.
 
-The `.github/plugin/.mcp.json` manifest uses `npx` so the MCP server works immediately after plugin install — no local build step required:
-
-```json
-{
-  "mcpServers": {
-    "cairn": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "--package", "@akubly/cairn", "cairn-mcp"]
-    }
-  }
-}
-```
-
 **MCP config** can live in two places — repo-scoped (`.copilot/mcp-config.json`, checked into the project) or user-scoped (`~/.copilot/mcp-config.json`, personal overrides). Repo-scoped config is picked up automatically when working inside the repo; user-scoped config applies globally.
-
-For local development, `npm link` + the repo-scoped config is enough. For global use, copy the server entry to your user-scoped config.
 
 ## Roadmap
 
@@ -149,7 +144,8 @@ For local development, `npm link` + the repo-scoped config is enough. For global
 | 3 | Curator + Pattern Detection | ✅ Done |
 | 4 | Session Hooks + Crash Recovery | ✅ Done |
 | 5 | MCP Server — 6 tools | ✅ Done |
-| 6 | Plugin Packaging | ⬜ Current |
+| 6 | Plugin Packaging | ✅ Done |
+| 7 | Prescriber — Close the feedback loop | ✅ Done |
 
 ## License
 
