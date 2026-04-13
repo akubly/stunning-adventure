@@ -208,6 +208,32 @@ describe('Skill Parser', () => {
       });
     });
 
+    it('should not drop list items after blank lines', () => {
+      const skillWithBlankLines = `---
+name: "blanks"
+tools:
+  - name: "first"
+    description: "First tool"
+
+  - name: "second"
+    description: "Second tool"
+---
+
+# Blank Lines
+
+## Context
+Testing.
+
+## Patterns
+Testing.
+`;
+      const result = parseSkill(skillWithBlankLines);
+
+      expect(result.frontmatter!.tools).toHaveLength(2);
+      expect(result.frontmatter!.tools![0].name).toBe('first');
+      expect(result.frontmatter!.tools![1].name).toBe('second');
+    });
+
     it('should return null frontmatter when no --- block exists', () => {
       const result = parseSkill(NO_FRONTMATTER);
 
@@ -225,13 +251,12 @@ describe('Skill Parser', () => {
       expect(result.parseErrors[0].message).toBe('Empty file');
     });
 
-    it('should record parse error for invalid confidence', () => {
+    it('should not validate confidence values (linter responsibility)', () => {
       const result = parseSkill(INVALID_CONFIDENCE);
 
       expect(result.frontmatter!.confidence).toBe('extreme');
-      expect(result.parseErrors.some(
-        (e) => e.message.includes('Invalid confidence'),
-      )).toBe(true);
+      // Parser should NOT emit parse errors for invalid confidence — that's the linter's job
+      expect(result.parseErrors).toHaveLength(0);
     });
 
     it('should handle malformed frontmatter gracefully', () => {
@@ -296,6 +321,36 @@ describe('Skill Parser', () => {
       for (const section of result.sections) {
         expect(section.lineStart).toBeGreaterThan(0);
       }
+    });
+
+    it('should not treat headings inside code fences as sections', () => {
+      const skillWithCodeBlock = `---
+name: "code-block"
+description: "Has code blocks with headings"
+---
+
+# Code Block Skill
+
+## Context
+Here is an example:
+
+\`\`\`python
+# This is a comment, not a heading
+def hello():
+    pass
+\`\`\`
+
+## Patterns
+Always use fenced code blocks.
+`;
+      const result = parseSkill(skillWithCodeBlock);
+
+      const headings = result.sections.map((s) => s.heading);
+      expect(headings).toContain('Code Block Skill');
+      expect(headings).toContain('Context');
+      expect(headings).toContain('Patterns');
+      // The Python comment should NOT be detected as a section
+      expect(headings).not.toContain('This is a comment, not a heading');
     });
   });
 

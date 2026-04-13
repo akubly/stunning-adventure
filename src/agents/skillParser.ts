@@ -117,8 +117,6 @@ function unquote(val: string): string {
  */
 function parseFrontmatter(
   yaml: string,
-  errors: ParseError[],
-  lineOffset: number,
 ): SkillFrontmatter {
   const result: SkillFrontmatter = {};
   const lines = yaml.split('\n');
@@ -152,9 +150,7 @@ function parseFrontmatter(
         if (key === 'tools') {
           result.tools = items.map(parseToolItem);
         } else {
-          result[key] = items.map((item) =>
-            typeof item === 'string' ? item : item,
-          );
+          result[key] = items;
         }
         // Advance past the indented block
         i = skipIndentedBlock(lines, i + 1);
@@ -171,17 +167,6 @@ function parseFrontmatter(
     i++;
   }
 
-  // Validate known fields
-  if (result.confidence !== undefined) {
-    const c = String(result.confidence);
-    if (!['low', 'medium', 'high'].includes(c)) {
-      errors.push({
-        line: lineOffset + 1,
-        message: `Invalid confidence value "${c}" — expected low, medium, or high`,
-      });
-    }
-  }
-
   return result;
 }
 
@@ -195,8 +180,10 @@ function parseIndentedList(
 
   while (i < lines.length) {
     const line = lines[i];
-    // Must be indented
-    if (line.trim() === '' || (!line.startsWith(' ') && !line.startsWith('\t'))) {
+    // Skip blank lines within the indented block
+    if (line.trim() === '') { i++; continue; }
+    // Non-indented line ends the block
+    if (!line.startsWith(' ') && !line.startsWith('\t')) {
       break;
     }
 
@@ -271,6 +258,7 @@ function skipIndentedBlock(lines: string[], startIdx: number): number {
 /**
  * Split the markdown body into sections by heading.
  * Each section captures: heading text, level, content, line number.
+ * Headings inside fenced code blocks (``` or ~~~) are ignored.
  */
 function parseSections(body: string, lineOffset: number): SkillSection[] {
   const sections: SkillSection[] = [];
@@ -278,10 +266,19 @@ function parseSections(body: string, lineOffset: number): SkillSection[] {
 
   let currentSection: SkillSection | null = null;
   const contentLines: string[] = [];
+  let inCodeFence = false;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+
+    // Track fenced code blocks to avoid false heading detection
+    if (line.trimStart().startsWith('```') || line.trimStart().startsWith('~~~')) {
+      inCodeFence = !inCodeFence;
+      if (currentSection) contentLines.push(line);
+      continue;
+    }
+
+    const headingMatch = !inCodeFence ? line.match(/^(#{1,6})\s+(.+)$/) : null;
 
     if (headingMatch) {
       // Flush previous section
@@ -336,7 +333,7 @@ export function parseSkill(raw: string): ParsedSkill {
 
   const fmBlock = extractFrontmatterBlock(raw);
   if (fmBlock) {
-    frontmatter = parseFrontmatter(fmBlock.yaml, errors, 1);
+    frontmatter = parseFrontmatter(fmBlock.yaml);
     bodyStartLine = fmBlock.bodyStartLine;
   }
 

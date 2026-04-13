@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { getDb } from '../db/index.js';
 import { getActiveSession, getMostRecentActiveSession } from '../db/sessions.js';
 import { getInsights, getInsight, getInsightsByIds, countInsightsByStatus } from '../db/insights.js';
+import { logEvent } from '../db/events.js';
 import { curate, getCuratorStatus } from '../agents/curator.js';
 import { prescribe, checkAutoSuppress } from '../agents/prescriber.js';
 import { applyPrescription } from '../agents/applier.js';
@@ -1015,7 +1016,6 @@ server.registerTool(
         const repoKey = process.env.CAIRN_REPO_KEY ?? 'unknown';
         const session = getActiveSession(repoKey);
         if (session) {
-          const { logEvent } = await import('../db/events.js');
           logEvent(session.id, 'skill_lint', {
             path: filePath,
             skillName: parsed.name,
