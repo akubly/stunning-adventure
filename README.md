@@ -36,10 +36,10 @@ Processes the event stream to detect patterns and generate insights.
 
 ### Hooks — *connects to Copilot CLI*
 
-Copilot CLI hooks wire Cairn into every tool call, fail-open so they never break your workflow.
+Copilot CLI hooks wire Cairn into every tool call, fail-open so they never break your workflow. Hooks are packaged as a Copilot CLI plugin (`.github/plugin/hooks.json`) and also available as PowerShell wrappers (`.github/hooks/cairn/*.ps1`) with 3-tier fallback: user-deployed override → global npm install → repo checkout.
 
-- **`preToolUse`** — session catch-up and crash recovery. On first tool call, recovers any orphaned session and runs curation. On subsequent calls, exits immediately (fast path).
-- **`postToolUse`** — event recording. Reads the hook payload from stdin, logs tool use or errors to the active session via the Archivist.
+- **`preToolUse`** (`curate.ps1`) — session catch-up and crash recovery. On first tool call, recovers any orphaned session and runs curation. On subsequent calls, exits immediately (fast path).
+- **`postToolUse`** (`record.ps1`) — event recording. Reads the hook payload from stdin, logs tool use or errors to the active session via the Archivist.
 
 ### MCP Server — *speaks to conversations*
 
@@ -72,7 +72,7 @@ Six tools expose Cairn's knowledge base to Copilot conversations. Tool names fol
 npm install @akubly/cairn
 ```
 
-Copilot CLI plugin packaging is in progress (Phase 6). Once shipped, Cairn will be installable directly as a Copilot CLI plugin with hooks and MCP server configured automatically.
+Cairn is also packaged as a Copilot CLI plugin (`.github/plugin/`). The plugin configures hooks and MCP server automatically — no manual wiring required.
 
 ## Usage
 
@@ -119,7 +119,7 @@ npm run mcp       # Start the MCP server (requires build first)
 | 3 | Curator + Pattern Detection | ✅ Done |
 | 4 | Session Hooks + Crash Recovery | ✅ Done |
 | 5 | MCP Server — 6 tools | ✅ Done |
-| 6 | Plugin Packaging | ⬜ Current |
+| 6 | Plugin Packaging | ✅ Done |
 
 ## License
 
