@@ -181,3 +181,10 @@ $raw | node $hookScript 2>$null
 - **`$PSScriptRoot` relative path for repo checkout fallback.** Scripts at `.github/hooks/cairn/` navigate `..\..\..` to reach `dist/hooks/`. Works regardless of where the repo is cloned.
 - **hooks.json uses repo-relative paths.** The `powershell` field references `.github/hooks/cairn/*.ps1` — Copilot resolves these from repo root.
 - **Fail-open pattern preserved.** `$ErrorActionPreference = 'SilentlyContinue'`, outer try/catch, and unconditional `exit 0` ensure hooks never break the user.
+
+### README Accuracy Pass — Phase 6 Completion
+
+- **Roadmap table:** Phase 6 status changed from `⬜ Current` to `✅ Done` — plugin packaging is complete with plugin.json, hooks.json, .mcp.json, and marketplace.json all in `.github/plugin/`.
+- **Installation section:** Replaced "in progress" language with statement that Cairn is packaged as a Copilot CLI plugin in `.github/plugin/`, with hooks and MCP server configured automatically.
+- **Hooks section:** Added context that hooks are packaged as a Copilot CLI plugin (`.github/plugin/hooks.json`) and available as PowerShell wrappers with 3-tier fallback (user override → npm global → repo checkout). Kept existing preToolUse/postToolUse descriptions unchanged — they were already accurate.
+- **Principle:** Surgical edits only. Verified 6 MCP tools, 136 tests, 7 tables, 9 pattern categories, agent descriptions, API example, and philosophy section were all already correct — left untouched.
