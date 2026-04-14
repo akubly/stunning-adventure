@@ -961,7 +961,7 @@ server.registerTool(
       'Returns structured lint results with severity, rule ID, and suggested fixes. ' +
       'Use this when authoring or reviewing skill files.',
     inputSchema: {
-      path: z
+      skill_path: z
         .string()
         .describe(
           'Path to the SKILL.md file, or a directory containing one. ' +
@@ -972,9 +972,9 @@ server.registerTool(
       readOnlyHint: true,
     },
   },
-  async ({ path: skillPath }: { path: string }) => {
+  async ({ skill_path }: { skill_path: string }) => {
     try {
-      let filePath = skillPath;
+      let filePath = skill_path;
 
       // Resolve relative paths
       if (!path.isAbsolute(filePath)) {

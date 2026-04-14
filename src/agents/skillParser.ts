@@ -75,10 +75,11 @@ function extractFrontmatterBlock(raw: string): {
   yaml: string;
   bodyStartLine: number;
 } | null {
-  // Frontmatter must start at line 1
-  if (!raw.startsWith('---')) return null;
-
   const lines = raw.split('\n');
+
+  // Frontmatter must start with an opening delimiter on line 1
+  if (lines.length === 0 || lines[0].trimEnd() !== '---') return null;
+
   // Find closing ---
   for (let i = 1; i < lines.length; i++) {
     if (lines[i].trimEnd() === '---') {
