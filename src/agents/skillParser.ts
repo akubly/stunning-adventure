@@ -285,17 +285,23 @@ function parseSections(body: string, lineOffset: number): SkillSection[] {
     const line = lines[i];
 
     // Track fenced code blocks to avoid false heading detection.
-    // Per CommonMark: fences may be indented 0-3 spaces; closing fence must
-    // use the same char and be at least as long as the opening fence.
-    const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
-    if (fenceMatch) {
-      const char = fenceMatch[1][0];
-      const len = fenceMatch[1].length;
-      if (!inCodeFence) {
-        inCodeFence = true;
-        fenceChar = char;
-        fenceLen = len;
-      } else if (char === fenceChar && len >= fenceLen) {
+    // Per CommonMark: fences may be indented 0-3 spaces; opening fences may
+    // have trailing info strings; closing fences must have only whitespace after.
+    const openFenceMatch = !inCodeFence ? line.match(/^ {0,3}(`{3,}|~{3,})/) : null;
+    const closeFenceMatch = inCodeFence ? line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/) : null;
+
+    if (openFenceMatch) {
+      inCodeFence = true;
+      fenceChar = openFenceMatch[1][0];
+      fenceLen = openFenceMatch[1].length;
+      if (currentSection) contentLines.push(line);
+      continue;
+    }
+
+    if (closeFenceMatch) {
+      const char = closeFenceMatch[1][0];
+      const len = closeFenceMatch[1].length;
+      if (char === fenceChar && len >= fenceLen) {
         inCodeFence = false;
         fenceChar = null;
         fenceLen = 0;

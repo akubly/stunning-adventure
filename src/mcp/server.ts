@@ -955,9 +955,9 @@ server.registerTool(
     title: 'Lint Skill',
     description:
       'Validate a SKILL.md file for structural correctness. ' +
-      'Checks for required frontmatter fields (name, description, domain, confidence, source), ' +
-      'required sections (Context, Patterns), empty sections, valid confidence values, ' +
-      'and well-formed tool declarations. ' +
+      'Checks for required frontmatter fields (name, description) and recommended frontmatter fields ' +
+      '(domain, confidence, source), required sections (Context, Patterns), empty sections, ' +
+      'valid confidence values, and well-formed tool declarations. ' +
       'Returns structured lint results with severity, rule ID, and suggested fixes. ' +
       'Use this when authoring or reviewing skill files.',
     inputSchema: {
