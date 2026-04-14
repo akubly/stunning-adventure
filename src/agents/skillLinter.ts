@@ -160,7 +160,7 @@ function noHeading(skill: ParsedSkill): LintResult[] {
 
 /** Rule: tools field must be an array of objects with name. */
 function toolsMalformed(skill: ParsedSkill): LintResult[] {
-  if (!skill.frontmatter?.tools) return [];
+  if (!skill.frontmatter || !('tools' in skill.frontmatter)) return [];
   const tools = skill.frontmatter.tools;
 
   if (!Array.isArray(tools)) {

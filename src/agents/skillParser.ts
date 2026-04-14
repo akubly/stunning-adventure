@@ -117,6 +117,7 @@ function unquote(val: string): string {
  */
 function parseFrontmatter(
   yaml: string,
+  errors: ParseError[],
 ): SkillFrontmatter {
   const result: SkillFrontmatter = {};
   const lines = yaml.split('\n');
@@ -143,8 +144,18 @@ function parseFrontmatter(
     const key = kvMatch[1];
     const valueStr = kvMatch[2].trim();
 
-    if (valueStr === '' || valueStr === '|' || valueStr === '>') {
-      // Could be a block scalar or array — check next lines for indented items
+    if (valueStr === '|' || valueStr === '>') {
+      // Block scalars are not supported by this lightweight parser
+      errors.push({
+        line: i + 2, // 1-based, offset by opening ---
+        message: `Block scalar "${valueStr}" on key "${key}" is not supported — use a single-line value`,
+      });
+      i = skipIndentedBlock(lines, i + 1);
+      continue;
+    }
+
+    if (valueStr === '') {
+      // Could be an array — check next lines for indented items
       const items = parseIndentedList(lines, i + 1);
       if (items.length > 0) {
         if (key === 'tools') {
@@ -274,8 +285,9 @@ function parseSections(body: string, lineOffset: number): SkillSection[] {
     const line = lines[i];
 
     // Track fenced code blocks to avoid false heading detection.
-    // Per CommonMark: closing fence must use the same char and be at least as long.
-    const fenceMatch = line.trimStart().match(/^(`{3,}|~{3,})/);
+    // Per CommonMark: fences may be indented 0-3 spaces; closing fence must
+    // use the same char and be at least as long as the opening fence.
+    const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
     if (fenceMatch) {
       const char = fenceMatch[1][0];
       const len = fenceMatch[1].length;
@@ -347,7 +359,7 @@ export function parseSkill(raw: string): ParsedSkill {
 
   const fmBlock = extractFrontmatterBlock(raw);
   if (fmBlock) {
-    frontmatter = parseFrontmatter(fmBlock.yaml);
+    frontmatter = parseFrontmatter(fmBlock.yaml, errors);
     bodyStartLine = fmBlock.bodyStartLine;
   }
 

@@ -995,11 +995,10 @@ server.registerTool(
       let content: string;
       try {
         content = fs.readFileSync(filePath, 'utf8');
-      } catch (err: unknown) {
-        return {
+      } catch {        return {
           content: [{
             type: 'text' as const,
-            text: JSON.stringify({ error: `Cannot read file: ${filePath}`, details: String(err) }),
+            text: JSON.stringify({ error: `Cannot read file: ${filePath}` }),
           }],
           isError: true,
         };
