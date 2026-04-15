@@ -1018,11 +1018,12 @@ server.registerTool(
       }
 
       // Guard against oversized files (1 MB limit)
-      if (content.length > 1_000_000) {
+      const contentBytes = Buffer.byteLength(content, 'utf8');
+      if (contentBytes > 1_000_000) {
         return {
           content: [{
             type: 'text' as const,
-            text: JSON.stringify({ error: `File too large: ${filePath} (${content.length} bytes)` }),
+            text: JSON.stringify({ error: `File too large: ${filePath} (${contentBytes} bytes)` }),
           }],
           isError: true,
         };

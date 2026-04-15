@@ -68,12 +68,12 @@ export interface ParsedSkill {
 
 /**
  * Extract the YAML frontmatter block from the raw content.
- * Returns the inner YAML text and the line number where the closing
- * `---` appears (so we know where the body starts).
+ * Returns the inner YAML text and the 0-based line index where the
+ * body starts (first line after the closing `---`).
  */
 function extractFrontmatterBlock(raw: string): {
   yaml: string;
-  bodyStartLine: number;
+  bodyStartIndex: number;
 } | null {
   const lines = raw.split('\n');
 
@@ -85,7 +85,7 @@ function extractFrontmatterBlock(raw: string): {
     if (lines[i].trimEnd() === '---') {
       return {
         yaml: lines.slice(1, i).join('\n'),
-        bodyStartLine: i + 1, // 0-based index of first body line
+        bodyStartIndex: i + 1, // 0-based index of first body line
       };
     }
   }
@@ -368,18 +368,18 @@ export function parseSkill(raw: string): ParsedSkill {
 
   // Extract frontmatter
   let frontmatter: SkillFrontmatter | null = null;
-  let bodyStartLine = 0;
+  let bodyStartIndex = 0;
 
   const fmBlock = extractFrontmatterBlock(raw);
   if (fmBlock) {
     frontmatter = parseFrontmatter(fmBlock.yaml, errors);
-    bodyStartLine = fmBlock.bodyStartLine;
+    bodyStartIndex = fmBlock.bodyStartIndex;
   }
 
   // Parse body into sections
-  const bodyLines = raw.split('\n').slice(bodyStartLine);
+  const bodyLines = raw.split('\n').slice(bodyStartIndex);
   const body = bodyLines.join('\n');
-  const sections = parseSections(body, bodyStartLine);
+  const sections = parseSections(body, bodyStartIndex);
 
   // Extract skill name from first level-1 heading
   const nameSection = sections.find((s) => s.level === 1);
