@@ -137,7 +137,13 @@ function parseFrontmatter(
     // Top-level key: value
     const kvMatch = trimmed.match(/^([a-zA-Z_][a-zA-Z0-9_-]*)\s*:\s*(.*)/);
     if (!kvMatch) {
-      // Indented continuation line without a key — skip
+      // Non-indented, non-comment line that isn't key: value — malformed
+      if (!line.startsWith(' ') && !line.startsWith('\t')) {
+        errors.push({
+          line: i + 2, // 1-based, offset by opening ---
+          message: `Malformed frontmatter line: expected "key: value" but found "${trimmed}"`,
+        });
+      }
       i++;
       continue;
     }

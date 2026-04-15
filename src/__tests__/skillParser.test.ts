@@ -259,12 +259,15 @@ Testing.
       expect(result.parseErrors).toHaveLength(0);
     });
 
-    it('should handle malformed frontmatter gracefully', () => {
+    it('should emit parse error for malformed frontmatter lines', () => {
       const result = parseSkill(MALFORMED_FRONTMATTER);
 
       expect(result.frontmatter).not.toBeNull();
       expect(result.frontmatter!.name).toBe('test');
-      // Malformed line is skipped, not fatal
+      // Malformed line should produce a parse error, not silently skip
+      expect(result.parseErrors.length).toBeGreaterThan(0);
+      expect(result.parseErrors[0].message).toContain('Malformed frontmatter line');
+      // But parsing continues — sections still extracted
       expect(result.sections.length).toBeGreaterThan(0);
     });
   });

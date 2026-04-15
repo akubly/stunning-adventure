@@ -102,21 +102,38 @@ function invalidConfidence(skill: ParsedSkill): LintResult[] {
   return [];
 }
 
-/** Rule: required sections must exist. */
+/** Rule: required sections must exist at level 2 (## heading). */
 function missingSections(skill: ParsedSkill): LintResult[] {
   const results: LintResult[] = [];
-  const headings = new Set(
-    skill.sections.map((s) => s.heading.toLowerCase()),
+  const level2Headings = new Set(
+    skill.sections
+      .filter((s) => s.level === 2)
+      .map((s) => s.heading.toLowerCase()),
   );
 
   for (const required of REQUIRED_SECTIONS) {
-    if (!headings.has(required)) {
-      results.push({
-        rule: `missing-section:${required}`,
-        severity: 'error',
-        message: `Missing required section "## ${required.charAt(0).toUpperCase() + required.slice(1)}"`,
-        fix: `Add a "## ${required.charAt(0).toUpperCase() + required.slice(1)}" section`,
-      });
+    const capitalized = required.charAt(0).toUpperCase() + required.slice(1);
+    if (!level2Headings.has(required)) {
+      // Check if the heading exists at the wrong level
+      const wrongLevel = skill.sections.find(
+        (s) => s.heading.toLowerCase() === required && s.level !== 2,
+      );
+      if (wrongLevel) {
+        results.push({
+          rule: `wrong-section-level:${required}`,
+          severity: 'warning',
+          message: `Section "${capitalized}" found at heading level ${wrongLevel.level} — expected level 2 (##)`,
+          line: wrongLevel.lineStart,
+          fix: `Change to "## ${capitalized}"`,
+        });
+      } else {
+        results.push({
+          rule: `missing-section:${required}`,
+          severity: 'error',
+          message: `Missing required section "## ${capitalized}"`,
+          fix: `Add a "## ${capitalized}" section`,
+        });
+      }
     }
   }
 

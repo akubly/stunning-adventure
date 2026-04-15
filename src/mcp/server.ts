@@ -1012,8 +1012,10 @@ server.registerTool(
       // Log a skill_lint event if a session is active
       try {
         ensureDb();
-        const repoKey = process.env.CAIRN_REPO_KEY ?? 'unknown';
-        const session = getActiveSession(repoKey);
+        const repoKey = process.env.CAIRN_REPO_KEY;
+        const session = repoKey
+          ? getActiveSession(repoKey)
+          : getMostRecentActiveSession();
         if (session) {
           logEvent(session.id, 'skill_lint', {
             path: filePath,
