@@ -361,7 +361,10 @@ function parseSections(body: string, lineOffset: number): SkillSection[] {
 export function parseSkill(raw: string): ParsedSkill {
   const errors: ParseError[] = [];
 
-  if (raw.trim() === '') {
+  // Normalize CRLF → LF so all downstream splitting works consistently
+  const normalized = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  if (normalized.trim() === '') {
     errors.push({ line: 0, message: 'Empty file' });
     return { name: null, frontmatter: null, sections: [], raw, parseErrors: errors };
   }
@@ -370,14 +373,14 @@ export function parseSkill(raw: string): ParsedSkill {
   let frontmatter: SkillFrontmatter | null = null;
   let bodyStartIndex = 0;
 
-  const fmBlock = extractFrontmatterBlock(raw);
+  const fmBlock = extractFrontmatterBlock(normalized);
   if (fmBlock) {
     frontmatter = parseFrontmatter(fmBlock.yaml, errors);
     bodyStartIndex = fmBlock.bodyStartIndex;
   }
 
   // Parse body into sections
-  const bodyLines = raw.split('\n').slice(bodyStartIndex);
+  const bodyLines = normalized.split('\n').slice(bodyStartIndex);
   const body = bodyLines.join('\n');
   const sections = parseSections(body, bodyStartIndex);
 

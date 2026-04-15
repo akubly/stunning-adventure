@@ -1003,6 +1003,22 @@ server.registerTool(
         };
       }
 
+      // Guard against oversized files (1 MB limit) before reading
+      try {
+        const fileSize = fs.statSync(filePath).size;
+        if (fileSize > 1_000_000) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify({ error: `File too large: ${filePath} (${fileSize} bytes)` }),
+            }],
+            isError: true,
+          };
+        }
+      } catch {
+        // stat failed — let readFile produce the error
+      }
+
       // Read the file
       let content: string;
       try {
@@ -1012,18 +1028,6 @@ server.registerTool(
           content: [{
             type: 'text' as const,
             text: JSON.stringify({ error: `Cannot read file: ${filePath}` }),
-          }],
-          isError: true,
-        };
-      }
-
-      // Guard against oversized files (1 MB limit)
-      const contentBytes = Buffer.byteLength(content, 'utf8');
-      if (contentBytes > 1_000_000) {
-        return {
-          content: [{
-            type: 'text' as const,
-            text: JSON.stringify({ error: `File too large: ${filePath} (${contentBytes} bytes)` }),
           }],
           isError: true,
         };
