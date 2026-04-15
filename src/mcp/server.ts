@@ -991,14 +991,38 @@ server.registerTool(
         // stat failed — let the readFile below produce the error
       }
 
+      // Restrict to SKILL.md files to avoid probing arbitrary paths
+      const basename = path.basename(filePath);
+      if (basename !== 'SKILL.md') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ error: `Expected a SKILL.md file, got "${basename}"` }),
+          }],
+          isError: true,
+        };
+      }
+
       // Read the file
       let content: string;
       try {
         content = fs.readFileSync(filePath, 'utf8');
-      } catch {        return {
+      } catch {
+        return {
           content: [{
             type: 'text' as const,
             text: JSON.stringify({ error: `Cannot read file: ${filePath}` }),
+          }],
+          isError: true,
+        };
+      }
+
+      // Guard against oversized files (1 MB limit)
+      if (content.length > 1_000_000) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ error: `File too large: ${filePath} (${content.length} bytes)` }),
           }],
           isError: true,
         };

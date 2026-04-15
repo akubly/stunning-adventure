@@ -383,7 +383,7 @@ export function parseSkill(raw: string): ParsedSkill {
 
   // Extract skill name from first level-1 heading
   const nameSection = sections.find((s) => s.level === 1);
-  const name = nameSection?.heading ?? frontmatter?.name as string ?? null;
+  const name = nameSection?.heading ?? frontmatter?.name ?? null;
 
   return { name, frontmatter, sections, raw, parseErrors: errors };
 }
