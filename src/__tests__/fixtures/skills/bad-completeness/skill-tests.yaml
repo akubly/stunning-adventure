@@ -1,0 +1,41 @@
+name: "Bad completeness — unreferenced tools, shallow sections, missing flow"
+skill_path: "./SKILL.md"
+
+tier1:
+  assertions:
+    # --- Completeness failures (expected) ---
+    - vector: completeness
+      rule: tools-referenced-in-body
+      threshold: 0.3
+    - vector: completeness
+      rule: section-depth
+      section: Context
+      params:
+        min_words: 50
+      threshold: 0.2
+    - vector: completeness
+      rule: section-depth
+      section: Patterns
+      params:
+        min_words: 50
+      threshold: 0.2
+    - vector: completeness
+      rule: section-depth
+      section: Anti-Patterns
+      params:
+        min_words: 50
+      threshold: 0.1
+    - vector: completeness
+      rule: context-patterns-flow
+      threshold: 0.3
+
+    # --- Other vectors should be reasonable (isolation check) ---
+    - vector: clarity
+      rule: imperative-voice
+      section: Patterns
+    - vector: consistency
+      rule: name-heading-match
+
+# Tier 2 placeholder (designed, not executed)
+tier2:
+  scenarios: []

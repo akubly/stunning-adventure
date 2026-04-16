@@ -1,0 +1,34 @@
+name: "Bad consistency — mismatched name/heading, orphaned tools, domain drift"
+skill_path: "./SKILL.md"
+
+tier1:
+  assertions:
+    # --- Consistency failures (expected) ---
+    - vector: consistency
+      rule: name-heading-match
+      threshold: 0.2
+    - vector: consistency
+      rule: tool-section-agreement
+      threshold: 0.2
+    - vector: consistency
+      rule: domain-content-match
+      threshold: 0.2
+
+    # --- Containment also expected to fail (domain drift) ---
+    - vector: containment
+      rule: scope-bounded
+      threshold: 0.3
+
+    # --- Other vectors should be reasonable (isolation check) ---
+    - vector: clarity
+      rule: imperative-voice
+      section: Patterns
+    - vector: completeness
+      rule: section-depth
+      section: Patterns
+      params:
+        min_words: 50
+
+# Tier 2 placeholder (designed, not executed)
+tier2:
+  scenarios: []

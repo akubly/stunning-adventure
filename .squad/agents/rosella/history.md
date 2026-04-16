@@ -243,3 +243,23 @@ ode dist/hooks/...\ commands in hooks.json for cross-platform compatibility
 - Apply blocks on drift detection — if sidecar was manually edited after last write, apply fails with descriptive error
 
 **Dogfood gate:** Build ✅ | 294 tests ✅ | Lint ✅
+
+### 2026-07-27: Phase 8D — Skill Test Fixture Creation
+
+**Task:** Create SKILL.md test fixtures and YAML scenario files for the Skill Test Harness.
+
+**Deliverables:**
+
+1. **`src/__tests__/fixtures/skills/good-skill/`** — TypeScript Error Handling skill with full 5 C's compliance. Imperative voice, concrete code examples, 3 declared tools all referenced in body, domain-heading-name alignment. YAML covers all 5 vectors with 19 assertions.
+
+2. **`src/__tests__/fixtures/skills/bad-clarity/`** — React Component Patterns skill saturated with hedge words ("might want to consider", "could potentially"), passive voice ("Tests should be written"), and sentences exceeding 40 words. Isolation test: completeness and consistency pass, clarity fails. YAML targets 7 clarity assertions with low thresholds.
+
+3. **`src/__tests__/fixtures/skills/bad-completeness/`** — API Integration Testing skill with 4 declared tools (powershell, grep, view, web_fetch), none referenced in body. Context and Patterns under 20 words each. Anti-Patterns is 2 words. YAML targets 5 completeness assertions plus isolation checks.
+
+4. **`src/__tests__/fixtures/skills/bad-consistency/`** — frontmatter says `name: "api-testing"` with `domain: "testing"`, but heading says "Database Migration Patterns" and content covers Kubernetes/Terraform/deployment. Declared tools (kubectl, docker, terraform) never appear in Patterns. YAML targets 3 consistency + 1 containment failure assertions.
+
+5. **`src/__tests__/fixtures/skills/minimal-valid/`** — Only `name` + `description` in frontmatter, only Context + Patterns sections with 1 sentence each. No tools, no examples, no anti-patterns. Linter produces 3 warnings (missing optional fields) — confirms boundary. YAML tests name-heading match (pass) and section-depth (fail).
+
+**Key design insight:** Tier 1 (structural linter) and Tier 2 (5 C's quality vectors) are intentionally orthogonal. All "bad" fixtures pass Tier 1 cleanly — their defects are quality-layer concerns only detectable by Tier 2 rules. This validates the harness architecture: structural + quality are distinct evaluation layers.
+
+**Dogfood gate:** Build ✅ | 360 tests ✅ | All 5 fixtures lint-validated via Cairn MCP
