@@ -258,6 +258,6 @@ export interface ValidatorRule {
   tier: 1 | 2 | 3;
   /** Human-readable description of what this rule checks */
   description: string;
-  /** Evaluate the rule. Tier 1 returns sync, Tier 2+ returns Promise. */
-  evaluate(skill: ParsedSkill, options?: Record<string, unknown>): ValidationResult | Promise<ValidationResult>;
+  /** Evaluate the rule against a parsed skill. Returns a sync result. */
+  evaluate(skill: ParsedSkill, options?: Record<string, unknown>): ValidationResult;
 }

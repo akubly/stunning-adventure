@@ -13,7 +13,7 @@ import { parse as parseYaml } from 'yaml';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { parseSkill } from './skillParser.js';
-import { validateSkill } from './skillValidator.js';
+import { validateSkill, DEFAULT_THRESHOLD } from './skillValidator.js';
 import type { QualityVector, ValidationResult } from '../types/index.js';
 
 // ---------------------------------------------------------------------------
@@ -61,7 +61,7 @@ const ALL_VECTORS: QualityVector[] = [
   'clarity', 'completeness', 'concreteness', 'consistency', 'containment',
 ];
 
-const DEFAULT_THRESHOLD = 0.5;
+// DEFAULT_THRESHOLD imported from skillValidator
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -114,6 +114,13 @@ export function loadTestScenario(yamlPath: string): TestScenario {
   const tier2Raw = doc.tier2 as Record<string, unknown> | undefined;
   const tier2Scenarios = (tier2Raw?.scenarios as Tier2Scenario[]) ?? [];
   const tier2 = tier2Scenarios.length > 0 ? tier2Scenarios : undefined;
+
+  if (assertions.length === 0) {
+    throw new Error(
+      `No assertions found in scenario "${name}" (${absolutePath}). ` +
+      'Check that tier1.assertions is defined and correctly spelled.',
+    );
+  }
 
   return { name, skillPath, assertions, tier2 };
 }

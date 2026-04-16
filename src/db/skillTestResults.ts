@@ -131,7 +131,11 @@ export function getTestHistory(vector: string, limit?: number): SkillTestResultR
   return rows.map(mapRow);
 }
 
-/** Get the most recent test run for a skill (all results from the same run_at). */
+/**
+ * Get the most recent test run for a skill (all results from the same run_at).
+ * Note: groups by run_at at second precision. Two runs within the same second
+ * would merge — acceptable for current interactive usage patterns.
+ */
 export function getLatestTestRun(skillPath: string): SkillTestResultRow[] {
   const db = getDb();
   const rows = db

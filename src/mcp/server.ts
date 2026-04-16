@@ -950,6 +950,93 @@ server.registerTool(
 );
 
 // ---------------------------------------------------------------------------
+// Shared skill file resolution helper (used by lint_skill and test_skill)
+// ---------------------------------------------------------------------------
+
+interface SkillFileResult {
+  filePath: string;
+  content: string;
+}
+
+interface SkillFileError {
+  [key: string]: unknown;
+  content: Array<{ type: 'text'; text: string }>;
+  isError: true;
+}
+
+/**
+ * Resolve a skill_path to an absolute SKILL.md path, apply name and size
+ * guards, and read the file content. Returns the resolved path and content,
+ * or an MCP error response if any guard fails.
+ */
+function resolveAndReadSkill(skillPath: string): SkillFileResult | SkillFileError {
+  let filePath = skillPath;
+
+  // Resolve relative paths
+  if (!path.isAbsolute(filePath)) {
+    filePath = path.resolve(filePath);
+  }
+
+  // If path is a directory, look for SKILL.md inside it
+  try {
+    const stat = fs.statSync(filePath);
+    if (stat.isDirectory()) {
+      filePath = path.join(filePath, 'SKILL.md');
+    }
+  } catch {
+    // stat failed — let the readFile below produce the error
+  }
+
+  // Restrict to SKILL.md files to avoid probing arbitrary paths
+  const basename = path.basename(filePath);
+  if (basename !== 'SKILL.md') {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({ error: `Expected a SKILL.md file, got "${basename}"` }),
+      }],
+      isError: true,
+    };
+  }
+
+  // Guard against oversized files (1 MB limit)
+  try {
+    const fileSize = fs.statSync(filePath).size;
+    if (fileSize > 1_000_000) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({ error: `File too large: ${filePath} (${fileSize} bytes)` }),
+        }],
+        isError: true,
+      };
+    }
+  } catch {
+    // stat failed — let readFile produce the error
+  }
+
+  // Read the file
+  let content: string;
+  try {
+    content = fs.readFileSync(filePath, 'utf8');
+  } catch {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({ error: `Cannot read file: ${filePath}` }),
+      }],
+      isError: true,
+    };
+  }
+
+  return { filePath, content };
+}
+
+function isSkillFileError(result: SkillFileResult | SkillFileError): result is SkillFileError {
+  return 'isError' in result;
+}
+
+// ---------------------------------------------------------------------------
 // Tool: lint_skill
 // ---------------------------------------------------------------------------
 
@@ -978,64 +1065,9 @@ server.registerTool(
   },
   async ({ skill_path }: { skill_path: string }) => {
     try {
-      let filePath = skill_path;
-
-      // Resolve relative paths
-      if (!path.isAbsolute(filePath)) {
-        filePath = path.resolve(filePath);
-      }
-
-      // If path is a directory, look for SKILL.md inside it
-      try {
-        const stat = fs.statSync(filePath);
-        if (stat.isDirectory()) {
-          filePath = path.join(filePath, 'SKILL.md');
-        }
-      } catch {
-        // stat failed — let the readFile below produce the error
-      }
-
-      // Restrict to SKILL.md files to avoid probing arbitrary paths
-      const basename = path.basename(filePath);
-      if (basename !== 'SKILL.md') {
-        return {
-          content: [{
-            type: 'text' as const,
-            text: JSON.stringify({ error: `Expected a SKILL.md file, got "${basename}"` }),
-          }],
-          isError: true,
-        };
-      }
-
-      // Guard against oversized files (1 MB limit) before reading
-      try {
-        const fileSize = fs.statSync(filePath).size;
-        if (fileSize > 1_000_000) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: JSON.stringify({ error: `File too large: ${filePath} (${fileSize} bytes)` }),
-            }],
-            isError: true,
-          };
-        }
-      } catch {
-        // stat failed — let readFile produce the error
-      }
-
-      // Read the file
-      let content: string;
-      try {
-        content = fs.readFileSync(filePath, 'utf8');
-      } catch {
-        return {
-          content: [{
-            type: 'text' as const,
-            text: JSON.stringify({ error: `Cannot read file: ${filePath}` }),
-          }],
-          isError: true,
-        };
-      }
+      const resolved = resolveAndReadSkill(skill_path);
+      if (isSkillFileError(resolved)) return resolved;
+      const { filePath, content } = resolved;
 
       // Parse and lint
       const parsed = parseSkill(content);
@@ -1112,7 +1144,7 @@ server.registerTool(
         ),
     },
     annotations: {
-      readOnlyHint: true,
+      readOnlyHint: false,
     },
   },
   async ({ skill_path, scenario_path }: { skill_path: string; scenario_path?: string }) => {
@@ -1125,6 +1157,11 @@ server.registerTool(
         }
 
         const scenario = loadTestScenario(scenarioFile);
+
+        // Apply the same guards to the scenario's resolved skill path
+        const scenarioSkillResolved = resolveAndReadSkill(scenario.skillPath);
+        if (isSkillFileError(scenarioSkillResolved)) return scenarioSkillResolved;
+
         const report = runTestScenario(scenario);
         const text = formatTestReport(report);
 
@@ -1169,68 +1206,22 @@ server.registerTool(
       }
 
       // No scenario — run default validation
-      let filePath = skill_path;
-
-      // Resolve relative paths
-      if (!path.isAbsolute(filePath)) {
-        filePath = path.resolve(filePath);
-      }
-
-      // If path is a directory, look for SKILL.md inside it
-      try {
-        const stat = fs.statSync(filePath);
-        if (stat.isDirectory()) {
-          filePath = path.join(filePath, 'SKILL.md');
-        }
-      } catch {
-        // stat failed — let the readFile below produce the error
-      }
-
-      // Restrict to SKILL.md files
-      const basename = path.basename(filePath);
-      if (basename !== 'SKILL.md') {
-        return {
-          content: [{
-            type: 'text' as const,
-            text: JSON.stringify({ error: `Expected a SKILL.md file, got "${basename}"` }),
-          }],
-          isError: true,
-        };
-      }
-
-      // Guard against oversized files (1 MB limit)
-      try {
-        const fileSize = fs.statSync(filePath).size;
-        if (fileSize > 1_000_000) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: JSON.stringify({ error: `File too large: ${filePath} (${fileSize} bytes)` }),
-            }],
-            isError: true,
-          };
-        }
-      } catch {
-        // stat failed — let readFile produce the error
-      }
-
-      // Read and parse the skill file
-      let content: string;
-      try {
-        content = fs.readFileSync(filePath, 'utf8');
-      } catch {
-        return {
-          content: [{
-            type: 'text' as const,
-            text: JSON.stringify({ error: `Cannot read file: ${filePath}` }),
-          }],
-          isError: true,
-        };
-      }
+      const resolved = resolveAndReadSkill(skill_path);
+      if (isSkillFileError(resolved)) return resolved;
+      const { filePath, content } = resolved;
 
       const parsed = parseSkill(content);
       const results = validateSkill(parsed);
       const summary = formatValidationSummary(results);
+
+      // Compute numeric overall score for consistent telemetry
+      const vectors = new Set(results.map((r) => r.vector));
+      let totalVectorScore = 0;
+      for (const v of vectors) {
+        const vResults = results.filter((r) => r.vector === v);
+        totalVectorScore += vResults.reduce((s, r) => s + r.score, 0) / vResults.length;
+      }
+      const numericOverallScore = vectors.size > 0 ? totalVectorScore / vectors.size : 0;
 
       // Persist results to DB if session exists
       try {
@@ -1257,7 +1248,7 @@ server.registerTool(
           logEvent(session.id, 'skill_test', {
             path: filePath,
             skillName: parsed.name,
-            overallScore: summary,
+            overallScore: numericOverallScore,
           });
         }
       } catch {

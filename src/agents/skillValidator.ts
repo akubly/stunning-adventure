@@ -26,7 +26,7 @@ export interface ValidateOptions {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const DEFAULT_THRESHOLD = 0.5;
+export const DEFAULT_THRESHOLD = 0.5;
 
 /** Get section content by heading name (case-insensitive). */
 function getSectionContent(skill: ParsedSkill, heading: string): string | null {
@@ -520,7 +520,7 @@ const hasSpecifics: ValidatorRule = {
       specifics.push('tool references');
     }
 
-    const score = specifics.length > 0 ? 1.0 : 0.5;
+    const score = specifics.length > 0 ? 1.0 : 0.3;
 
     return {
       rule: this.id, vector: this.vector, tier: this.tier,
@@ -837,8 +837,22 @@ export function validateSkill(
 
   const results: ValidationResult[] = [];
 
+  // Surface parse errors as failed validation results
+  for (const err of skill.parseErrors) {
+    results.push({
+      rule: 'parse-error',
+      vector: 'completeness',
+      tier: 1,
+      score: 0.0,
+      passed: false,
+      message: err.message,
+      evidence: [],
+      line: err.line,
+    });
+  }
+
   for (const rule of activeRules) {
-    const result = rule.evaluate(skill) as ValidationResult;
+    const result = rule.evaluate(skill);
 
     // Apply custom threshold if provided
     if (thresholds?.[rule.id] !== undefined) {
