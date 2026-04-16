@@ -556,3 +556,34 @@ Aaron asked three targeted follow-ups about delivery vehicles, npm vs plugin, an
 6. **DP6 — managed_artifacts + Sidecars:** Sidecar instruction files, not user-owned file modification. managed_artifacts table with rollback + drift detection.
 
 **Plan structure:** 6 sub-phases (7A-7F), 15 new files, 7 modified, ~115 new tests (target ~250 total). Critical path: 7A -> 7B -> 7D -> 7F.
+
+### 2026-04-07: Phase 8D Design — Skill Test Harness Architecture
+
+**Type:** Design space analysis (no implementation)  
+**Trigger:** Aaron's 4 open design questions about the test harness after Phase 8A-C shipped (PR #16)
+
+**Key architectural decisions:**
+
+1. **Test scenario format: YAML + TypeScript execution engine.** YAML defines scenarios declaratively (machine-readable, agent-authorable, portable). TypeScript provides the execution engine (Vitest integration, type safety). Rejected: pure TypeScript (verbose, requires TS knowledge), Markdown sidecar (fragile parsing, already built one parser).
+
+2. **"Executing" a skill = content quality analysis.** Skills are instruction documents, not programs. Three tiers of "execution": Tier 1 (deterministic heuristics — hedge words, cross-references, actionable verbs), Tier 2 (LLM-as-judge — prompt + skill → evaluate output), Tier 3 (agent simulation). Only Tier 1 ships in Phase 8D. Unified `ValidatorRule` interface supports all three via sync/async evaluate.
+
+3. **Golden results: YAML expectations + DB results (hybrid).** Expectations (what SHOULD happen) live in versioned YAML alongside the skill. Results (what DID happen) live in knowledge.db `skill_test_results` table. "Track everything" principle satisfied. PR-reviewable expectations + SQL-queryable historical results.
+
+4. **Deterministic first, LLM later (tiered).** 12-15 Tier 1 rules across 5 C's (Clarity, Completeness, Concreteness, Consistency, Containment). Same interface as future Tier 2 rules. No architectural change when Copilot SDK lands — only the rule registry grows.
+
+5. **Validator separate from linter.** `skillLinter.ts` = structure (pass/fail, CI gate). `skillValidator.ts` = quality (scored 0.0-1.0, advisory). Different concerns, different consumers, different output shapes.
+
+**New modules designed:**
+- `src/agents/skillValidator.ts` — Tier 1 quality rules (pure functions)
+- `src/agents/skillTestHarness.ts` — Scenario loader, orchestrator, Vitest helper
+- `src/db/skillTestResults.ts` + migration 009
+- `test_skill` MCP tool
+
+**Deliverables:** ~40-50 new tests, 5+ fixture skills, ~8 new/modified files.
+
+**4 open questions raised for Aaron:** YAML dependency (recommend `yaml` package), threshold configurability, MCP tool granularity (recommend single tool), dogfooding (recommend testing Cairn's own generated skills).
+
+**Decision document:** `.squad/decisions/inbox/graham-phase-8d-design.md`
+
+**Architectural insight:** The parser → linter → validator pipeline mirrors the established 3-layer architecture: Parser is pure parse (primitive), Linter validates structure (primitive), Validator scores quality (primitive), TestHarness orchestrates (assembler), test_skill MCP tool presents (experience). Each layer adds analysis depth while sharing the `ParsedSkill` AST as common currency.

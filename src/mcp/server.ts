@@ -38,8 +38,12 @@ import {
 } from '../agents/sessionState.js';
 import { parseSkill } from '../agents/skillParser.js';
 import { lintSkill, formatLintSummary } from '../agents/skillLinter.js';
+import { validateSkill, formatValidationSummary } from '../agents/skillValidator.js';
+import { loadTestScenario, runTestScenario, formatTestReport } from '../agents/skillTestHarness.js';
+import { insertTestResults } from '../db/skillTestResults.js';
 
-import type { GrowthSummary, InsightStatus, PrescriptionStatus } from '../types/index.js';
+import type { GrowthSummary, InsightStatus, PrescriptionStatus, ValidationResult } from '../types/index.js';
+import type { SkillTestResultInsert } from '../db/skillTestResults.js';
 import { PRESCRIPTION_STATUSES } from '../types/index.js';
 import { checkIsScript } from '../utils/isScript.js';
 import { getPreference } from '../db/preferences.js';
@@ -1073,6 +1077,195 @@ server.registerTool(
             summary,
           }, null, 2),
         }],
+      };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: test_skill
+// ---------------------------------------------------------------------------
+
+server.registerTool(
+  'test_skill',
+  {
+    title: 'Test Skill',
+    description:
+      'Run quality validation on a SKILL.md file. Evaluates content quality across the 5 C\'s: ' +
+      'Clarity, Completeness, Concreteness, Consistency, Containment. ' +
+      'Returns scored results (0.0-1.0) per quality vector.',
+    inputSchema: {
+      skill_path: z
+        .string()
+        .describe('Path to a SKILL.md file or directory containing one'),
+      scenario_path: z
+        .string()
+        .optional()
+        .describe(
+          'Optional path to a skill-tests.yaml scenario file. ' +
+          'If omitted, runs all Tier 1 rules with default thresholds.',
+        ),
+    },
+    annotations: {
+      readOnlyHint: true,
+    },
+  },
+  async ({ skill_path, scenario_path }: { skill_path: string; scenario_path?: string }) => {
+    try {
+      // If scenario_path is provided, use the test harness
+      if (scenario_path) {
+        let scenarioFile = scenario_path;
+        if (!path.isAbsolute(scenarioFile)) {
+          scenarioFile = path.resolve(scenarioFile);
+        }
+
+        const scenario = loadTestScenario(scenarioFile);
+        const report = runTestScenario(scenario);
+        const text = formatTestReport(report);
+
+        // Persist results to DB if session exists
+        try {
+          ensureDb();
+          const repoKey = process.env.CAIRN_REPO_KEY;
+          const session = repoKey
+            ? getActiveSession(repoKey)
+            : getMostRecentActiveSession();
+          if (session) {
+            const inserts: SkillTestResultInsert[] = report.results.map((r: ValidationResult) => ({
+              skillPath: report.skillPath,
+              skillName: report.skillName ?? undefined,
+              scenarioName: report.scenario,
+              vector: r.vector,
+              tier: r.tier,
+              rule: r.rule,
+              score: r.score,
+              passed: r.passed,
+              message: r.message,
+              evidence: r.evidence,
+              sessionId: session.id,
+            }));
+            insertTestResults(inserts);
+
+            logEvent(session.id, 'skill_test', {
+              path: report.skillPath,
+              skillName: report.skillName,
+              scenario: report.scenario,
+              passed: report.passed,
+              overallScore: report.overallScore,
+            });
+          }
+        } catch {
+          // Fail-open — event logging must not break the tool
+        }
+
+        return {
+          content: [{ type: 'text' as const, text }],
+        };
+      }
+
+      // No scenario — run default validation
+      let filePath = skill_path;
+
+      // Resolve relative paths
+      if (!path.isAbsolute(filePath)) {
+        filePath = path.resolve(filePath);
+      }
+
+      // If path is a directory, look for SKILL.md inside it
+      try {
+        const stat = fs.statSync(filePath);
+        if (stat.isDirectory()) {
+          filePath = path.join(filePath, 'SKILL.md');
+        }
+      } catch {
+        // stat failed — let the readFile below produce the error
+      }
+
+      // Restrict to SKILL.md files
+      const basename = path.basename(filePath);
+      if (basename !== 'SKILL.md') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ error: `Expected a SKILL.md file, got "${basename}"` }),
+          }],
+          isError: true,
+        };
+      }
+
+      // Guard against oversized files (1 MB limit)
+      try {
+        const fileSize = fs.statSync(filePath).size;
+        if (fileSize > 1_000_000) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify({ error: `File too large: ${filePath} (${fileSize} bytes)` }),
+            }],
+            isError: true,
+          };
+        }
+      } catch {
+        // stat failed — let readFile produce the error
+      }
+
+      // Read and parse the skill file
+      let content: string;
+      try {
+        content = fs.readFileSync(filePath, 'utf8');
+      } catch {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ error: `Cannot read file: ${filePath}` }),
+          }],
+          isError: true,
+        };
+      }
+
+      const parsed = parseSkill(content);
+      const results = validateSkill(parsed);
+      const summary = formatValidationSummary(results);
+
+      // Persist results to DB if session exists
+      try {
+        ensureDb();
+        const repoKey = process.env.CAIRN_REPO_KEY;
+        const session = repoKey
+          ? getActiveSession(repoKey)
+          : getMostRecentActiveSession();
+        if (session) {
+          const inserts: SkillTestResultInsert[] = results.map((r) => ({
+            skillPath: filePath,
+            skillName: parsed.name ?? undefined,
+            vector: r.vector,
+            tier: r.tier,
+            rule: r.rule,
+            score: r.score,
+            passed: r.passed,
+            message: r.message,
+            evidence: r.evidence,
+            sessionId: session.id,
+          }));
+          insertTestResults(inserts);
+
+          logEvent(session.id, 'skill_test', {
+            path: filePath,
+            skillName: parsed.name,
+            overallScore: summary,
+          });
+        }
+      } catch {
+        // Fail-open — event logging must not break the tool
+      }
+
+      return {
+        content: [{ type: 'text' as const, text: summary }],
       };
     } catch (err: unknown) {
       return {

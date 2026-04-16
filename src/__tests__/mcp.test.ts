@@ -14,6 +14,9 @@ import {
   updatePrescriptionStatus,
   getSessionsSinceInstall,
 } from '../db/prescriptions.js';
+import { parseSkill } from '../agents/skillParser.js';
+import { validateSkill, formatValidationSummary } from '../agents/skillValidator.js';
+import { insertTestResults, getTestResults } from '../db/skillTestResults.js';
 import {
   confidenceToWords,
   resetProactiveHintCounter,
@@ -597,6 +600,151 @@ describe('run_curate prescription chaining', () => {
     // No insights → prescribe would generate 0
     const prescribeResult = prescribe();
     expect(prescribeResult.prescriptionsGenerated).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// test_skill — backing logic
+// ---------------------------------------------------------------------------
+
+describe('test_skill logic', () => {
+  const GOOD_SKILL = `---
+name: test-skill
+description: A test skill for validation
+domain: testing
+confidence: proven
+source: tests
+---
+
+## Context
+
+This is a test skill that provides comprehensive context about testing
+best practices. It covers unit testing, integration testing, and end-to-end
+testing strategies. The context section should be long enough to pass the
+section depth validation rule. We need more than fifty words here so let us
+keep writing about testing patterns and methodologies that help developers
+write better software and catch bugs earlier in the development cycle.
+
+## Patterns
+
+- Always write unit tests before integration tests.
+- Use descriptive test names that explain the expected behavior.
+- Ensure test isolation by resetting state between test runs.
+- Validate edge cases including null inputs and boundary values.
+- Apply the Arrange-Act-Assert pattern consistently in every test.
+- Use mock objects to isolate the unit under test from dependencies.
+- Run tests in CI pipelines to catch regressions automatically.
+- Prefer deterministic tests over flaky ones that depend on timing.
+`;
+
+  const MINIMAL_SKILL = `---
+name: minimal
+description: Bare minimum
+---
+
+## Context
+
+Short.
+
+## Patterns
+
+Maybe do something, possibly.
+`;
+
+  it('validates a skill file without scenario', () => {
+    const parsed = parseSkill(GOOD_SKILL);
+    const results = validateSkill(parsed);
+    expect(results.length).toBeGreaterThan(0);
+
+    for (const r of results) {
+      expect(r).toHaveProperty('rule');
+      expect(r).toHaveProperty('vector');
+      expect(r).toHaveProperty('score');
+      expect(r).toHaveProperty('passed');
+      expect(r.score).toBeGreaterThanOrEqual(0);
+      expect(r.score).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('formats validation summary with scores', () => {
+    const parsed = parseSkill(GOOD_SKILL);
+    const results = validateSkill(parsed);
+    const summary = formatValidationSummary(results);
+
+    expect(summary).toContain('%');
+    expect(summary).toContain('Overall');
+  });
+
+  it('detects quality issues in a minimal skill', () => {
+    const parsed = parseSkill(MINIMAL_SKILL);
+    const results = validateSkill(parsed);
+
+    // Should have some failures due to hedge words and shallow content
+    const failures = results.filter((r) => !r.passed);
+    expect(failures.length).toBeGreaterThan(0);
+  });
+
+  it('persists test results to DB', () => {
+    const parsed = parseSkill(GOOD_SKILL);
+    const results = validateSkill(parsed);
+
+    const inserts = results.map((r) => ({
+      skillPath: '/test/SKILL.md',
+      skillName: parsed.name ?? undefined,
+      vector: r.vector,
+      tier: r.tier,
+      rule: r.rule,
+      score: r.score,
+      passed: r.passed,
+      message: r.message,
+      evidence: r.evidence,
+    }));
+
+    const ids = insertTestResults(inserts);
+    expect(ids.length).toBe(results.length);
+
+    const stored = getTestResults('/test/SKILL.md');
+    expect(stored.length).toBe(results.length);
+    expect(stored[0].skillName).toBe('test-skill');
+  });
+
+  it('logs skill_test event when session exists', () => {
+    const sessionId = createSession('org/repo', 'main');
+    const parsed = parseSkill(GOOD_SKILL);
+    const results = validateSkill(parsed);
+
+    const inserts = results.map((r) => ({
+      skillPath: '/test/SKILL.md',
+      skillName: parsed.name ?? undefined,
+      vector: r.vector,
+      tier: r.tier,
+      rule: r.rule,
+      score: r.score,
+      passed: r.passed,
+      message: r.message,
+      evidence: r.evidence,
+      sessionId,
+    }));
+    insertTestResults(inserts);
+
+    logEvent(sessionId, 'skill_test', {
+      path: '/test/SKILL.md',
+      skillName: parsed.name,
+    });
+
+    expect(hasEventOccurred(sessionId, 'skill_test')).toBe(true);
+  });
+
+  it('returns all 5 quality vectors in results', () => {
+    const parsed = parseSkill(GOOD_SKILL);
+    const results = validateSkill(parsed);
+
+    const vectors = new Set(results.map((r) => r.vector));
+    expect(vectors.has('clarity')).toBe(true);
+    expect(vectors.has('completeness')).toBe(true);
+    expect(vectors.has('concreteness')).toBe(true);
+    expect(vectors.has('consistency')).toBe(true);
+    expect(vectors.has('containment')).toBe(true);
   });
 });
 

@@ -3358,3 +3358,127 @@ The auto-suppression check (deferCount >= threshold → suppress) is exported as
 **Decision:** Block with error. The user must resolve drift before new content is applied.
 
 **Rationale:** Silently overwriting user edits violates the "safe defaults" principle from DP6. The user should explicitly acknowledge changes before Cairn writes again.
+
+---
+
+## Phase 8D — Skill Test Harness
+
+### 2026-04-15T23-17-39: Phase 8D Design Decisions — Skill Test Harness
+
+**Author:** Aaron (via Copilot)  
+**Type:** Architecture  
+**Status:** Active
+
+**Decisions:**
+
+1. **YAML parser:** Use `yaml` npm package for scenario files (not custom parser)
+2. **Thresholds:** Configurable with sensible defaults in YAML scenarios
+3. **MCP tool:** Single `test_skill` tool with optional `scenario_path` parameter
+4. **Dogfooding:** Yes — validate Cairn's own generated prescription sidecars as test fixtures
+5. **Overall architecture:** Approved — 3-tier (deterministic → LLM-as-judge → simulation), separate `skillValidator.ts` module, YAML expectations + DB results hybrid
+
+**Rationale:** Aaron approved Graham's design proposal. Build Tier 1 in Phase 8D, design interface for Tier 2/3 but defer implementation until Copilot SDK lands.
+
+---
+
+### 2026-04-07: Phase 8D Architectural Design — Graham Knight
+
+**Author:** Graham Knight (Lead/Architect)  
+**Type:** Architecture  
+**Status:** Approved
+
+**Executive Summary:**
+
+The linter validates *structure*. The test harness validates *behavior* — the 5 C's (Clarity, Completeness, Concreteness, Consistency, Containment). The architectural challenge: skills are instruction documents, not programs. You can't "run" them. The harness must validate content quality through a tiered strategy that starts deterministic and grows into LLM-as-judge.
+
+**Key Design Decisions:**
+
+1. **Test Scenarios:** YAML format (Option B) with TypeScript execution engine
+   - Scenarios are declarative data, executable by both Vitest and MCP tools
+   - Clean separation: YAML = what to test, TS = how to test
+   
+2. **Tier 1 Implementation:** 12-15 deterministic rules across 5 C's vectors
+   - CLARITY: no-hedge-words, no-vague-refs, imperative-voice, sentence-length
+   - COMPLETENESS: tools-referenced, context-patterns-flow, section-depth, missing-examples
+   - CONCRETENESS: actionable-verbs, has-specifics, no-abstractions
+   - CONSISTENCY: domain-content-match, tool-section-agreement, name-heading-match, no-contradictions
+   - CONTAINMENT: scope-bounded, tool-scope
+   
+3. **Data Persistence:** Hybrid approach (Option D)
+   - **Expectations** in git-versioned YAML (reviewed in PRs)
+   - **Results** in SQLite DB (historical, queryable, trend-capable)
+   - New table: skill_test_results (migration 009)
+   
+4. **Validator Architecture:** Option B — Separate content analysis engine
+   - New module `skillValidator.ts` with pure rule functions
+   - Unified interface: `(skill: ParsedSkill) => ValidationResult[]`
+   - Same pattern as linter — composable, extensible rules
+   
+5. **Tiered Roadmap:**
+   - **Phase 8D:** Tier 1 deterministic rules, YAML scenarios, DB persistence, test_skill MCP tool
+   - **Phase 8E (future):** Tier 2 LLM-as-judge rules (same interface, async evaluate)
+   - **Phase 8F (future):** Tier 3 simulation (full agent loop with skill loaded)
+
+**Why Deterministic First?**
+
+- Deterministic checks are CI-safe — identical results, zero cost, repeatable
+- LLM checks are advisory only — non-deterministic results can't gate CI
+- Heuristics catch ~70% of quality issues
+- Interface identical across all tiers — Tier 2/3 just extend rule registry
+
+**Rationale:**
+
+Three-tier architecture is architecturally correct even without LLM access. Separation of concerns between linter (structure) and validator (quality) enables both to evolve independently. YAML + DB hybrid enables portable, reviewable expectations plus rich, historical result analysis.
+
+**Files Affected:**
+
+- New: `src/agents/skillValidator.ts` (rule implementations)
+- New: `src/db/migrations/009-skill-test-results.ts`
+- New: `src/db/skillTestResults.ts` (CRUD module)
+- New: `src/agents/skillTestHarness.ts` (scenario orchestrator)
+- Modified: `src/mcp/server.ts` (add test_skill tool)
+- Modified: `src/types/index.ts` (add QualityVector, ValidationResult types)
+- Fixtures: 5+ skill test fixture directories with SKILL.md + YAML scenarios
+
+---
+
+### 2026-04-06: Skill Validator Heuristic Thresholds — Roger Wilco
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Implementation  
+**Status:** Approved
+
+**Context:**
+
+Phase 8D Skill Validator implements 14 Tier 1 deterministic rules across the 5 C's. Two heuristic thresholds were calibrated during implementation.
+
+**Decisions Made:**
+
+**1. `context-patterns-flow` uses 0.25 threshold (not default 0.5)**
+
+Context and Patterns serve different purposes — Context sets up "when/why", Patterns gives "how". Expecting 50% keyword overlap is unrealistic. A well-authored skill with 8 Context terms might only repeat 2-3 in Patterns. Stem matching (first 4 chars) + minimum word length of 6 + expanded stopwords get it to a reasonable signal-to-noise ratio.
+
+**2. `scope-bounded` flags zero-domain-count as score 0.0**
+
+When a skill declares domain "testing" but the body never mentions "testing" while "security" appears 6 times, domainCount=0 is worse than domainCount < otherCount. The original code required `domainCount > 0` to fire, silently passing when the declared domain was completely absent. Now: domainCount=0 yields score 0.0.
+
+**Trade-offs:**
+
+- Stem matching is crude (4-char prefix) — may produce false positives ("construct" matching "configure" both start with "con"). Acceptable for Tier 1 heuristics.
+- The KNOWN_DOMAINS list in scope-bounded is static. New domains need manual addition.
+- These thresholds work well on the test fixtures but haven't been validated against a large corpus of real SKILL.md files.
+
+**Test Coverage:**
+
+- `src/__tests__/skillValidator.test.ts` — 41 tests across 10 fixtures
+- Validates all 14 rules with diverse skill examples
+
+**Key Files:**
+
+- `src/agents/skillValidator.ts` — Rule implementations and RULES registry
+- `src/__tests__/skillValidator.test.ts` — 41 tests, 10 fixtures
+- `src/types/index.ts` — QualityVector, ValidationResult, ValidatorRule types
+
+**Impact:**
+
+These calibrations ensure Tier 1 validators reliably detect actual quality issues without false negatives (missing real problems) or excessive false positives (flagging minor variations as failures).

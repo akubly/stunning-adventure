@@ -581,11 +581,11 @@ describe('migration 007', () => {
     expect(tables.map((t) => t.name)).toContain('topology_cache');
   });
 
-  it('should record schema version 8', () => {
+  it('should record schema version 9', () => {
     const db = getDb();
     const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
       version: number;
     };
-    expect(row.version).toBe(8);
+    expect(row.version).toBe(9);
   });
 });

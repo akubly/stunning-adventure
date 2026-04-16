@@ -2,6 +2,8 @@
  * Shared type definitions for Cairn.
  */
 
+import type { ParsedSkill } from '../agents/skillParser.js';
+
 /** Top-level Cairn configuration. */
 export interface CairnConfig {
   /** Path to the knowledge database. */
@@ -217,4 +219,45 @@ export interface GrowthSummary {
   };
   trendDirection: 'improving' | 'stable' | 'declining';
   trendMessage: string;
+}
+
+// ---------------------------------------------------------------------------
+// Skill Validator types (Phase 8D)
+// ---------------------------------------------------------------------------
+
+/** The 5 correctness vectors for skill quality assessment. */
+export type QualityVector = 'clarity' | 'completeness' | 'concreteness' | 'consistency' | 'containment';
+
+/** Result from a single validation rule. */
+export interface ValidationResult {
+  /** Rule identifier (e.g., 'no-hedge-words', 'tools-referenced') */
+  rule: string;
+  /** Which quality vector this rule measures */
+  vector: QualityVector;
+  /** Which tier: 1 = deterministic, 2 = LLM-as-judge, 3 = simulation */
+  tier: 1 | 2 | 3;
+  /** Score from 0.0 (worst) to 1.0 (best) */
+  score: number;
+  /** Whether the score meets the threshold */
+  passed: boolean;
+  /** Human-readable description of the result */
+  message: string;
+  /** Supporting details / evidence */
+  evidence: string[];
+  /** 1-based source line, if applicable */
+  line?: number;
+}
+
+/** A single validation rule that evaluates a parsed skill. */
+export interface ValidatorRule {
+  /** Rule identifier */
+  id: string;
+  /** Which quality vector this rule measures */
+  vector: QualityVector;
+  /** Which tier this rule belongs to */
+  tier: 1 | 2 | 3;
+  /** Human-readable description of what this rule checks */
+  description: string;
+  /** Evaluate the rule. Tier 1 returns sync, Tier 2+ returns Promise. */
+  evaluate(skill: ParsedSkill, options?: Record<string, unknown>): ValidationResult | Promise<ValidationResult>;
 }
