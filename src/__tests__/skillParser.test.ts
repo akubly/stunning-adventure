@@ -234,6 +234,30 @@ Testing.
       expect(result.frontmatter!.tools![1].name).toBe('second');
     });
 
+    it('should treat tools: with only comments as no tools declared', () => {
+      const templateStyle = `---
+name: "template"
+description: "Template skill"
+tools:
+  # - name: "example"
+  #   description: "An example tool"
+---
+
+# Template
+
+## Context
+Testing.
+
+## Patterns
+Testing.
+`;
+      const result = parseSkill(templateStyle);
+
+      // tools key should not be set — no actual tool items
+      expect(result.frontmatter!.tools).toBeUndefined();
+      expect(result.parseErrors).toHaveLength(0);
+    });
+
     it('should return null frontmatter when no --- block exists', () => {
       const result = parseSkill(NO_FRONTMATTER);
 

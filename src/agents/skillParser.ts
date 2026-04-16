@@ -174,9 +174,17 @@ function parseFrontmatter(
         i = skipIndentedBlock(lines, i + 1);
         continue;
       }
-      // Empty key with no indented block — treat as empty string
-      result[key] = '';
-      i++;
+      // Empty key with no list items (or only comments) — skip indented
+      // block but don't set a misleading empty string for array-typed keys
+      const afterBlock = skipIndentedBlock(lines, i + 1);
+      if (afterBlock > i + 1) {
+        // Had indented content (e.g., comments only) — skip the block
+        i = afterBlock;
+      } else {
+        // Truly empty value
+        result[key] = '';
+        i++;
+      }
       continue;
     }
 
