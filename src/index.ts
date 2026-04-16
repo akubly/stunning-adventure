@@ -20,6 +20,8 @@ export {
 } from './agents/archivist.js';
 export { getSessionSummary, hasEventOccurred, findEvents } from './agents/sessionState.js';
 export { scrubSecrets } from './agents/secretScrubber.js';
+export { parseSkill } from './agents/skillParser.js';
+export { lintSkill, formatLintSummary } from './agents/skillLinter.js';
 export {
   curate,
   getCuratorStatus,
@@ -60,3 +62,11 @@ export type {
 } from './types/index.js';
 export type { SessionSummary } from './agents/sessionState.js';
 export type { CurateResult } from './agents/curator.js';
+export type {
+  ParsedSkill,
+  SkillFrontmatter,
+  SkillSection,
+  SkillToolDeclaration,
+  ParseError,
+} from './agents/skillParser.js';
+export type { LintResult, LintSeverity } from './agents/skillLinter.js';

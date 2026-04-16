@@ -8,6 +8,8 @@
  * MCP host (e.g. Copilot CLI, VS Code).
  */
 
+import path from 'node:path';
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -16,6 +18,7 @@ import { z } from 'zod';
 import { getDb } from '../db/index.js';
 import { getActiveSession, getMostRecentActiveSession } from '../db/sessions.js';
 import { getInsights, getInsight, getInsightsByIds, countInsightsByStatus } from '../db/insights.js';
+import { logEvent } from '../db/events.js';
 import { curate, getCuratorStatus } from '../agents/curator.js';
 import { prescribe, checkAutoSuppress } from '../agents/prescriber.js';
 import { applyPrescription } from '../agents/applier.js';
@@ -33,6 +36,8 @@ import {
   hasEventOccurred,
   findEvents,
 } from '../agents/sessionState.js';
+import { parseSkill } from '../agents/skillParser.js';
+import { lintSkill, formatLintSummary } from '../agents/skillLinter.js';
 
 import type { GrowthSummary, InsightStatus, PrescriptionStatus } from '../types/index.js';
 import { PRESCRIPTION_STATUSES } from '../types/index.js';
@@ -930,6 +935,144 @@ server.registerTool(
             ),
           },
         ],
+      };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: lint_skill
+// ---------------------------------------------------------------------------
+
+server.registerTool(
+  'lint_skill',
+  {
+    title: 'Lint Skill',
+    description:
+      'Validate a SKILL.md file for structural correctness. ' +
+      'Checks for required frontmatter fields (name, description) and recommended frontmatter fields ' +
+      '(domain, confidence, source), required sections (Context, Patterns), empty sections, ' +
+      'valid confidence values, and well-formed tool declarations. ' +
+      'Returns structured lint results with severity, rule ID, and suggested fixes. ' +
+      'Use this when authoring or reviewing skill files.',
+    inputSchema: {
+      skill_path: z
+        .string()
+        .describe(
+          'Path to the SKILL.md file, or a directory containing one. ' +
+          'Absolute or relative to the current working directory.',
+        ),
+    },
+    annotations: {
+      readOnlyHint: true,
+    },
+  },
+  async ({ skill_path }: { skill_path: string }) => {
+    try {
+      let filePath = skill_path;
+
+      // Resolve relative paths
+      if (!path.isAbsolute(filePath)) {
+        filePath = path.resolve(filePath);
+      }
+
+      // If path is a directory, look for SKILL.md inside it
+      try {
+        const stat = fs.statSync(filePath);
+        if (stat.isDirectory()) {
+          filePath = path.join(filePath, 'SKILL.md');
+        }
+      } catch {
+        // stat failed — let the readFile below produce the error
+      }
+
+      // Restrict to SKILL.md files to avoid probing arbitrary paths
+      const basename = path.basename(filePath);
+      if (basename !== 'SKILL.md') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ error: `Expected a SKILL.md file, got "${basename}"` }),
+          }],
+          isError: true,
+        };
+      }
+
+      // Guard against oversized files (1 MB limit) before reading
+      try {
+        const fileSize = fs.statSync(filePath).size;
+        if (fileSize > 1_000_000) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify({ error: `File too large: ${filePath} (${fileSize} bytes)` }),
+            }],
+            isError: true,
+          };
+        }
+      } catch {
+        // stat failed — let readFile produce the error
+      }
+
+      // Read the file
+      let content: string;
+      try {
+        content = fs.readFileSync(filePath, 'utf8');
+      } catch {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ error: `Cannot read file: ${filePath}` }),
+          }],
+          isError: true,
+        };
+      }
+
+      // Parse and lint
+      const parsed = parseSkill(content);
+      const results = lintSkill(parsed);
+      const summary = formatLintSummary(results);
+
+      // Log a skill_lint event if a session is active
+      try {
+        ensureDb();
+        const repoKey = process.env.CAIRN_REPO_KEY;
+        const session = repoKey
+          ? getActiveSession(repoKey)
+          : getMostRecentActiveSession();
+        if (session) {
+          logEvent(session.id, 'skill_lint', {
+            path: filePath,
+            skillName: parsed.name,
+            errors: results.filter((r) => r.severity === 'error').length,
+            warnings: results.filter((r) => r.severity === 'warning').length,
+          });
+        }
+      } catch {
+        // Fail-open — event logging must not break the tool
+      }
+
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            path: filePath,
+            skill_name: parsed.name,
+            results: results.map((r) => ({
+              rule: r.rule,
+              severity: r.severity,
+              message: r.message,
+              line: r.line ?? null,
+              fix: r.fix ?? null,
+            })),
+            summary,
+          }, null, 2),
+        }],
       };
     } catch (err: unknown) {
       return {
