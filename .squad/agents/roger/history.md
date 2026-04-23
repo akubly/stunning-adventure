@@ -378,3 +378,15 @@ ode dist/mcp/server.js\)
 - **Wired exports** in `src/index.ts` — `validateSkill`, `formatValidationSummary`, `loadTestScenario`, `runTestScenario`, `formatTestReport`, `insertTestResult/s`, `getTestResults`, `getTestHistory`, `getLatestTestRun` + type exports for `QualityVector`, `ValidationResult`, `ValidatorRule`, `TestScenario`, `TestAssertion`, `TestReport`, `SkillTestResultInsert`, `SkillTestResultRow`.
 - **6 new tests** in `src/__tests__/mcp.test.ts` covering default validation, summary formatting, quality issue detection, DB persistence, event logging, and 5-vector coverage.
 - **Test count:** 421 → 427 (6 new tests for Phase 8D final). Build clean, lint clean (only pre-existing `lenientReport` unused-var in skillTestHarness.test.ts).
+
+### 2026-04-07: Copilot SDK Deep Dive (Spike)
+
+- **`@github/copilot-sdk` v0.2.2 is real and installable.** 52 versions published, MIT, 483KB unpacked. Dependencies: `@github/copilot` (bundled CLI), `vscode-jsonrpc`, `zod`. Technical Preview but rapid iteration (~weekly releases).
+- **86 event types in the generated type definitions.** The `session-events.d.ts` file is 105KB of discriminated union types. Every event has `id` (UUID), `timestamp` (ISO 8601), `parentId` (linked chain), `type`, and typed `data`.
+- **`assistant.usage` is richer than expected.** Beyond model/tokens/cache, it includes: `cost` (billing multiplier), `duration`/`ttftMs`/`interTokenLatencyMs` (latency), `quotaSnapshots` (entitlement tracking), `copilotUsage.totalNanoAiu` (actual billing cost in nano AI Units), `initiator` and `parentToolCallId` (sub-agent attribution).
+- **6 hooks are bi-directional.** `onPreToolUse` can modify args AND change permission decisions (`allow`/`deny`/`ask`). `onPostToolUse` can modify results. `onErrorOccurred` can choose `retry`/`skip`/`abort`. This is strictly more powerful than Cairn's current observe-only stdin hooks.
+- **Event bridge to Cairn is ~20 LOC for the core, ~50 with error handling.** `session.on((event) => logEvent(sessionId, EVENT_MAP[event.type], JSON.stringify(event.data)))` — that's literally the pattern. The SDK's event shape maps cleanly to Cairn's `event_log(event_type, payload, session_id)`.
+- **Session management is comprehensive.** `createSession`/`resumeSession`, custom session IDs, model selection mid-session via `setModel()`, MCP server config, custom agents, skill directories, infinite sessions with auto-compaction.
+- **BYOK works without GitHub auth.** Can use OpenAI/Azure/Anthropic keys directly via `provider` config. Good for testing without Copilot subscription.
+- **OpenTelemetry is built in.** OTLP HTTP export, file-based JSONL export, W3C trace context propagation. Free observability without custom instrumentation.
+- **Full findings written to `docs/spikes/copilot-sdk-exploration.md`.**
