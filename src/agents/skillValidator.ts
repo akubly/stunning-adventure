@@ -92,7 +92,7 @@ const noHedgeWords: ValidatorRule = {
       };
     }
 
-    const words = patterns.toLowerCase().split(/\s+/);
+    const words = patterns.toLowerCase().split(/\s+/).map(w => w.replace(/[^a-z]/g, '')).filter(Boolean);
     const totalWords = words.length;
     if (totalWords === 0) {
       return {

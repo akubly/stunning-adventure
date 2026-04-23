@@ -18,7 +18,7 @@ export const migration009: Migration = {
         message TEXT,
         evidence TEXT,
         session_id TEXT REFERENCES sessions(id),
-        run_at TEXT NOT NULL DEFAULT (datetime('now'))
+        run_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
       );
 
       CREATE INDEX idx_skill_test_results_path ON skill_test_results(skill_path);

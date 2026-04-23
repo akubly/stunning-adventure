@@ -57,9 +57,10 @@ export function insertTestResult(result: SkillTestResultInsert): number {
   const db = getDb();
   const stmt = db.prepare(
     `INSERT INTO skill_test_results
-       (skill_path, skill_name, scenario_name, vector, tier, rule, score, passed, message, evidence, session_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (skill_path, skill_name, scenario_name, vector, tier, rule, score, passed, message, evidence, session_id, run_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
+  const runAt = new Date().toISOString();
   const res = stmt.run(
     result.skillPath,
     result.skillName ?? null,
@@ -72,6 +73,7 @@ export function insertTestResult(result: SkillTestResultInsert): number {
     result.message ?? null,
     result.evidence ? JSON.stringify(result.evidence) : null,
     result.sessionId ?? null,
+    runAt,
   );
   return Number(res.lastInsertRowid);
 }

@@ -156,8 +156,17 @@ export function runTestScenario(scenario: TestScenario): TestReport {
   for (const assertion of scenario.assertions) {
     const result = resultByRule.get(assertion.rule);
     if (!result) {
-      // Rule not found in results — assertion fails
+      // Rule not found in results — push synthetic failure so it appears in report
       allPassed = false;
+      reportResults.push({
+        rule: assertion.rule,
+        vector: assertion.vector,
+        score: 0,
+        tier: 1,
+        passed: false,
+        message: `Assertion references rule "${assertion.rule}" but no validation result was produced`,
+        evidence: [],
+      });
       continue;
     }
 
