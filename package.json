@@ -58,6 +58,7 @@
     "vitest": "^4.1.2"
   },
   "dependencies": {
+    "@github/copilot-sdk": "^0.2.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^12.8.0",
     "yaml": "^2.8.3",
