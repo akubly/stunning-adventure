@@ -4010,3 +4010,62 @@ Three complementary proposals from different angles:
 **Converging Insight:** Scope decision is emerging — Cairn stays observability-focused. Execution (Forge) becomes a sibling. Human-in-loop ceremony (Shiproom) is the governance layer.
 
 **Session Log:** `.squad/log/2026-04-23T06-30-00Z-brainstorm-round2.md`
+
+---
+
+### 2026-04-23T20-13-00: Architectural Concept — Workflow Portability via Forge as Compiler
+
+**Author:** Graham Knight (Lead/Architect) — from Day 1-2 spawn session  
+**Type:** Architecture  
+**Status:** Proposed
+
+**What:** Position Forge as a **workflow compiler**, not just an artifact package tool. Compile certified workflows (SKILL.md + verified metadata → DBOM) into portable, deployable artifacts that can be exported to corporate/EMU environments. Trust model: Decision Bill of Materials (DBOM) — companion document to SKILL.md that lists all architectural decisions, dependencies, and assumptions. Export pipeline: Extract (audit trail) → Strip (remove env-specific bindings) → Attach (environment config layer) → Validate (Copilot SDK LLM-as-judge on 5 correctness vectors).
+
+**Alternatives Considered:**
+1. **Ad-hoc export scripts** — Low automation, high brittleness, decisions not portable
+2. **Generic artifact bundler without DBOM** — Lose auditability, trust breaks in corporate environments
+3. **Compiler-only (no export layer)** — Local validation, no corporate deployment path
+
+**Selected:** Forge as compiler with DBOM export pipeline.
+
+**Rationale:** Brings portability to the platform architecture (R5 dual-environments requirement). Corporate environments need auditability and explicit decision tracking. DBOM makes architectural assumptions explicit and portable. Compiler pattern is proven (language compilers, Docker, infrastructure-as-code). LLM-as-judge validates that exported artifact preserves intent across environment boundaries.
+
+**Impact:**
+- Extends R5 architecture (sidecar + dual environments) with portable export semantics
+- Drives DBOM schema design and Decision Record enrichment
+- Enables corporate/EMU deployment pipelines
+- Informs Forge implementation phases (compiler before full bundler)
+
+---
+
+### 2026-04-23T20-13-00: Architectural Concept — PGO Telemetry Loop via Continuous Profile-Guided Optimization
+
+**Author:** Graham Knight (Lead/Architect) — from Day 1-2 spawn session  
+**Type:** Architecture  
+**Status:** Proposed
+
+**What:** Deployed artifacts (workflows, agents, skills) emit telemetry to Application Insights (aggregate signals only, no PII). Telemetry feeds back to Cairn as a continuous optimization input. Cairn's Prescriber learns from production patterns: which decisions work, which workflows get abandoned, which patterns emerge at scale. Creates a closed loop: Deploy → Emit → Ingest → Profile → Prescribe. Cairn becomes "profile-guided optimization" for workflows — same pattern as compiler PGO (profile → recompile → redeploy for speed gains). Here: profile → prescribe → rearchitect for correctness and user fit.
+
+**Telemetry Signal Categories** (PII-free):
+- Workflow abandonment points (which phase fails most often)
+- Decision reversal rates (prescriptions accepted/rejected ratios per decision type)
+- Artifact topology changes (when teams refactor their DBOM)
+- Environment-specific success variance (same workflow, different performance in corporate vs. personal)
+
+**Alternatives Considered:**
+1. **Ad-hoc query layer to Application Insights** — One-off insights, no systematic feedback
+2. **Cairn runs offline** — No production signal, prescriptions based on local patterns only
+3. **Full telemetry sink in Cairn (centralized)** — Tight coupling to Application Insights, hard to swap backends
+
+**Selected:** Pluggable telemetry sink + input adapter in Cairn, with Application Insights as reference implementation (V1).
+
+**Rationale:** Completes the feedback loop for platform-scale learning. Addresses Gap 3 from R5 (SDK capability audit revealed no telemetry standard). Matches organizational thinking (profiling as optimization driver). Pluggable sink keeps Cairn decoupled from specific observability backends. PGO metaphor is intuitive for engineers (familiar from compiler/CPU optimization). Profile-guided optimization is proven in system design (Linux perf, Go runtime, MLIR).
+
+**Impact:**
+- Reshapes Cairn from single-session learner to multi-session/multi-environment learner
+- Drives telemetry schema design (events → Application Insights → Cairn feedback)
+- Requires Application Insights adapter (new component) and pluggable sink interface
+- Informs Prescriber priority scoring (production signals weight decision recommendations)
+- Enables corporate environments to run "dark telemetry" (insights for internal feedback, no external reporting)
+
+---

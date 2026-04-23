@@ -80,6 +80,17 @@
 - **Proactive hint counter is per-session, not per-process:** Track `proactiveHintSessionGeneration` alongside the counter, reset when `getSessionsSinceInstall()` changes. Avoids stale counter in long-lived MCP servers.
 - **N+1 batch pattern:** Added `getInsightsByIds()` to insights DAL — collects unique IDs, one `WHERE id IN (...)` query, map results in-memory. Standard batch-fetch pattern for DAL.
 - **ordinal() edge cases:** 11/12/13 are 'th' (not 'st/nd/rd'). Must check `% 100` before `% 10`.
+
+### 2026-04-08: Copilot SDK Spike — Day 1 (Hands-On Verification)
+
+- **Circuit breaker PASSED:** `CopilotClient` and `CopilotSession` are real exports. `createSession()`, `resumeSession()`, `listSessions()`, `sendAndWait()` all exist with full type definitions. Session management API is exactly as documented.
+- **86 event types, auto-generated from JSON schema:** Events are generated from `session-events.schema.json`, not hand-written. This suggests schema stability across versions. All 86 types from pre-spike research confirmed.
+- **Zero dependency conflicts:** SDK's `zod ^4.3.6` matches Cairn's. `vscode-jsonrpc` and `@github/copilot` are new but non-conflicting. Build passes, all 427 tests pass.
+- **Event bridge is ~120 LOC with extractors:** Core mapping is ~20 LOC (confirming pre-spike estimate), but payload extractors for selective field extraction add ~100 LOC. 22 of 86 events map to Cairn-relevant signals.
+- **`defineTool` uses same Zod pattern as Cairn MCP tools:** Zero learning curve for tool definition — same `z.object()` schema approach.
+- **Hooks are bi-directional:** SDK hooks can modify behavior (permission decisions, tool args), not just observe. More powerful than Cairn's stdin hooks.
+- **Pin SDK version exactly for production:** `^0.2.2` allows patch upgrades; given 52 versions in 3 months, exact pinning (`0.2.2`) is safer.
+- **`ERR_PACKAGE_PATH_NOT_EXPORTED` on package.json import:** SDK uses Node.js `exports` field restriction. Minor, doesn't affect functionality.
 - **SQL parameterization:** Never interpolate user-supplied values (including LIMIT) directly into SQL strings. Always use bound parameters.
 - **shouldResurface off-by-one:** The `+1` compensation hack broke when prescribe() was called from MCP `run_curate` (no session increment). Fix: remove the hack, reorder sessionStart to increment counter BEFORE calling prescribe().
 - **MVP simplification docs:** When hardcoding values intentionally, document WHY in the code so future readers don't assume it's a bug.
