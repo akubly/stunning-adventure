@@ -95,6 +95,21 @@
 - **shouldResurface off-by-one:** The `+1` compensation hack broke when prescribe() was called from MCP `run_curate` (no session increment). Fix: remove the hack, reorder sessionStart to increment counter BEFORE calling prescribe().
 - **MVP simplification docs:** When hardcoding values intentionally, document WHY in the code so future readers don't assume it's a bug.
 
+### 2026-04-08: Copilot SDK Spike — Day 2 (Tool Hooks, Decision Gates, Model Selection)
+
+- **Tool hooks are first-class and bidirectional.** `onPreToolUse` receives `toolName`, `toolArgs`, `timestamp`, `cwd`. Can return `permissionDecision: "allow"|"deny"|"ask"`, `modifiedArgs`, `additionalContext`. `onPostToolUse` receives `toolResult` and can return `modifiedResult`. Hooks are async, support Promises.
+- **`permissionDecision: "deny"` blocks tool execution natively.** No need to wrap tools — the hook system has a built-in gate mechanism. Returning `"ask"` defers to the `onPermissionRequest` handler, which receives rich context (command text, diffs, file paths).
+- **Three complementary decision gate mechanisms:** (1) Hook blocking (`"deny"`), (2) Hook → permission handler (`"ask"`), (3) Elicitation forms (`session.ui.confirm()`). Each serves different granularity needs. The permission handler is the most powerful — it gets richer context than any custom wrapper could provide.
+- **`PermissionRequestResult` uses kind-based union, not boolean.** `{ kind: "approved" }`, `{ kind: "denied-interactively-by-user" }`, `{ kind: "denied-by-rules", rules }`, etc. Richer than expected — gives decision audit trail for free.
+- **`registerHooks()` replaces, doesn't append.** Multiple hook observers need a composition pattern. Built a `composeHooks()` combiner — last-writer-wins for outputs, all observers get called in order.
+- **Internal hook types not re-exported from SDK index.** `SessionHooks`, `PreToolUseHookInput`, `PostToolUseHookOutput`, `ReasoningEffort` are in `types.d.ts` but not in `index.d.ts`. Workaround: `NonNullable<SessionConfig["hooks"]>` or mirror locally. Minor ergonomic issue.
+- **`ElicitationRequest` renamed to `ElicitationContext` in public SDK.** The bundled CLI internal copy uses the old name. Always import from `@github/copilot-sdk`, never from `@github/copilot/copilot-sdk`.
+- **Two copies of SDK types in node_modules.** `@github/copilot-sdk` (public) and `@github/copilot/copilot-sdk` (bundled CLI internal). Different export surfaces. Must always use the public package.
+- **`session.setModel()` is async and fires `session.model_change` event.** Event includes `previousModel`, `newModel`, `previousReasoningEffort`, `reasoningEffort`. Conversation history preserved across switches.
+- **`client.listModels()` returns rich `ModelInfo[]`.** Context window, vision/reasoning support, billing multiplier, policy state, supported reasoning efforts. Enough data for intelligent model routing strategies.
+- **No runtime token budget setter.** Limits are per-model via `ModelCapabilities.limits`. Budget enforcement must be application-level: accumulate `assistant.usage` events, switch models or stop when limit reached.
+- **Provenance tagging is ~20 LOC.** Static classification of event types into `"internal"` vs `"certification"` tiers. DBOM reconstruction is a filter-and-collect over certification events. Zero runtime overhead.
+
 ### 2026-03-28: Copilot SDK & Platform Extensibility Recon
 
 - **Three SDK layers exist:** (1) `@github/copilot-sdk` — embed the full Copilot agentic engine in any app via JSON-RPC to CLI server mode (TS, Python, Go, .NET, Java). Technical Preview. (2) `@copilot-extensions/preview-sdk` — build Copilot Chat extensions as GitHub Apps with SSE response streaming. Alpha but semver-safe. (3) `@github/copilot-engine-sdk` — build custom engines for the coding agent platform with platform events, git ops, and MCP. Very early.

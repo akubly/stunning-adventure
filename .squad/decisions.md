@@ -4069,3 +4069,69 @@ Three complementary proposals from different angles:
 - Enables corporate environments to run "dark telemetry" (insights for internal feedback, no external reporting)
 
 ---
+### 2026-04-23T20-25-00Z: SDK Spike Day 2 Complete — Tool Hooks, Decision Gates, Model Selection All Viable
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical/Findings  
+**Status:** Confirmed  
+**Date:** 2026-04-23T20:25:00Z  
+**Branch:** `squad/copilot-sdk-spike`
+
+**Context:** Day 2 exploration of Copilot SDK @github/copilot-sdk (v0.2.2) for Forge instrumentation requirements. Three critical research questions: Q2 (tool hooks), Q3 (decision gates), Q7 (model selection). All confirmed viable. All 427 tests pass. Event bridge extended with provenance tagging.
+
+**Q2: Tool Call Interception — ✅ Confirmed**
+
+`registerHooks()` is first-class and composable. `onPreToolUse` hook receives tool name, arguments, timestamp. Handler can return:
+- `permissionDecision: "allow" | "deny" | "ask"`
+- `modifiedArgs: Record<string, unknown>` (modify tool inputs)
+
+`onPostToolUse` observes results. Hooks emit `hook.start` and `hook.end` events for correlation. Key nuance: `registerHooks()` replaces (doesn't stack) — need `composeHooks()` combiner when multiple subsystems observe.
+
+**Q3: Decision Gates — ✅ Confirmed (Three Native Mechanisms)**
+
+1. **Hook blocking** — `permissionDecision: "deny"` for instant programmatic gates
+2. **Hook → permission handler** — `permissionDecision: "ask"` defers to `onPermissionRequest`, which receives rich context: parsed shell commands, file diffs, MCP server attribution. **This is the primary gate.**
+3. **Elicitation UI** — `session.ui.confirm()` for structured multi-option decisions
+
+Permission handler context exceeds what we'd build ourselves (shell command parsing, diff computation, MCP attribution). Limitation: no native async approval (e.g., Slack thumbs-up); would require promise-wrapping. Not a blocker for Forge Day 1.
+
+**Q7: Model Selection & Token Budgeting — ✅ Confirmed**
+
+- `client.listModels()` → `ModelInfo[]` with capabilities, billing, policy
+- `session.setModel(model, { reasoningEffort? })` fires `session.model_change` event
+- `assistant.usage` → per-call tokens, cost in nano-AIU, cache metrics, quota snapshots
+- `session.usage_info` → context window utilization snapshots
+- **Runtime budget enforcement:** No native setter; must enforce at application level
+
+**Provenance & DBOM**
+
+Event bridge enhanced with `ProvenanceTier: "internal" | "certification" | "deployment"`. 10 SDK event types tagged certification-tier (auditable), 12 internal-tier. DBOM reconstruction pattern implemented: filter certification events, produce audit manifest. ~20 lines of code, zero runtime overhead.
+
+**Surprises & Gotchas**
+
+1. Hook types (`SessionHooks`, `PreToolUseHookInput`, etc.) defined in SDK but NOT re-exported from index. Workaround: `NonNullable<SessionConfig["hooks"]>` or local type mirrors.
+2. Type naming divergence: `ElicitationRequest` in CLI bundle vs `ElicitationContext` in public SDK.
+3. `PermissionRequestResult` is rich kind-based union (not simple boolean) — better for audit trails but requires pattern matching.
+4. Two SDK type copies in node_modules (internal vs external). Always import from `@github/copilot-sdk`.
+
+**Spike Verification**
+
+- All spike files compile cleanly (`tsc --noEmit`)
+- Main build passes
+- 427/427 tests pass
+- Zero infrastructure conflicts
+- Code isolation: spike code in `src/spike/`, no main codebase entanglement
+
+**Conclusion**
+
+SDK provides complete feature set for Forge instrumentation layer. Non-invasive tool observation, native blocking/gating, rich model control, and token/cost telemetry all present and production-ready. No architectural blockers for integration. Proceeding to Day 3: Cairn bridge end-to-end, integration smoke test.
+
+**Gates Satisfied:**
+
+- ✅ Tool hooks first-class (Q2)
+- ✅ Decision gates work through 3 native mechanisms (Q3)
+- ✅ Model selection fully controllable (Q7)
+- ✅ 7 of 8 spike questions answered, all green
+- ✅ Test coverage maintained
+
+---

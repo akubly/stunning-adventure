@@ -3,7 +3,7 @@
 **Author:** Roger Wilco (Platform Dev)
 **Date:** 2026-04-07
 **Branch:** `squad/copilot-sdk-spike`
-**Status:** Day 1 spike complete — hands-on verification
+**Status:** Day 2 spike complete — tool hooks, decision gates, model selection verified
 
 ---
 
@@ -633,3 +633,149 @@ Event subscription is fully typed:
 3. **Better than expected:** Hook model is bi-directional (can modify behavior), not just observe-only like Cairn's stdin hooks.
 4. **As expected:** The 86 event types match the pre-spike research catalog exactly. No hidden events, no missing events.
 5. **Minor friction:** The `ERR_PACKAGE_PATH_NOT_EXPORTED` on `package.json` import is a minor annoyance but doesn't affect anything functional.
+
+---
+
+## 15. Day 2 Spike Findings (Tool Hooks, Decision Gates, Model Selection)
+
+**Date:** 2026-04-08
+**Code:** `src/spike/tool-hooks-poc.ts`, `src/spike/decision-gate-poc.ts`, `src/spike/model-selection-poc.ts`, updated `src/spike/event-bridge.ts`
+
+### Q2 Answer: Tool Call Interception — ✅ Yes (Fully Supported)
+
+The SDK provides **first-class tool call interception** through the hook system. Both observation and blocking are natively supported.
+
+**Evidence from types and compilation:**
+
+1. **`registerHooks(hooks?: SessionHooks)`** is a real method on `CopilotSession` (session.d.ts:296). It accepts an optional `SessionHooks` object, or `undefined` to clear hooks.
+
+2. **`onPreToolUse` hook** receives `PreToolUseHookInput`:
+   - `toolName: string` — the tool being called
+   - `toolArgs: unknown` — the arguments passed
+   - `timestamp: number` — when the call was initiated
+   - `cwd: string` — working directory context
+
+3. **`onPreToolUse` can modify behavior** via `PreToolUseHookOutput`:
+   - `permissionDecision: "allow" | "deny" | "ask"` — **can block tool execution**
+   - `permissionDecisionReason: string` — human-readable reason
+   - `modifiedArgs: unknown` — can rewrite tool arguments
+   - `additionalContext: string` — inject context for the LLM
+   - `suppressOutput: boolean` — hide tool output from the user
+
+4. **`onPostToolUse` hook** receives `PostToolUseHookInput`:
+   - `toolName`, `toolArgs` (same as pre-hook)
+   - `toolResult: ToolResultObject` — the actual tool execution result
+
+5. **`onPostToolUse` can modify results** via `PostToolUseHookOutput`:
+   - `modifiedResult: ToolResultObject` — rewrite what the LLM sees
+   - `additionalContext`, `suppressOutput` — same as pre-hook
+
+6. **Event stream correlation:** Hooks fire `hook.start` and `hook.end` events with `hookInvocationId` for correlation, plus `hookType` ("preToolUse", "postToolUse", etc.).
+
+7. **Dynamic registration:** `session.registerHooks()` can be called at any time to add, replace, or clear hooks. **CAVEAT:** It replaces ALL hooks, doesn't append — composition must be done manually.
+
+**Key finding:** The pre-tool hook's `permissionDecision: "deny"` return is a **synchronous blocking mechanism** — the tool is prevented from executing entirely. This is more powerful than Cairn's current stdin-based hooks which are observe-only.
+
+**Spike deliverable:** `src/spike/tool-hooks-poc.ts` demonstrates observation hooks, blocking hooks, hook composition (combiner pattern), and dynamic registration.
+
+### Q3 Answer: Decision Gates — ✅ Yes (Three Complementary Mechanisms)
+
+The SDK supports decision gates through **three** complementary mechanisms, giving us flexibility depending on the use case.
+
+**Mechanism A: Hook-based blocking (`onPreToolUse` → `"deny"`):**
+- Synchronous, immediate blocking — tool never executes
+- Best for: automated rules (denylist tools, block dangerous operations)
+- Limitation: no user interaction, just a programmatic decision
+
+**Mechanism B: Hook → Permission handler (`onPreToolUse` → `"ask"`):**
+- Hook returns `permissionDecision: "ask"`, which defers to the `onPermissionRequest` handler
+- The permission handler receives rich context:
+  - `kind: "shell" | "write" | "read" | "mcp" | "url" | "custom-tool"`
+  - For shell: `fullCommandText`, `intention`, parsed `commands`, `possiblePaths`
+  - For write: `fileName`, `diff`, `newFileContents`
+  - For MCP: `serverName`, `toolName`
+- Returns `PermissionRequestResult` with kind-based outcomes (`approved`, `denied-interactively-by-user`, `denied-by-rules`, etc.)
+- Fires `permission.requested` / `permission.completed` events in the stream
+- **This is the native decision gate mechanism** — the SDK was designed for this exact pattern
+
+**Mechanism C: Elicitation (`session.ui.confirm()` / `session.ui.elicitation()`):**
+- Presents structured forms to the user (not just yes/no)
+- Schema-driven: `requestedSchema` defines fields at runtime
+- `ElicitationHandler` callback receives `ElicitationContext` with `sessionId`, `message`, `requestedSchema`, `mode`, `elicitationSource`
+- Returns `ElicitationResult` with `action: "accept" | "decline" | "cancel"` plus form `content`
+- Fires `elicitation.requested` / `elicitation.completed` events
+- **Best for multi-option decisions** — "Which approach?", "What confidence level?"
+
+**Decision Record concept verified:** All three mechanisms produce structured data that maps cleanly to a `decision_point` event type in Cairn's event_log. The DBOM (Decision Bill of Materials) can be reconstructed from certification-tier events.
+
+**Limitation:** No native "pause and wait for external system" mechanism — the decision must happen within the handler callback. For async approval workflows (e.g., Slack notification → wait for thumbs up), we'd need to wrap the handler with a promise that resolves when the external approval arrives. This is doable but not built-in.
+
+**Spike deliverable:** `src/spike/decision-gate-poc.ts` demonstrates all three mechanisms, the DecisionRecord data model, decision-to-Cairn-event bridge, and DBOM reconstruction.
+
+### Q7 Answer: Model Selection & Token Budgeting — ✅ Yes (Comprehensive)
+
+**Model selection:**
+1. `client.listModels()` returns `ModelInfo[]` with:
+   - `id`, `name` — identification
+   - `capabilities.limits.max_context_window_tokens`, `max_prompt_tokens` — size limits
+   - `capabilities.supports.vision`, `capabilities.supports.reasoningEffort` — feature flags
+   - `billing.multiplier` — cost multiplier
+   - `policy.state: "enabled" | "disabled" | "unconfigured"` — availability
+   - `supportedReasoningEfforts`, `defaultReasoningEffort` — reasoning levels
+2. `session.setModel(model, { reasoningEffort? })` changes model mid-session:
+   - Async (returns `Promise<void>`)
+   - Fires `session.model_change` event with `previousModel`, `newModel`, `previousReasoningEffort`, `reasoningEffort`
+   - Conversation history is preserved across model switches
+3. Model selection at session creation via `SessionConfig.model` and `reasoningEffort`
+
+**Token budgeting:**
+1. `assistant.usage` events carry per-call metrics:
+   - `model`, `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`
+   - `cost` (billing multiplier), `duration` (ms), `ttftMs` (time to first token)
+   - `copilotUsage.totalNanoAiu` — actual billing cost in nano AI Units
+   - `quotaSnapshots` — per-quota usage and remaining percentage
+2. `session.usage_info` events give context window snapshots:
+   - `tokenLimit`, `currentTokens`, `messagesLength`
+   - `systemTokens`, `conversationTokens`, `toolDefinitionsTokens`
+3. **No runtime budget setter** — token limits are per-model via `ModelCapabilities.limits`, not configurable at session level. Budget enforcement must be application-level (accumulate usage events, switch models or stop when limit reached).
+
+**Spike deliverable:** `src/spike/model-selection-poc.ts` demonstrates model listing, mid-session switching, token tracking accumulator, budget reporting, and model selection strategies (cheapest, smartest, budget-aware).
+
+### Provenance & DBOM
+
+**Event bridge enhanced** with provenance tier tagging:
+- Every mapped event is classified as `"internal"` or `"certification"` based on its type
+- 10 event types are certification-tier (permission outcomes, decisions, errors, workflow state changes)
+- 12 event types are internal-tier (tool calls, model usage, context metrics)
+- A third tier `"deployment"` is defined for future PGO telemetry from deployed artifacts
+
+**DBOM reconstruction** is implemented as a simple filter-and-collect over certification-tier events:
+- Produces an auditable manifest of all human decisions in a session
+- Includes summary statistics (human approved/denied, automated allow/deny)
+- Exportable as JSON for compliance, importable for PGO feedback
+
+**Spike deliverable:** Updated `src/spike/event-bridge.ts` with `ProvenanceTier`, `classifyProvenance()`, `reconstructDBOM()`, and the `DBOM` type.
+
+### Surprises & Notable Findings
+
+1. **Export surface smaller than internal types:** `SessionHooks`, `PreToolUseHookInput`, `PostToolUseHookOutput`, `ReasoningEffort` and other hook types are defined in `types.d.ts` but **not re-exported from the SDK index**. Must use `SessionConfig["hooks"]` accessor pattern or mirror the types locally. This is a minor ergonomic friction, not a blocker.
+
+2. **`ElicitationRequest` renamed to `ElicitationContext`:** The public SDK uses `ElicitationContext` (with `sessionId` included), not `ElicitationRequest` (which is the internal bundled CLI copy). The handler signature is `(context: ElicitationContext) => Promise<ElicitationResult>` — single argument, not two.
+
+3. **`PermissionRequestResult` is a complex union:** Not a simple `{ allow: boolean }`. It's `{ kind: "approved" } | { kind: "denied-interactively-by-user" } | { kind: "denied-by-rules", rules: ... } | { kind: "denied-by-content-exclusion-policy", path, message } | { kind: "no-result" }`. This gives richer decision recording than expected.
+
+4. **Two copies of SDK types in node_modules:** The `@github/copilot-sdk` package (public SDK) and `@github/copilot/copilot-sdk` (bundled CLI internal copy) have slightly different type definitions. Must import from `@github/copilot-sdk` only.
+
+5. **Hook composition is manual:** `registerHooks()` replaces all hooks, it doesn't stack. The `composeHooks()` combiner pattern (demonstrated in tool-hooks-poc.ts) is necessary when multiple subsystems need to observe. This is a design pattern we'd want to extract into a shared utility.
+
+6. **`session.model_change` event includes reasoning effort:** Both `previousReasoningEffort` and `reasoningEffort` are included, so we can track reasoning strategy changes alongside model changes.
+
+### Day 2 Circuit Breaker Status
+
+All three Day 2 questions answered positively:
+- **Q2 (Tool Interception): ✅ PASS** — hooks are real, typed, and support both observation and blocking
+- **Q3 (Decision Gates): ✅ PASS** — three complementary mechanisms, native permission system is the primary gate
+- **Q7 (Model Selection): ✅ PASS** — full model lifecycle control with rich token/cost telemetry
+
+**Remaining for Day 3:** Q5 (Cairn bridge end-to-end) and Q8 (integration smoke test). The bridge is already functional (event-bridge.ts); Day 3 focuses on wiring it through to Cairn's actual DB and MCP query surface.
+

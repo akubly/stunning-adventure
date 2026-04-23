@@ -17,11 +17,57 @@ import type {
 // Cairn event_log schema (mirrored from src/db.ts for reference)
 // ---------------------------------------------------------------------------
 
+/**
+ * Provenance tiers tag events by their evidentiary weight:
+ *   - 'internal': Mechanical events (tool calls, model switches, streaming).
+ *                 Useful for debugging and analytics, but not decision-relevant.
+ *   - 'certification': Decision-relevant events (human approvals, tool blocks,
+ *                       quality gates, permission outcomes). These form the
+ *                       DBOM (Decision Bill of Materials) for a workflow run.
+ *   - 'deployment': Events from deployed artifacts (SKILL.md, hooks) running
+ *                   in corp/EMU environments. Used for PGO feedback via
+ *                   Application Insights telemetry.
+ */
+type ProvenanceTier = "internal" | "certification" | "deployment";
+
 interface CairnEvent {
   session_id: string;
   event_type: string;
   payload: string; // JSON string
   created_at: string; // ISO 8601
+  provenanceTier: ProvenanceTier;
+}
+
+// ---------------------------------------------------------------------------
+// Provenance tier classification
+// ---------------------------------------------------------------------------
+
+/**
+ * Classifies a Cairn event type by its provenance tier.
+ *
+ * Certification-tier events are those that record human decisions,
+ * permission outcomes, quality assessments, or workflow state changes.
+ * These form the DBOM — the auditable record of what a human approved.
+ *
+ * Internal-tier events are mechanical observations: tool calls, model
+ * usage, context window metrics. Useful for analytics but not auditable.
+ */
+const CERTIFICATION_EVENT_TYPES = new Set([
+  "permission_requested",
+  "permission_completed",
+  "decision_point",
+  "plan_changed",
+  "error",
+  "subagent_start",
+  "subagent_complete",
+  "subagent_failed",
+  "skill_invoked",
+  "snapshot_rewind",
+]);
+
+function classifyProvenance(cairnEventType: string): ProvenanceTier {
+  if (CERTIFICATION_EVENT_TYPES.has(cairnEventType)) return "certification";
+  return "internal";
 }
 
 // ---------------------------------------------------------------------------
@@ -147,12 +193,14 @@ function bridgeEvent(cairnSessionId: string, event: SessionEvent): CairnEvent | 
 
   const extractor = PAYLOAD_EXTRACTORS[event.type] ?? defaultExtractor;
   const payload = extractor(event);
+  const provenanceTier = classifyProvenance(cairnType);
 
   return {
     session_id: cairnSessionId,
     event_type: cairnType,
     payload: JSON.stringify(payload),
     created_at: event.timestamp,
+    provenanceTier,
   };
 }
 
@@ -196,6 +244,10 @@ function attachBridge(
  *   Transform needed: 5 — payload reshaping, ~10 LOC each
  *   New Cairn types:  8 — extend Cairn's vocabulary, no schema migration
  *
+ * PROVENANCE CLASSIFICATION:
+ *   Certification tier: 10 types — decision-relevant, DBOM-worthy
+ *   Internal tier:      12 types — mechanical observations
+ *
  * SKIPPED (64 types):
  *   Streaming deltas:      5 — ephemeral, high-frequency noise
  *   Content types:        15 — display-layer, not observability
@@ -205,11 +257,70 @@ function attachBridge(
  *   Other transient:       31 — various low-signal events
  *
  * VERDICT: 22/86 events mapped covers all Cairn-relevant signals.
- * The remaining 64 are display-layer or infrastructure events that
- * would add noise without insight. The bridge is ~120 LOC total
- * (map + extractors + wiring), confirming the ~50 LOC core estimate
- * from pre-spike research, with extractors adding modest overhead.
+ * Provenance tagging adds ~20 LOC with no runtime overhead (static classification).
+ * DBOM reconstruction from certification-tier events is O(n) filter + collect.
  */
+
+// ---------------------------------------------------------------------------
+// DBOM reconstruction from certification-tier events
+// ---------------------------------------------------------------------------
+
+/**
+ * Reconstructs a Decision Bill of Materials from collected CairnEvents.
+ * Filters to certification-tier events only, producing an auditable record
+ * of all decision-relevant actions in a session.
+ *
+ * A DBOM captures:
+ *   - What tools were gated (permission_requested)
+ *   - What decisions were made (permission_completed, decision_point)
+ *   - What workflow state changes occurred (plan_changed, snapshot_rewind)
+ *   - What errors surfaced (error)
+ *
+ * This is the portable artifact: exportable as JSON for compliance,
+ * importable into PGO for feedback loops.
+ */
+interface DBOMEntry {
+  eventType: string;
+  timestamp: string;
+  payload: Record<string, unknown>;
+}
+
+interface DBOM {
+  sessionId: string;
+  generatedAt: string;
+  certificationEvents: DBOMEntry[];
+  summary: {
+    totalEvents: number;
+    certificationEvents: number;
+    eventTypeCounts: Record<string, number>;
+  };
+}
+
+function reconstructDBOM(sessionId: string, events: CairnEvent[]): DBOM {
+  const certEvents = events.filter((e) => e.provenanceTier === "certification");
+
+  const entries: DBOMEntry[] = certEvents.map((e) => ({
+    eventType: e.event_type,
+    timestamp: e.created_at,
+    payload: JSON.parse(e.payload) as Record<string, unknown>,
+  }));
+
+  const typeCounts: Record<string, number> = {};
+  for (const e of certEvents) {
+    typeCounts[e.event_type] = (typeCounts[e.event_type] ?? 0) + 1;
+  }
+
+  return {
+    sessionId,
+    generatedAt: new Date().toISOString(),
+    certificationEvents: entries,
+    summary: {
+      totalEvents: events.length,
+      certificationEvents: certEvents.length,
+      eventTypeCounts: typeCounts,
+    },
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Exports
@@ -218,8 +329,14 @@ function attachBridge(
 export {
   bridgeEvent,
   attachBridge,
+  classifyProvenance,
+  reconstructDBOM,
   EVENT_MAP,
   PAYLOAD_EXTRACTORS,
+  CERTIFICATION_EVENT_TYPES,
   type CairnEvent,
+  type ProvenanceTier,
   type PayloadExtractor,
+  type DBOM,
+  type DBOMEntry,
 };
