@@ -1,12 +1,13 @@
 import { getDb } from './index.js';
+import type { QualityVector } from '../types/index.js';
 
 /** Shape for inserting a test result. */
 export interface SkillTestResultInsert {
   skillPath: string;
   skillName?: string;
   scenarioName?: string;
-  vector: string;
-  tier: number;
+  vector: QualityVector;
+  tier: 1 | 2 | 3;
   rule: string;
   score: number;
   passed: boolean;
@@ -45,7 +46,7 @@ function mapRow(row: Record<string, unknown>): SkillTestResultRow {
     score: row.score as number,
     passed: (row.passed as number) === 1,
     message: (row.message as string | null) ?? null,
-    evidence: raw ? (JSON.parse(raw) as string[]) : [],
+    evidence: raw ? (() => { try { return JSON.parse(raw) as string[]; } catch { return []; } })() : [],
     sessionId: (row.session_id as string | null) ?? null,
     runAt: row.run_at as string,
   };

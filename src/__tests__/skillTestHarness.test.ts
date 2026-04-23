@@ -158,6 +158,9 @@ describe('skillTestHarness', () => {
       };
       const strictReport = runTestScenario(strictScenario);
 
+      // Lenient thresholds should pass (or at least not fail worse than strict)
+      expect(lenientReport.passed || !strictReport.passed).toBe(true);
+
       // Strict thresholds should cause more failures
       expect(strictReport.passed).toBe(false);
     });

@@ -1134,7 +1134,11 @@ server.registerTool(
     inputSchema: {
       skill_path: z
         .string()
-        .describe('Path to a SKILL.md file or directory containing one'),
+        .optional()
+        .describe(
+          'Path to a SKILL.md file or directory containing one. ' +
+          'Optional when scenario_path is provided (scenario defines its own skill_path).',
+        ),
       scenario_path: z
         .string()
         .optional()
@@ -1147,7 +1151,7 @@ server.registerTool(
       readOnlyHint: false,
     },
   },
-  async ({ skill_path, scenario_path }: { skill_path: string; scenario_path?: string }) => {
+  async ({ skill_path, scenario_path }: { skill_path?: string; scenario_path?: string }) => {
     try {
       // If scenario_path is provided, use the test harness
       if (scenario_path) {
@@ -1162,7 +1166,8 @@ server.registerTool(
         const scenarioSkillResolved = resolveAndReadSkill(scenario.skillPath);
         if (isSkillFileError(scenarioSkillResolved)) return scenarioSkillResolved;
 
-        const report = runTestScenario(scenario);
+        // Use the resolved path so runTestScenario doesn't re-resolve differently
+        const report = runTestScenario({ ...scenario, skillPath: scenarioSkillResolved.filePath });
         const text = formatTestReport(report);
 
         // Persist results to DB if session exists
@@ -1205,7 +1210,17 @@ server.registerTool(
         };
       }
 
-      // No scenario — run default validation
+      // No scenario — skill_path is required
+      if (!skill_path) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ error: 'skill_path is required when scenario_path is not provided' }),
+          }],
+          isError: true,
+        };
+      }
+
       const resolved = resolveAndReadSkill(skill_path);
       if (isSkillFileError(resolved)) return resolved;
       const { filePath, content } = resolved;

@@ -695,16 +695,24 @@ const domainContentMatch: ValidatorRule = {
       };
     }
 
-    // Domain keyword and its common variants
-    const domainLower = domain.toLowerCase();
-    const domainTerms = [domainLower];
+    // Domain keyword and its common variants.
+    // Normalize hyphens/underscores to spaces so "error-handling" matches "error handling".
+    const domainNormalized = domain.toLowerCase().replace(/[-_]/g, ' ');
+    const domainTerms = [domainNormalized];
     // Add simple plural/gerund forms
-    if (!domainLower.endsWith('s')) domainTerms.push(domainLower + 's');
-    if (!domainLower.endsWith('ing')) domainTerms.push(domainLower.replace(/e$/, '') + 'ing');
+    if (!domainNormalized.endsWith('s')) domainTerms.push(domainNormalized + 's');
+    if (!domainNormalized.endsWith('ing')) domainTerms.push(domainNormalized.replace(/e$/, '') + 'ing');
 
-    const domainCount = words.filter((w) =>
-      domainTerms.some((dt) => w.includes(dt)),
-    ).length;
+    const domainCount = domainTerms.reduce((count, dt) => {
+      // Use substring matching on the full body text for multi-word domains
+      let idx = 0;
+      let matches = 0;
+      while ((idx = body.indexOf(dt, idx)) !== -1) {
+        matches++;
+        idx += dt.length;
+      }
+      return count + matches;
+    }, 0);
 
     // Heuristic: domain terms should appear at least twice
     const score = domainCount >= 2 ? 1.0 : domainCount >= 1 ? 0.7 : 0.0;
@@ -749,18 +757,31 @@ const scopeBounded: ValidatorRule = {
     }
 
     const body = getBodyText(skill).toLowerCase();
-    const words = body.split(/\s+/);
-    const domainLower = domain.toLowerCase();
+    // Normalize hyphens/underscores to spaces so "error-handling" matches "error handling"
+    const domainNormalized = domain.toLowerCase().replace(/[-_]/g, ' ');
 
-    // Count declared domain occurrences
-    const domainCount = words.filter((w) => w.includes(domainLower)).length;
+    // Count declared domain occurrences via substring matching on full body
+    const domainCount = (() => {
+      let idx = 0;
+      let matches = 0;
+      while ((idx = body.indexOf(domainNormalized, idx)) !== -1) {
+        matches++;
+        idx += domainNormalized.length;
+      }
+      return matches;
+    })();
 
     // Count other domain occurrences
-    const otherDomains = KNOWN_DOMAINS.filter((d) => d !== domainLower);
+    const otherDomains = KNOWN_DOMAINS.filter((d) => d !== domainNormalized);
     const domainCounts: Array<{ domain: string; count: number }> = [];
 
     for (const other of otherDomains) {
-      const count = words.filter((w) => w.includes(other)).length;
+      let idx = 0;
+      let count = 0;
+      while ((idx = body.indexOf(other, idx)) !== -1) {
+        count++;
+        idx += other.length;
+      }
       if (count > 0) {
         domainCounts.push({ domain: other, count });
       }

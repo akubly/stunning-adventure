@@ -146,7 +146,11 @@ export function runTestScenario(scenario: TestScenario): TestReport {
     resultByRule.set(r.rule, r);
   }
 
-  // Check each assertion against the matching validation result
+  // Check each assertion against the matching validation result.
+  // NOTE: assertion.section and assertion.params are parsed but intentionally
+  // unused in Tier 1. They are reserved for future Tier 2 scenario evaluation
+  // where assertions can target specific sections or pass rule-specific params.
+  // Currently all Tier 1 rules run against the full skill content.
   let allPassed = true;
   for (const assertion of scenario.assertions) {
     const result = resultByRule.get(assertion.rule);
