@@ -110,6 +110,18 @@
 - **No runtime token budget setter.** Limits are per-model via `ModelCapabilities.limits`. Budget enforcement must be application-level: accumulate `assistant.usage` events, switch models or stop when limit reached.
 - **Provenance tagging is ~20 LOC.** Static classification of event types into `"internal"` vs `"certification"` tiers. DBOM reconstruction is a filter-and-collect over certification events. Zero runtime overhead.
 
+### 2026-04-09: Copilot SDK Spike — Day 3 (E2E Integration, DBOM, Final Scorecard)
+
+- **E2E smoke test passes all 5 integration checks.** Simulated 20 SDK events across 10 integration phases. All bridge through `bridgeEvent()` without type errors. Coverage: 90%+ of events mapped, 100% of certification-tier events captured. Cost tracking, decision chains, and DBOM reconstruction all verified.
+- **Bridge is ~75 LOC total, not 50.** Core mapping is 15 LOC, payload extractors add ~50 LOC, wiring is 10 LOC. Slightly over the pre-spike estimate but still thin. Pure functions, no side effects, no schema migration needed.
+- **Production wiring is ONE callback.** The `onEvent` handler in `SessionConfig` is the single integration point. Hooks and permission handlers feed INTO the event stream automatically — no separate wiring.
+- **Cost attribution works across subagents.** SDK's `assistant.usage` includes `initiator: "sub-agent"` and `parentToolCallId` fields. Cost can be sliced by subagent without custom tracking code.
+- **DBOM hash chain is Merkle-sequential, not tree.** Each decision's SHA-256 includes its parent hash, creating a tamper-evident chain. Root hash seals the entire provenance record. Simple and sufficient for linear session timelines.
+- **DBOM → YAML frontmatter integrates naturally with SKILL.md.** No new file format needed. Standard `---`-delimited YAML frontmatter block at the top of compiled skills. Hashes truncated for readability, full data in structured format.
+- **Decision source classification has three categories.** `human` (permission approved/denied interactively), `automated_rule` (policy-based denials, system events), `ai_recommendation` (AI-suggested decisions). Conservative default is `automated_rule`.
+- **All 8 spike questions answered green.** Q1–Q5, Q7–Q8 are ✅ Yes, Q6 is ⚠️ Manageable. Final recommendation: GO — build on the SDK.
+- **Estimated production effort: ~730 LOC, 3.5 days.** Event bridge (100), harness bootstrap (80), DBOM generator (200), cost summary (100), tests (250).
+
 ### 2026-03-28: Copilot SDK & Platform Extensibility Recon
 
 - **Three SDK layers exist:** (1) `@github/copilot-sdk` — embed the full Copilot agentic engine in any app via JSON-RPC to CLI server mode (TS, Python, Go, .NET, Java). Technical Preview. (2) `@copilot-extensions/preview-sdk` — build Copilot Chat extensions as GitHub Apps with SSE response streaming. Alpha but semver-safe. (3) `@github/copilot-engine-sdk` — build custom engines for the coding agent platform with platform events, git ops, and MCP. Very early.

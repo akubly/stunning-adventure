@@ -650,3 +650,40 @@ Aaron asked three targeted follow-ups about delivery vehicles, npm vs plugin, an
 - Updated focus: `.squad/identity/now.md`
 
 **Architectural insight:** The spike scope mirrors Cairn's own development pattern — answer the hardest question first (Q1 = "can we manage sessions?"), circuit-break early, build confidence incrementally. The same "fail fast" principle that drove Phase 5's MCP-before-CLI decision applies here: don't invest in downstream architecture until the foundation is proven.
+
+### 2026-04-08: Copilot SDK Spike Assessment — GO
+
+**Type:** Spike conclusion and architecture assessment  
+**Trigger:** Day 3 of 3-day spike. Roger's exploration complete (Days 1-2). Graham's go/no-go assessment.  
+**Branch:** `squad/copilot-sdk-spike`
+
+**Verdict: GO.** The `@github/copilot-sdk` is a sound foundation for Forge.
+
+**Scorecard: 7 ✅, 1 ⚠️ — exceeded the go/no-go threshold (which required only Q1+Q2+Q4+Q5 = ✅).**
+
+**Key architectural findings:**
+
+1. **Event bridge is the critical abstraction.** The ~50 LOC adapter between SDK events and Cairn's event_log is Forge's most important module. It isolates both systems from SDK API churn. If the SDK breaks, only this adapter needs updating. This is the architectural seam that makes the monorepo viable — without it, SDK instability would propagate through the entire system.
+
+2. **Hook composition is a mandatory pattern.** The SDK's `registerHooks()` replaces all hooks — doesn't stack. If Forge registers observation hooks and then user code calls `registerHooks()` directly, Forge's instrumentation disappears silently. The hook composer pattern (merge multiple observers into a single handler) must be the only way hooks are registered. This is the first "codebase convention" for Forge — equivalent to Cairn's `isScript` guard.
+
+3. **Decision gates are richer than expected.** Three native mechanisms (hook blocking, permission handler, elicitation forms) provide graduated levels of human involvement. The `permission.requested`/`permission.completed` event pair is particularly valuable — it gives us structured decision records with rich context (diffs for writes, commands for shell, server+tool for MCP) without any custom code.
+
+4. **Token cost data is production-grade.** `copilotUsage.totalNanoAiu` gives actual billing cost, not just token counts. `quotaSnapshots` shows remaining quota percentage with reset dates. `ttftMs` and `interTokenLatencyMs` give latency metrics. This is richer than most dedicated APM tools provide. Aaron's token cost awareness requirement is satisfied by the SDK's existing event stream — no scraping or estimation needed.
+
+5. **Monorepo boundaries are clean.** `@cairn/types` holds the shared contract (CairnEvent, ProvenanceTier, DBOM, DecisionRecord). `@cairn/cairn` stays largely unchanged (add bridge ingest + telemetry modules). `@cairn/forge` wraps the SDK and implements the export pipeline. The integration seams are: event bridge (Forge→Cairn), prescription output (Cairn→Forge), export pipeline (Forge→artifacts), PGO telemetry (corp→Cairn→Forge).
+
+6. **The runtime verification gap is the biggest remaining risk.** The spike proved API surface and type compatibility through compiled PoC code, but the SDK requires a live Copilot CLI process for actual execution. Type-level verification is necessary but not sufficient. Phase 2 (live runtime test) must close this gap before committing to Phase 3 (core Forge loop).
+
+**Concepts validated from mid-spike discussions:**
+
+- **Portability (Aaron):** Provenance tier classification + DBOM reconstruction prove the data model supports exporting certified artifacts to corp/EMU environments.
+- **PGO Telemetry (Aaron):** The `"deployment"` provenance tier + SDK's built-in OpenTelemetry support provide the foundation for production feedback loops.
+- **ACP Horizon:** The event bridge abstraction means multi-agent transport is additive — Cairn consumes `CairnEvent`, not SDK-specific types.
+
+**Artifacts produced:**
+- Go/no-go assessment: `docs/spikes/copilot-sdk-assessment.md`
+- Decision document: `.squad/decisions/inbox/graham-spike-assessment.md`
+- Updated focus: `.squad/identity/now.md`
+
+**Key lesson:** A well-scoped spike with a clear circuit breaker and go/no-go threshold produces high-confidence decisions in minimal time. The 3-day time box forced focus on the 8 questions that matter. The pre-defined threshold (Q1+Q2+Q4+Q5 = ✅) meant the verdict was mechanical — no ambiguity about whether we learned enough. This is a reusable pattern for future technology evaluations.
