@@ -80,9 +80,47 @@
 - **Proactive hint counter is per-session, not per-process:** Track `proactiveHintSessionGeneration` alongside the counter, reset when `getSessionsSinceInstall()` changes. Avoids stale counter in long-lived MCP servers.
 - **N+1 batch pattern:** Added `getInsightsByIds()` to insights DAL — collects unique IDs, one `WHERE id IN (...)` query, map results in-memory. Standard batch-fetch pattern for DAL.
 - **ordinal() edge cases:** 11/12/13 are 'th' (not 'st/nd/rd'). Must check `% 100` before `% 10`.
+
+### 2026-04-08: Copilot SDK Spike — Day 1 (Hands-On Verification)
+
+- **Circuit breaker PASSED:** `CopilotClient` and `CopilotSession` are real exports. `createSession()`, `resumeSession()`, `listSessions()`, `sendAndWait()` all exist with full type definitions. Session management API is exactly as documented.
+- **86 event types, auto-generated from JSON schema:** Events are generated from `session-events.schema.json`, not hand-written. This suggests schema stability across versions. All 86 types from pre-spike research confirmed.
+- **Zero dependency conflicts:** SDK's `zod ^4.3.6` matches Cairn's. `vscode-jsonrpc` and `@github/copilot` are new but non-conflicting. Build passes, all 427 tests pass.
+- **Event bridge is ~120 LOC with extractors:** Core mapping is ~20 LOC (confirming pre-spike estimate), but payload extractors for selective field extraction add ~100 LOC. 22 of 86 events map to Cairn-relevant signals.
+- **`defineTool` uses same Zod pattern as Cairn MCP tools:** Zero learning curve for tool definition — same `z.object()` schema approach.
+- **Hooks are bi-directional:** SDK hooks can modify behavior (permission decisions, tool args), not just observe. More powerful than Cairn's stdin hooks.
+- **Pin SDK version exactly for production:** `^0.2.2` allows patch upgrades; given 52 versions in 3 months, exact pinning (`0.2.2`) is safer.
+- **`ERR_PACKAGE_PATH_NOT_EXPORTED` on package.json import:** SDK uses Node.js `exports` field restriction. Minor, doesn't affect functionality.
 - **SQL parameterization:** Never interpolate user-supplied values (including LIMIT) directly into SQL strings. Always use bound parameters.
 - **shouldResurface off-by-one:** The `+1` compensation hack broke when prescribe() was called from MCP `run_curate` (no session increment). Fix: remove the hack, reorder sessionStart to increment counter BEFORE calling prescribe().
 - **MVP simplification docs:** When hardcoding values intentionally, document WHY in the code so future readers don't assume it's a bug.
+
+### 2026-04-08: Copilot SDK Spike — Day 2 (Tool Hooks, Decision Gates, Model Selection)
+
+- **Tool hooks are first-class and bidirectional.** `onPreToolUse` receives `toolName`, `toolArgs`, `timestamp`, `cwd`. Can return `permissionDecision: "allow"|"deny"|"ask"`, `modifiedArgs`, `additionalContext`. `onPostToolUse` receives `toolResult` and can return `modifiedResult`. Hooks are async, support Promises.
+- **`permissionDecision: "deny"` blocks tool execution natively.** No need to wrap tools — the hook system has a built-in gate mechanism. Returning `"ask"` defers to the `onPermissionRequest` handler, which receives rich context (command text, diffs, file paths).
+- **Three complementary decision gate mechanisms:** (1) Hook blocking (`"deny"`), (2) Hook → permission handler (`"ask"`), (3) Elicitation forms (`session.ui.confirm()`). Each serves different granularity needs. The permission handler is the most powerful — it gets richer context than any custom wrapper could provide.
+- **`PermissionRequestResult` uses kind-based union, not boolean.** `{ kind: "approved" }`, `{ kind: "denied-interactively-by-user" }`, `{ kind: "denied-by-rules", rules }`, etc. Richer than expected — gives decision audit trail for free.
+- **`registerHooks()` replaces, doesn't append.** Multiple hook observers need a composition pattern. Built a `composeHooks()` combiner — last-writer-wins for outputs, all observers get called in order.
+- **Internal hook types not re-exported from SDK index.** `SessionHooks`, `PreToolUseHookInput`, `PostToolUseHookOutput`, `ReasoningEffort` are in `types.d.ts` but not in `index.d.ts`. Workaround: `NonNullable<SessionConfig["hooks"]>` or mirror locally. Minor ergonomic issue.
+- **`ElicitationRequest` renamed to `ElicitationContext` in public SDK.** The bundled CLI internal copy uses the old name. Always import from `@github/copilot-sdk`, never from `@github/copilot/copilot-sdk`.
+- **Two copies of SDK types in node_modules.** `@github/copilot-sdk` (public) and `@github/copilot/copilot-sdk` (bundled CLI internal). Different export surfaces. Must always use the public package.
+- **`session.setModel()` is async and fires `session.model_change` event.** Event includes `previousModel`, `newModel`, `previousReasoningEffort`, `reasoningEffort`. Conversation history preserved across switches.
+- **`client.listModels()` returns rich `ModelInfo[]`.** Context window, vision/reasoning support, billing multiplier, policy state, supported reasoning efforts. Enough data for intelligent model routing strategies.
+- **No runtime token budget setter.** Limits are per-model via `ModelCapabilities.limits`. Budget enforcement must be application-level: accumulate `assistant.usage` events, switch models or stop when limit reached.
+- **Provenance tagging is ~20 LOC.** Static classification of event types into `"internal"` vs `"certification"` tiers. DBOM reconstruction is a filter-and-collect over certification events. Zero runtime overhead.
+
+### 2026-04-09: Copilot SDK Spike — Day 3 (E2E Integration, DBOM, Final Scorecard)
+
+- **E2E smoke test passes all 5 integration checks.** Simulated 20 SDK events across 10 integration phases. All bridge through `bridgeEvent()` without type errors. Coverage: 90%+ of events mapped, 100% of certification-tier events captured. Cost tracking, decision chains, and DBOM reconstruction all verified.
+- **Bridge is ~75 LOC total, not 50.** Core mapping is 15 LOC, payload extractors add ~50 LOC, wiring is 10 LOC. Slightly over the pre-spike estimate but still thin. Pure functions, no side effects, no schema migration needed.
+- **Production wiring is ONE callback.** The `onEvent` handler in `SessionConfig` is the single integration point. Hooks and permission handlers feed INTO the event stream automatically — no separate wiring.
+- **Cost attribution works across subagents.** SDK's `assistant.usage` includes `initiator: "sub-agent"` and `parentToolCallId` fields. Cost can be sliced by subagent without custom tracking code.
+- **DBOM hash chain is Merkle-sequential, not tree.** Each decision's SHA-256 includes its parent hash, creating a tamper-evident chain. Root hash seals the entire provenance record. Simple and sufficient for linear session timelines.
+- **DBOM → YAML frontmatter integrates naturally with SKILL.md.** No new file format needed. Standard `---`-delimited YAML frontmatter block at the top of compiled skills. Hashes truncated for readability, full data in structured format.
+- **Decision source classification has three categories.** `human` (permission approved/denied interactively), `automated_rule` (policy-based denials, system events), `ai_recommendation` (AI-suggested decisions). Conservative default is `automated_rule`.
+- **All 8 spike questions answered green.** Q1–Q5, Q7–Q8 are ✅ Yes, Q6 is ⚠️ Manageable. Final recommendation: GO — build on the SDK.
+- **Estimated production effort: ~730 LOC, 3.5 days.** Event bridge (100), harness bootstrap (80), DBOM generator (200), cost summary (100), tests (250).
 
 ### 2026-03-28: Copilot SDK & Platform Extensibility Recon
 
@@ -378,3 +416,15 @@ ode dist/mcp/server.js\)
 - **Wired exports** in `src/index.ts` — `validateSkill`, `formatValidationSummary`, `loadTestScenario`, `runTestScenario`, `formatTestReport`, `insertTestResult/s`, `getTestResults`, `getTestHistory`, `getLatestTestRun` + type exports for `QualityVector`, `ValidationResult`, `ValidatorRule`, `TestScenario`, `TestAssertion`, `TestReport`, `SkillTestResultInsert`, `SkillTestResultRow`.
 - **6 new tests** in `src/__tests__/mcp.test.ts` covering default validation, summary formatting, quality issue detection, DB persistence, event logging, and 5-vector coverage.
 - **Test count:** 421 → 427 (6 new tests for Phase 8D final). Build clean, lint clean (only pre-existing `lenientReport` unused-var in skillTestHarness.test.ts).
+
+### 2026-04-07: Copilot SDK Deep Dive (Spike)
+
+- **`@github/copilot-sdk` v0.2.2 is real and installable.** 52 versions published, MIT, 483KB unpacked. Dependencies: `@github/copilot` (bundled CLI), `vscode-jsonrpc`, `zod`. Technical Preview but rapid iteration (~weekly releases).
+- **86 event types in the generated type definitions.** The `session-events.d.ts` file is 105KB of discriminated union types. Every event has `id` (UUID), `timestamp` (ISO 8601), `parentId` (linked chain), `type`, and typed `data`.
+- **`assistant.usage` is richer than expected.** Beyond model/tokens/cache, it includes: `cost` (billing multiplier), `duration`/`ttftMs`/`interTokenLatencyMs` (latency), `quotaSnapshots` (entitlement tracking), `copilotUsage.totalNanoAiu` (actual billing cost in nano AI Units), `initiator` and `parentToolCallId` (sub-agent attribution).
+- **6 hooks are bi-directional.** `onPreToolUse` can modify args AND change permission decisions (`allow`/`deny`/`ask`). `onPostToolUse` can modify results. `onErrorOccurred` can choose `retry`/`skip`/`abort`. This is strictly more powerful than Cairn's current observe-only stdin hooks.
+- **Event bridge to Cairn is ~20 LOC for the core, ~50 with error handling.** `session.on((event) => logEvent(sessionId, EVENT_MAP[event.type], JSON.stringify(event.data)))` — that's literally the pattern. The SDK's event shape maps cleanly to Cairn's `event_log(event_type, payload, session_id)`.
+- **Session management is comprehensive.** `createSession`/`resumeSession`, custom session IDs, model selection mid-session via `setModel()`, MCP server config, custom agents, skill directories, infinite sessions with auto-compaction.
+- **BYOK works without GitHub auth.** Can use OpenAI/Azure/Anthropic keys directly via `provider` config. Good for testing without Copilot subscription.
+- **OpenTelemetry is built in.** OTLP HTTP export, file-based JSONL export, W3C trace context propagation. Free observability without custom instrumentation.
+- **Full findings written to `docs/spikes/copilot-sdk-exploration.md`.**

@@ -2895,6 +2895,114 @@ npm run build && npm run test && npm run lint
 | 7F | `src/mcp/server.ts` | Register 4 new tools |
 | 7F | `src/__tests__/mcp.test.ts` | Tests for new MCP tools |
 
+---
+
+## 2026-04-07: Decision — Copilot SDK Spike Scope
+
+**Author:** Graham (Lead / Architect)  
+**Date:** 2026-04-07  
+**Status:** Approved (Aaron chose Option C — "Spike First")  
+**Branch:** `squad/copilot-sdk-spike`
+
+### Context
+
+Aaron reviewed three architecture options from the brainstorm session:
+- **Option A:** Cairn absorbs compiler responsibilities
+- **Option B:** Build Forge immediately as a separate project
+- **Option C:** Spike first — time-boxed investigation before committing
+
+Aaron chose **Option C**. Roger's finding that the SDK already emits
+`assistant.usage` events with model, tokens, latency, cache metrics, and
+billing multiplier validates that the SDK has real observability surface area.
+
+### Decision
+
+Time-boxed 3-day spike to evaluate `@github/copilot-sdk` as Forge's runtime
+foundation. Spike answers 8 technical questions covering session management,
+tool interception, decision gates, event taxonomy, Cairn bridge, stability,
+model/token control, and end-to-end integration.
+
+### Key Commitments
+
+1. **Cairn = APM (debugger). Forge = Runtime (compiler).** Neither absorbs the other.
+2. **Monorepo with shared types** (`@cairn/types`, `@cairn/cairn`, `@cairn/forge`).
+3. **Spike first, then sister squad.** No Forge chartering until spike concludes.
+4. **Circuit breaker:** If Q1 (session management) = ❌ on Day 1, stop early.
+
+### Trade-offs
+
+| Choice | Upside | Downside |
+|--------|--------|----------|
+| Spike before committing | Low cost to learn; avoids premature architecture | Delays Forge start by ~3 days |
+| SDK as foundation (if go) | Real runtime, maintained by GitHub, embeds agentic patterns | Technical Preview — API instability risk |
+| Monorepo | Atomic type changes, shared CI | Repo complexity, tooling overhead |
+
+### Artifacts
+
+- Spike scope document: `docs/spikes/copilot-sdk-spike.md`
+- Spike code (temporary): `src/spike/` (excluded from build)
+- Spike report: updates to scope document with findings
+
+### Go/No-Go Threshold
+
+**Go** if Q1 + Q2 + Q4 + Q5 = ✅ (core loop works).  
+Q3 and Q7 can be ⚠️.  
+Only Q1 = ❌ is a hard no-go.
+
+---
+
+## 2026-04-07: SDK Spike Findings — Proceeding with Harness Development
+
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-04-07  
+**Type:** Technical spike results  
+**Urgency:** Normal — informational, no blocking decisions
+
+### What I Found
+
+The `@github/copilot-sdk` (v0.2.2) is published, installable, well-typed, and comprehensive. 86 event types, 6 bi-directional hooks, full session management, BYOK support, built-in OpenTelemetry.
+
+### Key Discovery: `assistant.usage` Is Better Than Expected
+
+The `assistant.usage` event gives us:
+- **Token counts:** input, output, cache read/write
+- **Actual billing cost:** `copilotUsage.totalNanoAiu` (nano AI Units — not estimates)
+- **Latency metrics:** duration, TTFT, inter-token latency
+- **Quota tracking:** entitlement snapshots with remaining percentage
+- **Sub-agent attribution:** `parentToolCallId` and `initiator` fields
+
+This is everything we'd need for cost tracking without any estimation or scraping.
+
+### Integration Effort
+
+| Component | LOC | Time |
+|-----------|-----|------|
+| Event bridge adapter | ~50 | Hours |
+| Harness bootstrap | ~80 | Hours |
+| New Cairn event types | ~30 | Hours |
+| Cost summary in curator | ~100 | 1 day |
+| Tests | ~150 | 1 day |
+| **Total** | **~410** | **2-3 days** |
+
+### What This Changes
+
+1. **Token cost tracking is solvable now.** No need to wait for custom telemetry — the SDK emits exactly what we need.
+2. **Hooks become richer.** SDK hooks can *modify* behavior (args, permissions, results), not just observe. Cairn's stdin hooks are observe-only.
+3. **The harness IS the integration.** Instead of bolting Cairn onto the CLI, the harness embeds both the SDK and Cairn in one process. In-process event bridge, no IPC overhead.
+
+### Risk
+
+SDK is Technical Preview. 52 versions in ~3 months = frequent churn. Mitigations:
+- Pin version, don't auto-upgrade
+- Abstract behind our own event types (bridge adapter is the seam)
+- Keep existing stdin hooks working for non-harness users
+
+### Recommendation
+
+Proceed with harness development. The SDK is ready enough to build on, and the event system maps cleanly to Cairn's architecture. Biggest open question: do we want the harness to *replace* the Copilot CLI, or wrap it? The SDK supports both patterns (spawn vs connect to existing).
+
+Full spike document: `docs/spikes/copilot-sdk-exploration.md`
+
 ### Summary
 
 - **15 new files** (7 source, 1 cache DAL, 2 migrations, 5 test files)
@@ -3902,3 +4010,281 @@ Three complementary proposals from different angles:
 **Converging Insight:** Scope decision is emerging — Cairn stays observability-focused. Execution (Forge) becomes a sibling. Human-in-loop ceremony (Shiproom) is the governance layer.
 
 **Session Log:** `.squad/log/2026-04-23T06-30-00Z-brainstorm-round2.md`
+
+---
+
+### 2026-04-23T20-13-00: Architectural Concept — Workflow Portability via Forge as Compiler
+
+**Author:** Graham Knight (Lead/Architect) — from Day 1-2 spawn session  
+**Type:** Architecture  
+**Status:** Proposed
+
+**What:** Position Forge as a **workflow compiler**, not just an artifact package tool. Compile certified workflows (SKILL.md + verified metadata → DBOM) into portable, deployable artifacts that can be exported to corporate/EMU environments. Trust model: Decision Bill of Materials (DBOM) — companion document to SKILL.md that lists all architectural decisions, dependencies, and assumptions. Export pipeline: Extract (audit trail) → Strip (remove env-specific bindings) → Attach (environment config layer) → Validate (Copilot SDK LLM-as-judge on 5 correctness vectors).
+
+**Alternatives Considered:**
+1. **Ad-hoc export scripts** — Low automation, high brittleness, decisions not portable
+2. **Generic artifact bundler without DBOM** — Lose auditability, trust breaks in corporate environments
+3. **Compiler-only (no export layer)** — Local validation, no corporate deployment path
+
+**Selected:** Forge as compiler with DBOM export pipeline.
+
+**Rationale:** Brings portability to the platform architecture (R5 dual-environments requirement). Corporate environments need auditability and explicit decision tracking. DBOM makes architectural assumptions explicit and portable. Compiler pattern is proven (language compilers, Docker, infrastructure-as-code). LLM-as-judge validates that exported artifact preserves intent across environment boundaries.
+
+**Impact:**
+- Extends R5 architecture (sidecar + dual environments) with portable export semantics
+- Drives DBOM schema design and Decision Record enrichment
+- Enables corporate/EMU deployment pipelines
+- Informs Forge implementation phases (compiler before full bundler)
+
+---
+
+### 2026-04-23T20-13-00: Architectural Concept — PGO Telemetry Loop via Continuous Profile-Guided Optimization
+
+**Author:** Graham Knight (Lead/Architect) — from Day 1-2 spawn session  
+**Type:** Architecture  
+**Status:** Proposed
+
+**What:** Deployed artifacts (workflows, agents, skills) emit telemetry to Application Insights (aggregate signals only, no PII). Telemetry feeds back to Cairn as a continuous optimization input. Cairn's Prescriber learns from production patterns: which decisions work, which workflows get abandoned, which patterns emerge at scale. Creates a closed loop: Deploy → Emit → Ingest → Profile → Prescribe. Cairn becomes "profile-guided optimization" for workflows — same pattern as compiler PGO (profile → recompile → redeploy for speed gains). Here: profile → prescribe → rearchitect for correctness and user fit.
+
+**Telemetry Signal Categories** (PII-free):
+- Workflow abandonment points (which phase fails most often)
+- Decision reversal rates (prescriptions accepted/rejected ratios per decision type)
+- Artifact topology changes (when teams refactor their DBOM)
+- Environment-specific success variance (same workflow, different performance in corporate vs. personal)
+
+**Alternatives Considered:**
+1. **Ad-hoc query layer to Application Insights** — One-off insights, no systematic feedback
+2. **Cairn runs offline** — No production signal, prescriptions based on local patterns only
+3. **Full telemetry sink in Cairn (centralized)** — Tight coupling to Application Insights, hard to swap backends
+
+**Selected:** Pluggable telemetry sink + input adapter in Cairn, with Application Insights as reference implementation (V1).
+
+**Rationale:** Completes the feedback loop for platform-scale learning. Addresses Gap 3 from R5 (SDK capability audit revealed no telemetry standard). Matches organizational thinking (profiling as optimization driver). Pluggable sink keeps Cairn decoupled from specific observability backends. PGO metaphor is intuitive for engineers (familiar from compiler/CPU optimization). Profile-guided optimization is proven in system design (Linux perf, Go runtime, MLIR).
+
+**Impact:**
+- Reshapes Cairn from single-session learner to multi-session/multi-environment learner
+- Drives telemetry schema design (events → Application Insights → Cairn feedback)
+- Requires Application Insights adapter (new component) and pluggable sink interface
+- Informs Prescriber priority scoring (production signals weight decision recommendations)
+- Enables corporate environments to run "dark telemetry" (insights for internal feedback, no external reporting)
+
+---
+### 2026-04-23T20-25-00Z: SDK Spike Day 2 Complete — Tool Hooks, Decision Gates, Model Selection All Viable
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical/Findings  
+**Status:** Confirmed  
+**Date:** 2026-04-23T20:25:00Z  
+**Branch:** `squad/copilot-sdk-spike`
+
+**Context:** Day 2 exploration of Copilot SDK @github/copilot-sdk (v0.2.2) for Forge instrumentation requirements. Three critical research questions: Q2 (tool hooks), Q3 (decision gates), Q7 (model selection). All confirmed viable. All 427 tests pass. Event bridge extended with provenance tagging.
+
+**Q2: Tool Call Interception — ✅ Confirmed**
+
+`registerHooks()` is first-class and composable. `onPreToolUse` hook receives tool name, arguments, timestamp. Handler can return:
+- `permissionDecision: "allow" | "deny" | "ask"`
+- `modifiedArgs: Record<string, unknown>` (modify tool inputs)
+
+`onPostToolUse` observes results. Hooks emit `hook.start` and `hook.end` events for correlation. Key nuance: `registerHooks()` replaces (doesn't stack) — need `composeHooks()` combiner when multiple subsystems observe.
+
+**Q3: Decision Gates — ✅ Confirmed (Three Native Mechanisms)**
+
+1. **Hook blocking** — `permissionDecision: "deny"` for instant programmatic gates
+2. **Hook → permission handler** — `permissionDecision: "ask"` defers to `onPermissionRequest`, which receives rich context: parsed shell commands, file diffs, MCP server attribution. **This is the primary gate.**
+3. **Elicitation UI** — `session.ui.confirm()` for structured multi-option decisions
+
+Permission handler context exceeds what we'd build ourselves (shell command parsing, diff computation, MCP attribution). Limitation: no native async approval (e.g., Slack thumbs-up); would require promise-wrapping. Not a blocker for Forge Day 1.
+
+**Q7: Model Selection & Token Budgeting — ✅ Confirmed**
+
+- `client.listModels()` → `ModelInfo[]` with capabilities, billing, policy
+- `session.setModel(model, { reasoningEffort? })` fires `session.model_change` event
+- `assistant.usage` → per-call tokens, cost in nano-AIU, cache metrics, quota snapshots
+- `session.usage_info` → context window utilization snapshots
+- **Runtime budget enforcement:** No native setter; must enforce at application level
+
+**Provenance & DBOM**
+
+Event bridge enhanced with `ProvenanceTier: "internal" | "certification" | "deployment"`. 10 SDK event types tagged certification-tier (auditable), 12 internal-tier. DBOM reconstruction pattern implemented: filter certification events, produce audit manifest. ~20 lines of code, zero runtime overhead.
+
+**Surprises & Gotchas**
+
+1. Hook types (`SessionHooks`, `PreToolUseHookInput`, etc.) defined in SDK but NOT re-exported from index. Workaround: `NonNullable<SessionConfig["hooks"]>` or local type mirrors.
+2. Type naming divergence: `ElicitationRequest` in CLI bundle vs `ElicitationContext` in public SDK.
+3. `PermissionRequestResult` is rich kind-based union (not simple boolean) — better for audit trails but requires pattern matching.
+4. Two SDK type copies in node_modules (internal vs external). Always import from `@github/copilot-sdk`.
+
+**Spike Verification**
+
+- All spike files compile cleanly (`tsc --noEmit`)
+- Main build passes
+- 427/427 tests pass
+- Zero infrastructure conflicts
+- Code isolation: spike code in `src/spike/`, no main codebase entanglement
+
+**Conclusion**
+
+SDK provides complete feature set for Forge instrumentation layer. Non-invasive tool observation, native blocking/gating, rich model control, and token/cost telemetry all present and production-ready. No architectural blockers for integration. Proceeding to Day 3: Cairn bridge end-to-end, integration smoke test.
+
+**Gates Satisfied:**
+
+- ✅ Tool hooks first-class (Q2)
+- ✅ Decision gates work through 3 native mechanisms (Q3)
+- ✅ Model selection fully controllable (Q7)
+- ✅ 7 of 8 spike questions answered, all green
+- ✅ Test coverage maintained
+
+---
+
+### 2026-04-08: Copilot SDK Spike Assessment — GO
+
+**Author:** Graham Knight (Lead/Architect)  
+**Type:** Decision  
+**Status:** Approved  
+**Date:** 2026-04-08
+
+**Decision:** GO — Proceed with building Forge on @github/copilot-sdk v0.2.2.
+
+**Evidence:**
+- 7 of 8 spike questions answered ✅
+- 1 question answered ⚠️ (Stability — Technical Preview, manageable via abstraction layer)
+- Integration surface thin (~75 LOC bridge adapter)
+- Event data rich enough for full DBOM artifact provenance
+
+**Architecture Confirmed:**
+Monorepo with three packages:
+- `@cairn/types` — shared event contract, DBOM schema, decision types
+- `@cairn/cairn` — existing observability platform (unchanged)
+- `@cairn/forge` — new execution runtime (SDK wrapper, event bridge, decision gates, export pipeline)
+
+**Key Findings That Changed Assumptions:**
+
+*Easier than expected:*
+- Event bridge (~50 LOC)
+- Decision gates (3 native mechanisms)
+- Dependency compatibility (zero conflicts, shared zod)
+
+*Harder than expected:*
+- Hook type re-exports (not all exported from SDK index)
+- No runtime token budget setter (must enforce at application level)
+- Runtime verification gap (compiles clean but needs live CLI process)
+
+*New risk discovered:*
+- `registerHooks()` replaces all hooks — doesn't stack
+- Hook composer pattern is mandatory, not optional
+
+**Risk Mitigations:**
+1. Pin to `0.2.2` (exact, not caret) — 52 versions in 3 months
+2. Abstract behind `CairnEvent` — bridge adapter is the seam
+3. Start with events only — don't depend on hooks for correctness
+4. Keep stdin hooks — SDK harness is additive, not replacement
+
+**Recommended Next Steps:**
+1. Monorepo foundation (extract @cairn/types) — 1–2 days
+2. Live runtime verification — 1–2 days
+3. Core Forge loop — 3–5 days
+4. Export pipeline (DBOM + SKILL.md compiler) — 2–3 days
+
+**Trade-offs:**
+
+| Choice | Upside | Downside |
+|--------|--------|----------|
+| Build on SDK v0.2.2 | Comprehensive API, 86 events, native decision gates | Technical Preview — API may change |
+| Monorepo structure | Atomic type changes, shared CI | Repo complexity |
+| Event bridge as isolation layer | SDK changes affect ~50 LOC | Extra indirection |
+| Application-level token budgeting | Works today, no SDK dependency | More code than a runtime setter |
+
+**Artifacts:**
+- Spike scope: `docs/spikes/copilot-sdk-spike.md`
+- Roger's exploration: `docs/spikes/copilot-sdk-exploration.md`
+- Go/no-go assessment: `docs/spikes/copilot-sdk-assessment.md`
+- PoC code: `src/spike/*.ts` (8 files, to be deleted after approval)
+
+---
+
+### 2026-04-09: Spike Complete — All 8 Questions Answered, E2E Integration Proven
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Decision  
+**Status:** Confirmed  
+**Date:** 2026-04-09
+
+**Decision:** ✅ GO — Build on `@github/copilot-sdk` v0.2.2. The 3-day spike validated every load-bearing assumption.
+
+**Final Scorecard:**
+
+| # | Question | Answer | Key Finding |
+|---|----------|--------|-------------|
+| Q1 | Session Management | ✅ Yes | Full lifecycle API: create, resume, list, terminate |
+| Q2 | Tool Call Interception | ✅ Yes | Bidirectional hooks with blocking capability |
+| Q3 | Decision Gates | ✅ Yes | Three mechanisms: hook, permission handler, elicitation |
+| Q4 | Event Taxonomy | ✅ Yes | 86 typed events from JSON schema, 22 Cairn-relevant |
+| Q5 | Cairn Bridge | ✅ Yes | ~75 LOC adapter, real-time streaming, no migration |
+| Q6 | Stability | ⚠️ Manageable | Technical Preview — pin version, abstract behind seam |
+| Q7 | Model Selection | ✅ Yes | listModels, setModel, budget via assistant.usage |
+| Q8 | E2E Integration | ✅ Yes | 20-event smoke test passes all 5 checks |
+
+**Key Findings:**
+
+*The Bridge Is Thin:*
+- 75 LOC total (15 mapping + 50 extractors + 10 wiring)
+- ONE callback (`onEvent`) handles the entire integration
+- No schema migrations — new events are new `event_type` strings
+
+*Cost Tracking Is Comprehensive:*
+- `assistant.usage` provides: model, tokens (in/out/cache), nano-AIU billing, quota snapshots
+- Sub-agent cost attribution via `initiator` and `parentToolCallId`
+- Context window monitoring via `session.usage_info`
+
+*DBOM Is Feasible:*
+- Certification-tier events → SHA-256 hash chain → YAML frontmatter
+- Integrates naturally with SKILL.md format
+- Tamper-evident: modifying any decision invalidates downstream hashes
+- Three decision source categories: human, automated_rule, ai_recommendation
+
+*Decision Gates Are Better Than Expected:*
+- Three complementary mechanisms, not just one
+- Permission handler gets richer context than any custom wrapper
+- `PermissionRequestResult` uses kind-based union (not boolean) for audit trail
+
+**Risk Mitigations:**
+
+1. **Pin to `0.2.2`** (exact, not caret) — 52 versions in 3 months
+2. **Abstract behind `CairnEvent`** — the bridge adapter is the seam
+3. **Start with events only** — don't depend on hooks for correctness
+4. **Keep stdin hooks** — SDK harness is additive, not replacement
+
+**Production Effort Estimate:**
+
+| Component | LOC | Time |
+|-----------|-----|------|
+| Event bridge (production) | ~100 | 0.5 day |
+| Harness bootstrap | ~80 | 0.5 day |
+| DBOM generator (production) | ~200 | 1 day |
+| Cost summary materialization | ~100 | 0.5 day |
+| Tests | ~250 | 1 day |
+| **Total** | **~730** | **3.5 days** |
+
+**Spike Deliverables:**
+
+| File | Purpose |
+|------|---------|
+| `src/spike/forge-poc.ts` | Q1 — session management PoC |
+| `src/spike/event-bridge.ts` | Q5 — event bridge adapter |
+| `src/spike/tool-hooks-poc.ts` | Q2 — tool call interception |
+| `src/spike/decision-gate-poc.ts` | Q3 — decision gate mechanisms |
+| `src/spike/model-selection-poc.ts` | Q7 — model selection + budgeting |
+| `src/spike/e2e-smoke-test.ts` | Q8 — E2E integration smoke test |
+| `src/spike/dbom-generator.ts` | DBOM — provenance artifact generator |
+| `docs/spikes/copilot-sdk-exploration.md` | Full exploration report |
+| `docs/spikes/copilot-sdk-spike.md` | Original spike scope |
+
+**Next Steps (if GO is confirmed):**
+
+1. Charter Forge implementation work (separate from spike branch)
+2. Pin SDK version to exact `0.2.2` in production package.json
+3. Move bridge adapter from spike to production source
+4. Implement `cost_summary` materialization in curator
+5. Add DBOM generation to skill compilation pipeline
+
+---

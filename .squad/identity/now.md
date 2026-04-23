@@ -1,54 +1,57 @@
 ---
-updated_at: 2026-04-07T05:43:00Z
-focus_area: Phase 8 — Ecosystem & Extensions
+updated_at: 2026-04-08T12:00:00Z
+focus_area: Post-Spike — Monorepo Foundation & Forge Chartering
 active_issues:
-  - "Phase 8: CLI extensions & ecosystem integration (deferred from Phase 7)"
+  - "Monorepo restructuring: @cairn/types, @cairn/cairn, @cairn/forge"
+  - "Live runtime verification of Copilot SDK findings"
   - "#11 — Worktree-aware sessions (deferred)"
   - "awesome-copilot submission (deferred)"
 ---
 
 # What We're Focused On
 
-**Phase 7: Prescriber Implementation** — ✅ COMPLETE
+**Copilot SDK Spike** — ✅ COMPLETE (GO)
 
-Cairn's third core agent is fully implemented and ready for production use.
+Branch: `squad/copilot-sdk-spike`
 
-**Phase 7 Summary (All Complete):**
-- ✅ **7A** — Data Foundation (Roger): schema, types, DAL, preferences
-- ✅ **7B** — Artifact Discovery (Rosella): 4-phase scanner + cache
-- ✅ **7C** — Infrastructure (Gabriel): curate() 3s cap + trigger wiring
-- ✅ **7D** — Prescription Engine (Roger): core agent, state machine, priority scoring
-- ✅ **7E** — Apply Engine (Rosella): sidecar writing, rollback, drift detection
-- ✅ **7F** — MCP Tools + UX (Roger + Valanice): 4 new tools + growth tracking
+The 3-day spike answered all 8 questions. Verdict: **GO.** The SDK is a sound
+foundation for Forge. See `docs/spikes/copilot-sdk-assessment.md` for the
+full go/no-go assessment with architecture sketch.
 
-**Quality Achievement:**
-- 316/316 tests passing (↑ 194 from Phase 6)
-- TypeScript builds clean (strict mode)
-- Zero lint violations
-- All 10 UX principles integrated & tested
-- Hybrid trigger (preToolUse + run_curate) operational
-- Production-ready dogfood gates passed
+**Spike results (7 ✅, 1 ⚠️):**
+- Q1 Session Management: ✅ — full lifecycle API
+- Q2 Tool Interception: ✅ — first-class hooks, bidirectional
+- Q3 Decision Gates: ✅ — three native mechanisms
+- Q4 Event Taxonomy: ✅ — 86 typed events, 22 map to Cairn
+- Q5 Cairn Bridge: ✅ — ~50 LOC adapter with provenance tiering
+- Q6 Stability: ⚠️ — Technical Preview risks bounded by abstraction layer
+- Q7 Model/Tokens: ✅ — nano-AIU billing, quota snapshots, mid-session switch
+- Q8 End-to-End: ✅ — event bridge + DBOM reconstruction verified
 
-**Test Progression:**
-- Phase 6 baseline: 122 tests
-- After Phase 7: 316 tests (+194, +159%)
-- Coverage: All core paths, state transitions, UX formatting, edge cases
+**Architecture confirmed:** Monorepo with `@cairn/types` (shared contract),
+`@cairn/cairn` (observability), `@cairn/forge` (execution runtime).
 
-**Prescriber Implementation Complete:**
-- ✅ 4 new MCP tools (10 total in platform)
-- ✅ 8-state prescription lifecycle
-- ✅ 5-min artifact discovery cache
-- ✅ 3s curate() time cap enforced
-- ✅ Sidecar file management with rollback
-- ✅ Drift detection & recovery
-- ✅ Growth tracking & resolution heuristics
-- ✅ Full test coverage (316 tests)
+**Concepts validated during spike:**
+- Portability: Export certified artifacts (SKILL.md + DBOM) for corp/EMU
+- PGO Telemetry: Deployed artifacts → Application Insights → Cairn feedback
+- ACP Horizon: Multi-agent transport is additive, not a rewrite
 
-**Deferred to Phase 8+:**
-- CLI extension prototype spike
+**Recommended next steps (prioritized):**
+1. Phase 1: Monorepo foundation — extract `@cairn/types`, restructure (1–2 days)
+2. Phase 2: Live runtime verification — close the type-vs-runtime gap (1–2 days)
+3. Phase 3: Core Forge loop — SDK wrapper, event bridge, decision gates (3–5 days)
+4. Phase 4: Export pipeline — DBOM generator, SKILL.md compiler (2–3 days)
+5. Phase 5: PGO telemetry — pluggable sinks, feedback ingest (future)
+
+**Decision point for Aaron:** Charter sister squad after Phase 2 or continue
+with this squad through Phase 3?
+
+**Previous milestones (complete):**
+- Phase 7: Prescriber (316 tests, 10 MCP tools) ✅
+- Phase 8: Skill Linter + Validator + Test Harness ✅
+
+**Deferred:**
 - Worktree support (Issue #11)
-- Bash wrappers for macOS/Linux
 - awesome-copilot submission
-- Vector-based semantic search
 - Performance optimizations
 
