@@ -3482,3 +3482,206 @@ When a skill declares domain "testing" but the body never mentions "testing" whi
 **Impact:**
 
 These calibrations ensure Tier 1 validators reliably detect actual quality issues without false negatives (missing real problems) or excessive false positives (flagging minor variations as failures).
+
+---
+
+## Proposed Decisions (Brainstorm Session 2026-04-23)
+
+Session: `.squad/log/2026-04-23T06-10-00Z-brainstorm-session.md`
+
+These are brainstorm outputs from parallel agent analysis of 9 ideas for Cairn future. Not binding decisions — open for team discussion and refinement.
+
+### PROPOSED: Cairn as Runtime + Debugger in Compiler Metaphor
+
+**Author:** Graham Knight (Lead / Architect)  
+**Type:** Architecture  
+**Status:** Proposed (Brainstorm 2026-04-23)  
+**Source:** `.squad/decisions/inbox/graham-brainstorm-vision.md`
+
+**Proposal:** Formalize Cairn's boundary as "runtime instrumentation + debugger" within the compiler metaphor:
+- **Archivist** = trace/debug symbol emitter
+- **Curator** = static analyzer / linter (post-hoc pattern detection)
+- **Prescriber** = auto-fix / code action provider
+
+Cairn is NOT the compiler (LLM + harness is). This framing clarifies ownership: we own observability, analysis, and correction — not execution or behavior direction.
+
+**Rationale:** Clarifies architectural boundaries, guides future feature decisions, distinguishes what Cairn owns from what it doesn't.
+
+**Next Step:** Formalize in architecture documentation if approved.
+
+---
+
+### PROPOSED: Decision Chain Data Model (Content-Addressable Audit Trail)
+
+**Author:** Graham Knight (Lead / Architect)  
+**Type:** Architecture  
+**Status:** Proposed (Brainstorm 2026-04-23)  
+**Source:** `.squad/decisions/inbox/graham-brainstorm-vision.md`
+
+**Proposal:** Create formalized `decisions` table as first-class chain:
+
+```
+Decision {
+  id: hash(parent_id + content + timestamp)  // content-addressable
+  parent_id: Decision.id | null              // chain link
+  session_id: Session.id
+  decision_type: 'insight' | 'prescription' | 'disposition' | 'override'
+  actor: 'curator' | 'prescriber' | 'human'
+  content: string
+  alternatives_considered: string[]
+  confidence: number
+  created_at: timestamp
+}
+```
+
+Content-addressable IDs (like git SHA) create immutable audit trail. Parent-child linking enables decision chains. Actor field distinguishes human vs. automated decisions.
+
+**Trade-off:** New table increases schema complexity. Worth it — decisions are highest-value signal.
+
+**Recommendation:** Candidate for Phase 9. Discuss with team. If approved, Graham to design schema and migration strategy.
+
+**Next Step:** Team discussion on priority and scope if approved.
+
+---
+
+### PROPOSED: Platform Feasibility Analysis — Sensory Pervasion & Signal Expansion
+
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical Analysis  
+**Status:** Proposed (Brainstorm 2026-04-23)  
+**Source:** `.squad/decisions/inbox/roger-brainstorm-platform.md`
+
+**Proposal:** Platform is ready for signal expansion today:
+- `event_log` table is schemaless append-only (event_type + JSON payload)
+- New event types require zero schema migration
+- Curator pattern detection already handles new event types via reflection
+
+**Tier 1 Signals (Ready Now):**
+- model_call events (tracks which model, tokens, latency)
+- tool_selection events (decision path, confidence scores)
+- error_recovery events (automated corrections, success rates)
+
+**Tier 2 Signals (Data Pipeline Problem):**
+- Token cost tracking (requires harness instrumentation not yet exposed)
+- Quality scoring (Curator evolution, not new infrastructure)
+
+**Recommendation:** Start Tier 1 signal expansion immediately. Coordinate token cost with platform team as separate initiative.
+
+**Next Step:** Roger to scope Tier 1 event types for immediate implementation.
+
+---
+
+### PROPOSED: LX Design Principles — Nielsen-Parallel Heuristics for LLM Interfaces
+
+**Author:** Valanice (UX / Human Factors)  
+**Type:** Design Framework  
+**Status:** Proposed (Brainstorm 2026-04-23)  
+**Source:** `.squad/decisions/inbox/valanice-brainstorm-lx.md`
+
+**Proposal:** Apply traditional UX design principles to LLM-facing harness. Structural parallels:
+- **Context window** = working memory (Miller's Law)
+- **Attention decay** = transformer attention score decay with token distance
+- **Tool selection ambiguity** = Fitts's Law analog (more tools = worse selection)
+
+**10 LX Heuristics (Parallel to Nielsen's 10):**
+1. Visibility of System State (get_status pull-based, not push-based)
+2. Match with Mental Model (verb_noun naming conventions)
+3. Error Prevention (Zod schema validation)
+4. Consistency (verb_noun enforced across tools)
+5. Recognition over Recall (tool descriptions, not IDs)
+6. Flexibility & Efficiency (multiple query methods)
+7. Progressive Disclosure (tiered detail levels in responses)
+8. Help & Documentation (parameter descriptions as form labels)
+9. Undo/Redo (rollback capability for Prescriber)
+10. Aesthetic & Minimalist Design (tool count ≤ 12 for LLM sanity)
+
+**Cairn Compliance:** Already implements LX-1 (get_status), LX-2 (verb_noun), LX-3 (Zod), LX-5 (tool descriptions).
+
+**Recommendation:** Adopt LX checklist as design evaluation framework for all future MCP tools. Non-blocking design gate.
+
+**Decision Altitude Taxonomy (Bonus):** Policy (affects all agents) > Framework (affects multiple) > Local (single decision).
+
+**Slop Reframe:** Quality issues are upstream failures, not downstream detection problems.
+
+**Next Step:** Integrate LX checklist into feature design template if approved.
+
+---
+
+### PROPOSED: Extensibility Analysis — OOP Type Hierarchy for Agentic Primitives
+
+**Author:** Rosella Chen (Plugin Dev)  
+**Type:** Architecture  
+**Status:** Proposed (Brainstorm 2026-04-23)  
+**Source:** `.squad/decisions/inbox/rosella-brainstorm-extensibility.md`
+
+**Proposal:** Unify Cairn's extensible components under `AgenticPrimitive` base class:
+
+```
+interface AgenticPrimitive {
+  name: string
+  type: PrimitiveType
+  status: 'draft' | 'active' | 'deprecated' | 'retired'
+  confidence: number          // 0.0–1.0
+  createdBy: string           // agent name or 'human'
+  createdFrom?: string        // parent primitive ID
+  rationale?: string
+  scope: ArtifactScope        // user | project | plugin
+  resolutionRule: ResolutionRule  // additive | first_found | last_wins
+}
+```
+
+Four Primitive Families:
+1. **Agents** (Archivist, Curator, Prescriber, future agents)
+2. **Skills** (ParsedSkill AST with type annotations)
+3. **Validators** (ValidatorRule interface with execution contracts)
+4. **Hooks** (Plugin lifecycle hooks with resolution rules)
+
+**Agent Factory Pattern:** Enable agent-authored agents via factory, extending Prescriber model.
+
+**Compiler-Informed Architecture:** Standard libraries, packages, linker semantics for composition.
+
+**Current State:** ParsedSkill, ValidatorRule, Prescription, DiscoveredArtifact are already OOP patterns. Analysis formalizes and names them.
+
+**Recommendation:** Formalize without rushing. Let emerge from observed needs. No immediate changes — informational for future architects.
+
+**Next Step:** Integrate AgenticPrimitive framework into Phase 9+ architecture if approved.
+
+---
+
+### PROPOSED: Organizational Paradigm Mapping — Future Agent Roadmap
+
+**Author:** Graham Knight (Lead / Architect)  
+**Type:** Strategy  
+**Status:** Proposed (Brainstorm 2026-04-23)  
+**Source:** `.squad/decisions/inbox/graham-brainstorm-vision.md`
+
+**Proposal:** Map Cairn agents to organizational roles. Current agents already map:
+- **Archivist** → Scribe / Minutes-taker
+- **Curator** → Quality Analyst / Pattern Detective
+- **Prescriber** → Tech Lead / Code Reviewer
+
+**Missing Roles (Future Candidates):**
+- **Planner** → Project Manager (estimates, priorities, sequencing)
+- **Auditor** → Compliance / Governance (enforces standards)
+- **Cost Analyst** → FinOps (token budget tracking, ROI analysis)
+- **Triage Agent** → Incident Commander (escalation, severity assessment)
+
+**Recommendation:** Don't build all of these. Let them emerge from observed needs. Model: Curator emerged because pattern detection was needed → Prescriber emerged because insights need actions. Each new agent should follow same pattern: need → prototype → formalize.
+
+**Next Step:** Use as roadmap guidance for Phase 9+ agent planning.
+
+---
+
+### Summary: Brainstorm Session Convergences
+
+**Key Convergent Themes (All 4 Agents Aligned):**
+
+1. **Decision Chain as Phase 9 Candidate** — Graham + Roger both recommend content-addressable decisions table for highest architectural priority.
+2. **LX Heuristics Checklist** — Design gate for all future MCP tools. Non-blocking, high signal.
+3. **Cairn = Debugger Boundary** — All four converged on "runtime instrumentation + debugger" framing. Clarifies ownership.
+
+**Next Steps:**
+1. Team discussion on brainstorm proposals
+2. If Decision Chain approved: Graham designs schema + migration
+3. If LX heuristics approved: Integrate into feature template
+4. If Sensory Pervasion approved: Roger scopes Tier 1 signals
