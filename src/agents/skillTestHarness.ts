@@ -152,6 +152,7 @@ export function runTestScenario(scenario: TestScenario): TestReport {
   // where assertions can target specific sections or pass rule-specific params.
   // Currently all Tier 1 rules run against the full skill content.
   let allPassed = true;
+  const reportResults: ValidationResult[] = [];
   for (const assertion of scenario.assertions) {
     const result = resultByRule.get(assertion.rule);
     if (!result) {
@@ -160,10 +161,24 @@ export function runTestScenario(scenario: TestScenario): TestReport {
       continue;
     }
 
+    // Validate that assertion vector matches result vector
+    if (result.vector !== assertion.vector) {
+      allPassed = false;
+      reportResults.push({
+        ...result,
+        passed: false,
+        message: `Vector mismatch: assertion expects "${assertion.vector}" but rule produced "${result.vector}"`,
+      });
+      continue;
+    }
+
     const threshold = assertion.threshold ?? DEFAULT_THRESHOLD;
-    if (result.score < threshold) {
+    const passed = result.score >= threshold;
+    if (!passed) {
       allPassed = false;
     }
+    // Clone result with recomputed passed based on scenario threshold
+    reportResults.push({ ...result, passed });
   }
 
   // Compute per-vector scores: average of unique results per vector
@@ -187,7 +202,7 @@ export function runTestScenario(scenario: TestScenario): TestReport {
     skillPath: scenario.skillPath,
     skillName: parsed.name,
     passed: allPassed,
-    results,
+    results: reportResults,
     scores,
     overallScore,
     runAt: new Date().toISOString(),

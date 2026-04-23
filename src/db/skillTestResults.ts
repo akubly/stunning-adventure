@@ -81,11 +81,12 @@ export function insertTestResults(results: SkillTestResultInsert[]): number[] {
   const db = getDb();
   const stmt = db.prepare(
     `INSERT INTO skill_test_results
-       (skill_path, skill_name, scenario_name, vector, tier, rule, score, passed, message, evidence, session_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (skill_path, skill_name, scenario_name, vector, tier, rule, score, passed, message, evidence, session_id, run_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
 
   const ids: number[] = [];
+  const runAt = new Date().toISOString();
   const insertAll = db.transaction(() => {
     for (const r of results) {
       const res = stmt.run(
@@ -100,6 +101,7 @@ export function insertTestResults(results: SkillTestResultInsert[]): number[] {
         r.message ?? null,
         r.evidence ? JSON.stringify(r.evidence) : null,
         r.sessionId ?? null,
+        runAt,
       );
       ids.push(Number(res.lastInsertRowid));
     }
@@ -121,7 +123,7 @@ export function getTestResults(skillPath: string, limit?: number): SkillTestResu
 }
 
 /** Get test history across all skills for a specific vector. */
-export function getTestHistory(vector: string, limit?: number): SkillTestResultRow[] {
+export function getTestHistory(vector: QualityVector, limit?: number): SkillTestResultRow[] {
   const db = getDb();
   const sql = limit
     ? `SELECT * FROM skill_test_results WHERE vector = ? ORDER BY run_at DESC, id DESC LIMIT ?`

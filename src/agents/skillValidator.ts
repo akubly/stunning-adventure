@@ -516,7 +516,7 @@ const hasSpecifics: ValidatorRule = {
     }
 
     // Tool references (if tools declared)
-    if (skill.frontmatter?.tools?.some((t) => body.includes(t.name))) {
+    if (skill.frontmatter?.tools?.some((t) => body.toLowerCase().includes(t.name.toLowerCase()))) {
       specifics.push('tool references');
     }
 
