@@ -2895,6 +2895,114 @@ npm run build && npm run test && npm run lint
 | 7F | `src/mcp/server.ts` | Register 4 new tools |
 | 7F | `src/__tests__/mcp.test.ts` | Tests for new MCP tools |
 
+---
+
+## 2026-04-07: Decision — Copilot SDK Spike Scope
+
+**Author:** Graham (Lead / Architect)  
+**Date:** 2026-04-07  
+**Status:** Approved (Aaron chose Option C — "Spike First")  
+**Branch:** `squad/copilot-sdk-spike`
+
+### Context
+
+Aaron reviewed three architecture options from the brainstorm session:
+- **Option A:** Cairn absorbs compiler responsibilities
+- **Option B:** Build Forge immediately as a separate project
+- **Option C:** Spike first — time-boxed investigation before committing
+
+Aaron chose **Option C**. Roger's finding that the SDK already emits
+`assistant.usage` events with model, tokens, latency, cache metrics, and
+billing multiplier validates that the SDK has real observability surface area.
+
+### Decision
+
+Time-boxed 3-day spike to evaluate `@github/copilot-sdk` as Forge's runtime
+foundation. Spike answers 8 technical questions covering session management,
+tool interception, decision gates, event taxonomy, Cairn bridge, stability,
+model/token control, and end-to-end integration.
+
+### Key Commitments
+
+1. **Cairn = APM (debugger). Forge = Runtime (compiler).** Neither absorbs the other.
+2. **Monorepo with shared types** (`@cairn/types`, `@cairn/cairn`, `@cairn/forge`).
+3. **Spike first, then sister squad.** No Forge chartering until spike concludes.
+4. **Circuit breaker:** If Q1 (session management) = ❌ on Day 1, stop early.
+
+### Trade-offs
+
+| Choice | Upside | Downside |
+|--------|--------|----------|
+| Spike before committing | Low cost to learn; avoids premature architecture | Delays Forge start by ~3 days |
+| SDK as foundation (if go) | Real runtime, maintained by GitHub, embeds agentic patterns | Technical Preview — API instability risk |
+| Monorepo | Atomic type changes, shared CI | Repo complexity, tooling overhead |
+
+### Artifacts
+
+- Spike scope document: `docs/spikes/copilot-sdk-spike.md`
+- Spike code (temporary): `src/spike/` (excluded from build)
+- Spike report: updates to scope document with findings
+
+### Go/No-Go Threshold
+
+**Go** if Q1 + Q2 + Q4 + Q5 = ✅ (core loop works).  
+Q3 and Q7 can be ⚠️.  
+Only Q1 = ❌ is a hard no-go.
+
+---
+
+## 2026-04-07: SDK Spike Findings — Proceeding with Harness Development
+
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-04-07  
+**Type:** Technical spike results  
+**Urgency:** Normal — informational, no blocking decisions
+
+### What I Found
+
+The `@github/copilot-sdk` (v0.2.2) is published, installable, well-typed, and comprehensive. 86 event types, 6 bi-directional hooks, full session management, BYOK support, built-in OpenTelemetry.
+
+### Key Discovery: `assistant.usage` Is Better Than Expected
+
+The `assistant.usage` event gives us:
+- **Token counts:** input, output, cache read/write
+- **Actual billing cost:** `copilotUsage.totalNanoAiu` (nano AI Units — not estimates)
+- **Latency metrics:** duration, TTFT, inter-token latency
+- **Quota tracking:** entitlement snapshots with remaining percentage
+- **Sub-agent attribution:** `parentToolCallId` and `initiator` fields
+
+This is everything we'd need for cost tracking without any estimation or scraping.
+
+### Integration Effort
+
+| Component | LOC | Time |
+|-----------|-----|------|
+| Event bridge adapter | ~50 | Hours |
+| Harness bootstrap | ~80 | Hours |
+| New Cairn event types | ~30 | Hours |
+| Cost summary in curator | ~100 | 1 day |
+| Tests | ~150 | 1 day |
+| **Total** | **~410** | **2-3 days** |
+
+### What This Changes
+
+1. **Token cost tracking is solvable now.** No need to wait for custom telemetry — the SDK emits exactly what we need.
+2. **Hooks become richer.** SDK hooks can *modify* behavior (args, permissions, results), not just observe. Cairn's stdin hooks are observe-only.
+3. **The harness IS the integration.** Instead of bolting Cairn onto the CLI, the harness embeds both the SDK and Cairn in one process. In-process event bridge, no IPC overhead.
+
+### Risk
+
+SDK is Technical Preview. 52 versions in ~3 months = frequent churn. Mitigations:
+- Pin version, don't auto-upgrade
+- Abstract behind our own event types (bridge adapter is the seam)
+- Keep existing stdin hooks working for non-harness users
+
+### Recommendation
+
+Proceed with harness development. The SDK is ready enough to build on, and the event system maps cleanly to Cairn's architecture. Biggest open question: do we want the harness to *replace* the Copilot CLI, or wrap it? The SDK supports both patterns (spawn vs connect to existing).
+
+Full spike document: `docs/spikes/copilot-sdk-exploration.md`
+
 ### Summary
 
 - **15 new files** (7 source, 1 cache DAL, 2 migrations, 5 test files)

@@ -625,3 +625,28 @@ Aaron asked three targeted follow-ups about delivery vehicles, npm vs plugin, an
 6. **Self-correction:** My original "debugger, not compiler" claim was right about the present but wrong about the future. The Decision Chain inherently requires execution-layer participation. The answer isn't to make Cairn the compiler — it's to build a companion that IS the compiler.
 
 **Decision document:** `.squad/decisions/inbox/graham-compiler-debugger.md`
+
+### 2026-04-07: Copilot SDK Spike — Scope Document
+
+**Type:** Spike scoping (architecture)  
+**Trigger:** Aaron chose Option C ("Spike First") from the brainstorm session.  
+**Branch:** `squad/copilot-sdk-spike`
+
+**Key decisions captured:**
+
+1. **Spike-first approach validated.** 3-day time box, 8 technical questions, circuit breaker on Day 1 if session management (Q1) fails. Low-cost exploration before committing to monorepo restructuring or sister squad chartering.
+
+2. **Build order is dependency-driven.** Steps 1–3 (env, client, events) on Day 1 establish whether the SDK is viable. Steps 4–6 (interception, gates, tokens) on Day 2 test the integration surface. Steps 7–8 (bridge, E2E) on Day 3 prove the Cairn↔Forge data flow.
+
+3. **5 decision points identified for Aaron.** Auth model (DP1), spike code location (DP2), circuit breaker response (DP3), event schema alignment strategy (DP4), go/no-go threshold (DP5). Each has a recommended option with trade-offs.
+
+4. **Go/no-go threshold defined.** Q1 + Q2 + Q4 + Q5 = ✅ is "go" (core loop: sessions, tool observation, events, and Cairn bridge all work). Q3 (decision gates) and Q7 (token budgeting) can be partial. Only Q1 = ❌ is a hard stop.
+
+5. **Roger's prior finding is load-bearing.** The `assistant.usage` event discovery (model, tokens, latency, cache metrics, billing multiplier) suggests the SDK has real observability surface area — not just a black-box client. This makes Q4 (event taxonomy) likely to succeed, which de-risks the entire spike.
+
+**Artifacts produced:**
+- Spike scope document: `docs/spikes/copilot-sdk-spike.md`
+- Decision document: `.squad/decisions/inbox/graham-spike-scope.md`
+- Updated focus: `.squad/identity/now.md`
+
+**Architectural insight:** The spike scope mirrors Cairn's own development pattern — answer the hardest question first (Q1 = "can we manage sessions?"), circuit-break early, build confidence incrementally. The same "fail fast" principle that drove Phase 5's MCP-before-CLI decision applies here: don't invest in downstream architecture until the foundation is proven.

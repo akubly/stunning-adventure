@@ -1,54 +1,50 @@
 ---
-updated_at: 2026-04-07T05:43:00Z
-focus_area: Phase 8 — Ecosystem & Extensions
+updated_at: 2026-04-07T08:00:00Z
+focus_area: Copilot SDK Spike — Forge Runtime Investigation
 active_issues:
-  - "Phase 8: CLI extensions & ecosystem integration (deferred from Phase 7)"
+  - "Copilot SDK spike: Can @github/copilot-sdk serve as Forge runtime foundation?"
   - "#11 — Worktree-aware sessions (deferred)"
   - "awesome-copilot submission (deferred)"
 ---
 
 # What We're Focused On
 
-**Phase 7: Prescriber Implementation** — ✅ COMPLETE
+**Copilot SDK Spike** — 🔬 IN PROGRESS
 
-Cairn's third core agent is fully implemented and ready for production use.
+Branch: `squad/copilot-sdk-spike`
 
-**Phase 7 Summary (All Complete):**
-- ✅ **7A** — Data Foundation (Roger): schema, types, DAL, preferences
-- ✅ **7B** — Artifact Discovery (Rosella): 4-phase scanner + cache
-- ✅ **7C** — Infrastructure (Gabriel): curate() 3s cap + trigger wiring
-- ✅ **7D** — Prescription Engine (Roger): core agent, state machine, priority scoring
-- ✅ **7E** — Apply Engine (Rosella): sidecar writing, rollback, drift detection
-- ✅ **7F** — MCP Tools + UX (Roger + Valanice): 4 new tools + growth tracking
+Investigating whether `@github/copilot-sdk` (Technical Preview) can serve as
+the runtime foundation for Forge — the agentic execution harness that
+complements Cairn's observability platform.
 
-**Quality Achievement:**
-- 316/316 tests passing (↑ 194 from Phase 6)
-- TypeScript builds clean (strict mode)
-- Zero lint violations
-- All 10 UX principles integrated & tested
-- Hybrid trigger (preToolUse + run_curate) operational
-- Production-ready dogfood gates passed
+**Architecture decision (2026-04-07):** Aaron chose Option C ("Spike First")
+from the brainstorm session. Key commitments:
+- Cairn = APM (debugger). Forge = Runtime (compiler). Neither absorbs the other.
+- Monorepo with shared types (`@cairn/types`, `@cairn/cairn`, `@cairn/forge`)
+- Spike first within this squad, then charter a sister squad for Forge.
 
-**Test Progression:**
-- Phase 6 baseline: 122 tests
-- After Phase 7: 316 tests (+194, +159%)
-- Coverage: All core paths, state transitions, UX formatting, edge cases
+**Spike scope:** 3-day time box, 8 questions to answer. See
+`docs/spikes/copilot-sdk-spike.md` for full scope document.
 
-**Prescriber Implementation Complete:**
-- ✅ 4 new MCP tools (10 total in platform)
-- ✅ 8-state prescription lifecycle
-- ✅ 5-min artifact discovery cache
-- ✅ 3s curate() time cap enforced
-- ✅ Sidecar file management with rollback
-- ✅ Drift detection & recovery
-- ✅ Growth tracking & resolution heuristics
-- ✅ Full test coverage (316 tests)
+**Key questions:**
+1. Can we manage sessions programmatically via `CopilotClient`?
+2. Can we intercept/observe tool calls before and after execution?
+3. Can we inject decision gates (human-in-the-loop)?
+4. What events does the SDK emit, and at what granularity?
+5. Can we bridge SDK events into Cairn's event_log?
+6. SDK stability and limitations?
+7. Model selection and token budgeting?
+8. End-to-end: minimal Forge session → events → Cairn?
 
-**Deferred to Phase 8+:**
-- CLI extension prototype spike
+**Prior finding (Roger):** SDK already emits `assistant.usage` events with
+model, tokens, latency, cache metrics, and billing multiplier.
+
+**Previous milestones (complete):**
+- Phase 7: Prescriber (316 tests, 10 MCP tools) ✅
+- Phase 8: Skill Linter + Validator + Test Harness ✅
+
+**Deferred:**
 - Worktree support (Issue #11)
-- Bash wrappers for macOS/Linux
 - awesome-copilot submission
-- Vector-based semantic search
 - Performance optimizations
 
