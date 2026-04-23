@@ -263,3 +263,16 @@ ode dist/hooks/...\ commands in hooks.json for cross-platform compatibility
 **Key design insight:** Tier 1 (structural linter) and Tier 2 (5 C's quality vectors) are intentionally orthogonal. All "bad" fixtures pass Tier 1 cleanly — their defects are quality-layer concerns only detectable by Tier 2 rules. This validates the harness architecture: structural + quality are distinct evaluation layers.
 
 **Dogfood gate:** Build ✅ | 360 tests ✅ | All 5 fixtures lint-validated via Cairn MCP
+
+### 2025-07-28: Brainstorming — Extensibility & OOP for Agentic Primitives
+
+**Task:** React to Aaron's 9 ideas for agentic software engineering through the extensibility lens.
+
+**Key insight:** Cairn already contains emergent OOP patterns — the SKILL.md format is an interface, the Prescriber is a Factory, resolution rules are a linker, the Curator is a profiler, and the Validator is a type checker. The architecture just needs the patterns named and formalized.
+
+**Proposed:**
+1. `AgenticPrimitive` base type hierarchy (4 families: Knowledge, Actor, Bridge, Signal) — maps OOP concepts (interface, class, method, observer, factory, command, composite) to agentic concepts (skill, agent, tool, hook, prescriber, prescription, pipeline).
+2. Agent-authored-agents via Factory pattern extension to the Prescriber. Capability ceiling principle for containment. Provenance chain as "blockchain of decisions."
+3. Compiler metaphor mapped to plugin architecture: Skills = types, resolution rules = linker, marketplace = package manager, event log = debug symbols.
+
+**Deliverable:** `.squad/decisions/inbox/rosella-brainstorm-extensibility.md`

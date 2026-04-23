@@ -40,6 +40,28 @@
 
 <!-- Append new learnings below -->
 
+### 2026-04-07: Platform Feasibility Brainstorm (Aaron's 9 Ideas)
+
+- **event_log's JSON payload design is accidentally future-proof:** New signal types (model_call, decision_point, context_assembly, quality_signal) can be added without schema migrations. Just emit new event_type strings. The curator's cursor-based processing picks them up automatically.
+- **Token cost tracking requires host integration:** Cairn doesn't make LLM calls — the host (Copilot CLI) does. `model_call` events need to come from the harness. This is an integration feasibility question before committing to schema work.
+- **Slop is a quality problem, not an error problem:** The curator's three pattern types (recurring_error, error_sequence, skip_frequency) only catch error-flavored slop. Need a `quality_signal` pattern type for churn, retry storms, verbosity, and rejection cascades.
+- **Materialized rollups beat re-scanning:** A `cost_summary` table aggregated by the curator during event processing avoids O(n) scans of the full event log for basic questions like "how many tokens this session?"
+- **SQLite generated columns are useful for payload indexing:** `json_extract(payload, '$.model') VIRTUAL` gives queryable columns without widening the write path.
+- **Priority stack for next platform work:** (1) model_call events + cost_summary, (2) quality detection rules in curator, (3) decision_point event type. Everything else is downstream or needs more design.
+- **Full analysis written to `.squad/decisions/inbox/roger-brainstorm-platform.md`.**
+
+### 2026-04-07: Copilot SDK Harness Feasibility Assessment
+
+- **`@github/copilot-sdk` is real and buildable on.** Technical Preview but core primitives (CopilotClient, createSession, defineTool, hooks, events) are stable. Multi-language (TS, Python, Go, .NET, Java). JSON-RPC to embedded CLI process.
+- **`assistant.usage` event solves token cost tracking.** Emits model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, cost (billing multiplier), duration. No need to observe host traffic — we ARE the host.
+- **SDK hook model maps directly to Cairn instrumentation.** Six hooks: onSessionStart, onUserPromptSubmitted, onPreToolUse, onPostToolUse, onSessionEnd, onErrorOccurred. Each maps to a Cairn event type and instrumentation point.
+- **Event bridge is ~50 LOC.** The SDK emits structured events with typed payloads. Mapping to Cairn's event_log is a thin adapter: `session.on(event => logEvent(sessionId, mapType(event.type), event.data))`.
+- **`session.usage_info` gives context window monitoring.** tokenLimit, currentTokens, messagesLength. Plus `session.compaction_complete` for compaction metrics.
+- **OpenTelemetry is built in.** `TelemetryConfig` with OTLP endpoint + W3C trace context propagation. Free observability export.
+- **Recommended architecture: Cairn as library inside the harness (Option A).** Same TypeScript runtime, import Cairn's DB/agents directly. Event bridge is in-process. Lowest latency, simplest deployment.
+- **Existing hooks become legacy.** stdin-based hooks (sessionStart.ts, postToolUse.ts) still work for stock Copilot CLI users, but harness users get richer instrumentation via SDK hooks.
+- **Full analysis written to `.squad/decisions/inbox/roger-copilot-sdk-harness.md`.**
+
 ### Phase 7F: MCP Tools + UX + Growth (Final Phase)
 
 - **4 new MCP tools registered:** `list_prescriptions`, `get_prescription`, `resolve_prescription`, `show_growth` — bringing total to 10 tools.

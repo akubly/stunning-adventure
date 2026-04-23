@@ -3685,3 +3685,220 @@ Four Primitive Families:
 2. If Decision Chain approved: Graham designs schema + migration
 3. If LX heuristics approved: Integrate into feature template
 4. If Sensory Pervasion approved: Roger scopes Tier 1 signals
+
+---
+
+## Proposed Decisions (Brainstorm Round 2 — 2026-04-23)
+
+### PROPOSED: Compiler + Debugger Architecture — Cairn and Forge
+
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-04-23  
+**Type:** Architectural recommendation  
+**Status:** PROPOSED — awaiting discussion  
+**Source:** `.squad/decisions/inbox/graham-compiler-debugger.md`  
+**Orchestration Log:** `.squad/orchestration-log/2026-04-23T06-30-00Z-graham-brainstorm-r2.md`
+
+**Context:** Revised boundary statement addressing Aaron's challenge to the Cairn boundary test. The Decision Chain data model blurs the line between observability (debugger) and execution (compiler): instrumenting decision points and placing the human in the loop are execution-layer concerns.
+
+**Recommendation: Two Projects, One Monorepo**
+
+- **Cairn (APM — Application Performance Monitor):**
+  - Observability, pattern detection, insight generation, prescription generation
+  - Stays ~12 modules (Archivist, Curator, Prescriber, MCP tools)
+  - Focus: "What happened? What pattern does it match? How do we improve?"
+  - Release: Weekly iteration on analysis quality
+
+- **Forge (Execution Harness — NEW):**
+  - Runtime execution, orchestration, context management, human-in-loop UX
+  - Copilot SDK wrapper, DecisionGate, ToolRouter, ContextManager
+  - Focus: "What should happen next? When should we stop and ask? How fast?"
+  - Release: Careful gated updates (hot path)
+
+**Monorepo Structure:**
+```
+packages/
+├── @cairn/types          ← Shared contract (events, decisions, sessions)
+├── @cairn/cairn           ← Debugger / APM
+└── @cairn/forge           ← Compiler / harness (NEW)
+```
+
+**Why Monorepo (not separate repos):**
+- Shared type changes must be atomic (both consumers must stay in sync)
+- Integration testing in one CI pipeline
+- Prevents version drift at the integration seam where correctness matters most
+
+**Why Not Absorb the Harness INTO Cairn:**
+- Scope explosion (Cairn goes from 12 modules to 30+)
+- Stability contracts differ (Cairn can iterate, harness must be rock-stable)
+- Release cadence differs
+- Merging observability + execution obscures what code is doing
+
+**Team Structure: Spike First, Then Sister Squad**
+
+Phase 1: **Copilot SDK Spike** (this squad, 1-2 sessions)
+- Can we wrap CopilotClient and intercept tool calls?
+- Can we inject decision gates into the execution flow?
+- What events can we emit, and at what granularity?
+- What are the SDK's limitations?
+
+Phase 2: **Sister Squad (Forge)** (after spike)
+- Different domain expertise than Cairn
+- Cairn team: data pipelines, pattern detection, SQLite, MCP tools
+- Forge team: agent orchestration, Copilot SDK, UX for decision gates, streaming, model routing
+
+**Trade-offs Named:**
+| Decision | Alternative | Why chosen |
+|----------|------------|------------|
+| Monorepo | Separate repos | Atomic shared type changes |
+| Sister squad | Expand this team | Different domain expertise |
+| Spike first | Squad immediately | Need SDK constraints before charter |
+| Forge as sibling | Forge inside Cairn | Scope explosion + stability concerns |
+
+**Next Steps:**
+1. Copilot SDK spike — Time-boxed research
+2. Draft `@cairn/types` — Extract shared types from current Cairn codebase
+3. Forge squad charter — Written after spike, informed by SDK constraints
+4. Monorepo migration — Move current Cairn into `packages/cairn/` structure
+
+**Open Questions for Aaron:**
+1. Does "Forge" resonate as the harness name? (Alternatives: Anvil, Loom, Mill)
+2. Should the spike include a minimal decision gate prototype, or just research?
+3. Timeline: Phase 9, or parallel track?
+
+---
+
+### PROPOSED: Copilot SDK Harness — Platform Feasibility Assessment
+
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-04-23  
+**Type:** Technical Feasibility / Platform Analysis  
+**Status:** PROPOSED — open for discussion  
+**Source:** `.squad/decisions/inbox/roger-copilot-sdk-harness.md`  
+**Orchestration Log:** `.squad/orchestration-log/2026-04-23T06-30-00Z-roger-brainstorm-r2.md`
+
+**Executive Summary:** Building an agentic harness on `@github/copilot-sdk` is feasible and high-leverage. The SDK already emits exactly the event stream Cairn needs but currently can't see. Owning the harness closes every observability gap and transforms Cairn from a passive observer (scraping hook JSON) into a first-class participant in the agentic loop.
+
+**SDK Core Primitives:**
+| Primitive | What It Gives Cairn |
+|-----------|-------------------|
+| `CopilotClient` | Session lifecycle owner |
+| `createSession()` | Decision point visibility |
+| `defineTool()` | Tool orchestration surface |
+| `session.on(event)` | **THE OBSERVABILITY GOLDMINE** |
+| `hooks.*` | Instrumentation injection points |
+| `TelemetryConfig` | OTLP + W3C trace context |
+
+**Events SDK Already Emits:**
+
+**Token Cost (SOLVED):**
+- `assistant.usage` — inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, cost (billing multiplier), duration_ms, apiCallId
+
+**Tool Observability (SOLVED):**
+- `tool.execution_start` — toolCallId, toolName, arguments, mcpServerName
+- `tool.execution_complete` — success, result, error, toolTelemetry
+- `tool.execution_partial_result` — streaming tool output
+
+**Context Management (SOLVED):**
+- `session.usage_info` — tokenLimit, currentTokens, messagesLength
+- `session.compaction_complete` — pre/post compaction tokens, messages removed, summary content
+
+**Agent Reasoning (SOLVED):**
+- `assistant.reasoning` / `assistant.reasoning_delta` — extended thinking
+- `assistant.intent` — what the agent thinks it's doing
+- `assistant.message` — complete response with reasoning text
+
+**Session Lifecycle (SOLVED):**
+- `assistant.turn_start` / `assistant.turn_end`
+- `session.idle` — agent finished processing
+- `session.error` — errorType, message, statusCode
+- `session.context_changed` — cwd, gitRoot, repository, branch
+
+**Hooks We'd Wire:**
+| Hook | What We'd Do |
+|------|------------|
+| `onSessionStart` | Create Cairn session, inject context from insights |
+| `onUserPromptSubmitted` | Log context assembly, measure prompt size |
+| `onPreToolUse` | Log decision point, apply permission gates |
+| `onPostToolUse` | Log tool result, detect churn/retry patterns |
+| `onSessionEnd` | Finalize session, run curator, compute cost |
+| `onErrorOccurred` | Log error with full context |
+
+**Recommendation:** Build the harness. The SDK is stable, shipped, and closes every observability gap. ~50 line event bridge. High-leverage next step.
+
+---
+
+### PROPOSED: Shiproom Ceremony — Decision Record Schema and Ceremonial Process
+
+**Author:** Valanice (UX / Human Factors)  
+**Date:** 2026-04-23  
+**Type:** Ceremony Design / LX + UX Specification  
+**Status:** DRAFT — for team discussion  
+**Source:** `.squad/decisions/inbox/valanice-shiproom-ceremony.md`  
+**Orchestration Log:** `.squad/orchestration-log/2026-04-23T06-30-00Z-valanice-brainstorm-r2.md`
+
+**What Shiproom Is (And Isn't):**
+
+- **NOT code review:** "Is the code correct?" — Instead: "Were the decisions sound?"
+- **NOT a retrospective:** "What should we do differently next time?" — Instead: "Should we ship THIS right now?"
+- **IS:** A ceremony where the human and agents collectively stress-test the decision chain before shipping
+
+**The Real-World Analog:** In software organizations, Shiproom is the final gate before release. A team presents its payload (decision chain) to stakeholders who stress-test the decisions that produced the work.
+
+**Decision Record Schema:**
+
+Every decision worth defending is captured at decision time:
+
+```
+DecisionRecord {
+  id:            string       // content-addressable (hash of inputs)
+  timestamp:     ISO-8601
+  agent:         string       // who decided
+  altitude:      0|1|2|3      // Decision Altitude: Local → Policy
+  question:      string       // what's being decided
+  chosen:        string       // what was chosen
+  alternatives:  string[]     // at least 1 (MANDATORY — anti-anchoring rule)
+  evidence:      string       // what supported the choice
+  confidence:    number       // agent's self-assessed confidence (0.0–1.0)
+  parent_id:     string?      // dependency lineage
+  tags:          string[]     // domain tags for routing challengers
+}
+```
+
+**Why `alternatives` is mandatory with minimum 1:**
+- Embedded anti-anchoring rule: if agent can't articulate alternative, it hasn't decided — it's followed inertia
+- Prevents confabulation: alternatives recorded at decision time, not reconstructed later
+- Enables challenge: "Here's your alternative and why it lost; here's why the choice was right"
+
+**Decision Chain as Tamper-Evident DAG:**
+- Content-addressable IDs: change decision A → hash changes → downstream lineage breaks
+- Auditability by construction: not security theater, just trustworthy chain
+- Pull-based event log: decision records live in DB, not in context (preserves token budget)
+
+**Shiproom Process:**
+
+1. **Candidate review:** Human reviews decision chain
+2. **Challenge round:** Agents (by domain expertise) challenge specific decisions
+3. **Disposition:** Accept decision, request revision, or escalate
+4. **Payload assembly:** Approved chain + rejected decisions + override justifications
+5. **Ship or iterate:** Decision made
+
+**Next Steps:**
+1. Formalize Decision Record schema in types
+2. Build `prepare_payload` MCP tool
+3. Design challenge orchestration (which agents challenge what)
+4. Integrate into Forge harness lifecycle
+
+---
+
+### Round 2 Brainstorm Summary
+
+Three complementary proposals from different angles:
+
+1. **Graham (Architecture):** Cairn + Forge monorepo separation — APM + Runtime. Spike first, sister squad after.
+2. **Roger (Platform):** SDK emits the events Cairn needs. ~50 line bridge closes all observability gaps.
+3. **Valanice (UX):** Shiproom ceremony + Decision Record schema operationalizes "decisions must be defensible."
+
+**Converging Insight:** Scope decision is emerging — Cairn stays observability-focused. Execution (Forge) becomes a sibling. Human-in-loop ceremony (Shiproom) is the governance layer.
+
+**Session Log:** `.squad/log/2026-04-23T06-30-00Z-brainstorm-round2.md`

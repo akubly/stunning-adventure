@@ -587,3 +587,41 @@ Aaron asked three targeted follow-ups about delivery vehicles, npm vs plugin, an
 **Decision document:** `.squad/decisions/inbox/graham-phase-8d-design.md`
 
 **Architectural insight:** The parser → linter → validator pipeline mirrors the established 3-layer architecture: Parser is pure parse (primitive), Linter validates structure (primitive), Validator scores quality (primitive), TestHarness orchestrates (assembler), test_skill MCP tool presents (experience). Each layer adds analysis depth while sharing the `ParsedSkill` AST as common currency.
+
+### 2026-04-07: Architecture Vision Brainstorm — 9 Ideas for Cairn's Future
+
+**Type:** Brainstorming session (no implementation)  
+**Trigger:** Aaron proposed 9 ideas for the future of Cairn and agentic software engineering.
+
+**Key architectural insights:**
+
+1. **Cairn's role in the compiler metaphor:** Cairn is NOT the compiler (that's the LLM + harness). Cairn is the **runtime instrumentation + debugger** — observability and correction, not execution. This framing is a clean boundary test for future features: if it observes/analyzes/corrects agent behavior, it's Cairn's job. If it directs behavior, it's not.
+
+2. **Decision Chain data model:** Decisions are the highest-value signal in agentic engineering. Proposed a content-addressable `Decision` entity with parent_id chaining (like git SHAs), actor tracking (human vs automated), and alternatives_considered. This would unify the currently scattered insight→prescription→disposition trail into a first-class audit chain. Strongest candidate for Phase 9 scope.
+
+3. **Organizational paradigm mapping:** Current agents already map to org roles (Archivist=Scribe, Curator=QA, Prescriber=Tech Lead). Identified 4 potential future agents (Planner, Auditor, Cost Analyst, Triage Agent) but recommended against building speculatively — let them emerge from observed need, same way Curator→Prescriber emerged.
+
+4. **LMX (Language Model Experience):** Applying UX design principles to MCP tool design. Identified gaps in progressive disclosure and suggested an LMX principles checklist for new tool development.
+
+**Decision document:** `.squad/decisions/inbox/graham-brainstorm-vision.md`
+
+### 2026-04-07: Compiler + Debugger Architecture — Cairn and Forge
+
+**Type:** Architectural recommendation (follow-up to vision brainstorm)  
+**Trigger:** Aaron challenged the "Cairn is the debugger" boundary. He correctly identified that the Decision Chain blurs the boundary — instrumenting decision points and placing humans in the loop are execution-layer concerns, not pure observation.
+
+**Key architectural insights:**
+
+1. **The boundary problem:** Cairn is ~80% debugger, ~20% actuator (Prescriber applies sidecars). The Decision Chain makes this tension explicit: you can't instrument a decision point from outside the execution path. Post-hoc recording ≠ in-line gating.
+
+2. **The APM model:** The right analogy is Application ↔ APM (Application Performance Monitor). The harness (Forge) runs, emits telemetry, consumes feedback. Cairn collects, analyzes, prescribes. Tightly integrated in data flow, loosely coupled in deployment.
+
+3. **Monorepo with shared types:** Recommended `@cairn/types` (shared contract), `@cairn/cairn` (current project), `@cairn/forge` (new harness). Monorepo because shared type changes must be atomic — version drift at the integration seam is the highest-risk failure mode.
+
+4. **Sister squad with spike-first timing:** Different domain expertise needed (Cairn = data pipelines + pattern detection; Forge = agent orchestration + Copilot SDK + UX). But spike the SDK first within this squad to understand constraints before chartering the sister squad.
+
+5. **Revised boundary statement:** The boundary holds but is collaborative, not a wall. Cairn = Telemetry & Improvement System. Forge = Execution Runtime. Shared = event contract, decision schema, session types.
+
+6. **Self-correction:** My original "debugger, not compiler" claim was right about the present but wrong about the future. The Decision Chain inherently requires execution-layer participation. The answer isn't to make Cairn the compiler — it's to build a companion that IS the compiler.
+
+**Decision document:** `.squad/decisions/inbox/graham-compiler-debugger.md`
