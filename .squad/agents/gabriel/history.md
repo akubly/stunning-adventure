@@ -123,3 +123,20 @@
 - `npm audit` shows 3 vulnerabilities (2 moderate, 1 high) in SDK transitive deps: `hono` (cookie/path traversal/IP matching issues) and `@hono/node-server` (middleware bypass). These are in the Hono web framework used internally by `@github/copilot` — not directly exploitable in our hook/MCP usage pattern but worth tracking for SDK updates.
 
 **Files Modified:** `tsconfig.json` (added spike exclusion), `package.json` + `package-lock.json` (SDK dependency added)
+
+### 2026-04-23: Phase 1 Monorepo Restructuring — Graham's Foundation
+
+**Context:** Cairn monorepo foundational restructuring by Graham (Lead).
+
+**Monorepo Architecture:**
+- **`packages/types`** (`@cairn/types`) — Shared contract types (bridge events, decisions, DBOM, session identity)
+- **`packages/cairn`** (`@akubly/cairn`) — Existing Cairn observability, MCP tools, plugin infrastructure
+- **`packages/forge`** (`@cairn/forge`) — Forge runtime scaffold (SDK integration, deterministic execution)
+
+**Type Governance:** Shared types in `@cairn/types`. Internal types (CairnEvent, agent types, prescription lifecycle) remain in cairn. Cairn re-exports shared types for backward compatibility.
+
+**Build Discipline:** Root `tsconfig.json` with project references. `tsc --build` enforces correct order: types → cairn, types → forge. All 427 tests pass. Clean build, zero logic changes.
+
+**Impact for Gabriel:** The monorepo structure enables infrastructure separation — hook infrastructure stays in cairn (close to MCP tools), but Forge runtime can have independent tooling chains. This pattern keeps infra concerns decoupled and scalable as phases progress.
+
+**Next Phase:** Phase 2 (live runtime verification) validates type contracts during SDK harness integration.

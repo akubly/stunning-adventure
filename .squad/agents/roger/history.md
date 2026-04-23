@@ -428,3 +428,18 @@ ode dist/mcp/server.js\)
 - **BYOK works without GitHub auth.** Can use OpenAI/Azure/Anthropic keys directly via `provider` config. Good for testing without Copilot subscription.
 - **OpenTelemetry is built in.** OTLP HTTP export, file-based JSONL export, W3C trace context propagation. Free observability without custom instrumentation.
 - **Full findings written to `docs/spikes/copilot-sdk-exploration.md`.**
+
+### 2026-04-23: Phase 1 Monorepo Restructuring — Graham's Foundation
+
+**Context:** Cairn monorepo foundational restructuring by Graham (Lead).
+
+**Monorepo Layout:**
+- **`packages/types`** (`@cairn/types`) — Shared contract types (ProvenanceTier, CairnBridgeEvent, DecisionRecord, DBOM, SessionIdentity, TelemetrySink)
+- **`packages/cairn`** (`@akubly/cairn`) — Existing Cairn observability + MCP tools
+- **`packages/forge`** (`@cairn/forge`) — Forge runtime scaffold (uses @cairn/types)
+
+**Build:** Root `tsconfig.json` with project references (`tsc --build`) enforces correct order. All 427 tests pass. Zero business logic changes.
+
+**Impact for Roger:** The shared types now live in `@cairn/types`. No changes needed to existing code or MCP server logic — cairn package re-exports all shared types. Forge can depend on `@cairn/types` for bridge contracts without coupling to Cairn's internal schema.
+
+**Next Phase:** Phase 2 (live runtime verification) validates type-vs-runtime behavior during SDK integration.

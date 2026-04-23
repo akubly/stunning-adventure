@@ -29,6 +29,25 @@
 
 <!-- Append new learnings below -->
 
+### 2026-04-23: Phase 1 — Monorepo Foundation
+
+**Restructuring:** Converted single-package `@akubly/cairn` to three-package npm workspace monorepo: `@cairn/types` (shared contracts), `@akubly/cairn` (current codebase), `@cairn/forge` (scaffold).
+
+**Key architecture decisions:**
+- **Type split:** DB row types (e.g., `CairnEvent` with `id: number`) stay Cairn-internal. Bridge event types (`CairnBridgeEvent` with `provenanceTier`) are the shared contract. Re-export pattern in cairn's types/index.ts ensures zero import path changes.
+- **Build strategy:** Root `tsc --build` with project references rather than `npm run build --workspaces`. Ensures topological ordering (types first) and enables incremental builds.
+- **`composite: true` + `declarationMap: true`** on shared packages enables cross-package go-to-definition and incremental compilation.
+- **.github/ distribution files** dropped from cairn's npm `files` field — they're repo-level plugin metadata, not package contents.
+
+**Key file paths:**
+- Root workspace config: `package.json` (workspaces: ["packages/*"])
+- Root project refs: `tsconfig.json` (references to all three packages)
+- Shared types: `packages/types/src/index.ts`
+- Cairn internal types: `packages/cairn/src/types/index.ts` (re-exports shared)
+- Forge scaffold: `packages/forge/src/index.ts`
+
+**Pattern:** npm workspace dependency syntax is `"*"` (not `"workspace:*"` — that's pnpm/yarn).
+
 ### 2026-04-02: Phase 5 Architecture Review — MCP Server
 
 **Review type:** Pre-merge architecture review  

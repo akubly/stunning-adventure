@@ -4288,3 +4288,58 @@ Monorepo with three packages:
 5. Add DBOM generation to skill compilation pipeline
 
 ---
+
+## Phase 1 Decisions — Monorepo Foundation
+
+### 2026-04-23: Monorepo Foundation — npm Workspaces with Three Packages
+
+**Author:** Graham Knight (Lead / Architect)  
+**Type:** Architecture  
+**Status:** Implemented
+
+**Context**
+
+Cairn was a single package (`@akubly/cairn`) containing all source code. The upcoming Forge runtime needs to share contract types with Cairn but must remain a separate package with its own dependency tree (e.g., `@github/copilot-sdk` is a Forge production dependency, not Cairn's concern).
+
+**Decision**
+
+Restructured to an npm workspaces monorepo with three packages:
+
+| Package | Name | Purpose |
+|---------|------|---------|
+| `packages/types` | `@cairn/types` | Shared contract types — pure type definitions, zero runtime |
+| `packages/cairn` | `@akubly/cairn` | Current Cairn codebase (observability, learning, MCP tools) |
+| `packages/forge` | `@cairn/forge` | Empty scaffold for the deterministic execution runtime |
+
+**Type Split Design**
+
+**Key distinction:** Cairn-internal types (DB row shapes like `CairnEvent` with `id: number`, agent types, prescription lifecycle) stay in `packages/cairn/src/types/index.ts`. Shared contract types (bridge event format, decision records, DBOM structures, session identity, telemetry sink) live in `@cairn/types`.
+
+The cairn types file re-exports all shared types from `@cairn/types`, so existing internal imports are unaffected.
+
+**Shared types defined:**
+- `ProvenanceTier`, `CairnBridgeEvent` — bridge event format (distinct from DB row type)
+- `DecisionSource`, `DecisionRecord` — structured decision auditing
+- `DBOMDecisionEntry`, `DBOMStats`, `DBOMArtifact` — Decision Bill of Materials
+- `SessionIdentity` — minimal cross-package session reference
+- `TelemetrySink` — pluggable event output interface for Phase 5
+
+**Build Strategy**
+
+Root `tsconfig.json` uses project references (`tsc --build`) to enforce correct build order (types → cairn, types → forge). This is more reliable than `npm run build --workspaces` which doesn't guarantee topological ordering.
+
+**Trade-offs**
+
+1. **`tsc --build` vs per-package `tsc`:** Using `tsc --build` from root ensures correct build order and incremental builds via `.tsbuildinfo`. Trade-off: packages can't use independent TypeScript versions (acceptable — we want version consistency anyway).
+
+2. **`.github/hooks/` and `.github/plugin/` in cairn's `files` field:** These repo-root directories were previously listed in the cairn package's npm `files` field. In a monorepo, the cairn package can't reference files outside its directory for npm publish. Dropped from `files` — these are distribution/plugin metadata that belong at repo root, not in the npm tarball.
+
+3. **`"*"` for workspace dependencies:** npm workspaces uses `"*"` (not `"workspace:*"` which is pnpm/yarn syntax) to reference local packages.
+
+**Verification**
+
+- All 427 existing tests pass without modification
+- Clean build across all three packages
+- Zero business logic changes — purely structural
+
+---

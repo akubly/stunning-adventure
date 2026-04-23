@@ -276,3 +276,20 @@ ode dist/hooks/...\ commands in hooks.json for cross-platform compatibility
 3. Compiler metaphor mapped to plugin architecture: Skills = types, resolution rules = linker, marketplace = package manager, event log = debug symbols.
 
 **Deliverable:** `.squad/decisions/inbox/rosella-brainstorm-extensibility.md`
+
+### 2026-04-23: Phase 1 Monorepo Restructuring — Graham's Foundation
+
+**Context:** Cairn monorepo foundational restructuring by Graham (Lead).
+
+**Monorepo Layout:**
+- **`packages/types`** (`@cairn/types`) — Shared contract types for cross-package consumption
+- **`packages/cairn`** (`@akubly/cairn`) — Existing Cairn observability + MCP tools + plugin infrastructure
+- **`packages/forge`** (`@cairn/forge`) — Forge runtime scaffold ready for SDK integration
+
+**Type Split:** Cairn-internal types stay in cairn package. Shared types (bridge events, decision records, DBOM, session identity, telemetry sinks) move to `@cairn/types`. Cairn re-exports all shared types — no changes to existing code.
+
+**Build:** npm workspaces with root `tsconfig.json` project references. `tsc --build` enforces correct order. All 427 tests pass.
+
+**Impact for Rosella:** Plugin infrastructure remains in cairn package. New monorepo structure enables forge runtime as a separate package — important for distribution strategy. When Forge ships, it can have its own dependencies without bloating Cairn's npm tarball.
+
+**Next Phase:** Phase 2 (live runtime verification) brings Forge online with SDK integration.
