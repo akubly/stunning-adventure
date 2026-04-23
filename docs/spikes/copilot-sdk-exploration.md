@@ -3,7 +3,7 @@
 **Author:** Roger Wilco (Platform Dev)
 **Date:** 2026-04-07
 **Branch:** `squad/copilot-sdk-spike`
-**Status:** Research complete
+**Status:** Day 1 spike complete — hands-on verification
 
 ---
 
@@ -556,3 +556,80 @@ session.on((event) => bridgeEvent(cairnSessionId, event));
 4. **Keep existing hooks working** — SDK harness is additive, not replacement
 
 The `assistant.usage` event alone justifies the integration — it gives us model, tokens, cache metrics, billing cost in nano-AIU, latency, and quota tracking. That's everything we'd need for Phase 8's cost tracking feature with zero scraping or estimation.
+
+---
+
+## 14. Day 1 Spike Findings (Hands-On Verification)
+
+**Date:** 2026-04-08  
+**Code:** `src/spike/forge-poc.ts`, `src/spike/event-bridge.ts`
+
+### Q1 Answer: Session Management — ✅ Yes
+
+The SDK's session management API is **real, typed, and compiles cleanly**. We verified:
+
+- `CopilotClient` constructor accepts `CopilotClientOptions` (cliPath, logLevel, useStdio, telemetry, etc.)
+- `client.createSession(config)` returns `CopilotSession` with rich `SessionConfig`:
+  - Model selection (`model`, `reasoningEffort`)
+  - Tool registration (`tools`, `availableTools`, `excludedTools`)
+  - MCP server config (`mcpServers`)
+  - 6 lifecycle hooks (`onSessionStart`, `onSessionEnd`, `onPreToolUse`, `onPostToolUse`, `onUserPromptSubmitted`, `onErrorOccurred`)
+  - Permission handler (`onPermissionRequest: approveAll`)
+  - Early event handler (`onEvent`)
+  - Client identification (`clientName`)
+  - Infinite sessions support (`infiniteSessions`)
+  - BYOK provider config (`provider`)
+- `client.resumeSession({ sessionId })` for session resume
+- `client.listSessions()` and `client.getSessionMetadata()` for session management
+- `session.send()` and `session.sendAndWait()` for prompting
+- `session.disconnect()`, `session.destroy()`, `session.abort()` for cleanup
+- `client.getAuthStatus()`, `client.getStatus()`, `client.ping()` for health
+- `client.listModels()` returns `ModelInfo[]` with capabilities, billing, policy
+
+**Circuit breaker: PASSED.** The session management API exists exactly as documented.
+
+### Q4 Answer: Event Taxonomy — ✅ Comprehensive (86 typed events)
+
+The SDK emits **86 event types** from a generated schema (`session-events.schema.json`). Every event has:
+- `id` (UUID v4), `timestamp` (ISO 8601), `parentId` (linked chain), `ephemeral?` (transient flag)
+- `type` (discriminated union tag), `data` (type-specific payload)
+
+Event subscription is fully typed:
+- `session.on("assistant.usage", (event) => ...)` — TypeScript infers the exact payload shape
+- `session.on((event) => ...)` — catch-all, discriminated union on `event.type`
+- Both return an unsubscribe function
+
+**Key finding beyond pre-spike research:** The event types are auto-generated from a JSON schema, not hand-written. This means they're likely stable across SDK versions (schema-driven, not ad-hoc). The `session-events.d.ts` file is ~105KB of generated types.
+
+**Cairn mapping coverage:** 22 of 86 events map to Cairn-relevant signals (see `event-bridge.ts` for full analysis). The remaining 64 are display-layer or infrastructure events.
+
+### Q6 Answer: Stability & Limitations — ⚠️ Manageable Risks
+
+**Install:**
+- SDK v0.2.2 installs cleanly alongside existing deps
+- No dependency conflicts: SDK uses `zod ^4.3.6` (same as Cairn), `vscode-jsonrpc ^8.2.1`, and `@github/copilot ^1.0.21`
+- Build (`tsc`) passes with spike code — no type conflicts
+- All 427 existing tests pass — zero regressions
+- 3 pre-existing npm audit vulnerabilities (2 moderate, 1 high) — not introduced by SDK
+
+**Type system:**
+- All documented exports are real: `CopilotClient`, `CopilotSession`, `defineTool`, `approveAll`, `SYSTEM_PROMPT_SECTIONS`, plus 60+ type exports
+- Type inference works correctly for typed event handlers
+- `defineTool` accepts Zod schemas as documented
+- No `@ts-ignore` or type casting needed in PoC code
+
+**Limitations discovered:**
+1. **`package.json` exports restriction** — SDK uses Node.js `exports` field; `require('@github/copilot-sdk/package.json')` throws `ERR_PACKAGE_PATH_NOT_EXPORTED`. Must access version via `node_modules` path inspection.
+2. **Runtime requirement** — SDK compiles fine but requires a live Copilot CLI process to actually execute. This is expected and documented, but means the PoC can only be type-verified, not runtime-verified, in the spike.
+3. **No source maps** — `.d.ts` files exist but no TypeScript source in the package. Debugging requires reading compiled JS.
+4. **Rapid version churn** — 52 versions in ~3 months. The `0.3.0-preview.0` prerelease already exists. Pin to `0.2.2`.
+
+**Verdict:** Technical Preview risks are real but well-bounded. The type system is comprehensive enough to build against. The version pinning strategy (`^0.2.2` in package.json) should be tightened to exact (`0.2.2`) for production use.
+
+### Surprises
+
+1. **Better than expected:** `defineTool` uses the same Zod pattern as Cairn's MCP tools. Zero learning curve for tool definition.
+2. **Better than expected:** SDK shares our `zod` dependency — no version conflict, no duplicate installs.
+3. **Better than expected:** Hook model is bi-directional (can modify behavior), not just observe-only like Cairn's stdin hooks.
+4. **As expected:** The 86 event types match the pre-spike research catalog exactly. No hidden events, no missing events.
+5. **Minor friction:** The `ERR_PACKAGE_PATH_NOT_EXPORTED` on `package.json` import is a minor annoyance but doesn't affect anything functional.
