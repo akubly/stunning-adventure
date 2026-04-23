@@ -1,0 +1,79 @@
+name: "Good skill — passes all 5 C's quality vectors"
+skill_path: "./SKILL.md"
+
+tier1:
+  assertions:
+    # --- Clarity ---
+    - vector: clarity
+      rule: no-hedge-words
+      section: Patterns
+    - vector: clarity
+      rule: no-hedge-words
+      section: Context
+    - vector: clarity
+      rule: imperative-voice
+      section: Patterns
+    - vector: clarity
+      rule: sentence-length
+      section: Patterns
+      params:
+        max_words: 40
+    - vector: clarity
+      rule: no-vague-refs
+      section: Patterns
+
+    # --- Completeness ---
+    - vector: completeness
+      rule: tools-referenced-in-body
+    - vector: completeness
+      rule: section-depth
+      section: Context
+      params:
+        min_words: 50
+    - vector: completeness
+      rule: section-depth
+      section: Patterns
+      params:
+        min_words: 50
+    - vector: completeness
+      rule: section-depth
+      section: Examples
+      params:
+        min_words: 50
+    - vector: completeness
+      rule: section-depth
+      section: Anti-Patterns
+      params:
+        min_words: 50
+    - vector: completeness
+      rule: context-patterns-flow
+
+    # --- Concreteness ---
+    - vector: concreteness
+      rule: actionable-verbs
+      section: Patterns
+    - vector: concreteness
+      rule: has-specifics
+      section: Patterns
+    - vector: concreteness
+      rule: has-specifics
+      section: Examples
+    - vector: concreteness
+      rule: no-abstractions
+      section: Patterns
+
+    # --- Consistency ---
+    - vector: consistency
+      rule: name-heading-match
+    - vector: consistency
+      rule: tool-section-agreement
+    - vector: consistency
+      rule: domain-content-match
+
+    # --- Containment ---
+    - vector: containment
+      rule: scope-bounded
+
+# Tier 2 placeholder (designed, not executed)
+tier2:
+  scenarios: []

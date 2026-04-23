@@ -38,8 +38,12 @@ import {
 } from '../agents/sessionState.js';
 import { parseSkill } from '../agents/skillParser.js';
 import { lintSkill, formatLintSummary } from '../agents/skillLinter.js';
+import { validateSkill, formatValidationSummary } from '../agents/skillValidator.js';
+import { loadTestScenario, runTestScenario, formatTestReport } from '../agents/skillTestHarness.js';
+import { insertTestResults } from '../db/skillTestResults.js';
 
-import type { GrowthSummary, InsightStatus, PrescriptionStatus } from '../types/index.js';
+import type { GrowthSummary, InsightStatus, PrescriptionStatus, ValidationResult } from '../types/index.js';
+import type { SkillTestResultInsert } from '../db/skillTestResults.js';
 import { PRESCRIPTION_STATUSES } from '../types/index.js';
 import { checkIsScript } from '../utils/isScript.js';
 import { getPreference } from '../db/preferences.js';
@@ -946,6 +950,93 @@ server.registerTool(
 );
 
 // ---------------------------------------------------------------------------
+// Shared skill file resolution helper (used by lint_skill and test_skill)
+// ---------------------------------------------------------------------------
+
+interface SkillFileResult {
+  filePath: string;
+  content: string;
+}
+
+interface SkillFileError {
+  [key: string]: unknown;
+  content: Array<{ type: 'text'; text: string }>;
+  isError: true;
+}
+
+/**
+ * Resolve a skill_path to an absolute SKILL.md path, apply name and size
+ * guards, and read the file content. Returns the resolved path and content,
+ * or an MCP error response if any guard fails.
+ */
+function resolveAndReadSkill(skillPath: string): SkillFileResult | SkillFileError {
+  let filePath = skillPath;
+
+  // Resolve relative paths
+  if (!path.isAbsolute(filePath)) {
+    filePath = path.resolve(filePath);
+  }
+
+  // If path is a directory, look for SKILL.md inside it
+  try {
+    const stat = fs.statSync(filePath);
+    if (stat.isDirectory()) {
+      filePath = path.join(filePath, 'SKILL.md');
+    }
+  } catch {
+    // stat failed — let the readFile below produce the error
+  }
+
+  // Restrict to SKILL.md files to avoid probing arbitrary paths
+  const basename = path.basename(filePath);
+  if (basename !== 'SKILL.md') {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({ error: `Expected a SKILL.md file, got "${basename}"` }),
+      }],
+      isError: true,
+    };
+  }
+
+  // Guard against oversized files (1 MB limit)
+  try {
+    const fileSize = fs.statSync(filePath).size;
+    if (fileSize > 1_000_000) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({ error: `File too large: ${filePath} (${fileSize} bytes)` }),
+        }],
+        isError: true,
+      };
+    }
+  } catch {
+    // stat failed — let readFile produce the error
+  }
+
+  // Read the file
+  let content: string;
+  try {
+    content = fs.readFileSync(filePath, 'utf8');
+  } catch {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({ error: `Cannot read file: ${filePath}` }),
+      }],
+      isError: true,
+    };
+  }
+
+  return { filePath, content };
+}
+
+function isSkillFileError(result: SkillFileResult | SkillFileError): result is SkillFileError {
+  return 'isError' in result;
+}
+
+// ---------------------------------------------------------------------------
 // Tool: lint_skill
 // ---------------------------------------------------------------------------
 
@@ -974,64 +1065,9 @@ server.registerTool(
   },
   async ({ skill_path }: { skill_path: string }) => {
     try {
-      let filePath = skill_path;
-
-      // Resolve relative paths
-      if (!path.isAbsolute(filePath)) {
-        filePath = path.resolve(filePath);
-      }
-
-      // If path is a directory, look for SKILL.md inside it
-      try {
-        const stat = fs.statSync(filePath);
-        if (stat.isDirectory()) {
-          filePath = path.join(filePath, 'SKILL.md');
-        }
-      } catch {
-        // stat failed — let the readFile below produce the error
-      }
-
-      // Restrict to SKILL.md files to avoid probing arbitrary paths
-      const basename = path.basename(filePath);
-      if (basename !== 'SKILL.md') {
-        return {
-          content: [{
-            type: 'text' as const,
-            text: JSON.stringify({ error: `Expected a SKILL.md file, got "${basename}"` }),
-          }],
-          isError: true,
-        };
-      }
-
-      // Guard against oversized files (1 MB limit) before reading
-      try {
-        const fileSize = fs.statSync(filePath).size;
-        if (fileSize > 1_000_000) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: JSON.stringify({ error: `File too large: ${filePath} (${fileSize} bytes)` }),
-            }],
-            isError: true,
-          };
-        }
-      } catch {
-        // stat failed — let readFile produce the error
-      }
-
-      // Read the file
-      let content: string;
-      try {
-        content = fs.readFileSync(filePath, 'utf8');
-      } catch {
-        return {
-          content: [{
-            type: 'text' as const,
-            text: JSON.stringify({ error: `Cannot read file: ${filePath}` }),
-          }],
-          isError: true,
-        };
-      }
+      const resolved = resolveAndReadSkill(skill_path);
+      if (isSkillFileError(resolved)) return resolved;
+      const { filePath, content } = resolved;
 
       // Parse and lint
       const parsed = parseSkill(content);
@@ -1073,6 +1109,169 @@ server.registerTool(
             summary,
           }, null, 2),
         }],
+      };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: test_skill
+// ---------------------------------------------------------------------------
+
+server.registerTool(
+  'test_skill',
+  {
+    title: 'Test Skill',
+    description:
+      'Run quality validation on a SKILL.md file. Evaluates content quality across the 5 C\'s: ' +
+      'Clarity, Completeness, Concreteness, Consistency, Containment. ' +
+      'Returns scored results (0.0-1.0) per quality vector.',
+    inputSchema: {
+      skill_path: z
+        .string()
+        .optional()
+        .describe(
+          'Path to a SKILL.md file or directory containing one. ' +
+          'Optional when scenario_path is provided (scenario defines its own skill_path).',
+        ),
+      scenario_path: z
+        .string()
+        .optional()
+        .describe(
+          'Optional path to a skill-tests.yaml scenario file. ' +
+          'If omitted, runs all Tier 1 rules with default thresholds.',
+        ),
+    },
+    annotations: {
+      readOnlyHint: false,
+    },
+  },
+  async ({ skill_path, scenario_path }: { skill_path?: string; scenario_path?: string }) => {
+    try {
+      // If scenario_path is provided, use the test harness
+      if (scenario_path) {
+        let scenarioFile = scenario_path;
+        if (!path.isAbsolute(scenarioFile)) {
+          scenarioFile = path.resolve(scenarioFile);
+        }
+
+        const scenario = loadTestScenario(scenarioFile);
+
+        // Apply the same guards to the scenario's resolved skill path
+        const scenarioSkillResolved = resolveAndReadSkill(scenario.skillPath);
+        if (isSkillFileError(scenarioSkillResolved)) return scenarioSkillResolved;
+
+        // Use the resolved path so runTestScenario doesn't re-resolve differently
+        const report = runTestScenario({ ...scenario, skillPath: scenarioSkillResolved.filePath });
+        const text = formatTestReport(report);
+
+        // Persist results to DB if session exists
+        try {
+          ensureDb();
+          const repoKey = process.env.CAIRN_REPO_KEY;
+          const session = repoKey
+            ? getActiveSession(repoKey)
+            : getMostRecentActiveSession();
+          if (session) {
+            const inserts: SkillTestResultInsert[] = report.results.map((r: ValidationResult) => ({
+              skillPath: report.skillPath,
+              skillName: report.skillName ?? undefined,
+              scenarioName: report.scenario,
+              vector: r.vector,
+              tier: r.tier,
+              rule: r.rule,
+              score: r.score,
+              passed: r.passed,
+              message: r.message,
+              evidence: r.evidence,
+              sessionId: session.id,
+            }));
+            insertTestResults(inserts);
+
+            logEvent(session.id, 'skill_test', {
+              path: report.skillPath,
+              skillName: report.skillName,
+              scenario: report.scenario,
+              passed: report.passed,
+              overallScore: report.overallScore,
+            });
+          }
+        } catch {
+          // Fail-open — event logging must not break the tool
+        }
+
+        return {
+          content: [{ type: 'text' as const, text }],
+        };
+      }
+
+      // No scenario — skill_path is required
+      if (!skill_path) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ error: 'skill_path is required when scenario_path is not provided' }),
+          }],
+          isError: true,
+        };
+      }
+
+      const resolved = resolveAndReadSkill(skill_path);
+      if (isSkillFileError(resolved)) return resolved;
+      const { filePath, content } = resolved;
+
+      const parsed = parseSkill(content);
+      const results = validateSkill(parsed);
+      const summary = formatValidationSummary(results);
+
+      // Compute numeric overall score for consistent telemetry
+      const vectors = new Set(results.map((r) => r.vector));
+      let totalVectorScore = 0;
+      for (const v of vectors) {
+        const vResults = results.filter((r) => r.vector === v);
+        totalVectorScore += vResults.reduce((s, r) => s + r.score, 0) / vResults.length;
+      }
+      const numericOverallScore = vectors.size > 0 ? totalVectorScore / vectors.size : 0;
+
+      // Persist results to DB if session exists
+      try {
+        ensureDb();
+        const repoKey = process.env.CAIRN_REPO_KEY;
+        const session = repoKey
+          ? getActiveSession(repoKey)
+          : getMostRecentActiveSession();
+        if (session) {
+          const inserts: SkillTestResultInsert[] = results.map((r) => ({
+            skillPath: filePath,
+            skillName: parsed.name ?? undefined,
+            vector: r.vector,
+            tier: r.tier,
+            rule: r.rule,
+            score: r.score,
+            passed: r.passed,
+            message: r.message,
+            evidence: r.evidence,
+            sessionId: session.id,
+          }));
+          insertTestResults(inserts);
+
+          logEvent(session.id, 'skill_test', {
+            path: filePath,
+            skillName: parsed.name,
+            overallScore: numericOverallScore,
+          });
+        }
+      } catch {
+        // Fail-open — event logging must not break the tool
+      }
+
+      return {
+        content: [{ type: 'text' as const, text: summary }],
       };
     } catch (err: unknown) {
       return {

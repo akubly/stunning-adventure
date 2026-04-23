@@ -1,0 +1,26 @@
+name: "Minimal valid — bare minimum that passes the linter"
+skill_path: "./SKILL.md"
+
+tier1:
+  assertions:
+    # --- Structural validity (should pass) ---
+    - vector: consistency
+      rule: name-heading-match
+
+    # --- Completeness boundary (should fail — sections are thin) ---
+    - vector: completeness
+      rule: section-depth
+      section: Context
+      params:
+        min_words: 50
+      threshold: 0.2
+    - vector: completeness
+      rule: section-depth
+      section: Patterns
+      params:
+        min_words: 50
+      threshold: 0.2
+
+# Tier 2 placeholder (designed, not executed)
+tier2:
+  scenarios: []

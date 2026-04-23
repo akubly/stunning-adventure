@@ -89,3 +89,16 @@
 2. `pending_count` in `prescriber_state` increased
 
 **Learning:** When testing module-internal call chains in ESM (where you can't intercept the import binding), assert on observable side effects (DB state, file output) rather than trying to spy on re-exported functions through wrapper objects.
+
+### 2026-04-09 — Phase 8D: DB Migration 009 + Results Module
+
+**Delivered:**
+- Migration 009: `skill_test_results` table with 5C vector constraint, 3-tier check, score range, boolean passed, JSON evidence, session FK, and 3 indexes (path, vector, run_at).
+- CRUD module `src/db/skillTestResults.ts`: `insertTestResult`, `insertTestResults` (transactional batch), `getTestResults`, `getTestHistory`, `getLatestTestRun`. Evidence stored as JSON text, parsed to `string[]` on read. Snake→camel mapping in `mapRow()`.
+- Registered migration009 in `src/db/schema.ts`.
+- Updated schema version assertions from 8→9 in three test files: `db.test.ts`, `discovery.test.ts`, `prescriptions.test.ts`.
+
+**Key Pattern:** Schema version assertions exist in multiple test files (db, discovery, prescriptions). All must be updated when adding a migration — grep for `toBe(N)` where N is the old version.
+
+**Files Created:** `src/db/migrations/009-skill-test-results.ts`, `src/db/skillTestResults.ts`
+**Files Modified:** `src/db/schema.ts`, `src/__tests__/db.test.ts`, `src/__tests__/discovery.test.ts`, `src/__tests__/prescriptions.test.ts`

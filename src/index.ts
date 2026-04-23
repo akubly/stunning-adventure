@@ -22,6 +22,12 @@ export { getSessionSummary, hasEventOccurred, findEvents } from './agents/sessio
 export { scrubSecrets } from './agents/secretScrubber.js';
 export { parseSkill } from './agents/skillParser.js';
 export { lintSkill, formatLintSummary } from './agents/skillLinter.js';
+export { validateSkill, formatValidationSummary } from './agents/skillValidator.js';
+export {
+  loadTestScenario,
+  runTestScenario,
+  formatTestReport,
+} from './agents/skillTestHarness.js';
 export {
   curate,
   getCuratorStatus,
@@ -45,6 +51,13 @@ export {
   deletePrunedInsights,
   setInsightStatus,
 } from './db/insights.js';
+export {
+  insertTestResult,
+  insertTestResults,
+  getTestResults,
+  getTestHistory,
+  getLatestTestRun,
+} from './db/skillTestResults.js';
 
 // Types
 export type {
@@ -70,3 +83,17 @@ export type {
   ParseError,
 } from './agents/skillParser.js';
 export type { LintResult, LintSeverity } from './agents/skillLinter.js';
+export type {
+  QualityVector,
+  ValidationResult,
+  ValidatorRule,
+} from './types/index.js';
+export type {
+  TestScenario,
+  TestAssertion,
+  TestReport,
+} from './agents/skillTestHarness.js';
+export type {
+  SkillTestResultInsert,
+  SkillTestResultRow,
+} from './db/skillTestResults.js';

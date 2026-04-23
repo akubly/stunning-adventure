@@ -1,0 +1,49 @@
+name: "Bad clarity — hedge words, passive voice, long sentences"
+skill_path: "./SKILL.md"
+
+tier1:
+  assertions:
+    # --- Clarity failures (expected) ---
+    - vector: clarity
+      rule: no-hedge-words
+      section: Context
+      threshold: 0.3
+    - vector: clarity
+      rule: no-hedge-words
+      section: Patterns
+      threshold: 0.3
+    - vector: clarity
+      rule: imperative-voice
+      section: Patterns
+      threshold: 0.3
+    - vector: clarity
+      rule: imperative-voice
+      section: Anti-Patterns
+      threshold: 0.3
+    - vector: clarity
+      rule: sentence-length
+      section: Patterns
+      params:
+        max_words: 40
+      threshold: 0.3
+    - vector: clarity
+      rule: no-vague-refs
+      section: Context
+      threshold: 0.3
+    - vector: clarity
+      rule: no-vague-refs
+      section: Patterns
+      threshold: 0.3
+
+    # --- Other vectors should be reasonable (isolation check) ---
+    - vector: completeness
+      rule: section-depth
+      section: Patterns
+      params:
+        min_words: 50
+    - vector: consistency
+      rule: name-heading-match
+
+# Tier 2 placeholder (designed, not executed)
+tier2:
+  scenarios: []
