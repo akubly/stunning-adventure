@@ -1,8 +1,24 @@
 /**
- * Shared type definitions for Cairn.
+ * Cairn-internal type definitions.
+ *
+ * Cross-package shared types live in @akubly/types.
+ * Re-exported below for backward compatibility.
  */
 
 import type { ParsedSkill } from '../agents/skillParser.js';
+
+// Re-export shared contract types from @akubly/types
+export type {
+  ProvenanceTier,
+  CairnBridgeEvent,
+  DecisionSource,
+  DecisionRecord,
+  DBOMDecisionEntry,
+  DBOMStats,
+  DBOMArtifact,
+  SessionIdentity,
+  TelemetrySink,
+} from '@akubly/types';
 
 /** Top-level Cairn configuration. */
 export interface CairnConfig {

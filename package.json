@@ -1,27 +1,17 @@
 {
-  "name": "@akubly/cairn",
-  "version": "0.2.0",
+  "name": "cairn-monorepo",
+  "private": true,
   "description": "Cairn — an agentic software engineering platform. Built stone by stone. Showing the way.",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "bin": {
-    "cairn": "dist/cli.js",
-    "cairn-mcp": "dist/mcp/server.js"
-  },
-  "files": [
-    "dist/",
-    ".github/hooks/",
-    ".github/plugin/"
+  "workspaces": [
+    "packages/*"
   ],
   "scripts": {
-    "build": "tsc",
-    "test": "vitest run",
-    "lint": "eslint src/",
-    "clean": "rimraf dist coverage",
-    "typecheck": "tsc --noEmit",
-    "mcp": "node dist/mcp/server.js",
-    "prepublishOnly": "npm run build && npm run test && npm run lint"
+    "build": "tsc --build",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "eslint packages/*/src/",
+    "clean": "npm run clean --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -33,20 +23,8 @@
     "url": "git+https://github.com/akubly/stunning-adventure.git"
   },
   "homepage": "https://github.com/akubly/stunning-adventure#readme",
-  "keywords": [
-    "cairn",
-    "agentic",
-    "copilot",
-    "copilot-plugin",
-    "mcp",
-    "model-context-protocol",
-    "software-engineering",
-    "cli"
-  ],
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^25.5.0",
     "@typescript-eslint/eslint-plugin": "^8.57.2",
     "@typescript-eslint/parser": "^8.57.2",
     "eslint": "^10.1.0",
@@ -54,14 +32,6 @@
     "rimraf": "^6.1.3",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.57.2",
-    "vitest": "^4.1.2"
-  },
-  "dependencies": {
-    "@github/copilot-sdk": "^0.2.2",
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "better-sqlite3": "^12.8.0",
-    "yaml": "^2.8.3",
-    "zod": "^4.3.6"
+    "typescript-eslint": "^8.57.2"
   }
 }

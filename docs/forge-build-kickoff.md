@@ -14,9 +14,9 @@ Full architecture sketch with integration seams diagram: [`docs/spikes/copilot-s
 
 | Package | Role | Description |
 |---------|------|-------------|
-| `@cairn/types` | Shared Contract | Pure type definitions: `CairnEvent`, `ProvenanceTier`, `DBOM`, `DecisionRecord`, `SessionIdentity`, `TelemetrySink`. No runtime behavior. |
-| `@cairn/cairn` | Observability Platform | Current project. Archivist, Curator, Prescriber, 10 MCP tools, hooks, SQLite. Adds `bridge/ingest.ts` (accepts Forge events) and `telemetry/` (pluggable sinks). |
-| `@cairn/forge` | Execution Runtime | **New package.** SDK wrapper (`runtime/`), event bridge (`bridge/`), hook composer (`hooks/`), decision gate framework (`decisions/`), model selector (`models/`), export pipeline (`export/`). |
+| `@akubly/types` | Shared Contract | Pure type definitions: `CairnEvent`, `ProvenanceTier`, `DBOM`, `DecisionRecord`, `SessionIdentity`, `TelemetrySink`. No runtime behavior. |
+| `@akubly/cairn` | Observability Platform | Current project. Archivist, Curator, Prescriber, 10 MCP tools, hooks, SQLite. Adds `bridge/ingest.ts` (accepts Forge events) and `telemetry/` (pluggable sinks). |
+| `@akubly/forge` | Execution Runtime | **New package.** SDK wrapper (`runtime/`), event bridge (`bridge/`), hook composer (`hooks/`), decision gate framework (`decisions/`), model selector (`models/`), export pipeline (`export/`). |
 
 **Integration seams (four):**
 
@@ -57,9 +57,9 @@ Go/no-go threshold was Q1+Q2+Q4+Q5 = ✅. All four passed plus Q3, Q7, Q8 exceed
 ## Build Phases
 
 ### Phase 1: Monorepo Foundation (1–2 days)
-1. Create `@cairn/types` package — extract shared types from current codebase
-2. Restructure current project as `@cairn/cairn` — update imports, verify all 427 tests pass
-3. Scaffold `@cairn/forge` package — empty package with correct TS config, importing `@cairn/types`
+1. Create `@akubly/types` package — extract shared types from current codebase
+2. Restructure current project as `@akubly/cairn` — update imports, verify all 427 tests pass
+3. Scaffold `@akubly/forge` package — empty package with correct TS config, importing `@akubly/types`
 
 ### Phase 2: Live Runtime Verification (1–2 days)
 4. Close the runtime gap — run spike PoC against a live Copilot CLI process
@@ -69,7 +69,7 @@ Go/no-go threshold was Q1+Q2+Q4+Q5 = ✅. All four passed plus Q3, Q7, Q8 exceed
 6. SDK wrapper + session manager — production `runtime/` module
 7. Event bridge — promote spike `event-bridge.ts` to production with full test coverage
 8. Hook composer — extract from `tool-hooks-poc.ts`, make it the mandatory hook registration path
-9. Decision gate framework — promote from `decision-gate-poc.ts`, add `DecisionRecord` to `@cairn/types`
+9. Decision gate framework — promote from `decision-gate-poc.ts`, add `DecisionRecord` to `@akubly/types`
 
 ### Phase 4: Export Pipeline (2–3 days)
 10. DBOM generator — promote from spike, add persistence to Cairn's DB

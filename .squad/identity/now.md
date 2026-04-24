@@ -15,9 +15,9 @@ active_issues:
 Branch: `main`
 
 Graham restructured Cairn into an npm workspaces monorepo with three packages:
-- `@cairn/types` — shared contract types
+- `@akubly/types` — shared contract types
 - `@akubly/cairn` — observability + MCP tools + plugin infra
-- `@cairn/forge` — empty scaffold ready for SDK integration
+- `@akubly/forge` — empty scaffold ready for SDK integration
 
 **Verification:**
 - ✅ All 427 tests pass
@@ -34,7 +34,7 @@ Close the type-vs-runtime gap. Validate shared contracts during SDK harness inte
 
 ---
 
-**Architecture Confirmed:** Monorepo with `@cairn/types` (shared contract), `@cairn/cairn` (observability), `@cairn/forge` (execution runtime).
+**Architecture Confirmed:** Monorepo with `@akubly/types` (shared contract), `@akubly/cairn` (observability), `@akubly/forge` (execution runtime).
 
 **Concepts validated during spike:**
 - Portability: Export certified artifacts (SKILL.md + DBOM) for corp/EMU
