@@ -33,6 +33,10 @@
 
 **Restructuring:** Converted single-package `@akubly/cairn` to three-package npm workspace monorepo: `@cairn/types` (shared contracts), `@akubly/cairn` (current codebase), `@cairn/forge` (scaffold).
 
+### 2026-04-24: Package Scope Unification
+
+**Scope rename:** Roger unified package scopes — `@cairn/types` → `@akubly/types`, `@cairn/forge` → `@akubly/forge`. All three packages now under `@akubly` scope (owned by Aaron on npm). Simplifies npm publishing, removes scope ownership blocker. All 427 tests pass, clean build. Decision logged to decisions.md.
+
 **Key architecture decisions:**
 - **Type split:** DB row types (e.g., `CairnEvent` with `id: number`) stay Cairn-internal. Bridge event types (`CairnBridgeEvent` with `provenanceTier`) are the shared contract. Re-export pattern in cairn's types/index.ts ensures zero import path changes.
 - **Build strategy:** Root `tsc --build` with project references rather than `npm run build --workspaces`. Ensures topological ordering (types first) and enables incremental builds.

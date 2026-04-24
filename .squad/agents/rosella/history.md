@@ -147,6 +147,10 @@ ode dist/hooks/...\ commands in hooks.json for cross-platform compatibility
 
 **Status:** Plugin packaging infrastructure complete. All entry points operational. Ready for Phase 7 (CLI installation commands, worktree support, awesome-copilot submission).
 
+### 2026-04-24: Package Scope Unification
+
+**Scope rename:** Roger unified package scopes — `@cairn/types` → `@akubly/types`, `@cairn/forge` → `@akubly/forge`. All three packages now under `@akubly` scope (owned by Aaron on npm). Simplifies npm publishing for plugin packages, removes scope ownership blocker. All 427 tests pass, clean build. Package.json version stays at 0.1.0. Decision logged to decisions.md.
+
 ### 2026-07-26: Prescriber Plugin Architecture — Artifact Discovery Design
 
 **Task:** Design the Prescriber's artifact discovery mechanism, "play nice" topology, and plugin self-hosting strategy.
