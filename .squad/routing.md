@@ -9,6 +9,8 @@ How to decide who handles what.
 | Architecture, system design | Graham | Component boundaries, ADRs, tech stack decisions |
 | Backend, APIs, data layer | Roger | Endpoints, data models, server logic, database |
 | Plugins, SDK, extensions | Rosella | Plugin scaffolds, SDK interfaces, integration adapters |
+| SDK runtime, session management | Alexander | SDK wrapper, session lifecycle, model selection, runtime verification |
+| Testing, QA, verification | Laura | Test suites, edge cases, runtime verification, integration tests |
 | DevOps, CI/CD, tooling | Gabriel | Pipelines, deployment, build tooling, infra config |
 | Code review | Graham | Review PRs, check quality, architectural alignment |
 | Testing | Roger | Write tests, find edge cases, verify fixes |
@@ -47,6 +49,10 @@ How to decide who handles what.
 | Architecture, code review, decisions | Graham | — |
 | Backend, APIs, data layer | Roger | — |
 | SDK, extensions, integrations | Rosella | — |
+| SDK runtime, session lifecycle | Alexander | Roger |
+| Testing, QA, verification | Laura | Roger |
 | DevOps, CI/CD, tooling | Gabriel | — |
 | UX / Human Factors | Valanice | — |
+| SDK runtime, session lifecycle, model selection | Alexander | Roger |
+| Test strategy, test code, runtime verification | Laura | — |
 
