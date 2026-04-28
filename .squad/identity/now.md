@@ -1,9 +1,10 @@
 ---
-updated_at: 2026-04-23T23:35:00Z
-focus_area: Phase 1 Complete — Phase 2 Ready
+updated_at: 2026-04-29T20:00:00Z
+focus_area: Phase 2 IN PROGRESS — Event Bridge, Hooks, Test Infra Live
 active_issues:
   - "Phase 1: Monorepo restructuring ✅ COMPLETE"
-  - "Phase 2: Live runtime verification (1–2 days)"
+  - "Phase 2: Live runtime verification — IN PROGRESS (3/5 modules done; 111/~98 tests passing)"
+  - "Phase 2 remaining: decisions/, dbom/, session/ modules"
   - "#11 — Worktree-aware sessions (deferred)"
   - "awesome-copilot submission (deferred)"
 ---
@@ -28,9 +29,26 @@ Graham restructured Cairn into an npm workspaces monorepo with three packages:
 
 ---
 
-**Phase 2: Live Runtime Verification** — NEXT (1–2 days)
+**Phase 2: Live Runtime Verification** — IN PROGRESS (3/5 modules complete, ~111 tests passing)
 
-Close the type-vs-runtime gap. Validate shared contracts during SDK harness integration. Forge scaffold initialization.
+**Progress Summary:**
+- ✅ Event bridge adapter (`packages/forge/src/bridge/`) — 22 SDK events → CairnBridgeEvent, provenance classification, payload extractors
+- ✅ Hook composer (`packages/forge/src/hooks/`) — HookComposer class with live observer set, error isolation (try/catch per observer)
+- ✅ Test infrastructure — vitest config, mock SDK factory, event factory, type assertion helpers (25 infra tests)
+- ✅ Runtime verification tests — 111 tests total (32 contracts, 22 bridge, 20 hooks, 25 infra) — ALL PASSING
+- ⏳ Decisions module (pending)
+- ⏳ DBOM module (pending)
+- ⏳ Session module (pending)
+
+**Build Status:** Clean via `tsc --build` — 427 Cairn + 111 Forge = 538 total tests passing
+
+**Architecture Blueprint:** 5-module structure with Phase 2/3 boundary rule ("if it needs `CopilotClient()`, it's Phase 3").
+
+**Key Decisions Made:**
+1. HookComposer uses live observer set — dynamic registration without SDK re-registration
+2. Hook composer isolates observer errors — buggy telemetry cannot kill decision gates
+3. Test infrastructure uses SDK mocks, not live CLI — Phase 2 is offline verification only
+4. Cross-package contracts via `@akubly/types` — Forge never imports from `@akubly/cairn`
 
 ---
 
@@ -42,8 +60,8 @@ Close the type-vs-runtime gap. Validate shared contracts during SDK harness inte
 - ACP Horizon: Multi-agent transport is additive, not a rewrite
 
 **Recommended next steps (prioritized):**
-1. Phase 2: Live runtime verification — close the type-vs-runtime gap (1–2 days) ✅ READY
-2. Phase 3: Core Forge loop — SDK wrapper, event bridge, decision gates (3–5 days)
+1. Phase 2 completion: decisions/, dbom/, session/ modules (1–2 days)
+2. Phase 3: Core Forge loop — CopilotClient integration, session orchestration, model selection (3–5 days)
 3. Phase 4: Export pipeline — DBOM generator, SKILL.md compiler (2–3 days)
 4. Phase 5: PGO telemetry — pluggable sinks, feedback ingest (future)
 

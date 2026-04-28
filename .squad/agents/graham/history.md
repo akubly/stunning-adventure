@@ -29,6 +29,25 @@
 
 <!-- Append new learnings below -->
 
+### 2026-04-24: Phase 2 Architecture — Forge Runtime Verification Blueprint
+
+**Decision document:** `.squad/decisions/inbox/graham-forge-phase2-architecture.md`
+
+**Architecture decisions:**
+- **Module structure:** 5 directories under `packages/forge/src/` — `bridge/`, `hooks/`, `decisions/`, `dbom/`, `session/`. Each maps to a spike PoC file. Flat structure rejected (too many files at root); monolith rejected (composability is the core value).
+- **Phase 2 vs 3 boundary:** Phase 2 = anything testable without a running Copilot CLI. Phase 3 = anything requiring live SDK. Clear rule: "if it needs `CopilotClient()`, it's Phase 3."
+- **Cross-package contracts:** Forge imports ONLY from `@akubly/types`, never from `@akubly/cairn`. Data flows at runtime via `CairnBridgeEvent` wire format. No circular dependencies.
+- **Test strategy:** ~98 fixture-based tests. Simulated `SessionEvent` objects (derived from spike's e2e-smoke-test.ts) feed production logic. No SDK instantiation, no DB dependency.
+- **Type migration rule:** All spike-local type redefinitions (`ProvenanceTier`, `DecisionRecord`, etc.) must be deleted — use `@akubly/types` imports exclusively. Key gotcha: spike uses snake_case (`session_id`), shared types use camelCase (`sessionId`).
+
+**Key file paths:**
+- Architecture blueprint: `.squad/decisions/inbox/graham-forge-phase2-architecture.md`
+- Forge scaffold: `packages/forge/src/index.ts`
+- Shared types: `packages/types/src/index.ts`
+- Spike source: `packages/cairn/src/spike/` (7 files + README)
+
+**Assignments:** Alexander owns `bridge/` + `session/`, Roger owns `hooks/` + `decisions/`, Laura owns `dbom/` + cross-package validation + test fixtures.
+
 ### 2026-04-23: Phase 1 — Monorepo Foundation
 
 **Restructuring:** Converted single-package `@akubly/cairn` to three-package npm workspace monorepo: `@cairn/types` (shared contracts), `@akubly/cairn` (current codebase), `@cairn/forge` (scaffold).

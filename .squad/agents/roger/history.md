@@ -443,3 +443,15 @@ ode dist/mcp/server.js\)
 **Impact for Roger:** The shared types now live in `@cairn/types`. No changes needed to existing code or MCP server logic — cairn package re-exports all shared types. Forge can depend on `@cairn/types` for bridge contracts without coupling to Cairn's internal schema.
 
 **Next Phase:** Phase 2 (live runtime verification) validates type-vs-runtime behavior during SDK integration.
+
+### Phase 2: Forge Test Infrastructure Setup
+
+- **Vitest config mirrors Cairn:** `packages/forge/vitest.config.ts` uses same pattern — `globals: false`, `environment: 'node'`, `include: ['src/**/*.test.ts']`.
+- **Root `npm test` auto-discovers Forge:** Uses `npm run test --workspaces --if-present`, so adding `"test": "vitest run"` to Forge's `package.json` is sufficient. No root config changes needed.
+- **SDK mock factory:** `createMockSession()` and `createMockClient()` produce mock objects with `vi.fn()` stubs for `send`, `sendAndWait`, `disconnect`, `on`. Test helpers `_emit()` and `_handlers()` for event dispatch verification. No live CLI process needed.
+- **SDK event field names differ from docs:** `tool.execution_start` uses `toolName` not `name`. `tool.execution_complete` uses `success: boolean` not `isError`. `result` is `{ content: string }` not plain string. `user.message` data has no `messageId` field. Always check generated types in `session-events.d.ts`.
+- **SessionEvent is a 72-variant discriminated union.** TypeScript requires type narrowing via `if (event.type === '...')` before accessing `event.data` properties. Cannot access `.data.content` etc. on the base union type.
+- **Event factory provides 6 builders:** `sessionStartEvent`, `assistantMessageEvent`, `assistantUsageEvent`, `toolExecutionStartEvent`, `toolExecutionCompleteEvent`, `userMessageEvent`. All return well-typed `SessionEvent`. Auto-incrementing IDs via `resetEventCounter()`.
+- **Type assertion helpers validate CairnBridgeEvent shape at runtime.** `assertIsCairnBridgeEvent()` throws descriptive errors. `isCairnBridgeEvent()` returns boolean. Validates all 5 required fields including `provenanceTier` enum membership.
+- **Key file paths:** `packages/forge/vitest.config.ts`, `packages/forge/src/__tests__/helpers/` (mock-sdk, event-factory, type-assertions, index barrel), `packages/forge/src/__tests__/test-infra.test.ts`.
+- **Test count:** 0 → 25 new tests (infra validation) + 74 pre-existing tests = 99 total Forge tests. All 427 Cairn tests unaffected.

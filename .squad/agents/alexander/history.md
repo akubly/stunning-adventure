@@ -28,3 +28,28 @@
 **My primary responsibility:** Build the production SDK wrapper (`packages/forge/src/runtime/`) that promotes the spike PoC into a reliable, tested runtime. The abstraction layer must insulate Forge from SDK API churn — changes to the SDK should affect ~50 LOC, never leak into Forge's core.
 
 ## Learnings
+
+### 2026-04-29: Phase 2 — Event Bridge + Hook Composer Production Promotion
+
+**What was built:**
+- `packages/forge/src/bridge/index.ts` — Production event bridge adapter (22 SDK events → Cairn events, provenance classification, modular payload extractors)
+- `packages/forge/src/hooks/index.ts` — `HookComposer` class + `composeHooks()` static helper. Dynamic add/remove of observers, all 6 hook types composed independently.
+- `packages/forge/src/types.ts` — SDK type mirrors with documented rationale (SDK hook types NOT re-exported from index)
+- `packages/forge/src/index.ts` — Full public API re-export
+
+**Key architecture decisions:**
+1. **EVENT_MAP and PAYLOAD_EXTRACTORS are frozen exports** — downstream can inspect but never mutate. Spike had them as module-private `const`s.
+2. **`EventSource` interface** instead of coupling to `CopilotSession` — the bridge only needs `on(handler)`, making it testable with simple mocks.
+3. **`HookComposer` class with live reference** — unlike the spike's static `composeHooks()`, the class captures a live `Set<HookObserver>` so adding/removing observers after `compose()` takes effect on next invocation without re-registering with the SDK. Static `composeHooks()` kept as convenience.
+4. **Explicit `as` casts in hook composer** — the SDK's hook type signatures use positional parameters that don't align perfectly with our named interfaces; casts are contained in the composer rather than leaking into consumer code.
+5. **Types import from `@akubly/types`** — `CairnBridgeEvent` and `ProvenanceTier` imported from shared contract, never redefined locally (spike had local mirrors).
+
+**File paths:**
+- Bridge: `packages/forge/src/bridge/index.ts`
+- Hooks: `packages/forge/src/hooks/index.ts`
+- Types: `packages/forge/src/types.ts`
+- Public API: `packages/forge/src/index.ts`
+
+### 2026-04-29: Hook Error Isolation (Laura's decision)
+
+Applied Laura's `laura-hook-error-isolation` decision: wrapped every observer call in `HookComposer.compose()` with try/catch. Errors are logged via `console.warn` with the hook name for diagnostics but never propagate. The static `composeHooks()` inherits the fix since it delegates to `HookComposer`. This guarantees a buggy telemetry observer can never kill a downstream decision gate observer.

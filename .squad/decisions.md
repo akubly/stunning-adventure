@@ -161,6 +161,101 @@ The platform should support queryable session state. Humans should be able to as
 
 ---
 
+### 2026-04-24: Forge Phase 2 Architecture — Live Runtime Verification
+
+**Author:** Graham Knight (Lead)
+**Type:** Architecture
+**Status:** Implemented
+
+Defined 5-module structure under `packages/forge/src/` and Phase 2 vs Phase 3 boundary. Phase 2 covers anything testable without running Copilot CLI; Phase 3 requires live SDK integration.
+
+**5-Module Structure:**
+- `bridge/` — SDK events → CairnBridgeEvent adapter
+- `hooks/` — Hook composition, multi-observer pattern
+- `decisions/` — Decision gate mechanisms
+- `dbom/` — Provenance artifact generation
+- `session/` — Session identity validation
+
+**Key Rule:** Phase 2 vs Phase 3 boundary is "if it needs `CopilotClient()`, it's Phase 3."
+
+**Contracts:**
+- Forge imports ONLY from `@akubly/types`, never from `@akubly/cairn`
+- Data flows at runtime via `CairnBridgeEvent` wire format
+- No circular dependencies between packages
+
+**Test Strategy:** ~98 fixture-based tests using simulated `SessionEvent` objects (no SDK instantiation, no DB dependency).
+
+**Type Migration Rule:** Delete spike-local type redefinitions; use `@akubly/types` imports exclusively.
+
+**Full Report:** `.squad/decisions/inbox/graham-forge-phase2-architecture.md`
+
+---
+
+### 2026-04-29: HookComposer Uses Live Observer Set
+
+**Author:** Alexander (SDK/Runtime Dev)
+**Type:** Architecture
+**Status:** Implemented
+
+HookComposer class holds a live `Set<HookObserver>`. The `compose()` method returns hooks that reference the live set, so add/remove after composition takes effect on the next hook invocation without re-registering with the SDK.
+
+**Tradeoffs:**
+- **Pro:** Dynamic observer management without SDK re-registration — critical for decision gates added/removed mid-session.
+- **Pro:** Each `add()` returns a dispose function — clean RAII-style cleanup.
+- **Con:** Slightly more complex than a pure function; the composed hooks capture `this`.
+- **Accepted:** Complexity justified because Cairn's architecture requires dynamic gate registration.
+
+**Affects:**
+- `packages/forge/src/hooks/index.ts`
+- Any future code that registers decision gates or telemetry observers mid-session
+
+---
+
+### 2026-04-28: Forge Test Infrastructure Pattern
+
+**Author:** Roger Wilco (Platform Dev)
+**Type:** Infrastructure
+**Status:** Implemented
+
+Forge test infrastructure uses SDK mocks rather than live CLI integration for all unit tests.
+
+**Three Test Helper Modules:**
+1. **mock-sdk** — `createMockSession()` / `createMockClient()` with `vi.fn()` stubs and `_emit()` for event dispatch testing.
+2. **event-factory** — Type-safe `SessionEvent` builders for all 6 core event types.
+3. **type-assertions** — Runtime shape validation for `CairnBridgeEvent` conformance.
+
+**Rationale:**
+- SDK requires running Copilot CLI process for real sessions — unit tests must be offline.
+- Event factory ensures tests use correctly-typed SDK events without fragile manual construction.
+- Type assertion helpers serve double duty: test validation now, production runtime guards later.
+
+**Rule:** All Forge tests must import from `./helpers/index.js`. No test may instantiate `CopilotClient` or `CopilotSession` directly.
+
+---
+
+### 2026-04-28: Hook Composer Must Isolate Observer Errors
+
+**Author:** Laura (Tester)
+**Type:** Implementation Requirement
+**Status:** Implemented
+
+The production `composeHooks` implementation MUST wrap each observer call in try/catch, logging errors but continuing to the next observer.
+
+**Context:**
+Spike's `composeHooks` propagates errors — if one observer's `onPreToolUse` throws, subsequent observers never run. This is dangerous in production: a buggy telemetry observer would kill the decision gate observer, silently removing safety checks.
+
+**Implementation:**
+Each observer call wrapped in try/catch. Errors logged but don't prevent subsequent observers from running.
+
+**Test Coverage:**
+- `"one observer throwing does not kill others"` — verifies isolated behavior (passing)
+- `"spike composeHooks propagates errors"` — documents the spike's known gap (baseline)
+
+**Impact:**
+Telemetry observers are now safe in production. Error in one observer cannot cascade to disable decision gates or other critical observers.
+
+---
+
 ### 2026-03-29T00-30-44: Architectural Decision — Platform vs. Pure Plugins
 
 **Author:** Aaron (via Copilot)  
