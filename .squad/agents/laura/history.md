@@ -78,3 +78,20 @@ Replaced all inline mock types and the inline `composeHooks` function with real 
 **Test count:** hooks.test.ts went from 20 tests (inline mocks) to 32 tests (production imports + HookComposer coverage). Full forge suite: 111 tests passing.
 
 **Cross-agent coordination:** Alexander read the error isolation decision and implemented it in HookComposer. His implementation uses try/catch per observer and logs warnings. The test suite confirms this works as designed.
+
+### 2026-04-28: Bridge Tests Upgraded to Production Imports
+
+Replaced all inline mock types and reimplemented bridge logic with real imports from Alexander's production bridge module:
+- `bridgeEvent`, `classifyProvenance`, `EVENT_MAP`, `PAYLOAD_EXTRACTORS` from `../bridge/index.js`
+- `SessionEvent` type from `@github/copilot-sdk`
+
+**Changes:**
+- Deleted ~120 lines of inline type definitions, EVENT_MAP, CERTIFICATION_EVENT_TYPES, classifyProvenance, PayloadExtractor, defaultExtractor, PAYLOAD_EXTRACTORS, and bridgeEvent
+- Removed stale `CairnBridgeEvent` and `ProvenanceTier` type imports (no longer needed — tests use production functions that handle typing internally)
+- Updated `makeSdkEvent` helper to construct SDK-compatible `SessionEvent` objects (requires `id`, `parentId` fields; uses `as unknown as SessionEvent` cast since SDK type is a discriminated union)
+- Updated explicit `SessionEvent` construction in "preserves timestamp" test to match SDK shape
+- Cast `EVENT_MAP` access with string key via `as Record<string, string>` since production type is `Partial<Record<SessionEventType, string>>`
+
+**Key finding confirmed:** The inline copy HAD DIVERGED from production — inline `defaultExtractor` had `?? {}` fallback but production did not. Alexander simultaneously fixed production to add `?? {}`. This validates the persona review's concern about inline copies drifting.
+
+**Test count:** All 22 bridge tests pass against production code. Full forge suite: 111 tests passing.
