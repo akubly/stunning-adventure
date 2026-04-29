@@ -1,11 +1,10 @@
 ---
-updated_at: 2026-04-28T20:00:00Z
-focus_area: Phase 2 CONTINUING — Event Bridge, Hooks, Test Infra (persona review complete)
+updated_at: 2026-04-28T21:30:00Z
+focus_area: Phase 3 PREPARING — CopilotClient integration, session orchestration, model selection
 active_issues:
   - "Phase 1: Monorepo restructuring ✅ COMPLETE"
-  - "Phase 2: Live runtime verification — IN PROGRESS (3/5 modules done; 111 tests passing; persona review ✅ COMPLETE)"
-  - "Phase 2 persona review: 10 findings triaged (6 accepted+fixed, 2 rejected, 1 escalated, 1 deferred)"
-  - "Phase 2 remaining: decisions/, dbom/, session/ modules"
+  - "Phase 2: Live runtime verification ✅ COMPLETE (608 tests; 5/5 modules done)"
+  - "Phase 3: CopilotClient Integration — PLANNED (next phase)"
   - "#11 — Worktree-aware sessions (deferred)"
   - "awesome-copilot submission (deferred)"
 ---
@@ -30,18 +29,17 @@ Graham restructured Cairn into an npm workspaces monorepo with three packages:
 
 ---
 
-**Phase 2: Live Runtime Verification** — IN PROGRESS (3/5 modules complete, ~111 tests passing)
+**Phase 2: Live Runtime Verification** — ✅ COMPLETE (5/5 modules, 608 tests)
 
-**Progress Summary:**
-- ✅ Event bridge adapter (`packages/forge/src/bridge/`) — 22 SDK events → CairnBridgeEvent, provenance classification, payload extractors
-- ✅ Hook composer (`packages/forge/src/hooks/`) — HookComposer class with live observer set, error isolation (try/catch per observer)
+**Delivered Modules:**
+- ✅ Event bridge adapter (`packages/forge/src/bridge/`) — 22 SDK events → CairnBridgeEvent, provenance classification, payload extractors (22 tests)
+- ✅ Hook composer (`packages/forge/src/hooks/`) — HookComposer class with live observer set, error isolation (try/catch per observer) (20 tests)
 - ✅ Test infrastructure — vitest config, mock SDK factory, event factory, type assertion helpers (25 infra tests)
-- ✅ Runtime verification tests — 111 tests total (32 contracts, 22 bridge, 20 hooks, 25 infra) — ALL PASSING
-- ⏳ Decisions module (pending)
-- ⏳ DBOM module (pending)
-- ⏳ Session module (pending)
+- ✅ Decisions module (`packages/forge/src/decisions/`) — createDecisionGate, createDecisionRecorder, makeDecisionRecord (18 tests)
+- ✅ DBOM module (`packages/forge/src/dbom/`) — generateDBOM, computeDecisionHash, classifyDecisionSource, summarizeDecision, rootHash (33 tests)
+- ✅ Session module (`packages/forge/src/session/`) — ModelSnapshot, toModelSnapshot, ModelChangeRecord, ReasoningEffort (10 tests)
 
-**Build Status:** Clean via `tsc --build` — 427 Cairn + 111 Forge = 538 total tests passing
+**Build Status:** Clean via `tsc --build` — 427 Cairn + 181 Forge = 608 total tests passing
 
 **Architecture Blueprint:** 5-module structure with Phase 2/3 boundary rule ("if it needs `CopilotClient()`, it's Phase 3").
 

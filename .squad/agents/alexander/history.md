@@ -53,3 +53,24 @@
 ### 2026-04-29: Hook Error Isolation (Laura's decision)
 
 Applied Laura's `laura-hook-error-isolation` decision: wrapped every observer call in `HookComposer.compose()` with try/catch. Errors are logged via `console.warn` with the hook name for diagnostics but never propagate. The static `composeHooks()` inherits the fix since it delegates to `HookComposer`. This guarantees a buggy telemetry observer can never kill a downstream decision gate observer.
+
+### 2026-04-29: Phase 2 — Decision Gates + Session Types Production Promotion
+
+**What was built:**
+- `packages/forge/src/decisions/index.ts` — Three exports: `createDecisionGate()` (active gating via `permissionDecision: "ask"`), `createDecisionRecorder()` (passive pre/post tool observation), `makeDecisionRecord()` (well-formed DecisionRecord constructor with auto-generated IDs and timestamps).
+- `packages/forge/src/session/index.ts` — Four exports: `ModelSnapshot` interface, `toModelSnapshot()` pure extractor from SDK `ModelInfo`, `ModelChangeRecord` interface for tracking model switches, `ReasoningEffort` type mirror.
+- `packages/forge/src/index.ts` — Barrel updated with all new exports, doc comment updated.
+
+**Key architecture decisions:**
+1. **`makeDecisionRecord()` accepts optional id/timestamp overrides** — defaults generate unique IDs and ISO timestamps, but callers can supply their own for deterministic testing or replaying.
+2. **`createDecisionRecorder` observes both pre and post tool hooks** — pre captures intent, post captures outcome. Together they form a complete decision audit trail without altering control flow.
+3. **Error isolation via try/catch in both gate and recorder** — consistent with the hook composer's isolation contract. Decision recording failures log warnings but never propagate.
+4. **`toModelSnapshot()` uses `as` casts for `ReasoningEffort` arrays** — the SDK's `supportedReasoningEfforts` and `defaultReasoningEffort` types may not exactly match our local mirror; casts are contained in the extractor function.
+5. **Phase 2 boundary strictly maintained** — no CopilotClient, no CopilotSession, no SDK runtime dependencies beyond type imports.
+
+**File paths:**
+- Decisions: `packages/forge/src/decisions/index.ts`
+- Session: `packages/forge/src/session/index.ts`
+- Barrel: `packages/forge/src/index.ts`
+
+**Phase 2 module status:** bridge/ ✅, hooks/ ✅, decisions/ ✅, session/ ✅, dbom/ ✅ — all 5 modules complete.

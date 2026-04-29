@@ -95,3 +95,31 @@ Replaced all inline mock types and reimplemented bridge logic with real imports 
 **Key finding confirmed:** The inline copy HAD DIVERGED from production — inline `defaultExtractor` had `?? {}` fallback but production did not. Alexander simultaneously fixed production to add `?? {}`. This validates the persona review's concern about inline copies drifting.
 
 **Test count:** All 22 bridge tests pass against production code. Full forge suite: 111 tests passing.
+
+### 2026-04-28: Phase 2 Remaining Module Tests (decisions, dbom, session)
+
+**Files created:**
+- `packages/forge/src/__tests__/decisions.test.ts` — 18 tests covering createDecisionGate (gating, pass-through, DecisionRecord shape, error isolation, session ID evidence, certification tier), createDecisionRecorder (passive recording, correct fields, multiple calls), makeDecisionRecord (unique IDs, timestamps, all fields, passthrough)
+- `packages/forge/src/__tests__/dbom.test.ts` — 33 tests covering generateDBOM (certification filtering, valid artifact shape, empty events, hash chain linking, tamper detection, internal-only filtering), classifyDecisionSource (16 classification cases including permission_completed variants, decision_point sources, subagent events, conservative defaults), summarizeDecision (all event types, missing fields), computeDecisionHash (determinism, differentiation, chain integrity, SHA-256 format), computeStats (source counting, chain depth/roots, event type counts, empty input)
+- `packages/forge/src/__tests__/session.test.ts` — 10 tests covering ModelSnapshot shape (required fields, optional fields present/absent), toModelSnapshot (correct extraction, missing optionals, internal field stripping, reasoning model, zero context), ReasoningEffort type (valid values, type-level check)
+
+**Total: 61 new tests, all passing against production modules.** Full forge suite: 181 tests.
+
+**Key approach:** All tests import from real production modules (`../decisions/index.js`, `../dbom/index.js`, `../session/index.js`). No inline mocks of production logic — lesson learned from bridge.test.ts.
+
+**Fixes during test authoring:**
+1. `makeDecisionRecord` requires all fields (alternatives, evidence, confidence, provenanceTier) — no defaults. Adjusted test from "uses sensible defaults" to "passes through all caller-provided fields."
+2. `summarizeDecision('snapshot_rewind')` returns "Session state rewound to snapshot" — used `toContain('rewound')` not `toContain('rewind')`.
+
+### 2026-04-28: Session Test TypeScript Fix — ModelPolicy.terms
+
+Fixed `session.test.ts` build failures caused by SDK `ModelPolicy` type requiring a `terms` field and `state` being a `"enabled" | "disabled" | "unconfigured"` union (not free string).
+
+**Changes:**
+- Replaced untyped `makeModelInfo` helper with properly typed version using `ModelInfo` import from `@github/copilot-sdk`
+- Fixed `policy.state` values: `'available'` → `'enabled'`, `'preview'` → `'disabled'`
+- Added `terms: ''` to all policy objects
+- Used `as unknown as ModelInfo` cast for "strips internal fields" test (to add extra properties)
+- Fixed `makeDecisionRecord` calls missing required fields (`alternatives`, `evidence`, `confidence`, `provenanceTier`)
+
+**Lesson:** When building mock objects for SDK types, always import and annotate with the real type. Free-form objects with inferred types silently allow invalid string literals until `tsc --build` catches them.
