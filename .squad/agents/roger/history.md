@@ -455,3 +455,12 @@ ode dist/mcp/server.js\)
 - **Type assertion helpers validate CairnBridgeEvent shape at runtime.** `assertIsCairnBridgeEvent()` throws descriptive errors. `isCairnBridgeEvent()` returns boolean. Validates all 5 required fields including `provenanceTier` enum membership.
 - **Key file paths:** `packages/forge/vitest.config.ts`, `packages/forge/src/__tests__/helpers/` (mock-sdk, event-factory, type-assertions, index barrel), `packages/forge/src/__tests__/test-infra.test.ts`.
 - **Test count:** 0 → 25 new tests (infra validation) + 74 pre-existing tests = 99 total Forge tests. All 427 Cairn tests unaffected.
+
+### DBOM Module — Phase 2 Data Processing Layer
+
+- **Promoted spike to production:** `packages/cairn/src/spike/dbom-generator.ts` → `packages/forge/src/dbom/index.ts`. All functions are pure — no SDK dependency, no side effects.
+- **Field name adaptation:** Spike used `CairnEvent` (DB row type: `event_type`, `created_at`). Production uses `CairnBridgeEvent` (shared contract: `eventType`, `createdAt`).
+- **Canonical JSON improvement:** Spike used `JSON.stringify` with sorted top-level keys only. Production uses recursive `canonicalStringify()` for true canonical form — all nested object keys sorted deterministically. This means production hashes differ from spike hashes, which is correct since the spike was experimental.
+- **Type migration:** Deleted all spike-local type redefinitions (`DecisionSource`, `DBOMDecisionEntry`, `DBOMStats`, `DBOMArtifact`). Production imports exclusively from `@akubly/types`.
+- **Export surface:** `generateDBOM`, `classifyDecisionSource`, `summarizeDecision`, `computeDecisionHash` are public. `computeRootHash` and `computeStats` are also exported (useful for testing/composition). `canonicalStringify` is internal.
+- **Existing tests unaffected:** All 111 Forge tests pass after DBOM addition.
