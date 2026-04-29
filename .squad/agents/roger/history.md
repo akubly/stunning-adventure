@@ -465,6 +465,15 @@ ode dist/mcp/server.js\)
 - **Export surface:** `generateDBOM`, `classifyDecisionSource`, `summarizeDecision`, `computeDecisionHash` are public. `computeRootHash` and `computeStats` are also exported (useful for testing/composition). `canonicalStringify` is internal.
 - **Existing tests unaffected:** All 111 Forge tests pass after DBOM addition.
 
+### Phase 3: Models Module (`packages/forge/src/models/`)
+
+- **Promoted spike to production:** `packages/cairn/src/spike/model-selection-poc.ts` → `packages/forge/src/models/` (catalog.ts, token-tracker.ts, strategy.ts, index.ts).
+- **Injection pattern (ADR-P3-003):** `createModelCatalog(listFn)` takes a factory function instead of a ForgeClient reference. Keeps the catalog testable without an SDK instance.
+- **EventSource decoupling (ADR-P3-002):** Token tracker takes `EventSource` interface (from bridge/), not `CopilotSession` directly. The EventSource.on() handler receives ALL events, so the tracker filters by event type internally.
+- **Strategies as plain functions (ADR-P3-006):** `ModelStrategy` is a function type, not a class. Three built-in strategies (`cheapest`, `smartest`, `budgetAware`) exported as `MODEL_STRATEGIES` frozen record. Extension point is adding new functions, not subclassing.
+- **SDK-free module:** models/ imports only from `../session/index.js` (types) and `../bridge/index.js` (EventSource). No `@github/copilot-sdk` imports.
+- **All 268 tests pass** (52 models tests + 216 existing Phase 2/runtime tests). Zero regressions.
+
 ### 2026-04-29: Phase 3 Kickoff — Architecture Spec & Test Contracts Delivered
 
 **Context:** Phase 3 architecture specification and 87 test contracts delivered. Integration with runtime/ and models/ modules begins once Alexander implements them.

@@ -7,6 +7,7 @@
 export {
   createMockClient,
   createMockSession,
+  makeModelInfo,
   type MockCopilotClient,
   type MockCopilotSession,
 } from './mock-sdk.js';

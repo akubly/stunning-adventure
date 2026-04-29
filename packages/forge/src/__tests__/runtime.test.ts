@@ -5,9 +5,6 @@
  * which wraps CopilotClient and CopilotSession with Forge instrumentation
  * (bridge event wiring, hook composition, decision gate integration).
  *
- * TDD red phase: Tests define contracts BEFORE implementation exists.
- * All imports from ../runtime/ are TODO placeholders.
- *
  * @module
  */
 
@@ -29,175 +26,12 @@ import { bridgeEvent } from '../bridge/index.js';
 import { HookComposer } from '../hooks/index.js';
 import type { HookObserver } from '../hooks/index.js';
 import type { CairnBridgeEvent } from '@akubly/types';
-
-// ---------------------------------------------------------------------------
-// TODO: Replace with real imports once runtime/ module exists
-//
-//   import {
-//     ForgeClient,
-//     ForgeSession,
-//     type ForgeClientOptions,
-//     type ForgeSessionConfig,
-//   } from '../runtime/index.js';
-//
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Expected API surface — defines the contract the runtime must implement
-// ---------------------------------------------------------------------------
-
-/** Options for creating a ForgeClient. */
-interface ForgeClientOptions {
-  /** Underlying SDK client (injectable for testing). */
-  sdkClient: MockCopilotClient;
-  /** Optional client name for identification. */
-  clientName?: string;
-}
-
-/** Configuration for creating a ForgeSession. */
-interface ForgeSessionConfig {
-  model?: string;
-  reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh';
-  workingDirectory?: string;
-  /** Hook observers to compose and wire into the session. */
-  observers?: HookObserver[];
-  /** Decision gate predicate — which tools require gating. */
-  decisionGate?: (toolName: string) => boolean;
-}
-
-/**
- * Inline ForgeClient implementation for contract testing.
- * Defines the expected public API surface.
- */
-class ForgeClient {
-  private client: MockCopilotClient;
-  private clientName: string;
-  private sessions = new Map<string, ForgeSession>();
-
-  constructor(opts: ForgeClientOptions) {
-    this.client = opts.sdkClient;
-    this.clientName = opts.clientName ?? 'forge';
-  }
-
-  async createSession(config: ForgeSessionConfig = {}): Promise<ForgeSession> {
-    const hookComposer = new HookComposer();
-    for (const obs of config.observers ?? []) {
-      hookComposer.add(obs);
-    }
-
-    const sdkSession = await this.client.createSession({
-      model: config.model,
-      reasoningEffort: config.reasoningEffort,
-      workingDirectory: config.workingDirectory,
-      hooks: hookComposer.compose(),
-      clientName: this.clientName,
-    } as Partial<SessionConfig>);
-
-    const forgeSession = new ForgeSession(sdkSession, hookComposer, config);
-    this.sessions.set(sdkSession.sessionId, forgeSession);
-    return forgeSession;
-  }
-
-  async resumeSession(sessionId: string, config: ForgeSessionConfig = {}): Promise<ForgeSession> {
-    const hookComposer = new HookComposer();
-    for (const obs of config.observers ?? []) {
-      hookComposer.add(obs);
-    }
-
-    const sdkSession = await this.client.resumeSession({
-      sessionId,
-      hooks: hookComposer.compose(),
-    });
-
-    const forgeSession = new ForgeSession(sdkSession, hookComposer, config);
-    this.sessions.set(sdkSession.sessionId, forgeSession);
-    return forgeSession;
-  }
-
-  getSession(sessionId: string): ForgeSession | undefined {
-    return this.sessions.get(sessionId);
-  }
-
-  get sessionCount(): number {
-    return this.sessions.size;
-  }
-
-  async stop(): Promise<void> {
-    for (const session of this.sessions.values()) {
-      await session.disconnect();
-    }
-    this.sessions.clear();
-    await this.client.stop();
-  }
-}
-
-/**
- * Inline ForgeSession implementation for contract testing.
- * Wraps CopilotSession, auto-wires bridge and hook composition.
- */
-class ForgeSession {
-  readonly sessionId: string;
-  private sdkSession: MockCopilotSession;
-  private hookComposer: HookComposer;
-  private bridgeEvents: CairnBridgeEvent[] = [];
-  private eventSubscriptions: Array<() => void> = [];
-  private _disconnected = false;
-
-  constructor(
-    sdkSession: MockCopilotSession,
-    hookComposer: HookComposer,
-    _config: ForgeSessionConfig,
-  ) {
-    this.sdkSession = sdkSession;
-    this.sessionId = sdkSession.sessionId;
-    this.hookComposer = hookComposer;
-
-    // Auto-wire bridge event subscription
-    const unsub = sdkSession.on((event: SessionEvent) => {
-      const bridged = bridgeEvent(this.sessionId, event);
-      if (bridged) {
-        this.bridgeEvents.push(bridged);
-      }
-    });
-    if (unsub) this.eventSubscriptions.push(unsub);
-  }
-
-  async send(prompt: string): Promise<string> {
-    return this.sdkSession.send({ prompt });
-  }
-
-  async sendAndWait(prompt: string, timeoutMs = 30_000): Promise<SessionEvent | undefined> {
-    return this.sdkSession.sendAndWait({ prompt }, timeoutMs);
-  }
-
-  async disconnect(): Promise<void> {
-    if (this._disconnected) return;
-    this._disconnected = true;
-    for (const unsub of this.eventSubscriptions) unsub();
-    this.eventSubscriptions = [];
-    await this.sdkSession.disconnect();
-  }
-
-  get isDisconnected(): boolean {
-    return this._disconnected;
-  }
-
-  getBridgeEvents(): readonly CairnBridgeEvent[] {
-    return [...this.bridgeEvents];
-  }
-
-  getHookComposer(): HookComposer {
-    return this.hookComposer;
-  }
-
-  addObserver(observer: HookObserver): () => void {
-    return this.hookComposer.add(observer);
-  }
-
-  removeObserver(observer: HookObserver): void {
-    this.hookComposer.remove(observer);
-  }
-}
+import {
+  ForgeClient,
+  ForgeSession,
+  type ForgeClientOptions,
+  type ForgeSessionConfig,
+} from '../runtime/index.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

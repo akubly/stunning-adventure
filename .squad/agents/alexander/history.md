@@ -75,6 +75,31 @@ Applied Laura's `laura-hook-error-isolation` decision: wrapped every observer ca
 
 **Phase 2 module status:** bridge/ ✅, hooks/ ✅, decisions/ ✅, session/ ✅, dbom/ ✅ — all 5 modules complete.
 
+### 2026-04-28: Phase 3 — Runtime Module (ForgeClient + ForgeSession)
+
+**What was built:**
+- `packages/forge/src/runtime/client.ts` — `ForgeClient` class wrapping CopilotClient 1:1 (ADR-P3-001). Creates/resumes ForgeSession instances with auto-wired HookComposer. Tracks sessions by ID. `stop()` disconnects all sessions then stops the SDK client.
+- `packages/forge/src/runtime/session.ts` — `ForgeSession` class. Constructor auto-wires bridge event subscription (SDK events → CairnBridgeEvent). Exposes `send()`, `sendAndWait()`, `disconnect()` (idempotent), `getBridgeEvents()`, `addObserver()`/`removeObserver()` for dynamic hook management.
+- `packages/forge/src/runtime/index.ts` — Barrel exports for all runtime types.
+- `packages/forge/src/index.ts` — Updated with runtime/ exports.
+- `packages/forge/src/__tests__/runtime.test.ts` — Updated to import from the real runtime module instead of inline contract implementations.
+
+**Key architecture decisions:**
+1. **SDKClient/SDKSession interfaces** — Thin interface types define the subset of SDK surface ForgeClient/ForgeSession depend on. Mock sessions and clients satisfy these interfaces directly, keeping tests decoupled from the full SDK type.
+2. **ForgeSession owns bridge subscription lifetime** — The `on()` subscription is set up in the constructor and torn down in `disconnect()`. The `_disconnected` flag ensures idempotent cleanup.
+3. **HookComposer is injected, not created internally** — ForgeClient creates the HookComposer and passes it to ForgeSession, so the client can wire hooks into the SDK config while the session retains a reference for dynamic observer management.
+4. **No SDK runtime dependency** — Like Phase 2, the runtime module only imports SDK types, never instantiates CopilotClient directly. The real SDK client is injected via `ForgeClientOptions.sdkClient`.
+
+**Test results:** All 268 tests pass (35 runtime + 233 Phase 2). Zero regressions.
+
+**File paths:**
+- Client: `packages/forge/src/runtime/client.ts`
+- Session: `packages/forge/src/runtime/session.ts`
+- Barrel: `packages/forge/src/runtime/index.ts`
+- Public API: `packages/forge/src/index.ts`
+
+**Phase 3 module status:** runtime/ ✅ — ForgeClient + ForgeSession complete.
+
 ### 2026-04-29: Phase 3 Architecture Spec Delivered (Graham)
 
 **Context:** Phase 3 architecture specification and test contracts delivered. Alexander's next task: implement runtime/ and models/ modules to satisfy test contracts and architecture decisions.

@@ -50,6 +50,31 @@ export {
   computeDecisionHash,
 } from "./dbom/index.js";
 
+// --- Models ---
+export {
+  createModelCatalog,
+  createTokenTracker,
+  formatBudgetReport,
+  MODEL_STRATEGIES,
+  type ModelCatalog,
+  type ModelComparison,
+  type ModelUsageAccumulator,
+  type TokenBudget,
+  type TokenTracker,
+  type ModelStrategy,
+  type StrategyContext,
+} from "./models/index.js";
+
+// --- Runtime ---
+export {
+  ForgeClient,
+  ForgeSession,
+  type ForgeClientOptions,
+  type ForgeSessionConfig,
+  type SDKClient,
+  type SDKSession,
+} from "./runtime/index.js";
+
 // --- Types (SDK mirrors) ---
 export type {
   SessionHooks,

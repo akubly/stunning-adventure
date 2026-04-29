@@ -555,6 +555,32 @@ Natural language searchable query of user's sidecar history. "What have I learne
 
 ---
 
+### 2026-04-28: Alexander — SDK Interface Types for Runtime Module
+
+**Author:** Alexander (SDK/Runtime Dev)  
+**Type:** Architecture  
+**Status:** Implemented
+
+ForgeClient and ForgeSession depend on thin interface types (`SDKClient`, `SDKSession`) rather than importing CopilotClient/CopilotSession classes directly.
+
+**Rationale:**
+1. **Testability** — Mock objects from the test helpers satisfy the interface without needing the real SDK classes (which require a running Copilot CLI process).
+2. **SDK churn isolation** — If the SDK adds/removes methods, only the interface definitions need updating, not every consumer.
+3. **Dependency inversion** — The runtime module is constructor-injected with an `SDKClient`, making it composable and mockable at every level.
+
+**Tradeoffs:**
+- **Pro:** Tests run offline, no SDK instantiation needed.
+- **Pro:** SDK method additions don't break existing code until we choose to adopt them.
+- **Con:** Must manually keep interfaces in sync with the SDK surface we actually use.
+- **Accepted:** The interface surface is small (~5 methods on SDKClient, ~5 on SDKSession), so maintenance cost is negligible.
+
+**Affects:**
+- `packages/forge/src/runtime/client.ts` — `SDKClient` interface
+- `packages/forge/src/runtime/session.ts` — `SDKSession` interface
+- All test code that uses `createMockClient()` / `createMockSession()`
+
+---
+
 ## Governance
 
 - All meaningful changes require team consensus
