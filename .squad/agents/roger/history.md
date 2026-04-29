@@ -464,3 +464,23 @@ ode dist/mcp/server.js\)
 - **Type migration:** Deleted all spike-local type redefinitions (`DecisionSource`, `DBOMDecisionEntry`, `DBOMStats`, `DBOMArtifact`). Production imports exclusively from `@akubly/types`.
 - **Export surface:** `generateDBOM`, `classifyDecisionSource`, `summarizeDecision`, `computeDecisionHash` are public. `computeRootHash` and `computeStats` are also exported (useful for testing/composition). `canonicalStringify` is internal.
 - **Existing tests unaffected:** All 111 Forge tests pass after DBOM addition.
+
+### 2026-04-29: Phase 3 Kickoff — Architecture Spec & Test Contracts Delivered
+
+**Context:** Phase 3 architecture specification and 87 test contracts delivered. Integration with runtime/ and models/ modules begins once Alexander implements them.
+
+**Key deliverables:**
+- **Graham (Architecture):** 6 ADRs documenting ForgeClient ownership (1:1 wrapper), EventSource abstraction, ModelCatalog injection, type locality, dual event paths, strategy design
+- **Laura (Tests):** 87 test contracts (35 runtime, 52 models) with inline implementations and extended mock SDK
+
+**Impact on Roger's Phase 4 integration work:**
+- Runtime/ and models/ APIs now fully specified via ADRs and test contracts
+- Bridge ↔ runtime integration points clarified in architecture spec
+- Test counts: Forge 111 → 198 (87 new Phase 3 tests)
+- Phase 3 modules (runtime/, models/) will integrate with existing Phase 2 modules (bridge/, hooks/, decisions/, session/, dbom/)
+
+**Files to review:**
+- docs/forge-phase3-spec.md — API contracts and integration points
+- .squad/decisions.md — ADR-P3-001 through ADR-P3-006
+- packages/forge/src/__tests__/runtime.test.ts — Runtime module contract (35 tests)
+- packages/forge/src/__tests__/models.test.ts — Models module contract (52 tests)

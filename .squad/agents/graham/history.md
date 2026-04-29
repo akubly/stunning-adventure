@@ -29,6 +29,24 @@
 
 <!-- Append new learnings below -->
 
+### 2026-04-30: Phase 3 Architecture — Live SDK Integration
+
+**Decision document:** `.squad/decisions/inbox/graham-phase3-architecture.md`  
+**Specification:** `docs/forge-phase3-spec.md`
+
+**Architecture decisions:**
+- **Two new modules:** `runtime/` (ForgeClient + ForgeSession) and `models/` (catalog, token tracker, strategies). Both compose Phase 2 modules with live SDK.
+- **Phase boundary held:** Phase 3 = "needs CopilotClient()". ForgeClient is the single SDK entry point; everything else remains offline-testable.
+- **EventSource interface pattern:** Both `attachBridge()` and `createTokenTracker()` accept the minimal `EventSource` interface rather than `CopilotSession` directly. This preserves testability — the same mock event source works for both bridge and model tests.
+- **HookComposer live Set:** The Phase 2 decision (live observer Set) pays off — `ForgeSession.addObserver()` / `removeObserver()` after session creation takes effect without SDK re-registration. Critical for mid-session decision gate management.
+- **Dual event paths:** `onEvent` callback catches events during `createSession()` (before `session.on()` is available). `attachBridge()` takes over after. No dedup needed — SDK guarantees non-overlapping windows.
+- **Injection over reference:** `createModelCatalog(listFn)` takes a function, not a ForgeClient. Same pattern as Phase 2 — modules don't hold SDK references.
+- **No new shared types:** Phase 3 types stay Forge-internal. Cross-package contracts (CairnBridgeEvent, TelemetrySink, SessionIdentity) already sufficient.
+
+**Work decomposition:** 3 waves of parallelism. Alexander owns runtime/ (7 items), Roger owns models/ (8 items), Laura owns test strategy + cross-module validation (7 items). Critical path: Laura's fixture factory (L1) unblocks all integration tests.
+
+**Spike promotion map:** Every spike PoC function has a clear production home. Most model-related patterns (toModelSnapshot, EVENT_MAP entries for model_change) were already promoted in Phase 2. Phase 3 promotes session lifecycle, token tracking, and model strategies.
+
 ### 2026-04-24: Phase 2 Architecture — Forge Runtime Verification Blueprint
 
 **Decision document:** `.squad/decisions/inbox/graham-forge-phase2-architecture.md`

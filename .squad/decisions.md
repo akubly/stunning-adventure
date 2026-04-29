@@ -4438,3 +4438,142 @@ Root `tsconfig.json` uses project references (`tsc --build`) to enforce correct 
 - Zero business logic changes — purely structural
 
 ---
+
+---
+
+### 2026-04-30: Phase 3 Architecture — ForgeClient & SDK Abstraction (Graham)
+
+**Author:** Graham Knight (Lead)  
+**Type:** Architecture  
+**Status:** Active
+
+# Graham — Phase 3 Architecture Decisions
+
+**Date:** 2026-04-30  
+**Author:** Graham Knight (Lead / Architect)  
+**Context:** Phase 3 architecture specification for `@akubly/forge` — live SDK integration
+
+---
+
+## ADR-P3-001: ForgeClient wraps CopilotClient 1:1
+
+**Decision:** Each ForgeClient owns exactly one CopilotClient. No shared instances.
+
+**Alternatives:**
+1. Shared client singleton — lifecycle confusion, race conditions on concurrent session creation.
+2. No wrapper / expose CopilotClient directly — breaks "SDK types don't leak" contract.
+3. **1:1 wrapper (chosen)** — clear ownership, deterministic cleanup.
+
+**Trade-off:** Slightly more memory if multiple ForgeClients exist. Clear lifecycle wins.
+
+---
+
+## ADR-P3-002: EventSource interface over direct CopilotSession coupling
+
+**Decision:** `attachBridge()` and `createTokenTracker()` accept `EventSource { on(handler): () => void }` rather than `CopilotSession`.
+
+**Alternatives:**
+1. Accept CopilotSession directly — simpler types, but couples to SDK and complicates testing.
+2. **EventSource interface (chosen)** — enables mock event sources, keeps Phase 2 bridge SDK-free.
+
+**Trade-off:** One extra interface definition for massive test simplification.
+
+---
+
+## ADR-P3-003: ModelCatalog uses injection over ForgeClient reference
+
+**Decision:** `createModelCatalog()` takes a `listFn: () => Promise<ModelSnapshot[]>` rather than a ForgeClient reference.
+
+**Alternatives:**
+1. Pass ForgeClient — simpler call site, untestable without live client.
+2. **Injection (chosen)** — testable with static array, matches Phase 2 pattern.
+
+**Trade-off:** Caller wires one line of glue for full testability.
+
+---
+
+## ADR-P3-004: No new shared types in @akubly/types
+
+**Decision:** Phase 3 types (ForgeClientOptions, ForgeSessionConfig, TokenBudget, ModelCatalog) stay Forge-internal.
+
+**Rationale:** Cairn consumes CairnBridgeEvent, not TokenBudget. Types graduate to shared only when two packages actually import them.
+
+**Trade-off:** If Cairn needs TokenBudget later, one PR to migrate. Smaller shared surface now.
+
+---
+
+## ADR-P3-005: Dual event paths — onEvent for setup, attachBridge for runtime
+
+**Decision:** Use SessionConfig.onEvent for events during createSession(), attachBridge() after session exists. No dedup needed.
+
+**Rationale:** SDK guarantees non-overlapping windows. Matches spike pattern.
+
+**Trade-off:** Relies on SDK behavior guarantee. Low risk.
+
+---
+
+## ADR-P3-006: Strategies as plain functions, not class hierarchy
+
+**Decision:** ModelStrategy is a function type. Built-in strategies are a Record<string, ModelStrategy>.
+
+**Alternatives:**
+1. Strategy class hierarchy — overkill for 3 strategies, adds constructor ceremony.
+2. **Function type (chosen)** — easy to test, compose, override.
+
+**Trade-off:** No runtime type-checking of strategy names. Acceptable for developer-facing API.
+
+
+---
+
+### 2026-04-29: Phase 3 Test Strategy — Inline Contract Testing (Laura)
+
+**Author:** Laura (Tester)  
+**Type:** Testing  
+**Status:** Active
+
+# Laura — Phase 3 Test Strategy: Inline Contract Testing
+
+**Author:** Laura (Tester)
+**Type:** Test Strategy
+**Status:** Proposed
+**Date:** 2026-04-29
+
+## Decision
+
+Phase 3 test contracts use **inline implementations** of the expected API surface (ForgeClient, ForgeSession, ModelCatalog, ModelSwitcher, TokenBudgetTracker) rather than importing from non-existent modules. Each inline class defines the behavioral contract. When Alexander builds the production modules, tests switch imports — any divergence breaks tests immediately.
+
+## Rationale
+
+1. **TDD red-phase compatibility:** Tests must be runnable NOW, before production code exists. Importing from `../runtime/index.js` would produce compile errors.
+2. **Contract precision:** Inline implementations encode expected behavior (e.g., "disconnect is idempotent", "bridge events are returned as copies") that pure type signatures cannot express.
+3. **Proven pattern:** Phase 2 used the same approach (inline bridge/hooks) and the migration to production imports was smooth — documented in history.md.
+
+## Migration Path
+
+When production modules are built:
+1. Delete inline class definitions from test files
+2. Replace TODO import comments with real imports
+3. Run tests — failures reveal behavioral divergence
+4. Resolve divergence (fix production code or update contract if intentional)
+
+## Mock SDK Extensions
+
+Extended `helpers/mock-sdk.ts` for Phase 3 needs:
+- **MockCopilotSession:** Added `setModel`, typed event handler map, unsubscribe returns
+- **MockCopilotClient:** Added `resumeSession`, `listModels`, `listSessions`, `getAuthStatus`, `getStatus`
+- **makeModelInfo:** Shared factory for constructing valid `ModelInfo` objects
+
+These extensions are backward-compatible — existing Phase 2 tests continue to pass unchanged.
+
+## Test Coverage Summary
+
+| Module | Tests | Key Behaviors |
+|--------|-------|---------------|
+| runtime.test.ts | 35 | Session lifecycle, bridge wiring, hook composition, decision gates, disconnect semantics |
+| models.test.ts | 52 | Model catalog CRUD, snapshot extraction, mid-session switching, token budget tracking, selection strategies |
+
+## Risks
+
+- Inline implementations may drift from what Alexander builds. Mitigation: clear TODO markers and documented migration path.
+- Mock SDK extensions add maintenance surface. Mitigation: centralized in helpers/, barrel-exported.
+

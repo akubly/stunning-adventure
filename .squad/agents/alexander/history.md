@@ -74,3 +74,23 @@ Applied Laura's `laura-hook-error-isolation` decision: wrapped every observer ca
 - Barrel: `packages/forge/src/index.ts`
 
 **Phase 2 module status:** bridge/ ✅, hooks/ ✅, decisions/ ✅, session/ ✅, dbom/ ✅ — all 5 modules complete.
+
+### 2026-04-29: Phase 3 Architecture Spec Delivered (Graham)
+
+**Context:** Phase 3 architecture specification and test contracts delivered. Alexander's next task: implement runtime/ and models/ modules to satisfy test contracts and architecture decisions.
+
+**Key deliverables:**
+- **Graham (Architecture):** 6 ADRs covering ForgeClient ownership (1:1 wrapper), EventSource abstraction, ModelCatalog injection, type locality, dual event paths, strategy design as functions
+- **Laura (Tests):** 87 test contracts (35 runtime, 52 models) with inline implementations enabling TDD before production code
+
+**Impact on Alexander's work:**
+- Test contracts define expected API surface and behavioral guarantees for runtime/ and models/ modules
+- Architecture spec provides detailed rationale for design decisions (ADRs document trade-offs)
+- Migration path: Tests will switch from inline to production imports when implementation complete
+- Forge test count: 181 → 268 (87 new tests)
+
+**Files to read:**
+- `docs/forge-phase3-spec.md` — Full architecture specification (API contracts, state machines, integration points)
+- `.squad/decisions.md` — ADR-P3-001 through ADR-P3-006 (merged from inbox)
+- `packages/forge/src/__tests__/runtime.test.ts` — 35 test contracts for runtime/ (inline ForgeClient, ForgeSession, HookWiring)
+- `packages/forge/src/__tests__/models.test.ts` — 52 test contracts for models/ (inline ModelCatalog, ModelSwitcher, TokenBudgetTracker)

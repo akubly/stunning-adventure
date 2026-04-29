@@ -123,3 +123,24 @@ Fixed `session.test.ts` build failures caused by SDK `ModelPolicy` type requirin
 - Fixed `makeDecisionRecord` calls missing required fields (`alternatives`, `evidence`, `confidence`, `provenanceTier`)
 
 **Lesson:** When building mock objects for SDK types, always import and annotate with the real type. Free-form objects with inferred types silently allow invalid string literals until `tsc --build` catches them.
+
+### 2026-04-29: Phase 3 Test Contracts — Runtime & Models
+
+**Files created:**
+- `packages/forge/src/__tests__/runtime.test.ts` — 35 tests covering ForgeClient session lifecycle (create, resume, stop, error propagation), ForgeSession bridge event wiring (auto-subscribe, bridge mapping, multi-event, usage capture, unmapped events), hook composition integration (multi-observer, dynamic add/remove via live HookComposer), message sending (send, sendAndWait delegation), disconnect lifecycle (idempotent, event unsubscription), edge cases (multi-session tracking, copy semantics), decision gate integration (blocking, pass-through, gate+telemetry composition).
+- `packages/forge/src/__tests__/models.test.ts` — 52 tests covering ModelCatalog (refresh from client, list/get/filter, size, copy semantics, empty state, strategy integration), toModelSnapshot extraction (required fields, optional fields, missing optionals, maxOutputTokens), ModelSwitcher (setModel delegation, reasoning effort, change event tracking, history ordering, current model updates, copy semantics), TokenBudgetTracker (per-model accumulation, cache tokens, nano-AIU, duration, cross-model totals, unknown model default, context window tracking with peak/limit/updates, dispose lifecycle), model strategies (cheapest, smartest, budgetAware with threshold behavior, disabled model exclusion, empty lists, default billing).
+
+**Files modified:**
+- `packages/forge/src/__tests__/helpers/mock-sdk.ts` — Extended MockCopilotSession with `setModel` mock, typed event handler tracking (`_typedHandlers`), and unsubscribe return values from `on()`. Extended MockCopilotClient with `resumeSession`, `listSessions`, `listModels`, `getAuthStatus`, `getStatus` mocks. Added `makeModelInfo` factory helper.
+- `packages/forge/src/__tests__/helpers/index.ts` — Added `makeModelInfo` to barrel export.
+
+**Total: 87 new tests, all passing.** Full forge suite: 268 tests passing.
+
+**Key approach — inline contract implementations:**
+Phase 3 modules (runtime/, models/) don't exist yet. Rather than importing from non-existent modules, the test files define expected API types and inline implementations (ForgeClient, ForgeSession, ModelCatalog, ModelSwitcher, TokenBudgetTracker) that establish the behavioral contract. When Alexander builds the real modules, tests switch from inline to real imports — any behavioral divergence immediately surfaces as test failures.
+
+**Mock SDK extension rationale:**
+Phase 2 mocks only had createSession/stop on the client and basic on/send/sendAndWait/disconnect on the session. Phase 3 needs resumeSession, listModels, setModel, typed event subscriptions, and unsubscribe return values. Extended the shared helpers rather than creating test-local mocks to maintain the "single source of mock truth" pattern.
+
+**Bridge event type discovery:**
+Initial test assumed `tool.execution_start` maps to `tool_start` in CairnBridgeEvent. Actually maps to `tool_use` (and `tool.execution_complete` → `tool_result`). Fixed by checking the production EVENT_MAP. Lesson: always verify Cairn event type names against the production bridge module rather than guessing from SDK event names.
