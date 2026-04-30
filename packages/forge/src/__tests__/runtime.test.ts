@@ -557,3 +557,60 @@ describe('ForgeSession — decision gate integration', () => {
     expect(log).toEqual(['telemetry:bash', 'gate:bash']);
   });
 });
+
+// ===========================================================================
+// ForgeClient — event dedup guard (ADR-P3-005)
+// ===========================================================================
+
+describe('ForgeClient — event dedup guard', () => {
+  it('onEvent callback is disabled once bridge is attached via session.on()', async () => {
+    const mockSession = createMockSession();
+    const mockClient = createMockClient({ session: mockSession });
+
+    // Intercept the onEvent callback passed to SDK createSession
+    let capturedOnEvent: ((event: SessionEvent) => void) | undefined;
+    mockClient.createSession.mockImplementation(async (config: Partial<SessionConfig>) => {
+      capturedOnEvent = config.onEvent as (event: SessionEvent) => void;
+      return mockSession;
+    });
+
+    const forgeClient = new ForgeClient({ sdkClient: mockClient });
+    const session = await forgeClient.createSession();
+
+    // Simulate an event arriving via onEvent AFTER bridge is attached
+    // (the overlap scenario the dedup guard prevents)
+    expect(capturedOnEvent).toBeDefined();
+    const lateEvent = sessionStartEvent({ sessionId: mockSession.sessionId });
+    capturedOnEvent!(lateEvent);
+
+    // Also emit via session.on() (the normal path)
+    mockSession._emit(lateEvent);
+
+    // Should see exactly 1 bridge event, not 2
+    const bridged = session.getBridgeEvents();
+    expect(bridged).toHaveLength(1);
+    expect(bridged[0].eventType).toBe('session_start');
+  });
+
+  it('onEvent captures events BEFORE bridge attachment', async () => {
+    const mockSession = createMockSession();
+    const mockClient = createMockClient({ session: mockSession });
+
+    let capturedOnEvent: ((event: SessionEvent) => void) | undefined;
+    mockClient.createSession.mockImplementation(async (config: Partial<SessionConfig>) => {
+      capturedOnEvent = config.onEvent as (event: SessionEvent) => void;
+      // Simulate SDK emitting an event during createSession (before on() is wired)
+      const earlyEvent = sessionStartEvent({ sessionId: mockSession.sessionId });
+      capturedOnEvent!(earlyEvent);
+      return mockSession;
+    });
+
+    const forgeClient = new ForgeClient({ sdkClient: mockClient });
+    const session = await forgeClient.createSession();
+
+    // The pre-session event should be captured
+    const bridged = session.getBridgeEvents();
+    expect(bridged).toHaveLength(1);
+    expect(bridged[0].eventType).toBe('session_start');
+  });
+});

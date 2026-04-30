@@ -143,3 +143,17 @@ Applied Laura's `laura-hook-error-isolation` decision: wrapped every observer ca
 **Test results:** All 268 tests pass (35 runtime + 233 others). Zero regressions.
 
 **Key learning:** Persona review found real correctness bugs (F1, F4) that would have manifested in production under failure conditions. The spec-gap findings (F2) were correctly scoped by triage guidance — spec is aspirational, tests are the contract.
+
+### 2026-04-30: Event Dedup Guard (ADR-P3-005 hardening)
+
+**Context:** Design reviewers flagged that the dual event path (onEvent callback during createSession + session.on() after construction) has a temporal overlap window. If the SDK fires events via onEvent after createSession resolves but before/during ForgeSession construction, the same event could be captured by both paths, corrupting TokenTracker accumulation and DBOM reconstruction.
+
+**Fix:** Added a `bridgeAttached` boolean flag in `ForgeClient.createSession()`. The `onEvent` closure checks this flag and short-circuits if `true`. The flag is set immediately before `ForgeSession` construction (which wires `session.on()`). Total change: ~4 LOC in client.ts.
+
+**Tests added:** 2 new tests in runtime.test.ts:
+1. "onEvent callback is disabled once bridge is attached" — simulates overlap, asserts no duplicate bridge events
+2. "onEvent captures events BEFORE bridge attachment" — confirms pre-session events still work
+
+**Test results:** All 270 tests pass (37 runtime). Zero regressions.
+
+**Key learning:** The simplest dedup mechanism (a boolean flag matching the temporal contract) is preferable to hash-based dedup (LRU + eventId). The flag directly encodes the design intent: onEvent is a pre-bridge stopgap, not a parallel path.

@@ -70,9 +70,13 @@ export class ForgeClient {
       hookComposer.add(obs);
     }
 
-    // Capture events emitted during session creation (before on() is wired)
+    // Capture events emitted during session creation (before on() is wired).
+    // Once ForgeSession attaches its bridge via session.on(), this path is
+    // disabled to prevent duplicate events (ADR-P3-005 dedup guard).
     const preSessionEvents: CairnBridgeEvent[] = [];
+    let bridgeAttached = false;
     const onEvent = (event: SessionEvent) => {
+      if (bridgeAttached) return;
       const bridged = bridgeEvent("pending", event);
       if (bridged) preSessionEvents.push(bridged);
     };
@@ -96,6 +100,9 @@ export class ForgeClient {
     if (existing && !existing.isDisconnected) {
       try { await existing.disconnect(); } catch { /* best effort */ }
     }
+
+    // Disable onEvent path — ForgeSession's constructor wires session.on()
+    bridgeAttached = true;
 
     const forgeSession = new ForgeSession(sdkSession, hookComposer, config, {
       preSessionEvents,

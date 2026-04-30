@@ -144,3 +144,24 @@ Phase 2 mocks only had createSession/stop on the client and basic on/send/sendAn
 
 **Bridge event type discovery:**
 Initial test assumed `tool.execution_start` maps to `tool_start` in CairnBridgeEvent. Actually maps to `tool_use` (and `tool.execution_complete` → `tool_result`). Fixed by checking the production EVENT_MAP. Lesson: always verify Cairn event type names against the production bridge module rather than guessing from SDK event names.
+
+### 2026-04-29: Phase 3 Cross-Module Integration Tests (L2–L7)
+
+**File created:**
+- `packages/forge/src/__tests__/integration.test.ts` — 19 tests across 6 test groups
+
+**Test groups:**
+- **L2 (E2E Wiring):** 3 tests — full ForgeClient→ForgeSession→bridge→sink flow, hook observers through composed hooks, event sequence ordering
+- **L3 (Error Isolation):** 4 tests — throwing observer isolation, bridge handler error resilience, disconnect cleanup with throwing unsubscribe, stop() resilience with failing session disconnect
+- **L4 (Decision Gate Integration):** 3 tests — gate→HookComposer→ForgeSession blocking, gate+recorder composition, dynamic gate add/remove mid-session
+- **L5 (Model Switching):** 3 tests — model_change event tracking, accumulation, bridge event emission
+- **L6 (Token Tracker Integration):** 3 tests — per-model accumulation from assistant.usage, context window high-water mark from session.usage_info, unsubscribe stops tracking
+- **L7 (Resume):** 3 tests — create→disconnect→resume with re-attached bridge, old session cleanup from tracking map, new observers on resumed session
+
+**Full forge suite: 289 tests passing (19 new).**
+
+**Key finding — mock session unsubscribe semantics:**
+The mock session's `on()` returns a no-op unsubscribe stub. For testing real unsubscribe behavior (L6 token tracker), I needed to build a proper EventSource adapter with `Set<handler>`-based subscribe/unsubscribe. The mock session helpers are designed for fire-and-forget event wiring (ForgeSession's bridge subscription), not for testing unsubscribe semantics directly.
+
+**Decision: disconnect error propagation (L3):**
+ForgeSession.disconnect() does NOT wrap individual unsubscribe calls in try/catch — if the bridge unsubscribe throws, disconnect throws. However, ForgeClient.stop() DOES wrap each session disconnect in try/catch and collects errors. This is correct: stop() must be resilient (best-effort cleanup), while disconnect() is a direct API where callers can handle the error. The L3 tests verify both behaviors.
