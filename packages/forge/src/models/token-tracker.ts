@@ -43,6 +43,13 @@ export interface TokenTracker {
   unsubscribe(): void;
 }
 
+/** Internal mutable context window state. */
+interface MutableContextWindow {
+  tokenLimit?: number;
+  peakTokens: number;
+  lastTokens: number;
+}
+
 // ---------------------------------------------------------------------------
 // createTokenTracker — factory function
 // ---------------------------------------------------------------------------
@@ -55,84 +62,68 @@ export function createTokenTracker(
   source: EventSource,
   sessionId: string,
 ): TokenTracker {
+  const contextWindow: MutableContextWindow = { peakTokens: 0, lastTokens: 0 };
+
   const budget: TokenBudget = {
     sessionId,
     modelUsage: new Map(),
-    contextWindow: { peakTokens: 0, lastTokens: 0 },
+    contextWindow,
   };
 
-  const unsubscribers: Array<() => void> = [];
+  // Single subscription handles both event types
+  const unsub = source.on((event) => {
+    if (event.type === "assistant.usage") {
+      const d = event.data as {
+        model?: string;
+        inputTokens?: number;
+        outputTokens?: number;
+        cacheReadTokens?: number;
+        cacheWriteTokens?: number;
+        duration?: number;
+        copilotUsage?: { totalNanoAiu?: number };
+      };
 
-  // Subscribe to usage events — accumulate per-model token counts
-  const unsubUsage = source.on((event) => {
-    if (event.type !== "assistant.usage") return;
+      const model = d.model ?? "unknown";
+      const existing = budget.modelUsage.get(model) ?? {
+        callCount: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCacheReadTokens: 0,
+        totalCacheWriteTokens: 0,
+        totalNanoAiu: 0,
+        totalDurationMs: 0,
+      };
 
-    const d = event.data as {
-      model?: string;
-      inputTokens?: number;
-      outputTokens?: number;
-      cacheReadTokens?: number;
-      cacheWriteTokens?: number;
-      duration?: number;
-      copilotUsage?: { totalNanoAiu?: number };
-    };
+      existing.callCount++;
+      existing.totalInputTokens += d.inputTokens ?? 0;
+      existing.totalOutputTokens += d.outputTokens ?? 0;
+      existing.totalCacheReadTokens += d.cacheReadTokens ?? 0;
+      existing.totalCacheWriteTokens += d.cacheWriteTokens ?? 0;
+      existing.totalNanoAiu += d.copilotUsage?.totalNanoAiu ?? 0;
+      existing.totalDurationMs += d.duration ?? 0;
 
-    const model = d.model ?? "unknown";
-    const existing = budget.modelUsage.get(model) ?? {
-      callCount: 0,
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
-      totalCacheReadTokens: 0,
-      totalCacheWriteTokens: 0,
-      totalNanoAiu: 0,
-      totalDurationMs: 0,
-    };
+      budget.modelUsage.set(model, existing);
+    } else if (event.type === "session.usage_info") {
+      const d = event.data as {
+        tokenLimit?: number;
+        currentTokens?: number;
+      };
 
-    existing.callCount++;
-    existing.totalInputTokens += d.inputTokens ?? 0;
-    existing.totalOutputTokens += d.outputTokens ?? 0;
-    existing.totalCacheReadTokens += d.cacheReadTokens ?? 0;
-    existing.totalCacheWriteTokens += d.cacheWriteTokens ?? 0;
-    existing.totalNanoAiu += d.copilotUsage?.totalNanoAiu ?? 0;
-    existing.totalDurationMs += d.duration ?? 0;
-
-    budget.modelUsage.set(model, existing);
-  });
-  unsubscribers.push(unsubUsage);
-
-  // Subscribe to context window events — track high-water mark
-  // EventSource dispatches ALL events to one handler, so we filter by type above.
-  // For usage_info, we need a second subscription or filter in the same handler.
-  // Since EventSource.on() takes a single handler for ALL events, we handle both
-  // in one subscription. Let's refactor:
-
-  // Actually, EventSource.on() takes a handler for ALL events. We already filter
-  // by type. But we need to also handle usage_info. We subscribed once for usage.
-  // We need a second subscription for usage_info:
-  const unsubContext = source.on((event) => {
-    if (event.type !== "session.usage_info") return;
-
-    const d = event.data as {
-      tokenLimit?: number;
-      currentTokens?: number;
-    };
-
-    if (d.tokenLimit) {
-      (budget.contextWindow as { tokenLimit?: number }).tokenLimit = d.tokenLimit;
-    }
-    const current = d.currentTokens ?? 0;
-    (budget.contextWindow as { lastTokens: number }).lastTokens = current;
-    if (current > budget.contextWindow.peakTokens) {
-      (budget.contextWindow as { peakTokens: number }).peakTokens = current;
+      if (d.tokenLimit) {
+        contextWindow.tokenLimit = d.tokenLimit;
+      }
+      const current = d.currentTokens ?? 0;
+      contextWindow.lastTokens = current;
+      if (current > contextWindow.peakTokens) {
+        contextWindow.peakTokens = current;
+      }
     }
   });
-  unsubscribers.push(unsubContext);
 
   return {
     budget,
     unsubscribe(): void {
-      for (const unsub of unsubscribers) unsub();
-      unsubscribers.length = 0;
+      unsub();
     },
   };
 }

@@ -13,6 +13,7 @@ import type { CairnBridgeEvent } from "@akubly/types";
 
 import { bridgeEvent } from "../bridge/index.js";
 import { HookComposer, type HookObserver } from "../hooks/index.js";
+import type { ModelChangeRecord, ReasoningEffort } from "../session/index.js";
 
 // ---------------------------------------------------------------------------
 // ForgeSessionConfig — passed by ForgeClient at construction time
@@ -21,12 +22,10 @@ import { HookComposer, type HookObserver } from "../hooks/index.js";
 /** Configuration for creating a ForgeSession. */
 export interface ForgeSessionConfig {
   model?: string;
-  reasoningEffort?: "low" | "medium" | "high" | "xhigh";
+  reasoningEffort?: ReasoningEffort;
   workingDirectory?: string;
   /** Hook observers to compose and wire into the session. */
   observers?: HookObserver[];
-  /** Decision gate predicate — which tools require gating. */
-  decisionGate?: (toolName: string) => boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,23 +63,49 @@ export class ForgeSession {
   private sdkSession: SDKSession;
   private hookComposer: HookComposer;
   private bridgeEvents: CairnBridgeEvent[] = [];
+  private _modelChanges: ModelChangeRecord[] = [];
   private eventSubscriptions: Array<() => void> = [];
   private _disconnected = false;
+  private _onDisconnect?: () => void;
 
   constructor(
     sdkSession: SDKSession,
     hookComposer: HookComposer,
     _config: ForgeSessionConfig,
+    options?: { onDisconnect?: () => void; preSessionEvents?: CairnBridgeEvent[] },
   ) {
     this.sdkSession = sdkSession;
     this.sessionId = sdkSession.sessionId;
     this.hookComposer = hookComposer;
+    this._onDisconnect = options?.onDisconnect;
+
+    // Merge any events captured during session creation (onEvent bridge)
+    if (options?.preSessionEvents) {
+      this.bridgeEvents.push(...options.preSessionEvents);
+    }
 
     // Auto-wire bridge event subscription
     const unsub = sdkSession.on((event: SessionEvent) => {
-      const bridged = bridgeEvent(this.sessionId, event);
-      if (bridged) {
-        this.bridgeEvents.push(bridged);
+      if (this._disconnected) return;
+      try {
+        const bridged = bridgeEvent(this.sessionId, event);
+        if (bridged) {
+          this.bridgeEvents.push(bridged);
+        }
+
+        // Track model changes for audit trail
+        if (event.type === "session.model_change") {
+          const data = event.data as Record<string, unknown>;
+          this._modelChanges.push({
+            timestamp: event.timestamp,
+            previousModel: data.previousModel as string | undefined,
+            newModel: data.newModel as string,
+            previousReasoningEffort: data.previousReasoningEffort as ReasoningEffort | undefined,
+            newReasoningEffort: data.newReasoningEffort as ReasoningEffort | undefined,
+          });
+        }
+      } catch (err) {
+        console.warn(`[ForgeSession] bridge handler error: ${err}`);
       }
     });
     if (unsub) this.eventSubscriptions.push(unsub);
@@ -106,6 +131,7 @@ export class ForgeSession {
     for (const unsub of this.eventSubscriptions) unsub();
     this.eventSubscriptions = [];
     await this.sdkSession.disconnect();
+    this._onDisconnect?.();
   }
 
   /** Whether this session has been disconnected. */
@@ -116,6 +142,11 @@ export class ForgeSession {
   /** Return a snapshot copy of all bridge events captured so far. */
   getBridgeEvents(): readonly CairnBridgeEvent[] {
     return [...this.bridgeEvents];
+  }
+
+  /** Return a snapshot copy of all model change records. */
+  get modelChanges(): readonly ModelChangeRecord[] {
+    return [...this._modelChanges];
   }
 
   /** Expose the HookComposer for dynamic observer management. */

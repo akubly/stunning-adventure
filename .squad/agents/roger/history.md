@@ -493,3 +493,15 @@ ode dist/mcp/server.js\)
 - .squad/decisions.md — ADR-P3-001 through ADR-P3-006
 - packages/forge/src/__tests__/runtime.test.ts — Runtime module contract (35 tests)
 - packages/forge/src/__tests__/models.test.ts — Models module contract (52 tests)
+
+### Persona Review — models/ module (2026-04-29)
+
+**Findings triaged:** 5 total (4 accepted, 1 rejected)
+
+- **F1 REJECTED:** sort() mutating input — false positive. `filter()` already creates a new array; `sort()` only mutates the filtered copy, not the original `models` parameter.
+- **F2 ACCEPTED:** Replaced `as` casts for readonly bypass with separate `MutableContextWindow` internal type. Cleaner type boundary between internal mutation and external readonly contract.
+- **F3 ACCEPTED:** Merged dual EventSource subscriptions into single handler with if/else on event.type. Halves event delivery overhead.
+- **F4 ACCEPTED:** Aligned test's local `ModelChangeRecord` field from `reasoningEffort` to `newReasoningEffort` to match production type in session/index.ts.
+- **F5 ACCEPTED:** Added explicit guard for `budgetLimitNanoAiu <= 0` in `budgetAware` strategy, falling back to `cheapest` instead of producing `Infinity`.
+
+**Key learning:** `Array.filter()` returns a new array — chaining `.sort()` on the result does NOT mutate the original input. Reviewers sometimes miss this.

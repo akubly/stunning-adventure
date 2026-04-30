@@ -9,9 +9,11 @@
  * @module
  */
 
-import type { SessionConfig } from "@github/copilot-sdk";
+import type { SessionConfig, SessionEvent } from "@github/copilot-sdk";
 import { HookComposer, type HookObserver } from "../hooks/index.js";
+import { bridgeEvent } from "../bridge/index.js";
 import { ForgeSession, type ForgeSessionConfig, type SDKSession } from "./session.js";
+import type { CairnBridgeEvent } from "@akubly/types";
 
 // ---------------------------------------------------------------------------
 // Minimal SDK client interface — what ForgeClient needs from the SDK
@@ -68,15 +70,37 @@ export class ForgeClient {
       hookComposer.add(obs);
     }
 
+    // Capture events emitted during session creation (before on() is wired)
+    const preSessionEvents: CairnBridgeEvent[] = [];
+    const onEvent = (event: SessionEvent) => {
+      const bridged = bridgeEvent("pending", event);
+      if (bridged) preSessionEvents.push(bridged);
+    };
+
     const sdkSession = await this.client.createSession({
       model: config.model,
       reasoningEffort: config.reasoningEffort,
       workingDirectory: config.workingDirectory,
       hooks: hookComposer.compose(),
       clientName: this.clientName,
+      onEvent,
     } as Partial<SessionConfig>);
 
-    const forgeSession = new ForgeSession(sdkSession, hookComposer, config);
+    // Patch pre-session events with the real sessionId
+    for (const evt of preSessionEvents) {
+      (evt as { sessionId: string }).sessionId = sdkSession.sessionId;
+    }
+
+    // Disconnect any existing session with the same ID before overwriting
+    const existing = this.sessions.get(sdkSession.sessionId);
+    if (existing && !existing.isDisconnected) {
+      try { await existing.disconnect(); } catch { /* best effort */ }
+    }
+
+    const forgeSession = new ForgeSession(sdkSession, hookComposer, config, {
+      preSessionEvents,
+      onDisconnect: () => this.sessions.delete(sdkSession.sessionId),
+    });
     this.sessions.set(sdkSession.sessionId, forgeSession);
     return forgeSession;
   }
@@ -96,7 +120,15 @@ export class ForgeClient {
       hooks: hookComposer.compose(),
     });
 
-    const forgeSession = new ForgeSession(sdkSession, hookComposer, config);
+    // Disconnect any existing session with the same ID before overwriting
+    const existing = this.sessions.get(sdkSession.sessionId);
+    if (existing && !existing.isDisconnected) {
+      try { await existing.disconnect(); } catch { /* best effort */ }
+    }
+
+    const forgeSession = new ForgeSession(sdkSession, hookComposer, config, {
+      onDisconnect: () => this.sessions.delete(sdkSession.sessionId),
+    });
     this.sessions.set(sdkSession.sessionId, forgeSession);
     return forgeSession;
   }
@@ -113,10 +145,18 @@ export class ForgeClient {
 
   /** Disconnect all sessions and stop the underlying SDK client. */
   async stop(): Promise<void> {
+    const errors: Error[] = [];
     for (const session of this.sessions.values()) {
-      await session.disconnect();
+      try {
+        await session.disconnect();
+      } catch (err) {
+        errors.push(err instanceof Error ? err : new Error(String(err)));
+      }
     }
     this.sessions.clear();
     await this.client.stop();
+    if (errors.length > 0) {
+      console.warn(`[ForgeClient] ${errors.length} session(s) failed to disconnect:`, errors);
+    }
   }
 }

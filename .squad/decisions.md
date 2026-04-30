@@ -4603,3 +4603,93 @@ These extensions are backward-compatible — existing Phase 2 tests continue to 
 - Inline implementations may drift from what Alexander builds. Mitigation: clear TODO markers and documented migration path.
 - Mock SDK extensions add maintenance surface. Mitigation: centralized in helpers/, barrel-exported.
 
+---
+
+### 2026-04-30: Phase 3 Persona Review Fixes — Runtime (Alexander)
+
+**Author:** Alexander (SDK/Runtime Dev)  
+**Type:** Implementation  
+**Status:** Implemented  
+**Date:** 2026-04-30
+
+## Summary
+
+Addressed 7 persona review findings for `packages/forge/src/runtime/`. 6 accepted with fixes, 1 partially rejected (spec-vs-implementation gap with no test contracts).
+
+## Key Decisions
+
+**Spec Surface Gap — Partial Reject (F2)**
+
+Rejected: `listModels`, `listSessions`, `getAuthStatus`, `getStatus` — these are in the architecture spec but have no test contracts and no consumers. They can be added when a consumer needs them.
+
+Accepted from same finding: `onEvent` bridge for pre-session events and `model_change` tracking — these are correctness concerns with spec backing.
+
+**Session Map Lifecycle (F6)**
+
+Added `onDisconnect` callback pattern: ForgeClient passes a cleanup callback when creating ForgeSession. On disconnect, the session auto-removes itself from the client's tracking map. This means `sessionCount` stays accurate without manual cleanup.
+
+**decisionGate Removed from Config (F5)**
+
+`decisionGate` predicate was defined in `ForgeSessionConfig` but never wired. Decision gating is already handled through the observer pattern (`HookObserver.onPreToolUse`). Removed to avoid misleading API surface.
+
+## Fixes Applied
+
+| Finding | Description | Fix |
+|---------|-------------|-----|
+| F1 | stop() error isolation | Added try/catch per session; errors logged separately |
+| F3 | onEvent bridge missing | Wired pre-session event bridge (ADR-P3-005) |
+| F4 | model_change tracking | Integrated into ModelChangeRecord[], persisted in events |
+| F5 | decisionGate config field | Removed (not wired; gating handled by HookObserver) |
+| F6 | Bridge handler guards | Added _disconnected guard + try/catch wrapper |
+| F7 | Session map lifecycle | Added onDisconnect callback; auto-removal on disconnect |
+
+## Files Changed
+
+- `packages/forge/src/runtime/client.ts`
+- `packages/forge/src/runtime/session.ts`
+
+## Test Impact
+
+All 268 tests pass. Zero regressions.
+
+---
+
+### 2026-04-30: Phase 3 Persona Review Fixes — Models (Roger)
+
+**Author:** Roger (Platform Dev)  
+**Type:** Implementation  
+**Status:** Implemented  
+**Date:** 2026-04-30
+
+## Summary
+
+9 persona reviewers surfaced 5 findings against the models/ module. Triaged as:
+- **4 accepted and fixed** (F2–F5)
+- **1 rejected** (F1)
+
+## Key Decisions
+
+**Rejected: F1 — sort() Mutates Input Array**
+
+The Architect flagged `sort()` in `cheapest`/`smartest` strategies as mutating the input `models` array. This is a false positive: `filter()` already returns a new array, so `sort()` only mutates the filtered copy. No caller's data is affected.
+
+## Fixes Applied
+
+| Finding | Description | Fix |
+|---------|-------------|-----|
+| F2 | readonly bypass on TokenBudget.contextWindow | Introduced MutableContextWindow internal type; external API stays readonly |
+| F3 | Dual EventSource subscriptions | Merged into single source.on() handler with if/else on event.type |
+| F4 | Test field drift (reasoningEffort vs newReasoningEffort) | Updated test's ModelChangeRecord, makeModelChangeEvent, and assertions |
+| F5 | Division by zero in budgetAware | Added guard: `if (context.budgetLimitNanoAiu <= 0) return cheapest(...)` |
+
+## Files Changed
+
+- `packages/forge/src/models/strategy.ts`
+- `packages/forge/src/models/token-budget.ts`
+- `packages/forge/src/__tests__/models.test.ts`
+
+## Test Impact
+
+- `npm run build` — clean
+- `npx vitest run` — 268/268 tests pass
+

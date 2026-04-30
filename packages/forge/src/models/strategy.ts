@@ -60,6 +60,7 @@ const smartest: ModelStrategy = (models) => {
 
 /** Use smartest when under 80% budget, cheapest when over. */
 const budgetAware: ModelStrategy = (models, context) => {
+  if (context.budgetLimitNanoAiu <= 0) return cheapest(models, context);
   const budgetUsed = context.currentBudgetNanoAiu / context.budgetLimitNanoAiu;
   if (budgetUsed > 0.8) {
     return cheapest(models, context);

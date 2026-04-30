@@ -62,7 +62,7 @@ interface ModelChangeRecord {
   previousModel?: string;
   newModel: string;
   previousReasoningEffort?: string;
-  reasoningEffort?: string;
+  newReasoningEffort?: string;
 }
 
 interface PerModelUsage {
@@ -155,7 +155,7 @@ class ModelSwitcher {
         previousModel?: string;
         newModel: string;
         previousReasoningEffort?: string;
-        reasoningEffort?: string;
+        newReasoningEffort?: string;
       };
       this.changes.push({
         timestamp: event.timestamp,
@@ -353,7 +353,7 @@ function makeUsageInfoEvent(
 function makeModelChangeEvent(
   newModel: string,
   previousModel?: string,
-  opts: { reasoningEffort?: string; previousReasoningEffort?: string } = {},
+  opts: { newReasoningEffort?: string; previousReasoningEffort?: string } = {},
 ): SessionEvent {
   return {
     id: `evt-${Math.random().toString(36).slice(2, 8)}`,
@@ -364,7 +364,7 @@ function makeModelChangeEvent(
       previousModel,
       newModel,
       previousReasoningEffort: opts.previousReasoningEffort,
-      reasoningEffort: opts.reasoningEffort,
+      newReasoningEffort: opts.newReasoningEffort,
     },
   } as unknown as SessionEvent;
 }
@@ -590,12 +590,12 @@ describe('ModelSwitcher — model switching', () => {
   it('tracks reasoning effort changes', () => {
     mockSession._emit(makeModelChangeEvent('claude-sonnet-4.6', 'gpt-4', {
       previousReasoningEffort: 'medium',
-      reasoningEffort: 'high',
+      newReasoningEffort: 'high',
     }));
 
     const record = switcher.getHistory()[0];
     expect(record.previousReasoningEffort).toBe('medium');
-    expect(record.reasoningEffort).toBe('high');
+    expect(record.newReasoningEffort).toBe('high');
   });
 
   it('changeCount reflects total switches', () => {

@@ -119,3 +119,27 @@ Applied Laura's `laura-hook-error-isolation` decision: wrapped every observer ca
 - `.squad/decisions.md` — ADR-P3-001 through ADR-P3-006 (merged from inbox)
 - `packages/forge/src/__tests__/runtime.test.ts` — 35 test contracts for runtime/ (inline ForgeClient, ForgeSession, HookWiring)
 - `packages/forge/src/__tests__/models.test.ts` — 52 test contracts for models/ (inline ModelCatalog, ModelSwitcher, TokenBudgetTracker)
+
+### 2026-04-30: Persona Review — Runtime Hardening (7 findings triaged)
+
+**Context:** 9 persona reviewers found 7 findings in runtime/. Triaged and fixed 6, rejected 1 subset.
+
+**Dispositions:**
+
+| # | Finding | Severity | Disposition | Rationale |
+|---|---------|----------|-------------|-----------|
+| F1 | stop() lacks error isolation | BLOCKING | **ACCEPT** | One failing disconnect leaked all remaining sessions. Wrapped each in try/catch, always reach clear() + stop(). |
+| F2 | Spec surface gap | BLOCKING | **PARTIAL REJECT** | Rejected listModels, listSessions, getAuthStatus, getStatus — no test contracts, no consumers. Accepted onEvent bridge + model_change tracking (spec-required, correctness). |
+| F3 | ADR-P3-005 incomplete | BLOCKING | **ACCEPT** | Added onEvent callback in createSession for pre-session events. Added model_change → ModelChangeRecord accumulation in bridge handler. |
+| F4 | Bridge handler lacks guards | IMPORTANT | **ACCEPT** | Added `_disconnected` guard AND try/catch with console.warn in bridge event handler. |
+| F5 | decisionGate config unused | IMPORTANT | **ACCEPT** | Removed misleading `decisionGate` field from ForgeSessionConfig. Gates are wired via observers. |
+| F6 | Session map lifecycle issues | IMPORTANT | **ACCEPT** | Added duplicate-check-and-disconnect before map insertion. Added onDisconnect callback for auto-removal from map. |
+| F7 | Test ModelChangeRecord field drift | IMPORTANT | **NO-OP** | Already fixed — test uses `newReasoningEffort` matching production type. |
+
+**Changes made:**
+- `runtime/client.ts`: Error-isolated stop(), onEvent bridge in createSession, duplicate session protection, onDisconnect wiring
+- `runtime/session.ts`: _disconnected guard + try/catch on bridge handler, model_change tracking, onDisconnect callback, removed decisionGate from config
+
+**Test results:** All 268 tests pass (35 runtime + 233 others). Zero regressions.
+
+**Key learning:** Persona review found real correctness bugs (F1, F4) that would have manifested in production under failure conditions. The spec-gap findings (F2) were correctly scoped by triage guidance — spec is aspirational, tests are the contract.
