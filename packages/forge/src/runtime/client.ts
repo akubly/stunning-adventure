@@ -122,6 +122,8 @@ export class ForgeClient {
       hookComposer.add(obs);
     }
 
+    // No onEvent capture needed — resumeSession does not accept onEvent
+    // and constructor on() wiring is synchronous within the JS event loop.
     const sdkSession = await this.client.resumeSession({
       sessionId,
       hooks: hookComposer.compose(),

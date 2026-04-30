@@ -1,9 +1,0 @@
-feat(forge): Phase 3 complete — integration tests + dedup guard
-
-- Laura: 19 integration tests (L2-L7: E2E, error isolation, gates, model switching, tokens, resume)
-- Alexander: bridgeAttached dedup guard (4 LOC) + 2 tests
-- Forge total: 289 tests across 10 files, clean build
-- Phase 3 milestone: 7 modules (bridge, hooks, decisions, dbom, session, runtime, models)
-- 9-persona review completed, 10 findings accepted and addressed
-
-Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>

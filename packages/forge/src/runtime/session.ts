@@ -128,7 +128,13 @@ export class ForgeSession {
   async disconnect(): Promise<void> {
     if (this._disconnected) return;
     this._disconnected = true;
-    for (const unsub of this.eventSubscriptions) unsub();
+    for (const unsub of this.eventSubscriptions) {
+      try {
+        unsub();
+      } catch (err) {
+        console.warn(`[ForgeSession] unsubscribe error: ${err}`);
+      }
+    }
     this.eventSubscriptions = [];
     await this.sdkSession.disconnect();
     this._onDisconnect?.();

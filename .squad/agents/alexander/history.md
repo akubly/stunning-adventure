@@ -157,3 +157,17 @@ Applied Laura's `laura-hook-error-isolation` decision: wrapped every observer ca
 **Test results:** All 270 tests pass (37 runtime). Zero regressions.
 
 **Key learning:** The simplest dedup mechanism (a boolean flag matching the temporal contract) is preferable to hash-based dedup (LRU + eventId). The flag directly encodes the design intent: onEvent is a pre-bridge stopgap, not a parallel path.
+
+### 2026-04-30: Persona Review — disconnect() error isolation + resumeSession comment
+
+**Context:** Persona review found 2 issues in runtime/. F1 was a real unrecoverable bug; F2 was a documentation gap.
+
+**F1 — disconnect() unsub loop error isolation (session.ts):**
+The `disconnect()` method called `unsub()` directly in a loop. If any unsubscribe function threw, remaining unsubs were skipped, `sdkSession.disconnect()` never ran, and `_onDisconnect` never fired. Since `_disconnected = true` was already set, retry was impossible — unrecoverable state. Fixed by wrapping each `unsub()` in try/catch with `console.warn`, matching the pattern already used in `ForgeClient.stop()`. Updated integration test from `rejects.toThrow` to `resolves.not.toThrow` + asserting `sdkSession.disconnect()` was still called.
+
+**F2 — resumeSession() asymmetry comment (client.ts):**
+Added comment explaining why `resumeSession()` has no `onEvent` capture: the SDK's `resumeSession` doesn't accept `onEvent`, and constructor `on()` wiring is synchronous within the JS event loop.
+
+**Test results:** All 289 tests pass (10 test files). Zero regressions.
+
+**Key learning:** Error isolation in cleanup paths must be consistent across the codebase. `stop()` had it, `disconnect()` didn't — same pattern, same risk, missed during initial implementation.

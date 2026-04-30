@@ -2,6 +2,41 @@
 
 ## Active Decisions
 
+### 2026-04-30: Event Dedup Guard — bridgeAttached flag
+
+**Author:** Alexander (SDK/Runtime Dev)
+**Type:** Defensive Correctness
+**Status:** Implemented
+
+ADR-P3-005 defines dual event paths: `SessionConfig.onEvent` captures events during `createSession()` (before `session.on()` is wired), and `session.on()` captures events after `ForgeSession` construction. Design reviewers independently flagged that if the SDK fires events via `onEvent` after `createSession` resolves — during the gap before `ForgeSession` wires `session.on()` — both paths would emit the same event, causing duplicate `CairnBridgeEvent`s. This corrupts `TokenTracker` accumulation and `DBOM` reconstruction.
+
+Added a `bridgeAttached` boolean flag in `ForgeClient.createSession()`. The `onEvent` closure checks this flag and returns early if `true`. The flag is set immediately before `ForgeSession` construction (which wires `session.on()` in its constructor).
+
+**Alternatives Considered:**
+1. Hash-based dedup (eventId or type+timestamp LRU) — More robust against unknown overlap patterns, but adds complexity (LRU cache, hash computation) for a problem that has a clean temporal boundary. Rejected as over-engineering for a Technical Preview SDK.
+2. No guard — Relies on SDK honoring the non-overlapping window contract. Rejected because the SDK has shipped 52 versions in 3 months — behavioral contracts are unstable.
+
+**Impact:**
+- `packages/forge/src/runtime/client.ts` — ~4 LOC added (flag declaration, check, set)
+- `packages/forge/src/__tests__/runtime.test.ts` — 2 new tests (overlap prevention + pre-bridge capture confirmation)
+- All 289 tests pass, zero regressions
+
+---
+
+### 2026-04-29: Mock Session Unsubscribe Semantics
+
+**Author:** Laura (Tester)
+**Type:** Test Infrastructure
+**Status:** Observation
+
+While writing L6 Token Tracker integration tests, the shared mock session's `on()` returns a no-op unsubscribe function. This works fine for ForgeSession's bridge wiring (which only uses unsubscribe at disconnect time, where the whole session is torn down), but breaks any test that needs to verify real unsubscribe behavior — the handler keeps firing after "unsubscribing."
+
+For tests requiring real unsubscribe semantics, build a dedicated `EventSource` adapter with `Set<handler>`-based subscribe/unsubscribe rather than trying to enhance the mock session. The mock session is designed for ForgeSession/ForgeClient lifecycle testing; the EventSource interface is the correct abstraction for lower-level eventing tests.
+
+**Impact:** No changes to shared helpers needed. This is a documented pattern for future test authors: when testing event unsubscription, build a standalone EventSource, don't use `createMockSession()`.
+
+---
+
 ### 2026-03-28T07-22-14: User Directive — Claude Opus 4.6 Context Window
 
 **Author:** Aaron (via Copilot)  

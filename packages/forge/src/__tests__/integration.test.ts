@@ -169,16 +169,28 @@ describe('L3: Error Isolation', () => {
 
     const session = await forgeClient.createSession();
 
-    // Emit a malformed-ish event that still maps but the bridge handler error
-    // should be caught. The session construction wires a try/catch in the
-    // bridge handler, so even if something weird happens, the stream survives.
-    mockSession._emit(sessionStartEvent());
+    // Craft a mapped event whose payload causes JSON.stringify to throw
+    // inside bridgeEvent(), exercising the try/catch in session.ts
+    const poisonEvent = {
+      id: 'evt-poison',
+      timestamp: new Date().toISOString(),
+      parentId: null,
+      type: 'session.start', // mapped type so bridgeEvent() processes it
+      data: {
+        get sessionId(): string { throw new Error('payload extraction boom'); },
+      },
+    } as unknown as SessionEvent;
 
-    // Subsequent events should still be captured
+    mockSession._emit(poisonEvent);
+
+    // Verify the error was caught and warned
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[ForgeSession] bridge handler error'),
+    );
+
+    // Stream should continue — subsequent events still captured
     mockSession._emit(assistantMessageEvent('Hello'));
-
     const types = session.getBridgeEvents().map(e => e.eventType);
-    expect(types).toContain('session_start');
     expect(types).toContain('assistant_message');
     warnSpy.mockRestore();
   });
@@ -194,15 +206,19 @@ describe('L3: Error Isolation', () => {
 
     const session = await forgeClient.createSession();
 
-    // disconnect should not throw — the unsubscribe error is swallowed
-    // because eventSubscriptions are iterated with direct calls (not try/catch
-    // at that layer), but the session still marks itself disconnected.
-    // Actually, looking at the code, disconnect calls unsub() directly
-    // which WILL throw. Let's verify the behavior:
-    await expect(session.disconnect()).rejects.toThrow('unsubscribe boom');
-    // Even though it threw, calling disconnect again should be safe (idempotent guard)
-    // The _disconnected flag was set before the unsub loop
-    await session.disconnect(); // idempotent — should not throw
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    // disconnect should NOT throw — unsub errors are caught and warned
+    await expect(session.disconnect()).resolves.not.toThrow();
+    // SDK disconnect should still be called despite the unsub error
+    expect(mockSession.disconnect).toHaveBeenCalledOnce();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('unsubscribe error'),
+    );
+    // Idempotent — second call is a no-op
+    await session.disconnect();
+
+    warnSpy.mockRestore();
   });
 
   it('stop() completes even if one session disconnect throws', async () => {
@@ -328,7 +344,7 @@ describe('L5: Model Switching', () => {
     previousModel?: string;
     newModel: string;
     previousReasoningEffort?: string;
-    reasoningEffort?: string;
+    newReasoningEffort?: string;
   }): SessionEvent {
     return {
       id: `evt-mc-${Date.now()}`,
@@ -339,7 +355,7 @@ describe('L5: Model Switching', () => {
         previousModel: opts.previousModel,
         newModel: opts.newModel,
         previousReasoningEffort: opts.previousReasoningEffort,
-        reasoningEffort: opts.reasoningEffort,
+        newReasoningEffort: opts.newReasoningEffort,
       },
     } as unknown as SessionEvent;
   }
@@ -351,11 +367,15 @@ describe('L5: Model Switching', () => {
     mockSession._emit(modelChangeEvent({
       previousModel: 'gpt-4',
       newModel: 'claude-sonnet-4.6',
+      previousReasoningEffort: 'medium',
+      newReasoningEffort: 'high',
     }));
 
     expect(session.modelChanges).toHaveLength(1);
     expect(session.modelChanges[0].previousModel).toBe('gpt-4');
     expect(session.modelChanges[0].newModel).toBe('claude-sonnet-4.6');
+    expect(session.modelChanges[0].previousReasoningEffort).toBe('medium');
+    expect(session.modelChanges[0].newReasoningEffort).toBe('high');
   });
 
   it('multiple switches accumulate in modelChanges array', async () => {
