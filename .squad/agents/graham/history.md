@@ -29,6 +29,28 @@
 
 <!-- Append new learnings below -->
 
+### 2026-05-01: Phase 4 Architecture — Export Pipeline
+
+**Decision document:** `.squad/decisions.md` (merged from inbox)  
+**Specification:** `docs/forge-phase4-spec.md`
+
+**Architecture decisions:**
+- **Phase boundary held:** Phase 4 = "produces portable artifacts." Export pipeline works offline from persisted events — no live SDK session required.
+- **Injection pattern extended:** Quality gate uses same injection-over-import pattern as Phase 3's `createModelCatalog(listFn)`. Forge never imports Cairn. `ExportQualityGate` is a function type satisfied by Cairn at the call site.
+- **DBOM persistence schema:** Two new tables (`dbom_artifacts` + `dbom_decisions`) in migration 010. Upsert semantics — one DBOM per session, re-export replaces. Stats fields flattened for queryability.
+- **Pipeline as fixed stages:** Four stages (Extract → Strip → Attach → QualityGate) as pure functions. No dynamic stage registration — stages are fundamentally ordered. Plugin architecture rejected as YAGNI.
+- **Fail-closed quality gate:** Gate failure returns `success: false` but still includes the compiled skill (soft failure). Caller decides whether to write. DBOM persistence failures are fail-open (warning diagnostic).
+- **No new shared types:** Continues ADR-P3-004 precedent. All Phase 4 types stay package-internal. Cross-package contract remains `DBOMArtifact` + `CairnBridgeEvent`.
+- **SKILL.md frontmatter schema:** `provenance` block in YAML frontmatter contains compiler version, session ID, DBOM root hash, decision stats. This is the "object code" output of the compiler metaphor.
+
+**Key file paths:**
+- Specification: `docs/forge-phase4-spec.md`
+- Export module: `packages/forge/src/export/` (pipeline.ts, compiler.ts, stages.ts, types.ts)
+- DBOM persistence: `packages/cairn/src/db/dbomArtifacts.ts` + `migrations/010-dbom-artifacts.ts`
+- Cairn skill tooling (integration targets): `packages/cairn/src/agents/skill{Parser,Linter,Validator,TestHarness}.ts`
+
+**Work decomposition:** 3 streams. Alexander owns DBOM persistence (4 items), Roger owns export pipeline (8 items), Laura owns integration tests (5 items). Critical path: R1 → R2/R3 → R4 → L1. Estimated 2–3 days.
+
 ### 2026-04-30: Phase 3 Architecture — Live SDK Integration
 
 **Decision document:** `.squad/decisions/inbox/graham-phase3-architecture.md`  

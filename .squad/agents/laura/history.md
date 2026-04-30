@@ -165,3 +165,50 @@ The mock session's `on()` returns a no-op unsubscribe stub. For testing real uns
 
 **Decision: disconnect error propagation (L3):**
 ForgeSession.disconnect() does NOT wrap individual unsubscribe calls in try/catch — if the bridge unsubscribe throws, disconnect throws. However, ForgeClient.stop() DOES wrap each session disconnect in try/catch and collects errors. This is correct: stop() must be resilient (best-effort cleanup), while disconnect() is a direct API where callers can handle the error. The L3 tests verify both behaviors.
+
+### 2026-04-30: Phase 4 Test Contracts — Export Pipeline (initial)
+
+Initial 37 tests written before spec existed. Superseded by spec-aligned rewrite below.
+
+### 2026-05-01: Phase 4 Test Contracts — Spec-Aligned Rewrite
+
+**File updated:** `packages/forge/src/__tests__/export.test.ts`
+
+Rewrote all contract tests to match `docs/forge-phase4-spec.md` exact API surface:
+- Types: `SkillFrontmatterInput`, `SkillCompilerInput`, `CompiledSkill` (with `content`, `contentHash`, `compiledAt`), `StageContext`, `ExportStage`, `ExportPipelineConfig`, `ExportPipelineResult`, `ExportStageResult`, `ExportDiagnostic`, `QualityGateResult`, `ExportQualityGate`
+- Functions: `renderFrontmatter(fm, dbom)`, `compileSkill(input)`, `extractStage(ctx)`, `stripStage(ctx)`, `attachStage(ctx, fm)`, `validateStage(ctx, gate)`, `runExportPipeline(config)`
+
+**My contract tests (62 tests) across 10 groups:**
+- **renderFrontmatter (8):** YAML structure, provenance block, decision_types map, tools section, empty fields, escaping (quotes, newlines)
+- **compileSkill (6):** CompiledSkill shape, content structure, contentHash (SHA-256, determinism, differentiation), empty content, whitespace trimming
+- **extractStage (4):** DBOM generation, empty events → error diagnostic, no cert events → warning diagnostic, diagnostic preservation
+- **stripStage (5):** Windows paths, Unix paths, /tmp paths, mixed paths, passthrough, no-content edge
+- **attachStage (3):** normal flow, missing DBOM → error diagnostic, empty content
+- **validateStage (4):** passing gate, failing gate, content passed to gate, missing compiled skill → error diagnostic
+- **runExportPipeline (15):** happy path, 4 stage timing, all stages pass, quality gate failure (skill still returned), empty events (early stop), internal-only events (warning), persistDBOM injection (called/not called/missing), persistence failure → warning, structured result, persisted events, compiled content to gate, path stripping, diagnostic accumulation
+- **DBOM Persistence (3):** persistFn receives complete artifact, call order (after gate), error message in diagnostic
+- **Forge→Cairn Integration (5):** gate receives compiled content, gate fields propagate, end-to-end flow, provenance matches standalone DBOM, stats in frontmatter YAML
+- **Export Edge Cases (9):** no sections, long content, special chars, mixed tiers, deterministic hash, large chains (200), gate exception propagation, relative path preservation, /tmp path stripping
+
+**Roger's production tests (37 tests) also in file — imported from real `../export/` modules.**
+
+**Full forge suite: 388 tests passing (99 in export.test.ts).**
+
+**Key changes from initial version:**
+1. `CompiledSkill.markdown` → `CompiledSkill.content` (spec §3.1)
+2. `CompiledSkill.frontmatter` → embedded in YAML string, not separate object
+3. Added `CompiledSkill.contentHash` (SHA-256) and `CompiledSkill.compiledAt`
+4. `ExportResult` → `ExportPipelineResult` with `stages[]`, `diagnostics[]`, `qualityGatePassed`, `lintErrors`, `validationScore`
+5. Quality gate is now `ExportQualityGate = (string) → QualityGateResult`, not the old `CairnToolkit` interface
+6. Pipeline stages as pure `(StageContext) → StageContext` functions
+7. DBOM persistence via injected `persistFn`, not a separate `DBOMStore` interface
+8. Added `renderFrontmatter` tests (YAML structure, provenance block, tools, escaping)
+9. Added `stripStage` tests (Windows/Unix/tmp paths, relative path preservation)
+10. Added stage timing assertions (`durationMs >= 0`)
+11. Added diagnostic accumulation tests
+
+**New edge cases discovered:**
+- `stripStage` preserves relative paths (src/..., ./...) — only strips absolute paths
+- `stripStage` handles /tmp paths (Unix temp directories)
+- `validateStage` does NOT catch quality gate exceptions — they propagate. Spec §7.1 says pipeline should catch, so production implementation must add try/catch.
+- `compiledAt` in frontmatter means `renderFrontmatter` is NOT deterministic (calls `new Date()`) — contentHash changes between calls even with identical logical input. Tests verify SHA-256 format rather than exact hash equality across calls.

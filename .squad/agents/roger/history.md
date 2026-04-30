@@ -40,6 +40,18 @@
 
 <!-- Append new learnings below -->
 
+### 2026-05-01: Phase 4 — Export Pipeline Implementation (R1–R8)
+
+- **4-file flat module at `packages/forge/src/export/`:** types.ts, compiler.ts, stages.ts, pipeline.ts + index.ts barrel. Flat structure works well for 4 stages with clear boundaries.
+- **Stages are pure functions `(context) → context`:** StageContext threads state through Extract → Strip → Attach → Validate. No classes, no lifecycle hooks. The pipeline orchestrator handles timing and I/O.
+- **Quality gate is an injected function `(string) → QualityGateResult`:** Forge never imports @akubly/cairn. The caller wires Cairn's linter/validator into the pipeline via dependency injection. This preserves the acyclic dependency graph: types ← cairn, types ← forge.
+- **renderFrontmatter** produces YAML with proper escaping via `escapeFrontmatter()` — escapes double quotes and newlines. Provenance block embeds DBOM stats directly.
+- **compileSkill** produces a deterministic SHA-256 contentHash from the full compiled content (frontmatter + body). `compiled_at` timestamp in frontmatter means the hash varies per compilation, which is correct — it's a compilation fingerprint, not a content fingerprint.
+- **Pipeline fail-open/fail-closed split:** Quality gate failure → fail-closed (success=false, but compiled skill still returned for inspection). DBOM persistence failure → fail-open (warning diagnostic, pipeline continues).
+- **stripStage** conservatively removes Windows (`C:\...\`) and Unix (`/home/...`, `/Users/...`, `/tmp/...`) absolute paths, replacing with `<path>`.
+- **Test count:** Forge 289 → 363 (74 in export.test.ts: 42 Laura's contract stubs + 32 new production tests). Total across workspaces: 801.
+- **Key files:** `packages/forge/src/export/{types,compiler,stages,pipeline,index}.ts`, tests in `packages/forge/src/__tests__/export.test.ts`.
+
 ### 2026-04-07: Platform Feasibility Brainstorm (Aaron's 9 Ideas)
 
 - **event_log's JSON payload design is accidentally future-proof:** New signal types (model_call, decision_point, context_assembly, quality_signal) can be added without schema migrations. Just emit new event_type strings. The curator's cursor-based processing picks them up automatically.

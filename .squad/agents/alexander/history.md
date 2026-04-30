@@ -171,3 +171,29 @@ Added comment explaining why `resumeSession()` has no `onEvent` capture: the SDK
 **Test results:** All 289 tests pass (10 test files). Zero regressions.
 
 **Key learning:** Error isolation in cleanup paths must be consistent across the codebase. `stop()` had it, `disconnect()` didn't — same pattern, same risk, missed during initial implementation.
+
+### 2026-05-01: Phase 4 — DBOM Persistence Layer (A1–A4)
+
+**What was built:**
+- `packages/cairn/src/db/migrations/010-dbom-artifacts.ts` — Migration creating `dbom_artifacts` and `dbom_decisions` tables with UNIQUE(session_id), ON DELETE CASCADE, and 4 indexes.
+- `packages/cairn/src/db/dbomArtifacts.ts` — Full CRUD module: types (DBOMArtifactInsert, DBOMArtifactRow, DBOMDecisionRow), row mappers, and 6 functions (upsertDBOM, getDBOM, getDBOMDecisions, loadDBOMArtifact, deleteDBOM, listDBOMs).
+- `packages/cairn/src/db/schema.ts` — Registered migration010 in the migrations array.
+- `packages/cairn/src/index.ts` — Barrel exports for all DBOM CRUD functions and types.
+- `packages/cairn/src/__tests__/dbomArtifacts.test.ts` — 11 tests covering round-trip, upsert replace, cascade delete, list ordering, limit, decision seq ordering, JSON details, getDBOM row, getDBOMDecisions by id.
+
+**Key architecture decisions:**
+1. **Upsert via DELETE + INSERT in transaction** — UNIQUE(session_id) means one DBOM per session. Re-export deletes old artifact (CASCADE cleans decisions) then inserts fresh. Simpler than UPDATE + diff decisions.
+2. **No FK to sessions table** — session_id is a logical reference. Forge sessions don't exist in Cairn's DB. This was a spec constraint.
+3. **`seq` column for decision ordering** — Decisions are inserted with array index as seq, retrieved ORDER BY seq. This preserves the decision chain's causal ordering independent of insert timing.
+4. **decision_types and details stored as JSON text** — decision_types has dynamic keys, details is arbitrary. Both are JSON.parse'd in row mappers, matching the existing skillTestResults pattern (evidence field).
+
+**Schema version bump impact:** Updated 5 existing tests in db.test.ts, discovery.test.ts, and prescriptions.test.ts that hardcoded `toBe(9)` → `toBe(10)`.
+
+**Test results:** All 1090 tests pass (11 new DBOM tests). Zero regressions.
+
+**File paths:**
+- Migration: `packages/cairn/src/db/migrations/010-dbom-artifacts.ts`
+- CRUD: `packages/cairn/src/db/dbomArtifacts.ts`
+- Schema: `packages/cairn/src/db/schema.ts`
+- Barrel: `packages/cairn/src/index.ts`
+- Tests: `packages/cairn/src/__tests__/dbomArtifacts.test.ts`

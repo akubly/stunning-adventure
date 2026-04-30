@@ -2,6 +2,96 @@
 
 ## Active Decisions
 
+### 2026-05-01: Phase 4 Export Pipeline Architecture
+
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-01  
+**Type:** Architecture  
+**Status:** Implemented
+
+Phase 4 introduces the Export Pipeline — the third integration seam from the Forge build kickoff. It converts persisted `CairnBridgeEvent`s into certified SKILL.md files with DBOM provenance in YAML frontmatter.
+
+**Key Decisions:**
+
+#### ADR-P4-001: Fixed pure-function pipeline (not plugin architecture)
+Four stages: Extract → Strip → Attach → QualityGate. Pure functions composed by `runExportPipeline()`. Dynamic stage registration rejected as YAGNI.
+
+#### ADR-P4-002: Quality gate as injected function
+`ExportQualityGate` is a function type in Forge. Cairn satisfies it at the call site. Consistent with `createModelCatalog(listFn)` pattern. Forge never imports Cairn.
+
+#### ADR-P4-003: DBOM upsert (replace) semantics
+One DBOM per session. Re-export replaces. Versioned history rejected — no current consumer.
+
+#### ADR-P4-004: Soft quality gate failure
+Gate failure returns `success: false` with the compiled skill still included. Caller decides write policy. DBOM persistence failures are fail-open.
+
+#### ADR-P4-005: No new shared types
+All Phase 4 types stay package-internal. Continues ADR-P3-004 precedent.
+
+**Impact:**
+- **New files:** `packages/forge/src/export/` (5 files), `packages/cairn/src/db/migrations/010-dbom-artifacts.ts`, `packages/cairn/src/db/dbomArtifacts.ts`
+- **Modified files:** `packages/cairn/src/db/schema.ts` (register migration), `packages/forge/src/index.ts` (barrel update)
+- **Tests:** 99 total (62 contract + 37 production)
+
+**Specification:** Full spec at `docs/forge-phase4-spec.md`.
+
+---
+
+### 2026-05-01: Export Pipeline — Function Types over Shared Interfaces
+
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-05-01  
+**Type:** Architecture  
+**Status:** Implemented
+
+Phase 4 export pipeline needs a quality gate that runs Cairn's linter/validator on compiled SKILL.md content. Forge must never import @akubly/cairn directly (acyclic dependency graph constraint).
+
+**Decision:**
+Quality gate is a simple function type `(skillContent: string) => QualityGateResult` defined in `forge/export/types.ts`. The caller (Cairn MCP tool or CLI) wires Cairn's functions into this shape. No shared interface in `@akubly/types`.
+
+All Phase 4 types (`ExportDiagnostic`, `QualityGateResult`, `CompiledSkill`, `SkillFrontmatterInput`, `StageContext`, pipeline config/result types) stay package-internal in forge.
+
+**Rationale:**
+- Only one call site needs this contract — a shared interface in @akubly/types adds coupling for no composability gain.
+- Function types are the simplest contract. If the quality gate signature changes, only forge and the one wiring site update.
+- Consistent with Phase 3 pattern (`createModelCatalog(listFn)`).
+- No new shared types means zero risk of cross-package type churn.
+
+**Impact:**
+- 5 new files in `packages/forge/src/export/`
+- 32 new unit tests, 99 total export tests
+- Forge test count: 326 → 388
+
+---
+
+### 2026-05-01: Export Pipeline Quality Gate Semantics
+
+**Author:** Laura (Tester)  
+**Type:** Test Contract  
+**Status:** Implemented  
+**Date:** 2026-05-01 (updated from 2026-04-30)
+
+Phase 4 export pipeline uses quality gates before emitting a compiled SKILL.md. Now aligned with `docs/forge-phase4-spec.md` §4.4, §4.5, §7.
+
+**Decision (spec-aligned):**
+- Quality gate is an injected `ExportQualityGate = (skillContent: string) => QualityGateResult`
+- `QualityGateResult.passed === false` → `ExportPipelineResult.success = false`
+- Quality gate failure is **fail-closed but soft**: compiled skill is still returned for inspection, `qualityGatePassed = false`
+- DBOM persistence failure is **fail-open**: warning diagnostic, pipeline continues
+- Gate results propagate: `lintErrors`, `lintWarnings`, `validationScore` flow to pipeline result
+- If the quality gate function **throws**, spec §7.1 says catch + diagnostic. Current inline implementation propagates — Roger should add try/catch in production (implemented by Coordinator).
+
+**Key Finding:**
+`validateStage` did NOT catch exceptions from the injected quality gate. Spec §7.1 explicitly says "Catch + diagnostic" for this case. Test documents this gap — production `validateStage` must wrap the gate call in try/catch. **Coordinator fixed in production implementation.**
+
+**Impact:**
+- 62 contract tests + 37 production tests in `export.test.ts` (99 total)
+- `ExportQualityGate` replaces the old `CairnToolkit` interface (simpler, one function vs five)
+- Forge never imports `@akubly/cairn` — gate is wired at call site per §5.2
+- All 99 tests passing (100%)
+
+---
+
 ### 2026-04-30: Event Dedup Guard — bridgeAttached flag
 
 **Author:** Alexander (SDK/Runtime Dev)
