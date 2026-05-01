@@ -6,7 +6,8 @@ active_issues:
   - "Phase 2: Live runtime verification ✅ COMPLETE (5/5 modules)"
   - "Phase 3: CopilotClient Integration ✅ COMPLETE (7 modules, 289 tests, 9-persona review)"
   - "Phase 4: Export Pipeline ✅ COMPLETE (export/, DBOM persistence, 826 tests)"
-  - "Phase 5: PGO Telemetry — NEXT"
+  - "Phase 5: PGO Telemetry — DEFERRED (Azure budget + data protection prerequisites)"
+  - "Local Feedback Loop — NEXT: design a local PGO cycle for prompt determinism + token efficiency (no cloud dependency)"
   - "#11 — Worktree-aware sessions (deferred)"
   - "awesome-copilot submission (deferred)"
 ---

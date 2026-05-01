@@ -8,6 +8,7 @@ import { migration006 } from './migrations/006-managed-artifacts.js';
 import { migration007 } from './migrations/007-topology-cache.js';
 import { migration008 } from './migrations/008-nullable-prescription-id.js';
 import { migration009 } from './migrations/009-skill-test-results.js';
+import { migration010 } from './migrations/010-dbom-artifacts.js';
 
 export interface Migration {
   version: number;
@@ -15,7 +16,7 @@ export interface Migration {
   up: (db: Database.Database) => void;
 }
 
-const migrations: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009];
+const migrations: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010];
 
 export function applyMigrations(db: Database.Database): void {
   db.exec(`

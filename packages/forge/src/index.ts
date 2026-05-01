@@ -75,6 +75,30 @@ export {
   type SDKSession,
 } from "./runtime/index.js";
 
+// --- Export ---
+export {
+  runExportPipeline,
+  compileSkill,
+  renderFrontmatter,
+  escapeFrontmatter,
+  extractStage,
+  stripStage,
+  attachStage,
+  validateStage,
+  type ExportPipelineConfig,
+  type ExportPipelineResult,
+  type ExportStageResult,
+  type SkillCompilerInput,
+  type SkillFrontmatterInput,
+  type CompiledSkill,
+  type StageContext,
+  type ExportStage,
+  type ExportQualityGate,
+  type ExportDiagnostic,
+  type ExportDiagnosticSeverity,
+  type QualityGateResult,
+} from "./export/index.js";
+
 // --- Types (SDK mirrors) ---
 export type {
   SessionHooks,

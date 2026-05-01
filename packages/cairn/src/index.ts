@@ -97,3 +97,16 @@ export type {
   SkillTestResultInsert,
   SkillTestResultRow,
 } from './db/skillTestResults.js';
+export {
+  upsertDBOM,
+  getDBOM,
+  getDBOMDecisions,
+  loadDBOMArtifact,
+  deleteDBOM,
+  listDBOMs,
+} from './db/dbomArtifacts.js';
+export type {
+  DBOMArtifactInsert,
+  DBOMArtifactRow,
+  DBOMDecisionRow,
+} from './db/dbomArtifacts.js';
