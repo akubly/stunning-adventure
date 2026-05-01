@@ -202,6 +202,80 @@ ode dist/hooks/...\ commands in hooks.json for cross-platform compatibility
 
 4. **`src/__tests__/discovery.test.ts`** — 36 tests covering all phases, conflicts, checksums, cache TTL, identity extraction, missing dirs, duration tracking
 
+### 2026-05-01: Phase 4.5 Local Feedback Loop — Round 2 Brainstorm
+
+**Session:** `.squad/log/2026-05-01T18-14-00Z-brainstorm-round2.md`  
+**Orchestration:** `.squad/orchestration-log/2026-05-01T18-14-00Z-rosella-round2.md`  
+**Decisions:** Merged to `.squad/decisions.md`
+
+**Topic:** Follow-up on Karpathy wiki integration, knowledge graphs, ancestry integration, and caching layers.
+
+**Key learnings:**
+
+1. **Karpathy Wiki Integration: Knowledge Graph as Interactive Archive**
+   - Extend `knowledge_graph_edges` table with wiki-style metadata (node_id, title, description, content, links_to, last_updated, revision_chain)
+   - Each node becomes a "page" with human-readable name + markdown-rendered decision record
+   - Use case: Plugin displays interactive graph explorer. User clicks decision node → see full record, related prescriptions, ancestor/descendant chains
+   - Search: Full-text SQLite FTS5 (node title + content)
+   - Implementation layers:
+     - **Layer 1 (Phase 4.5):** Static wiki generation. Export knowledge graph to HTML on decision export.
+     - **Layer 2 (Phase 5):** Interactive wiki. Web UI with graph visualization (D3.js/vis.js). Real-time node search.
+     - **Layer 3 (Phase 6+):** Wiki as skill repository. Encode skills as wiki pages with inheritance (parent → child skills)
+   - Next: Design wiki schema additions to Phase 4.5 DB migration. Lead wiki UI spike in Phase 5.
+
+2. **Ancestry Integration in Knowledge Graph: Dual Representation Strategy**
+   - Problem: Prescription ancestry stored as linear JSON chain. Difficult to query "what if" branches or detect cycles.
+   - Solution: Dual representation
+     - **Linear (L1):** Prescription ancestry JSON for fast serialization + export
+     - **Graph (L2):** Edges table with ancestry links. Node = decision or prescription. Edge = relation type.
+   - Ancestry edge types: `ancestry` (decision → prescription), `caused_drift` (prescription → outcome change, quantified), `feeds_into` (decision → downstream decision), `refutes` (outcome contradicts prediction)
+   - Example recursive query: Find all prescriptions in ancestry chain whose application caused >10% outcome drift
+   - Next: Alexander to add recursive CTE tests. Validate performance at scale.
+
+3. **Caching Layers for Wiki & Knowledge Graph**
+   - Problem: Recursive CTE queries on large graphs are expensive.
+   - Solution: Multi-layer cache strategy
+     - L1 (In-Memory): Node payload (title, description, links). ~10ms refresh on update.
+     - L2 (Session Store): Query result cache (ancestry chains, drift detection). ~5 min TTL.
+     - L3 (Short-TTL): Traversal index cache (precomputed BFS from common roots). ~1 hour TTL.
+     - L4 (Long-TTL): Archived graph snapshots (full state at decision points). ~30 day TTL.
+   - Cache invalidation: When new decision added or prescription applied, invalidate nodes touching change (ancestors + descendants), query results, traversal indices.
+   - Materialized views: For common queries (top 10 decisions, all prescriptions by user, convergence patterns). Pre-compute at L3 refresh (~1 hour). Store with versioning. Update async.
+
+4. **Wild Cards: Time-Travel Debugging & Predictive Cache Warming**
+   - **Time-Travel Debugging (Approved for Phase 6+ Backlog)**
+     - User selects any decision point in ancestry chain
+     - Rewind session state to that point
+     - Replay with different model, tool, or parameter choice
+     - Observe outcome delta
+     - Use case: "What if I'd used gpt-4 instead of gpt-3.5?" → measure quality + cost difference
+     - Implementation: Store session snapshots at decision points in L4 cache. Replay uses same tool invocations but swaps model/tool.
+     - Challenge: Requires deterministic tool output (may need mock layer for testing)
+
+   - **Predictive Cache Warming (Approved for Phase 6+ Backlog)**
+     - User starts new session similar to past (same user type, similar preferences)
+     - Forecast likely tool invocations based on user history
+     - Pre-populate L2-L3 cache with anticipated results
+     - Reduces latency on first tool call in new session
+     - Implementation: ML-based predictor (user_profile → expected_tools). Train on historical session data.
+     - Timeline: Phase 5 implementation (post-canary metrics available)
+
+5. **Cross-Agent Alignment**
+   - Graham: Confirmed ancestor/descendant patterns align with wild card concepts. Genetic programming roadmap complements time-travel debugging.
+   - Roger: Confirmed vector search enables wiki search (full-text + semantic). Graph storage scales to wiki size (10K+ nodes).
+   - Alexander: Confirmed cache invalidation patterns work with ancestry. SDK memoization compatible with wiki caching.
+
+**Implementation path:**
+- Phase 4.5: Add wiki metadata to knowledge graph schema. Static HTML wiki export on skill export.
+- Phase 4.75: Time-travel debugging spike (non-blocking for launch)
+- Phase 5: Interactive wiki UI + predictive cache warming
+- Phase 6+: Wiki as skill repository + genetic programming + self-annealing
+
+**Pattern established:** Wiki as interactive knowledge graph archive enables human exploration of decision space. Dual representation (linear + graph) supports both performance (L1-L2) and analysis (L3-L4). Ancestry patterns bridge prescriptions → outcomes → exploration → optimization.
+
+**Wild card prioritization:** Time-travel debugging first (accessibility + learning value). Predictive cache warming second (performance optimization). Both approved for Phase 6+ backlog.
+
+
 **Key decisions:**
 - Scanned `.copilot/mcp-config.json` AND `.copilot/mcp.json` for project MCP (critic caught that real repo uses `mcp-config.json`)
 - Marketplace artifacts included in topology but excluded from conflict detection (they're reference-only)

@@ -706,6 +706,78 @@ ForgeClient and ForgeSession depend on thin interface types (`SDKClient`, `SDKSe
 
 ---
 
+### 2026-05-01T18:14:00Z: Phase 4.5 Local Feedback Loop — Aaron's Scope Decisions
+
+**Author:** Aaron Kubly (via Copilot)  
+**Date:** 2026-05-01T18:14:00Z  
+**Type:** Direction / Scope  
+**Status:** Active
+
+Phase 4.5 brainstorm Round 2 follow-up captured six major decisions:
+
+#### 1. Loop Trigger Model
+- **Forge:** Feedback loop is deliberate (manual) — user-initiated review of prescriptions
+- **Cairn:** Feedback loop is automatic — pattern detection triggers prescription generation
+
+#### 2. Profile Granularity
+All four levels are viable and serve different purposes:
+- **Per-skill:** Improves artifacts directly
+- **Per-user:** Surfaces human insights (Cairn's core mission)
+- **Per-model:** Exploratory/feedback data for determining best model per task
+- **Global:** Dashboard of overall trends ("proving our pudding")
+
+#### 3. Cold Start Strategy
+Canary bootstrap is the natural choice. Training sessions deferred to Phase 4.75.
+
+#### 4. Ancestry Graph Optimization Exploration
+- Track prescription ancestry (which changes caused which drift)
+- Derive heuristics about what types of changes cause directional drift
+- Long-term: graph math for intelligent exploration of metric space
+- Detect local optima via convergence patterns
+- When wild cards come online (self-annealing, genetic programming), use graph to introduce evolutions and escape local maxima
+
+#### 5. Feedback Loop Frequency — Maximum Detail Preferred
+Aaron's prior stance: "Why would we not want as much detail as possible?" The tradeoffs need to be articulated explicitly before any future pruning decisions.
+
+#### 6. Wild Card Ideas
+All six wild cards from brainstorm are approved as future backlog items:
+1. Time-Travel Debugging (rewind state to any decision point, replay with different model/parameters)
+2. Predictive Cache Warming (pre-fetch likely-needed artifacts before user requests)
+3. Self-Annealing Prescriptions (feedback loop automatically re-ranks prescriptions)
+4. Genetic Programming Ancestry (crossover + mutation of decision graphs)
+5. Karpathy Wiki Integration (encode knowledge graph as executable wiki)
+6. Adaptive Skill Ranking (vector-based skill retrieval with user feedback)
+
+**Rationale:** Team decisions from Phase 4.5 brainstorm follow-up — captured for team memory. Cascades to Phase 4.5 implementation planning, Phase 5 canary configuration, and Phase 6+ feature backlog.
+
+**Impact:**
+- Ancestry tracking: 200 LOC MVP planned for Phase 4.5
+- Caching strategy: 4-layer hierarchy (L1 in-memory → L2 session → L3 short-TTL → L4 long-TTL)
+- Vector search: Deferred to Phase 4.75 (non-blocking)
+- Graph storage: Recursive CTEs in SQLite for ancestry queries
+- Max detail: Capture everything, filter on read (downstream filtering strategy)
+
+---
+
+### 2026-04-30T22:25:00Z: Phase 5 (PGO Telemetry) Deferred — Budget & Data Protection
+
+**Author:** Aaron Kubly (via Copilot)  
+**Date:** 2026-04-30T22:25:00Z  
+**Type:** Scope / Risk  
+**Status:** Active
+
+Phase 5 (PGO Telemetry) is deferred as future work.
+
+**Reasons:**
+1. **Azure budget constraints** — Application Insights is expensive. Cost-benefit unclear until Phase 4.5 canary metrics available.
+2. **Corporate data protection** — Requirements for emitting telemetry from work environments must be resolved before telemetry collection begins. Legal review pending.
+
+**Timeline:** Revisit for Phase 4.75 (post-canary) if budget approved and compliance cleared.
+
+**Impact:** Phase 5 planning deferred. Phase 4.5 canary proceeds without integrated telemetry pipeline; manual metrics collection via CLI query tools only.
+
+---
+
 ## Governance
 
 - All meaningful changes require team consensus

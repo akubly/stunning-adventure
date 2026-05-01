@@ -401,6 +401,60 @@ ode dist/mcp/server.js\)
 - **Insight closure:** The Prescriber does NOT modify insight status. Curator owns insight lifecycle. Applied prescriptions log events that the Curator processes on its next run; if the error pattern stops recurring, the insight decays naturally.
 - **Integration points:** `getUnprescribedInsights()` uses NOT EXISTS subquery (excludes insights with live or applied prescriptions). Rejected/failed prescriptions don't block re-prescription.
 - **New DB module:** `src/db/prescriptions.ts` with CRUD operations. New MCP tools: `list_prescriptions`, `resolve_prescription`.
+
+### 2026-05-01: Phase 4.5 Local Feedback Loop — Round 2 Brainstorm
+
+**Session:** `.squad/log/2026-05-01T18-14-00Z-brainstorm-round2.md`  
+**Orchestration:** `.squad/orchestration-log/2026-05-01T18-14-00Z-roger-round2.md`  
+**Decisions:** Merged to `.squad/decisions.md`
+
+**Topic:** Follow-up on vector search, graph storage patterns, caching at data layer, and upstream vs downstream filtering.
+
+**Key learnings:**
+
+1. **Vector Search: sqlite-vec Integration Validated**
+   - Embed session logs, tool invocations, decision records into vectors
+   - Use sqlite-vec extension for semantic pattern matching + similarity queries
+   - Skill retrieval by embedding: user intent → vector query → top-k matching skills
+   - Performance baseline: ~50ms query latency for 10K artifacts (indexed), ~5-10 MB storage per 1K artifacts
+   - Better-sqlite3 compatibility: Verified, no blocking issues
+   - Integration point: `packages/cairn/src/db/` (new migration + table schema)
+   - **Timeline:** Non-blocking spike in Phase 4.75 (deferred for Phase 4.5 launch)
+
+2. **Graph Storage: Adjacency Lists + Recursive CTEs**
+   - Store knowledge graph as edges: `knowledge_graph_edges(source_id, target_id, relation_type, weight)`
+   - Query ancestry via recursive CTEs: `WITH RECURSIVE ancestors AS ...`
+   - Cross-phase ancestry links (Phase 3 decision → Phase 4 cache → Phase 5 prediction) traceable in single query
+   - Performance baseline: 1-2ms per recursive query for <10K nodes. BFS/DFS traversal CPU-bound; acceptable for interactive use.
+   - Tested depth limits: Recursion depth 100+ safe with SQLite settings
+   - Next: Integration into cache invalidation logic + recursive CTE unit tests (Alexander lead)
+
+3. **Caching at Data Layer: Upstream vs Downstream Filtering (Productive Tension)**
+   - **My Position (Upstream Filtering):** Filter at source (tool invocation, event bridge). Fewer artifacts = simpler queries, lower storage, faster retrieval. Risk: Lose context if filtering rules change.
+   - **Alexander's Position (Downstream Filtering):** Capture everything. Maximize detail for future analysis (ancestry, pattern extraction, genetic programming). Supports Aaron's guidance: "Why would we not want as much detail as possible?" Risk: Storage growth.
+   - **Aaron's Directive:** Maximum detail preferred. Capture everything, filter on read (downstream strategy). Implement time-based retention (Phase 5) if storage becomes bottleneck.
+   - **Resolution path:** Phase 4.5 = capture everything. Monitor storage metrics. Phase 5 = implement archival + compression if needed. Future = revisit based on empirical data.
+
+4. **Cache Layer Hierarchy at Data Layer**
+   - L1 (In-Memory): Tool result memoization. Prevents re-fetching within turn.
+   - L2 (Session Store): Event bridge caches provenance classifications. Semantic fingerprinting for hits.
+   - L3 (Short-TTL): Cached query results (ancestry chains, graph traversals). ~1 hour reuse window.
+   - L4 (Long-TTL): Archived artifacts for pattern extraction. ~30 day window before compression.
+   - Storage projection: Phase 4.5 canary (10 users, 100 sessions/user) = ~50-100 MB. Phase 5 production (1000 users) = ~5-10 GB without retention.
+
+5. **Cross-Agent Alignment**
+   - Graham: Confirmed caching hierarchy alignment. Upstream/downstream tension resolved by Aaron's directive.
+   - Alexander: Confirmed graph storage viability for cache invalidation. Will integrate recursive CTE.
+   - Rosella: Confirmed vector search enabling skill retrieval. Karpathy wiki uses graph patterns.
+
+**Implementation path:**
+- Phase 4.5: Deploy L1-L4 hierarchy at data layer + graph storage schema. Vector search deferred.
+- Phase 4.75: sqlite-vec spike (non-blocking for launch)
+- Phase 5: Time-based retention policies + compression
+- Phase 6+: Genetic programming uses graph patterns for evolution
+
+**Pattern established:** Caching at data layer (L3-L4) enables long-term pattern analysis without sacrificing immediate query performance (L1-L2). Downstream filtering strategy maximizes future optionality.
+
 - **Key file:** `.squad/decisions/inbox/roger-prescriber-datamodel.md` — full proposal with SQL, TypeScript types, integration map, and open questions.
 
 ### Phase 8D: Skill Validator — Types + Rules + Tests

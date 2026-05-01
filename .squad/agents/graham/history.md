@@ -493,6 +493,56 @@ Conducted deep research into GitHub Copilot's full extensibility landscape. Key 
 
 3. **All validation gates pass.** TypeScript clean, 136/136 tests, ESLint clean.
 
+### 2026-05-01: Phase 4.5 Local Feedback Loop — Round 2 Brainstorm
+
+**Session:** `.squad/log/2026-05-01T18-14-00Z-brainstorm-round2.md`  
+**Orchestration:** `.squad/orchestration-log/2026-05-01T18-14-00Z-graham-round2.md`  
+**Decisions:** Merged to `.squad/decisions.md`
+
+**Topic:** Follow-up on caching architecture, ancestry graph structure, and intermediate steps for Phase 4.5 local feedback loop.
+
+**Key learnings:**
+
+1. **Caching 4-Layer Hierarchy Finalized**
+   - L1 (In-Memory): Session-scoped, fast eviction (~100ms). Tool memoization prevents redundant SDK calls.
+   - L2 (Session Store): Persistent across turns (~5 min TTL). Semantic fingerprinting for cache hits.
+   - L3 (Short-TTL): ~1 hour, intermediate layer. Reusable across sessions with matching context hash.
+   - L4 (Long-TTL): ~30 days, archival for ancestry extraction and pattern analysis.
+   - Rationale: Balances speed (L1-L2) with reach (L3-L4). SDK prefix stability enables cross-session reuse.
+
+2. **Ancestry Graph 3-Phase Roadmap**
+   - Phase 4.5 MVP: Linear provenance chain (~200 LOC). Capture prescription ancestry in `prescriptions.ancestry_chain` (JSON array of decision IDs).
+   - Phase 5: Change vectors. Quantify drift when prescriptions applied. Enables comparison of outcome metrics across ancestry branches.
+   - Phase 6+: Graph math. Intelligent exploration of metric space via crossover/mutation. Detect local optima via convergence patterns.
+   - Rationale: Start with linear provenance (low complexity, high value). Defer graph-based optimization to Phase 6.
+
+3. **Intermediate Steps & Cache Integration**
+   - Ancestry chain as cache invalidation trigger. When prescription applied and outcomes measured, mark chain nodes with outcome metrics.
+   - Storage policy: Archive ancestry chains >1yr (Phase 5), compress via lossless encoding.
+   - Predictive cache warming enabled by ancestry chain (wild card for Phase 6+).
+
+4. **Wild Cards Approved** (All six added to future backlog)
+   - Time-Travel Debugging (rewind to decision, replay with different params)
+   - Predictive Cache Warming (pre-fetch likely-needed artifacts)
+   - Self-Annealing Prescriptions (feedback loop auto-ranks)
+   - Genetic Programming Ancestry (crossover/mutation of decision graphs)
+   - Karpathy Wiki Integration (encode knowledge graph as executable wiki)
+   - Adaptive Skill Ranking (vector-based skill retrieval)
+
+5. **Cross-Agent Alignment**
+   - Roger: Vector search + graph storage. Recursive CTE baseline: 1-2ms for <10K nodes.
+   - Alexander: Runtime caching + SDK optimization. Prefix stability key for cross-session reuse.
+   - Rosella: Karpathy wiki + Ancestry integration. Dual representation (linear JSON + graph edges).
+
+**Implementation path:**
+- Phase 4.5: Implement L1-L4 hierarchy + linear ancestry MVP + graph storage schema
+- Phase 4.75: Vector search spike, sqlite-vec integration
+- Phase 5: Archive + compression, canary metrics, storage retention policy
+- Phase 6+: Wild cards (time-travel debugging, predictive warming, genetic programming)
+
+**Pattern established:** Caching at layer hierarchy enables both performance optimization (L1-L2) and future analysis (L3-L4). Ancestry tracking bridges prescriptions → outcomes → future optimizations.
+
+
 **Review pattern learned:** When a bug fix (isScript) removes the need for a workaround (direct node invocation), check whether the workaround was also applied elsewhere. The `.mcp.json` change was a workaround that should have been reverted once the root cause fix landed.
 
 **Branch:** `squad/phase6-plugin-packaging` → PR #12

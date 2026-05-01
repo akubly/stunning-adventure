@@ -144,6 +144,70 @@ Applied Laura's `laura-hook-error-isolation` decision: wrapped every observer ca
 
 **Key learning:** Persona review found real correctness bugs (F1, F4) that would have manifested in production under failure conditions. The spec-gap findings (F2) were correctly scoped by triage guidance — spec is aspirational, tests are the contract.
 
+### 2026-05-01: Phase 4.5 Local Feedback Loop — Round 2 Brainstorm
+
+**Session:** `.squad/log/2026-05-01T18-14-00Z-brainstorm-round2.md`  
+**Orchestration:** `.squad/orchestration-log/2026-05-01T18-14-00Z-alexander-round2.md`  
+**Decisions:** Merged to `.squad/decisions.md`
+
+**Topic:** Follow-up on runtime caching, SDK cache optimization, and max detail tradeoffs.
+
+**Key learnings:**
+
+1. **Runtime Caching: 4-Layer Hierarchy Mapped to Forge Runtime**
+   - L1 (In-Memory): Tool result memoization in HookComposer attached to onToolUse. ~100ms window. Prevents redundant SDK calls.
+   - L2 (Session Store): CairnBridgeEvent provenance caching. Session-scoped TTL (~5 min).
+   - L3 (Short-TTL): Query result cache (ancestry chains, skill lookups). ~1 hour TTL. Reusable across sessions.
+   - L4 (Long-TTL): Archival layer. ~30 day TTL before compression.
+   - Implementation location: `packages/forge/src/cache/` (new module: cache.ts, invalidation.ts, memoization.ts)
+   - Next: Integrate into Hook Composer; add cache metrics instrumentation (hit rate, eviction, utilization)
+
+2. **SDK Cache Optimization: Prefix Stability Enables Cross-Session Reuse**
+   - Problem: SDK listModels() changes when models added/deprecated. Direct IDs as cache keys break on updates.
+   - Solution: Prefix-based cache keys. Model: `<prefix>/<model-id>` (prefix = API version + region). Tool: `<tool-namespace>/<tool-name>@<version>`. Session: `<session-type>/<user-id>/<timestamp-bucket>`.
+   - Cache warmth: On session start, pre-populate L2-L3 with likely-needed artifacts based on user history (same user type, model preferences).
+   - Metrics: Track L1-L4 hit rates. Monitor prefix invalidation frequency (should be rare post-launch).
+   - Pattern: Reusable for other SDK-based systems needing cache consistency across versions
+
+3. **Max Detail Tradeoff: Capture Everything vs. Filter Upstream**
+   - My position (Capture Everything, Filter on Read): L1-L2 capture full event payloads. Enables retrospective analysis if filtering rules change. Maximizes detail for ancestry reconstruction + pattern extraction.
+   - Supports Aaron's guidance: "Why would we not want as much detail as possible?"
+   - Mitigation: Time-based retention (Phase 5), compression, lazy loading (decompress on query)
+   - Implementation: Event provenance includes full CairnBridgeEvent payload. Ancestry chains capture decision IDs (lightweight); full decision records stored separately (compressible). Query layer selectively loads expanded records.
+   - Pattern: Dual representation (lightweight + full) enables both performance + analysis
+
+4. **Cache Invalidation & Ancestry Integration**
+   - Pattern: When prescription applied and outcomes measured, mark ancestry chain nodes with outcome metrics
+   - Invalidate L3-L4 cache entries for "divergent" ancestries (different outcome class)
+   - Warm cache with "converging" ancestries (similar model/tool, similar outcome)
+   - Example: User A tried (model=gpt-4, tool=vector-search) → success. User B tries (model=gpt-3.5, tool=bm25) → fail. On next session, warm User B's cache with User A's choices if profiles match.
+   - Ancestry metadata: Store in prescriptions.ancestry_chain (Phase 4.5 MVP):
+     ```json
+     {
+       "chain": [
+         {"decision_id": "d1", "type": "model_selection", "value": "gpt-4", "outcome": "success"},
+         {"decision_id": "d2", "type": "tool_choice", "value": "vector-search", "outcome": "success"}
+       ],
+       "convergence_class": "high_quality_ml",
+       "last_verified": "2026-05-01T18:14:00Z"
+     }
+     ```
+   - Next: Add recursive CTE tests for ancestry queries. Validate performance at scale.
+
+5. **Cross-Agent Alignment**
+   - Graham: Confirmed 4-layer hierarchy. Ancestry roadmap supports cache invalidation.
+   - Roger: Confirmed graph storage viability for ancestry queries. Recursive CTEs enable convergence detection.
+   - Rosella: Confirmed ancestry metadata supports Karpathy wiki navigation (ancestor → descendant links)
+
+**Implementation path:**
+- Phase 4.5: Integrate L1-L4 hierarchy into Forge runtime. Implement prefix stability pattern.
+- Phase 4.75: Measure L1-L4 hit rates. Validate prefix invalidation frequency.
+- Phase 5: Archive + compression if storage bottleneck. Ancestry-driven cache warming optimization.
+- Phase 6+: Use ancestry graph for genetic programming evolution
+
+**Pattern established:** Multi-layer caching enables speed (L1-L2) + reach (L3-L4). Ancestry-driven invalidation bridges prescriptions → outcomes → future optimizations. Prefix stability pattern reusable across SDK-based systems.
+
+
 ### 2026-04-30: Event Dedup Guard (ADR-P3-005 hardening)
 
 **Context:** Design reviewers flagged that the dual event path (onEvent callback during createSession + session.on() after construction) has a temporal overlap window. If the SDK fires events via onEvent after createSession resolves but before/during ForgeSession construction, the same event could be captured by both paths, corrupting TokenTracker accumulation and DBOM reconstruction.
