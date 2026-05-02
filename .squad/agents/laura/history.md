@@ -166,6 +166,19 @@ The mock session's `on()` returns a no-op unsubscribe stub. For testing real uns
 **Decision: disconnect error propagation (L3):**
 ForgeSession.disconnect() does NOT wrap individual unsubscribe calls in try/catch — if the bridge unsubscribe throws, disconnect throws. However, ForgeClient.stop() DOES wrap each session disconnect in try/catch and collects errors. This is correct: stop() must be resilient (best-effort cleanup), while disconnect() is a direct API where callers can handle the error. The L3 tests verify both behaviors.
 
+### 2026-05-02: Phase 4.5 — Integration Tests + Convergence (Complete)
+
+**Session:** 2026-05-02T04:35:00Z  
+**Outcome:** ✅ SUCCESS
+
+**Delivered:** `feedback-loop.test.ts` with 36 integration/convergence/regression/efficiency tests. Updated forge barrel exports. Process-invariant testing philosophy (response curves, not terminal states). In-file LCG property tests (zero-dep, reproducible).
+
+**Key design:** Convergence asserted by monotone response curves (hint count ↓ as drift ↓), not "system reaches GREEN". Operator effect simulated at profile level (testing system response, not operator quality). Efficiency bounds generous (250ms / 10k vs ~25µs). L5 tests catch O(N) regressions. Drift gate pinned at >= 0.3 with metamorphic tests.
+
+**Integration:** Merged with all three streams (Roger/telemetry, Alexander/db, Rosella/prescribers). 990 total tests passing (512 forge, 478 cairn). Build clean. +164 tests this phase.
+
+**Notes for downstream:** L5 tests catch collector regressions. L2 integration covers buffer sizes 1 and 16. L3 metamorphic pins gate at >= 0.3 — moving threshold requires test update.
+
 ### 2026-04-30: Phase 4 Test Contracts — Export Pipeline (initial)
 
 Initial 37 tests written before spec existed. Superseded by spec-aligned rewrite below.
@@ -212,3 +225,35 @@ Rewrote all contract tests to match `docs/forge-phase4-spec.md` exact API surfac
 - `stripStage` handles /tmp paths (Unix temp directories)
 - `validateStage` does NOT catch quality gate exceptions — they propagate. Spec §7.1 says pipeline should catch, so production implementation must add try/catch.
 - `compiledAt` in frontmatter means `renderFrontmatter` is NOT deterministic (calls `new Date()`) — contentHash changes between calls even with identical logical input. Tests verify SHA-256 format rather than exact hash equality across calls.
+
+### 2026-05-02: Phase 4.5 Integration + Convergence Tests (L1–L5)
+
+**File created:**
+- packages/forge/src/__tests__/feedback-loop.test.ts — 36 tests covering the cross-module feedback-loop surface (collector → sink → aggregator → prescriber → applier).
+
+**Index barrel updated:**
+- packages/forge/src/index.ts — added // --- Prescribers --- and // --- Applier --- blocks following the same format as the telemetry block. Exports analyze*Optimizations, applyOptimizations, tuneParameters, DEFAULT_STRATEGY_PARAMS, and all related types.
+
+**Test categories (per spec §11):**
+- **L1 Fixture factories (4 tests):** evt(), profile(), hint(), good/badSessionEvents() — all in-file, no new helpers/ module since they're feedback-loop-specific.
+- **L2 Integration (5 tests):** end-to-end pipeline with mock CairnBridgeEvents, sink persistence, aggregator commutativity over disjoint batches, skillId propagation through the pipeline.
+- **L3 Convergence (4 tests):** monotone non-increasing hint count as drift improves, monotone non-increasing max impact, self-tuning parameter steady-state stability (swing < 0.2 over last 3 cycles), aggregator 'improving' trend detection.
+- **L4 Regression (8 tests):** prescriber idempotence, applier patch determinism with injected now(), impactScore-desc tie-broken-by-id-asc ordering, confidence threshold gating, maxHintsPerCycle accounting (applied + skipped == input), drift-gate suppression of token hints, explorationBudget hard floor, all tuneParameters bounds under stress.
+- **L5 Efficiency (6 tests):** drift/token/outcome collectors handle 10k events under 250/250/100 ms; aggregateSignals folds 1k samples under 50ms; sink enqueue+flush 1k under 100ms; applyOptimizations 500 hints under 50ms.
+- **§11.3 Properties (4 tests):** drift score ∈ [0,1] over 200 LCG-seeded random vectors, classification monotone, aggregator commutative on session counts, applier ordering stable under input shuffle.
+- **§11.4 Metamorphic (5 tests):** more sessions → higher prompt-structure confidence, worse drift → ≥ hints, drift-gate equality (token hints iff drift < 0.3 — verified at 0.1, 0.3, 0.5), doubling signals never decreases score, low-confidence hint never changes the applied set.
+
+**Key approach decisions:**
+- "Test the learning process, not the learned artifacts" (spec §11.2): tests assert behavioural invariants — monotonicity, stability, suppression — rather than specific hint text or counts. Counts-based assertions are bounded with ≤/≥, not equality.
+- Convergence cycles are *simulated*: the operator's effect of applying a patch is modelled as a profile whose drift is lower in the next cycle. We can't run a real model in unit tests.
+- Efficiency bounds are intentionally generous (250ms for 10k events) — tight enough to catch O(N) regressions, loose enough to survive CI variability.
+- Used a deterministic LCG for property-based tests (no fast-check dependency added) — keeps the test suite zero-dep and reproducible.
+- Drift gate test (§11.4) probes the boundary at three points (0.1, 0.3, 0.5) — confirms the >= 0.3 cutoff in tokenOptimizer.
+
+**Build/typecheck fixes:**
+- TelemetrySink.flush? is optional in the @akubly/types contract — must be called as sink.flush?.() even though LocalDBOMSink always implements it.
+
+**Final test counts:**
+- Forge: 512 tests (was 476, +36)
+- Cairn: 478 tests
+- Total: 990 passing across both packages, build clean.

@@ -457,6 +457,19 @@ ode dist/mcp/server.js\)
 
 - **Key file:** `.squad/decisions/inbox/roger-prescriber-datamodel.md` — full proposal with SQL, TypeScript types, integration map, and open questions.
 
+### 2026-05-02: Phase 4.5 — Telemetry Module (Complete)
+
+**Session:** 2026-05-02T04:35:00Z  
+**Outcome:** ✅ SUCCESS
+
+**Delivered:** 5-signal drift computation (telemetry/types.ts, drift.ts, collectors.ts, aggregator.ts, sink.ts, index.ts). 56 new tests, all passing. FeedbackSource added to @akubly/types as first new shared type since Phase 2. ExecutionProfile and ProfileGranularity shared. TelemetrySink abstraction bridges Phase 4.5 (LocalDBOMSink) → Phase 5 (AppInsightsSink).
+
+**Key design:** Collectors registered as HookObservers on Forge bridge. Manual loop trigger in Forge (library control). 5 weighted signals with GREEN/YELLOW/RED classification. Determinism signals 70% total weight per Aaron's "Determinism > Token Cost" constraint.
+
+**Integration:** All 4 phases converged (Alexander's DB layer, Rosella's prescribers+applier, Laura's integration tests). 990 total tests passing (826 baseline + 164 new). Build clean.
+
+**Known issues:** Event-type mismatch (spec vs bridge EVENT_MAP) noted for Graham's wiring task. Convergence formula degeneracy TBD post-Phase-4.5.
+
 ### Phase 8D: Skill Validator — Types + Rules + Tests
 
 **What was built:**
@@ -571,3 +584,28 @@ ode dist/mcp/server.js\)
 - **F5 ACCEPTED:** Added explicit guard for `budgetLimitNanoAiu <= 0` in `budgetAware` strategy, falling back to `cheapest` instead of producing `Infinity`.
 
 **Key learning:** `Array.filter()` returns a new array — chaining `.sort()` on the result does NOT mutate the original input. Reviewers sometimes miss this.
+
+## Learnings (Phase 4.5 telemetry — 2026-05-02)
+
+**Architecture decisions made:**
+- `FeedbackSource` is the first new shared type in `@akubly/types` since Phase 2. It is the read-side complement to `TelemetrySink` (write side). To make it actually shareable I also moved `ProfileGranularity` and `ExecutionProfile` into `@akubly/types`, with `forge/telemetry/types.ts` re-exporting them so forge code keeps a single import surface.
+- `OptimizationHint` and `StrategyParameters` are open-shaped (`[key: string]: unknown`) in `@akubly/types`. Concrete prescribers extend the shape without forcing a churn-prone shared schema. Preserves the ADR-P4-005 instinct while still enabling cross-package wiring.
+- `LocalDBOMSink.emit()` is intentionally a no-op. The bridge event stream is consumed by collectors (HookObserver pattern, ADR-P4.5-001); only derived `SignalSample`s are worth persisting. Callers push samples via `enqueueSample()`. `emit()` exists only to satisfy the `TelemetrySink` contract.
+- Auto-flush on buffer full + fail-open on persistence error are both load-bearing. Telemetry must never kill a session.
+
+**Spec deviations worth knowing:**
+- The spec accesses `event.payload?.toolName` directly, but `CairnBridgeEvent.payload` is a JSON string (see `@akubly/types` and `packages/forge/src/dbom/index.ts:276`). I added a `parsePayload()` helper that JSON-parses lazily and tolerates malformed input. Same pattern Curator and DBOM already use.
+- The spec convergence formula `convergedTurn / turnCount` is degenerate when `session_completed` arrives at the last turn (always 1.0 = max drift). I followed the spec literally but the GREEN-classification test now constructs a scenario with extra turns *after* completion to actually exercise the GREEN branch. Worth raising with Graham before Phase 5.
+- Spec §9.4 lists event types (`tool_call_started`, `usage_reported`, `turn_completed`, `session_completed`, `tool_call_failed`) that don't appear in the bridge `EVENT_MAP` (which uses `tool_use`, `model_call`, `turn_end`, `session_end`, etc.). Collectors are coded to the spec strings; wiring will need a thin remapper or an `EVENT_MAP` extension.
+
+**Patterns to remember:**
+- Test infra: vitest, files in `packages/forge/src/__tests__/`, ending in `.test.ts`. No setup/teardown — pure unit tests.
+- Property + metamorphic tests scale well: e.g. "replaying the same usage N times scales totals by N" catches a class of off-by-N bugs without enumerating cases.
+- Determinism > token cost is encoded in `DRIFT_WEIGHTS` (convergence 0.30 + toolEntropy 0.25 + promptStability 0.15 = 0.70 vs cost 0.30). Added a test asserting that inequality so any future tweak forces a conscious decision.
+
+**Key file paths:**
+- `packages/forge/src/telemetry/{types,drift,collectors,aggregator,sink,index}.ts` — the whole module
+- `packages/forge/src/__tests__/telemetry-{drift,collectors,aggregator}.test.ts` — 56 tests
+- `packages/types/src/index.ts` — extended with FeedbackSource + ExecutionProfile + ProfileGranularity + OptimizationHint + StrategyParameters
+- `packages/forge/src/index.ts` — barrel updated to re-export telemetry surface
+- Build: `npm run build`. Forge tests: `cd packages/forge; npm test`. Repo: `npm test --workspaces --if-present`. Baseline 826 → 954 (forge 476 + cairn 478).

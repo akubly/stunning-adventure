@@ -3601,6 +3601,263 @@ Drift signal weights are constants (convergence: 0.30, toolEntropy: 0.25, tokenP
 `FeedbackSource` added to `@akubly/types`. First new shared type since Phase 2. Justified: both Forge (session start) and Cairn (Curator) consume this contract.
 
 #### ADR-P4.5-006: Manual loop trigger in Forge, Curator-driven in Cairn
+Forge caller controls `compute()` and `getSink()` invocation timing. Cairn's Curator drives feedback loops via session start + periodic checks. Manual in Forge (library control), autonomous in Cairn (always-on platform).
+
+---
+
+## Phase 4.5 Implementation Decisions (Session 2026-05-02T04:35:00Z)
+
+### 2026-05-02: Phase 4.5 DB CRUD modules use the singleton `getDb()` pattern
+
+**Author:** Alexander (SDK/Runtime Dev)
+**Date:** 2026-05-02
+**Type:** Convention
+**Status:** Implemented
+
+#### Context
+
+The Phase 4.5 spec asked for three new CRUD modules in `packages/cairn/src/db/`
+covering signal samples, execution profiles, and optimization hints. The task
+brief suggested each module export pure functions accepting a
+`Database.Database` parameter. Every existing CRUD module in `packages/cairn/src/db/`
+(including the named reference, `dbomArtifacts.ts`) uses the singleton
+`getDb()` pattern, and the test harness depends on it via
+`beforeEach: closeDb(); getDb(':memory:')`.
+
+#### Decision
+
+The three new modules — `signalSamples.ts`, `executionProfiles.ts`,
+`optimizationHints.ts` — call `getDb()` internally rather than accepting a
+`Database.Database` argument. This matches every other CRUD module in the
+package and lets the existing test harness work unmodified.
+
+#### Rationale
+
+- **Consistency** — Mixing two patterns in `packages/cairn/src/db/` would force
+  every future contributor to ask which one applies.
+- **Test reuse** — The `closeDb(); getDb(':memory:')` lifecycle is the package
+  convention. New tests for these modules use it directly, no plumbing.
+- **Reversibility** — If we ever need DI for cross-DB scenarios, refactoring
+  the whole `db/` layer in one pass is cleaner than gradually drifting toward
+  it module-by-module.
+
+#### Impact
+
+- 3 new CRUD modules + migration 011 + 40 new tests, all green.
+- Existing tests asserting `schema_version` count/max (`db.test.ts`,
+  `discovery.test.ts`, `prescriptions.test.ts`) bumped from 10 → 11.
+- **Note for downstream consumers (Curator):** TTL sweep and row cap
+  enforcement live on the Curator, not in the DB. `sweepSignalSamples(cutoffIso)`
+  and `enforceSignalSampleCap(cap)` are the primitives to schedule.
+
+---
+
+### 2026-05-02: Phase 4.5 feedback-loop test strategy
+
+**Author:** Laura (Tester)
+**Date:** 2026-05-02
+**Status:** Implemented
+
+#### Context
+
+Phase 4.5 ships a closed feedback loop: collectors → sink → aggregator →
+prescribers → applier → (operator updates skill) → improved next cycle. The
+loop is causally complete only when an operator actually edits a SKILL.md and
+re-runs sessions. In tests, we cannot close that loop with real model calls.
+
+#### Decision
+
+Adopt **process-invariant testing** for the feedback loop, codified in
+`feedback-loop.test.ts`:
+
+1. **Convergence is asserted by *response curve*, not by terminal state.**
+   We assert that hint count is monotone non-increasing as profile drift
+   decreases across simulated cycles, and that the maximum impact score is
+   likewise non-increasing. We do not assert "the system reaches GREEN" —
+   that depends on the operator.
+
+2. **The operator's effect is simulated at the profile level.** Each "next
+   cycle" feeds the prescriber a profile whose drift mean is lower than the
+   previous cycle's. We are testing the system's *response* to improving
+   inputs, not the operator's quality.
+
+3. **Efficiency bounds are intentionally generous.** Hot-path collectors are
+   capped at 250ms / 10k events (vs. spec implication of ~25µs/event). Tight
+   enough to catch O(N) regressions, loose enough to survive CI variability.
+
+4. **Property-based tests use an in-file LCG, not fast-check.** Keeps the
+   test suite zero-dep and reproducible. Coverage is sufficient for the
+   small-dimensional invariants we care about (drift score bounds,
+   classification monotonicity, aggregator commutativity).
+
+#### Implications for Other Agents
+
+- **Alexander / runtime:** if any collector implementation regresses to per-
+  event O(N) (e.g., recomputing entropy from a growing list), the L5 tests
+  will catch it before it ships.
+- **Roger / sink:** the L2 integration test exercises `enqueueSample` at
+  buffer-size 1 and 16 and asserts every sample reaches `persistSample`.
+  Future sinks (e.g., AppInsightsSink) should pass the same shape of test.
+- **Anyone touching the drift gate:** §11.4 metamorphic test pins the gate
+  at >= 0.3 and probes 0.1 / 0.3 / 0.5. Moving the threshold requires
+  updating that test in lockstep.
+
+#### Alternatives Considered
+
+- **Run real Copilot CLI sessions in CI:** rejected — too slow, too flaky,
+  and would obscure regressions in the loop logic itself behind model noise.
+- **Add fast-check for property tests:** rejected for now — current
+  invariants are simple enough that an LCG suffices, and the dependency
+  cost outweighs the marginal coverage gain.
+- **Snapshot the applier output:** rejected — snapshots would lock in
+  *artifacts* (hint text, counts) rather than *processes*. A snapshot would
+  fire on every recommendation-string tweak.
+
+---
+
+### 2026-05-02: Promote ExecutionProfile / ProfileGranularity to @akubly/types alongside FeedbackSource
+
+**Author:** Roger Wilco (Platform Dev)
+**Date:** 2026-05-02
+**Type:** Architecture
+**Status:** Implemented (Phase 4.5)
+
+#### Context
+
+Spec §9.3 declares `FeedbackSource` as the first new shared type in
+`@akubly/types` since Phase 2. The interface signature references
+`ExecutionProfile`, `ProfileGranularity`, `OptimizationHint`, and
+`StrategyParameters` — types the spec otherwise defines inside
+`packages/forge/src/telemetry/` and `packages/forge/src/prescribers/`.
+
+`@akubly/types` cannot depend on `@akubly/forge` (acyclic dependency graph,
+ADR-P4-002), so `FeedbackSource` cannot literally use forge-private types.
+
+#### Decision
+
+Two of the four referenced types are now defined in `@akubly/types`:
+
+- `ProfileGranularity` — string union, fully shared.
+- `ExecutionProfile` — full structural definition (drift / tokens / outcomes
+  blocks). `packages/forge/src/telemetry/types.ts` re-exports them so forge
+  code retains a single import path.
+
+The remaining two are defined as **open-shaped** interfaces in `@akubly/types`:
+
+- `OptimizationHint` — required keys (`id`, `source`, `skillId`, `category`,
+  `description`) plus `[key: string]: unknown` for prescriber-specific fields.
+- `StrategyParameters` — pure `[key: string]: unknown` map.
+
+Concrete prescribers extend these without forcing schema changes in
+`@akubly/types`.
+
+#### Rationale
+
+- `ExecutionProfile` is genuinely shared: Cairn's curator and prescribers
+  both need to read profiles produced by Forge. Putting it in `@akubly/types`
+  matches its actual lifetime as a cross-package contract.
+- Open-shaped `OptimizationHint` / `StrategyParameters` honour the
+  ADR-P4-005 "minimum shared types" instinct. The required keys are the
+  invariant identity (every hint has an id, source, skill, category,
+  description); everything else varies by prescriber.
+- This avoids two anti-patterns: (1) widening `FeedbackSource` to use
+  `unknown` everywhere (kills compile-time safety), and (2) duplicating the
+  hint/strategy schemas across packages (kills the contract).
+
+#### Impact
+
+- `packages/types/src/index.ts` — +5 exports (`ProfileGranularity`,
+  `ExecutionProfile`, `OptimizationHint`, `StrategyParameters`,
+  `FeedbackSource`). No removals, no breaking changes.
+- Forge's `telemetry/types.ts` re-exports `ProfileGranularity` and
+  `ExecutionProfile` so `import { ExecutionProfile } from "../telemetry/types.js"` keeps working.
+- Tests: 826 baseline → 954 passing (forge 476 + cairn 478). Telemetry
+  module contributes 56 of the new tests.
+
+#### Follow-ups for the team
+
+1. **Spec event-type mismatch (for Graham / wiring task):** spec §9.4 names
+   `tool_call_started`, `usage_reported`, `turn_completed`,
+   `session_completed`, `tool_call_failed`. The bridge `EVENT_MAP` uses
+   `tool_use`, `model_call`, `turn_end`, `session_end`. The collectors are
+   coded to the spec strings; wiring will need either a remapper at the
+   collector boundary or an `EVENT_MAP` extension.
+2. **Convergence formula (for Graham):** `convergedTurn / turnCount` is
+   degenerate at typical session shapes (always 1.0 when `session_completed`
+   arrives last). Worth a redesign before Phase 5 — perhaps
+   `convergedTurn / expectedTurns` against a per-skill expected-turns
+   parameter from `StrategyParameters`.
+
+---
+
+### 2026-05-02: Phase 4.5 Prescribers + Applier — Determinism Mechanisms
+
+**Author:** Princess Rosella (Plugin Dev)
+**Date:** 2026-05-02
+**Type:** Architecture / Implementation
+**Status:** Implemented (S1–S8)
+
+#### Context
+
+The Phase 4.5 spec (§3–§4) prescribes the prescriber → applier pipeline and
+states the ordering rule "Determinism > Token Cost (Aaron's constraint)" as
+prose. While implementing, I had to choose how strongly to encode that
+constraint. Two options:
+
+1. **Soft prioritization** — token optimizer always runs, but its hints carry
+   lower impact scores than prompt-optimizer hints.
+2. **Hard gate** — token optimizer returns an empty hint set entirely when
+   drift is RED, regardless of cache/cost signals.
+
+#### Decision
+
+I chose **(2) hard gate**, exposed as ``TokenOptimizerConfig.driftGate``
+(default ``0.3``). ``analyzeTokenOptimizations`` exits early with no hints when
+``profile.drift.mean >= driftGate``. This matches the spec text at line 933
+("Guard: Don't optimize tokens if drift is RED — fix determinism first") and
+makes the constraint structurally enforced rather than score-balancing
+dependent.
+
+I also made the **applier order-stable**: sort key is
+``(impactScore desc, id asc)``. Without the id tiebreaker, two hints with
+identical impact scores could swap positions across runs depending on input
+order, breaking SKILL.md compilation reproducibility.
+
+#### Other team-relevant choices
+
+- ``DEFAULT_STRATEGY_PARAMS`` is ``Object.freeze``-d. Cross-package consumers
+  (Cairn, runtime, future loop-driver) cannot mutate it accidentally.
+- ``EXPLORATION_FLOOR = 0.15`` is a module constant, not a config knob.
+  Aaron's directive ("diminishing returns worth it when scaled across future
+  of software engineering") means this is policy, not preference.
+- ``ApplierConfig.now: () => Date`` is injectable for deterministic tests of
+  ``frontmatterPatch.optimizationHints[].appliedAt``. The export pipeline can
+  use this to thread its own clock if it ever needs to backdate patches.
+- ``cacheableTools`` extraction reads from ``evidence.triggerMetrics`` keys
+  prefixed with ``tool:`` and an optional ``evidence.cacheableTools`` array.
+  Forward-compatible with telemetry adding tool-level signals — Roger and I
+  should align on which path becomes canonical when the loop-driver lands.
+
+#### Implications
+
+- **Cairn / loop-driver:** When feeding hints back through the loop, expect
+  zero token-optimization hints during RED drift periods — this is by design,
+  not a bug. Test fixtures should not assume token hints are always present.
+- **Export pipeline (Phase 4):** ``SkillFrontmatterPatch`` is the contract
+  between applier and ``attachStage``. Adding new patch fields requires
+  coordinated changes here.
+- **Telemetry team (Roger):** ``ExecutionProfile`` shape is now relied upon
+  by both telemetry and prescribers. Changes to drift/tokens/outcomes nesting
+  will ripple into 27 prescriber tests.
+
+#### Verification
+
+- ``npm run build --workspace=@akubly/forge`` passes.
+- 27 new tests in ``packages/forge/src/__tests__/prescribers-applier.test.ts``
+  all pass (mechanism × determinism × metamorphic).
+- 475/476 forge tests pass overall. The one unrelated failure
+  (``telemetry-collectors.test.ts > classifies ... as GREEN``) is in
+  Roger's collectors module and predates my work.
 Forge is the development tool (human in loop). Cairn is autonomous (Curator decides). Shared analysis logic, two trigger paths.
 
 #### ADR-P4.5-007: Determinism > Token Cost ordering

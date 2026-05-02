@@ -222,6 +222,19 @@ Applied Laura's `laura-hook-error-isolation` decision: wrapped every observer ca
 
 **Key learning:** The simplest dedup mechanism (a boolean flag matching the temporal contract) is preferable to hash-based dedup (LRU + eventId). The flag directly encodes the design intent: onEvent is a pre-bridge stopgap, not a parallel path.
 
+### 2026-05-02: Phase 4.5 — DB Layer + CRUD Modules (Complete)
+
+**Session:** 2026-05-02T04:35:00Z  
+**Outcome:** ✅ SUCCESS
+
+**Delivered:** Migration 011 (signal_samples, execution_profiles, optimization_hints tables). Three CRUD modules (signalSamples.ts, executionProfiles.ts, optimizationHints.ts). 40 new tests, all passing. Schema version bumped to 11.
+
+**Key design:** DB CRUD singleton pattern (`getDb()` internally) — consistent with existing cairn/db/ conventions. Existing test harness works unmodified. TTL sweep and row cap enforcement on Curator, not DB triggers.
+
+**Integration:** Merged with Roger's telemetry and Rosella's prescribers+applier. 990 total tests passing. Build clean. Zero breaking changes.
+
+**Note for downstream:** Primitives `sweepSignalSamples(cutoffIso)` and `enforceSignalSampleCap(cap)` available for Curator lifecycle management.
+
 ### 2026-04-30: Persona Review — disconnect() error isolation + resumeSession comment
 
 **Context:** Persona review found 2 issues in runtime/. F1 was a real unrecoverable bug; F2 was a documentation gap.
@@ -261,3 +274,38 @@ Added comment explaining why `resumeSession()` has no `onEvent` capture: the SDK
 - Schema: `packages/cairn/src/db/schema.ts`
 - Barrel: `packages/cairn/src/index.ts`
 - Tests: `packages/cairn/src/__tests__/dbomArtifacts.test.ts`
+
+### 2026-05-02: Phase 4.5 — Telemetry Feedback DB Layer (Migration 011 + 3 CRUD modules)
+
+**What was built:**
+- `packages/cairn/src/db/migrations/011-telemetry-feedback.ts` — 3 tables: `signal_samples` (raw drift/token/outcome samples, 7-day TTL + 10K cap enforced by Curator), `execution_profiles` (PGO-equivalent flattened stats keyed by skill x granularity x granularity_key), `optimization_hints` (TEXT/UUID id, lifecycle states pending->accepted->applied/rejected/etc).
+- `packages/cairn/src/db/signalSamples.ts` — insert (single + batch transactional), query by kind/skill/session/time-range, `sweepSignalSamples(cutoffIso)` for TTL, `enforceSignalSampleCap(cap)` deletes oldest by collected_at then id.
+- `packages/cairn/src/db/executionProfiles.ts` — `upsertExecutionProfile` via `ON CONFLICT(skill_id, granularity, granularity_key) DO UPDATE`, `getExecutionProfile`, `listExecutionProfilesForSkill`, `listExecutionProfiles`, `deleteExecutionProfile`. `granularityKey` defaults to `'global'`.
+- `packages/cairn/src/db/optimizationHints.ts` — insert with sensible defaults, query by skill/status (single or array)/source/parent, `updateOptimizationHintStatus` validates a transition table (`STATUS_TRANSITIONS`) for the prescription state machine; `applied` auto-stamps `applied_at` if caller omits. `force: true` bypasses transition validation for admin/test paths.
+- Schema registered in `packages/cairn/src/db/schema.ts` (added migration011 import, appended to migrations array).
+
+**Tests added (40 new):**
+- `packages/cairn/src/__tests__/signalSamples.test.ts` (16)
+- `packages/cairn/src/__tests__/executionProfiles.test.ts` (7)
+- `packages/cairn/src/__tests__/optimizationHints.test.ts` (17)
+
+**Test count change:** cairn 478 (+45), forge 393, total 871.
+
+**Existing tests bumped:** `db.test.ts` (3 sites), `discovery.test.ts`, `prescriptions.test.ts` — all hard-coded the migration count to 10. Bumped to 11. Pattern: tests assert `MAX(version)` and `COUNT(*)` from `schema_version` rather than reading from the migrations array, so every new migration breaks them. Non-trivial coupling.
+
+**Architecture decisions:**
+1. **Followed existing `getDb()` singleton pattern, not Database.Database injection.** Aaron's task spec suggested the latter, but `dbomArtifacts.ts` (the named reference module) and every other CRUD module in the package use the singleton. Test harness pattern (`closeDb(); getDb(':memory:')`) depends on it. Diverging would have created two patterns and broken test reuse.
+2. **Status transition table is in-module, not in shared types.** Lifecycle is a property of the persistence layer's invariants; encoding it as a plain `Record<HintStatus, HintStatus[]>` keeps it inspectable and trivially testable. Phase 4.6 may extract this if other modules need the same machine.
+3. **`insertSignalSamples` (batch) wraps in a transaction.** Curator will write samples in bursts; per-row prepares would be costly at the 10K cap.
+4. **Cap enforcement uses `ORDER BY collected_at ASC, id ASC LIMIT excess` in a subquery.** `id` tiebreaker guarantees deterministic eviction when many samples share a timestamp (common for batch inserts).
+5. **Status query supports `HintStatus | HintStatus[]`.** Common UI need: "show me everything that's not applied/rejected". An empty-array query short-circuits to `[]` rather than emitting `IN ()` (invalid SQL).
+
+**Key file paths:**
+- Migration: `packages/cairn/src/db/migrations/011-telemetry-feedback.ts`
+- CRUD: `packages/cairn/src/db/{signalSamples,executionProfiles,optimizationHints}.ts`
+- Tests: `packages/cairn/src/__tests__/{signalSamples,executionProfiles,optimizationHints}.test.ts`
+- Schema registry: `packages/cairn/src/db/schema.ts`
+
+**Patterns established for Phase 4.5 downstream consumers:**
+- TTL + cap belong on the Curator, not DB triggers (per spec §5.2). The CRUD module exposes `sweepSignalSamples` and `enforceSignalSampleCap` as primitives; the Curator schedules them.
+- Optimization hints carry `parent_prescription_id` for linear provenance (Phase 4.5). Phase 4.6 layers change vectors on top — don't repurpose this column.
