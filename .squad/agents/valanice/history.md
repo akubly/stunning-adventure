@@ -124,3 +124,60 @@
 - Plugin artifact discovery: how does Prescriber know what's installed?
 - Conflicting prescription detection
 - Growth tracking scope: repo-scoped or global?
+
+### 2025-07-18: LX Brainstorm — Inverting UX for Language Model Interfaces
+
+**Task:** React to Aaron's 9-point vision for agentic software engineering, centering on "LX" (Language Model Experience) — the idea that the harness/tool interface is UX for the LLM.
+
+**Key Insight:** The parallel between UX and LX is structural, not metaphorical. Context window IS working memory (Miller's Law). Attention score decay IS recency bias. Tool selection ambiguity IS decision fatigue (Hick's Law). This enables us to port proven UX heuristics directly.
+
+**Artifacts Produced:**
+- `.squad/decisions/inbox/valanice-brainstorm-lx.md` — 10 LX Heuristics (parallel to Nielsen's 10), Decision Consequence Taxonomy, slop-as-upstream-LX-failure analysis, OOP mental model mapping, new LX vocabulary
+- Proposed LX Heuristic Evaluation checklist as highest-leverage next action
+
+**Key LX Principles Identified:**
+- Context Budget: the LX analog of attention span — every token consumed is budget spent
+- Signal Density: information value per token in tool output (Cairn's `confidenceToWords()` is a good example)
+- Vocabulary Contracts: verb semantics (get/list/search/run/check) as the LX equivalent of consistent navigation
+- Upstream Prevention: slop is a symptom of LX violations, not a standalone problem to police
+- Idempotent Safety: the LLM equivalent of "undo" — safe to retry without side effects
+- Decision Altitude: 4-tier consequence taxonomy (ambient → logged → flagged → gated)
+
+**Connections to Existing Work:**
+- Cairn's DP1–DP5 design principles are already LX heuristics in disguise
+- The Prescriber's accept/reject/defer model exemplifies LX-3 (Freedom and Undo) and LX-5 (Error Prevention)
+- The verb_noun naming convention from Phase 5 is a rigorous implementation of LX-2 and LX-4
+
+### 2025-07-18: Shiproom Ceremony Design — Decision Defense as Agentic QA
+
+**Task:** Design the Shiproom ceremony pattern for Squad, grounded in both UX (human-facing) and LX (LLM-facing) principles.
+
+**Core Concept:** Shiproom is where agents "speak to" their decisions — presenting the decision chain for a completed task and defending it against domain challengers. Unlike code review (which evaluates artifacts), Shiproom evaluates *reasoning* — the decisions that produced the artifacts.
+
+**Key Design Decisions:**
+
+1. **Decision Record schema** — every defensible decision captured at decision time with: question, chosen option, alternatives (min 1, mandatory), evidence, confidence, altitude, parent linkage. The `alternatives` minimum prevents default-as-decision inertia. Content-addressable IDs make the chain tamper-evident (Aaron's "blockchain" analogy made structural).
+
+2. **Facilitator: Graham (Lead), not a dedicated agent.** A ceremony-only agent would lack domain context. The Lead has the cross-cutting knowledge to smell when something is wrong. Role rotation handles conflict of interest — when Graham's own decisions are under review, Roger facilitates that specific decision.
+
+3. **One probing question per challenger.** Prevents death-by-a-thousand-questions. This is attention rationing — the ceremony equivalent of "max 1 proactive hint per session" from Prescriber UX. Challengers are domain-routed by decision tags.
+
+4. **Curator as unique non-domain challenger.** It doesn't have opinions — it has data. "The last three times a decision like this was made, the pattern recurred within 5 sessions." Evidence-based challenge, not subjective review.
+
+5. **Decision Altitude filters what enters Shiproom.** Altitude 0–1: never individually examined. Altitude 2: examined, challenge optional. Altitude 3: full examination required, human notified. Progressive disclosure (Krug) applied to ceremony design.
+
+6. **Human sees summary + escalations only (default).** The "newspaper test" — 30-second summary tells you exactly where attention is needed. Full ceremony browsable as opt-in pull interface. Asynchronous escalation resolution — human judges on their schedule.
+
+7. **Confabulation prevention in "speak to" pattern.** Agents can only cite evidence already in the decision record — no post-hoc reasoning. Behavioral constraint first; structural verification (hash checking) deferred until confabulation rate is measurable via Curator patterns.
+
+8. **LX-11: Ceremony Efficiency (new heuristic).** Metrics: challenge rate, amendment rate, escalation rate, token cost per decision. These feed back into the Curator → Prescriber loop for self-improvement.
+
+**The Flywheel:** Shiproom generates structured signal about decision quality → Curator detects patterns in overturned/amended decisions → Prescriber suggests improvements → Future decisions improve → Fewer Shiproom amendments → Lower ceremony cost → More time building.
+
+**Artifacts Produced:**
+- `.squad/decisions/inbox/valanice-shiproom-ceremony.md` — full design specification
+
+**Open Questions:**
+- Auto-trigger threshold calibration (start at 3+ Altitude ≥ 2, adapt via amendment/overturn rates)
+- Confabulation measurement methodology
+- Ceremony cost budget in tokens

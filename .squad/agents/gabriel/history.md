@@ -102,3 +102,41 @@
 
 **Files Created:** `src/db/migrations/009-skill-test-results.ts`, `src/db/skillTestResults.ts`
 **Files Modified:** `src/db/schema.ts`, `src/__tests__/db.test.ts`, `src/__tests__/discovery.test.ts`, `src/__tests__/prescriptions.test.ts`
+
+### 2026-04-09 — Copilot SDK Spike: Infrastructure Verification
+
+**Task:** Verify `@github/copilot-sdk@0.2.2` installation doesn't break existing infrastructure on `squad/copilot-sdk-spike` branch.
+
+**Results — All Clear:**
+- **Build:** `npm run build` passes clean. No TypeScript compilation errors.
+- **Tests:** All 427 tests pass (15 test files, 838ms). No regressions.
+- **Dependency compatibility:** SDK is ESM (`"type": "module"`), targets Node >=20.0.0, ships `.d.ts` declarations — fully aligned with our project settings (ES2022/Node16/ESM).
+- **Zod shared:** SDK depends on `zod@^4.3.6`, same as our project — deduped cleanly, no version conflict.
+- **No peer dependency issues:** `npm ls` shows no ERR/WARN/invalid entries.
+
+**Spike Isolation Changes:**
+- Added `"src/spike"` to `tsconfig.json` `exclude` array — spike code won't be compiled into `dist/` by `npm run build`.
+- `package.json` `files` field already limits npm package to `dist/`, `.github/hooks/`, `.github/plugin/` — spike code can never ship.
+- `vitest.config.ts` uses `include: ['src/**/*.test.ts']` — spike tests would only run if placed in `.test.ts` files, which is fine for PoC exploration.
+
+**Security Notes:**
+- `npm audit` shows 3 vulnerabilities (2 moderate, 1 high) in SDK transitive deps: `hono` (cookie/path traversal/IP matching issues) and `@hono/node-server` (middleware bypass). These are in the Hono web framework used internally by `@github/copilot` — not directly exploitable in our hook/MCP usage pattern but worth tracking for SDK updates.
+
+**Files Modified:** `tsconfig.json` (added spike exclusion), `package.json` + `package-lock.json` (SDK dependency added)
+
+### 2026-04-23: Phase 1 Monorepo Restructuring — Graham's Foundation
+
+**Context:** Cairn monorepo foundational restructuring by Graham (Lead).
+
+**Monorepo Architecture:**
+- **`packages/types`** (`@cairn/types`) — Shared contract types (bridge events, decisions, DBOM, session identity)
+- **`packages/cairn`** (`@akubly/cairn`) — Existing Cairn observability, MCP tools, plugin infrastructure
+- **`packages/forge`** (`@cairn/forge`) — Forge runtime scaffold (SDK integration, deterministic execution)
+
+**Type Governance:** Shared types in `@cairn/types`. Internal types (CairnEvent, agent types, prescription lifecycle) remain in cairn. Cairn re-exports shared types for backward compatibility.
+
+**Build Discipline:** Root `tsconfig.json` with project references. `tsc --build` enforces correct order: types → cairn, types → forge. All 427 tests pass. Clean build, zero logic changes.
+
+**Impact for Gabriel:** The monorepo structure enables infrastructure separation — hook infrastructure stays in cairn (close to MCP tools), but Forge runtime can have independent tooling chains. This pattern keeps infra concerns decoupled and scalable as phases progress.
+
+**Next Phase:** Phase 2 (live runtime verification) validates type contracts during SDK harness integration.

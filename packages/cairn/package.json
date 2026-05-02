@@ -1,0 +1,54 @@
+{
+  "name": "@akubly/cairn",
+  "version": "0.2.0",
+  "description": "Cairn — an agentic software engineering platform. Built stone by stone. Showing the way.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "cairn": "dist/cli.js",
+    "cairn-mcp": "dist/mcp/server.js"
+  },
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "lint": "eslint src/",
+    "clean": "rimraf dist coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT",
+  "author": "akubly",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akubly/stunning-adventure.git"
+  },
+  "keywords": [
+    "cairn",
+    "agentic",
+    "copilot",
+    "copilot-plugin",
+    "mcp",
+    "model-context-protocol",
+    "software-engineering",
+    "cli"
+  ],
+  "dependencies": {
+    "@akubly/types": "*",
+    "@github/copilot-sdk": "^0.2.2",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^12.8.0",
+    "yaml": "^2.8.3",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.5.0",
+    "vitest": "^4.1.2"
+  }
+}
