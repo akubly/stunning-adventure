@@ -3570,6 +3570,51 @@ export interface GrowthSummary {
 
 ```typescript
 server.registerTool('list_prescriptions', {
+```
+
+---
+
+### 2026-05-02: Phase 4.5 Architecture — Local Feedback Loop
+
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-02  
+**Type:** Architecture  
+**Status:** Proposed
+
+Phase 4.5 introduces the Local Feedback Loop — a profile-guided optimization engine that runs entirely on local SQLite. Sessions produce telemetry → collectors aggregate signals → prescribers generate optimization hints → the applier writes improved SKILL.md v2 artifacts.
+
+**Key Decisions:**
+
+#### ADR-P4.5-001: Collectors as HookObservers, not a separate event bus
+Telemetry collectors implement `HookObserver` and register via `ForgeSession.addObserver()`. No separate telemetry pipeline. Collectors see the same event stream as decision gates. O(1) per event, defer analysis to flush.
+
+#### ADR-P4.5-002: Three tables, not one universal signal table
+Separate `signal_samples`, `execution_profiles`, and `optimization_hints` tables. Each has different access patterns and indexes. Same reasoning as Phase 4's separate `dbom_artifacts`/`dbom_decisions`.
+
+#### ADR-P4.5-003: TTL and row caps enforced by Curator, not DB triggers
+7-day TTL and 10K row cap on `signal_samples` managed by Curator's existing sweep mechanism. Consistent with existing patterns, avoids synchronous trigger overhead on INSERT.
+
+#### ADR-P4.5-004: Fixed drift weights, not learned
+Drift signal weights are constants (convergence: 0.30, toolEntropy: 0.25, tokenPressure: 0.15, contextBloat: 0.15, promptStability: 0.15). Determinism signals get 70% total weight per Aaron's "Determinism > Token Cost" constraint.
+
+#### ADR-P4.5-005: FeedbackSource as new shared type
+`FeedbackSource` added to `@akubly/types`. First new shared type since Phase 2. Justified: both Forge (session start) and Cairn (Curator) consume this contract.
+
+#### ADR-P4.5-006: Manual loop trigger in Forge, Curator-driven in Cairn
+Forge is the development tool (human in loop). Cairn is autonomous (Curator decides). Shared analysis logic, two trigger paths.
+
+#### ADR-P4.5-007: Determinism > Token Cost ordering
+All prescriber priority, drift weights, and optimization ordering enforces determinism first. Token optimizer gates on drift level — won't prescribe if drift is RED. This is Aaron's design constraint, not a decision.
+
+**Impact:**
+- **New files:** `packages/forge/src/telemetry/` (6 files), `packages/forge/src/prescribers/` (4 files), `packages/forge/src/applier/` (3 files), `packages/cairn/src/db/migrations/011-telemetry-feedback.ts`, 3 new CRUD modules
+- **Modified files:** `packages/cairn/src/db/schema.ts`, `packages/forge/src/index.ts`, `packages/types/src/index.ts` (FeedbackSource)
+- **Estimated LOC:** ~1200 production + ~600-800 tests
+- **Estimated tests:** 61-80
+
+**Specification:**
+- Full spec: `docs/forge-phase4.5-spec.md`
+- Roadmap (4.6/5): `docs/forge-phase5-roadmap.md`
   title: 'List Prescriptions',
   description:
     'List improvement suggestions the Prescriber has generated from detected patterns. ' +

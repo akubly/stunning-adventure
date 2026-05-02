@@ -29,6 +29,34 @@
 
 <!-- Append new learnings below -->
 
+### 2026-05-02: Phase 4.5 Architecture — Local Feedback Loop + Phase 5 Roadmap
+
+**Specifications:**
+- `docs/forge-phase4.5-spec.md` (full implementation spec)
+- `docs/forge-phase5-roadmap.md` (Phase 4.6/5 roadmap + wild cards)
+
+**Architecture decisions:**
+- **Spec partitioning:** Two documents, not one. Phase 4.5 gets a full implementation spec (ready for coding). Phase 4.6/5/wild cards get a lighter roadmap. Prior phases each got one spec, but this scope spans multiple future phases with different readiness levels.
+- **Three new modules in Forge:** `telemetry/` (collectors + drift + aggregator + sink), `prescribers/` (prompt + token optimizer), `applier/` (optimizer + self-tuning). Follows established module-per-concern pattern.
+- **80% infrastructure reuse confirmed:** Prescriber interface, prescription lifecycle states, Curator aggregation pattern, DBOM persistence, export pipeline — all reused. Phase 4.5 adds new implementations, not new infrastructure.
+- **TelemetrySink abstraction is the Phase 5 bridge:** `LocalDBOMSink` (Phase 4.5, SQLite) and `AppInsightsSink` (Phase 5, cloud) both satisfy `TelemetrySink`. Swap at construction, no runtime changes.
+- **FeedbackSource graduated to shared types:** First new `@akubly/types` addition since Phase 2. Justified by bidirectional consumption (Forge reads profiles, Cairn's Curator reads for sweep decisions).
+- **Drift score formula:** Weighted sum of 5 signals. Determinism signals get 70% total weight (convergence 0.30 + toolEntropy 0.25 + promptStability 0.15). Cost signals get 30%. Aaron's "Determinism > Token Cost" constraint baked into the weights.
+- **Collectors as HookObservers:** No separate event bus. Collectors see the same CairnBridgeEvent stream as decision gates. O(1) per event, defer analysis to flush.
+- **Three-phase ancestry roadmap:** Phase 4.5 = linear provenance (parent_prescription_id). Phase 4.6 = change vector learning. Phase 5 = full DAG + genetic programming. Each phase is prerequisite data for the next.
+- **Canary bootstrap for cold start:** Gradual ramp prevents prescribing from insufficient data. 0 sessions → defaults only, 3+ → prompt optimizer, 5+ → token optimizer, 10+ → auto-apply.
+
+**Key file paths:**
+- Phase 4.5 spec: `docs/forge-phase4.5-spec.md`
+- Phase 5 roadmap: `docs/forge-phase5-roadmap.md`
+- Telemetry module: `packages/forge/src/telemetry/` (6 files)
+- Prescribers module: `packages/forge/src/prescribers/` (4 files)
+- Applier module: `packages/forge/src/applier/` (3 files)
+- DB migration: `packages/cairn/src/db/migrations/011-telemetry-feedback.ts`
+- DB CRUD: `packages/cairn/src/db/{signalSamples,executionProfiles,optimizationHints}.ts`
+
+**Brainstorm distillation pattern:** 2 rounds × 10 agents = massive input. Spec writing is lossy compression — the goal is to capture every decision and constraint while discarding exploration that didn't converge. Aaron's explicit decisions are spec constraints, not suggestions.
+
 ### 2026-05-01: Phase 4 Architecture — Export Pipeline
 
 **Decision document:** `.squad/decisions.md` (merged from inbox)  

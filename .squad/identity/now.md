@@ -1,20 +1,46 @@
 ---
-updated_at: 2026-04-30T07:30:00Z
-focus_area: Phase 4 COMPLETE — Export Pipeline, 388 Forge tests, 826 total
+updated_at: 2026-05-02T12:00:00Z
+focus_area: Phase 4.5 SPECIFIED — Local Feedback Loop (telemetry, prescribers, applier, 3 new tables)
 active_issues:
   - "Phase 1: Monorepo restructuring ✅ COMPLETE"
   - "Phase 2: Live runtime verification ✅ COMPLETE (5/5 modules)"
   - "Phase 3: CopilotClient Integration ✅ COMPLETE (7 modules, 289 tests, 9-persona review)"
   - "Phase 4: Export Pipeline ✅ COMPLETE (export/, DBOM persistence, 826 tests)"
-  - "Phase 5: PGO Telemetry — DEFERRED (Azure budget + data protection prerequisites)"
-  - "Local Feedback Loop — NEXT: design a local PGO cycle for prompt determinism + token efficiency (no cloud dependency)"
+  - "Phase 4.5: Local Feedback Loop — SPECIFIED (docs/forge-phase4.5-spec.md) — NEXT FOR IMPLEMENTATION"
+  - "Phase 4.6: Change Vector Learning — ROADMAP (docs/forge-phase5-roadmap.md)"
+  - "Phase 5: Cloud PGO + Full Graph — ROADMAP (docs/forge-phase5-roadmap.md, Azure budget prerequisite)"
   - "#11 — Worktree-aware sessions (deferred)"
   - "awesome-copilot submission (deferred)"
 ---
 
 # What We're Focused On
 
-**Phase 1: Monorepo Foundation** — ✅ COMPLETE (SUCCESS)
+**Phase 4.5: Local Feedback Loop** — SPECIFIED, ready for implementation
+
+Branch: TBD (branch from `main` after Phase 4 merge)
+
+Graham distilled the 2-round Phase 4.5 brainstorm (10 agents) into two spec documents:
+- `docs/forge-phase4.5-spec.md` — Full implementation spec for the local PGO engine
+- `docs/forge-phase5-roadmap.md` — Roadmap for Phase 4.6 (change vector learning), Phase 5 (cloud PGO), and wild cards
+
+**Phase 4.5 delivers:**
+- 3 new modules: `telemetry/` (5 files), `prescribers/` (4 files), `applier/` (3 files)
+- DB migration 011: `signal_samples`, `execution_profiles`, `optimization_hints` tables
+- Drift score computation (5 weighted signals, GREEN/YELLOW/RED classification)
+- 2 new prescribers: prompt optimizer + token optimizer
+- Optimization applier with SKILL.md v2 frontmatter extensions
+- Self-tuning strategy parameters
+- ~1200 LOC production, ~600-800 LOC tests, 61-80 estimated tests
+
+**Key design decisions:**
+- Determinism > Token Cost (Aaron's constraint — pervades all weights and priorities)
+- Collectors as HookObservers (no separate event bus)
+- Manual loop trigger in Forge, Curator-driven in Cairn
+- TelemetrySink abstraction bridges Phase 4.5 (LocalDBOMSink) → Phase 5 (AppInsightsSink)
+- FeedbackSource as new shared type in @akubly/types (first new shared type since Phase 2)
+- Canary bootstrap for cold start (gradual ramp from 0 → 3 → 5 → 10 sessions)
+
+**Work decomposition:** 4 streams. Alexander owns DB (6 items), Roger owns telemetry (7 items), Rosella owns prescribers + applier (8 items), Laura owns integration tests (5 items). 5 waves of parallelism.
 
 Branch: `main`
 
