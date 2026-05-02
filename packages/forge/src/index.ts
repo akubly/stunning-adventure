@@ -99,6 +99,60 @@ export {
   type QualityGateResult,
 } from "./export/index.js";
 
+// --- Telemetry (Phase 4.5 local feedback loop) ---
+export {
+  createDriftCollector,
+  createTokenCollector,
+  createOutcomeCollector,
+  computeDriftScore,
+  classifyDriftLevel,
+  DRIFT_WEIGHTS,
+  createLocalDBOMSink,
+  aggregateSignals,
+  type DriftCollector,
+  type TokenCollector,
+  type OutcomeCollector,
+  type TelemetryCollector,
+  type DriftScore,
+  type DriftLevel,
+  type DriftSignals,
+  type LocalDBOMSink,
+  type LocalDBOMSinkConfig,
+  type AggregationResult,
+  type SignalKind,
+  type SignalSample,
+  type TelemetryEvent,
+  type ExecutionProfile,
+  type ProfileGranularity,
+} from "./telemetry/index.js";
+
+// --- Prescribers (Phase 4.5) ---
+export {
+  analyzePromptOptimizations,
+  analyzeTokenOptimizations,
+  type PromptOptimizerConfig,
+  type TokenOptimizerConfig,
+  type MetricSnapshot,
+  type OptimizationCategory,
+  type OptimizationEvidence,
+  type OptimizationHint,
+  type PrescriberResult,
+} from "./prescribers/index.js";
+
+// --- Applier (Phase 4.5) ---
+export {
+  applyOptimizations,
+  DEFAULT_STRATEGY_PARAMS,
+  DEFAULT_BUDGET_LIMIT_NANO_AIU,
+  tuneParameters,
+  type ApplierConfig,
+  type AppliedOptimization,
+  type OptimizationApplierResult,
+  type SkillFrontmatterPatch,
+  type StrategyParameters,
+  type TuneContext,
+} from "./applier/index.js";
+
 // --- Types (SDK mirrors) ---
 export type {
   SessionHooks,

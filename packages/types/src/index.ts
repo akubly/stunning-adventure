@@ -119,3 +119,140 @@ export interface TelemetrySink {
   flush?(): Promise<void>;
   close?(): Promise<void>;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 4.5 — Feedback loop contracts
+//
+// First new shared types since Phase 2. These are the cross-package contract
+// for the local feedback loop: TelemetrySink (above) is the write side,
+// FeedbackSource (below) is the read side. ExecutionProfile and
+// ProfileGranularity are the shared aggregation shape.
+//
+// OptimizationHint and StrategyParameters are intentionally open-shaped here
+// — concrete prescriber implementations (in @akubly/forge) extend them with
+// prescriber-specific fields without a churn-prone shared schema.
+// ---------------------------------------------------------------------------
+
+/** Granularity at which an execution profile aggregates samples. */
+export type ProfileGranularity = 'per-skill' | 'per-user' | 'per-model' | 'global';
+
+/**
+ * Streaming quantile sketch for drift values.
+ *
+ * Uses a fixed 100-bucket histogram of [0, 1] (drift is normalized). Bucket i
+ * holds the count of samples in [i/100, (i+1)/100). p50/p95 are computed by
+ * walking the cumulative count. Backward-compatible: optional + tolerated
+ * absence by readers (they fall back to per-batch percentiles).
+ */
+export interface DriftSketch {
+  /** Bucket counts (length 100, summing to `count`). */
+  buckets: number[];
+  /** Total samples observed across all aggregations. */
+  count: number;
+}
+
+/** Per-signal mean components surfaced to prescribers. */
+export interface ProfileSignals {
+  convergence: number;
+  tokenPressure: number;
+  toolEntropy: number;
+  contextBloat: number;
+  promptStability: number;
+}
+
+/** Aggregated execution profile for a skill at a given granularity. */
+export interface ExecutionProfile {
+  skillId: string;
+  granularity: ProfileGranularity;
+  granularityKey: string;
+  sessionCount: number;
+  drift: {
+    mean: number;
+    p50: number;
+    p95: number;
+    trend: 'improving' | 'stable' | 'degrading';
+    /** Streaming sketch — present when the aggregator has seen ≥1 drift sample. */
+    sketch?: DriftSketch;
+  };
+  tokens: {
+    meanInputTokens: number;
+    meanOutputTokens: number;
+    meanCacheHitRate: number;
+    totalCostNanoAiu: number;
+  };
+  outcomes: {
+    successRate: number;
+    meanConvergenceTurns: number;
+    toolErrorRate: number;
+  };
+  /**
+   * Per-signal means surfaced for targeted prescription. Populated from
+   * drift sample metadata. Optional for backward compatibility — older
+   * profiles persisted before this field landed will simply omit it.
+   */
+  signals?: ProfileSignals;
+  updatedAt: string;
+}
+
+/**
+ * A prescriber-generated optimization hint. Open-shaped: prescribers in
+ * @akubly/forge define the concrete fields (category, description, payload).
+ */
+export interface OptimizationHint {
+  id: string;
+  source: string;
+  skillId: string;
+  category: string;
+  description: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Self-tuning strategy parameters for a skill. Open-shaped: concrete
+ * parameter sets are defined per-strategy by the consumer.
+ */
+export interface StrategyParameters {
+  [key: string]: unknown;
+}
+
+/**
+ * Read-side complement to {@link TelemetrySink}. The Forge runtime consults
+ * a FeedbackSource at session start to load the latest profile and apply
+ * pending optimizations.
+ */
+export interface FeedbackSource {
+  /**
+   * Get the execution profile for a skill (null if none yet aggregated).
+   *
+   * Profiles are stored under a composite key of
+   * `(skill_id, granularity, granularity_key)`, so callers must supply the
+   * granularity key whenever they want a non-global profile. For example:
+   *   - `granularity: 'per-user'`  → `granularityKey` is the user id
+   *   - `granularity: 'per-model'` → `granularityKey` is the model id
+   *   - `granularity: 'per-skill'` or `'global'` → key defaults to `'global'`
+   *
+   * @param skillId        The skill whose profile to load.
+   * @param granularity    Aggregation tier (defaults to `'global'`).
+   * @param granularityKey Sub-key within the granularity tier (e.g. user id,
+   *                       model id). Defaults to `'global'` when the tier is
+   *                       `'per-skill'` or `'global'`. Required to address
+   *                       per-user / per-model profiles.
+   */
+  getProfile(
+    skillId: string,
+    granularity?: ProfileGranularity,
+    granularityKey?: string,
+  ): ExecutionProfile | null;
+  /**
+   * Get pending optimization hints for a skill. Hints are keyed by skill
+   * only (no granularity dimension in the underlying store), so no
+   * granularity parameters are required here.
+   */
+  getPendingHints(skillId: string): OptimizationHint[];
+  /**
+   * Get strategy parameters (self-tuned or default) for a skill. Strategy
+   * parameters are open-shaped and currently scoped per-skill; granularity
+   * dimensions are not modeled in the contract yet.
+   */
+  getStrategyParameters(skillId: string): StrategyParameters;
+}
