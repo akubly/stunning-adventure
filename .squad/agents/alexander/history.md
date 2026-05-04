@@ -63,6 +63,27 @@
 - forge: 556+ passing, 2 todos
 - Phase 4.5 baseline was 990; current total ≈ 1034+ (healthy growth)
 
+## 2026-05-04: Phase 4.6 Cycle 3 — Advisory Fixes (Lockout Round)
+
+**Items completed:** 3 advisory fixes in forge prescribers.
+
+**Item 1 — safeMin guard in computeConfidenceBoost:**
+- `minVectors=0` made the log-denominator `Math.log(1) = 0`, yielding Infinity for vc>0. Added `const safeMin = Math.max(1, minVectors)` before the division; denominator now minimum `Math.log(2)`.
+- Mirrors the identical guard Rosella is placing in cairn's `summarizeChangeVectors`. Pattern: whenever a formula divides by `Math.log(1 + n)`, the `n` must be clamped to ≥1 before use.
+
+**Item 2 — confidenceBoost JSDoc:**
+- Stale comment claimed `<1.0 attenuates`. Wave 1 clamp (`Math.max(1.0, …)`) makes this impossible. Updated JSDoc names both enforcement sites (forge + cairn), defers attenuation explicitly to Wave 2.
+- Lesson: JSDoc on a type field that depends on a runtime invariant should name the code location that enforces the invariant — not just describe the conceptual intent.
+
+**Item 3 — applyHistoricalVectorOrdering DRY extraction:**
+- Identical 8-line two-tier sort block existed in promptOptimizer and tokenOptimizer. tokenOptimizer even had a "Same logic as promptOptimizer" comment — a textbook "extract this" signal.
+- Extracted to `utils.ts` as a pure, exported function. Both prescribers now delegate with one call each, removing 12 lines of duplication.
+- Pattern: when a comment in code says "same as [other place]", treat it as a TODO:extract, not just documentation.
+
+**Build:** forge package clean (`tsc --project packages/forge/tsconfig.json` exit 0). Full monorepo build has a pre-existing error in cairn's `curator.ts:631` (Rosella's work-in-progress, not touched here).
+
+**Commits:** fc897a0, 8f16ad1, 04f02b0
+
 ## Learnings
 
 - Always grep test files for hardcoded schema version numbers after adding a migration. The pattern `toBe(11)` appears in at least 3 test files; it's predictable churn.
