@@ -71,8 +71,14 @@ export interface MetricSnapshot {
   successRate: number;
   convergenceTurns: number;
   cacheHitRate: number;
-  /** profile.sessionCount at snapshot time — required for per-session cost delta in change vectors. */
-  sessionCount: number;
+  /**
+   * profile.sessionCount at snapshot time — required for per-session cost delta in change vectors.
+   * Optional for backward compatibility: snapshots stored before Phase 4.6 cycle 2 will lack
+   * this field. The Curator's sweepChangeVectors handles absence via `?? 0` (treats as no
+   * prior sessions — cost delta falls back to raw cumulative, which is consistent with old behavior).
+   * buildSnapshot() always populates this field for new hints.
+   */
+  sessionCount?: number;
 }
 
 export interface PrescriberResult {
