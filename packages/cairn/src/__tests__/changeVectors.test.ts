@@ -346,7 +346,7 @@ describe('summarizeChangeVectors', () => {
     expect(summary.skillId).toBe('skill-x');
   });
 
-  it('confidence is log-scaled: log(1+vc)/log(1+mv) — equals 1.0 at vectorCount=minVectors', () => {
+  it('confidenceBoost is log-scaled: log(1+vc)/log(1+mv) — equals 1.0 at vectorCount=minVectors', () => {
     const db = getDb();
     const hint1 = insertOptimizationHint(makeHint({ skillId: 'skill-b', category: 'convergence' }));
     const hint2 = insertOptimizationHint(makeHint({ skillId: 'skill-b', category: 'convergence' }));
@@ -358,7 +358,19 @@ describe('summarizeChangeVectors', () => {
     const summary = summarizeChangeVectors(db, 'convergence', 'skill-b', 3);
     // vectorCount=3, minVectors=3 → log(4)/log(4) = 1.0
     expect(summary.vectorCount).toBe(3);
-    expect(summary.confidence).toBeCloseTo(1.0, 10);
+    expect(summary.confidenceBoost).toBeCloseTo(1.0, 10);
+  });
+
+  it('summarizeChangeVectors — confidenceBoost is 1.0 when vectorCount is 0 (matches computeConfidenceBoost(0))', () => {
+    // Phase 4.6 / ADR-P4.6-002: absence of vectors = neutral = identity multiplier.
+    // computeConfidenceBoost(0) in forge returns 1.0; this test locks in the same
+    // contract for the Cairn side without introducing a cross-package import.
+    const db = getDb();
+    const summary = summarizeChangeVectors(db, 'convergence', 'skill-a');
+
+    expect(summary).toMatchObject({ vectorCount: 0, meanNetImpact: 0, confidenceBoost: 1.0 });
+    // Cross-check: the identity value 1.0 is the same value computeConfidenceBoost(0) returns.
+    expect(summary.confidenceBoost).toBe(1.0);
   });
 });
 

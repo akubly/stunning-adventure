@@ -68,7 +68,7 @@ function makeVector(overrides: Partial<ChangeVectorSummary> = {}): ChangeVectorS
     skillId: 'skill-alpha',
     meanNetImpact: 0.25,
     vectorCount: 5,
-    confidence: 1.5, // boost > 1 → confidence is capped to 1
+    confidenceBoost: 1.5, // boost > 1 → hint.confidence is capped to 1
     ...overrides,
   };
 }
@@ -156,7 +156,7 @@ describe('analyzePromptOptimizations — single vector boost', () => {
     const originalConfidence = convBaseline.confidence;
 
     const vectors: ChangeVectorSummary[] = [
-      makeVector({ category: 'convergence', skillId: 'skill-alpha', confidence: 1.4 }),
+      makeVector({ category: 'convergence', skillId: 'skill-alpha', confidenceBoost: 1.4 }),
     ];
     const boosted = analyzePromptOptimizations(profile, undefined, vectors);
     const convBoosted = boosted.hints.find((h) => h.category === 'convergence')!;
@@ -184,7 +184,7 @@ describe('analyzePromptOptimizations — single vector boost', () => {
     if (!baselinePromptStructure) return; // hint may not be emitted for this profile shape
 
     const vectors: ChangeVectorSummary[] = [
-      makeVector({ category: 'convergence', skillId: 'skill-alpha', confidence: 2.0 }),
+      makeVector({ category: 'convergence', skillId: 'skill-alpha', confidenceBoost: 2.0 }),
     ];
     const result = analyzePromptOptimizations(profile, undefined, vectors);
     const afterPromptStructure = result.hints.find((h) => h.category === 'prompt-structure')!;
@@ -239,7 +239,7 @@ describe('analyzePromptOptimizations — edge cases', () => {
     const profile = makeProfile({ skillId: 'skill-alpha' });
     const baseline = analyzePromptOptimizations(profile);
     const vectors: ChangeVectorSummary[] = [
-      makeVector({ category: 'convergence', skillId: 'skill-OTHER', confidence: 2.0 }),
+      makeVector({ category: 'convergence', skillId: 'skill-OTHER', confidenceBoost: 2.0 }),
     ];
     const result = analyzePromptOptimizations(profile, undefined, vectors);
     for (const hint of result.hints) {
@@ -251,24 +251,28 @@ describe('analyzePromptOptimizations — edge cases', () => {
     }
   });
 
-  it('vectorCount === 0 produces confidence boost of 1.0 (no effect on prescriber confidence)', () => {
-    // computeConfidenceBoost(0) = 1.0 → confidence * 1.0 = unchanged
+  it('vectorCount === 0 produces confidenceBoost of 1.0 (no effect on prescriber hint.confidence)', () => {
+    // confidenceBoost: 1.0 → hint.confidence * 1.0 = identity (unchanged).
+    // This locks in the canary-bootstrap protection from Phase 4.5: when there
+    // are no historical vectors yet, prescriber confidence is preserved as-is.
     const profile = makeProfile();
     const baseline = analyzePromptOptimizations(profile);
     const vectors: ChangeVectorSummary[] = [
-      makeVector({ category: 'convergence', skillId: 'skill-alpha', vectorCount: 0, confidence: computeConfidenceBoost(0) }),
+      makeVector({ category: 'convergence', skillId: 'skill-alpha', vectorCount: 0, confidenceBoost: computeConfidenceBoost(0) }),
     ];
     const result = analyzePromptOptimizations(profile, undefined, vectors);
     const convBoosted = result.hints.find((h) => h.category === 'convergence')!;
     const convBase = baseline.hints.find((h) => h.category === 'convergence')!;
-    // confidence × 1.0 = unchanged
+    // confidenceBoost === 1.0 → hint.confidence is exactly the pre-multiplied value (identity)
     expect(convBoosted.confidence).toBeCloseTo(convBase.confidence, 10);
+    // Explicitly: confidenceBoost is 1.0 (computeConfidenceBoost(0))
+    expect(vectors[0]!.confidenceBoost).toBe(1.0);
   });
 
-  it('confidence is capped at 1.0 even when boost factor exceeds 1', () => {
+  it('hint.confidence is capped at 1.0 even when confidenceBoost factor exceeds 1', () => {
     const profile = makeProfile();
     const vectors: ChangeVectorSummary[] = [
-      makeVector({ category: 'convergence', skillId: 'skill-alpha', confidence: 999 }),
+      makeVector({ category: 'convergence', skillId: 'skill-alpha', confidenceBoost: 999 }),
     ];
     const result = analyzePromptOptimizations(profile, undefined, vectors);
     const conv = result.hints.find((h) => h.category === 'convergence')!;
@@ -279,8 +283,51 @@ describe('analyzePromptOptimizations — edge cases', () => {
 });
 
 // ---------------------------------------------------------------------------
-// analyzeTokenOptimizations — backward compatibility
+// ChangeVectorSummary schema regression — confidenceBoost field
 // ---------------------------------------------------------------------------
+
+describe('ChangeVectorSummary schema regression — confidenceBoost field', () => {
+  it('ChangeVectorSummary with explicit confidenceBoost is consumed correctly by prompt prescriber', () => {
+    // If anyone reverts the rename to `confidence`, TypeScript will catch it at
+    // compile-time and this test will fail at runtime. Double-layer regression guard.
+    const summary: ChangeVectorSummary = {
+      category: 'convergence',
+      skillId: 'skill-alpha',
+      meanNetImpact: 0.3,
+      vectorCount: 3,
+      confidenceBoost: 1.2,
+    };
+
+    const profile = makeProfile();
+    const baseline = analyzePromptOptimizations(profile);
+    const result = analyzePromptOptimizations(profile, undefined, [summary]);
+    const convBase = baseline.hints.find((h) => h.category === 'convergence')!;
+    const convBoosted = result.hints.find((h) => h.category === 'convergence')!;
+
+    // summary.confidenceBoost === 1.2 → hint.confidence *= 1.2, capped at 1
+    expect(convBoosted.confidence).toBeCloseTo(Math.min(1, convBase.confidence * 1.2), 5);
+    expect(convBoosted.predictedImpact).toBeCloseTo(0.3, 5);
+  });
+
+  it('ChangeVectorSummary with confidenceBoost: 1.0 leaves hint.confidence exactly unchanged (identity)', () => {
+    const summary: ChangeVectorSummary = {
+      category: 'convergence',
+      skillId: 'skill-alpha',
+      meanNetImpact: 0.1,
+      vectorCount: 0,
+      confidenceBoost: 1.0,
+    };
+
+    const profile = makeProfile();
+    const baseline = analyzePromptOptimizations(profile);
+    const result = analyzePromptOptimizations(profile, undefined, [summary]);
+    const convBase = baseline.hints.find((h) => h.category === 'convergence')!;
+    const convBoosted = result.hints.find((h) => h.category === 'convergence')!;
+
+    // × 1.0 is identity — hint.confidence must be exactly the pre-multiplied value
+    expect(convBoosted.confidence).toBeCloseTo(convBase.confidence, 10);
+  });
+});
 
 describe('analyzeTokenOptimizations — backward compatibility (no vectors)', () => {
   it('omitting historicalVectors produces the same hints as Phase 4.5', () => {
@@ -322,7 +369,7 @@ describe('analyzeTokenOptimizations — single vector boost', () => {
     const originalConfidence = cacheBase.confidence;
 
     const vectors: ChangeVectorSummary[] = [
-      makeVector({ category: 'cache-optimization', skillId: 'skill-alpha', confidence: 1.6, meanNetImpact: 0.3 }),
+      makeVector({ category: 'cache-optimization', skillId: 'skill-alpha', confidenceBoost: 1.6, meanNetImpact: 0.3 }),
     ];
     const result = analyzeTokenOptimizations(profile, undefined, vectors);
     const cacheBoosted = result.hints.find((h) => h.category === 'cache-optimization')!;
@@ -355,7 +402,7 @@ describe('analyzeTokenOptimizations — edge cases', () => {
     });
     const baseline = analyzeTokenOptimizations(profile);
     const vectors: ChangeVectorSummary[] = [
-      makeVector({ category: 'cache-optimization', skillId: 'skill-DIFFERENT', confidence: 5.0 }),
+      makeVector({ category: 'cache-optimization', skillId: 'skill-DIFFERENT', confidenceBoost: 5.0 }),
     ];
     const result = analyzeTokenOptimizations(profile, undefined, vectors);
     for (const hint of result.hints) {
@@ -373,7 +420,7 @@ describe('analyzeTokenOptimizations — edge cases', () => {
       tokens: { meanInputTokens: 1_000, meanOutputTokens: 100, meanCacheHitRate: 0.05, totalCostNanoAiu: 100_000 },
     });
     const vectors: ChangeVectorSummary[] = [
-      makeVector({ category: 'cache-optimization', skillId: 'skill-alpha', confidence: 10 }),
+      makeVector({ category: 'cache-optimization', skillId: 'skill-alpha', confidenceBoost: 10 }),
     ];
     const result = analyzeTokenOptimizations(redProfile, undefined, vectors);
     expect(result.hints).toEqual([]);
