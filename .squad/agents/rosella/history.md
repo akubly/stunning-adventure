@@ -132,6 +132,59 @@ rename has already landed, which is why the type errors surface. Expected mid-fl
   The `computeConfidenceBoost` function is intentionally neutral when vectorCount ≤ 0
   (returns 1.0) — Wave 2 can add a penalty multiplier path without changing the signature.
 
+---
+
+## Learnings — Phase 4.6 Cycle 2 Code Panel Review (2026-05-03)
+
+**What the cycle-1 panel review surfaced:**
+The 15-finding panel review exposed a cluster of correctness issues in the change-vector
+sweep that would have produced materially wrong net_impact values once the system ran
+in production. The main patterns:
+
+1. **Cumulative vs per-session confusion.** `deltaCost` was computed as
+   `profile.token_total_cost - snapshot.tokenCostNanoAiu` — both cumulative totals.
+   As more sessions accumulate, `token_total_cost` grows monotonically even when
+   per-session cost is flat or improving. The delta would always trend positive
+   (appearing worse) the longer a hint was observed. Panel caught this; I hadn't
+   because the test fixtures used fixed values where cumulative == per-session.
+   **Lesson:** delta computations on cumulative metrics need normalization. Always
+   ask "is this field an accumulator or a rate?"
+
+2. **The confidence cliff.** `log(1+vc)/log(1+min)` with vc=1, min=3 returns ~0.5.
+   So 1 vector = half confidence. That *halves* the hint's influence — the opposite
+   of "positive boost only." The clamp to `Math.max(1.0, …)` was the obvious fix
+   once named, but it took the panel to name it. **Lesson:** test sparse-evidence
+   behavior explicitly, not just the saturated case.
+
+3. **The read-check-then-insert TOCTOU.** The original guard was
+   `getChangeVectorsByHintId(); if (existing.length > 0) continue;` followed by
+   an insert. Not atomic. The UNIQUE(hint_id) constraint + INSERT OR IGNORE is the
+   correct fix — it delegates idempotence to the DB where it belongs.
+
+4. **Single counter hiding four skip reasons.** `vectorsComputed: number` was
+   opaque. You couldn't tell if sweeps were doing nothing because all hints were
+   already computed vs. nothing had enough sessions vs. all snapshots were malformed.
+   **Lesson:** diagnostic counters on background sweeps should be structured from
+   the start, especially when the sweep has multiple independent skip conditions.
+
+**Coordination challenges during fix:**
+
+- **Lockout routing added cognitive overhead.** I fixed Alexander's code (curator.ts,
+  changeVectors.ts, migration 012); Alexander fixed mine (utils.ts, prescribers). This
+  meant reading and understanding code I didn't write under time pressure. The upside:
+  you catch things the author missed because you don't have their blind spots.
+
+- **sessionCount optionality was a non-trivial build decision.** Making
+  `MetricSnapshot.sessionCount` required broke Laura's test fixtures at build time.
+  The correct call was `optional` — but it took a failed build to surface the question.
+  Filed decision doc: `rosella-phase4.6-cycle2-sessioncount-optional.md`.
+
+- **DEFAULT_MIN_SESSIONS cross-package coordination.** Both cairn (changeVectors.ts)
+  and forge (prescribers/utils.ts) use `?? 3` / `= 3` defaults. I defined the constant
+  in cairn and left a note for Alexander to mirror or import. Since cairn can't import
+  from forge, mirroring is the safe call. A shared `@akubly/types` home for this constant
+  is a future-Phase 5 option if a third consumer appears.
+
 
 
 **Findings Fixed:** F3 (budgetContext), F6b (signal entropy consumption), F9 (buildSnapshot utility), F10 (adaptive exploration).
