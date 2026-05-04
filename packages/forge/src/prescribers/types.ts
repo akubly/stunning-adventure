@@ -20,7 +20,12 @@ export interface ChangeVectorSummary {
   skillId: string;
   meanNetImpact: number;
   vectorCount: number;
-  /** Log-scaled confidence boost multiplier (1.0 when no vectors observed — neutral; >1.0 amplifies; <1.0 attenuates). */
+  /**
+   * Log-scaled confidence boost multiplier.
+   * Wave 1: clamped to ≥ 1.0 by computeConfidenceBoost (forge) and summarizeChangeVectors (cairn).
+   * Negative-impact attenuation is deferred to Wave 2 per Aaron's policy.
+   * >1.0 amplifies hint confidence; 1.0 is identity (no change).
+   */
   confidenceBoost: number;
 }
 
