@@ -379,6 +379,15 @@ describe('TelemetrySink interface', () => {
 // Alexander added ChangeVectorSummary to the forge root index.ts so that Cairn
 // (and other consumers) can import it from '@akubly/forge' without reaching into
 // internal prescribers paths. This test verifies the export exists at runtime.
+//
+// IMPORTANT — relative path, not package name:
+//   We import from '../index.js' (the source file) rather than '@akubly/forge'
+//   (the package name) to avoid a workspace self-resolution chicken-and-egg
+//   problem: package.json#main/types point at 'dist/', which doesn't exist until
+//   after `tsc --build` completes — making the package name unresolvable during
+//   the build itself. Importing from the source path tests exactly the same
+//   contract (symbol is re-exported from the root index.ts) without requiring
+//   a pre-built dist/ directory.
 // ---------------------------------------------------------------------------
 
 describe('ChangeVectorSummary — root re-export smoke test', () => {
@@ -386,7 +395,8 @@ describe('ChangeVectorSummary — root re-export smoke test', () => {
     // Dynamic import to verify the shape exists at the module boundary.
     // TypeScript's `import type` is erased at runtime; we use a value import here
     // to confirm the module resolves correctly and the prescribers barrel works.
-    const forgeModule = await import('@akubly/forge');
+    // Relative path used to avoid workspace self-resolution issue (see block comment above).
+    const forgeModule = await import('../index.js');
 
     // ChangeVectorSummary is a type-only export — it has no runtime value.
     // The smoke test verifies that importing from the root does NOT throw (i.e.,
@@ -403,26 +413,23 @@ describe('ChangeVectorSummary — root re-export smoke test', () => {
   it('a value conforming to ChangeVectorSummary has the expected shape', () => {
     // This is a compile-time + runtime shape test.
     // TypeScript will error here if ChangeVectorSummary's shape changes.
-    const summary: import('@akubly/forge').ChangeVectorSummary = {
+    // Relative path used to avoid workspace self-resolution issue (see block comment above).
+    const summary: import('../index.js').ChangeVectorSummary = {
       category: 'convergence',
       skillId: 'skill-test',
-      sampleSize: 5,
-      avgDeltaDrift: -0.1,
-      avgDeltaCost: -5_000,
-      avgDeltaSuccessRate: 0.05,
-      avgDeltaConvergence: -1,
-      avgDeltaCacheHit: 0.02,
-      confidence: 0.85,
-      netImpact: 0.7,
+      meanNetImpact: 0.7,
+      vectorCount: 5,
+      confidenceBoost: 1.2,
     };
 
     expect(summary).toHaveProperty('category', 'convergence');
     expect(summary).toHaveProperty('skillId', 'skill-test');
-    expect(summary).toHaveProperty('sampleSize', 5);
-    expect(summary).toHaveProperty('confidence');
-    expect(summary).toHaveProperty('netImpact');
+    expect(summary).toHaveProperty('meanNetImpact', 0.7);
+    expect(summary).toHaveProperty('vectorCount', 5);
+    expect(summary).toHaveProperty('confidenceBoost');
     expect(typeof summary.category).toBe('string');
-    expect(typeof summary.confidence).toBe('number');
-    expect(typeof summary.netImpact).toBe('number');
+    expect(typeof summary.meanNetImpact).toBe('number');
+    expect(typeof summary.vectorCount).toBe('number');
+    expect(typeof summary.confidenceBoost).toBe('number');
   });
 });
