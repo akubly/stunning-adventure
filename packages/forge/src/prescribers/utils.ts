@@ -13,7 +13,7 @@
 
 import { classifyDriftLevel } from "../telemetry/drift.js";
 import type { ExecutionProfile } from "../telemetry/types.js";
-import type { MetricSnapshot } from "./types.js";
+import type { MetricSnapshot, OptimizationHint } from "./types.js";
 
 /** Minimum observed vectors for baseline confidence saturation. Mirrored in cairn/changeVectors.ts — keep in sync. */
 export const DEFAULT_MIN_SESSIONS = 3;
@@ -51,5 +51,22 @@ export function buildSnapshot(profile: ExecutionProfile): MetricSnapshot {
  */
 export function computeConfidenceBoost(vectorCount: number, minVectors: number = DEFAULT_MIN_SESSIONS): number {
   if (vectorCount <= 0) return 1.0;
-  return Math.max(1.0, Math.log(1 + vectorCount) / Math.log(1 + minVectors));
+  const safeMin = Math.max(1, minVectors);
+  return Math.max(1.0, Math.log(1 + vectorCount) / Math.log(1 + safeMin));
+}
+
+/**
+ * Apply historical-vector-informed two-tier ordering to a hint list.
+ * Hints with matching ChangeVectorSummary (predictedImpact assigned) come first,
+ * sorted by predictedImpact desc. Unmatched hints follow in their original
+ * impactScore-desc order.
+ *
+ * Pure function — does not mutate input.
+ */
+export function applyHistoricalVectorOrdering(hints: OptimizationHint[]): OptimizationHint[] {
+  const matched = hints.filter((h) => h.predictedImpact !== undefined);
+  const unmatched = hints.filter((h) => h.predictedImpact === undefined);
+  matched.sort((a, b) => (b.predictedImpact ?? 0) - (a.predictedImpact ?? 0));
+  unmatched.sort((a, b) => b.impactScore - a.impactScore);
+  return [...matched, ...unmatched];
 }
