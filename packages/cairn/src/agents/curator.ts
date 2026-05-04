@@ -530,6 +530,17 @@ export interface ChangeVectorSweepResult {
   skippedMalformedSnapshot: number;
   /** Hints already had a vector (idempotent skip via INSERT OR IGNORE). */
   alreadyComputed: number;
+  /**
+   * Hints whose cost delta was set to 0 because the snapshot predates per-session
+   * cost normalization (Phase 4.5 and earlier — no sessionCount in snapshot).
+   * Other deltas (drift, success, convergence, cacheHit) are still valid.
+   */
+  legacyCostSkipped: number;
+  /**
+   * Hints where profile.session_count < snapshot.sessionCount (counter reset or
+   * data anomaly). sessions_observed is clamped to 0 in these cases.
+   */
+  sessionCountReset: number;
 }
 
 /**
@@ -540,6 +551,15 @@ export interface ChangeVectorSweepResult {
  * processing loop, fails silently per-hint on malformed snapshots.
  * Idempotent: re-running over already-computed hints is safe; INSERT OR IGNORE
  * on the UNIQUE(hint_id) constraint prevents duplicates.
+ *
+ * **Legacy snapshot handling:** Phase 4.5 and earlier snapshots do not carry a
+ * `sessionCount` field. Without it, per-session cost normalization is impossible —
+ * the snapshot stored cumulative `tokenCostNanoAiu` while the current profile
+ * tracks per-session cost, so a raw subtraction produces a massive spurious
+ * negative delta. When `snapshot.sessionCount` is undefined or <= 0, `deltaCost`
+ * is set to 0 and `result.legacyCostSkipped` is incremented. All other deltas
+ * (drift, success, convergence, cacheHit) are rates/means and remain valid.
+ * Re-applying the hint after a fresh snapshot will produce a complete cost delta.
  *
  * @returns Structured diagnostic counts for this sweep run.
  */
@@ -552,6 +572,8 @@ function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResul
     skippedInsufficientSessions: 0,
     skippedMalformedSnapshot: 0,
     alreadyComputed: 0,
+    legacyCostSkipped: 0,
+    sessionCountReset: 0,
   };
 
   // Scan ALL applied hints — INSERT OR IGNORE handles idempotence.
@@ -596,16 +618,34 @@ function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResul
     // Normalize cost to per-session on both sides to avoid cumulative skew.
     // before: totalCost at snapshot time / sessions at snapshot time
     // after:  totalCost now / sessions now
+    //
+    // Legacy guard: Phase 4.5 and earlier snapshots have no sessionCount.
+    // Their tokenCostNanoAiu is cumulative, not per-session, so computing
+    // afterCostPerSession - beforeCumulative yields a massive spurious negative.
+    // Skip cost delta entirely for these snapshots; other deltas remain valid.
     const snapshotSessionCount = snapshot.sessionCount ?? 0;
-    const afterCostPerSession = profile.token_total_cost / Math.max(1, profile.session_count);
-    const beforeCostPerSession =
-      snapshotSessionCount > 0
-        ? (snapshot.tokenCostNanoAiu ?? 0) / snapshotSessionCount
-        : (snapshot.tokenCostNanoAiu ?? 0);
+    let deltaCost: number;
+    if (snapshotSessionCount <= 0) {
+      deltaCost = 0;
+      result.legacyCostSkipped++;
+      console.warn(
+        `sweepChangeVectors: legacy snapshot for hint ${hint.id} — cost delta skipped (no sessionCount; cumulative cost shape incompatible with per-session normalization)`,
+      );
+    } else {
+      const afterCostPerSession = profile.token_total_cost / Math.max(1, profile.session_count);
+      const beforeCostPerSession = (snapshot.tokenCostNanoAiu ?? 0) / snapshotSessionCount;
+      deltaCost = afterCostPerSession - beforeCostPerSession;
+    }
+
+    const rawSessionsObserved = profile.session_count - snapshotSessionCount;
+    if (rawSessionsObserved < 0) {
+      result.sessionCountReset++;
+    }
+    const sessionsObserved = Math.max(0, rawSessionsObserved);
 
     const deltas = {
       deltaDrift: profile.drift_mean - before.driftScore,
-      deltaCost: afterCostPerSession - beforeCostPerSession,
+      deltaCost,
       deltaSuccessRate: profile.outcome_success_rate - before.successRate,
       deltaConvergence: profile.outcome_mean_convergence - before.convergenceTurns,
       deltaCacheHit: profile.token_mean_cache_hit - before.cacheHitRate,
@@ -627,7 +667,7 @@ function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResul
       deltas.deltaConvergence,
       deltas.deltaCacheHit,
       computeNetImpact(deltas),
-      profile.session_count - snapshotSessionCount,
+      sessionsObserved,
       new Date().toISOString(),
     );
 
