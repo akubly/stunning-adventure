@@ -20,8 +20,8 @@ export interface ChangeVectorSummary {
   skillId: string;
   meanNetImpact: number;
   vectorCount: number;
-  /** Log-scaled confidence boost — computed via `computeConfidenceBoost()`. */
-  confidence: number;
+  /** Log-scaled confidence boost multiplier (1.0 when no vectors observed — neutral; >1.0 amplifies; <1.0 attenuates). */
+  confidenceBoost: number;
 }
 
 export interface OptimizationHint {

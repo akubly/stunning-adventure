@@ -138,7 +138,7 @@ export function analyzePromptOptimizations(
         (v) => v.category === hint.category && v.skillId === hint.skillId,
       );
       if (summary) {
-        hint.confidence = Math.min(1, hint.confidence * summary.confidence);
+        hint.confidence = Math.min(1, hint.confidence * summary.confidenceBoost);
         hint.predictedImpact = summary.meanNetImpact;
       }
     }
