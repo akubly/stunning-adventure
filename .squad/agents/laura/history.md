@@ -257,3 +257,40 @@ Rewrote all contract tests to match `docs/forge-phase4-spec.md` exact API surfac
 - Forge: 512 tests (was 476, +36)
 - Cairn: 478 tests
 - Total: 990 passing across both packages, build clean.
+
+
+### 2026-05-03: Phase 4.6 — Change Vector Learning (Wave 3, L1–L5)
+
+**Session:** 2026-05-03T18:00:00Z  
+**Outcome:** ✅ SUCCESS
+
+**Delivered:** 5 new test files — 75 real tests + 3 todos (across cairn + forge).
+
+| File | Tests | Coverage |
+|------|-------|----------|
+| cairn/__tests__/migration012.test.ts (L1) | 13 real | 012 migration: apply, columns, indices, idempotence |
+| cairn/__tests__/changeVectors.test.ts (L2) | 27 real + 1 todo | computeNetImpact, CHANGE_VECTOR_WEIGHTS pin, CRUD, summarize |
+| orge/__tests__/prescribers-vectors.test.ts (L3) | 24 real + 2 todo | computeConfidenceBoost, prescriber backward compat, ranking |
+| cairn/__tests__/curatorVectors.test.ts (L4) | 11 real | curate() e2e: insert, skip, idempotent, multi-hint, delta/impact |
+| orge/__tests__/weight-consistency.test.ts (L5) | 18 real | DRIFT_WEIGHTS pin + cross-module mirror consistency |
+
+**Final test counts:**
+- Cairn: 528 tests (was 478, +50)
+- Forge: 571 tests (was 512, +59)
+- Total: 1099 passing across both packages
+
+**Key API discoveries:**
+- summarizeChangeVectors(db, category, skillId) returns a SINGLE ChangeVectorSummary, NOT an array. Initial scaffold was wrong; fixed during upgrade.
+- All changeVectors CRUD functions take explicit db: Database.Database as first param (unlike other cairn modules that use getDb() internally). Get the singleton with getDb() (no arg).
+- computeNetImpact NEGATES lower-is-better metrics (drift, cost, convergence). Positive net_impact = improvement. Weights: convergence 0.30, drift 0.25, successRate/cacheHit/cost 0.15 each.
+- curate() sweep queries: pplied hints + profile with granularity='per-skill' AND granularity_key='global' and session_count >= minSessionsObserved.
+
+**Cross-module weight consistency (L5):**
+- Cairn cannot import from Forge (acyclic dep constraint). Alexander mirrored DRIFT_WEIGHTS as CHANGE_VECTOR_WEIGHTS locally.
+- Solution: define EXPECTED_CHANGE_VECTOR_WEIGHTS in the test using DRIFT_WEIGHTS values, assert numeric equality for all 5 keys. No cross-package import needed.
+- Weight mapping: convergence→deltaConvergence (0.30), 	oolEntropy→deltaDrift (0.25), promptStability→deltaSuccessRate (0.15), contextBloat→deltaCacheHit (0.15), 	okenPressure→deltaCost (0.15).
+
+**Defect flagged:**
+- summarizeChangeVectors returns confidence: 0 when ectorCount === 0, but computeConfidenceBoost(0) = 1.0. Inconsistent. See .squad/decisions/inbox/laura-phase4.6-summarize-confidence-zero.md.
+
+**Commit strategy:** 2 commits per spec — Commit 1: L1+L5 (migration + weight consistency); Commit 2: L2+L3+L4 (CRUD + prescribers + curator).
