@@ -26,6 +26,7 @@ export function buildSnapshot(profile: ExecutionProfile): MetricSnapshot {
     successRate: profile.outcomes.successRate,
     convergenceTurns: profile.outcomes.meanConvergenceTurns,
     cacheHitRate: profile.tokens.meanCacheHitRate,
+    sessionCount: profile.sessionCount,
   };
 }
 

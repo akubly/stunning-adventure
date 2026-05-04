@@ -66,10 +66,13 @@ export interface OptimizationEvidence {
 export interface MetricSnapshot {
   driftScore: number;
   driftLevel: string;
+  /** Cumulative total cost (nanoAIU) at snapshot time. Divide by sessionCount for per-session cost. */
   tokenCostNanoAiu: number;
   successRate: number;
   convergenceTurns: number;
   cacheHitRate: number;
+  /** profile.sessionCount at snapshot time — required for per-session cost delta in change vectors. */
+  sessionCount: number;
 }
 
 export interface PrescriberResult {

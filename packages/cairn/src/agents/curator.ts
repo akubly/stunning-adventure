@@ -486,10 +486,13 @@ export function getCuratorStatus(): CuratorStatus {
 
 interface MetricSnapshotShape {
   driftScore?: number;
+  /** Cumulative total cost (nanoAIU) at snapshot time. Divide by sessionCount for per-session cost. */
   tokenCostNanoAiu?: number;
   successRate?: number;
   convergenceTurns?: number;
   cacheHitRate?: number;
+  /** profile.sessionCount at snapshot time — required for per-session cost delta. */
+  sessionCount?: number;
 }
 
 interface AppliedHintRow {
@@ -550,15 +553,24 @@ function sweepChangeVectors(config?: ChangeVectorConfig): number {
 
     const before = {
       driftScore: snapshot.driftScore ?? 0,
-      tokenCostNanoAiu: snapshot.tokenCostNanoAiu ?? 0,
       successRate: snapshot.successRate ?? 0,
       convergenceTurns: snapshot.convergenceTurns ?? 0,
       cacheHitRate: snapshot.cacheHitRate ?? 0,
     };
 
+    // Normalize cost to per-session on both sides to avoid cumulative skew.
+    // before: totalCost at snapshot time / sessions at snapshot time
+    // after:  totalCost now / sessions now
+    const snapshotSessionCount = snapshot.sessionCount ?? 0;
+    const afterCostPerSession = profile.token_total_cost / Math.max(1, profile.session_count);
+    const beforeCostPerSession =
+      snapshotSessionCount > 0
+        ? (snapshot.tokenCostNanoAiu ?? 0) / snapshotSessionCount
+        : (snapshot.tokenCostNanoAiu ?? 0);
+
     const deltas = {
       deltaDrift: profile.drift_mean - before.driftScore,
-      deltaCost: profile.token_total_cost - before.tokenCostNanoAiu,
+      deltaCost: afterCostPerSession - beforeCostPerSession,
       deltaSuccessRate: profile.outcome_success_rate - before.successRate,
       deltaConvergence: profile.outcome_mean_convergence - before.convergenceTurns,
       deltaCacheHit: profile.token_mean_cache_hit - before.cacheHitRate,
@@ -572,7 +584,7 @@ function sweepChangeVectors(config?: ChangeVectorConfig): number {
       insertChangeVector(db, {
         hintId: hint.id,
         deltas,
-        sessionsObserved: profile.session_count,
+        sessionsObserved: profile.session_count - snapshotSessionCount,
         computedAt: new Date().toISOString(),
       });
     })();
