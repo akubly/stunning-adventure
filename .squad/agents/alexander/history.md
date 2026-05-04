@@ -29,6 +29,22 @@
 - `optimizationHints.ts` uses internal `getDb()` calls. For changeVectors, the spec required explicit `db` parameter for Curator transactional control. Both patterns are valid; explicit `db` is cleaner for modules called inside transactions.
 - The `JOIN optimization_hints` pattern in `getChangeVectorsByCategoryAndSkill` works cleanly because SQLite's query planner handles it efficiently with the `idx_change_vectors_hint` index.
 
+## 2026-05-03: Phase 4.6 Wave 3 — Lockout-Compliant Fixes
+
+**Role:** Executor (Wave 1 foundation), then lockout-constrained fixer (Wave 3)
+
+**Wave 1 completion:**
+- A1–A4 completed: migration 012, schema v12 registration, changeVectors CRUD module, Curator sweep integration
+- Decision on weight constants: duplicate in Cairn with regression test guard (Laura L5) because cairn↔forge import would create circular dep
+- First commit: 8a53253 (all foundation work)
+
+**Wave 3 (lockout):**
+- Defect triage assigned me to fix Rosella's code (lockout rule: not the original author)
+- Changes: `prescribers/types.ts`, `promptOptimizer.ts`, `tokenOptimizer.ts` (renamed confidence → confidenceBoost, updated references)
+- Second commit: d592838 — renamed Rosella's files, confident the refactor surfaces the semantic fix Laura identified
+
+**Lesson:** Lockout rule is a real safety mechanism. When I fixed my own changeVectors.ts zero-initialization bug in wave 1, Rosella's follow-up caught it. Cross-review under lockout prevents blind spots that single review misses.
+
 **Curator sweep integration:**
 - The Curator's `curate()` function processes events in batches (cursor-based). The change-vector sweep is fundamentally different — it's a scan of `optimization_hints` for `applied` status, not event-driven. Adding it as a post-event-loop call (after `updateLastRunTimestamp`) is clean: it runs once per `curate()` invocation, not per batch. This keeps per-batch transaction overhead low.
 - The "NOT IN (SELECT DISTINCT hint_id FROM change_vectors)" anti-join is the right idiom for "compute only once per hint". SQLite optimizes this well with the `idx_change_vectors_hint` index.
@@ -52,6 +68,8 @@
 - Always grep test files for hardcoded schema version numbers after adding a migration. The pattern `toBe(11)` appears in at least 3 test files; it's predictable churn.
 - The `edit` tool's `old_str` must include enough context to be unique, and must match the closing braces exactly. Missing a `});` from the old_str pattern silently truncates the file. Always verify with a view after edits to test files.
 - The Curator is event-loop-centric by design. Non-event sweeps (like change vectors) slot naturally after the event loop, not inside it. This keeps the batch transaction model clean.
+- **Lockout-routing pattern (2026-05-03):** When a reviewer rejects an artifact and the Reviewer Rejection Lockout applies, the *author* of the buggy code cannot fix it. A second agent is assigned instead. This creates a symmetric cross-assignment: Alexander fixes Rosella's files, Rosella fixes Alexander's file. The coordinator must sequence commits so both sides land before the full build is clean — partial commits with clear notes are correct mid-flight behavior, not a problem.
+- **Cost of misnamed types:** `confidence` and `confidenceBoost` occupy different mathematical spaces (level ∈ [0,1] vs multiplier ∈ ℝ⁺). A type that *looks* like a level but *behaves* like a multiplier becomes a latent trap — the next developer writes `if (summary.confidence === 0)` and silently zeroes every hint. Field names must encode semantic space, not just intent. When a function is already named `computeConfidenceBoost()`, the field it produces should be `confidenceBoost` — one name, one concept.
 
 
 

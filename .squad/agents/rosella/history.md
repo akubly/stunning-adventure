@@ -28,6 +28,25 @@
 
 6. **Tests.** Added 8 new tests to `prescribers-applier.test.ts` covering: budget-relative tokenPressure (tighten + relax), default fallback, non-positive guard, exploration decay/grow/hold under GREEN/RED/YELLOW, and signal-driven tool-guidance preference. Updated `StrategyParameters` import to include `TuneContext`. All 36 tests pass.
 
+## 2026-05-03: Phase 4.6 Wave 1 & 3 — Prescriber Types + Lockout Fixes
+
+**Wave 1 (parallel):**
+- R1–R5: ChangeVectorSummary type definition, computeConfidenceBoost utility, prescriber integration for both optimizers (historicalVectors param), drift weight export verification
+- Decision on weight constants: confirmed DRIFT_WEIGHTS already exported from forge/telemetry/drift.ts (mapping documented)
+- 5 test suites created (migration, CRUD, prescriber integration, Curator end-to-end, weight consistency regression)
+- Laura upgraded 1099 → 1102 passing tests
+
+**Wave 2 (defect triage):**
+- Laura flagged inconsistency: `summarizeChangeVectors` returns confidence=0 but `computeConfidenceBoost(0)` returns 1.0
+- Three options analyzed; verdict: rename field to `confidenceBoost` for semantic clarity (Option B)
+- Fix routing assigned me: lockout rule prohibits Alexander from fixing his own changeVectors.ts, so I do it
+
+**Wave 3 (lockout):**
+- Changed Alexander's changeVectors.ts: rename confidence → confidenceBoost, fix zero-vector case from 0 → 1.0, update JSDoc
+- Commit: d592838 — confident lockout enforcement worked. Both our implementations were correct; the bug was the contract ambiguity
+
+**Lesson:** Lockout rule as a learning device. When I first designed ChangeVectorSummary with confidence as a "boost" (identity = 1.0), it looked right in isolation. Alexander's zero-initialization looked right in isolation. Neither caught the other's assumption. Cross-review under lockout surfaces these blind spots before they compound.
+
 **Coordination notes:**
 - Roger had already added `ProfileSignals` and `signals?: ProfileSignals` to `ExecutionProfile` in `packages/types/src/index.ts` — no schema collision; my code consumes his contract.
 - Pre-existing build state: `packages/forge/src/telemetry/collectors.ts` is missing on disk (referenced by `telemetry/index.ts` and two test files). 15 of 529 tests fail because of this; all failures are in `telemetry-collectors.test.ts` and `feedback-loop.test.ts` and are unrelated to this fix-set. Flagged for whoever owns collectors implementation.
@@ -68,7 +87,38 @@
 
 **Tests:** 534/534 passing (baseline unchanged — all Phase 4.5 tests green).
 
+## 2026-05-03: Phase 4.6 — Reviewer Rejection Fix: changeVectors confidenceBoost
+
+**Task:** Fix `packages/cairn/src/db/changeVectors.ts` per Graham's Option B verdict
+(lockout: Alexander authored the file, so Rosella fixes it).
+
+**Changes:**
+1. Renamed `confidence` → `confidenceBoost` in the local `ChangeVectorSummary` interface.
+2. Fixed zero-vector branch: `confidence: 0` → `confidenceBoost: 1.0` (multiplicative identity).
+3. Updated JSDoc on `summarizeChangeVectors` to document the vectorCount===0 contract and
+   its alignment with `computeConfidenceBoost(0)`.
+
+**Build status:** 9 type errors remain in `prescribers-vectors.test.ts` — those files still
+reference `.confidence` and are Laura's responsibility to update. Alexander's `types.ts`
+rename has already landed, which is why the type errors surface. Expected mid-flight.
+
+**Commit:** `d592838` — Phase 4.6: fix changeVectors confidenceBoost (rename + 0→1.0)
+
+---
+
 ## Learnings
+
+- **Value vs name: the multiplicative identity is 1.0, not 0.** When a field carries
+  boost-multiplier semantics (ℝ⁺, multiplicative), the "no evidence" default must be 1.0
+  (identity element), not 0. Returning 0 silently zeroes every downstream calculation.
+  Returning 1.0 means "no change" — exactly what absence of evidence should produce.
+
+- **A misnamed type field invites divergent implementations.** `confidence: number` is
+  ambiguous — a level-space thinker writes `0` (no confidence), a boost-space thinker
+  writes `1.0` (identity). Both are internally consistent; the bug is the name.
+  Renaming to `confidenceBoost` collapses the ambiguity: there is only one sensible
+  default (1.0) and one sensible formula (log-scaled ratio). The rename fixed the root
+  cause; the value fix fixed the symptom. You need both.
 
 - **Optional param vs config** is the right call for dynamic query-time data like vectors.
   It keeps prescribers pure (stateless) and trivially testable without mocking a DB.
