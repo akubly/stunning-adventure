@@ -1681,3 +1681,240 @@ Phase 4.5 persona review findings consolidated and resolved across three team me
 
 **Result:** 1,012 total tests passing (Forge 534 + Cairn 478), up from 990 pre-review. Build clean. All persona review findings hardened and deployed.
 
+---
+
+# Phase 4.6 — Cycle 1 Triage (Code Panel Findings)
+
+**Lead:** Graham (Architect)
+**Date:** 2026-05-03
+**Branch:** `squad/phase4.6-change-vectors`
+**Trigger:** 15-finding Code Panel review, Aaron selected squad-mode autonomous triage.
+
+---
+
+## Architectural Decisions
+
+### ADR-P4.6-004: Edit migration 012 in place (Finding #4)
+
+**Decision:** Edit migration 012 to add `UNIQUE(hint_id)` — do NOT create migration 013.
+
+**Rationale:** Migration immutability is a *production safety* convention. Phase 4.6 lives
+on a feature branch with no production data and no downstream consumers of the migration
+sequence. Adding a 013 that only exists to patch a 012 that never shipped creates dead
+weight in the migration history. The sweep should also switch to `INSERT OR IGNORE` to
+rely on the constraint rather than the read-check-then-write pattern.
+
+**Trade-off named:** If another branch concurrently builds on migration 012, this edit
+creates a merge conflict. Risk is low — Phase 4.6 is the only active consumer.
+
+**Alternative rejected:** Migration 013 (immutability convention). Convention exists to
+protect deployed schemas; pre-ship, it's ceremony without safety benefit.
+
+---
+
+### ADR-P4.6-005: Mirror ChangeVectorSummary with regression test (Finding #7)
+
+**Decision:** Do NOT promote `ChangeVectorSummary` to `@akubly/types`. Mirror the type
+in both packages and add a regression test that asserts structural compatibility.
+
+**Rationale:** Same pattern as ADR-P4.6-003 (drift weight mirroring). `OptimizationCategory`
+is a prescriber-internal concept — promoting it to the shared types package couples that
+package to prescriber domain semantics. The regression test (Laura's L5 suite) already
+validates shape; extend it to assert that all category values returned by
+`summarizeChangeVectors` are valid `OptimizationCategory` members.
+
+**Cost lands in:** Phase 4.6 (test addition). Promotion to `@akubly/types` deferred to
+Phase 5 if a third consumer emerges.
+
+**Trade-off named:** Duck-typing can drift silently between releases if the regression test
+is skipped. Mitigation: test runs in CI on every PR.
+
+**Alternative rejected:** Promote to `@akubly/types` now — premature coupling for a
+single cross-package consumer.
+
+---
+
+### ADR-P4.6-006: Ship primitives only; defer runtime wiring (Finding #9)
+
+**Decision:** Ship Phase 4.6 as "primitives only." The Curator sweep, CRUD layer,
+`computeNetImpact`, `summarizeChangeVectors`, and prescriber ranking integration are
+independently testable and correct. Runtime wiring (connecting Curator output to
+prescriber input in the live loop) is deferred to a tracked follow-up issue.
+
+**Rationale:** Phase 4.6 scope was always the computation and ranking primitives.
+Wiring requires runtime orchestration changes (Curator → prescriber pipeline in the
+session lifecycle) that expand scope, risk, and review surface significantly. The
+primitives are the hard part; wiring is mechanical once the contract is stable.
+
+**Trade-off named:** Phase 4.6 code is dormant at runtime until wiring lands. Tests
+prove correctness, but no production validation until the follow-up ships.
+
+**Follow-up issue:**
+- **Title:** `Wire Curator change vectors to prescriber historicalVectors at runtime`
+- **Body:** Phase 4.6 (ADR-P4.6-006) shipped computation primitives and prescriber
+  ranking support, but no production caller passes `historicalVectors` to
+  `analyzePromptOptimizations` / `analyzeTokenOptimizations`. The Curator sweep
+  computes vectors and `summarizeChangeVectors` aggregates them, but nothing in the
+  runtime session lifecycle queries summaries and feeds them to prescribers.
+  Scope: add the orchestration glue in the Curator's periodic sweep or a new
+  runtime hook that queries summaries and passes them to prescriber invocations.
+  Depends on: Phase 4.6 merged.
+
+---
+
+## Per-Finding Triage
+
+| # | Sev | Disposition | Fix Agent | Notes |
+|---|-----|------------|-----------|-------|
+| 1 | 🔴 | **ACCEPT** | Rosella | `deltaCost` uses cumulative `token_total_cost` (monotonic). Normalize to per-session cost before computing delta. Curator.ts is Alexander's code → Rosella fixes per lockout. |
+| 2 | 🟡 | **ACCEPT** | Alexander (utils.ts) + Rosella (changeVectors.ts) | Confidence cliff: `vectorCount=1, minVectors=3` → boost 0.5, which *halves* confidence. Contradicts Wave 1 "positive boost only" policy. Fix: clamp to `Math.max(1.0, log(…)/log(…))` so vectors only amplify, never attenuate. Split across packages per lockout. |
+| 3 | 🟡 | **ACCEPT** | Rosella | `sessionsObserved` stores cumulative `session_count` but migration comment says "between before/after." The proxy was a deliberate decision (see decisions.md §Sessions-Observed Proxy), but column docs are misleading. Fix: update column comment in migration 012 (being edited per ADR-P4.6-004 anyway) to say "cumulative session count at vector computation time." |
+| 4 | 🟡 | **ACCEPT** | Rosella | Add `UNIQUE(hint_id)` to migration 012 per ADR-P4.6-004. Switch sweep to `INSERT OR IGNORE`. Both are Alexander's code → Rosella per lockout. |
+| 5 | 🟡 | **ACCEPT** | Alexander | Sort bug: unmatched hints (predictedImpact undefined → 0) outrank matched hints with negative impact. Fix: partition matched/unmatched; sort matched by predictedImpact desc; append unmatched in original impactScore order. Both optimizers are Rosella's → Alexander per lockout. |
+| 6 | 🟡 | **ACCEPT** | Rosella | `sweepChangeVectors` returns a single counter conflating 4 skip reasons. Add structured diagnostic: `{ eligible, skippedInsufficientSessions, skippedMalformed, alreadyComputed, computed }`. Curator.ts is Alexander's → Rosella per lockout. |
+| 7 | 🟡 | **ACCEPT** | Laura | Per ADR-P4.6-005: add regression test asserting Cairn's `ChangeVectorSummary.category` values are valid `OptimizationCategory` members. Laura owns tests; lockout N/A. |
+| 8 | 🟡 | **ACCEPT** | Alexander | `ChangeVectorSummary` missing from `@akubly/forge` root barrel re-export. Add to the prescribers re-export block in `forge/src/index.ts`. Adjacent to Rosella's module → Alexander per lockout. |
+| 9 | 🟡 | **DEFER** | — | Per ADR-P4.6-006: ship primitives only. Follow-up issue: "Wire Curator change vectors to prescriber historicalVectors at runtime." |
+| 10 | ⚪ | **ACCEPT** | Rosella | `computeNetImpact` inline negations are fragile. Extract named contributions: `const driftContrib = -deltaDrift * weights.deltaDrift;` etc. changeVectors.ts is Alexander's → Rosella per lockout. |
+| 11 | ⚪ | **REJECT** | — | ADR-P4.6-002 explicitly chose the optional positional parameter over a config/options object. Finding contradicts an existing architectural decision. If the pattern proves painful at more call sites, revisit in Phase 5. |
+| 12 | ⚪ | **DEFER** | — | DB injection style (explicit `db` param vs `getDb()`) is a repo-wide convention question, not Phase 4.6 scope. Follow-up issue: "Standardize DB access pattern: explicit injection vs internal getDb()." |
+| 13 | ⚪ | **ACCEPT** | Laura | Describe block says "cross-module weight consistency" but test only validates local `DRIFT_WEIGHTS`. Rename to reflect actual scope; `it.todo` already marks the cross-module aspiration. Laura owns tests; lockout N/A. |
+| 14 | ⚪ | **ACCEPT** | Alexander | `computeConfidenceBoost` re-exported publicly from `prescribers/index.ts` but it's an internal helper (Cairn mirrors the formula, can't import). Drop from public re-export. prescribers/index.ts is Rosella's → Alexander per lockout. |
+| 15 | ⚪ | **ACCEPT** | Alexander (forge) + Rosella (cairn) | Four sites use `?? 3` for minSessions default. Extract `DEFAULT_MIN_SESSIONS = 3` constant. Rosella defines it in cairn's changeVectors.ts (Alexander's code → lockout). Alexander updates forge's utils.ts + optimizers (Rosella's code → lockout). |
+
+---
+
+## Summary
+
+- **Accepted:** 12 findings
+- **Rejected:** 1 (finding #11 — contradicts ADR-P4.6-002)
+- **Deferred:** 2 (findings #9 and #12 — follow-up issues)
+- **Escalated:** 0
+
+### Agent Dispatch
+
+| Agent | Finding #s | Count |
+|-------|-----------|-------|
+| Rosella | 1, 2 (changeVectors.ts), 3, 4, 6, 10, 15 (cairn) | 7 |
+| Alexander | 2 (utils.ts), 5, 8, 14, 15 (forge) | 5 |
+| Laura | 7, 13 | 2 |
+
+### Cycle 2 Concerns
+
+1. **Rosella's load is heavy** (7 items). Findings 1, 3, 4 all touch curator.ts — they
+   should be batched in a single pass to avoid merge churn. Finding 4 (migration edit)
+   and finding 3 (column comment) are the same file change.
+2. **Finding #1 is the only blocker.** Rosella should prioritize it. The deltaCost bug
+   produces materially wrong net_impact values that cascade into ranking.
+3. **Finding #2 (confidence clamp) touches both packages.** Alexander and Rosella must
+   coordinate — the formula change should be identical in both locations.
+4. **Finding #15 (constant extraction) is low-risk but cross-package.** Can be done last.
+
+---
+
+# Decision: Two-Tier Sort Formulation for Matched vs Unmatched Hints (Finding #5)
+
+**Author:** Alexander (SDK/Runtime Dev)
+**Date:** 2026-05-03
+**Branch:** `squad/phase4.6-change-vectors`
+**Finding:** #5 — sort fallback for unmatched hints
+
+---
+
+## Problem
+
+When `historicalVectors` are provided, hints were sorted with:
+
+```ts
+hints.sort((a, b) => (b.predictedImpact ?? 0) - (a.predictedImpact ?? 0));
+```
+
+This conflates two cases:
+- **Unmatched hints** — no summary found; `predictedImpact` remains `undefined`, coerced to `0`.
+- **Matched hints with negative impact** — summary found; `predictedImpact` is set to a negative `meanNetImpact`.
+
+Result: an unmatched hint (0) outranks a matched hint with measured negative impact (e.g., -0.1). This is a behavioral regression — measured-bad evidence is treated as worse than no evidence at all.
+
+---
+
+## Options Considered
+
+### Option A: Stable-sort comparator with undefined as a separate equivalence class
+
+```ts
+hints.sort((a, b) => {
+  const aMatched = a.predictedImpact !== undefined;
+  const bMatched = b.predictedImpact !== undefined;
+  if (aMatched && bMatched) return b.predictedImpact! - a.predictedImpact!;
+  if (aMatched) return -1;  // matched before unmatched
+  if (bMatched) return 1;
+  return b.impactScore - a.impactScore;  // both unmatched: Phase 4.5 order
+});
+```
+
+**Pro:** Single pass, no array copy.  
+**Con:** The four-branch comparator obscures the semantic intent. The sort guarantee for unmatched items requires understanding that `b.impactScore - a.impactScore` preserves Phase 4.5 order *only* when input is already sorted by impactScore — which it is in the current implementation, but that's an implicit assumption.
+
+### Option B: Explicit partition then concatenate ✅ CHOSEN
+
+```ts
+const matched = hints.filter((h) => h.predictedImpact !== undefined);
+const unmatched = hints.filter((h) => h.predictedImpact === undefined);
+matched.sort((a, b) => b.predictedImpact! - a.predictedImpact!);
+unmatched.sort((a, b) => b.impactScore - a.impactScore);
+hints.length = 0;
+hints.push(...matched, ...unmatched);
+```
+
+**Pro:** The invariant is explicit and self-documenting — matched first, unmatched after, each with its own clear sort key. No implicit reliance on pre-existing hint order.  
+**Con:** Two filter passes + two sorts + array reassignment. At the scale of prescriber hints (≤10 items typically), this is not a performance concern.
+
+---
+
+## Decision
+
+**Option B** (explicit partition). The prescriber hint lists are small (≤10 items in typical profiles), so there is no performance argument for a single-pass comparator. The partition approach makes the invariant self-documenting and eliminates the implicit assumption about pre-existing hint order that Option A carries.
+
+**Modified-in-place via `hints.length = 0; hints.push(...)` pattern** instead of returning a new array, because the surrounding code pattern (`const hints: OptimizationHint[] = []`) mutates and returns the same reference — maintaining that pattern avoids any possibility of the result reference diverging.
+
+---
+
+## Impact
+
+- Both `promptOptimizer.ts` and `tokenOptimizer.ts` receive the identical fix.
+- Laura's L3 "ranking with predicted impact" test continues to pass.
+- The new edge case (unmatched-hint vs negative-matched-hint ordering) is covered by Laura's forthcoming addition.
+
+---
+
+# Decision: MetricSnapshot.sessionCount is optional (not required)
+
+**Author:** Rosella (Plugin Dev)
+**Date:** 2026-05-03
+**Branch:** `squad/phase4.6-change-vectors`
+**Context:** Phase 4.6 cycle 2, Finding #1 — deltaCost normalization requires sessionCount in MetricSnapshot.
+
+---
+
+## Decision
+
+`MetricSnapshot.sessionCount` is declared as **optional** (`sessionCount?: number`) rather than required.
+
+## Rationale
+
+1. **Backward compatibility with stored JSON.** `MetricSnapshot` is serialized to `optimization_hints.metric_snapshot` (a JSON column). Hints created before Phase 4.6 cycle 2 will not have `sessionCount` in their stored JSON. Making the field required would silently cause `undefined` at runtime for those rows — worse than a `?? 0` fallback.
+
+2. **Test fixture compatibility.** Laura's test fixtures (`feedback-loop.test.ts`, `prescribers-applier.test.ts`) use inline `metricSnapshot` objects built before this field existed. Making the field required broke the build (2 TS errors). Optional avoids forcing Laura to update fixtures just to unblock the build, while letting her add `sessionCount` values in her cycle-2 test updates naturally.
+
+3. **Safe fallback exists.** `sweepChangeVectors` in curator.ts already handles missing `sessionCount` via `snapshot.sessionCount ?? 0`. When sessionCount is absent, the cost delta falls back to `tokenCostNanoAiu` (raw cumulative, no per-session normalization) — identical to pre-cycle-2 behavior. This is a graceful degradation, not a correctness cliff.
+
+4. **`buildSnapshot()` always populates it.** New hints created after this cycle will always have `sessionCount`, so the fallback only fires for historical data.
+
+## Alternative Rejected
+
+Making `sessionCount: number` required (which was the initial implementation). This caused 2 TypeScript compilation errors in test files owned by Laura. Forcing her to update fixtures just to accommodate my type change violates the "each agent owns their scope" principle and would serialize our parallel work.
+
+## Trade-off
+
+The optional field means the type doesn't enforce the invariant at compile time. Mitigation: `buildSnapshot()` is the only factory for `MetricSnapshot` in production paths, and it always sets `sessionCount`. The `?? 0` fallback is documented in the type JSDoc.
+

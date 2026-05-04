@@ -67,6 +67,33 @@
 
 **Lesson:** When two implementations are internally consistent but the contract is ambiguous (level vs boost semantics), the bug is the naming, not the logic. Renaming surfaces intent.
 
+### Phase 4.6 Review Cycle — 3-Cycle Persona Review (2026-05-04)
+
+**Role:** Cycle 1 Triage Lead (graham-2)
+
+**Cycle 1 Personas (parallel):**
+- 5 persona reviewers ran in parallel
+- Consolidated: 15 findings (1B / 9I / 5M)
+- Blocked issue: deltaCost cumulative bug (blocking on ranking correctness)
+
+**Cycle 1 Triage:**
+- Adopted squad-mode autonomous triage (Aaron selected)
+- 12 findings accepted, 1 rejected (contradicts ADR-P4.6-002), 2 deferred (scope questions)
+- Filed 3 new ADRs (P4.6-004/005/006) documenting scope/trade-offs
+- Applied lockout rule: original author cannot fix their own findings → cross-package coordination
+
+**Cycle 2 Re-Review (correctness-1, skeptic-1, craft-1):**
+- 7/7 + 4 PASS/3 PARTIAL + 6/6 verification
+- 10 advisory findings routed to cycle 3 for remediation
+
+**Cycle 3 Fixes (alexander-3, rosella-3, laura-5):**
+- 1153 tests passing (+163 since baseline 990)
+- Branch review-clean, compliance approved for merge
+
+**Key decision:** ADR-P4.6-006 — Ship primitives only, defer runtime wiring to Wave 2. Rationale: computation hard, wiring mechanical. Separates concerns and unblocks PR.
+
+**Lesson:** Autonomous triage with lockout coordination works for cross-package findings. Each agent owns their scope; review prevents author bias.
+
 ## Key Pattern Inventory
 
 **Installation architecture:** Three broken surfaces (hooks, MCP registration, binaries). Strategy: `npm link` + `cairn install` CLI command.

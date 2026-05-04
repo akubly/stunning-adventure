@@ -124,3 +124,37 @@
 **Defect scan — no production defects found.** All cycle-3 changes (Rosella's legacy snapshot guard, sessions_observed clamp, safeMin in summarizeChangeVectors; Alexander's safeMin in computeConfidenceBoost, applyHistoricalVectorOrdering extraction) were already in place. The view tool returned a cached version of changeVectors.ts that lacked the safeMin guard — Get-Content confirmed the guard was present. Lesson: when a test passes unexpectedly, verify live source with Get-Content, not view.
 
 **Totals: 1153 passing (556 cairn + 597 forge), 4 todos. Baseline was 1133 (+20).**
+
+## 2026-05-04: Phase 4.6 Review Cycle — 3-Cycle Complete
+
+**Role:** Wave 1 test author (L1–L5), Wave 2 defect finder (confidence inconsistency), Wave 3 cycle-3 test & code updates (L3, L4, L5)
+
+**Final Outcome:**
+- 1153 tests passing (baseline 990 + 163 new)
+- Branch review-clean, all persona findings resolved
+- Delivered 20 new tests in cycle 3 (L5)
+
+**Review Cycle Scope:**
+- Cycle 1: 15 findings; L1–L5 tests executed (93 new), 1099 → 1102 passing
+- Cycle 2: Laura flagged `summarizeChangeVectors` confidence=0 vs `computeConfidenceBoost(0)` inconsistency
+  - Analysis: contract ambiguity (level vs boost), not logic error
+  - Verdict (Option B): rename field to `confidenceBoost`, re-opened test as passing
+- Cycle 3: Updated all tests per cycle-1/2 fixes; added 20 edge-case tests (1133 → 1153)
+
+**Cycle 3 Test Additions:**
+- `curatorVectors.test.ts` +6: legacy snapshot handling (deltaCost=0), session count reset clamp
+- `changeVectors.test.ts` +2: safeMin guard at 1, minVectors=0 edge case
+- `weight-consistency.test.ts` +4: computeConfidenceBoost with safeMin
+- `prescribers-vectors.test.ts` +8: applyHistoricalVectorOrdering partition & sort semantics
+- Contracts + naming updates: dropped deprecated `vectorsComputed` alias, reordered shape-guard tests
+
+**Key Pattern (Cycle 1):** Contract-first test architecture paid off. L1–L5 established expected behavior *before* fixes were known. When cycle-1 findings emerged, tests already captured the happy path; adding cycle-2/3 edge cases was incremental, not rework. UNIQUE constraint tests reveal SQLite auto-indexes (filtered out); schema changes require explicit test re-verification.
+
+**Defect Surface (Cycle 2):** The `confidence` field ambiguity exposed a real risk: 
+- Alexander's zero-default was consistent with "confidence level" semantics (0 = no data).
+- Rosella's 1.0 return was consistent with "confidence boost" semantics (1.0 = identity).
+- Without naming discipline, the next developer writes either `if (summary.confidence === 0) hint.skip()` or `hint.confidence *= summary.confidence`, and one silently breaks. Renaming to `confidenceBoost` collapsed the ambiguity at the type level.
+
+**Lesson (Cycle 3 integration):** When running test suites after fixes land, always verify live source (Get-Content) if a test passes unexpectedly — cached views can mask live-source changes. Additionally, cycle-3 advisory tests revealed that safeMin guards needed validation across all formula call sites. A single missing guard in any prescriber would silently pass test boundaries but fail in production. Pattern: enumerate all formula call sites and apply the guard consistently.
+
+**Lockout Observation:** Test updates for findings in both forge and cairn required coordination across Alexander and Rosella's fixes. Laura ran tests after each fix wave, preventing integration gaps. Tests became the integration contract between parallel implementations.
