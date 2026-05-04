@@ -9,7 +9,7 @@
 import { randomUUID } from "node:crypto";
 import type { ExecutionProfile } from "../telemetry/types.js";
 import type { ChangeVectorSummary, OptimizationHint, PrescriberResult } from "./types.js";
-import { buildSnapshot } from "./utils.js";
+import { buildSnapshot, applyHistoricalVectorOrdering } from "./utils.js";
 
 export interface TokenOptimizerConfig {
   /** Minimum sessions before prescribing. Default: 5. */
@@ -120,12 +120,9 @@ export function analyzeTokenOptimizations(
         hint.predictedImpact = summary.meanNetImpact;
       }
     }
-    const matched = hints.filter((h) => h.predictedImpact !== undefined);
-    const unmatched = hints.filter((h) => h.predictedImpact === undefined);
-    matched.sort((a, b) => b.predictedImpact! - a.predictedImpact!);
-    unmatched.sort((a, b) => b.impactScore - a.impactScore);
+    const sortedHints = applyHistoricalVectorOrdering(hints);
     hints.length = 0;
-    hints.push(...matched, ...unmatched);
+    hints.push(...sortedHints);
   }
 
   return { hints, analysisTimeMs: Date.now() - startTime };
