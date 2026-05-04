@@ -8,7 +8,7 @@
 import { randomUUID } from "node:crypto";
 import type { ExecutionProfile } from "../telemetry/types.js";
 import type { ChangeVectorSummary, OptimizationHint, PrescriberResult } from "./types.js";
-import { buildSnapshot } from "./utils.js";
+import { buildSnapshot, DEFAULT_MIN_SESSIONS } from "./utils.js";
 
 export interface PromptOptimizerConfig {
   /** Minimum sessions before prescribing. Default: 3. */
@@ -30,7 +30,7 @@ export function analyzePromptOptimizations(
 ): PrescriberResult {
   const startTime = Date.now();
   const hints: OptimizationHint[] = [];
-  const minSessions = config?.minSessions ?? 3;
+  const minSessions = config?.minSessions ?? DEFAULT_MIN_SESSIONS;
   const driftThreshold = config?.driftThreshold ?? 0.2;
   const entropyThreshold = config?.toolEntropyThreshold ?? 0.5;
 
@@ -130,7 +130,10 @@ export function analyzePromptOptimizations(
   // For each hint, find a matching summary (same category + skillId).
   // - Multiply hint.confidence by the log-scaled boost from the vector summary.
   // - Record meanNetImpact as predictedImpact for downstream ranking.
-  // - Sort hints by predictedImpact desc so callers see highest-predicted first.
+  // - Two-tier sort: matched hints (predictedImpact assigned) sorted by predictedImpact desc,
+  //   followed by unmatched hints in their original impactScore desc order (Phase 4.5 default).
+  //   This prevents unmatched hints with predictedImpact=undefined (treated as 0) from
+  //   outranking matched hints with measured negative impact.
   // When historicalVectors is omitted, behavior is identical to Phase 4.5.
   if (historicalVectors && historicalVectors.length > 0) {
     for (const hint of hints) {
@@ -142,7 +145,12 @@ export function analyzePromptOptimizations(
         hint.predictedImpact = summary.meanNetImpact;
       }
     }
-    hints.sort((a, b) => (b.predictedImpact ?? 0) - (a.predictedImpact ?? 0));
+    const matched = hints.filter((h) => h.predictedImpact !== undefined);
+    const unmatched = hints.filter((h) => h.predictedImpact === undefined);
+    matched.sort((a, b) => b.predictedImpact! - a.predictedImpact!);
+    unmatched.sort((a, b) => b.impactScore - a.impactScore);
+    hints.length = 0;
+    hints.push(...matched, ...unmatched);
   }
 
   return { hints, analysisTimeMs: Date.now() - startTime };

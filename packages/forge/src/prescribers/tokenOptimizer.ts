@@ -108,7 +108,8 @@ export function analyzeTokenOptimizations(
 
   // Apply historical vector data when provided (Phase 4.6).
   // Same logic as promptOptimizer: boost confidence, attach predictedImpact,
-  // sort by predictedImpact desc. When omitted, identical to Phase 4.5.
+  // two-tier sort (matched by predictedImpact desc, unmatched by impactScore desc).
+  // When omitted, identical to Phase 4.5.
   if (historicalVectors && historicalVectors.length > 0) {
     for (const hint of hints) {
       const summary = historicalVectors.find(
@@ -119,7 +120,12 @@ export function analyzeTokenOptimizations(
         hint.predictedImpact = summary.meanNetImpact;
       }
     }
-    hints.sort((a, b) => (b.predictedImpact ?? 0) - (a.predictedImpact ?? 0));
+    const matched = hints.filter((h) => h.predictedImpact !== undefined);
+    const unmatched = hints.filter((h) => h.predictedImpact === undefined);
+    matched.sort((a, b) => b.predictedImpact! - a.predictedImpact!);
+    unmatched.sort((a, b) => b.impactScore - a.impactScore);
+    hints.length = 0;
+    hints.push(...matched, ...unmatched);
   }
 
   return { hints, analysisTimeMs: Date.now() - startTime };
