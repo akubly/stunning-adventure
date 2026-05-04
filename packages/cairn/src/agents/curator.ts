@@ -18,6 +18,11 @@ import {
   getInsightByPattern,
   countInsightsByStatus,
 } from '../db/insights.js';
+import {
+  insertChangeVector,
+  getChangeVectorsByHintId,
+  computeNetImpact,
+} from '../db/changeVectors.js';
 import type { CairnEvent, CuratorStatus } from '../types/index.js';
 import { parseSqliteDateToMs } from '../utils/timestamps.js';
 
@@ -42,6 +47,24 @@ const SKIP_FREQUENCY_THRESHOLD = 2;
 
 /** Maximum time window (ms) between events to consider them part of a sequence. */
 const SEQUENCE_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+
+// ---------------------------------------------------------------------------
+// Change vector configuration
+// ---------------------------------------------------------------------------
+
+/**
+ * Configuration for the Curator's change-vector computation sweep.
+ * Consistent with the "observe, don't block" Curator pattern — computation
+ * is deferred until enough post-application sessions exist to be meaningful.
+ */
+export interface ChangeVectorConfig {
+  /**
+   * Minimum sessions (execution_profiles.session_count) required before
+   * computing a change vector for an applied hint. Default: 3.
+   * Matches the prompt optimizer's `minSessions` canary threshold.
+   */
+  minSessionsObserved?: number;
+}
 
 // ---------------------------------------------------------------------------
 // Categorised event helpers
@@ -112,15 +135,19 @@ export interface CurateResult {
   insightsReinforced: number;
   capped: boolean;
   insightsChanged: boolean;
+  /** Number of change vectors computed during this sweep run. */
+  vectorsComputed: number;
 }
 
 /**
  * Main entry point: process unprocessed events in bounded batches,
  * detect patterns, store insights, and advance the cursor.
+ * Also sweeps for applied optimization hints that now have enough
+ * post-application sessions to compute change vectors.
  *
  * Each batch is wrapped in a transaction. Loops until caught up.
  */
-export function curate(): CurateResult {
+export function curate(changeVectorConfig?: ChangeVectorConfig): CurateResult {
   const startTime = Date.now();
   let totalProcessed = 0;
   let totalCreated = 0;
@@ -181,12 +208,15 @@ export function curate(): CurateResult {
 
   updateLastRunTimestamp();
 
+  const vectorsComputed = sweepChangeVectors(changeVectorConfig);
+
   return {
     eventsProcessed: totalProcessed,
     insightsCreated: totalCreated,
     insightsReinforced: totalReinforced,
     capped,
     insightsChanged: totalCreated > 0 || totalReinforced > 0,
+    vectorsComputed,
   };
 }
 
@@ -448,6 +478,109 @@ export function getCuratorStatus(): CuratorStatus {
     staleInsights: staleCount,
     prunedInsights: prunedCount,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Change vector sweep
+// ---------------------------------------------------------------------------
+
+interface MetricSnapshotShape {
+  driftScore?: number;
+  tokenCostNanoAiu?: number;
+  successRate?: number;
+  convergenceTurns?: number;
+  cacheHitRate?: number;
+}
+
+interface AppliedHintRow {
+  id: string;
+  skill_id: string;
+  metric_snapshot: string;
+}
+
+interface ProfileRow {
+  session_count: number;
+  drift_mean: number;
+  token_total_cost: number;
+  outcome_success_rate: number;
+  outcome_mean_convergence: number;
+  token_mean_cache_hit: number;
+}
+
+/**
+ * Sweep applied optimization hints and compute change vectors for those with
+ * enough post-application sessions and no existing vector.
+ *
+ * Follows the "observe, don't block" Curator pattern — runs outside the event
+ * processing loop, fails silently per-hint on malformed snapshots.
+ *
+ * @returns Number of change vectors inserted in this sweep.
+ */
+function sweepChangeVectors(config?: ChangeVectorConfig): number {
+  const minSessions = config?.minSessionsObserved ?? 3;
+  const db = getDb();
+  let computed = 0;
+
+  // Find all applied hints that don't yet have a change vector
+  const appliedHints = db.prepare(
+    `SELECT id, skill_id, metric_snapshot
+       FROM optimization_hints
+      WHERE status = 'applied'
+        AND id NOT IN (SELECT DISTINCT hint_id FROM change_vectors)`
+  ).all() as AppliedHintRow[];
+
+  for (const hint of appliedHints) {
+    // Lookup the per-skill global execution profile (canonical post-application snapshot)
+    const profile = db.prepare(
+      `SELECT session_count, drift_mean, token_total_cost,
+              outcome_success_rate, outcome_mean_convergence, token_mean_cache_hit
+         FROM execution_profiles
+        WHERE skill_id = ? AND granularity = 'per-skill' AND granularity_key = 'global'
+        LIMIT 1`
+    ).get(hint.skill_id) as ProfileRow | undefined;
+
+    if (!profile || profile.session_count < minSessions) continue;
+
+    let snapshot: MetricSnapshotShape;
+    try {
+      snapshot = JSON.parse(hint.metric_snapshot) as MetricSnapshotShape;
+    } catch {
+      continue; // malformed snapshot — skip, don't block
+    }
+
+    const before = {
+      driftScore: snapshot.driftScore ?? 0,
+      tokenCostNanoAiu: snapshot.tokenCostNanoAiu ?? 0,
+      successRate: snapshot.successRate ?? 0,
+      convergenceTurns: snapshot.convergenceTurns ?? 0,
+      cacheHitRate: snapshot.cacheHitRate ?? 0,
+    };
+
+    const deltas = {
+      deltaDrift: profile.drift_mean - before.driftScore,
+      deltaCost: profile.token_total_cost - before.tokenCostNanoAiu,
+      deltaSuccessRate: profile.outcome_success_rate - before.successRate,
+      deltaConvergence: profile.outcome_mean_convergence - before.convergenceTurns,
+      deltaCacheHit: profile.token_mean_cache_hit - before.cacheHitRate,
+    };
+
+    // Guard: skip if a vector was inserted between our NOT IN check and now
+    const existing = getChangeVectorsByHintId(db, hint.id);
+    if (existing.length > 0) continue;
+
+    db.transaction(() => {
+      insertChangeVector(db, {
+        hintId: hint.id,
+        deltas,
+        sessionsObserved: profile.session_count,
+        computedAt: new Date().toISOString(),
+      });
+    })();
+
+    computed++;
+  }
+
+  return computed;
 }
 
 /** Update the last_run_at timestamp in curator_state. */
