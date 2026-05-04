@@ -21,4 +21,4 @@ export type {
   PrescriberResult,
 } from "./types.js";
 
-export { buildSnapshot, computeConfidenceBoost } from "./utils.js";
+export { buildSnapshot } from "./utils.js";
