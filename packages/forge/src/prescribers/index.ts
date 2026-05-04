@@ -13,9 +13,12 @@ export {
 } from "./tokenOptimizer.js";
 
 export type {
+  ChangeVectorSummary,
   MetricSnapshot,
   OptimizationCategory,
   OptimizationEvidence,
   OptimizationHint,
   PrescriberResult,
 } from "./types.js";
+
+export { buildSnapshot, computeConfidenceBoost } from "./utils.js";

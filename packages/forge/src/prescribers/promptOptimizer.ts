@@ -7,7 +7,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { ExecutionProfile } from "../telemetry/types.js";
-import type { OptimizationHint, PrescriberResult } from "./types.js";
+import type { ChangeVectorSummary, OptimizationHint, PrescriberResult } from "./types.js";
 import { buildSnapshot } from "./utils.js";
 
 export interface PromptOptimizerConfig {
@@ -26,6 +26,7 @@ export interface PromptOptimizerConfig {
 export function analyzePromptOptimizations(
   profile: ExecutionProfile,
   config?: PromptOptimizerConfig,
+  historicalVectors?: ChangeVectorSummary[],
 ): PrescriberResult {
   const startTime = Date.now();
   const hints: OptimizationHint[] = [];
@@ -123,6 +124,25 @@ export function analyzePromptOptimizations(
       metricSnapshot: snapshot,
       generatedAt,
     });
+  }
+
+  // Apply historical vector data when provided (Phase 4.6).
+  // For each hint, find a matching summary (same category + skillId).
+  // - Multiply hint.confidence by the log-scaled boost from the vector summary.
+  // - Record meanNetImpact as predictedImpact for downstream ranking.
+  // - Sort hints by predictedImpact desc so callers see highest-predicted first.
+  // When historicalVectors is omitted, behavior is identical to Phase 4.5.
+  if (historicalVectors && historicalVectors.length > 0) {
+    for (const hint of hints) {
+      const summary = historicalVectors.find(
+        (v) => v.category === hint.category && v.skillId === hint.skillId,
+      );
+      if (summary) {
+        hint.confidence = Math.min(1, hint.confidence * summary.confidence);
+        hint.predictedImpact = summary.meanNetImpact;
+      }
+    }
+    hints.sort((a, b) => (b.predictedImpact ?? 0) - (a.predictedImpact ?? 0));
   }
 
   return { hints, analysisTimeMs: Date.now() - startTime };
