@@ -19,8 +19,6 @@ import {
   countInsightsByStatus,
 } from '../db/insights.js';
 import {
-  insertChangeVector,
-  getChangeVectorsByHintId,
   computeNetImpact,
 } from '../db/changeVectors.js';
 import type { CairnEvent, CuratorStatus } from '../types/index.js';
@@ -576,20 +574,29 @@ function sweepChangeVectors(config?: ChangeVectorConfig): number {
       deltaCacheHit: profile.token_mean_cache_hit - before.cacheHitRate,
     };
 
-    // Guard: skip if a vector was inserted between our NOT IN check and now
-    const existing = getChangeVectorsByHintId(db, hint.id);
-    if (existing.length > 0) continue;
+    // INSERT OR IGNORE: the UNIQUE(hint_id) constraint handles idempotence.
+    // changes === 0 means the vector was already present.
+    const insertResult = db.prepare(
+      `INSERT OR IGNORE INTO change_vectors
+         (hint_id, delta_drift, delta_cost, delta_success_rate,
+          delta_convergence, delta_cache_hit, net_impact,
+          sessions_observed, computed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      hint.id,
+      deltas.deltaDrift,
+      deltas.deltaCost,
+      deltas.deltaSuccessRate,
+      deltas.deltaConvergence,
+      deltas.deltaCacheHit,
+      computeNetImpact(deltas),
+      profile.session_count - snapshotSessionCount,
+      new Date().toISOString(),
+    );
 
-    db.transaction(() => {
-      insertChangeVector(db, {
-        hintId: hint.id,
-        deltas,
-        sessionsObserved: profile.session_count - snapshotSessionCount,
-        computedAt: new Date().toISOString(),
-      });
-    })();
-
-    computed++;
+    if (insertResult.changes > 0) {
+      computed++;
+    }
   }
 
   return computed;

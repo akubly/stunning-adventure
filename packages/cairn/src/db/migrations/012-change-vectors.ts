@@ -10,7 +10,7 @@ export const migration012: Migration = {
       CREATE TABLE change_vectors (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         hint_id TEXT NOT NULL REFERENCES optimization_hints(id),
-        -- Metric deltas (after - before)
+        -- Metric deltas (after - before), cost normalized to per-session
         delta_drift REAL NOT NULL,
         delta_cost REAL NOT NULL,
         delta_success_rate REAL NOT NULL,
@@ -18,9 +18,10 @@ export const migration012: Migration = {
         delta_cache_hit REAL NOT NULL,
         -- Weighted impact (positive = prescription improved things)
         net_impact REAL NOT NULL,
-        -- Sessions between before/after snapshot
+        -- Sessions between hint application and vector computation (delta, not cumulative)
         sessions_observed INTEGER NOT NULL,
-        computed_at TEXT NOT NULL
+        computed_at TEXT NOT NULL,
+        UNIQUE(hint_id)
       );
 
       CREATE INDEX idx_change_vectors_hint ON change_vectors(hint_id);
