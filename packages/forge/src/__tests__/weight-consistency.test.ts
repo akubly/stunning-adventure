@@ -22,7 +22,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { DRIFT_WEIGHTS } from '../telemetry/drift.js';
-import { computeConfidenceBoost } from '../prescribers/utils.js';
+import { computeConfidenceBoost, DEFAULT_MIN_SESSIONS } from '../prescribers/utils.js';
 
 // ---------------------------------------------------------------------------
 // Phase 4.6 weight pin — regression guard
@@ -81,10 +81,31 @@ describe('computeConfidenceBoost — edge cases', () => {
     expect(computeConfidenceBoost(3, 3)).toBeCloseTo(1.0, 10);
   });
 
-  it('formula matches log(1+vc) / log(1+mv) for non-zero counts', () => {
+  it('returns 1.0 for vectorCount=1, minVectors=3 (clamp prevents penalty — cycle-2 fix #2)', () => {
+    // Before cycle-2 fix: log(2)/log(4) ≈ 0.5 would ATTENUATE confidence.
+    // After fix: Math.max(1.0, 0.5) = 1.0 — sparse evidence is neutral, not penalising.
+    expect(computeConfidenceBoost(1, 3)).toBe(1.0);
+  });
+
+  it('returns 1.0 for any vectorCount below minVectors (clamp applied throughout sparse zone)', () => {
+    // All sparse counts should be clamped to 1.0
+    expect(computeConfidenceBoost(1, 5)).toBe(1.0);
+    expect(computeConfidenceBoost(2, 5)).toBe(1.0);
+    expect(computeConfidenceBoost(4, 5)).toBe(1.0);
+  });
+
+  it('vectors never attenuate confidence — output is always >= 1.0', () => {
+    // Wave 1 policy invariant: confidenceBoost must NEVER drop below 1.0 for any input.
+    for (const vc of [0, 1, 2, 3, 5, 10, 100]) {
+      expect(computeConfidenceBoost(vc)).toBeGreaterThanOrEqual(1.0);
+      expect(computeConfidenceBoost(vc, 10)).toBeGreaterThanOrEqual(1.0);
+    }
+  });
+
+  it('formula matches Math.max(1.0, log(1+vc) / log(1+mv)) for non-zero counts above threshold', () => {
     const vc = 7;
     const mv = 3;
-    const expected = Math.log(1 + vc) / Math.log(1 + mv);
+    const expected = Math.max(1.0, Math.log(1 + vc) / Math.log(1 + mv));
     expect(computeConfidenceBoost(vc, mv)).toBeCloseTo(expected, 10);
   });
 });
@@ -104,7 +125,7 @@ const EXPECTED_CHANGE_VECTOR_WEIGHTS = {
   deltaCost:        DRIFT_WEIGHTS.tokenPressure,  // 0.15
 } as const;
 
-describe('computeNetImpact — cross-module weight consistency', () => {
+describe('DRIFT_WEIGHTS — local invariants', () => {
   it('CHANGE_VECTOR_WEIGHTS.deltaConvergence mirrors DRIFT_WEIGHTS.convergence (0.30)', () => {
     expect(EXPECTED_CHANGE_VECTOR_WEIGHTS.deltaConvergence).toBe(0.30);
   });
@@ -124,5 +145,35 @@ describe('computeNetImpact — cross-module weight consistency', () => {
     const vectorSum = Object.values(EXPECTED_CHANGE_VECTOR_WEIGHTS).reduce((s, v) => s + v, 0);
     expect(driftSum).toBeCloseTo(1.0, 10);
     expect(vectorSum).toBeCloseTo(driftSum, 10);
+  });
+
+  it.todo(
+    // Cairn cannot import from Forge (acyclic dependency constraint), and Forge cannot import
+    // from Cairn. Both packages define their weight constants locally (ADR-P4.6-003).
+    // Cross-package constant verification requires a shared test infrastructure that reads
+    // both constants without violating the acyclic dep graph — tracked as a follow-up to Phase 4.6.
+    // The workaround: Laura\'s "DEFAULT_MIN_SESSIONS — cross-package" test (Finding #15) uses
+    // this same pattern to verify the mirrored constant stays in sync.
+    'cross-module weight consistency: cairn CHANGE_VECTOR_WEIGHTS mirrors forge DRIFT_WEIGHTS (pending cross-package test infrastructure)',
+  );
+});
+
+// ---------------------------------------------------------------------------
+// DEFAULT_MIN_SESSIONS — forge constant regression pin (Phase 4.6 cycle 2, Finding #15)
+//
+// Analogous to the drift weight pin above: both packages mirror DEFAULT_MIN_SESSIONS = 3.
+// Cairn's counterpart pin lives in cairn/__tests__/changeVectors.test.ts.
+// Together these form the cross-package assertion for Finding #15.
+// ---------------------------------------------------------------------------
+
+describe('DEFAULT_MIN_SESSIONS — forge constant regression pin', () => {
+  it('DEFAULT_MIN_SESSIONS is 3 (matches cairn DEFAULT_MIN_SESSIONS and minSessionsObserved default)', () => {
+    expect(DEFAULT_MIN_SESSIONS).toBe(3);
+  });
+
+  it('computeConfidenceBoost default minVectors argument equals DEFAULT_MIN_SESSIONS', () => {
+    // computeConfidenceBoost(vc) === computeConfidenceBoost(vc, DEFAULT_MIN_SESSIONS) for all vc
+    expect(computeConfidenceBoost(5)).toBeCloseTo(computeConfidenceBoost(5, DEFAULT_MIN_SESSIONS), 10);
+    expect(computeConfidenceBoost(10)).toBeCloseTo(computeConfidenceBoost(10, DEFAULT_MIN_SESSIONS), 10);
   });
 });

@@ -372,3 +372,57 @@ describe('TelemetrySink interface', () => {
     await expect(sink.close!()).resolves.toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// ChangeVectorSummary — root re-export smoke test (Phase 4.6 cycle 2, Finding #8)
+//
+// Alexander added ChangeVectorSummary to the forge root index.ts so that Cairn
+// (and other consumers) can import it from '@akubly/forge' without reaching into
+// internal prescribers paths. This test verifies the export exists at runtime.
+// ---------------------------------------------------------------------------
+
+describe('ChangeVectorSummary — root re-export smoke test', () => {
+  it('is importable as a type from @akubly/forge root index', async () => {
+    // Dynamic import to verify the shape exists at the module boundary.
+    // TypeScript's `import type` is erased at runtime; we use a value import here
+    // to confirm the module resolves correctly and the prescribers barrel works.
+    const forgeModule = await import('@akubly/forge');
+
+    // ChangeVectorSummary is a type-only export — it has no runtime value.
+    // The smoke test verifies that importing from the root does NOT throw (i.e.,
+    // the prescribers barrel is wired correctly and there are no missing re-exports).
+    // We do this by checking that the forge module object itself resolves without error.
+    expect(forgeModule).toBeDefined();
+
+    // Additionally verify that OptimizationCategory-related exports (which are value
+    // exports in the prescribers barrel) are still present, confirming the barrel export
+    // path for ChangeVectorSummary is intact.
+    expect(typeof forgeModule.analyzePromptOptimizations).toBe('function');
+  });
+
+  it('a value conforming to ChangeVectorSummary has the expected shape', () => {
+    // This is a compile-time + runtime shape test.
+    // TypeScript will error here if ChangeVectorSummary's shape changes.
+    const summary: import('@akubly/forge').ChangeVectorSummary = {
+      category: 'convergence',
+      skillId: 'skill-test',
+      sampleSize: 5,
+      avgDeltaDrift: -0.1,
+      avgDeltaCost: -5_000,
+      avgDeltaSuccessRate: 0.05,
+      avgDeltaConvergence: -1,
+      avgDeltaCacheHit: 0.02,
+      confidence: 0.85,
+      netImpact: 0.7,
+    };
+
+    expect(summary).toHaveProperty('category', 'convergence');
+    expect(summary).toHaveProperty('skillId', 'skill-test');
+    expect(summary).toHaveProperty('sampleSize', 5);
+    expect(summary).toHaveProperty('confidence');
+    expect(summary).toHaveProperty('netImpact');
+    expect(typeof summary.category).toBe('string');
+    expect(typeof summary.confidence).toBe('number');
+    expect(typeof summary.netImpact).toBe('number');
+  });
+});

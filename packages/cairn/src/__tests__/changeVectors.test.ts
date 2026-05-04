@@ -15,6 +15,7 @@ import {
   summarizeChangeVectors,
   computeNetImpact,
   CHANGE_VECTOR_WEIGHTS,
+  DEFAULT_MIN_SESSIONS,
   type ChangeVectorDeltas,
 } from '../db/changeVectors.js';
 import { insertOptimizationHint } from '../db/optimizationHints.js';
@@ -240,14 +241,15 @@ describe('getChangeVectorsByHintId', () => {
     expect(rows[0]!.hintId).toBe(hintId);
   });
 
-  it('returns multiple vectors when a hint has more than one change vector', () => {
+  it('UNIQUE(hint_id) — inserting a second change vector for the same hint throws', () => {
+    // Phase 4.6 cycle 2 (#4): UNIQUE(hint_id) ensures at most one change vector per hint.
+    // Each hint can only be evaluated once (the snapshot is point-in-time).
     const db = getDb();
     const hintId = insertOptimizationHint(makeHint());
     insertChangeVector(db, { hintId, deltas: makeDeltas(), sessionsObserved: 3, computedAt: '2026-05-03T20:00:00.000Z' });
-    insertChangeVector(db, { hintId, deltas: makeDeltas({ deltaDrift: -0.2 }), sessionsObserved: 6, computedAt: '2026-05-03T21:00:00.000Z' });
-
-    const rows = getChangeVectorsByHintId(db, hintId);
-    expect(rows.length).toBe(2);
+    expect(() =>
+      insertChangeVector(db, { hintId, deltas: makeDeltas({ deltaDrift: -0.2 }), sessionsObserved: 6, computedAt: '2026-05-03T21:00:00.000Z' }),
+    ).toThrow(/UNIQUE constraint failed/);
   });
 
   it('does not return vectors belonging to a different hint_id', () => {
@@ -382,4 +384,65 @@ describe('change vector policy', () => {
   it.todo(
     'penalizes confidence on negative meanNetImpact (Wave 2 — deferred per Aaron policy 2026-05-03)',
   );
+});
+
+// ---------------------------------------------------------------------------
+// DEFAULT_MIN_SESSIONS — constant regression pin (Phase 4.6 cycle 2, Finding #15)
+// ---------------------------------------------------------------------------
+
+describe('DEFAULT_MIN_SESSIONS — cairn constant regression pin', () => {
+  it('DEFAULT_MIN_SESSIONS is 3 (matches forge DEFAULT_MIN_SESSIONS and minSessionsObserved default)', () => {
+    // This guards that the cairn-side constant stays in sync with forge's DEFAULT_MIN_SESSIONS.
+    // Both packages use 3 as the threshold; if either changes, the L5 regression test in
+    // forge/weight-consistency.test.ts (Finding #15) and this test will catch the divergence.
+    expect(DEFAULT_MIN_SESSIONS).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// summarizeChangeVectors — confidence clamp regression (Phase 4.6 cycle 2, Finding #2)
+// ---------------------------------------------------------------------------
+
+describe('summarizeChangeVectors — confidence clamp (vectors never attenuate)', () => {
+  it('confidenceBoost is exactly 1.0 when vectorCount === 1 and minVectors === 3 (clamp applied)', () => {
+    // Before cycle-2 fix: log(2)/log(4) ≈ 0.5 would halve confidence.
+    // After fix: Math.max(1.0, 0.5) = 1.0 — sparse evidence is neutral, not penalising.
+    const db = getDb();
+    const hintId = insertOptimizationHint(makeHint({ skillId: 'skill-clamp', category: 'convergence' }));
+    insertChangeVector(db, { hintId, deltas: makeDeltas(), sessionsObserved: 3, computedAt: '2026-05-03T20:59:53.000Z' });
+
+    const summary = summarizeChangeVectors(db, 'convergence', 'skill-clamp', 3);
+    expect(summary.vectorCount).toBe(1);
+    expect(summary.confidenceBoost).toBe(1.0);
+  });
+
+  it('confidenceBoost is exactly 1.0 when vectorCount === 2 and minVectors === 3 (clamp applied)', () => {
+    const db = getDb();
+    const h1 = insertOptimizationHint(makeHint({ skillId: 'skill-clamp2', category: 'convergence' }));
+    const h2 = insertOptimizationHint(makeHint({ skillId: 'skill-clamp2', category: 'convergence' }));
+    insertChangeVector(db, { hintId: h1, deltas: makeDeltas(), sessionsObserved: 3, computedAt: '2026-05-03T20:00:00.000Z' });
+    insertChangeVector(db, { hintId: h2, deltas: makeDeltas(), sessionsObserved: 3, computedAt: '2026-05-03T21:00:00.000Z' });
+
+    const summary = summarizeChangeVectors(db, 'convergence', 'skill-clamp2', 3);
+    expect(summary.vectorCount).toBe(2);
+    // log(3)/log(4) ≈ 0.79 — clamped to 1.0
+    expect(summary.confidenceBoost).toBe(1.0);
+  });
+
+  it('vectors never attenuate confidence — confidenceBoost is always >= 1.0', () => {
+    // Wave 1 policy: positive boost only (Aaron, 2026-05-03).
+    // For any vectorCount from 0..minVectors, confidenceBoost must never drop below 1.0.
+    const db = getDb();
+    const hints = [
+      insertOptimizationHint(makeHint({ skillId: 'skill-noatt', category: 'convergence' })),
+      insertOptimizationHint(makeHint({ skillId: 'skill-noatt', category: 'convergence' })),
+    ];
+    for (const hintId of hints) {
+      insertChangeVector(db, { hintId, deltas: makeDeltas(), sessionsObserved: 3, computedAt: '2026-05-03T20:59:53.000Z' });
+    }
+
+    // Test with minVectors = 10 (sparse vectors would give log(3)/log(11) ≈ 0.46 without clamp)
+    const summary = summarizeChangeVectors(db, 'convergence', 'skill-noatt', 10);
+    expect(summary.confidenceBoost).toBeGreaterThanOrEqual(1.0);
+  });
 });
