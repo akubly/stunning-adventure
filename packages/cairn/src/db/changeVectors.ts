@@ -85,7 +85,11 @@ export interface ChangeVectorSummary {
   skillId: string;
   meanNetImpact: number;
   vectorCount: number;
-  /** Log-scaled confidence boost: log(1 + vectorCount) / log(1 + minVectors). */
+  /**
+   * Log-scaled confidence boost: 1.0 when no vectors OR sparse evidence;
+   * >1.0 only with sufficient evidence (vectorCount ≥ minVectors).
+   * Vectors never attenuate confidence — clamped to Math.max(1.0, formula).
+   */
   confidenceBoost: number;
 }
 
@@ -199,7 +203,12 @@ export function getChangeVectorsByCategoryAndSkill(
  * baseline confidence is preserved). This matches computeConfidenceBoost(0) and
  * ensures empty summaries do not zero out hint confidence.
  *
- * @param minVectors - Minimum vectors for full confidence (default 3, matches
+ * When vectorCount > 0 but < minVectors (sparse evidence), the formula is
+ * clamped to Math.max(1.0, …) so sparse vectors never attenuate confidence
+ * below the neutral baseline. Amplification (>1.0) only occurs once
+ * vectorCount ≥ minVectors — consistent with Wave 1 "positive boost only" policy.
+ *
+ * @param minVectors - Minimum vectors for full confidence boost (default 3, matches
  *   ChangeVectorConfig.minSessionsObserved and prompt optimizer canary threshold).
  */
 export function summarizeChangeVectors(
@@ -222,7 +231,7 @@ export function summarizeChangeVectors(
   const confidenceBoost =
     vectorCount === 0
       ? 1.0
-      : Math.log(1 + vectorCount) / Math.log(1 + minVectors);
+      : Math.max(1.0, Math.log(1 + vectorCount) / Math.log(1 + minVectors));
 
   return { category, skillId, meanNetImpact, vectorCount, confidenceBoost };
 }
