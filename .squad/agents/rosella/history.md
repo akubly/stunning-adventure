@@ -35,7 +35,54 @@
 **Verification:** `npx vitest run src/__tests__/prescribers-applier.test.ts` → 36/36 green. Full suite: 514/529 (only the pre-existing collectors-related failures remain).
 
 
-## 2026-05-02: Phase 4.5 Persona Review — Prescribers + Applier Integration
+## 2026-05-03: Phase 4.6 — Change Vector Prescriber Integration (R1–R5)
+
+**Task:** Implement Wave 2 prescriber enhancements for change vector learning.
+
+**Changes:**
+
+1. **R1 — `ChangeVectorSummary` type.** Added to `prescribers/types.ts`:
+   - New interface with `category`, `skillId`, `meanNetImpact`, `vectorCount`, `confidence`.
+   - Added `predictedImpact?: number` to `OptimizationHint` for vector-informed ranking.
+   - Updated file-level doc comment to reference Phase 4.6 additions.
+
+2. **R2 — `computeConfidenceBoost` utility.** Added to `prescribers/utils.ts`:
+   - Formula: `log(1 + vectorCount) / log(1 + minVectors)`, default minVectors = 3.
+   - Edge case: vectorCount ≤ 0 → returns 1.0 (neutral, no boost/penalty).
+   - Wave 1 policy (Aaron confirmed): positive boost only, negative penalty deferred to Wave 2.
+
+3. **R3/R4 — Prescriber integration.** Both `analyzePromptOptimizations` and
+   `analyzeTokenOptimizations` gain optional third param `historicalVectors?: ChangeVectorSummary[]`.
+   - When provided: confidence boosted, `predictedImpact` set, hints sorted by predicted impact desc.
+   - When omitted: identical to Phase 4.5 — backward compat preserved, all 534 existing tests pass.
+
+4. **R5 — Drift weight audit.** `DRIFT_WEIGHTS` was already exported as a frozen named const
+   from `telemetry/drift.ts`. No code change needed. Filed
+   `rosella-phase4.6-drift-weights.md` in the decision inbox with weight mapping table
+   and cairn↔forge dependency guidance for Alexander.
+
+5. **Index update.** Exported `ChangeVectorSummary`, `computeConfidenceBoost`, and `buildSnapshot`
+   from `prescribers/index.ts` for Laura's tests and future callers.
+
+**Commits:** 2 (R1+R2 foundation, R3+R4+index integration). R5 was documentation only.
+
+**Tests:** 534/534 passing (baseline unchanged — all Phase 4.5 tests green).
+
+## Learnings
+
+- **Optional param vs config** is the right call for dynamic query-time data like vectors.
+  It keeps prescribers pure (stateless) and trivially testable without mocking a DB.
+- **Export early, freeze constants.** `DRIFT_WEIGHTS` being a frozen exported const
+  meant R5 was a verification task, not a code task. Freezing at the source prevents
+  accidental mutation across package boundaries.
+- **Predict + sort** is the right UX for ranked hints — callers get highest-predicted
+  impact first without needing to re-sort themselves. The `predictedImpact` field
+  on the hint also lets callers display the rationale.
+- **Wave 1 / Wave 2 discipline.** Aaron confirmed: positive boost only for Wave 1.
+  The `computeConfidenceBoost` function is intentionally neutral when vectorCount ≤ 0
+  (returns 1.0) — Wave 2 can add a penalty multiplier path without changing the signature.
+
+
 
 **Findings Fixed:** F3 (budgetContext), F6b (signal entropy consumption), F9 (buildSnapshot utility), F10 (adaptive exploration).
 
