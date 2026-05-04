@@ -86,7 +86,7 @@ export interface ChangeVectorSummary {
   meanNetImpact: number;
   vectorCount: number;
   /** Log-scaled confidence boost: log(1 + vectorCount) / log(1 + minVectors). */
-  confidence: number;
+  confidenceBoost: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -195,6 +195,10 @@ export function getChangeVectorsByCategoryAndSkill(
  * Returns a ChangeVectorSummary with mean net_impact, vector count,
  * and log-scaled confidence boost.
  *
+ * When vectorCount === 0, returns confidenceBoost: 1.0 (no boost, no penalty —
+ * baseline confidence is preserved). This matches computeConfidenceBoost(0) and
+ * ensures empty summaries do not zero out hint confidence.
+ *
  * @param minVectors - Minimum vectors for full confidence (default 3, matches
  *   ChangeVectorConfig.minSessionsObserved and prompt optimizer canary threshold).
  */
@@ -215,10 +219,10 @@ export function summarizeChangeVectors(
 
   const vectorCount = row?.vector_count ?? 0;
   const meanNetImpact = row?.mean_net_impact ?? 0;
-  const confidence =
+  const confidenceBoost =
     vectorCount === 0
-      ? 0
+      ? 1.0
       : Math.log(1 + vectorCount) / Math.log(1 + minVectors);
 
-  return { category, skillId, meanNetImpact, vectorCount, confidence };
+  return { category, skillId, meanNetImpact, vectorCount, confidenceBoost };
 }
