@@ -294,3 +294,26 @@ Rewrote all contract tests to match `docs/forge-phase4-spec.md` exact API surfac
 - summarizeChangeVectors returns confidence: 0 when ectorCount === 0, but computeConfidenceBoost(0) = 1.0. Inconsistent. See .squad/decisions/inbox/laura-phase4.6-summarize-confidence-zero.md.
 
 **Commit strategy:** 2 commits per spec — Commit 1: L1+L5 (migration + weight consistency); Commit 2: L2+L3+L4 (CRUD + prescribers + curator).
+
+
+### 2026-05-03: Phase 4.6 — confidenceBoost rename + 0→1.0 fix (test upgrade)
+
+**Session:** 2026-05-03T21:38:00Z  
+**Outcome:** SUCCESS
+
+**Context:** Graham approved Option B from my defect report — rename `ChangeVectorSummary.confidence` -> `confidenceBoost` to make the multiplicative-boost semantics explicit, and fix the zero-vector case from 0 to 1.0. Alexander patched types.ts, promptOptimizer.ts, tokenOptimizer.ts; Rosella patched changeVectors.ts. Both had landed before my test upgrade ran.
+
+**Files changed:**
+- `cairn/__tests__/changeVectors.test.ts`: renamed summary.confidence -> summary.confidenceBoost, updated test description, and added a real passing test for the it.todo placeholder: asserts summarizeChangeVectors for empty result returns { vectorCount: 0, meanNetImpact: 0, confidenceBoost: 1.0 } (toMatchObject + toBe).
+- `forge/__tests__/prescribers-vectors.test.ts`: renamed confidence: -> confidenceBoost: in makeVector factory and all 8 vector-override call sites. Strengthened the vectorCount=0 backward-compat test to explicitly assert vectors[0].confidenceBoost === 1.0. Added a new ChangeVectorSummary schema regression describe block with 2 tests — runtime + TypeScript double guard against any future rename revert.
+
+**Final test counts:**
+- Cairn: 529 tests (was 528, +1 real; 1 todo unchanged)
+- Forge: 573 tests (was 571, +2 schema regression; 2 todo unchanged)
+- Total: 1102 passing, all green
+
+**Learnings: value-vs-name distinction**
+
+A renamed field can lock in semantics that survive future refactors. The field was named `confidence` but held a boost multiplier (identity = 1.0, not 0). Two implementations independently made the internally-consistent choice for their reading of the name: Alexander used 0 (correct for a confidence level), Rosella used 1.0 (correct for a boost). Graham's root cause: the name was ambiguous. Renaming to confidenceBoost resolved the ambiguity — and the new schema regression tests ensure any future revert fails at compile time (TypeScript) AND runtime (the test), not silently.
+
+Key takeaway: tests that hard-code the field name (not just the value) are more durable regression guards. A rename revert won't pass a test that explicitly constructs `ChangeVectorSummary { confidenceBoost: 1.2 }` and verifies it's consumed correctly.
