@@ -199,4 +199,51 @@ in production. The main patterns:
 
 **Integration:** Ready to consume Roger's per-signal means; prescribers can now target specific drivers independent of overall drift.
 
+---
+
+## Learnings — Phase 4.6 Cycle 3 Advisory Fixes (2026-05-04)
+
+**What cycle-2 review surfaced about the cost normalization regression:**
+
+The cycle-2 fix correctly introduced per-session normalization for `deltaCost`
+(`totalCost / sessionCount` on both sides). But the cycle-2 fix overlooked that
+Phase 4.5 snapshots — every hint already applied in production DBs — have no
+`sessionCount` field. When `sessionCount` is missing, the cycle-2 code fell back
+to `snapshot.tokenCostNanoAiu` raw (cumulative), while `afterCostPerSession` was
+correctly per-session. The asymmetry was *worse* than the original bug: a
+per-session value of ~210K minus a cumulative value of ~10M yields approximately
+−9.79M, which `computeNetImpact` sign-flips into a large spurious positive
+contribution. The fix would have silently poisoned all legacy hint vectors.
+
+**How the fallback was made safe:**
+
+Rather than attempt a partial normalization with unknown denominator, the
+correct answer is to skip cost delta entirely for legacy snapshots. All other
+delta fields (drift, success, convergence, cacheHit) are rates and means —
+they're snapshot-shape-agnostic and remain valid. Only cost required the
+session-count denominator. The new guard:
+
+```
+if (snapshotSessionCount <= 0) {
+  deltaCost = 0;
+  result.legacyCostSkipped++;
+  console.warn('... legacy snapshot — cost delta skipped ...');
+}
+```
+
+This produces an honest `deltaCost = 0` (neutral, not misleading) and surfaces
+the skip in the structured diagnostic result. The JSDoc on `sweepChangeVectors`
+now documents that re-applying a hint after a *new* snapshot will produce a
+complete delta, giving operators a clear remediation path.
+
+**Parallel fix (`sessionCountReset`):** When `profile.session_count` has been
+reset (e.g., after a DB migration or tenant wipe) it can be *less than*
+`snapshot.sessionCount`, producing negative `sessions_observed`. Added
+`Math.max(0, ...)` clamp and a dedicated counter to surface this anomaly
+without crashing or storing a nonsense value.
+
+**Lesson reinforced:** When fixing a normalization bug, enumerate all input
+shapes that can reach the new formula — especially historical/legacy records
+that predate the field being introduced. The fix that works for new data may
+silently corrupt old data if the new field is optional.
 
