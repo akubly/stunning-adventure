@@ -1,23 +1,34 @@
-feat(forge): Phase 4 Export Pipeline — DBOM persistence + SKILL.md compiler
+feat(forge): Phase 4.5 — Local Feedback Loop (PGO engine)
 
-Adds the third integration seam: Export Pipeline (Extract → Strip → Attach → QualityGate).
+Add telemetry, prescribers, and applier modules to Forge. Sessions
+produce drift/token/outcome signals → collectors aggregate → prescribers
+generate optimization hints → applier writes improved SKILL.md v2.
 
-New modules:
-- packages/forge/src/export/ — pipeline orchestrator, SKILL.md compiler, stage functions, quality gate integration via dependency injection
-- packages/cairn/src/db/dbomArtifacts.ts — DBOM persistence CRUD (migration 010)
-- docs/forge-phase4-spec.md — architecture specification
+Telemetry:
+- DriftCollector, TokenCollector, OutcomeCollector (HookObserver pattern)
+- Streaming quantile sketch for accurate p50/p95 across sessions
+- Individual signal components surfaced in ExecutionProfile
+- LocalDBOMSink with fail-open logging and droppedCount counter
 
-Design constraints:
-- Forge never imports @akubly/cairn (DI pattern for quality gate + persistence)
-- All stages are pure functions: (StageContext) → StageContext
-- Pipeline works offline from persisted events (no live SDK session required)
-- Deterministic content hash (injected timestamp, consistent YAML escaping)
+Prescribers:
+- Prompt optimizer (convergence, tool entropy, context management)
+- Token optimizer with determinism drift gate (>= 0.3 → zero hints)
+- Shared buildSnapshot utility, classifyDriftLevel reuse
 
-Persona-reviewed (5-persona Code Panel, squad mode):
-- 8 findings accepted and addressed (2 blocking, 4 important, 2 minor)
-- Key fixes: backslash YAML escaping, deterministic compiledAt injection, persistence gated on quality gate pass, stripStage dead code removal
+Applier:
+- Order-stable optimization via (impactScore desc, id asc) sort
+- Self-tuning strategy with adaptive explorationBudget
+- tokenPressure normalized via budgetLimitNanoAiu
 
-Tests: 831 total (438 Cairn + 393 Forge), all passing.
-Phase 4 adds 110 new tests (99 export + 11 DBOM persistence).
+DB (Cairn):
+- Migration 011: signal_samples, execution_profiles, optimization_hints
+- CRUD modules with TTL sweep, row cap, upsert, status lifecycle
+
+Shared types (@akubly/types):
+- ExecutionProfile, ProfileGranularity, FeedbackSource
+- OptimizationHint, StrategyParameters (open-shaped)
+
+1012 tests passing (Forge 534 + Cairn 478). Review-hardened: 11 persona
+review findings addressed (4 blocking, 4 important, 3 minor).
 
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>

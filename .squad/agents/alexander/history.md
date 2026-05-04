@@ -17,7 +17,43 @@
 **Lesson:** When a shared contract is strictly less expressive than its storage, treat it as a contract bug, not a feature gap — additive optional parameters carry near-zero risk and unblock real use cases.
 
 
-## 2026-05-02: Phase 4.5 Persona Review — SDK Feedback Integration
+## 2026-05-03: Phase 4.6 Wave 1 — Change Vector Foundation
+
+**Work items completed:** A1 (migration 012), A2 (schema v12), A3 (changeVectors CRUD), A4 (Curator sweep).
+
+**Migration patterns learned:**
+- The 011 pattern is the definitive template: a single `migration.up(db)` that runs one `db.exec()` with all DDL inside. No conditionals, no idempotency logic (the migration framework handles that via `schema_version` table). Keep the `version` and `description` consistent with the file name.
+- Tests hardcode `MAX(version)` and `COUNT(*)` against `schema_version` — every migration bump breaks them and requires updating. Pattern: grep for `toBe(11)` after bumping to 12.
+
+**CRUD module patterns:**
+- `optimizationHints.ts` uses internal `getDb()` calls. For changeVectors, the spec required explicit `db` parameter for Curator transactional control. Both patterns are valid; explicit `db` is cleaner for modules called inside transactions.
+- The `JOIN optimization_hints` pattern in `getChangeVectorsByCategoryAndSkill` works cleanly because SQLite's query planner handles it efficiently with the `idx_change_vectors_hint` index.
+
+**Curator sweep integration:**
+- The Curator's `curate()` function processes events in batches (cursor-based). The change-vector sweep is fundamentally different — it's a scan of `optimization_hints` for `applied` status, not event-driven. Adding it as a post-event-loop call (after `updateLastRunTimestamp`) is clean: it runs once per `curate()` invocation, not per batch. This keeps per-batch transaction overhead low.
+- The "NOT IN (SELECT DISTINCT hint_id FROM change_vectors)" anti-join is the right idiom for "compute only once per hint". SQLite optimizes this well with the `idx_change_vectors_hint` index.
+- Soft-fail on missing profile or malformed snapshot (continue, don't throw) is the correct Curator pattern. Vectors will be computed on the next sweep when conditions are met.
+
+**Circular dependency management:**
+- Cairn cannot import Forge. When ADR-P4.6-003 says "same weights as drift score", the implementation answer is: mirror + regression test (L5). Document the mapping explicitly so if DRIFT_WEIGHTS ever changes, the L5 test fails loudly before anyone notices meanNetImpact diverged.
+- Decision recorded in `.squad/decisions/inbox/alexander-phase4.6-weight-constants.md`.
+
+**Sign convention decision:**
+- Deltas stored as `after - before` (raw arithmetic). `computeNetImpact` negates lower-is-better metrics so positive net_impact = beneficial prescription. This convention is critical for Wave 2's negative penalty logic to work correctly — negative meanNetImpact means the prescription hurt, which is the signal for the penalty multiplier.
+
+**Build/test status at completion:**
+- `npm run build` clean in cairn
+- cairn: 478 passing, 44 todos (Laura's L1/L2/L4 stubs)
+- forge: 556+ passing, 2 todos
+- Phase 4.5 baseline was 990; current total ≈ 1034+ (healthy growth)
+
+## Learnings
+
+- Always grep test files for hardcoded schema version numbers after adding a migration. The pattern `toBe(11)` appears in at least 3 test files; it's predictable churn.
+- The `edit` tool's `old_str` must include enough context to be unique, and must match the closing braces exactly. Missing a `});` from the old_str pattern silently truncates the file. Always verify with a view after edits to test files.
+- The Curator is event-loop-centric by design. Non-event sweeps (like change vectors) slot naturally after the event loop, not inside it. This keeps the batch transaction model clean.
+
+
 
 **Finding Fixed:** F8 (granularityKey in FeedbackSource.getProfile).
 
