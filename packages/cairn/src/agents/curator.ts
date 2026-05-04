@@ -20,6 +20,7 @@ import {
 } from '../db/insights.js';
 import {
   computeNetImpact,
+  DEFAULT_MIN_SESSIONS,
 } from '../db/changeVectors.js';
 import type { CairnEvent, CuratorStatus } from '../types/index.js';
 import { parseSqliteDateToMs } from '../utils/timestamps.js';
@@ -543,7 +544,7 @@ export interface ChangeVectorSweepResult {
  * @returns Structured diagnostic counts for this sweep run.
  */
 function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResult {
-  const minSessions = config?.minSessionsObserved ?? 3;
+  const minSessions = config?.minSessionsObserved ?? DEFAULT_MIN_SESSIONS;
   const db = getDb();
   const result: ChangeVectorSweepResult = {
     eligible: 0,

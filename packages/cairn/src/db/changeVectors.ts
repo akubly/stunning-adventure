@@ -43,6 +43,13 @@ export const CHANGE_VECTOR_WEIGHTS = Object.freeze({
   deltaCacheHit: 0.15,
 });
 
+/**
+ * Minimum sessions observed before a change vector is considered reliable.
+ * Matches ChangeVectorConfig.minSessionsObserved and the prompt optimizer's
+ * canary threshold. Mirrored in forge — Alexander mirrors or imports from cairn.
+ */
+export const DEFAULT_MIN_SESSIONS = 3;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -103,16 +110,16 @@ export interface ChangeVectorSummary {
  * Convention: positive net_impact = prescription was beneficial.
  * Lower-is-better metrics (drift, cost, convergence) are negated so that
  * a reduction (negative delta) contributes positively to net_impact.
+ * Named intermediates make each term's polarity self-documenting.
  */
 export function computeNetImpact(deltas: ChangeVectorDeltas): number {
   const { deltaDrift, deltaCost, deltaSuccessRate, deltaConvergence, deltaCacheHit } = deltas;
-  return (
-    -deltaDrift * CHANGE_VECTOR_WEIGHTS.deltaDrift +
-    -deltaCost * CHANGE_VECTOR_WEIGHTS.deltaCost +
-    deltaSuccessRate * CHANGE_VECTOR_WEIGHTS.deltaSuccessRate +
-    -deltaConvergence * CHANGE_VECTOR_WEIGHTS.deltaConvergence +
-    deltaCacheHit * CHANGE_VECTOR_WEIGHTS.deltaCacheHit
-  );
+  const driftContrib = -deltaDrift * CHANGE_VECTOR_WEIGHTS.deltaDrift;
+  const costContrib = -deltaCost * CHANGE_VECTOR_WEIGHTS.deltaCost;
+  const successContrib = deltaSuccessRate * CHANGE_VECTOR_WEIGHTS.deltaSuccessRate;
+  const convergenceContrib = -deltaConvergence * CHANGE_VECTOR_WEIGHTS.deltaConvergence;
+  const cacheContrib = deltaCacheHit * CHANGE_VECTOR_WEIGHTS.deltaCacheHit;
+  return driftContrib + costContrib + successContrib + convergenceContrib + cacheContrib;
 }
 
 // ---------------------------------------------------------------------------
@@ -215,7 +222,7 @@ export function summarizeChangeVectors(
   db: Database.Database,
   category: string,
   skillId: string,
-  minVectors: number = 3,
+  minVectors: number = DEFAULT_MIN_SESSIONS,
 ): ChangeVectorSummary {
   const row = db.prepare(
     `SELECT
