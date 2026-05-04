@@ -23,8 +23,9 @@ import {
   analyzeTokenOptimizations,
   type ChangeVectorSummary,
 } from '../prescribers/index.js';
-import { computeConfidenceBoost } from '../prescribers/utils.js';
+import { computeConfidenceBoost, applyHistoricalVectorOrdering } from '../prescribers/utils.js';
 import type { ExecutionProfile } from '../telemetry/types.js';
+import type { OptimizationHint } from '../prescribers/types.js';
 
 // ---------------------------------------------------------------------------
 // Factories
@@ -522,5 +523,140 @@ describe('analyzePromptOptimizations — two-tier sort (matched before unmatched
     for (let i = 1; i < unmatched.length; i++) {
       expect(unmatched[i - 1]!.impactScore).toBeGreaterThanOrEqual(unmatched[i]!.impactScore);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyHistoricalVectorOrdering — extracted utility (cycle-3, Alexander)
+//
+// Alexander extracted `applyHistoricalVectorOrdering` from the inline sort logic
+// in promptOptimizer.ts + tokenOptimizer.ts into prescribers/utils.ts.
+// This test imports directly from utils.js to verify the contract is intact as a
+// pure, standalone function — independent of the prescriber layer.
+// ---------------------------------------------------------------------------
+
+function makeHintObj(overrides: Partial<OptimizationHint> = {}): OptimizationHint {
+  const profile = makeProfile();
+  return {
+    id: `hint-${Math.random().toString(36).slice(2)}`,
+    source: 'prompt-optimizer',
+    skillId: 'skill-alpha',
+    category: 'convergence',
+    description: 'Test hint',
+    recommendation: 'Do something',
+    impactScore: 0.5,
+    confidence: 0.8,
+    generatedAt: '2026-05-04T00:00:00.000Z',
+    evidence: { profile, triggerMetrics: {} },
+    metricSnapshot: {
+      driftScore: 0.3,
+      driftLevel: 'YELLOW',
+      tokenCostNanoAiu: 100_000,
+      successRate: 0.8,
+      convergenceTurns: 8,
+      cacheHitRate: 0.4,
+      sessionCount: 10,
+    },
+    ...overrides,
+  };
+}
+
+describe('applyHistoricalVectorOrdering — extracted utility (utils.ts)', () => {
+  it('matched hints (predictedImpact defined) appear before unmatched hints', () => {
+    const hints: OptimizationHint[] = [
+      makeHintObj({ predictedImpact: undefined, impactScore: 0.9 }),
+      makeHintObj({ predictedImpact: 0.4, impactScore: 0.3 }),
+      makeHintObj({ predictedImpact: undefined, impactScore: 0.7 }),
+      makeHintObj({ predictedImpact: 0.8, impactScore: 0.2 }),
+    ];
+
+    const ordered = applyHistoricalVectorOrdering(hints);
+
+    const matchedSlice = ordered.filter((h) => h.predictedImpact !== undefined);
+    const unmatchedSlice = ordered.filter((h) => h.predictedImpact === undefined);
+    expect(matchedSlice.length).toBe(2);
+    expect(unmatchedSlice.length).toBe(2);
+
+    // All matched must precede all unmatched
+    const firstUnmatchedIdx = ordered.findIndex((h) => h.predictedImpact === undefined);
+    const lastMatchedIdx = ordered.reduce((idx, h, i) => (h.predictedImpact !== undefined ? i : idx), -1);
+    expect(lastMatchedIdx).toBeLessThan(firstUnmatchedIdx);
+  });
+
+  it('matched hints are sorted by predictedImpact descending', () => {
+    const hints: OptimizationHint[] = [
+      makeHintObj({ predictedImpact: 0.1 }),
+      makeHintObj({ predictedImpact: 0.9 }),
+      makeHintObj({ predictedImpact: 0.5 }),
+    ];
+
+    const ordered = applyHistoricalVectorOrdering(hints);
+
+    expect(ordered[0]!.predictedImpact).toBeCloseTo(0.9, 5);
+    expect(ordered[1]!.predictedImpact).toBeCloseTo(0.5, 5);
+    expect(ordered[2]!.predictedImpact).toBeCloseTo(0.1, 5);
+  });
+
+  it('unmatched hints are sorted by impactScore descending', () => {
+    const hints: OptimizationHint[] = [
+      makeHintObj({ predictedImpact: undefined, impactScore: 0.3 }),
+      makeHintObj({ predictedImpact: undefined, impactScore: 0.9 }),
+      makeHintObj({ predictedImpact: undefined, impactScore: 0.6 }),
+    ];
+
+    const ordered = applyHistoricalVectorOrdering(hints);
+
+    expect(ordered[0]!.impactScore).toBeCloseTo(0.9, 5);
+    expect(ordered[1]!.impactScore).toBeCloseTo(0.6, 5);
+    expect(ordered[2]!.impactScore).toBeCloseTo(0.3, 5);
+  });
+
+  it('matched hint with negative predictedImpact still ranks before any unmatched hint', () => {
+    const hints: OptimizationHint[] = [
+      makeHintObj({ predictedImpact: undefined, impactScore: 0.95 }),
+      makeHintObj({ predictedImpact: -0.5, impactScore: 0.1 }),
+    ];
+
+    const ordered = applyHistoricalVectorOrdering(hints);
+
+    expect(ordered[0]!.predictedImpact).toBeCloseTo(-0.5, 5);
+    expect(ordered[1]!.predictedImpact).toBeUndefined();
+  });
+
+  it('does not mutate the input array', () => {
+    const hints: OptimizationHint[] = [
+      makeHintObj({ predictedImpact: undefined, impactScore: 0.9 }),
+      makeHintObj({ predictedImpact: 0.5, impactScore: 0.1 }),
+    ];
+    const originalOrder = [...hints];
+
+    applyHistoricalVectorOrdering(hints);
+
+    expect(hints[0]).toBe(originalOrder[0]);
+    expect(hints[1]).toBe(originalOrder[1]);
+  });
+
+  it('returns empty array unchanged', () => {
+    expect(applyHistoricalVectorOrdering([])).toEqual([]);
+  });
+
+  it('all matched → sorts by predictedImpact only', () => {
+    const hints: OptimizationHint[] = [
+      makeHintObj({ predictedImpact: 0.2, impactScore: 0.9 }),
+      makeHintObj({ predictedImpact: 0.8, impactScore: 0.1 }),
+    ];
+    const ordered = applyHistoricalVectorOrdering(hints);
+    expect(ordered[0]!.predictedImpact).toBeCloseTo(0.8, 5);
+    expect(ordered[1]!.predictedImpact).toBeCloseTo(0.2, 5);
+  });
+
+  it('all unmatched → sorts by impactScore descending only', () => {
+    const hints: OptimizationHint[] = [
+      makeHintObj({ predictedImpact: undefined, impactScore: 0.2 }),
+      makeHintObj({ predictedImpact: undefined, impactScore: 0.8 }),
+    ];
+    const ordered = applyHistoricalVectorOrdering(hints);
+    expect(ordered[0]!.impactScore).toBeCloseTo(0.8, 5);
+    expect(ordered[1]!.impactScore).toBeCloseTo(0.2, 5);
   });
 });

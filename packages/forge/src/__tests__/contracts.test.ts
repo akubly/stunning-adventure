@@ -391,28 +391,9 @@ describe('TelemetrySink interface', () => {
 // ---------------------------------------------------------------------------
 
 describe('ChangeVectorSummary — root re-export smoke test', () => {
-  it('is importable as a type from @akubly/forge root index', async () => {
-    // Dynamic import to verify the shape exists at the module boundary.
-    // TypeScript's `import type` is erased at runtime; we use a value import here
-    // to confirm the module resolves correctly and the prescribers barrel works.
-    // Relative path used to avoid workspace self-resolution issue (see block comment above).
-    const forgeModule = await import('../index.js');
-
-    // ChangeVectorSummary is a type-only export — it has no runtime value.
-    // The smoke test verifies that importing from the root does NOT throw (i.e.,
-    // the prescribers barrel is wired correctly and there are no missing re-exports).
-    // We do this by checking that the forge module object itself resolves without error.
-    expect(forgeModule).toBeDefined();
-
-    // Additionally verify that OptimizationCategory-related exports (which are value
-    // exports in the prescribers barrel) are still present, confirming the barrel export
-    // path for ChangeVectorSummary is intact.
-    expect(typeof forgeModule.analyzePromptOptimizations).toBe('function');
-  });
-
-  it('a value conforming to ChangeVectorSummary has the expected shape', () => {
-    // This is a compile-time + runtime shape test.
-    // TypeScript will error here if ChangeVectorSummary's shape changes.
+  it('ChangeVectorSummary is exported as a type from forge root index', () => {
+    // Compile-time + runtime shape guard. TypeScript will error here if
+    // ChangeVectorSummary's shape changes or the export is removed.
     // Relative path used to avoid workspace self-resolution issue (see block comment above).
     const summary: import('../index.js').ChangeVectorSummary = {
       category: 'convergence',
@@ -431,5 +412,20 @@ describe('ChangeVectorSummary — root re-export smoke test', () => {
     expect(typeof summary.meanNetImpact).toBe('number');
     expect(typeof summary.vectorCount).toBe('number');
     expect(typeof summary.confidenceBoost).toBe('number');
+  });
+
+  // Barrel sanity check — NOT a type assertion. ChangeVectorSummary is type-only and has
+  // no runtime value. This test confirms the module loads without error (prescribers barrel
+  // wired correctly, no missing re-exports), and that value exports remain present.
+  it('@akubly/forge barrel resolves without runtime error', async () => {
+    // Dynamic import to confirm the module resolves correctly.
+    // Relative path used to avoid workspace self-resolution issue (see block comment above).
+    const forgeModule = await import('../index.js');
+
+    expect(forgeModule).toBeDefined();
+
+    // Value exports from the prescribers barrel confirm the export path for
+    // ChangeVectorSummary is intact.
+    expect(typeof forgeModule.analyzePromptOptimizations).toBe('function');
   });
 });

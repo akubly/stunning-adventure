@@ -73,7 +73,23 @@
 - Added ChangeVectorSummary schema regression suite
 - **Final: 1102 passing tests**
 
-**Lesson:** Defect finding ≠ defect fixing. Tester identifies, architect decides, implementer executes under review. Divided labor prevents blind spots.
+**Wave 4 (Cycle 2 — Phase 4.6, 2026-05-03):**
+- 15 findings from code-panel review assigned; Rosella + Alexander fixes landed first
+- Pre-existing failing test: UNIQUE constraint caused "returns multiple vectors" to fail → fixed
+- New tests: 548 cairn + 585 forge (1133 total)
+  - #1 deltaCost per-session normalization (curatorVectors.test.ts)
+  - #2 confidence clamp / never-attenuate (changeVectors, weight-consistency, prescribers-vectors)
+  - #3 sessionsObserved as delta (curatorVectors.test.ts)
+  - #4 UNIQUE(hint_id) constraint (migration012.test.ts)
+  - #5 two-tier sort — matched before unmatched (prescribers-vectors.test.ts)
+  - #6 structured ChangeVectorSweepResult diagnostics (curatorVectors.test.ts)
+  - #7 category regression guard — duck-typed boundary (new: changeVectorCategoryRegression.test.ts)
+  - #8 ChangeVectorSummary root re-export smoke test (contracts.test.ts)
+  - #13 describe rename (weight-consistency.test.ts)
+  - #14 computeConfidenceBoost removed from prescribers/index.ts — compile-time guard (implicit)
+  - #15 DEFAULT_MIN_SESSIONS regression pin, both sides (changeVectors, weight-consistency)
+- Two commits: one for curator/migration/prescribers; one for category regression/weight-consistency/contracts
+- **Lesson:** UNIQUE constraint adds `sqlite_autoindex_*` — excluded by `NOT LIKE 'sqlite_%'` filter, so explicit index count tests are unaffected. Always check filter criteria when migration schema changes.
 
 ## Core Patterns Established
 
@@ -86,3 +102,25 @@
 **Regression guards:** L5 tests catch O(N) complexity regressions. Weight consistency tests (e.g., cairn/forge constant alignment) prevent silent divergence. Schema regression suites catch structural drift.
 
 **Defect resolution pattern:** Lockout rule (author cannot fix own defect) prevents blind spots. Three-phase triage (find → decide → fix) divides ownership, improves quality.
+
+**Cross-boundary category contract:** cairn stores `category: string`; forge uses `OptimizationCategory` union. Regression test uses `readonly OptimizationCategory[]` array — TypeScript enforces membership at compile time, runtime asserts round-trip. If forge renames a category, the array gets a type error in CI.
+
+**Test isolation + cursor state:** INSERT OR IGNORE idempotence tests must assert `alreadyComputed` on the _second_ curate() call — the first sweep has changes=1, the second has changes=0 (INSERT OR IGNORE does nothing). Always track which sweep call you're asserting on.
+
+## Learnings
+
+### 2026-05-04 — Cycle-3 Advisory Fixes
+
+**Items delivered:**
+- **ITEM A** (alias cleanup): Migrated 6 `result.vectorsComputed` calls → `result.changeVectorSweep.computed` across curatorVectors.test.ts. Dropped the deprecated `vectorsComputed` field from `CurateResult` interface and return object in curator.ts. Clean removal — no other callers.
+- **ITEM B** (contracts relabel): Reordered the two tests in `ChangeVectorSummary — root re-export smoke test`. Shape-guard test now runs first (renamed "ChangeVectorSummary is exported as a type from forge root index"). Barrel smoke test now second (renamed "@akubly/forge barrel resolves without runtime error" with comment clarifying it's not a type assertion).
+
+**New tests for cycle-3 production changes (+20 total):**
+- `curatorVectors.test.ts` +6: Legacy snapshot deltaCost=0 (no sessionCount / sessionCount=0 / other deltas still computed / sessionCount>0 normal path), session count reset clamp (sessionsObserved=0), equal counts edge case.
+- `changeVectors.test.ts` +2: `summarizeChangeVectors(db, cat, skill, 0)` → finite, >=1.0 (safeMin guard); vectorCount=0 with minVectors=0 still returns 1.0 (early-exit path).
+- `weight-consistency.test.ts` +4: `computeConfidenceBoost(vc, 0)` returns finite >= 1.0 for vc=0, 1, large, and all across a sweep.
+- `prescribers-vectors.test.ts` +8: `applyHistoricalVectorOrdering` imported directly from utils.ts; verified matched-first / predictedImpact-desc / unmatched-impactScore-desc contract; non-mutation; empty array; all-matched / all-unmatched edge cases.
+
+**Defect scan — no production defects found.** All cycle-3 changes (Rosella's legacy snapshot guard, sessions_observed clamp, safeMin in summarizeChangeVectors; Alexander's safeMin in computeConfidenceBoost, applyHistoricalVectorOrdering extraction) were already in place. The view tool returned a cached version of changeVectors.ts that lacked the safeMin guard — Get-Content confirmed the guard was present. Lesson: when a test passes unexpectedly, verify live source with Get-Content, not view.
+
+**Totals: 1153 passing (556 cairn + 597 forge), 4 todos. Baseline was 1133 (+20).**

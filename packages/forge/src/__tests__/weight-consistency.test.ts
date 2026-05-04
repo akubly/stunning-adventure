@@ -177,3 +177,40 @@ describe('DEFAULT_MIN_SESSIONS — forge constant regression pin', () => {
     expect(computeConfidenceBoost(10)).toBeCloseTo(computeConfidenceBoost(10, DEFAULT_MIN_SESSIONS), 10);
   });
 });
+
+// ---------------------------------------------------------------------------
+// computeConfidenceBoost — minVectors=0 safeMin guard (cycle-3, Alexander)
+//
+// computeConfidenceBoost(vc, 0): safeMin = Math.max(1, 0) = 1, so the formula
+// uses log(2) as denominator — all results are finite and >= 1.0.
+// ---------------------------------------------------------------------------
+
+describe('computeConfidenceBoost — minVectors=0 safeMin guard', () => {
+  it('computeConfidenceBoost(0, 0) returns 1.0 (vectorCount=0 early exit)', () => {
+    expect(computeConfidenceBoost(0, 0)).toBe(1.0);
+  });
+
+  it('computeConfidenceBoost(1, 0) returns finite >= 1.0 (safeMin=1 prevents log(1)=0 divide)', () => {
+    const result = computeConfidenceBoost(1, 0);
+    expect(Number.isFinite(result)).toBe(true);
+    expect(result).toBeGreaterThanOrEqual(1.0);
+    // With safeMin=1: log(2)/log(2) = 1.0 exactly
+    expect(result).toBeCloseTo(1.0, 10);
+  });
+
+  it('computeConfidenceBoost(large, 0) returns finite > 1.0 (safeMin=1, amplified)', () => {
+    // With safeMin=1: log(1+vc)/log(2) — grows without bound but stays finite
+    const result = computeConfidenceBoost(100, 0);
+    expect(Number.isFinite(result)).toBe(true);
+    expect(result).toBeGreaterThan(1.0);
+  });
+
+  it('minVectors=0 never produces NaN or Infinity for any finite vectorCount', () => {
+    for (const vc of [0, 1, 2, 5, 10, 100]) {
+      const result = computeConfidenceBoost(vc, 0);
+      expect(Number.isFinite(result)).toBe(true);
+      expect(Number.isNaN(result)).toBe(false);
+      expect(result).toBeGreaterThanOrEqual(1.0);
+    }
+  });
+});

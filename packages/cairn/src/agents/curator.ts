@@ -136,11 +136,6 @@ export interface CurateResult {
   insightsChanged: boolean;
   /** Structured diagnostics from the change-vector sweep run. */
   changeVectorSweep: ChangeVectorSweepResult;
-  /**
-   * Number of change vectors inserted in this sweep.
-   * @deprecated Use changeVectorSweep.computed for full diagnostics.
-   */
-  vectorsComputed: number;
 }
 
 /**
@@ -221,7 +216,6 @@ export function curate(changeVectorConfig?: ChangeVectorConfig): CurateResult {
     capped,
     insightsChanged: totalCreated > 0 || totalReinforced > 0,
     changeVectorSweep,
-    vectorsComputed: changeVectorSweep.computed,
   };
 }
 

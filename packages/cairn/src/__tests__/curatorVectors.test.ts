@@ -12,6 +12,11 @@
  *   - #3 sessionsObserved as delta (Rosella)
  *   - #4 UNIQUE + INSERT OR IGNORE idempotence (Rosella)
  *   - #6 structured ChangeVectorSweepResult diagnostics (Rosella)
+ *
+ * Updated in cycle 3 for:
+ *   - Legacy snapshot deltaCost skip (legacyCostSkipped counter) (Rosella)
+ *   - sessions_observed clamp via Math.max(0, ...) — sessionCountReset counter (Rosella)
+ *   - Migrated deprecated result.vectorsComputed → result.changeVectorSweep.computed (Laura)
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -114,7 +119,7 @@ describe('Curator sweep — change vector computation', () => {
 
     const result = curate();
 
-    expect(result.vectorsComputed).toBe(1);
+    expect(result.changeVectorSweep.computed).toBe(1);
     const db = getDb();
     const vectors = getChangeVectorsByHintId(db, hintId);
     expect(vectors.length).toBe(1);
@@ -129,7 +134,7 @@ describe('Curator sweep — change vector computation', () => {
 
     const result = curate();
 
-    expect(result.vectorsComputed).toBe(0);
+    expect(result.changeVectorSweep.computed).toBe(0);
     const db = getDb();
     const vectors = getChangeVectorsByHintId(db, hintId);
     expect(vectors.length).toBe(0);
@@ -144,7 +149,7 @@ describe('Curator sweep — change vector computation', () => {
 
     const result = curate({ minSessionsObserved: 5 });
 
-    expect(result.vectorsComputed).toBe(1);
+    expect(result.changeVectorSweep.computed).toBe(1);
     const db = getDb();
     expect(getChangeVectorsByHintId(db, hintId).length).toBe(1);
   });
@@ -159,7 +164,7 @@ describe('Curator sweep — change vector computation', () => {
     curate();
     const result2 = curate();
 
-    expect(result2.vectorsComputed).toBe(0);
+    expect(result2.changeVectorSweep.computed).toBe(0);
     const db = getDb();
     expect(getChangeVectorsByHintId(db, hintId).length).toBe(1);
   });
@@ -178,7 +183,7 @@ describe('Curator sweep — change vector computation', () => {
 
     const result = curate();
 
-    expect(result.vectorsComputed).toBe(2);
+    expect(result.changeVectorSweep.computed).toBe(2);
   });
 
   it('correctly computes delta_drift as after.drift_mean − before.driftScore', () => {
@@ -289,7 +294,7 @@ describe('Curator sweep — only processes applied hints', () => {
 
     const result = curate();
 
-    expect(result.vectorsComputed).toBe(0);
+    expect(result.changeVectorSweep.computed).toBe(0);
     const db = getDb();
     expect(getChangeVectorsByHintId(db, hintId)).toEqual([]);
   });
@@ -477,5 +482,159 @@ describe('Curator sweep — sessionsObserved is a delta (after - before session 
     const db = getDb();
     const vectors = getChangeVectorsByHintId(db, hintId);
     expect(vectors[0]!.sessionsObserved).toBe(7); // 7 - 0 = 7
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Legacy snapshot cost-delta skip — cycle-3 (Rosella)
+//
+// Snapshots from Phase 4.5 and earlier do not carry `sessionCount`. Without it,
+// per-session cost normalization is impossible. sweepChangeVectors sets deltaCost=0
+// and increments legacyCostSkipped for these hints. Other deltas remain valid.
+// ---------------------------------------------------------------------------
+
+describe('Curator sweep — legacy snapshot deltaCost handling', () => {
+  it('snapshot WITHOUT sessionCount field → deltaCost=0 and legacyCostSkipped increments', () => {
+    const hintId = insertAppliedHint('skill-lc1', 'convergence', {
+      driftScore: 0.3,
+      tokenCostNanoAiu: 100_000,
+      // no sessionCount field — legacy snapshot
+      successRate: 0.8,
+      convergenceTurns: 8,
+      cacheHitRate: 0.4,
+    });
+    upsertAfterProfile('skill-lc1', 5, { tokenTotalCost: 200_000 });
+
+    const result = curate();
+
+    expect(result.changeVectorSweep.legacyCostSkipped).toBe(1);
+    const db = getDb();
+    const vectors = getChangeVectorsByHintId(db, hintId);
+    expect(vectors.length).toBe(1);
+    // deltaCost must be 0 — cumulative cost subtraction would be meaningless
+    expect(vectors[0]!.deltaCost).toBe(0);
+  });
+
+  it('snapshot WITH sessionCount=0 → same handling as undefined (deltaCost=0, legacyCostSkipped++)', () => {
+    const hintId = insertAppliedHint('skill-lc2', 'convergence', {
+      driftScore: 0.3,
+      tokenCostNanoAiu: 100_000,
+      sessionCount: 0, // explicitly zero — treated as legacy
+      successRate: 0.8,
+      convergenceTurns: 8,
+      cacheHitRate: 0.4,
+    });
+    upsertAfterProfile('skill-lc2', 5, { tokenTotalCost: 200_000 });
+
+    const result = curate();
+
+    expect(result.changeVectorSweep.legacyCostSkipped).toBe(1);
+    const db = getDb();
+    const vectors = getChangeVectorsByHintId(db, hintId);
+    expect(vectors.length).toBe(1);
+    expect(vectors[0]!.deltaCost).toBe(0);
+  });
+
+  it('other deltas (drift, successRate, convergence, cacheHit) are still computed when cost is skipped', () => {
+    // Even with a legacy snapshot, non-cost deltas are rates/means that remain meaningful.
+    const hintId = insertAppliedHint('skill-lc3', 'convergence', {
+      driftScore: 0.3,
+      tokenCostNanoAiu: 100_000,
+      // no sessionCount — legacy
+      successRate: 0.8,
+      convergenceTurns: 8,
+      cacheHitRate: 0.4,
+    });
+    upsertAfterProfile('skill-lc3', 5, {
+      driftMean: 0.15,
+      successRate: 0.9,
+      meanConvergence: 5,
+      cacheHitRate: 0.6,
+    });
+
+    curate();
+
+    const db = getDb();
+    const vectors = getChangeVectorsByHintId(db, hintId);
+    const v = vectors[0]!;
+    expect(v.deltaCost).toBe(0);
+    expect(v.deltaDrift).toBeCloseTo(0.15 - 0.3, 5);     // -0.15 (improved)
+    expect(v.deltaSuccessRate).toBeCloseTo(0.9 - 0.8, 5); // +0.1 (improved)
+    expect(v.deltaConvergence).toBeCloseTo(5 - 8, 5);     // -3 (improved)
+    expect(v.deltaCacheHit).toBeCloseTo(0.6 - 0.4, 5);   // +0.2 (improved)
+  });
+
+  it('snapshot WITH sessionCount > 0 → cost delta computed normally (not skipped)', () => {
+    // Regression guard: modern snapshots with sessionCount must not trigger legacyCostSkipped.
+    const hintId = insertAppliedHint('skill-lc4', 'convergence', {
+      driftScore: 0.3,
+      tokenCostNanoAiu: 100_000,
+      sessionCount: 5,
+      successRate: 0.8,
+      convergenceTurns: 8,
+      cacheHitRate: 0.4,
+    });
+    upsertAfterProfile('skill-lc4', 10, { tokenTotalCost: 120_000 });
+
+    const result = curate();
+
+    expect(result.changeVectorSweep.legacyCostSkipped).toBe(0);
+    const db = getDb();
+    const vectors = getChangeVectorsByHintId(db, hintId);
+    // afterPerSession = 120_000/10 = 12_000; beforePerSession = 100_000/5 = 20_000
+    // deltaCost = 12_000 - 20_000 = -8_000 (improvement)
+    expect(vectors[0]!.deltaCost).toBeCloseTo(-8_000, 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sessions_observed clamp — cycle-3 (Rosella)
+//
+// When profile.session_count < snapshot.sessionCount (counter reset or data anomaly),
+// sessionsObserved is clamped to 0 via Math.max(0, ...) and sessionCountReset increments.
+// ---------------------------------------------------------------------------
+
+describe('Curator sweep — sessions_observed clamp on counter reset', () => {
+  it('profile.session_count < snapshot.sessionCount → sessionsObserved=0, sessionCountReset increments', () => {
+    // Scenario: snapshot recorded at 100 sessions; profile reset to 50 sessions.
+    const hintId = insertAppliedHint('skill-scr1', 'convergence', {
+      driftScore: 0.3,
+      tokenCostNanoAiu: 100_000,
+      sessionCount: 100, // snapshot taken at 100 sessions
+      successRate: 0.8,
+      convergenceTurns: 8,
+      cacheHitRate: 0.4,
+    });
+    // Profile now shows only 50 sessions — counter reset or data anomaly
+    upsertAfterProfile('skill-scr1', 50);
+
+    const result = curate();
+
+    expect(result.changeVectorSweep.sessionCountReset).toBe(1);
+    const db = getDb();
+    const vectors = getChangeVectorsByHintId(db, hintId);
+    expect(vectors.length).toBe(1);
+    // sessionsObserved must be clamped to 0, not a negative number
+    expect(vectors[0]!.sessionsObserved).toBe(0);
+  });
+
+  it('profile.session_count === snapshot.sessionCount → sessionsObserved=0, no sessionCountReset', () => {
+    // Edge: equal counts → rawSessionsObserved = 0, no clamp needed, no reset flagged.
+    const hintId = insertAppliedHint('skill-scr2', 'convergence', {
+      driftScore: 0.3,
+      tokenCostNanoAiu: 100_000,
+      sessionCount: 5,
+      successRate: 0.8,
+      convergenceTurns: 8,
+      cacheHitRate: 0.4,
+    });
+    upsertAfterProfile('skill-scr2', 5);
+
+    const result = curate();
+
+    expect(result.changeVectorSweep.sessionCountReset).toBe(0);
+    const db = getDb();
+    const vectors = getChangeVectorsByHintId(db, hintId);
+    expect(vectors[0]!.sessionsObserved).toBe(0);
   });
 });

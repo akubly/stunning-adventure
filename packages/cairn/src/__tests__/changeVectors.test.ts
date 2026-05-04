@@ -446,3 +446,32 @@ describe('summarizeChangeVectors — confidence clamp (vectors never attenuate)'
     expect(summary.confidenceBoost).toBeGreaterThanOrEqual(1.0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// summarizeChangeVectors — minVectors=0 safeMin guard (cycle-3, Rosella)
+//
+// When minVectors=0, the denominator log(1+0)=0 would produce Infinity before
+// the safeMin guard is applied. After Rosella's fix: safeMin = Math.max(1, 0) = 1,
+// so the formula uses log(2) as denominator — all results are finite.
+// ---------------------------------------------------------------------------
+
+describe('summarizeChangeVectors — minVectors=0 safeMin guard', () => {
+  it('called with minVectors=0 returns a finite confidenceBoost (not NaN, not Infinity)', () => {
+    const db = getDb();
+    const hintId = insertOptimizationHint(makeHint({ skillId: 'skill-safmin', category: 'convergence' }));
+    insertChangeVector(db, { hintId, deltas: makeDeltas(), sessionsObserved: 3, computedAt: '2026-05-04T00:00:00.000Z' });
+
+    const summary = summarizeChangeVectors(db, 'convergence', 'skill-safmin', 0);
+
+    expect(Number.isFinite(summary.confidenceBoost)).toBe(true);
+    expect(Number.isNaN(summary.confidenceBoost)).toBe(false);
+    expect(summary.confidenceBoost).toBeGreaterThanOrEqual(1.0);
+  });
+
+  it('vectorCount=0 with minVectors=0 still returns confidenceBoost 1.0 (early-exit path)', () => {
+    // No vectors inserted → vectorCount=0 → early return 1.0 regardless of minVectors.
+    const db = getDb();
+    const summary = summarizeChangeVectors(db, 'convergence', 'skill-safmin-empty', 0);
+    expect(summary.confidenceBoost).toBe(1.0);
+  });
+});
