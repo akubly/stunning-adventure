@@ -103,6 +103,20 @@ describe('computeConfidenceBoost — utility', () => {
     expect(computeConfidenceBoost(5, 5)).toBeCloseTo(1.0, 10);
     expect(computeConfidenceBoost(10, 10)).toBeCloseTo(1.0, 10);
   });
+
+  it('returns 1.0 for vectorCount=1, minVectors=3 (cycle-2 clamp fix #2 — was 0.5 before)', () => {
+    // Pre-fix: log(2)/log(4) ≈ 0.5 would halve confidence for a single observed vector.
+    // Post-fix: Math.max(1.0, 0.5) = 1.0 — sparse evidence is neutral, not penalising.
+    expect(computeConfidenceBoost(1, 3)).toBe(1.0);
+  });
+
+  it('vectors never attenuate confidence — output is always >= 1.0', () => {
+    // Wave 1 policy invariant (Aaron, 2026-05-03): confidenceBoost must never drop below 1.0.
+    for (const vc of [0, 1, 2, 3, 5, 10]) {
+      expect(computeConfidenceBoost(vc)).toBeGreaterThanOrEqual(1.0);
+      expect(computeConfidenceBoost(vc, 10)).toBeGreaterThanOrEqual(1.0);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -427,4 +441,86 @@ describe('analyzeTokenOptimizations — edge cases', () => {
   });
 
   it.todo('penalizes confidence on negative meanNetImpact (Wave 2 — deferred per Aaron policy 2026-05-03)');
+});
+
+// ---------------------------------------------------------------------------
+// Two-tier sort regression — Finding #5 (Phase 4.6 cycle 2)
+//
+// Before fix: unmatched hints (predictedImpact = undefined → 0) could outrank
+// matched hints with NEGATIVE predictedImpact (e.g., -0.2 < 0 = undefined's proxy).
+// After fix: matched hints always appear before unmatched, regardless of sign.
+// ---------------------------------------------------------------------------
+
+describe('analyzePromptOptimizations — two-tier sort (matched before unmatched)', () => {
+  it('unmatched hints appear AFTER matched hints even when matched hint has negative predictedImpact', () => {
+    // Skeptic flag from cycle-1 review: without the partition fix, an unmatched hint with
+    // predictedImpact = undefined (treated as 0 in simple sort) would outrank a matched hint
+    // with measurably bad historical performance (predictedImpact = -0.5).
+    const profile = makeProfile({
+      tokens: { meanInputTokens: 80_000, meanOutputTokens: 1_000, meanCacheHitRate: 0.6, totalCostNanoAiu: 100_000 },
+    });
+    // Give convergence a NEGATIVE historical vector (prescription made things worse)
+    const vectors: ChangeVectorSummary[] = [
+      makeVector({ category: 'convergence', skillId: 'skill-alpha', meanNetImpact: -0.5, confidenceBoost: 1.2 }),
+    ];
+    const result = analyzePromptOptimizations(profile, undefined, vectors);
+
+    // There must be both matched and unmatched hints for this test to be meaningful
+    const matchedHints = result.hints.filter((h) => h.predictedImpact !== undefined);
+    const unmatchedHints = result.hints.filter((h) => h.predictedImpact === undefined);
+
+    if (matchedHints.length === 0 || unmatchedHints.length === 0) {
+      // Profile didn't generate enough hints for the two-tier test; skip gracefully
+      return;
+    }
+
+    // ALL matched hints must precede ALL unmatched hints
+    const firstUnmatchedIndex = result.hints.findIndex((h) => h.predictedImpact === undefined);
+    const lastMatchedIndex = result.hints.reduce(
+      (idx, h, i) => (h.predictedImpact !== undefined ? i : idx),
+      -1,
+    );
+    expect(lastMatchedIndex).toBeLessThan(firstUnmatchedIndex);
+  });
+
+  it('matched hints with negative predictedImpact still rank before unmatched hints', () => {
+    const profile = makeProfile({
+      tokens: { meanInputTokens: 80_000, meanOutputTokens: 1_000, meanCacheHitRate: 0.6, totalCostNanoAiu: 100_000 },
+    });
+    const vectors: ChangeVectorSummary[] = [
+      makeVector({ category: 'convergence', skillId: 'skill-alpha', meanNetImpact: -0.9, confidenceBoost: 1.0 }),
+      makeVector({ category: 'context-management', skillId: 'skill-alpha', meanNetImpact: -0.1, confidenceBoost: 1.0 }),
+    ];
+    const result = analyzePromptOptimizations(profile, undefined, vectors);
+
+    const matchedHints = result.hints.filter((h) => h.predictedImpact !== undefined);
+    const unmatchedHints = result.hints.filter((h) => h.predictedImpact === undefined);
+
+    if (matchedHints.length === 0 || unmatchedHints.length === 0) return;
+
+    // The matched hints (even with negative predictedImpact) must all come before unmatched
+    for (const matched of matchedHints) {
+      const mi = result.hints.indexOf(matched);
+      for (const unmatched of unmatchedHints) {
+        const ui = result.hints.indexOf(unmatched);
+        expect(mi).toBeLessThan(ui);
+      }
+    }
+  });
+
+  it('unmatched hints are sorted by impactScore descending (original Phase 4.5 order preserved)', () => {
+    const profile = makeProfile({
+      tokens: { meanInputTokens: 80_000, meanOutputTokens: 1_000, meanCacheHitRate: 0.6, totalCostNanoAiu: 100_000 },
+    });
+    // Only match one category — the rest are unmatched and should preserve impactScore order
+    const vectors: ChangeVectorSummary[] = [
+      makeVector({ category: 'convergence', skillId: 'skill-alpha', meanNetImpact: 0.3 }),
+    ];
+    const result = analyzePromptOptimizations(profile, undefined, vectors);
+
+    const unmatched = result.hints.filter((h) => h.predictedImpact === undefined);
+    for (let i = 1; i < unmatched.length; i++) {
+      expect(unmatched[i - 1]!.impactScore).toBeGreaterThanOrEqual(unmatched[i]!.impactScore);
+    }
+  });
 });

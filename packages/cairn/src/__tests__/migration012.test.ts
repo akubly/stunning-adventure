@@ -158,8 +158,50 @@ describe('migration 012 — indices', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Migration 012 — idempotence
+// Migration 012 — UNIQUE constraint (Phase 4.6 cycle 2, Finding #4)
 // ---------------------------------------------------------------------------
+
+describe('migration 012 — UNIQUE(hint_id) constraint', () => {
+  it('change_vectors enforces UNIQUE on hint_id — duplicate insert throws', () => {
+    // ADR-P4.6-004: UNIQUE(hint_id) ensures at most one change vector per hint.
+    // The sweep uses INSERT OR IGNORE to rely on the constraint for idempotence.
+    const db = getDb(':memory:');
+    // Insert a prerequisite hint so FK constraint is satisfied
+    db.prepare(
+      `INSERT INTO optimization_hints (id, source, skill_id, category, description, recommendation, generated_at)
+       VALUES ('hint-unique-test', 'prompt-optimizer', 'skill-a', 'convergence', 'test', 'test', '2026-05-03T20:00:00.000Z')`
+    ).run();
+    db.prepare(
+      `INSERT INTO change_vectors (hint_id, delta_drift, delta_cost, delta_success_rate, delta_convergence, delta_cache_hit, net_impact, sessions_observed, computed_at)
+       VALUES ('hint-unique-test', 0, 0, 0, 0, 0, 0, 3, '2026-05-03T20:00:00.000Z')`
+    ).run();
+    expect(() =>
+      db.prepare(
+        `INSERT INTO change_vectors (hint_id, delta_drift, delta_cost, delta_success_rate, delta_convergence, delta_cache_hit, net_impact, sessions_observed, computed_at)
+         VALUES ('hint-unique-test', 0, 0, 0, 0, 0, 0, 5, '2026-05-03T21:00:00.000Z')`
+      ).run(),
+    ).toThrow(/UNIQUE constraint failed/);
+  });
+
+  it('INSERT OR IGNORE respects UNIQUE(hint_id) — duplicate is silently ignored', () => {
+    const db = getDb(':memory:');
+    db.prepare(
+      `INSERT INTO optimization_hints (id, source, skill_id, category, description, recommendation, generated_at)
+       VALUES ('hint-ignore-test', 'prompt-optimizer', 'skill-a', 'convergence', 'test', 'test', '2026-05-03T20:00:00.000Z')`
+    ).run();
+    db.prepare(
+      `INSERT INTO change_vectors (hint_id, delta_drift, delta_cost, delta_success_rate, delta_convergence, delta_cache_hit, net_impact, sessions_observed, computed_at)
+       VALUES ('hint-ignore-test', 0, 0, 0, 0, 0, 0, 3, '2026-05-03T20:00:00.000Z')`
+    ).run();
+    const result = db.prepare(
+      `INSERT OR IGNORE INTO change_vectors (hint_id, delta_drift, delta_cost, delta_success_rate, delta_convergence, delta_cache_hit, net_impact, sessions_observed, computed_at)
+       VALUES ('hint-ignore-test', 0, 0, 0, 0, 0, 0, 5, '2026-05-03T21:00:00.000Z')`
+    ).run();
+    expect(result.changes).toBe(0); // ignored, not inserted
+    const rows = db.prepare('SELECT COUNT(*) as n FROM change_vectors WHERE hint_id = ?').get('hint-ignore-test') as { n: number };
+    expect(rows.n).toBe(1); // only one row ever existed
+  });
+});
 
 describe('migration 012 — idempotence', () => {
   it('calling applyMigrations() on an already-migrated DB does not throw', () => {
