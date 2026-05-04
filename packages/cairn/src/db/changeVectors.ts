@@ -148,6 +148,12 @@ function mapRow(row: Record<string, unknown>): ChangeVectorRow {
 /**
  * Insert a new change vector. Computes net_impact from deltas.
  * Returns the id of the inserted row.
+ *
+ * @throws On duplicate `hint_id` — the `change_vectors.hint_id` column has a
+ *   UNIQUE constraint (added migration 012). This function uses a plain INSERT,
+ *   not INSERT OR IGNORE. Callers in retry or idempotent contexts should use
+ *   `sweepChangeVectors()` instead, which uses INSERT OR IGNORE semantics and
+ *   tracks already-computed hints via `ChangeVectorSweepResult.alreadyComputed`.
  */
 export function insertChangeVector(db: Database.Database, vector: ChangeVectorInsert): number {
   const netImpact = computeNetImpact(vector.deltas);
@@ -238,7 +244,11 @@ export function summarizeChangeVectors(
   const confidenceBoost =
     vectorCount === 0
       ? 1.0
-      : Math.max(1.0, Math.log(1 + vectorCount) / Math.log(1 + minVectors));
+      : (() => {
+          // Guard against minVectors=0: log(1+0)/log(1+0) = 0/0 = NaN.
+          const safeMin = Math.max(1, minVectors);
+          return Math.max(1.0, Math.log(1 + vectorCount) / Math.log(1 + safeMin));
+        })();
 
   return { category, skillId, meanNetImpact, vectorCount, confidenceBoost };
 }
