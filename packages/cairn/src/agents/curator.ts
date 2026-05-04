@@ -133,7 +133,12 @@ export interface CurateResult {
   insightsReinforced: number;
   capped: boolean;
   insightsChanged: boolean;
-  /** Number of change vectors computed during this sweep run. */
+  /** Structured diagnostics from the change-vector sweep run. */
+  changeVectorSweep: ChangeVectorSweepResult;
+  /**
+   * Number of change vectors inserted in this sweep.
+   * @deprecated Use changeVectorSweep.computed for full diagnostics.
+   */
   vectorsComputed: number;
 }
 
@@ -206,7 +211,7 @@ export function curate(changeVectorConfig?: ChangeVectorConfig): CurateResult {
 
   updateLastRunTimestamp();
 
-  const vectorsComputed = sweepChangeVectors(changeVectorConfig);
+  const changeVectorSweep = sweepChangeVectors(changeVectorConfig);
 
   return {
     eventsProcessed: totalProcessed,
@@ -214,7 +219,8 @@ export function curate(changeVectorConfig?: ChangeVectorConfig): CurateResult {
     insightsReinforced: totalReinforced,
     capped,
     insightsChanged: totalCreated > 0 || totalReinforced > 0,
-    vectorsComputed,
+    changeVectorSweep,
+    vectorsComputed: changeVectorSweep.computed,
   };
 }
 
@@ -509,26 +515,52 @@ interface ProfileRow {
 }
 
 /**
+ * Structured diagnostic result from a change-vector sweep run.
+ * Replaces the single `vectorsComputed` counter with per-reason breakdowns.
+ */
+export interface ChangeVectorSweepResult {
+  /** Total applied hints scanned in this sweep. */
+  eligible: number;
+  /** Change vectors successfully inserted. */
+  computed: number;
+  /** Hints skipped because the profile didn't exist or hadn't accumulated enough sessions. */
+  skippedInsufficientSessions: number;
+  /** Hints skipped because metric_snapshot couldn't be parsed. */
+  skippedMalformedSnapshot: number;
+  /** Hints already had a vector (idempotent skip via INSERT OR IGNORE). */
+  alreadyComputed: number;
+}
+
+/**
  * Sweep applied optimization hints and compute change vectors for those with
- * enough post-application sessions and no existing vector.
+ * enough post-application sessions.
  *
  * Follows the "observe, don't block" Curator pattern — runs outside the event
  * processing loop, fails silently per-hint on malformed snapshots.
+ * Idempotent: re-running over already-computed hints is safe; INSERT OR IGNORE
+ * on the UNIQUE(hint_id) constraint prevents duplicates.
  *
- * @returns Number of change vectors inserted in this sweep.
+ * @returns Structured diagnostic counts for this sweep run.
  */
-function sweepChangeVectors(config?: ChangeVectorConfig): number {
+function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResult {
   const minSessions = config?.minSessionsObserved ?? 3;
   const db = getDb();
-  let computed = 0;
+  const result: ChangeVectorSweepResult = {
+    eligible: 0,
+    computed: 0,
+    skippedInsufficientSessions: 0,
+    skippedMalformedSnapshot: 0,
+    alreadyComputed: 0,
+  };
 
-  // Find all applied hints that don't yet have a change vector
+  // Scan ALL applied hints — INSERT OR IGNORE handles idempotence.
   const appliedHints = db.prepare(
     `SELECT id, skill_id, metric_snapshot
        FROM optimization_hints
-      WHERE status = 'applied'
-        AND id NOT IN (SELECT DISTINCT hint_id FROM change_vectors)`
+      WHERE status = 'applied'`
   ).all() as AppliedHintRow[];
+
+  result.eligible = appliedHints.length;
 
   for (const hint of appliedHints) {
     // Lookup the per-skill global execution profile (canonical post-application snapshot)
@@ -540,13 +572,17 @@ function sweepChangeVectors(config?: ChangeVectorConfig): number {
         LIMIT 1`
     ).get(hint.skill_id) as ProfileRow | undefined;
 
-    if (!profile || profile.session_count < minSessions) continue;
+    if (!profile || profile.session_count < minSessions) {
+      result.skippedInsufficientSessions++;
+      continue;
+    }
 
     let snapshot: MetricSnapshotShape;
     try {
       snapshot = JSON.parse(hint.metric_snapshot) as MetricSnapshotShape;
     } catch {
-      continue; // malformed snapshot — skip, don't block
+      result.skippedMalformedSnapshot++;
+      continue;
     }
 
     const before = {
@@ -595,11 +631,13 @@ function sweepChangeVectors(config?: ChangeVectorConfig): number {
     );
 
     if (insertResult.changes > 0) {
-      computed++;
+      result.computed++;
+    } else {
+      result.alreadyComputed++;
     }
   }
 
-  return computed;
+  return result;
 }
 
 /** Update the last_run_at timestamp in curator_state. */
