@@ -12,13 +12,12 @@
  * @module
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import type { SessionEvent, ModelInfo } from '@github/copilot-sdk';
 import {
   createMockClient,
   createMockSession,
   makeModelInfo,
-  assistantUsageEvent,
   type MockCopilotSession,
   type MockCopilotClient,
 } from './helpers/index.js';

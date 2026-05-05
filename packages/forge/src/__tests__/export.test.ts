@@ -19,7 +19,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { generateDBOM } from '../dbom/index.js';
 import type {
   CairnBridgeEvent,
@@ -66,8 +66,6 @@ interface StageContext {
   qualityGate?: QualityGateResult;
   diagnostics: ExportDiagnostic[];
 }
-
-type ExportStage = (context: StageContext) => StageContext;
 
 // §4.4 — Pipeline config/result
 
@@ -1191,7 +1189,7 @@ describe('DBOM Persistence (injected)', () => {
 describe('Forge→Cairn Integration', () => {
   it('quality gate receives the fully compiled SKILL.md content', () => {
     const gate = makePassingQualityGate();
-    const result = runExportPipeline(makePipelineConfig({ qualityGate: gate }));
+    runExportPipeline(makePipelineConfig({ qualityGate: gate }));
 
     expect(gate).toHaveBeenCalledTimes(1);
     const content = (gate as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
@@ -1417,7 +1415,6 @@ import {
   compileSkill as prodCompileSkill,
   escapeFrontmatter as prodEscapeFrontmatter,
   type SkillFrontmatterInput as ProdSkillFrontmatterInput,
-  type SkillCompilerInput as ProdSkillCompilerInput,
 } from '../export/compiler.js';
 import {
   extractStage as prodExtractStage,
@@ -1428,9 +1425,8 @@ import {
 } from '../export/stages.js';
 import {
   runExportPipeline as prodRunExportPipeline,
-  type ExportPipelineConfig as ProdExportPipelineConfig,
 } from '../export/pipeline.js';
-import type { ExportQualityGate as ProdExportQualityGate, QualityGateResult as ProdQualityGateResult } from '../export/types.js';
+import type { ExportQualityGate as ProdExportQualityGate } from '../export/types.js';
 
 // ---------------------------------------------------------------------------
 // Helpers for production tests

@@ -8,7 +8,7 @@
  * @module
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import type { SessionEvent, SessionConfig } from '@github/copilot-sdk';
 import {
   createMockClient,
@@ -22,15 +22,11 @@ import {
   type MockCopilotSession,
   type MockCopilotClient,
 } from './helpers/index.js';
-import { bridgeEvent } from '../bridge/index.js';
 import { HookComposer } from '../hooks/index.js';
 import type { HookObserver } from '../hooks/index.js';
-import type { CairnBridgeEvent } from '@akubly/types';
 import {
   ForgeClient,
-  ForgeSession,
   type ForgeClientOptions,
-  type ForgeSessionConfig,
 } from '../runtime/index.js';
 
 // ---------------------------------------------------------------------------

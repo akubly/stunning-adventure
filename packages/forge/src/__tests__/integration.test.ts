@@ -17,14 +17,13 @@ import {
   assistantUsageEvent,
   assistantMessageEvent,
   toolExecutionStartEvent,
-  toolExecutionCompleteEvent,
   resetEventCounter,
   type MockCopilotSession,
   type MockCopilotClient,
 } from './helpers/index.js';
-import { ForgeClient, ForgeSession, type ForgeClientOptions } from '../runtime/index.js';
-import { HookComposer, type HookObserver } from '../hooks/index.js';
-import { bridgeEvent, type EventSource } from '../bridge/index.js';
+import { ForgeClient, type ForgeClientOptions } from '../runtime/index.js';
+import { type HookObserver } from '../hooks/index.js';
+import { type EventSource } from '../bridge/index.js';
 import { createDecisionGate, createDecisionRecorder } from '../decisions/index.js';
 import { createTokenTracker } from '../models/token-tracker.js';
 import type { DecisionRecord } from '@akubly/types';

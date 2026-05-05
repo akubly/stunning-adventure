@@ -24,7 +24,12 @@
 
 import { createHash } from "node:crypto";
 
-import type { CairnEvent, ProvenanceTier } from "./event-bridge.js";
+import type { CairnEvent } from "./event-bridge.js";
+import { bridgeEvent as bridgeEventImpl } from "./event-bridge.js";
+import {
+  createSimulatedEventStream,
+  SimulatedCairnStore,
+} from "./e2e-smoke-test.js";
 
 // ---------------------------------------------------------------------------
 // DBOM Core Types
@@ -433,15 +438,9 @@ function generateCompiledSkill(
  * Shows the full pipeline: events → DBOM → YAML frontmatter → compiled skill.
  */
 function dbomDemo(): DBOMDemoResult {
-  // Import smoke test events (simulated)
-  // In production, these come from Cairn's event_log query
-  const { createSimulatedEventStream, SimulatedCairnStore } = require("./e2e-smoke-test.js") as {
-    createSimulatedEventStream: () => Array<{ id: string; type: string; timestamp: string; parentId: string | null; data: Record<string, unknown> }>;
-    SimulatedCairnStore: new () => { logEvent: (e: CairnEvent) => void; getAll: () => CairnEvent[] };
-  };
-  const { bridgeEvent: bridge } = require("./event-bridge.js") as {
-    bridgeEvent: (sessionId: string, event: unknown) => CairnEvent | null;
-  };
+  // Bridges simulated SDK events through the real event bridge to construct
+  // a CairnEvent stream, then computes a DBOM artifact over those events.
+  const bridge = bridgeEventImpl;
 
   const sessionId = "dbom-demo-session";
   const events = createSimulatedEventStream();

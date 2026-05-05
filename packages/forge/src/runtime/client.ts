@@ -10,7 +10,7 @@
  */
 
 import type { SessionConfig, SessionEvent } from "@github/copilot-sdk";
-import { HookComposer, type HookObserver } from "../hooks/index.js";
+import { HookComposer } from "../hooks/index.js";
 import { bridgeEvent } from "../bridge/index.js";
 import { ForgeSession, type ForgeSessionConfig, type SDKSession } from "./session.js";
 import type { CairnBridgeEvent } from "@akubly/types";

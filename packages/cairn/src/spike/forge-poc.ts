@@ -17,7 +17,6 @@ import {
   approveAll,
   defineTool,
   type SessionEvent,
-  type SessionEventType,
   type SessionConfig,
   type CopilotClientOptions,
   type MessageOptions,

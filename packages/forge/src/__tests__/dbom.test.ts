@@ -19,9 +19,7 @@ import {
 } from '../dbom/index.js';
 import type {
   CairnBridgeEvent,
-  DBOMArtifact,
   DBOMDecisionEntry,
-  DBOMStats,
   DecisionSource,
 } from '@akubly/types';
 

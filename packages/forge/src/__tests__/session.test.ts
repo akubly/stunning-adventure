@@ -12,7 +12,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   toModelSnapshot,
-  type ModelSnapshot,
   type ReasoningEffort,
 } from '../session/index.js';
 import type { ModelInfo } from '@github/copilot-sdk';

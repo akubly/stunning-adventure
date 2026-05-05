@@ -9,13 +9,13 @@
  * @module
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   createDecisionGate,
   createDecisionRecorder,
   makeDecisionRecord,
 } from '../decisions/index.js';
-import type { DecisionRecord, DecisionSource } from '@akubly/types';
+import type { DecisionRecord } from '@akubly/types';
 import type { PreToolUseInput, HookInvocation } from '../types.js';
 
 // ---------------------------------------------------------------------------

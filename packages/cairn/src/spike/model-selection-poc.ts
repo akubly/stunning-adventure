@@ -22,8 +22,6 @@ import {
   CopilotSession,
   approveAll,
   type ModelInfo,
-  type ModelCapabilities,
-  type ModelBilling,
   type SessionEvent,
 } from "@github/copilot-sdk";
 

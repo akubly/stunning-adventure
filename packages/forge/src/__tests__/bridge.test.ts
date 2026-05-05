@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { SessionEvent } from '@github/copilot-sdk';
-import { bridgeEvent, classifyProvenance, EVENT_MAP, PAYLOAD_EXTRACTORS } from '../bridge/index.js';
+import { bridgeEvent, classifyProvenance, EVENT_MAP } from '../bridge/index.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -14,7 +14,6 @@ import type {
   PreToolUseInput,
   PreToolUseOutput,
   PostToolUseInput,
-  PostToolUseOutput,
   HookInvocation,
 } from '../types.js';
 import type { ToolResultObject } from '@github/copilot-sdk';

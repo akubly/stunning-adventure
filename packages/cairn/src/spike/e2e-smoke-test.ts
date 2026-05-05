@@ -23,12 +23,10 @@ import type {
   SessionEvent,
   SessionEventType,
   SessionConfig,
-  CopilotClientOptions,
 } from "@github/copilot-sdk";
 
 import {
   bridgeEvent,
-  classifyProvenance,
   reconstructDBOM,
   type CairnEvent,
   type ProvenanceTier,
@@ -46,7 +44,6 @@ import {
  * Each event matches the exact shape from the SDK's session-events.schema.json.
  */
 function createSimulatedEventStream(): SessionEvent[] {
-  const sessionId = "smoke-test-session-001";
   const baseTime = new Date("2026-04-09T10:00:00Z");
   let eventIndex = 0;
 
@@ -619,7 +616,7 @@ function sketchProductionSessionConfig(cairnSessionId: string): SessionConfig {
     workingDirectory: process.cwd(),
 
     // REAL: Permission handler — fires permission.requested/completed events
-    onPermissionRequest: async (request) => {
+    onPermissionRequest: async (_request) => {
       // In production: present to user, record decision
       return { kind: "approved" as const };
     },
@@ -643,14 +640,14 @@ function sketchProductionSessionConfig(cairnSessionId: string): SessionConfig {
         }
         return {};
       },
-      onSessionStart: async (ctx) => {
+      onSessionStart: async (_ctx) => {
         // CAIRN INTEGRATION POINT: Initialize session in Cairn DB
         return {};
       },
-      onSessionEnd: async (ctx) => {
+      onSessionEnd: async (_ctx) => {
         // CAIRN INTEGRATION POINT: Finalize session, generate DBOM
         const allEvents = cairnStore.getAll();
-        const _dbom = reconstructDBOM(cairnSessionId, allEvents);
+        reconstructDBOM(cairnSessionId, allEvents);
         // Would persist DBOM to disk or DB here
         return {};
       },

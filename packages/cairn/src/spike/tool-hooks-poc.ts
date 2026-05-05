@@ -19,7 +19,6 @@
 
 import {
   CopilotClient,
-  CopilotSession,
   approveAll,
   type SessionConfig,
   type SessionEvent,
