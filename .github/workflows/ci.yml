@@ -10,7 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [20, 22]
+        # Node 22 removed: vitest/rolldown native binding issue (rolldown-binding.linux-x64-gnu.node). Re-add when vitest resolves this.
+        node-version: [20]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
