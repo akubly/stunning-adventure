@@ -29,6 +29,116 @@
 
 <!-- Append new learnings below -->
 
+### 2026-05-02: Phase 4.5 Architecture — Local Feedback Loop + Phase 5 Roadmap
+
+**Specifications:**
+- `docs/forge-phase4.5-spec.md` (full implementation spec)
+- `docs/forge-phase5-roadmap.md` (Phase 4.6/5 roadmap + wild cards)
+
+**Architecture decisions:**
+- **Spec partitioning:** Two documents, not one. Phase 4.5 gets a full implementation spec (ready for coding). Phase 4.6/5/wild cards get a lighter roadmap. Prior phases each got one spec, but this scope spans multiple future phases with different readiness levels.
+- **Three new modules in Forge:** `telemetry/` (collectors + drift + aggregator + sink), `prescribers/` (prompt + token optimizer), `applier/` (optimizer + self-tuning). Follows established module-per-concern pattern.
+- **80% infrastructure reuse confirmed:** Prescriber interface, prescription lifecycle states, Curator aggregation pattern, DBOM persistence, export pipeline — all reused. Phase 4.5 adds new implementations, not new infrastructure.
+- **TelemetrySink abstraction is the Phase 5 bridge:** `LocalDBOMSink` (Phase 4.5, SQLite) and `AppInsightsSink` (Phase 5, cloud) both satisfy `TelemetrySink`. Swap at construction, no runtime changes.
+- **FeedbackSource graduated to shared types:** First new `@akubly/types` addition since Phase 2. Justified by bidirectional consumption (Forge reads profiles, Cairn's Curator reads for sweep decisions).
+- **Drift score formula:** Weighted sum of 5 signals. Determinism signals get 70% total weight (convergence 0.30 + toolEntropy 0.25 + promptStability 0.15). Cost signals get 30%. Aaron's "Determinism > Token Cost" constraint baked into the weights.
+- **Collectors as HookObservers:** No separate event bus. Collectors see the same CairnBridgeEvent stream as decision gates. O(1) per event, defer analysis to flush.
+- **Three-phase ancestry roadmap:** Phase 4.5 = linear provenance (parent_prescription_id). Phase 4.6 = change vector learning. Phase 5 = full DAG + genetic programming. Each phase is prerequisite data for the next.
+- **Canary bootstrap for cold start:** Gradual ramp prevents prescribing from insufficient data. 0 sessions → defaults only, 3+ → prompt optimizer, 5+ → token optimizer, 10+ → auto-apply.
+
+**Key file paths:**
+- Phase 4.5 spec: `docs/forge-phase4.5-spec.md`
+- Phase 5 roadmap: `docs/forge-phase5-roadmap.md`
+- Telemetry module: `packages/forge/src/telemetry/` (6 files)
+- Prescribers module: `packages/forge/src/prescribers/` (4 files)
+- Applier module: `packages/forge/src/applier/` (3 files)
+- DB migration: `packages/cairn/src/db/migrations/011-telemetry-feedback.ts`
+- DB CRUD: `packages/cairn/src/db/{signalSamples,executionProfiles,optimizationHints}.ts`
+
+**Brainstorm distillation pattern:** 2 rounds × 10 agents = massive input. Spec writing is lossy compression — the goal is to capture every decision and constraint while discarding exploration that didn't converge. Aaron's explicit decisions are spec constraints, not suggestions.
+
+### 2026-05-01: Phase 4 Architecture — Export Pipeline
+
+**Decision document:** `.squad/decisions.md` (merged from inbox)  
+**Specification:** `docs/forge-phase4-spec.md`
+
+**Architecture decisions:**
+- **Phase boundary held:** Phase 4 = "produces portable artifacts." Export pipeline works offline from persisted events — no live SDK session required.
+- **Injection pattern extended:** Quality gate uses same injection-over-import pattern as Phase 3's `createModelCatalog(listFn)`. Forge never imports Cairn. `ExportQualityGate` is a function type satisfied by Cairn at the call site.
+- **DBOM persistence schema:** Two new tables (`dbom_artifacts` + `dbom_decisions`) in migration 010. Upsert semantics — one DBOM per session, re-export replaces. Stats fields flattened for queryability.
+- **Pipeline as fixed stages:** Four stages (Extract → Strip → Attach → QualityGate) as pure functions. No dynamic stage registration — stages are fundamentally ordered. Plugin architecture rejected as YAGNI.
+- **Fail-closed quality gate:** Gate failure returns `success: false` but still includes the compiled skill (soft failure). Caller decides whether to write. DBOM persistence failures are fail-open (warning diagnostic).
+- **No new shared types:** Continues ADR-P3-004 precedent. All Phase 4 types stay package-internal. Cross-package contract remains `DBOMArtifact` + `CairnBridgeEvent`.
+- **SKILL.md frontmatter schema:** `provenance` block in YAML frontmatter contains compiler version, session ID, DBOM root hash, decision stats. This is the "object code" output of the compiler metaphor.
+
+**Key file paths:**
+- Specification: `docs/forge-phase4-spec.md`
+- Export module: `packages/forge/src/export/` (pipeline.ts, compiler.ts, stages.ts, types.ts)
+- DBOM persistence: `packages/cairn/src/db/dbomArtifacts.ts` + `migrations/010-dbom-artifacts.ts`
+- Cairn skill tooling (integration targets): `packages/cairn/src/agents/skill{Parser,Linter,Validator,TestHarness}.ts`
+
+**Work decomposition:** 3 streams. Alexander owns DBOM persistence (4 items), Roger owns export pipeline (8 items), Laura owns integration tests (5 items). Critical path: R1 → R2/R3 → R4 → L1. Estimated 2–3 days.
+
+### 2026-04-30: Phase 3 Architecture — Live SDK Integration
+
+**Decision document:** `.squad/decisions/inbox/graham-phase3-architecture.md`  
+**Specification:** `docs/forge-phase3-spec.md`
+
+**Architecture decisions:**
+- **Two new modules:** `runtime/` (ForgeClient + ForgeSession) and `models/` (catalog, token tracker, strategies). Both compose Phase 2 modules with live SDK.
+- **Phase boundary held:** Phase 3 = "needs CopilotClient()". ForgeClient is the single SDK entry point; everything else remains offline-testable.
+- **EventSource interface pattern:** Both `attachBridge()` and `createTokenTracker()` accept the minimal `EventSource` interface rather than `CopilotSession` directly. This preserves testability — the same mock event source works for both bridge and model tests.
+- **HookComposer live Set:** The Phase 2 decision (live observer Set) pays off — `ForgeSession.addObserver()` / `removeObserver()` after session creation takes effect without SDK re-registration. Critical for mid-session decision gate management.
+- **Dual event paths:** `onEvent` callback catches events during `createSession()` (before `session.on()` is available). `attachBridge()` takes over after. No dedup needed — SDK guarantees non-overlapping windows.
+- **Injection over reference:** `createModelCatalog(listFn)` takes a function, not a ForgeClient. Same pattern as Phase 2 — modules don't hold SDK references.
+- **No new shared types:** Phase 3 types stay Forge-internal. Cross-package contracts (CairnBridgeEvent, TelemetrySink, SessionIdentity) already sufficient.
+
+**Work decomposition:** 3 waves of parallelism. Alexander owns runtime/ (7 items), Roger owns models/ (8 items), Laura owns test strategy + cross-module validation (7 items). Critical path: Laura's fixture factory (L1) unblocks all integration tests.
+
+**Spike promotion map:** Every spike PoC function has a clear production home. Most model-related patterns (toModelSnapshot, EVENT_MAP entries for model_change) were already promoted in Phase 2. Phase 3 promotes session lifecycle, token tracking, and model strategies.
+
+### 2026-04-24: Phase 2 Architecture — Forge Runtime Verification Blueprint
+
+**Decision document:** `.squad/decisions/inbox/graham-forge-phase2-architecture.md`
+
+**Architecture decisions:**
+- **Module structure:** 5 directories under `packages/forge/src/` — `bridge/`, `hooks/`, `decisions/`, `dbom/`, `session/`. Each maps to a spike PoC file. Flat structure rejected (too many files at root); monolith rejected (composability is the core value).
+- **Phase 2 vs 3 boundary:** Phase 2 = anything testable without a running Copilot CLI. Phase 3 = anything requiring live SDK. Clear rule: "if it needs `CopilotClient()`, it's Phase 3."
+- **Cross-package contracts:** Forge imports ONLY from `@akubly/types`, never from `@akubly/cairn`. Data flows at runtime via `CairnBridgeEvent` wire format. No circular dependencies.
+- **Test strategy:** ~98 fixture-based tests. Simulated `SessionEvent` objects (derived from spike's e2e-smoke-test.ts) feed production logic. No SDK instantiation, no DB dependency.
+- **Type migration rule:** All spike-local type redefinitions (`ProvenanceTier`, `DecisionRecord`, etc.) must be deleted — use `@akubly/types` imports exclusively. Key gotcha: spike uses snake_case (`session_id`), shared types use camelCase (`sessionId`).
+
+**Key file paths:**
+- Architecture blueprint: `.squad/decisions/inbox/graham-forge-phase2-architecture.md`
+- Forge scaffold: `packages/forge/src/index.ts`
+- Shared types: `packages/types/src/index.ts`
+- Spike source: `packages/cairn/src/spike/` (7 files + README)
+
+**Assignments:** Alexander owns `bridge/` + `session/`, Roger owns `hooks/` + `decisions/`, Laura owns `dbom/` + cross-package validation + test fixtures.
+
+### 2026-04-23: Phase 1 — Monorepo Foundation
+
+**Restructuring:** Converted single-package `@akubly/cairn` to three-package npm workspace monorepo: `@cairn/types` (shared contracts), `@akubly/cairn` (current codebase), `@cairn/forge` (scaffold).
+
+### 2026-04-24: Package Scope Unification
+
+**Scope rename:** Roger unified package scopes — `@cairn/types` → `@akubly/types`, `@cairn/forge` → `@akubly/forge`. All three packages now under `@akubly` scope (owned by Aaron on npm). Simplifies npm publishing, removes scope ownership blocker. All 427 tests pass, clean build. Decision logged to decisions.md.
+
+**Key architecture decisions:**
+- **Type split:** DB row types (e.g., `CairnEvent` with `id: number`) stay Cairn-internal. Bridge event types (`CairnBridgeEvent` with `provenanceTier`) are the shared contract. Re-export pattern in cairn's types/index.ts ensures zero import path changes.
+- **Build strategy:** Root `tsc --build` with project references rather than `npm run build --workspaces`. Ensures topological ordering (types first) and enables incremental builds.
+- **`composite: true` + `declarationMap: true`** on shared packages enables cross-package go-to-definition and incremental compilation.
+- **.github/ distribution files** dropped from cairn's npm `files` field — they're repo-level plugin metadata, not package contents.
+
+**Key file paths:**
+- Root workspace config: `package.json` (workspaces: ["packages/*"])
+- Root project refs: `tsconfig.json` (references to all three packages)
+- Shared types: `packages/types/src/index.ts`
+- Cairn internal types: `packages/cairn/src/types/index.ts` (re-exports shared)
+- Forge scaffold: `packages/forge/src/index.ts`
+
+**Pattern:** npm workspace dependency syntax is `"*"` (not `"workspace:*"` — that's pnpm/yarn).
+
 ### 2026-04-02: Phase 5 Architecture Review — MCP Server
 
 **Review type:** Pre-merge architecture review  
@@ -411,6 +521,56 @@ Conducted deep research into GitHub Copilot's full extensibility landscape. Key 
 
 3. **All validation gates pass.** TypeScript clean, 136/136 tests, ESLint clean.
 
+### 2026-05-01: Phase 4.5 Local Feedback Loop — Round 2 Brainstorm
+
+**Session:** `.squad/log/2026-05-01T18-14-00Z-brainstorm-round2.md`  
+**Orchestration:** `.squad/orchestration-log/2026-05-01T18-14-00Z-graham-round2.md`  
+**Decisions:** Merged to `.squad/decisions.md`
+
+**Topic:** Follow-up on caching architecture, ancestry graph structure, and intermediate steps for Phase 4.5 local feedback loop.
+
+**Key learnings:**
+
+1. **Caching 4-Layer Hierarchy Finalized**
+   - L1 (In-Memory): Session-scoped, fast eviction (~100ms). Tool memoization prevents redundant SDK calls.
+   - L2 (Session Store): Persistent across turns (~5 min TTL). Semantic fingerprinting for cache hits.
+   - L3 (Short-TTL): ~1 hour, intermediate layer. Reusable across sessions with matching context hash.
+   - L4 (Long-TTL): ~30 days, archival for ancestry extraction and pattern analysis.
+   - Rationale: Balances speed (L1-L2) with reach (L3-L4). SDK prefix stability enables cross-session reuse.
+
+2. **Ancestry Graph 3-Phase Roadmap**
+   - Phase 4.5 MVP: Linear provenance chain (~200 LOC). Capture prescription ancestry in `prescriptions.ancestry_chain` (JSON array of decision IDs).
+   - Phase 5: Change vectors. Quantify drift when prescriptions applied. Enables comparison of outcome metrics across ancestry branches.
+   - Phase 6+: Graph math. Intelligent exploration of metric space via crossover/mutation. Detect local optima via convergence patterns.
+   - Rationale: Start with linear provenance (low complexity, high value). Defer graph-based optimization to Phase 6.
+
+3. **Intermediate Steps & Cache Integration**
+   - Ancestry chain as cache invalidation trigger. When prescription applied and outcomes measured, mark chain nodes with outcome metrics.
+   - Storage policy: Archive ancestry chains >1yr (Phase 5), compress via lossless encoding.
+   - Predictive cache warming enabled by ancestry chain (wild card for Phase 6+).
+
+4. **Wild Cards Approved** (All six added to future backlog)
+   - Time-Travel Debugging (rewind to decision, replay with different params)
+   - Predictive Cache Warming (pre-fetch likely-needed artifacts)
+   - Self-Annealing Prescriptions (feedback loop auto-ranks)
+   - Genetic Programming Ancestry (crossover/mutation of decision graphs)
+   - Karpathy Wiki Integration (encode knowledge graph as executable wiki)
+   - Adaptive Skill Ranking (vector-based skill retrieval)
+
+5. **Cross-Agent Alignment**
+   - Roger: Vector search + graph storage. Recursive CTE baseline: 1-2ms for <10K nodes.
+   - Alexander: Runtime caching + SDK optimization. Prefix stability key for cross-session reuse.
+   - Rosella: Karpathy wiki + Ancestry integration. Dual representation (linear JSON + graph edges).
+
+**Implementation path:**
+- Phase 4.5: Implement L1-L4 hierarchy + linear ancestry MVP + graph storage schema
+- Phase 4.75: Vector search spike, sqlite-vec integration
+- Phase 5: Archive + compression, canary metrics, storage retention policy
+- Phase 6+: Wild cards (time-travel debugging, predictive warming, genetic programming)
+
+**Pattern established:** Caching at layer hierarchy enables both performance optimization (L1-L2) and future analysis (L3-L4). Ancestry tracking bridges prescriptions → outcomes → future optimizations.
+
+
 **Review pattern learned:** When a bug fix (isScript) removes the need for a workaround (direct node invocation), check whether the workaround was also applied elsewhere. The `.mcp.json` change was a workaround that should have been reverted once the root cause fix landed.
 
 **Branch:** `squad/phase6-plugin-packaging` → PR #12
@@ -587,3 +747,103 @@ Aaron asked three targeted follow-ups about delivery vehicles, npm vs plugin, an
 **Decision document:** `.squad/decisions/inbox/graham-phase-8d-design.md`
 
 **Architectural insight:** The parser → linter → validator pipeline mirrors the established 3-layer architecture: Parser is pure parse (primitive), Linter validates structure (primitive), Validator scores quality (primitive), TestHarness orchestrates (assembler), test_skill MCP tool presents (experience). Each layer adds analysis depth while sharing the `ParsedSkill` AST as common currency.
+
+### 2026-04-07: Architecture Vision Brainstorm — 9 Ideas for Cairn's Future
+
+**Type:** Brainstorming session (no implementation)  
+**Trigger:** Aaron proposed 9 ideas for the future of Cairn and agentic software engineering.
+
+**Key architectural insights:**
+
+1. **Cairn's role in the compiler metaphor:** Cairn is NOT the compiler (that's the LLM + harness). Cairn is the **runtime instrumentation + debugger** — observability and correction, not execution. This framing is a clean boundary test for future features: if it observes/analyzes/corrects agent behavior, it's Cairn's job. If it directs behavior, it's not.
+
+2. **Decision Chain data model:** Decisions are the highest-value signal in agentic engineering. Proposed a content-addressable `Decision` entity with parent_id chaining (like git SHAs), actor tracking (human vs automated), and alternatives_considered. This would unify the currently scattered insight→prescription→disposition trail into a first-class audit chain. Strongest candidate for Phase 9 scope.
+
+3. **Organizational paradigm mapping:** Current agents already map to org roles (Archivist=Scribe, Curator=QA, Prescriber=Tech Lead). Identified 4 potential future agents (Planner, Auditor, Cost Analyst, Triage Agent) but recommended against building speculatively — let them emerge from observed need, same way Curator→Prescriber emerged.
+
+4. **LMX (Language Model Experience):** Applying UX design principles to MCP tool design. Identified gaps in progressive disclosure and suggested an LMX principles checklist for new tool development.
+
+**Decision document:** `.squad/decisions/inbox/graham-brainstorm-vision.md`
+
+### 2026-04-07: Compiler + Debugger Architecture — Cairn and Forge
+
+**Type:** Architectural recommendation (follow-up to vision brainstorm)  
+**Trigger:** Aaron challenged the "Cairn is the debugger" boundary. He correctly identified that the Decision Chain blurs the boundary — instrumenting decision points and placing humans in the loop are execution-layer concerns, not pure observation.
+
+**Key architectural insights:**
+
+1. **The boundary problem:** Cairn is ~80% debugger, ~20% actuator (Prescriber applies sidecars). The Decision Chain makes this tension explicit: you can't instrument a decision point from outside the execution path. Post-hoc recording ≠ in-line gating.
+
+2. **The APM model:** The right analogy is Application ↔ APM (Application Performance Monitor). The harness (Forge) runs, emits telemetry, consumes feedback. Cairn collects, analyzes, prescribes. Tightly integrated in data flow, loosely coupled in deployment.
+
+3. **Monorepo with shared types:** Recommended `@cairn/types` (shared contract), `@cairn/cairn` (current project), `@cairn/forge` (new harness). Monorepo because shared type changes must be atomic — version drift at the integration seam is the highest-risk failure mode.
+
+4. **Sister squad with spike-first timing:** Different domain expertise needed (Cairn = data pipelines + pattern detection; Forge = agent orchestration + Copilot SDK + UX). But spike the SDK first within this squad to understand constraints before chartering the sister squad.
+
+5. **Revised boundary statement:** The boundary holds but is collaborative, not a wall. Cairn = Telemetry & Improvement System. Forge = Execution Runtime. Shared = event contract, decision schema, session types.
+
+6. **Self-correction:** My original "debugger, not compiler" claim was right about the present but wrong about the future. The Decision Chain inherently requires execution-layer participation. The answer isn't to make Cairn the compiler — it's to build a companion that IS the compiler.
+
+**Decision document:** `.squad/decisions/inbox/graham-compiler-debugger.md`
+
+### 2026-04-07: Copilot SDK Spike — Scope Document
+
+**Type:** Spike scoping (architecture)  
+**Trigger:** Aaron chose Option C ("Spike First") from the brainstorm session.  
+**Branch:** `squad/copilot-sdk-spike`
+
+**Key decisions captured:**
+
+1. **Spike-first approach validated.** 3-day time box, 8 technical questions, circuit breaker on Day 1 if session management (Q1) fails. Low-cost exploration before committing to monorepo restructuring or sister squad chartering.
+
+2. **Build order is dependency-driven.** Steps 1–3 (env, client, events) on Day 1 establish whether the SDK is viable. Steps 4–6 (interception, gates, tokens) on Day 2 test the integration surface. Steps 7–8 (bridge, E2E) on Day 3 prove the Cairn↔Forge data flow.
+
+3. **5 decision points identified for Aaron.** Auth model (DP1), spike code location (DP2), circuit breaker response (DP3), event schema alignment strategy (DP4), go/no-go threshold (DP5). Each has a recommended option with trade-offs.
+
+4. **Go/no-go threshold defined.** Q1 + Q2 + Q4 + Q5 = ✅ is "go" (core loop: sessions, tool observation, events, and Cairn bridge all work). Q3 (decision gates) and Q7 (token budgeting) can be partial. Only Q1 = ❌ is a hard stop.
+
+5. **Roger's prior finding is load-bearing.** The `assistant.usage` event discovery (model, tokens, latency, cache metrics, billing multiplier) suggests the SDK has real observability surface area — not just a black-box client. This makes Q4 (event taxonomy) likely to succeed, which de-risks the entire spike.
+
+**Artifacts produced:**
+- Spike scope document: `docs/spikes/copilot-sdk-spike.md`
+- Decision document: `.squad/decisions/inbox/graham-spike-scope.md`
+- Updated focus: `.squad/identity/now.md`
+
+**Architectural insight:** The spike scope mirrors Cairn's own development pattern — answer the hardest question first (Q1 = "can we manage sessions?"), circuit-break early, build confidence incrementally. The same "fail fast" principle that drove Phase 5's MCP-before-CLI decision applies here: don't invest in downstream architecture until the foundation is proven.
+
+### 2026-04-08: Copilot SDK Spike Assessment — GO
+
+**Type:** Spike conclusion and architecture assessment  
+**Trigger:** Day 3 of 3-day spike. Roger's exploration complete (Days 1-2). Graham's go/no-go assessment.  
+**Branch:** `squad/copilot-sdk-spike`
+
+**Verdict: GO.** The `@github/copilot-sdk` is a sound foundation for Forge.
+
+**Scorecard: 7 ✅, 1 ⚠️ — exceeded the go/no-go threshold (which required only Q1+Q2+Q4+Q5 = ✅).**
+
+**Key architectural findings:**
+
+1. **Event bridge is the critical abstraction.** The ~50 LOC adapter between SDK events and Cairn's event_log is Forge's most important module. It isolates both systems from SDK API churn. If the SDK breaks, only this adapter needs updating. This is the architectural seam that makes the monorepo viable — without it, SDK instability would propagate through the entire system.
+
+2. **Hook composition is a mandatory pattern.** The SDK's `registerHooks()` replaces all hooks — doesn't stack. If Forge registers observation hooks and then user code calls `registerHooks()` directly, Forge's instrumentation disappears silently. The hook composer pattern (merge multiple observers into a single handler) must be the only way hooks are registered. This is the first "codebase convention" for Forge — equivalent to Cairn's `isScript` guard.
+
+3. **Decision gates are richer than expected.** Three native mechanisms (hook blocking, permission handler, elicitation forms) provide graduated levels of human involvement. The `permission.requested`/`permission.completed` event pair is particularly valuable — it gives us structured decision records with rich context (diffs for writes, commands for shell, server+tool for MCP) without any custom code.
+
+4. **Token cost data is production-grade.** `copilotUsage.totalNanoAiu` gives actual billing cost, not just token counts. `quotaSnapshots` shows remaining quota percentage with reset dates. `ttftMs` and `interTokenLatencyMs` give latency metrics. This is richer than most dedicated APM tools provide. Aaron's token cost awareness requirement is satisfied by the SDK's existing event stream — no scraping or estimation needed.
+
+5. **Monorepo boundaries are clean.** `@cairn/types` holds the shared contract (CairnEvent, ProvenanceTier, DBOM, DecisionRecord). `@cairn/cairn` stays largely unchanged (add bridge ingest + telemetry modules). `@cairn/forge` wraps the SDK and implements the export pipeline. The integration seams are: event bridge (Forge→Cairn), prescription output (Cairn→Forge), export pipeline (Forge→artifacts), PGO telemetry (corp→Cairn→Forge).
+
+6. **The runtime verification gap is the biggest remaining risk.** The spike proved API surface and type compatibility through compiled PoC code, but the SDK requires a live Copilot CLI process for actual execution. Type-level verification is necessary but not sufficient. Phase 2 (live runtime test) must close this gap before committing to Phase 3 (core Forge loop).
+
+**Concepts validated from mid-spike discussions:**
+
+- **Portability (Aaron):** Provenance tier classification + DBOM reconstruction prove the data model supports exporting certified artifacts to corp/EMU environments.
+- **PGO Telemetry (Aaron):** The `"deployment"` provenance tier + SDK's built-in OpenTelemetry support provide the foundation for production feedback loops.
+- **ACP Horizon:** The event bridge abstraction means multi-agent transport is additive — Cairn consumes `CairnEvent`, not SDK-specific types.
+
+**Artifacts produced:**
+- Go/no-go assessment: `docs/spikes/copilot-sdk-assessment.md`
+- Decision document: `.squad/decisions/inbox/graham-spike-assessment.md`
+- Updated focus: `.squad/identity/now.md`
+
+**Key lesson:** A well-scoped spike with a clear circuit breaker and go/no-go threshold produces high-confidence decisions in minimal time. The 3-day time box forced focus on the 8 questions that matter. The pre-defined threshold (Q1+Q2+Q4+Q5 = ✅) meant the verdict was mechanical — no ambiguity about whether we learned enough. This is a reusable pattern for future technology evaluations.

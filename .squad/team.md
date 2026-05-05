@@ -19,6 +19,8 @@
 | Scribe | Session Logger | `.squad/agents/scribe/charter.md` | 📋 Silent |
 | Ralph | Work Monitor | `.squad/agents/ralph/charter.md` | 🔄 Monitor |
 | Valanice | UX / Human Factors | `.squad/agents/valanice/charter.md` | ✅ Active |
+| Alexander | SDK/Runtime Dev | `.squad/agents/alexander/charter.md` | ✅ Active |
+| Laura | Tester | `.squad/agents/laura/charter.md` | ✅ Active |
 
 ## Project Context
 

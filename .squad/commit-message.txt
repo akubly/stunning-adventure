@@ -1,24 +1,23 @@
-docs(squad): Phase 7D/7E complete — 7F (final phase) launching
+feat(forge): Phase 4 Export Pipeline — DBOM persistence + SKILL.md compiler
 
-✅ Phase 7D (Prescription Engine) — Roger
-  - prescriber.ts: priority scoring, 8-state lifecycle, state machine
-  - 38 new tests; total 232 → 264 tests
+Adds the third integration seam: Export Pipeline (Extract → Strip → Attach → QualityGate).
 
-✅ Phase 7E (Apply Engine) — Rosella
-  - applier.ts: sidecar writing, LIFO rollback, SHA-256 drift detection
-  - 24 new tests; total 264 → 294 tests
+New modules:
+- packages/forge/src/export/ — pipeline orchestrator, SKILL.md compiler, stage functions, quality gate integration via dependency injection
+- packages/cairn/src/db/dbomArtifacts.ts — DBOM persistence CRUD (migration 010)
+- docs/forge-phase4-spec.md — architecture specification
 
-🚧 Phase 7F (MCP Tools + UX) — Roger + Valanice [LAUNCHING]
-  - 4 new MCP tools (list/get/resolve_prescriptions + show_growth)
-  - Growth tracking integration + 10 UX principles
-  - Target: ~18 new tests → 312 total
+Design constraints:
+- Forge never imports @akubly/cairn (DI pattern for quality gate + persistence)
+- All stages are pure functions: (StageContext) → StageContext
+- Pipeline works offline from persisted events (no live SDK session required)
+- Deterministic content hash (injected timestamp, consistent YAML escaping)
 
-Decision inbox merged and closed:
-  - roger-phase-7d-decisions.md: recencyWeight capping, fail-soft logging, deferral timing, rejection blocking, autoSuppress export
-  - rosella-phase-7e-decisions.md: LIFO rollback strategy, file-based drift detection, apply-blocks-on-drift
+Persona-reviewed (5-persona Code Panel, squad mode):
+- 8 findings accepted and addressed (2 blocking, 4 important, 2 minor)
+- Key fixes: backslash YAML escaping, deterministic compiledAt injection, persistence gated on quality gate pass, stripStage dead code removal
 
-Test baseline updated: 232 → 294 passing
-Orchestration log: 2026-04-07T05-30-phase-7de.md
-Session log: 2026-04-07T05-30-phase-7de.md
+Tests: 831 total (438 Cairn + 393 Forge), all passing.
+Phase 4 adds 110 new tests (99 export + 11 DBOM persistence).
 
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
