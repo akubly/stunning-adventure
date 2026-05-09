@@ -15,7 +15,7 @@ import { classifyDriftLevel } from "../telemetry/drift.js";
 import type { ExecutionProfile } from "../telemetry/types.js";
 import type { MetricSnapshot, OptimizationHint } from "./types.js";
 
-/** Minimum observed vectors for baseline confidence saturation. Mirrored in cairn/changeVectors.ts — keep in sync. */
+/** Minimum observed vectors for baseline confidence saturation. Mirrored in packages/cairn/src/db/changeVectors.ts — keep in sync. */
 export const DEFAULT_MIN_SESSIONS = 3;
 
 export function buildSnapshot(profile: ExecutionProfile): MetricSnapshot {
