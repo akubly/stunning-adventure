@@ -65,7 +65,8 @@ describe('database initialization', () => {
     const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
       version: number;
     };
-    expect(row.version).toBe(12);  });
+    expect(row.version).toBe(12);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -374,7 +375,8 @@ describe('schema migration', () => {
     const after = db.prepare('SELECT COUNT(*) as count FROM schema_version').get() as {
       count: number;
     };
-    expect(after.count).toBe(12);  });
+    expect(after.count).toBe(12);
+  });
 
   it('should record migration description', () => {
     const db = getDb(':memory:');

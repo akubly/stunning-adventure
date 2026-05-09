@@ -18,7 +18,7 @@ export const migration012: Migration = {
         delta_cache_hit REAL NOT NULL,
         -- Weighted impact (positive = prescription improved things)
         net_impact REAL NOT NULL,
-        -- Sessions between hint application and vector computation (delta, not cumulative)
+        -- Delta sessions observed since hint application. For legacy snapshots without sessionCount, falls back to profile lifetime count.
         sessions_observed INTEGER NOT NULL,
         computed_at TEXT NOT NULL,
         UNIQUE(hint_id)

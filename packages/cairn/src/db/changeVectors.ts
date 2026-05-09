@@ -32,8 +32,8 @@ import type Database from 'better-sqlite3';
  *   convergence:   0.30  → delta_convergence
  *   toolEntropy:   0.25  → delta_drift      (drift subsumes entropy, ADR-P4.6-003)
  *   promptStability: 0.15 → delta_success_rate
- *   tokenPressure: 0.15  → delta_cache_hit  (cache efficiency ↔ token pressure)
- *   contextBloat:  0.15  → delta_cost       (cost ↔ context utilization)
+ *   tokenPressure: 0.15  → delta_cost       (cost ↔ token pressure)
+ *   contextBloat:  0.15  → delta_cache_hit  (cache efficiency ↔ context utilization)
  */
 export const CHANGE_VECTOR_WEIGHTS = Object.freeze({
   deltaDrift: 0.25,
