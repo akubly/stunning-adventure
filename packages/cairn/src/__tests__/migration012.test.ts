@@ -125,16 +125,6 @@ describe('migration 012 — change_vectors table structure', () => {
 // ---------------------------------------------------------------------------
 
 describe('migration 012 — indices', () => {
-  it('index idx_change_vectors_hint exists on change_vectors', () => {
-    const db = getDb(':memory:');
-    const indices = db
-      .prepare(
-        "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='change_vectors'",
-      )
-      .all() as Array<{ name: string }>;
-    expect(indices.map((i) => i.name)).toContain('idx_change_vectors_hint');
-  });
-
   it('index idx_change_vectors_impact exists on change_vectors', () => {
     const db = getDb(':memory:');
     const indices = db
@@ -145,15 +135,55 @@ describe('migration 012 — indices', () => {
     expect(indices.map((i) => i.name)).toContain('idx_change_vectors_impact');
   });
 
-  it('exactly 2 explicit indices exist on change_vectors', () => {
+  it('exactly 1 explicit index exists on change_vectors (hint_id is covered by UNIQUE auto-index)', () => {
     const db = getDb(':memory:');
-    // SQLite auto-creates an index for PRIMARY KEY — filter it out
+    // SQLite auto-creates indices for PRIMARY KEY and UNIQUE constraints — filter them out.
+    // The UNIQUE(hint_id) constraint creates an implicit index that supersedes any
+    // explicit idx_change_vectors_hint, so only idx_change_vectors_impact remains.
     const explicit = db
       .prepare(
         "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='change_vectors' AND name NOT LIKE 'sqlite_%'",
       )
       .all() as Array<{ name: string }>;
-    expect(explicit.length).toBe(2);
+    expect(explicit.length).toBe(1);
+    expect(explicit.map((i) => i.name)).toEqual(['idx_change_vectors_impact']);
+  });
+
+  it('UNIQUE(hint_id) auto-index covers hint_id lookups', () => {
+    const db = getDb(':memory:');
+    const autoIndices = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='change_vectors' AND name LIKE 'sqlite_autoindex_%'",
+      )
+      .all() as Array<{ name: string }>;
+    expect(autoIndices.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Migration 012 — ON DELETE CASCADE on hint_id FK
+// ---------------------------------------------------------------------------
+
+describe('migration 012 — ON DELETE CASCADE on hint_id', () => {
+  it('deleting an optimization_hint cascades to its change_vector', () => {
+    const db = getDb(':memory:');
+    db.prepare(
+      `INSERT INTO optimization_hints (id, source, skill_id, category, description, recommendation, generated_at)
+       VALUES ('hint-cascade-test', 'prompt-optimizer', 'skill-a', 'convergence', 'test', 'test', '2026-05-08T20:00:00.000Z')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO change_vectors (hint_id, delta_drift, delta_cost, delta_success_rate, delta_convergence, delta_cache_hit, net_impact, sessions_observed, computed_at)
+       VALUES ('hint-cascade-test', 0, 0, 0, 0, 0, 0, 3, '2026-05-08T20:00:00.000Z')`,
+    ).run();
+
+    expect(() =>
+      db.prepare(`DELETE FROM optimization_hints WHERE id = ?`).run('hint-cascade-test'),
+    ).not.toThrow();
+
+    const remaining = db
+      .prepare('SELECT COUNT(*) as n FROM change_vectors WHERE hint_id = ?')
+      .get('hint-cascade-test') as { n: number };
+    expect(remaining.n).toBe(0);
   });
 });
 

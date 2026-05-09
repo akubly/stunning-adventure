@@ -9,7 +9,7 @@ export const migration012: Migration = {
       -- Computed by the Curator sweep; consumed by prescribers for impact ranking and confidence boost.
       CREATE TABLE change_vectors (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        hint_id TEXT NOT NULL REFERENCES optimization_hints(id),
+        hint_id TEXT NOT NULL REFERENCES optimization_hints(id) ON DELETE CASCADE,
         -- Metric deltas (after - before), cost normalized to per-session
         delta_drift REAL NOT NULL,
         delta_cost REAL NOT NULL,
@@ -24,7 +24,8 @@ export const migration012: Migration = {
         UNIQUE(hint_id)
       );
 
-      CREATE INDEX idx_change_vectors_hint ON change_vectors(hint_id);
+      -- No explicit index on hint_id: UNIQUE(hint_id) above already creates an
+      -- implicit sqlite_autoindex covering the same lookup path.
       CREATE INDEX idx_change_vectors_impact ON change_vectors(net_impact);
     `);
   },
