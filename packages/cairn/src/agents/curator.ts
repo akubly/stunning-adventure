@@ -570,11 +570,16 @@ function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResul
     sessionCountReset: 0,
   };
 
-  // Scan ALL applied hints — INSERT OR IGNORE handles idempotence.
+  // Scan only applied hints that don't yet have a change vector. The
+  // LEFT JOIN keeps sweep cost proportional to *new* work rather than the
+  // full historical applied-hint set, which would otherwise grow unbounded
+  // and drive linear growth in session-start latency. INSERT OR IGNORE
+  // below still guards against races between concurrent sweeps.
   const appliedHints = db.prepare(
-    `SELECT id, skill_id, metric_snapshot
-       FROM optimization_hints
-      WHERE status = 'applied'`
+    `SELECT oh.id, oh.skill_id, oh.metric_snapshot
+       FROM optimization_hints oh
+       LEFT JOIN change_vectors cv ON cv.hint_id = oh.id
+      WHERE oh.status = 'applied' AND cv.id IS NULL`
   ).all() as AppliedHintRow[];
 
   result.eligible = appliedHints.length;
@@ -589,7 +594,7 @@ function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResul
         LIMIT 1`
     ).get(hint.skill_id) as ProfileRow | undefined;
 
-    if (!profile || profile.session_count < minSessions) {
+    if (!profile) {
       result.skippedInsufficientSessions++;
       continue;
     }
@@ -599,6 +604,28 @@ function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResul
       snapshot = JSON.parse(hint.metric_snapshot) as MetricSnapshotShape;
     } catch {
       result.skippedMalformedSnapshot++;
+      continue;
+    }
+
+    // Reliability gate: count only sessions observed *since* the hint was
+    // applied, not the profile's lifetime total. Otherwise a hint snapshotted
+    // at sessionCount=100 would pass the gate immediately at sessionCount=101
+    // even though only one post-application session has accumulated, defeating
+    // the minSessionsObserved threshold. Legacy snapshots (no sessionCount)
+    // fall back to the lifetime total so historical hints keep their prior
+    // gating behavior.
+    const snapshotSessionCount = snapshot.sessionCount ?? 0;
+    const rawSessionsObserved = profile.session_count - snapshotSessionCount;
+    if (snapshotSessionCount > 0 && rawSessionsObserved < 0) {
+      // Counter reset or data anomaly — diagnostic counter still fires so
+      // operators see the event, but we can't compute a meaningful delta.
+      result.sessionCountReset++;
+    }
+    const sessionsSinceHint = snapshotSessionCount > 0
+      ? rawSessionsObserved
+      : profile.session_count;
+    if (sessionsSinceHint < minSessions) {
+      result.skippedInsufficientSessions++;
       continue;
     }
 
@@ -617,24 +644,17 @@ function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResul
     // Their tokenCostNanoAiu is cumulative, not per-session, so computing
     // afterCostPerSession - beforeCumulative yields a massive spurious negative.
     // Skip cost delta entirely for these snapshots; other deltas remain valid.
-    const snapshotSessionCount = snapshot.sessionCount ?? 0;
     let deltaCost: number;
+    let isLegacySnapshot = false;
     if (snapshotSessionCount <= 0) {
       deltaCost = 0;
-      result.legacyCostSkipped++;
-      console.warn(
-        `sweepChangeVectors: legacy snapshot for hint ${hint.id} — cost delta skipped (no sessionCount; cumulative cost shape incompatible with per-session normalization)`,
-      );
+      isLegacySnapshot = true;
     } else {
       const afterCostPerSession = profile.token_total_cost / Math.max(1, profile.session_count);
       const beforeCostPerSession = (snapshot.tokenCostNanoAiu ?? 0) / snapshotSessionCount;
       deltaCost = afterCostPerSession - beforeCostPerSession;
     }
 
-    const rawSessionsObserved = profile.session_count - snapshotSessionCount;
-    if (rawSessionsObserved < 0) {
-      result.sessionCountReset++;
-    }
     const sessionsObserved = Math.max(0, rawSessionsObserved);
 
     const deltas = {
@@ -645,8 +665,9 @@ function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResul
       deltaCacheHit: profile.token_mean_cache_hit - before.cacheHitRate,
     };
 
-    // INSERT OR IGNORE: the UNIQUE(hint_id) constraint handles idempotence.
-    // changes === 0 means the vector was already present.
+    // INSERT OR IGNORE: the UNIQUE(hint_id) constraint handles idempotence
+    // against races; the LEFT JOIN filter above keeps steady-state work bounded.
+    // changes === 0 means a concurrent sweep beat us to the insert.
     const insertResult = db.prepare(
       `INSERT OR IGNORE INTO change_vectors
          (hint_id, delta_drift, delta_cost, delta_success_rate,
@@ -667,6 +688,16 @@ function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResul
 
     if (insertResult.changes > 0) {
       result.computed++;
+      // Emit the legacy-snapshot warning only on the sweep that actually
+      // computes the vector. The LEFT JOIN above will exclude this hint from
+      // future sweeps, so the warning is naturally one-shot per hint instead
+      // of repeating every curate() call.
+      if (isLegacySnapshot) {
+        result.legacyCostSkipped++;
+        console.warn(
+          `sweepChangeVectors: legacy snapshot for hint ${hint.id} — cost delta skipped (no sessionCount; cumulative cost shape incompatible with per-session normalization)`,
+        );
+      }
     } else {
       result.alreadyComputed++;
     }

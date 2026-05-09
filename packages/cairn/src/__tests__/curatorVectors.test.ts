@@ -351,7 +351,7 @@ describe('Curator sweep — structured ChangeVectorSweepResult diagnostics', () 
     expect(result.changeVectorSweep.computed).toBe(0);
   });
 
-  it('alreadyComputed increments on second sweep (INSERT OR IGNORE idempotence)', () => {
+  it('second sweep skips hints that already have a change_vector — eligible=0, computed=0', () => {
     insertAppliedHint('skill-sr3', 'convergence', {
       driftScore: 0.3, tokenCostNanoAiu: 100_000,
       successRate: 0.8, convergenceTurns: 8, cacheHitRate: 0.4,
@@ -359,17 +359,24 @@ describe('Curator sweep — structured ChangeVectorSweepResult diagnostics', () 
     upsertAfterProfile('skill-sr3', 5);
 
     curate(); // first sweep: computes the vector
-    const result2 = curate(); // second sweep: INSERT OR IGNORE → alreadyComputed
+    const result2 = curate(); // second sweep: hint filtered out by LEFT JOIN
 
+    // Post-fix: the LEFT JOIN excludes hints that already have a vector,
+    // so they don't even appear in `eligible`. This keeps sweep cost
+    // proportional to *new* work rather than the full historical applied
+    // set. `alreadyComputed` is now reserved for the rare race where two
+    // concurrent sweeps both pass the JOIN filter and INSERT OR IGNORE
+    // resolves the tie.
+    expect(result2.changeVectorSweep.eligible).toBe(0);
     expect(result2.changeVectorSweep.computed).toBe(0);
-    expect(result2.changeVectorSweep.alreadyComputed).toBe(1);
+    expect(result2.changeVectorSweep.alreadyComputed).toBe(0);
     // DB still has only one vector per hint
     const db = getDb();
     const vectors = db.prepare('SELECT COUNT(*) as n FROM change_vectors WHERE hint_id LIKE ?').get('hint-e2e-%') as { n: number };
     expect(vectors.n).toBe(1);
   });
 
-  it('eligible counts ALL applied hints in the sweep, not just new ones', () => {
+  it('eligible only counts applied hints WITHOUT an existing change_vector', () => {
     insertAppliedHint('skill-sr4', 'convergence', {
       driftScore: 0.3, tokenCostNanoAiu: 100_000,
       successRate: 0.8, convergenceTurns: 8, cacheHitRate: 0.4,
@@ -377,10 +384,12 @@ describe('Curator sweep — structured ChangeVectorSweepResult diagnostics', () 
     upsertAfterProfile('skill-sr4', 5);
 
     curate(); // computes one vector
-    const result2 = curate(); // second sweep re-scans the same hint
+    const result2 = curate(); // second sweep — vector exists, hint excluded
 
-    // eligible should still be 1 (the applied hint is re-scanned)
-    expect(result2.changeVectorSweep.eligible).toBe(1);
+    // Post-fix: re-reading every applied hint on every curate() call would
+    // grow session-start latency linearly with total historical applied
+    // hints. The LEFT JOIN filter makes eligible reflect only outstanding work.
+    expect(result2.changeVectorSweep.eligible).toBe(0);
   });
 });
 
@@ -595,8 +604,14 @@ describe('Curator sweep — legacy snapshot deltaCost handling', () => {
 // ---------------------------------------------------------------------------
 
 describe('Curator sweep — sessions_observed clamp on counter reset', () => {
-  it('profile.session_count < snapshot.sessionCount → sessionsObserved=0, sessionCountReset increments', () => {
+  it('profile.session_count < snapshot.sessionCount → sessionCountReset increments and hint is skipped', () => {
     // Scenario: snapshot recorded at 100 sessions; profile reset to 50 sessions.
+    // Post-fix (Copilot review #3): the reliability gate now compares
+    // post-hint sessions (profile - snapshot) against minSessionsObserved.
+    // A counter reset yields a negative delta, which can never satisfy any
+    // non-negative threshold — the hint is skipped as insufficient sessions.
+    // sessionCountReset is still incremented as a diagnostic so operators
+    // can see the anomaly.
     const hintId = insertAppliedHint('skill-scr1', 'convergence', {
       driftScore: 0.3,
       tokenCostNanoAiu: 100_000,
@@ -611,15 +626,15 @@ describe('Curator sweep — sessions_observed clamp on counter reset', () => {
     const result = curate();
 
     expect(result.changeVectorSweep.sessionCountReset).toBe(1);
+    expect(result.changeVectorSweep.skippedInsufficientSessions).toBe(1);
+    expect(result.changeVectorSweep.computed).toBe(0);
     const db = getDb();
-    const vectors = getChangeVectorsByHintId(db, hintId);
-    expect(vectors.length).toBe(1);
-    // sessionsObserved must be clamped to 0, not a negative number
-    expect(vectors[0]!.sessionsObserved).toBe(0);
+    expect(getChangeVectorsByHintId(db, hintId)).toEqual([]);
   });
 
-  it('profile.session_count === snapshot.sessionCount → sessionsObserved=0, no sessionCountReset', () => {
-    // Edge: equal counts → rawSessionsObserved = 0, no clamp needed, no reset flagged.
+  it('profile.session_count === snapshot.sessionCount → 0 post-hint sessions, hint skipped', () => {
+    // Edge: equal counts → 0 post-hint sessions → below default minSessions=3.
+    // Post-fix the hint is skipped; sessionCountReset does NOT fire (delta = 0, not negative).
     const hintId = insertAppliedHint('skill-scr2', 'convergence', {
       driftScore: 0.3,
       tokenCostNanoAiu: 100_000,
@@ -633,8 +648,9 @@ describe('Curator sweep — sessions_observed clamp on counter reset', () => {
     const result = curate();
 
     expect(result.changeVectorSweep.sessionCountReset).toBe(0);
+    expect(result.changeVectorSweep.skippedInsufficientSessions).toBe(1);
+    expect(result.changeVectorSweep.computed).toBe(0);
     const db = getDb();
-    const vectors = getChangeVectorsByHintId(db, hintId);
-    expect(vectors[0]!.sessionsObserved).toBe(0);
+    expect(getChangeVectorsByHintId(db, hintId)).toEqual([]);
   });
 });
