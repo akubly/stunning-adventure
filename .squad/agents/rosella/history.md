@@ -1,41 +1,61 @@
-# Rosella — History
+# Rosella — History (Summarized)
 
-## 2026-05-01: Persona Review Fixes — Prescribers + Applier (F3, F6b, F9, F10)
+**Older work archived to history-archive.md (2026-05-01 through 2026-05-03 Wave 1–3).**
 
-**Task:** Resolve four findings from persona review on the Phase 4.5 prescribers + applier modules.
+---
 
-**Changes:**
+## 2026-05-03–04: Phase 4.6 Cycle 1–3 Review & Implementation
 
-1. **F3 (BLOCKING) — Self-tuning `tokenPressure` normalization.** `packages/forge/src/applier/selfTuning.ts`:
-   - Added third arg `context: TuneContext` carrying `budgetLimitNanoAiu` (mirrors `StrategyContext` from `models/strategy.ts`).
-   - `tokenPressure = clamp(costPerSession / budgetLimitNanoAiu, 0, 1)`. Now lives in 0-1 space matching `budgetThreshold`, so the budget knob can both tighten and relax.
-   - Added `DEFAULT_BUDGET_LIMIT_NANO_AIU = 1_000_000` (matches model-selection PoC) and a guard for non-positive limits.
+**What the cycle-1 panel review surfaced:**
+The 15-finding panel review exposed a cluster of correctness issues in the change-vector
+sweep that would have produced materially wrong net_impact values once the system ran
+in production. The main patterns:
 
-2. **F6b (IMPORTANT) — Prescribers consume signal components.** `promptOptimizer.ts`:
-   - Tool-guidance trigger now reads `profile.signals?.toolEntropy` (Roger's new field on `ExecutionProfile`), falling back to `profile.drift.p95` only for legacy profiles.
-   - Updated trigger metric in evidence to `toolEntropy` (was `driftP95`).
-   - Kept `toolEntropyThreshold` config name — now semantically accurate. Doc-comment notes the fallback path.
-   - `tokenOptimizer.ts`: no signal-misuse there; only the shared snapshot extraction.
+1. **Cumulative vs per-session confusion.** `deltaCost` was computed as
+   `profile.token_total_cost - snapshot.tokenCostNanoAiu` — both cumulative totals.
+   As more sessions accumulate, `token_total_cost` grows monotonically even when
+   per-session cost is flat or improving. The delta would always trend positive
+   (appearing worse) the longer a hint was observed. Panel caught this; I hadn't
+   because the test fixtures used fixed values where cumulative == per-session.
+   **Lesson:** delta computations on cumulative metrics need normalization. Always
+   ask "is this field an accumulator or a rate?"
 
-3. **F9 (MINOR) — Shared `buildSnapshot` utility.** Created `packages/forge/src/prescribers/utils.ts`. Both prescribers import from it. Snapshot now sources `driftLevel` from `classifyDriftLevel()` instead of inline thresholds — single source of truth for GREEN/YELLOW/RED.
+2. **The confidence cliff.** `log(1+vc)/log(1+min)` with vc=1, min=3 returns ~0.5.
+   So 1 vector = half confidence. That *halves* the hint's influence — the opposite
+   of "positive boost only." The clamp to `Math.max(1.0, …)` was the obvious fix
+   once named, but it took the panel to name it. **Lesson:** test sparse-evidence
+   behavior explicitly, not just the saturated case.
 
-4. **F10 (MINOR) — Adaptive `explorationBudget`.** `selfTuning.ts`:
-   - GREEN drift → multiply by `EXPLORATION_DECAY = 0.9` (decay toward floor as confidence grows).
-   - RED drift → multiply by `EXPLORATION_GROWTH = 1.1` (widen the search).
-   - YELLOW → no change. Clamped to `[EXPLORATION_FLOOR, EXPLORATION_CEILING]` so Aaron's hard floor still holds.
+3. **The read-check-then-insert TOCTOU.** The original guard was
+   `getChangeVectorsByHintId(); if (existing.length > 0) continue;` followed by
+   an insert. Not atomic. The UNIQUE(hint_id) constraint + INSERT OR IGNORE is the
+   correct fix — it delegates idempotence to the DB where it belongs.
 
-5. **Aggregator support.** `packages/forge/src/telemetry/aggregator.ts`: now folds `metadata.signals` from drift samples into `profile.signals` using the same prevCount-weighted mean pattern as `drift.mean`. `signals` stays absent when no drift sample carries it (backward-compatible).
+4. **Single counter hiding four skip reasons.** `vectorsComputed: number` was
+   opaque. You couldn't tell if sweeps were doing nothing because all hints were
+   already computed vs. nothing had enough sessions vs. all snapshots were malformed.
+   **Lesson:** diagnostic counters on background sweeps should be structured from
+   the start, especially when the sweep has multiple independent skip conditions.
 
-6. **Tests.** Added 8 new tests to `prescribers-applier.test.ts` covering: budget-relative tokenPressure (tighten + relax), default fallback, non-positive guard, exploration decay/grow/hold under GREEN/RED/YELLOW, and signal-driven tool-guidance preference. Updated `StrategyParameters` import to include `TuneContext`. All 36 tests pass.
+**Coordination challenges during fix:**
 
-**Coordination notes:**
-- Roger had already added `ProfileSignals` and `signals?: ProfileSignals` to `ExecutionProfile` in `packages/types/src/index.ts` — no schema collision; my code consumes his contract.
-- Pre-existing build state: `packages/forge/src/telemetry/collectors.ts` is missing on disk (referenced by `telemetry/index.ts` and two test files). 15 of 529 tests fail because of this; all failures are in `telemetry-collectors.test.ts` and `feedback-loop.test.ts` and are unrelated to this fix-set. Flagged for whoever owns collectors implementation.
+- **Lockout routing added cognitive overhead.** I fixed Alexander's code (curator.ts,
+  changeVectors.ts, migration 012); Alexander fixed mine (utils.ts, prescribers). This
+  meant reading and understanding code I didn't write under time pressure. The upside:
+  you catch things the author missed because you don't have their blind spots.
 
-**Verification:** `npx vitest run src/__tests__/prescribers-applier.test.ts` → 36/36 green. Full suite: 514/529 (only the pre-existing collectors-related failures remain).
+- **sessionCount optionality was a non-trivial build decision.** Making
+  `MetricSnapshot.sessionCount` required broke Laura's test fixtures at build time.
+  The correct call was `optional` — but it took a failed build to surface the question.
+  Filed decision doc: `rosella-phase4.6-cycle2-sessioncount-optional.md`.
+
+- **DEFAULT_MIN_SESSIONS cross-package coordination.** Both cairn (changeVectors.ts)
+  and forge (prescribers/utils.ts) use `?? 3` / `= 3` defaults. I defined the constant
+  in cairn and left a note for Alexander to mirror or import. Since cairn can't import
+  from forge, mirroring is the safe call. A shared `@akubly/types` home for this constant
+  is a future-Phase 5 option if a third consumer appears.
 
 
-## 2026-05-02: Phase 4.5 Persona Review — Prescribers + Applier Integration
 
 **Findings Fixed:** F3 (budgetContext), F6b (signal entropy consumption), F9 (buildSnapshot utility), F10 (adaptive exploration).
 
@@ -49,4 +69,81 @@
 
 **Integration:** Ready to consume Roger's per-signal means; prescribers can now target specific drivers independent of overall drift.
 
+---
 
+## Learnings — Phase 4.6 Cycle 3 Advisory Fixes (2026-05-04)
+
+**What cycle-2 review surfaced about the cost normalization regression:**
+
+The cycle-2 fix correctly introduced per-session normalization for `deltaCost`
+(`totalCost / sessionCount` on both sides). But the cycle-2 fix overlooked that
+Phase 4.5 snapshots — every hint already applied in production DBs — have no
+`sessionCount` field. When `sessionCount` is missing, the cycle-2 code fell back
+to `snapshot.tokenCostNanoAiu` raw (cumulative), while `afterCostPerSession` was
+correctly per-session. The asymmetry was *worse* than the original bug: a
+per-session value of ~210K minus a cumulative value of ~10M yields approximately
+−9.79M, which `computeNetImpact` sign-flips into a large spurious positive
+contribution. The fix would have silently poisoned all legacy hint vectors.
+
+**How the fallback was made safe:**
+
+Rather than attempt a partial normalization with unknown denominator, the
+correct answer is to skip cost delta entirely for legacy snapshots. All other
+delta fields (drift, success, convergence, cacheHit) are rates and means —
+they're snapshot-shape-agnostic and remain valid. Only cost required the
+session-count denominator. The new guard:
+
+```
+if (snapshotSessionCount <= 0) {
+  deltaCost = 0;
+  result.legacyCostSkipped++;
+  console.warn('... legacy snapshot — cost delta skipped ...');
+}
+```
+
+This produces an honest `deltaCost = 0` (neutral, not misleading) and surfaces
+the skip in the structured diagnostic result. The JSDoc on `sweepChangeVectors`
+now documents that re-applying a hint after a *new* snapshot will produce a
+complete delta, giving operators a clear remediation path.
+
+**Parallel fix (`sessionCountReset`):** When `profile.session_count` has been
+reset (e.g., after a DB migration or tenant wipe) it can be *less than*
+`snapshot.sessionCount`, producing negative `sessions_observed`. Added
+`Math.max(0, ...)` clamp and a dedicated counter to surface this anomaly
+without crashing or storing a nonsense value.
+
+**Lesson reinforced:** When fixing a normalization bug, enumerate all input
+shapes that can reach the new formula — especially historical/legacy records
+that predate the field being introduced. The fix that works for new data may
+silently corrupt old data if the new field is optional.
+
+## 2026-05-04: Phase 4.6 Review Cycle Completion
+
+**Role:** R1–R5 (Wave 1) + Cycle-1 Triage Fixes (Finding #1 blocker, plus others) + Cycle-3 Advisory Fixes
+
+**Final Outcome:**
+- 1153 tests passing (baseline 990 + 163 new)
+- Branch review-clean, compliance approved
+- Cycle 3 fixes delivered in parallel with Alexander's forge work
+
+**Cycle 1–3 Findings Addressed by Rosella:**
+- **Cycle 1:** Finding #1 (deltaCost cumulative bug — **blocking**), #2 (confidence clamp), #3 (sessions_observed docs), #4 (UNIQUE + INSERT OR IGNORE), #6 (sweep result structured), #10 (named contributions), #15 (DEFAULT_MIN_SESSIONS)
+- **Cycle 2:** 3 important advisory findings escalated to cycle 3
+- **Cycle 3:** 4 cairn-specific advisory fixes (legacy snapshot handling, sessions_observed clamp, minVectors guard, JSDoc)
+
+**Cycle 3 Details:**
+- Legacy snapshot handling: introduced `legacyCostSkipped` counter in sweep result; cost delta skipped when sessionCount unavailable
+- sessions_observed clamp: `Math.max(0, profile.session_count - snapshot.sessionCount)` to prevent negative deltas during session resets; added `sessionCountReset` counter
+- minVectors guard: safeMin clamped at 1 to prevent `Math.log(1) = 0` division
+- Structured sweep result: replaced single `computed` counter with `{ eligible, skippedInsufficientSessions, skippedMalformed, alreadyComputed, computed }`
+
+**Parallel Work:**
+- Alexander-3 fixed forge prescribers simultaneously; confidence clamp and two-tier sort applied in lockout fashion
+- Laura-5 added 20 tests to exercise the cycle-2 edge cases
+
+**Pattern Observations:**
+- **Cycle 1 triage to cycle 3 fixes:** Finding #1 (deltaCost) required deep thought — the bug was accumulation + normalization asymmetry with legacy data. Simple oversight in initial code; complex to fix correctly because it required enumeration of all input shapes and a deliberate skip-with-diagnostic strategy.
+- **Confidence field naming:** The cycle-2 review's rename of `confidence` → `confidenceBoost` (Option B) was the right call. My initial implementation was semantically consistent for a "level" (0 = no data). Alexander's fix (zero-default) was semantically consistent for a "boost" (1.0 = identity). The name resolved the ambiguity by enforcing one semantic space.
+- **Delegation under lockout:** Alexander fixed my changeVectors.ts naming bug in wave 3. I fixed his two-tier sort bug in cycle 1. Cross-review prevents blind spots — each implementation looked correct in its own context.
+
+**Lesson (Cycle 3):** Advisory findings from focused re-review often surface edge cases (null checks, guard conditions) that the initial implementation missed because it was optimizing for the happy path. My cycle-1 deltaCost fix worked for new hints; it would have silently poisoned legacy snapshots. Cycle 3's legacyCostSkipped counter + skip-with-diagnostic pattern is the right approach: acknowledge the limitation, surface it, provide an honest value (0, not misleading), and document the remediation path.

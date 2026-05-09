@@ -1,4 +1,4 @@
-# Laura — History
+# Laura — History (Summarized)
 
 ## Project Context
 
@@ -7,253 +7,154 @@
 - **User:** Aaron Kubly
 - **Joined:** 2026-04-28
 
-## Onboarding Context
-
-**Monorepo structure (as of Phase 1 completion):**
-- `packages/types` (`@akubly/types`) — Shared contract types
-- `packages/cairn` (`@akubly/cairn`) — Observability platform (427 tests across 15 test files, Vitest)
-- `packages/forge` (`@akubly/forge`) — Execution runtime scaffold (no tests yet)
+## Test Architecture Patterns
 
 **Existing test patterns (from @akubly/cairn):**
-- Framework: Vitest with `vitest run`
-- Config: `packages/cairn/vitest.config.ts`
-- Test location: `packages/cairn/src/__tests__/`
-- DB tests: In-memory SQLite via `getDb(':memory:')`
-- 427 tests across: archivist, applier, curator, db, discovery, isScript, mcp, paths, prescriber, prescriptions, sessionStart, skillLinter, skillParser, skillTestHarness, skillValidator
+- Framework: Vitest with itest run
+- Config: packages/cairn/vitest.config.ts
+- Test location: packages/cairn/src/__tests__/
+- DB tests: In-memory SQLite via getDb(':memory:')
+- 427 tests across 15 domains
 
-**Key risk for Forge testing:** The spike proved TYPE compatibility with the Copilot SDK but NOT runtime behavior. Phase 2 must close this gap. Tests need to verify:
-1. SDK session lifecycle actually works at runtime
-2. Event bridge produces correct CairnBridgeEvents from real SDK events
-3. Hook composition doesn't silently drop hooks
-4. Decision gates actually block/defer tool execution
-5. Model selection API behaves as documented
+**Contract-first testing approach:**
+- Inline contract implementations establish behavioral expectations
+- When real modules built, tests switch from inline to real imports
+- Any behavioral divergence immediately surfaces as test failures
+- Phase 3 pattern: define expected API types, inline implementations, then swap imports
 
-**SDK testing challenge:** The SDK requires a running Copilot CLI process for full integration tests. Strategy TBD: mock SDK for unit tests, live CLI for integration tests, or hybrid approach.
+**Key testing decisions:**
+- Mock SDK for unit tests, live CLI for integration tests
+- Bridge event type discovery: always verify names against production EVENT_MAP
+- Mock session unsubscribe semantics: fire-and-forget wiring ≠ testing unsubscribe
+- ForgeClient.stop() wraps in try/catch (resilient), ForgeSession.disconnect() throws directly
+
+## Phase-by-Phase Summary
+
+### Phase 2 Runtime Verification (2026-04-28)
+
+- 32 contract tests: CairnBridgeEvent shapes, ProvenanceTier, DecisionRecord, SessionIdentity, DBOMArtifact, TelemetrySink
+- 22 bridge tests: EVENT_MAP (22 entries), provenance classification, unmapped event handling, edge cases
+
+### Phase 3 Cross-Module Integration (2026-04-29)
+
+- 87 new tests: ForgeClient session lifecycle, bridge wiring, hook composition, message sending, disconnect lifecycle, model switching, token budget tracking
+- Full forge suite: 268 tests passing
+- Key finding: mock session returns no-op unsubscribe stub (only fire-and-forget wiring)
+
+### Phase 4.5 Feedback Loop (2026-05-02)
+
+- Delivered: 36 integration/convergence/regression/efficiency tests in eedback-loop.test.ts
+- Design: convergence asserted by monotone response curves (hint count ↓ as drift ↓), not terminal states
+- Process-invariant testing: simulate operator effect at profile level
+- L5 tests catch O(N) regressions
+- **Total: 990 tests passing (512 forge, 478 cairn)**
+
+### Phase 4 Export Pipeline (2026-05-01)
+
+- Rewrote 62 contract tests to match spec API surface
+- Test groups: renderFrontmatter (8), compileSkill (6), extractStage (4), stripStage (5), attachStage (3), validateStage (4), runExportPipeline (15), persistence (3), integration (5), edge cases (9)
+- Key discovery: stripStage preserves relative paths, only strips absolute paths
+- 37 production tests from Roger's modules also in file
+
+### Phase 4.6 Change Vector Learning (2026-05-03)
+
+**Wave 1:**
+- L1–L5: Migration 012 tests, CRUD tests, prescriber integration, Curator e2e, weight consistency regression
+- 93 new tests across 5 files; total: 1099 passing
+
+**Wave 2:**
+- Flagged inconsistency: summarizeChangeVectors returns confidence=0 vs computeConfidenceBoost(0) = 1.0
+- Analysis: contract ambiguity (level vs boost semantics), not logic error
+- Status: SATISFIED WITH CAVEAT
+
+**Wave 3:**
+- Upgraded all tests per defect verdict (renamed .confidence → .confidenceBoost)
+- Replaced it.todo with passing test
+- Added ChangeVectorSummary schema regression suite
+- **Final: 1102 passing tests**
+
+**Wave 4 (Cycle 2 — Phase 4.6, 2026-05-03):**
+- 15 findings from code-panel review assigned; Rosella + Alexander fixes landed first
+- Pre-existing failing test: UNIQUE constraint caused "returns multiple vectors" to fail → fixed
+- New tests: 548 cairn + 585 forge (1133 total)
+  - #1 deltaCost per-session normalization (curatorVectors.test.ts)
+  - #2 confidence clamp / never-attenuate (changeVectors, weight-consistency, prescribers-vectors)
+  - #3 sessionsObserved as delta (curatorVectors.test.ts)
+  - #4 UNIQUE(hint_id) constraint (migration012.test.ts)
+  - #5 two-tier sort — matched before unmatched (prescribers-vectors.test.ts)
+  - #6 structured ChangeVectorSweepResult diagnostics (curatorVectors.test.ts)
+  - #7 category regression guard — duck-typed boundary (new: changeVectorCategoryRegression.test.ts)
+  - #8 ChangeVectorSummary root re-export smoke test (contracts.test.ts)
+  - #13 describe rename (weight-consistency.test.ts)
+  - #14 computeConfidenceBoost removed from prescribers/index.ts — compile-time guard (implicit)
+  - #15 DEFAULT_MIN_SESSIONS regression pin, both sides (changeVectors, weight-consistency)
+- Two commits: one for curator/migration/prescribers; one for category regression/weight-consistency/contracts
+- **Lesson:** UNIQUE constraint adds `sqlite_autoindex_*` — excluded by `NOT LIKE 'sqlite_%'` filter, so explicit index count tests are unaffected. Always check filter criteria when migration schema changes.
+
+## Core Patterns Established
+
+**Test organization:** Inline contract implementations before real modules exist. Switch from inline to real imports with zero test changes (only implementation changes).
+
+**SDK testing constraint:** SDK requires running Copilot CLI process for full integration tests. Unit tests use mocks, integration tests require live CLI.
+
+**Metamorphic testing:** Response curves, not terminal states. Operator effects simulated at profile level. Generic bounds catch regressions without hardcoding expected values.
+
+**Regression guards:** L5 tests catch O(N) complexity regressions. Weight consistency tests (e.g., cairn/forge constant alignment) prevent silent divergence. Schema regression suites catch structural drift.
+
+**Defect resolution pattern:** Lockout rule (author cannot fix own defect) prevents blind spots. Three-phase triage (find → decide → fix) divides ownership, improves quality.
+
+**Cross-boundary category contract:** cairn stores `category: string`; forge uses `OptimizationCategory` union. Regression test uses `readonly OptimizationCategory[]` array — TypeScript enforces membership at compile time, runtime asserts round-trip. If forge renames a category, the array gets a type error in CI.
+
+**Test isolation + cursor state:** INSERT OR IGNORE idempotence tests must assert `alreadyComputed` on the _second_ curate() call — the first sweep has changes=1, the second has changes=0 (INSERT OR IGNORE does nothing). Always track which sweep call you're asserting on.
 
 ## Learnings
 
-### 2026-04-28: Phase 2 Runtime Verification Tests
+### 2026-05-04 — Cycle-3 Advisory Fixes
 
-**Files created:**
-- `packages/forge/src/__tests__/contracts.test.ts` — 32 tests verifying runtime shapes of CairnBridgeEvent, ProvenanceTier, DecisionRecord, SessionIdentity, DBOMArtifact, TelemetrySink
-- `packages/forge/src/__tests__/bridge.test.ts` — 22 tests covering EVENT_MAP (22 entries), provenance classification, payload extractors, unmapped event handling, edge cases (null/undefined/empty data)
-- `packages/forge/src/__tests__/hooks.test.ts` — 20 tests covering multi-observer composition, independent hook types, partial observers, error isolation, invocation context, decision gate pattern
+**Items delivered:**
+- **ITEM A** (alias cleanup): Migrated 6 `result.vectorsComputed` calls → `result.changeVectorSweep.computed` across curatorVectors.test.ts. Dropped the deprecated `vectorsComputed` field from `CurateResult` interface and return object in curator.ts. Clean removal — no other callers.
+- **ITEM B** (contracts relabel): Reordered the two tests in `ChangeVectorSummary — root re-export smoke test`. Shape-guard test now runs first (renamed "ChangeVectorSummary is exported as a type from forge root index"). Barrel smoke test now second (renamed "@akubly/forge barrel resolves without runtime error" with comment clarifying it's not a type assertion).
 
-**Total: 74 tests, all passing** (plus 25 from Roger's test-infra = 99 total in forge)
+**New tests for cycle-3 production changes (+20 total):**
+- `curatorVectors.test.ts` +6: Legacy snapshot deltaCost=0 (no sessionCount / sessionCount=0 / other deltas still computed / sessionCount>0 normal path), session count reset clamp (sessionsObserved=0), equal counts edge case.
+- `changeVectors.test.ts` +2: `summarizeChangeVectors(db, cat, skill, 0)` → finite, >=1.0 (safeMin guard); vectorCount=0 with minVectors=0 still returns 1.0 (early-exit path).
+- `weight-consistency.test.ts` +4: `computeConfidenceBoost(vc, 0)` returns finite >= 1.0 for vc=0, 1, large, and all across a sweep.
+- `prescribers-vectors.test.ts` +8: `applyHistoricalVectorOrdering` imported directly from utils.ts; verified matched-first / predictedImpact-desc / unmatched-impactScore-desc contract; non-mutation; empty array; all-matched / all-unmatched edge cases.
 
-**Key patterns used:**
-- Inline mock implementations of bridge and hook composer (from spike reference) since Alexander's production modules don't exist yet. Marked with `// TODO: Replace with real import once module exists`.
-- Type guard function pattern for runtime ProvenanceTier validation.
-- Factory helper functions (`makeBridgeEvent`, `makeDecision`, `makeSession`, `makeSdkEvent`) for clean test construction.
+**Defect scan — no production defects found.** All cycle-3 changes (Rosella's legacy snapshot guard, sessions_observed clamp, safeMin in summarizeChangeVectors; Alexander's safeMin in computeConfidenceBoost, applyHistoricalVectorOrdering extraction) were already in place. The view tool returned a cached version of changeVectors.ts that lacked the safeMin guard — Get-Content confirmed the guard was present. Lesson: when a test passes unexpectedly, verify live source with Get-Content, not view.
 
-**Edge cases discovered:**
-- `null` and `undefined` data payloads in SDK events — default extractor must handle gracefully via `?? {}`.
-- Missing `copilotUsage` in `assistant.usage` events — extractor must use optional chaining.
-- Empty hooks set and no-hooks-at-all — `composeHooks()` with zero args must still produce valid handler returning `{}`.
-- Error isolation gap in spike: spike `composeHooks` propagates errors (one bad observer kills all). Documented desired behavior (isolation) vs current behavior (propagation) in separate tests.
+**Totals: 1153 passing (556 cairn + 597 forge), 4 todos. Baseline was 1133 (+20).**
 
-**Architecture insight — error isolation:**
-The spike's `composeHooks` does NOT isolate errors — a throwing observer kills subsequent observers. Production implementation MUST add try/catch isolation. This is documented in `hooks.test.ts` with both the desired behavior test and a "documenting current behavior" test.
+## 2026-05-04: Phase 4.6 Review Cycle — 3-Cycle Complete
 
-**Vitest config:** Roger created `packages/forge/vitest.config.ts` — matches cairn's pattern. Run with `cd packages/forge && npx vitest run`.
+**Role:** Wave 1 test author (L1–L5), Wave 2 defect finder (confidence inconsistency), Wave 3 cycle-3 test & code updates (L3, L4, L5)
 
-### 2026-04-28: Hooks Tests Upgraded to Production Imports
+**Final Outcome:**
+- 1153 tests passing (baseline 990 + 163 new)
+- Branch review-clean, all persona findings resolved
+- Delivered 20 new tests in cycle 3 (L5)
 
-Replaced all inline mock types and the inline `composeHooks` function with real imports from Alexander's production modules:
-- `composeHooks`, `HookComposer`, `HookObserver` from `../hooks/index.js`
-- `PreToolUseInput`, `PreToolUseOutput`, `PostToolUseInput`, `PostToolUseOutput`, `HookInvocation` from `../types.js`
-- `ToolResultObject` from `@github/copilot-sdk`
+**Review Cycle Scope:**
+- Cycle 1: 15 findings; L1–L5 tests executed (93 new), 1099 → 1102 passing
+- Cycle 2: Laura flagged `summarizeChangeVectors` confidence=0 vs `computeConfidenceBoost(0)` inconsistency
+  - Analysis: contract ambiguity (level vs boost), not logic error
+  - Verdict (Option B): rename field to `confidenceBoost`, re-opened test as passing
+- Cycle 3: Updated all tests per cycle-1/2 fixes; added 20 edge-case tests (1133 → 1153)
 
-**Changes:**
-- Deleted ~120 lines of inline type definitions and mock `composeHooks`
-- Updated all observer annotations from `SessionHooks` to `HookObserver` (the partial type consumers actually provide)
-- Replaced `{ success: true }` toolResult with proper `ToolResultObject` shape
-- Removed obsolete "spike propagates errors" test — production now isolates errors
-- Replaced inline `composeHooksWithIsolation` with direct use of production `composeHooks`
-- Added 4 error isolation tests against real production code (pre, post, lifecycle, warning logging)
-- Added 10 `HookComposer` class tests: `add()`, `remove()`, `size`, `compose()` live-reference, dispose pattern, dynamic changes, duplicate-add idempotency
+**Cycle 3 Test Additions:**
+- `curatorVectors.test.ts` +6: legacy snapshot handling (deltaCost=0), session count reset clamp
+- `changeVectors.test.ts` +2: safeMin guard at 1, minVectors=0 edge case
+- `weight-consistency.test.ts` +4: computeConfidenceBoost with safeMin
+- `prescribers-vectors.test.ts` +8: applyHistoricalVectorOrdering partition & sort semantics
+- Contracts + naming updates: dropped deprecated `vectorsComputed` alias, reordered shape-guard tests
 
-**Key finding confirmed:** Alexander's production `HookComposer` correctly isolates errors with try/catch and logs via `console.warn("[HookComposer]...")`. The decision I filed (`laura-hook-error-isolation.md`) was implemented.
+**Key Pattern (Cycle 1):** Contract-first test architecture paid off. L1–L5 established expected behavior *before* fixes were known. When cycle-1 findings emerged, tests already captured the happy path; adding cycle-2/3 edge cases was incremental, not rework. UNIQUE constraint tests reveal SQLite auto-indexes (filtered out); schema changes require explicit test re-verification.
 
-**Test count:** hooks.test.ts went from 20 tests (inline mocks) to 32 tests (production imports + HookComposer coverage). Full forge suite: 111 tests passing.
+**Defect Surface (Cycle 2):** The `confidence` field ambiguity exposed a real risk: 
+- Alexander's zero-default was consistent with "confidence level" semantics (0 = no data).
+- Rosella's 1.0 return was consistent with "confidence boost" semantics (1.0 = identity).
+- Without naming discipline, the next developer writes either `if (summary.confidence === 0) hint.skip()` or `hint.confidence *= summary.confidence`, and one silently breaks. Renaming to `confidenceBoost` collapsed the ambiguity at the type level.
 
-**Cross-agent coordination:** Alexander read the error isolation decision and implemented it in HookComposer. His implementation uses try/catch per observer and logs warnings. The test suite confirms this works as designed.
+**Lesson (Cycle 3 integration):** When running test suites after fixes land, always verify live source (Get-Content) if a test passes unexpectedly — cached views can mask live-source changes. Additionally, cycle-3 advisory tests revealed that safeMin guards needed validation across all formula call sites. A single missing guard in any prescriber would silently pass test boundaries but fail in production. Pattern: enumerate all formula call sites and apply the guard consistently.
 
-### 2026-04-28: Bridge Tests Upgraded to Production Imports
-
-Replaced all inline mock types and reimplemented bridge logic with real imports from Alexander's production bridge module:
-- `bridgeEvent`, `classifyProvenance`, `EVENT_MAP`, `PAYLOAD_EXTRACTORS` from `../bridge/index.js`
-- `SessionEvent` type from `@github/copilot-sdk`
-
-**Changes:**
-- Deleted ~120 lines of inline type definitions, EVENT_MAP, CERTIFICATION_EVENT_TYPES, classifyProvenance, PayloadExtractor, defaultExtractor, PAYLOAD_EXTRACTORS, and bridgeEvent
-- Removed stale `CairnBridgeEvent` and `ProvenanceTier` type imports (no longer needed — tests use production functions that handle typing internally)
-- Updated `makeSdkEvent` helper to construct SDK-compatible `SessionEvent` objects (requires `id`, `parentId` fields; uses `as unknown as SessionEvent` cast since SDK type is a discriminated union)
-- Updated explicit `SessionEvent` construction in "preserves timestamp" test to match SDK shape
-- Cast `EVENT_MAP` access with string key via `as Record<string, string>` since production type is `Partial<Record<SessionEventType, string>>`
-
-**Key finding confirmed:** The inline copy HAD DIVERGED from production — inline `defaultExtractor` had `?? {}` fallback but production did not. Alexander simultaneously fixed production to add `?? {}`. This validates the persona review's concern about inline copies drifting.
-
-**Test count:** All 22 bridge tests pass against production code. Full forge suite: 111 tests passing.
-
-### 2026-04-28: Phase 2 Remaining Module Tests (decisions, dbom, session)
-
-**Files created:**
-- `packages/forge/src/__tests__/decisions.test.ts` — 18 tests covering createDecisionGate (gating, pass-through, DecisionRecord shape, error isolation, session ID evidence, certification tier), createDecisionRecorder (passive recording, correct fields, multiple calls), makeDecisionRecord (unique IDs, timestamps, all fields, passthrough)
-- `packages/forge/src/__tests__/dbom.test.ts` — 33 tests covering generateDBOM (certification filtering, valid artifact shape, empty events, hash chain linking, tamper detection, internal-only filtering), classifyDecisionSource (16 classification cases including permission_completed variants, decision_point sources, subagent events, conservative defaults), summarizeDecision (all event types, missing fields), computeDecisionHash (determinism, differentiation, chain integrity, SHA-256 format), computeStats (source counting, chain depth/roots, event type counts, empty input)
-- `packages/forge/src/__tests__/session.test.ts` — 10 tests covering ModelSnapshot shape (required fields, optional fields present/absent), toModelSnapshot (correct extraction, missing optionals, internal field stripping, reasoning model, zero context), ReasoningEffort type (valid values, type-level check)
-
-**Total: 61 new tests, all passing against production modules.** Full forge suite: 181 tests.
-
-**Key approach:** All tests import from real production modules (`../decisions/index.js`, `../dbom/index.js`, `../session/index.js`). No inline mocks of production logic — lesson learned from bridge.test.ts.
-
-**Fixes during test authoring:**
-1. `makeDecisionRecord` requires all fields (alternatives, evidence, confidence, provenanceTier) — no defaults. Adjusted test from "uses sensible defaults" to "passes through all caller-provided fields."
-2. `summarizeDecision('snapshot_rewind')` returns "Session state rewound to snapshot" — used `toContain('rewound')` not `toContain('rewind')`.
-
-### 2026-04-28: Session Test TypeScript Fix — ModelPolicy.terms
-
-Fixed `session.test.ts` build failures caused by SDK `ModelPolicy` type requiring a `terms` field and `state` being a `"enabled" | "disabled" | "unconfigured"` union (not free string).
-
-**Changes:**
-- Replaced untyped `makeModelInfo` helper with properly typed version using `ModelInfo` import from `@github/copilot-sdk`
-- Fixed `policy.state` values: `'available'` → `'enabled'`, `'preview'` → `'disabled'`
-- Added `terms: ''` to all policy objects
-- Used `as unknown as ModelInfo` cast for "strips internal fields" test (to add extra properties)
-- Fixed `makeDecisionRecord` calls missing required fields (`alternatives`, `evidence`, `confidence`, `provenanceTier`)
-
-**Lesson:** When building mock objects for SDK types, always import and annotate with the real type. Free-form objects with inferred types silently allow invalid string literals until `tsc --build` catches them.
-
-### 2026-04-29: Phase 3 Test Contracts — Runtime & Models
-
-**Files created:**
-- `packages/forge/src/__tests__/runtime.test.ts` — 35 tests covering ForgeClient session lifecycle (create, resume, stop, error propagation), ForgeSession bridge event wiring (auto-subscribe, bridge mapping, multi-event, usage capture, unmapped events), hook composition integration (multi-observer, dynamic add/remove via live HookComposer), message sending (send, sendAndWait delegation), disconnect lifecycle (idempotent, event unsubscription), edge cases (multi-session tracking, copy semantics), decision gate integration (blocking, pass-through, gate+telemetry composition).
-- `packages/forge/src/__tests__/models.test.ts` — 52 tests covering ModelCatalog (refresh from client, list/get/filter, size, copy semantics, empty state, strategy integration), toModelSnapshot extraction (required fields, optional fields, missing optionals, maxOutputTokens), ModelSwitcher (setModel delegation, reasoning effort, change event tracking, history ordering, current model updates, copy semantics), TokenBudgetTracker (per-model accumulation, cache tokens, nano-AIU, duration, cross-model totals, unknown model default, context window tracking with peak/limit/updates, dispose lifecycle), model strategies (cheapest, smartest, budgetAware with threshold behavior, disabled model exclusion, empty lists, default billing).
-
-**Files modified:**
-- `packages/forge/src/__tests__/helpers/mock-sdk.ts` — Extended MockCopilotSession with `setModel` mock, typed event handler tracking (`_typedHandlers`), and unsubscribe return values from `on()`. Extended MockCopilotClient with `resumeSession`, `listSessions`, `listModels`, `getAuthStatus`, `getStatus` mocks. Added `makeModelInfo` factory helper.
-- `packages/forge/src/__tests__/helpers/index.ts` — Added `makeModelInfo` to barrel export.
-
-**Total: 87 new tests, all passing.** Full forge suite: 268 tests passing.
-
-**Key approach — inline contract implementations:**
-Phase 3 modules (runtime/, models/) don't exist yet. Rather than importing from non-existent modules, the test files define expected API types and inline implementations (ForgeClient, ForgeSession, ModelCatalog, ModelSwitcher, TokenBudgetTracker) that establish the behavioral contract. When Alexander builds the real modules, tests switch from inline to real imports — any behavioral divergence immediately surfaces as test failures.
-
-**Mock SDK extension rationale:**
-Phase 2 mocks only had createSession/stop on the client and basic on/send/sendAndWait/disconnect on the session. Phase 3 needs resumeSession, listModels, setModel, typed event subscriptions, and unsubscribe return values. Extended the shared helpers rather than creating test-local mocks to maintain the "single source of mock truth" pattern.
-
-**Bridge event type discovery:**
-Initial test assumed `tool.execution_start` maps to `tool_start` in CairnBridgeEvent. Actually maps to `tool_use` (and `tool.execution_complete` → `tool_result`). Fixed by checking the production EVENT_MAP. Lesson: always verify Cairn event type names against the production bridge module rather than guessing from SDK event names.
-
-### 2026-04-29: Phase 3 Cross-Module Integration Tests (L2–L7)
-
-**File created:**
-- `packages/forge/src/__tests__/integration.test.ts` — 19 tests across 6 test groups
-
-**Test groups:**
-- **L2 (E2E Wiring):** 3 tests — full ForgeClient→ForgeSession→bridge→sink flow, hook observers through composed hooks, event sequence ordering
-- **L3 (Error Isolation):** 4 tests — throwing observer isolation, bridge handler error resilience, disconnect cleanup with throwing unsubscribe, stop() resilience with failing session disconnect
-- **L4 (Decision Gate Integration):** 3 tests — gate→HookComposer→ForgeSession blocking, gate+recorder composition, dynamic gate add/remove mid-session
-- **L5 (Model Switching):** 3 tests — model_change event tracking, accumulation, bridge event emission
-- **L6 (Token Tracker Integration):** 3 tests — per-model accumulation from assistant.usage, context window high-water mark from session.usage_info, unsubscribe stops tracking
-- **L7 (Resume):** 3 tests — create→disconnect→resume with re-attached bridge, old session cleanup from tracking map, new observers on resumed session
-
-**Full forge suite: 289 tests passing (19 new).**
-
-**Key finding — mock session unsubscribe semantics:**
-The mock session's `on()` returns a no-op unsubscribe stub. For testing real unsubscribe behavior (L6 token tracker), I needed to build a proper EventSource adapter with `Set<handler>`-based subscribe/unsubscribe. The mock session helpers are designed for fire-and-forget event wiring (ForgeSession's bridge subscription), not for testing unsubscribe semantics directly.
-
-**Decision: disconnect error propagation (L3):**
-ForgeSession.disconnect() does NOT wrap individual unsubscribe calls in try/catch — if the bridge unsubscribe throws, disconnect throws. However, ForgeClient.stop() DOES wrap each session disconnect in try/catch and collects errors. This is correct: stop() must be resilient (best-effort cleanup), while disconnect() is a direct API where callers can handle the error. The L3 tests verify both behaviors.
-
-### 2026-05-02: Phase 4.5 — Integration Tests + Convergence (Complete)
-
-**Session:** 2026-05-02T04:35:00Z  
-**Outcome:** ✅ SUCCESS
-
-**Delivered:** `feedback-loop.test.ts` with 36 integration/convergence/regression/efficiency tests. Updated forge barrel exports. Process-invariant testing philosophy (response curves, not terminal states). In-file LCG property tests (zero-dep, reproducible).
-
-**Key design:** Convergence asserted by monotone response curves (hint count ↓ as drift ↓), not "system reaches GREEN". Operator effect simulated at profile level (testing system response, not operator quality). Efficiency bounds generous (250ms / 10k vs ~25µs). L5 tests catch O(N) regressions. Drift gate pinned at >= 0.3 with metamorphic tests.
-
-**Integration:** Merged with all three streams (Roger/telemetry, Alexander/db, Rosella/prescribers). 990 total tests passing (512 forge, 478 cairn). Build clean. +164 tests this phase.
-
-**Notes for downstream:** L5 tests catch collector regressions. L2 integration covers buffer sizes 1 and 16. L3 metamorphic pins gate at >= 0.3 — moving threshold requires test update.
-
-### 2026-04-30: Phase 4 Test Contracts — Export Pipeline (initial)
-
-Initial 37 tests written before spec existed. Superseded by spec-aligned rewrite below.
-
-### 2026-05-01: Phase 4 Test Contracts — Spec-Aligned Rewrite
-
-**File updated:** `packages/forge/src/__tests__/export.test.ts`
-
-Rewrote all contract tests to match `docs/forge-phase4-spec.md` exact API surface:
-- Types: `SkillFrontmatterInput`, `SkillCompilerInput`, `CompiledSkill` (with `content`, `contentHash`, `compiledAt`), `StageContext`, `ExportStage`, `ExportPipelineConfig`, `ExportPipelineResult`, `ExportStageResult`, `ExportDiagnostic`, `QualityGateResult`, `ExportQualityGate`
-- Functions: `renderFrontmatter(fm, dbom)`, `compileSkill(input)`, `extractStage(ctx)`, `stripStage(ctx)`, `attachStage(ctx, fm)`, `validateStage(ctx, gate)`, `runExportPipeline(config)`
-
-**My contract tests (62 tests) across 10 groups:**
-- **renderFrontmatter (8):** YAML structure, provenance block, decision_types map, tools section, empty fields, escaping (quotes, newlines)
-- **compileSkill (6):** CompiledSkill shape, content structure, contentHash (SHA-256, determinism, differentiation), empty content, whitespace trimming
-- **extractStage (4):** DBOM generation, empty events → error diagnostic, no cert events → warning diagnostic, diagnostic preservation
-- **stripStage (5):** Windows paths, Unix paths, /tmp paths, mixed paths, passthrough, no-content edge
-- **attachStage (3):** normal flow, missing DBOM → error diagnostic, empty content
-- **validateStage (4):** passing gate, failing gate, content passed to gate, missing compiled skill → error diagnostic
-- **runExportPipeline (15):** happy path, 4 stage timing, all stages pass, quality gate failure (skill still returned), empty events (early stop), internal-only events (warning), persistDBOM injection (called/not called/missing), persistence failure → warning, structured result, persisted events, compiled content to gate, path stripping, diagnostic accumulation
-- **DBOM Persistence (3):** persistFn receives complete artifact, call order (after gate), error message in diagnostic
-- **Forge→Cairn Integration (5):** gate receives compiled content, gate fields propagate, end-to-end flow, provenance matches standalone DBOM, stats in frontmatter YAML
-- **Export Edge Cases (9):** no sections, long content, special chars, mixed tiers, deterministic hash, large chains (200), gate exception propagation, relative path preservation, /tmp path stripping
-
-**Roger's production tests (37 tests) also in file — imported from real `../export/` modules.**
-
-**Full forge suite: 388 tests passing (99 in export.test.ts).**
-
-**Key changes from initial version:**
-1. `CompiledSkill.markdown` → `CompiledSkill.content` (spec §3.1)
-2. `CompiledSkill.frontmatter` → embedded in YAML string, not separate object
-3. Added `CompiledSkill.contentHash` (SHA-256) and `CompiledSkill.compiledAt`
-4. `ExportResult` → `ExportPipelineResult` with `stages[]`, `diagnostics[]`, `qualityGatePassed`, `lintErrors`, `validationScore`
-5. Quality gate is now `ExportQualityGate = (string) → QualityGateResult`, not the old `CairnToolkit` interface
-6. Pipeline stages as pure `(StageContext) → StageContext` functions
-7. DBOM persistence via injected `persistFn`, not a separate `DBOMStore` interface
-8. Added `renderFrontmatter` tests (YAML structure, provenance block, tools, escaping)
-9. Added `stripStage` tests (Windows/Unix/tmp paths, relative path preservation)
-10. Added stage timing assertions (`durationMs >= 0`)
-11. Added diagnostic accumulation tests
-
-**New edge cases discovered:**
-- `stripStage` preserves relative paths (src/..., ./...) — only strips absolute paths
-- `stripStage` handles /tmp paths (Unix temp directories)
-- `validateStage` does NOT catch quality gate exceptions — they propagate. Spec §7.1 says pipeline should catch, so production implementation must add try/catch.
-- `compiledAt` in frontmatter means `renderFrontmatter` is NOT deterministic (calls `new Date()`) — contentHash changes between calls even with identical logical input. Tests verify SHA-256 format rather than exact hash equality across calls.
-
-### 2026-05-02: Phase 4.5 Integration + Convergence Tests (L1–L5)
-
-**File created:**
-- packages/forge/src/__tests__/feedback-loop.test.ts — 36 tests covering the cross-module feedback-loop surface (collector → sink → aggregator → prescriber → applier).
-
-**Index barrel updated:**
-- packages/forge/src/index.ts — added // --- Prescribers --- and // --- Applier --- blocks following the same format as the telemetry block. Exports analyze*Optimizations, applyOptimizations, tuneParameters, DEFAULT_STRATEGY_PARAMS, and all related types.
-
-**Test categories (per spec §11):**
-- **L1 Fixture factories (4 tests):** evt(), profile(), hint(), good/badSessionEvents() — all in-file, no new helpers/ module since they're feedback-loop-specific.
-- **L2 Integration (5 tests):** end-to-end pipeline with mock CairnBridgeEvents, sink persistence, aggregator commutativity over disjoint batches, skillId propagation through the pipeline.
-- **L3 Convergence (4 tests):** monotone non-increasing hint count as drift improves, monotone non-increasing max impact, self-tuning parameter steady-state stability (swing < 0.2 over last 3 cycles), aggregator 'improving' trend detection.
-- **L4 Regression (8 tests):** prescriber idempotence, applier patch determinism with injected now(), impactScore-desc tie-broken-by-id-asc ordering, confidence threshold gating, maxHintsPerCycle accounting (applied + skipped == input), drift-gate suppression of token hints, explorationBudget hard floor, all tuneParameters bounds under stress.
-- **L5 Efficiency (6 tests):** drift/token/outcome collectors handle 10k events under 250/250/100 ms; aggregateSignals folds 1k samples under 50ms; sink enqueue+flush 1k under 100ms; applyOptimizations 500 hints under 50ms.
-- **§11.3 Properties (4 tests):** drift score ∈ [0,1] over 200 LCG-seeded random vectors, classification monotone, aggregator commutative on session counts, applier ordering stable under input shuffle.
-- **§11.4 Metamorphic (5 tests):** more sessions → higher prompt-structure confidence, worse drift → ≥ hints, drift-gate equality (token hints iff drift < 0.3 — verified at 0.1, 0.3, 0.5), doubling signals never decreases score, low-confidence hint never changes the applied set.
-
-**Key approach decisions:**
-- "Test the learning process, not the learned artifacts" (spec §11.2): tests assert behavioural invariants — monotonicity, stability, suppression — rather than specific hint text or counts. Counts-based assertions are bounded with ≤/≥, not equality.
-- Convergence cycles are *simulated*: the operator's effect of applying a patch is modelled as a profile whose drift is lower in the next cycle. We can't run a real model in unit tests.
-- Efficiency bounds are intentionally generous (250ms for 10k events) — tight enough to catch O(N) regressions, loose enough to survive CI variability.
-- Used a deterministic LCG for property-based tests (no fast-check dependency added) — keeps the test suite zero-dep and reproducible.
-- Drift gate test (§11.4) probes the boundary at three points (0.1, 0.3, 0.5) — confirms the >= 0.3 cutoff in tokenOptimizer.
-
-**Build/typecheck fixes:**
-- TelemetrySink.flush? is optional in the @akubly/types contract — must be called as sink.flush?.() even though LocalDBOMSink always implements it.
-
-**Final test counts:**
-- Forge: 512 tests (was 476, +36)
-- Cairn: 478 tests
-- Total: 990 passing across both packages, build clean.
+**Lockout Observation:** Test updates for findings in both forge and cairn required coordination across Alexander and Rosella's fixes. Laura ran tests after each fix wave, preventing integration gaps. Tests became the integration contract between parallel implementations.

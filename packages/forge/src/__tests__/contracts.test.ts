@@ -372,3 +372,60 @@ describe('TelemetrySink interface', () => {
     await expect(sink.close!()).resolves.toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// ChangeVectorSummary — root re-export smoke test (Phase 4.6 cycle 2, Finding #8)
+//
+// Alexander added ChangeVectorSummary to the forge root index.ts so that Cairn
+// (and other consumers) can import it from '@akubly/forge' without reaching into
+// internal prescribers paths. This test verifies the export exists at runtime.
+//
+// IMPORTANT — relative path, not package name:
+//   We import from '../index.js' (the source file) rather than '@akubly/forge'
+//   (the package name) to avoid a workspace self-resolution chicken-and-egg
+//   problem: package.json#main/types point at 'dist/', which doesn't exist until
+//   after `tsc --build` completes — making the package name unresolvable during
+//   the build itself. Importing from the source path tests exactly the same
+//   contract (symbol is re-exported from the root index.ts) without requiring
+//   a pre-built dist/ directory.
+// ---------------------------------------------------------------------------
+
+describe('ChangeVectorSummary — root re-export smoke test', () => {
+  it('ChangeVectorSummary is exported as a type from forge root index', () => {
+    // Compile-time + runtime shape guard. TypeScript will error here if
+    // ChangeVectorSummary's shape changes or the export is removed.
+    // Relative path used to avoid workspace self-resolution issue (see block comment above).
+    const summary: import('../index.js').ChangeVectorSummary = {
+      category: 'convergence',
+      skillId: 'skill-test',
+      meanNetImpact: 0.7,
+      vectorCount: 5,
+      confidenceBoost: 1.2,
+    };
+
+    expect(summary).toHaveProperty('category', 'convergence');
+    expect(summary).toHaveProperty('skillId', 'skill-test');
+    expect(summary).toHaveProperty('meanNetImpact', 0.7);
+    expect(summary).toHaveProperty('vectorCount', 5);
+    expect(summary).toHaveProperty('confidenceBoost');
+    expect(typeof summary.category).toBe('string');
+    expect(typeof summary.meanNetImpact).toBe('number');
+    expect(typeof summary.vectorCount).toBe('number');
+    expect(typeof summary.confidenceBoost).toBe('number');
+  });
+
+  // Barrel sanity check — NOT a type assertion. ChangeVectorSummary is type-only and has
+  // no runtime value. This test confirms the module loads without error (prescribers barrel
+  // wired correctly, no missing re-exports), and that value exports remain present.
+  it('@akubly/forge barrel resolves without runtime error', async () => {
+    // Dynamic import to confirm the module resolves correctly.
+    // Relative path used to avoid workspace self-resolution issue (see block comment above).
+    const forgeModule = await import('../index.js');
+
+    expect(forgeModule).toBeDefined();
+
+    // Value exports from the prescribers barrel confirm the export path for
+    // ChangeVectorSummary is intact.
+    expect(typeof forgeModule.analyzePromptOptimizations).toBe('function');
+  });
+});

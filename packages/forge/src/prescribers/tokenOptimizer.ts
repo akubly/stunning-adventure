@@ -8,8 +8,8 @@
 
 import { randomUUID } from "node:crypto";
 import type { ExecutionProfile } from "../telemetry/types.js";
-import type { OptimizationHint, PrescriberResult } from "./types.js";
-import { buildSnapshot } from "./utils.js";
+import type { ChangeVectorSummary, OptimizationHint, PrescriberResult } from "./types.js";
+import { buildSnapshot, applyHistoricalVectorOrdering } from "./utils.js";
 
 export interface TokenOptimizerConfig {
   /** Minimum sessions before prescribing. Default: 5. */
@@ -25,6 +25,7 @@ export interface TokenOptimizerConfig {
 export function analyzeTokenOptimizations(
   profile: ExecutionProfile,
   config?: TokenOptimizerConfig,
+  historicalVectors?: ChangeVectorSummary[],
 ): PrescriberResult {
   const startTime = Date.now();
   const hints: OptimizationHint[] = [];
@@ -103,6 +104,25 @@ export function analyzeTokenOptimizations(
       metricSnapshot: snapshot,
       generatedAt,
     });
+  }
+
+  // Apply historical vector data when provided (Phase 4.6).
+  // Same logic as promptOptimizer: boost confidence, attach predictedImpact,
+  // two-tier sort (matched by predictedImpact desc, unmatched by impactScore desc).
+  // When omitted, identical to Phase 4.5.
+  if (historicalVectors && historicalVectors.length > 0) {
+    for (const hint of hints) {
+      const summary = historicalVectors.find(
+        (v) => v.category === hint.category && v.skillId === hint.skillId,
+      );
+      if (summary) {
+        hint.confidence = Math.min(1, hint.confidence * summary.confidenceBoost);
+        hint.predictedImpact = summary.meanNetImpact;
+      }
+    }
+    const sortedHints = applyHistoricalVectorOrdering(hints);
+    hints.length = 0;
+    hints.push(...sortedHints);
   }
 
   return { hints, analysisTimeMs: Date.now() - startTime };

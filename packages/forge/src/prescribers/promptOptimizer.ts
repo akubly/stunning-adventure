@@ -7,8 +7,8 @@
 
 import { randomUUID } from "node:crypto";
 import type { ExecutionProfile } from "../telemetry/types.js";
-import type { OptimizationHint, PrescriberResult } from "./types.js";
-import { buildSnapshot } from "./utils.js";
+import type { ChangeVectorSummary, OptimizationHint, PrescriberResult } from "./types.js";
+import { buildSnapshot, DEFAULT_MIN_SESSIONS, applyHistoricalVectorOrdering } from "./utils.js";
 
 export interface PromptOptimizerConfig {
   /** Minimum sessions before prescribing. Default: 3. */
@@ -26,10 +26,11 @@ export interface PromptOptimizerConfig {
 export function analyzePromptOptimizations(
   profile: ExecutionProfile,
   config?: PromptOptimizerConfig,
+  historicalVectors?: ChangeVectorSummary[],
 ): PrescriberResult {
   const startTime = Date.now();
   const hints: OptimizationHint[] = [];
-  const minSessions = config?.minSessions ?? 3;
+  const minSessions = config?.minSessions ?? DEFAULT_MIN_SESSIONS;
   const driftThreshold = config?.driftThreshold ?? 0.2;
   const entropyThreshold = config?.toolEntropyThreshold ?? 0.5;
 
@@ -123,6 +124,30 @@ export function analyzePromptOptimizations(
       metricSnapshot: snapshot,
       generatedAt,
     });
+  }
+
+  // Apply historical vector data when provided (Phase 4.6).
+  // For each hint, find a matching summary (same category + skillId).
+  // - Multiply hint.confidence by the log-scaled boost from the vector summary.
+  // - Record meanNetImpact as predictedImpact for downstream ranking.
+  // - Two-tier sort: matched hints (predictedImpact assigned) sorted by predictedImpact desc,
+  //   followed by unmatched hints in their original impactScore desc order (Phase 4.5 default).
+  //   This prevents unmatched hints with predictedImpact=undefined (treated as 0) from
+  //   outranking matched hints with measured negative impact.
+  // When historicalVectors is omitted, behavior is identical to Phase 4.5.
+  if (historicalVectors && historicalVectors.length > 0) {
+    for (const hint of hints) {
+      const summary = historicalVectors.find(
+        (v) => v.category === hint.category && v.skillId === hint.skillId,
+      );
+      if (summary) {
+        hint.confidence = Math.min(1, hint.confidence * summary.confidenceBoost);
+        hint.predictedImpact = summary.meanNetImpact;
+      }
+    }
+    const sortedHints = applyHistoricalVectorOrdering(hints);
+    hints.length = 0;
+    hints.push(...sortedHints);
   }
 
   return { hints, analysisTimeMs: Date.now() - startTime };

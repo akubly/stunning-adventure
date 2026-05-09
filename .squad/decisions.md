@@ -2,6 +2,564 @@
 
 ## Active Decisions
 
+
+# Phase 4.6 Kickoff — Change Vector Learning
+
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-03  
+**Status:** Kickoff — ready for team spawn  
+**Branch:** `squad/phase4.6-change-vectors`
+
+---
+
+## 1. Branch Decision
+
+**Decision:** New branch `squad/phase4.6-change-vectors` from `squad/phase4-export-pipeline`.
+
+**Rationale:**
+- Phase 4.5 is complete (1012 tests, review-hardened). Clean phase boundary.
+- PR-per-phase pattern established in Phases 3, 4, 4.5.
+- Keeps the diff reviewable — Phase 4.6 is ~200 LOC, but will have its own test surface.
+- If Phase 4.6 needs to bake longer, it doesn't block Phase 4.5 merge to main.
+
+**Alternative rejected:** Continue on current branch. Would blur the PR boundary and make rollback harder if change vectors need iteration.
+
+---
+
+## 2. Spec Clarifications (Resolved)
+
+### 2.1 Migration 012 Placement
+
+**Resolved:** `packages/cairn/src/db/migrations/012-change-vectors.ts`, registered in `schema.ts` (version 12). Follows exact pattern of migrations 010/011.
+
+### 2.2 Where `change_vectors` Writes Happen
+
+**Resolved:** New CRUD module `packages/cairn/src/db/changeVectors.ts` owns reads/writes. The **computation trigger** is the Curator sweep — when aggregating profiles, if a hint with status `'applied'` has a subsequent metric snapshot available (from a later execution_profile update), the Curator computes and inserts the change vector. This is NOT in the prescriber or applier — it's a post-hoc observation.
+
+**Rationale:** The Curator already owns cursor-based aggregation sweeps. Adding vector computation to the sweep is O(applied_hints) per sweep, naturally rate-limited, and consistent with the "observe, don't block" principle.
+
+### 2.3 `historicalVectors` Integration with Prescriber Signatures
+
+**Resolved:** Add optional third parameter to both prescribers:
+
+```typescript
+// Before (Phase 4.5):
+analyzePromptOptimizations(profile: ExecutionProfile, config?: PromptOptimizerConfig): PrescriberResult
+
+// After (Phase 4.6):
+analyzePromptOptimizations(profile: ExecutionProfile, config?: PromptOptimizerConfig, historicalVectors?: ChangeVectorSummary[]): PrescriberResult
+```
+
+**Type definition** (in `prescribers/types.ts`):
+```typescript
+export interface ChangeVectorSummary {
+  category: OptimizationCategory;
+  skillId: string;
+  meanNetImpact: number;
+  vectorCount: number;
+  confidence: number; // log-scaled boost
+}
+```
+
+**Why optional param, not config:** Config is static per-invocation. Vectors are dynamic data queried per-skill. Semantic distinction matters for testability — tests can pass vectors directly without mocking a DB query.
+
+### 2.4 "Before/After Metric Snapshots" — Concrete Meaning
+
+**Resolved:**
+- **Before:** `optimization_hints.metric_snapshot` JSON column (captured at hint generation time, already exists in migration 011).
+- **After:** The `execution_profiles` row for the same `skill_id` at the time the Curator sweep runs (post-application).
+- **Delta:** `after_value - before_value` for each of the 5 metric fields in `MetricSnapshot`.
+
+No new "snapshot" table needed — the before is already stored, the after is the live profile.
+
+### 2.5 Min `sessions_observed` Window
+
+**Decision:** Configurable with sensible default.
+
+```typescript
+export interface ChangeVectorConfig {
+  /** Minimum sessions between before/after to consider vector valid. Default: 3. */
+  minSessionsObserved?: number;
+}
+```
+
+**Rationale:** Fixed value is too rigid. A skill used 100x/day needs fewer sessions than one used 2x/week. Default 3 matches the prompt optimizer's `minSessions` canary threshold.
+
+### 2.6 Net Impact Weighting
+
+**Decision:** Same weights as drift score (from `telemetry/drift.ts`).
+
+The roadmap spec explicitly states: `net_impact = Σ(delta_i × weight_i) // same weights as drift score`. This means:
+- convergence: 0.30
+- toolEntropy: 0.25 (maps to `delta_drift` since drift subsumes entropy)
+- promptStability: 0.15
+- cacheHit: 0.15
+- cost: 0.15
+
+**Import the weight constants** from `telemetry/drift.ts` rather than duplicating. Single source of truth.
+
+---
+
+## 3. Work Decomposition
+
+### Wave 1 — Foundation (Alexander, parallel with Rosella type work)
+
+| # | Owner | Item | Description | Depends On |
+|---|-------|------|-------------|------------|
+| A1 | Alexander | Migration 012 | `012-change-vectors.ts` — CREATE TABLE + indices per roadmap §1.2 | — |
+| A2 | Alexander | Schema registration | Import + register migration012 in `schema.ts`, version bump to 12 | A1 |
+| A3 | Alexander | CRUD module | `packages/cairn/src/db/changeVectors.ts` — insert, getByHintId, getByCategory, computeNetImpact | A1 |
+| A4 | Alexander | Curator integration | Add vector computation to Curator sweep: for each `applied` hint with sufficient post-application sessions, compute + insert vector | A3 |
+
+### Wave 2 — Prescriber Enhancement (Rosella)
+
+| # | Owner | Item | Description | Depends On |
+|---|-------|------|-------------|------------|
+| R1 | Rosella | Types | `ChangeVectorSummary` interface in `prescribers/types.ts` | — |
+| R2 | Rosella | Confidence scaling | `computeConfidenceBoost(vectorCount, minVectors)` utility in `prescribers/utils.ts` | R1 |
+| R3 | Rosella | Prompt prescriber integration | Add `historicalVectors?` param to `analyzePromptOptimizations`, apply confidence boost + predicted impact ranking | R1, R2 |
+| R4 | Rosella | Token prescriber integration | Same for `analyzeTokenOptimizations` | R1, R2 |
+| R5 | Rosella | Weight import | Import drift weights from `telemetry/drift.ts` for `computeNetImpact` — ensure single source of truth | — |
+
+### Wave 3 — Tests (Laura)
+
+| # | Owner | Item | Description | Depends On |
+|---|-------|------|-------------|------------|
+| L1 | Laura | Migration tests | 012 applies cleanly, idempotent re-run, table/index existence | A1 |
+| L2 | Laura | CRUD tests | Insert/query/net-impact-computation for changeVectors module | A3 |
+| L3 | Laura | Prescriber integration tests | Both prescribers with/without historicalVectors — verify confidence boost, ranking changes, edge cases (empty vectors, single vector, negative impact) | R3, R4 |
+| L4 | Laura | Curator vector computation test | End-to-end: applied hint → profile update → sweep → vector appears | A4 |
+| L5 | Laura | Weight consistency test | Assert net_impact weights match drift score weights (regression guard) | R5 |
+
+### Critical Path
+
+```
+A1 → A2 (trivial)
+A1 → A3 → A4
+R1 → R2 → R3/R4
+A3 + R3/R4 → L3
+A4 → L4
+```
+
+**Estimated scope:** ~200 LOC production, ~150 LOC tests, 15-20 new tests. 1-day sprint for the team.
+
+---
+
+## 4. ADRs for This Phase
+
+### ADR-P4.6-001: Curator owns vector computation (not prescriber, not applier)
+
+Vectors are post-hoc observations about prescription efficacy. The Curator already sweeps periodically. Adding computation here keeps the prescriber pure (stateless analysis) and the applier focused on writes.
+
+**Alternative rejected:** Compute in the applier after applying a hint. Problem: the "after" snapshot isn't available yet at application time — you need subsequent sessions to measure the effect.
+
+### ADR-P4.6-002: Optional parameter over config object for historicalVectors
+
+Keeps the prescriber testable without mocking a database. Tests pass vectors directly. Production code queries them from CRUD and passes in.
+
+**Alternative rejected:** Add `vectorSource: () => ChangeVectorSummary[]` to config. Over-abstracted for a single call site.
+
+### ADR-P4.6-003: Same weights as drift score
+
+Single source of truth for "what matters" (Determinism > Cost). No independent weight tuning for net impact — if drift weights change, net impact changes too. Avoids divergent optimization signals.
+
+---
+
+## 5. Open Questions for Aaron
+
+1. **Vector TTL:** Should old change vectors expire? The roadmap doesn't specify. My recommendation: no TTL for now — vectors are small and historical accuracy improves with data. Revisit if table exceeds 10K rows.
+
+2. **Negative vectors:** If a prescription made things worse (negative net_impact), should it influence future confidence negatively (reduce confidence below baseline)? My recommendation: yes — `confidence_boost = log(1 + vectors_count) / log(1 + min_vectors)` only handles positive correlation. We should also apply a penalty multiplier when `meanNetImpact < 0`. But this is an enhancement we can add in Wave 2 without blocking Wave 1.
+
+---
+
+## 6. Ready to Spawn
+
+**Status: YES — ready to spawn.**
+
+All ambiguities resolved. Work items are concrete. No blockers.
+
+
+# Decision: Weight Constants in Cairn (ADR-P4.6-003 Implementation)
+
+**Author:** Alexander (SDK/Runtime Dev)  
+**Date:** 2026-05-03  
+**Status:** Decided  
+**Relates to:** ADR-P4.6-003 (same weights as drift score, single source of truth)
+
+---
+
+## Context
+
+The `computeNetImpact` function in `packages/cairn/src/db/changeVectors.ts` requires the
+same drift-signal weights used by `DRIFT_WEIGHTS` in `packages/forge/src/telemetry/drift.ts`.
+
+ADR-P4.6-003 mandates a single source of truth: if drift weights change, net_impact must
+change with them.
+
+## Problem
+
+Cairn cannot import from Forge. The dependency graph constraint is acyclic: Forge never
+imports Cairn, and Cairn has no `@akubly/forge` dependency in its `package.json`. Adding
+one would introduce a circular dependency (`@akubly/cairn` ← `@akubly/forge` ← ... ← back).
+
+The kickoff doc §2.3/A3 explicitly acknowledged this risk and provided the fallback:
+> "If there's a circular dep risk between cairn and forge, instead define the weight constants
+> in cairn AND add a Laura-checked regression test (L5) confirming they match."
+
+## Decision
+
+**Mirror the constants in Cairn with explicit mapping documentation.**
+
+`packages/cairn/src/db/changeVectors.ts` exports `CHANGE_VECTOR_WEIGHTS` with values
+mirrored from `DRIFT_WEIGHTS`, with the delta-field → drift-signal mapping documented inline:
+
+```typescript
+export const CHANGE_VECTOR_WEIGHTS = Object.freeze({
+  deltaDrift:        0.25,  // DRIFT_WEIGHTS.toolEntropy (drift subsumes entropy)
+  deltaCost:         0.15,  // DRIFT_WEIGHTS.contextBloat (cost ↔ context utilization)
+  deltaSuccessRate:  0.15,  // DRIFT_WEIGHTS.promptStability
+  deltaConvergence:  0.30,  // DRIFT_WEIGHTS.convergence
+  deltaCacheHit:     0.15,  // DRIFT_WEIGHTS.tokenPressure (cache ↔ token efficiency)
+});
+```
+
+## Net-Impact Sign Convention
+
+Deltas are stored as `after - before`. For lower-is-better metrics (drift, cost, convergence),
+a negative delta = improvement. `computeNetImpact` negates these before weighting so that
+**positive net_impact = prescription was beneficial**:
+
+```
+net_impact = -deltaDrift * 0.25
+           + -deltaCost * 0.15
+           + deltaSuccessRate * 0.15
+           + -deltaConvergence * 0.30
+           + deltaCacheHit * 0.15
+```
+
+This makes `meanNetImpact` in `ChangeVectorSummary` directly comparable: positive = good,
+negative = prescription made things worse (Wave 2 penalty hook point).
+
+## Rationale for Rejection of Alternatives
+
+| Alternative | Rejection reason |
+|-------------|-----------------|
+| Import DRIFT_WEIGHTS from forge into cairn | Creates circular dep |
+| Extract weights to `@akubly/types` | Adds coupling for no composability gain; types pkg is for shared types, not algorithmic constants |
+| Pass weights as parameter to computeNetImpact | Over-abstracted; only one caller, weights are stable constants |
+
+## Regression Guard
+
+Laura's **L5 test** (`curatorVectors.test.ts` or dedicated file) must assert:
+```typescript
+// cairn CHANGE_VECTOR_WEIGHTS values match forge DRIFT_WEIGHTS values
+expect(CHANGE_VECTOR_WEIGHTS.deltaConvergence).toBe(DRIFT_WEIGHTS.convergence);    // 0.30
+expect(CHANGE_VECTOR_WEIGHTS.deltaDrift).toBe(DRIFT_WEIGHTS.toolEntropy);          // 0.25
+expect(CHANGE_VECTOR_WEIGHTS.deltaSuccessRate).toBe(DRIFT_WEIGHTS.promptStability); // 0.15
+expect(CHANGE_VECTOR_WEIGHTS.deltaCacheHit).toBe(DRIFT_WEIGHTS.tokenPressure);     // 0.15
+expect(CHANGE_VECTOR_WEIGHTS.deltaCost).toBe(DRIFT_WEIGHTS.contextBloat);          // 0.15
+```
+
+This test imports from both packages from the monorepo root and will fail if either set
+of constants drifts. It is the enforcement mechanism for ADR-P4.6-003.
+
+## Sessions-Observed Proxy
+
+A secondary decision: the Curator sweep uses `execution_profiles.session_count` as the
+proxy for "sessions since hint applied". The `metric_snapshot` stored at hint-generation
+time does not include session count (not in `MetricSnapshot`), so exact delta is not
+available. Using total session count as the minimum guard (≥ minSessionsObserved = 3) is
+conservative and safe: it means vectors are only computed once a skill has at least 3
+sessions, which is the same threshold the prompt optimizer uses for canary decisions.
+The `sessions_observed` field in the inserted row records the actual total session count
+at computation time, giving downstream consumers full context.
+
+
+# R5 — Drift Weight Export Verification + Alexander Coordination
+
+**Author:** Rosella (Plugin Dev)  
+**Date:** 2026-05-03  
+**Status:** Decision documented — no code change needed
+
+---
+
+## Finding
+
+`DRIFT_WEIGHTS` is **already exported** as a named `const` from
+`packages/forge/src/telemetry/drift.ts`:
+
+```typescript
+export const DRIFT_WEIGHTS: Readonly<Record<keyof DriftSignals, number>> = Object.freeze({
+  convergence:    0.30,
+  tokenPressure:  0.15,
+  toolEntropy:    0.25,
+  contextBloat:   0.15,
+  promptStability: 0.15,
+});
+```
+
+No changes required on my side — the single source of truth is in place.
+
+---
+
+## Weight Mapping Note (for Alexander)
+
+The kickoff §2.6 lists net-impact weights as:
+> convergence: 0.30, toolEntropy: 0.25, promptStability: 0.15, cacheHit: 0.15, cost: 0.15
+
+These map to `DRIFT_WEIGHTS` fields as follows:
+
+| net_impact term  | DRIFT_WEIGHTS key | Weight |
+|------------------|-------------------|--------|
+| convergence      | convergence       | 0.30   |
+| toolEntropy      | toolEntropy       | 0.25   |
+| promptStability  | promptStability   | 0.15   |
+| cacheHit         | contextBloat      | 0.15   |
+| cost             | tokenPressure     | 0.15   |
+
+> ⚠️ Note: `cacheHit` delta maps to `contextBloat` weight, and `cost` delta maps
+> to `tokenPressure` weight. The drift score uses context bloat and token pressure
+> as proxies for cache efficiency and cost respectively. Alexander should use the
+> same key ordering in `computeNetImpact` to maintain the single source of truth.
+
+---
+
+## Dependency Decision: cairn↔forge import
+
+**Question:** Should `packages/cairn` import `DRIFT_WEIGHTS` directly from
+`packages/forge`, or duplicate the constants?
+
+**Recommendation:** **Import from forge** if the package dependency already
+exists (cairn uses forge types). If adding a cairn→forge dep creates a circular
+graph, **duplicate the constants** in cairn and rely on Laura's L5 regression
+test to flag divergence.
+
+Alexander should check `packages/cairn/package.json` for the existing dep graph
+before deciding. If he duplicates, he should add a comment pointing at the forge
+source of truth:
+
+```typescript
+// Mirrors DRIFT_WEIGHTS from packages/forge/src/telemetry/drift.ts.
+// Laura's L5 regression test asserts these match — do not edit independently.
+```
+
+---
+
+## Action Items
+
+- **Alexander:** Decide import-vs-duplicate. Either path is acceptable; document
+  in your own inbox decision.
+- **Laura:** L5 regression test should assert that the weights in `computeNetImpact`
+  match `DRIFT_WEIGHTS` from drift.ts — this is the guard regardless of import strategy.
+- **Rosella:** No further action. `DRIFT_WEIGHTS` is exported, discoverable, frozen.
+
+
+# Defect Flag: `summarizeChangeVectors` confidence=0 inconsistency
+
+**From:** Laura (Tester)  
+**Date:** 2026-05-03  
+**Phase:** 4.6 — Change Vector Learning  
+**Severity:** Latent risk (not a production path today)  
+**Assigned to:** Team (Graham to triage)
+
+---
+
+## Summary
+
+`summarizeChangeVectors` returns `confidence: 0` when `vectorCount === 0`,
+but `computeConfidenceBoost(0)` returns `1.0`. These two are inconsistent,
+and the inconsistency can cause silent confidence zeroing if a zero-vector
+summary is ever passed to a prescriber.
+
+---
+
+## Details
+
+### `computeConfidenceBoost(n: number)` (forge, Rosella R1)
+
+```ts
+export function computeConfidenceBoost(vectorCount: number): number {
+  // returns 1.0 when vectorCount === 0 (no evidence → no change)
+  if (vectorCount === 0) return 1.0;
+  // ...
+}
+```
+
+Rosella's design intent: absence of evidence = neutral (multiply by 1.0,
+no modification to existing confidence).
+
+### `summarizeChangeVectors(...)` (cairn, Alexander A3)
+
+```ts
+if (rows.length === 0) {
+  return { vectorCount: 0, meanNetImpact: 0, confidence: 0 };
+}
+```
+
+Alexander's current behavior: absence of vectors → `confidence: 0`.
+
+### The conflict
+
+If a prescriber receives a summary with `confidence: 0` and applies the
+confidence boost formula:
+
+```ts
+hint.confidence *= summary.confidence; // 0 → zeroes out all confidence
+```
+
+Every hint's confidence would be zeroed. This is **not a current production
+path** — the prescribers currently only call `computeConfidenceBoost(summary.vectorCount)`,
+not `hint.confidence *= summary.confidence`. But the inconsistency is a
+latent trap for future developers.
+
+---
+
+## Expected behavior (my read)
+
+When `vectorCount === 0`, `summarizeChangeVectors` should return
+`confidence: 1.0` to match `computeConfidenceBoost(0)`.
+
+OR: the field name should be changed to make the zero-default semantics
+explicit (e.g., `rawConfidence` vs `boost`).
+
+---
+
+## Impact
+
+- **Current production:** No impact. Prescribers call `computeConfidenceBoost(vectorCount)`,
+  not `summary.confidence`.
+- **Latent risk:** Any future code that does `hint.confidence *= summary.confidence`
+  will silently zero confidence when there are no vectors.
+- **Test coverage:** `changeVectors.test.ts` L2 has an `it.todo` for
+  `'summarizeChangeVectors — confidence behavior with vectorCount 0 matches computeConfidenceBoost(0)'`
+  which documents this expected fix.
+
+---
+
+## Suggested resolution
+
+Option A (minimal): Change `confidence: 0` to `confidence: 1.0` in the
+zero-vector branch of `summarizeChangeVectors`.
+
+Option B (clarifying): Rename the field to make the semantic explicit, and
+document the "no vectors = no change" contract in JSDoc.
+
+Option C (defer): Accept the inconsistency as intentional (zero confidence
+= "we have no data, don't trust this hint") and update `computeConfidenceBoost`
+to also return 0 for vectorCount=0. Then the prescriber logic becomes "if
+confidence=0, skip the hint."
+
+---
+
+## Next action
+
+Graham to decide between A/B/C in the next decision meeting. If Option A or
+B is chosen, Alexander to patch `changeVectors.ts` and Laura to upgrade the
+`it.todo` in `changeVectors.test.ts`.
+
+
+# Verdict: `summarizeChangeVectors` confidence=0 inconsistency
+
+**Author:** Graham Knight (Lead / Architect)
+**Date:** 2026-05-03
+**Phase:** 4.6 — Change Vector Learning
+**Triggered by:** Laura's defect flag (`laura-phase4.6-summarize-confidence-zero.md`)
+**Status:** DECIDED
+
+---
+
+## Verdict: B — Rename field to `confidenceBoost`
+
+### Rationale
+
+Aaron's analysis is correct and I'm adopting it. A confidence *level* and a
+confidence *boost* occupy different mathematical spaces:
+
+- **Level** ∈ [0, 1]: "how sure are we?" — 0 = no confidence, 1 = full confidence.
+- **Boost** ∈ ℝ⁺ (multiplicative): "how much should we scale existing confidence?" — 1.0 = identity (no change), >1.0 = amplify, <1.0 = attenuate.
+
+The field is named `confidence` but the JSDoc (my own kickoff doc, §2.3) says
+"log-scaled boost" and `computeConfidenceBoost(0)` returns `1.0`. The field
+name lies about what it contains. That is the root cause — Alexander's `0`
+makes perfect sense *if* confidence is a level, and Rosella's `1.0` makes
+perfect sense *if* confidence is a boost. Both implementations are internally
+consistent; the bug is the ambiguous type definition.
+
+Option A (patch value to 1.0) would fix the symptom but leave the misleading
+name in place — the next developer who reads `confidence: number` will assume
+level semantics and write `if (summary.confidence === 0)` instead of
+`if (summary.confidenceBoost === 1.0)`.
+
+Option C is rejected outright: returning 0 for zero vectors would zero out
+every hint's confidence at cold start (no vectors yet), which defeats the
+canary bootstrap from Phase 4.5. That's a functional regression, not a fix.
+
+### New field name: `confidenceBoost`
+
+Alternatives considered:
+
+| Name | Pros | Cons | Decision |
+|------|------|------|----------|
+| `confidenceBoost` | Self-documenting, matches `computeConfidenceBoost()` function name | Slightly long | **Chosen** |
+| `boostFactor` | Short | Generic — doesn't say *what* it boosts | Rejected |
+| `vectorBoost` | Ties to source data | Doesn't communicate that it scales *confidence* | Rejected |
+
+`confidenceBoost` wins because it mirrors the existing function name
+`computeConfidenceBoost()` — one name, one concept, zero ambiguity.
+
+---
+
+## Files to change
+
+| # | File | Change | Current owner |
+|---|------|--------|---------------|
+| 1 | `packages/forge/src/prescribers/types.ts` | `confidence` → `confidenceBoost` in `ChangeVectorSummary`; update JSDoc | Rosella (R1) |
+| 2 | `packages/cairn/src/db/changeVectors.ts` | `confidence` → `confidenceBoost` in local `ChangeVectorSummary` + `summarizeChangeVectors` return; fix zero-vector case from `0` → `1.0` | Alexander (A3) |
+| 3 | `packages/forge/src/prescribers/promptOptimizer.ts` | `summary.confidence` → `summary.confidenceBoost` | Rosella (R3) |
+| 4 | `packages/forge/src/prescribers/tokenOptimizer.ts` | `summary.confidence` → `summary.confidenceBoost` | Rosella (R4) |
+| 5 | Tests (multiple files) | Update all references to `.confidence` on `ChangeVectorSummary` objects | Laura (L2, L3) |
+
+---
+
+## Fix routing (Reviewer Rejection Protocol §lockout)
+
+The lockout rule: the author of the buggy code may NOT be the one to fix it.
+A different agent must make the correction.
+
+| Code to fix | Written by | Fixed by | Rationale |
+|-------------|-----------|----------|-----------|
+| `packages/cairn/src/db/changeVectors.ts` — rename field + fix `0` → `1.0` | Alexander (A3) | **Rosella** | Alexander wrote the zero-default; lockout applies |
+| `packages/forge/src/prescribers/types.ts` — rename field in interface | Rosella (R1) | **Alexander** | Rosella defined the type; lockout applies |
+| `packages/forge/src/prescribers/promptOptimizer.ts` — update reference | Rosella (R3) | **Alexander** | Same author, same lockout |
+| `packages/forge/src/prescribers/tokenOptimizer.ts` — update reference | Rosella (R4) | **Alexander** | Same author, same lockout |
+| Tests (`changeVectors.test.ts`, `prescribers-vectors.test.ts`, etc.) | Laura | **Laura** | Test updates are Laura's domain regardless of lockout |
+
+**Summary:**
+- **Alexander** fixes: `types.ts`, `promptOptimizer.ts`, `tokenOptimizer.ts` (Rosella's code)
+- **Rosella** fixes: `changeVectors.ts` (Alexander's code)
+- **Laura** fixes: all affected test files
+
+---
+
+## ADR reference
+
+This verdict extends ADR-P4.6-002 (§4 of kickoff doc): the `ChangeVectorSummary`
+type's `confidenceBoost` field carries boost-multiplier semantics with identity
+value 1.0. Prescribers apply it as `hint.confidence *= summary.confidenceBoost`.
+
+---
+
+## Verification criteria
+
+1. `computeConfidenceBoost(0)` returns `1.0` ✓ (already correct, no change needed)
+2. `summarizeChangeVectors(db, cat, skill)` returns `confidenceBoost: 1.0` when vectorCount === 0
+3. No remaining references to `summary.confidence` in prescriber or CRUD code
+4. All existing tests pass after rename
+5. Laura's `it.todo` for "confidence behavior with vectorCount 0 matches computeConfidenceBoost(0)" is upgraded to a passing test
+
+
+
 ### 2026-05-01: Phase 4 Export Pipeline Architecture
 
 **Author:** Graham Knight (Lead / Architect)  
@@ -1122,4 +1680,241 @@ Phase 4.5 persona review findings consolidated and resolved across three team me
 - **Alexander (SDK Dev):** F8 (granularityKey in FeedbackSource).
 
 **Result:** 1,012 total tests passing (Forge 534 + Cairn 478), up from 990 pre-review. Build clean. All persona review findings hardened and deployed.
+
+---
+
+# Phase 4.6 — Cycle 1 Triage (Code Panel Findings)
+
+**Lead:** Graham (Architect)
+**Date:** 2026-05-03
+**Branch:** `squad/phase4.6-change-vectors`
+**Trigger:** 15-finding Code Panel review, Aaron selected squad-mode autonomous triage.
+
+---
+
+## Architectural Decisions
+
+### ADR-P4.6-004: Edit migration 012 in place (Finding #4)
+
+**Decision:** Edit migration 012 to add `UNIQUE(hint_id)` — do NOT create migration 013.
+
+**Rationale:** Migration immutability is a *production safety* convention. Phase 4.6 lives
+on a feature branch with no production data and no downstream consumers of the migration
+sequence. Adding a 013 that only exists to patch a 012 that never shipped creates dead
+weight in the migration history. The sweep should also switch to `INSERT OR IGNORE` to
+rely on the constraint rather than the read-check-then-write pattern.
+
+**Trade-off named:** If another branch concurrently builds on migration 012, this edit
+creates a merge conflict. Risk is low — Phase 4.6 is the only active consumer.
+
+**Alternative rejected:** Migration 013 (immutability convention). Convention exists to
+protect deployed schemas; pre-ship, it's ceremony without safety benefit.
+
+---
+
+### ADR-P4.6-005: Mirror ChangeVectorSummary with regression test (Finding #7)
+
+**Decision:** Do NOT promote `ChangeVectorSummary` to `@akubly/types`. Mirror the type
+in both packages and add a regression test that asserts structural compatibility.
+
+**Rationale:** Same pattern as ADR-P4.6-003 (drift weight mirroring). `OptimizationCategory`
+is a prescriber-internal concept — promoting it to the shared types package couples that
+package to prescriber domain semantics. The regression test (Laura's L5 suite) already
+validates shape; extend it to assert that all category values returned by
+`summarizeChangeVectors` are valid `OptimizationCategory` members.
+
+**Cost lands in:** Phase 4.6 (test addition). Promotion to `@akubly/types` deferred to
+Phase 5 if a third consumer emerges.
+
+**Trade-off named:** Duck-typing can drift silently between releases if the regression test
+is skipped. Mitigation: test runs in CI on every PR.
+
+**Alternative rejected:** Promote to `@akubly/types` now — premature coupling for a
+single cross-package consumer.
+
+---
+
+### ADR-P4.6-006: Ship primitives only; defer runtime wiring (Finding #9)
+
+**Decision:** Ship Phase 4.6 as "primitives only." The Curator sweep, CRUD layer,
+`computeNetImpact`, `summarizeChangeVectors`, and prescriber ranking integration are
+independently testable and correct. Runtime wiring (connecting Curator output to
+prescriber input in the live loop) is deferred to a tracked follow-up issue.
+
+**Rationale:** Phase 4.6 scope was always the computation and ranking primitives.
+Wiring requires runtime orchestration changes (Curator → prescriber pipeline in the
+session lifecycle) that expand scope, risk, and review surface significantly. The
+primitives are the hard part; wiring is mechanical once the contract is stable.
+
+**Trade-off named:** Phase 4.6 code is dormant at runtime until wiring lands. Tests
+prove correctness, but no production validation until the follow-up ships.
+
+**Follow-up issue:**
+- **Title:** `Wire Curator change vectors to prescriber historicalVectors at runtime`
+- **Body:** Phase 4.6 (ADR-P4.6-006) shipped computation primitives and prescriber
+  ranking support, but no production caller passes `historicalVectors` to
+  `analyzePromptOptimizations` / `analyzeTokenOptimizations`. The Curator sweep
+  computes vectors and `summarizeChangeVectors` aggregates them, but nothing in the
+  runtime session lifecycle queries summaries and feeds them to prescribers.
+  Scope: add the orchestration glue in the Curator's periodic sweep or a new
+  runtime hook that queries summaries and passes them to prescriber invocations.
+  Depends on: Phase 4.6 merged.
+
+---
+
+## Per-Finding Triage
+
+| # | Sev | Disposition | Fix Agent | Notes |
+|---|-----|------------|-----------|-------|
+| 1 | 🔴 | **ACCEPT** | Rosella | `deltaCost` uses cumulative `token_total_cost` (monotonic). Normalize to per-session cost before computing delta. Curator.ts is Alexander's code → Rosella fixes per lockout. |
+| 2 | 🟡 | **ACCEPT** | Alexander (utils.ts) + Rosella (changeVectors.ts) | Confidence cliff: `vectorCount=1, minVectors=3` → boost 0.5, which *halves* confidence. Contradicts Wave 1 "positive boost only" policy. Fix: clamp to `Math.max(1.0, log(…)/log(…))` so vectors only amplify, never attenuate. Split across packages per lockout. |
+| 3 | 🟡 | **ACCEPT** | Rosella | `sessionsObserved` stores cumulative `session_count` but migration comment says "between before/after." The proxy was a deliberate decision (see decisions.md §Sessions-Observed Proxy), but column docs are misleading. Fix: update column comment in migration 012 (being edited per ADR-P4.6-004 anyway) to say "cumulative session count at vector computation time." |
+| 4 | 🟡 | **ACCEPT** | Rosella | Add `UNIQUE(hint_id)` to migration 012 per ADR-P4.6-004. Switch sweep to `INSERT OR IGNORE`. Both are Alexander's code → Rosella per lockout. |
+| 5 | 🟡 | **ACCEPT** | Alexander | Sort bug: unmatched hints (predictedImpact undefined → 0) outrank matched hints with negative impact. Fix: partition matched/unmatched; sort matched by predictedImpact desc; append unmatched in original impactScore order. Both optimizers are Rosella's → Alexander per lockout. |
+| 6 | 🟡 | **ACCEPT** | Rosella | `sweepChangeVectors` returns a single counter conflating 4 skip reasons. Add structured diagnostic: `{ eligible, skippedInsufficientSessions, skippedMalformed, alreadyComputed, computed }`. Curator.ts is Alexander's → Rosella per lockout. |
+| 7 | 🟡 | **ACCEPT** | Laura | Per ADR-P4.6-005: add regression test asserting Cairn's `ChangeVectorSummary.category` values are valid `OptimizationCategory` members. Laura owns tests; lockout N/A. |
+| 8 | 🟡 | **ACCEPT** | Alexander | `ChangeVectorSummary` missing from `@akubly/forge` root barrel re-export. Add to the prescribers re-export block in `forge/src/index.ts`. Adjacent to Rosella's module → Alexander per lockout. |
+| 9 | 🟡 | **DEFER** | — | Per ADR-P4.6-006: ship primitives only. Follow-up issue: "Wire Curator change vectors to prescriber historicalVectors at runtime." |
+| 10 | ⚪ | **ACCEPT** | Rosella | `computeNetImpact` inline negations are fragile. Extract named contributions: `const driftContrib = -deltaDrift * weights.deltaDrift;` etc. changeVectors.ts is Alexander's → Rosella per lockout. |
+| 11 | ⚪ | **REJECT** | — | ADR-P4.6-002 explicitly chose the optional positional parameter over a config/options object. Finding contradicts an existing architectural decision. If the pattern proves painful at more call sites, revisit in Phase 5. |
+| 12 | ⚪ | **DEFER** | — | DB injection style (explicit `db` param vs `getDb()`) is a repo-wide convention question, not Phase 4.6 scope. Follow-up issue: "Standardize DB access pattern: explicit injection vs internal getDb()." |
+| 13 | ⚪ | **ACCEPT** | Laura | Describe block says "cross-module weight consistency" but test only validates local `DRIFT_WEIGHTS`. Rename to reflect actual scope; `it.todo` already marks the cross-module aspiration. Laura owns tests; lockout N/A. |
+| 14 | ⚪ | **ACCEPT** | Alexander | `computeConfidenceBoost` re-exported publicly from `prescribers/index.ts` but it's an internal helper (Cairn mirrors the formula, can't import). Drop from public re-export. prescribers/index.ts is Rosella's → Alexander per lockout. |
+| 15 | ⚪ | **ACCEPT** | Alexander (forge) + Rosella (cairn) | Four sites use `?? 3` for minSessions default. Extract `DEFAULT_MIN_SESSIONS = 3` constant. Rosella defines it in cairn's changeVectors.ts (Alexander's code → lockout). Alexander updates forge's utils.ts + optimizers (Rosella's code → lockout). |
+
+---
+
+## Summary
+
+- **Accepted:** 12 findings
+- **Rejected:** 1 (finding #11 — contradicts ADR-P4.6-002)
+- **Deferred:** 2 (findings #9 and #12 — follow-up issues)
+- **Escalated:** 0
+
+### Agent Dispatch
+
+| Agent | Finding #s | Count |
+|-------|-----------|-------|
+| Rosella | 1, 2 (changeVectors.ts), 3, 4, 6, 10, 15 (cairn) | 7 |
+| Alexander | 2 (utils.ts), 5, 8, 14, 15 (forge) | 5 |
+| Laura | 7, 13 | 2 |
+
+### Cycle 2 Concerns
+
+1. **Rosella's load is heavy** (7 items). Findings 1, 3, 4 all touch curator.ts — they
+   should be batched in a single pass to avoid merge churn. Finding 4 (migration edit)
+   and finding 3 (column comment) are the same file change.
+2. **Finding #1 is the only blocker.** Rosella should prioritize it. The deltaCost bug
+   produces materially wrong net_impact values that cascade into ranking.
+3. **Finding #2 (confidence clamp) touches both packages.** Alexander and Rosella must
+   coordinate — the formula change should be identical in both locations.
+4. **Finding #15 (constant extraction) is low-risk but cross-package.** Can be done last.
+
+---
+
+# Decision: Two-Tier Sort Formulation for Matched vs Unmatched Hints (Finding #5)
+
+**Author:** Alexander (SDK/Runtime Dev)
+**Date:** 2026-05-03
+**Branch:** `squad/phase4.6-change-vectors`
+**Finding:** #5 — sort fallback for unmatched hints
+
+---
+
+## Problem
+
+When `historicalVectors` are provided, hints were sorted with:
+
+```ts
+hints.sort((a, b) => (b.predictedImpact ?? 0) - (a.predictedImpact ?? 0));
+```
+
+This conflates two cases:
+- **Unmatched hints** — no summary found; `predictedImpact` remains `undefined`, coerced to `0`.
+- **Matched hints with negative impact** — summary found; `predictedImpact` is set to a negative `meanNetImpact`.
+
+Result: an unmatched hint (0) outranks a matched hint with measured negative impact (e.g., -0.1). This is a behavioral regression — measured-bad evidence is treated as worse than no evidence at all.
+
+---
+
+## Options Considered
+
+### Option A: Stable-sort comparator with undefined as a separate equivalence class
+
+```ts
+hints.sort((a, b) => {
+  const aMatched = a.predictedImpact !== undefined;
+  const bMatched = b.predictedImpact !== undefined;
+  if (aMatched && bMatched) return b.predictedImpact! - a.predictedImpact!;
+  if (aMatched) return -1;  // matched before unmatched
+  if (bMatched) return 1;
+  return b.impactScore - a.impactScore;  // both unmatched: Phase 4.5 order
+});
+```
+
+**Pro:** Single pass, no array copy.  
+**Con:** The four-branch comparator obscures the semantic intent. The sort guarantee for unmatched items requires understanding that `b.impactScore - a.impactScore` preserves Phase 4.5 order *only* when input is already sorted by impactScore — which it is in the current implementation, but that's an implicit assumption.
+
+### Option B: Explicit partition then concatenate ✅ CHOSEN
+
+```ts
+const matched = hints.filter((h) => h.predictedImpact !== undefined);
+const unmatched = hints.filter((h) => h.predictedImpact === undefined);
+matched.sort((a, b) => b.predictedImpact! - a.predictedImpact!);
+unmatched.sort((a, b) => b.impactScore - a.impactScore);
+hints.length = 0;
+hints.push(...matched, ...unmatched);
+```
+
+**Pro:** The invariant is explicit and self-documenting — matched first, unmatched after, each with its own clear sort key. No implicit reliance on pre-existing hint order.  
+**Con:** Two filter passes + two sorts + array reassignment. At the scale of prescriber hints (≤10 items typically), this is not a performance concern.
+
+---
+
+## Decision
+
+**Option B** (explicit partition). The prescriber hint lists are small (≤10 items in typical profiles), so there is no performance argument for a single-pass comparator. The partition approach makes the invariant self-documenting and eliminates the implicit assumption about pre-existing hint order that Option A carries.
+
+**Modified-in-place via `hints.length = 0; hints.push(...)` pattern** instead of returning a new array, because the surrounding code pattern (`const hints: OptimizationHint[] = []`) mutates and returns the same reference — maintaining that pattern avoids any possibility of the result reference diverging.
+
+---
+
+## Impact
+
+- Both `promptOptimizer.ts` and `tokenOptimizer.ts` receive the identical fix.
+- Laura's L3 "ranking with predicted impact" test continues to pass.
+- The new edge case (unmatched-hint vs negative-matched-hint ordering) is covered by Laura's forthcoming addition.
+
+---
+
+# Decision: MetricSnapshot.sessionCount is optional (not required)
+
+**Author:** Rosella (Plugin Dev)
+**Date:** 2026-05-03
+**Branch:** `squad/phase4.6-change-vectors`
+**Context:** Phase 4.6 cycle 2, Finding #1 — deltaCost normalization requires sessionCount in MetricSnapshot.
+
+---
+
+## Decision
+
+`MetricSnapshot.sessionCount` is declared as **optional** (`sessionCount?: number`) rather than required.
+
+## Rationale
+
+1. **Backward compatibility with stored JSON.** `MetricSnapshot` is serialized to `optimization_hints.metric_snapshot` (a JSON column). Hints created before Phase 4.6 cycle 2 will not have `sessionCount` in their stored JSON. Making the field required would silently cause `undefined` at runtime for those rows — worse than a `?? 0` fallback.
+
+2. **Test fixture compatibility.** Laura's test fixtures (`feedback-loop.test.ts`, `prescribers-applier.test.ts`) use inline `metricSnapshot` objects built before this field existed. Making the field required broke the build (2 TS errors). Optional avoids forcing Laura to update fixtures just to unblock the build, while letting her add `sessionCount` values in her cycle-2 test updates naturally.
+
+3. **Safe fallback exists.** `sweepChangeVectors` in curator.ts already handles missing `sessionCount` via `snapshot.sessionCount ?? 0`. When sessionCount is absent, the cost delta falls back to `tokenCostNanoAiu` (raw cumulative, no per-session normalization) — identical to pre-cycle-2 behavior. This is a graceful degradation, not a correctness cliff.
+
+4. **`buildSnapshot()` always populates it.** New hints created after this cycle will always have `sessionCount`, so the fallback only fires for historical data.
+
+## Alternative Rejected
+
+Making `sessionCount: number` required (which was the initial implementation). This caused 2 TypeScript compilation errors in test files owned by Laura. Forcing her to update fixtures just to accommodate my type change violates the "each agent owns their scope" principle and would serialize our parallel work.
+
+## Trade-off
+
+The optional field means the type doesn't enforce the invariant at compile time. Mitigation: `buildSnapshot()` is the only factory for `MetricSnapshot` in production paths, and it always sets `sessionCount`. The `?? 0` fallback is documented in the type JSDoc.
 

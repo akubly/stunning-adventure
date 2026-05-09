@@ -18,6 +18,10 @@ import {
   getInsightByPattern,
   countInsightsByStatus,
 } from '../db/insights.js';
+import {
+  computeNetImpact,
+  DEFAULT_MIN_SESSIONS,
+} from '../db/changeVectors.js';
 import type { CairnEvent, CuratorStatus } from '../types/index.js';
 import { parseSqliteDateToMs } from '../utils/timestamps.js';
 
@@ -42,6 +46,24 @@ const SKIP_FREQUENCY_THRESHOLD = 2;
 
 /** Maximum time window (ms) between events to consider them part of a sequence. */
 const SEQUENCE_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+
+// ---------------------------------------------------------------------------
+// Change vector configuration
+// ---------------------------------------------------------------------------
+
+/**
+ * Configuration for the Curator's change-vector computation sweep.
+ * Consistent with the "observe, don't block" Curator pattern — computation
+ * is deferred until enough post-application sessions exist to be meaningful.
+ */
+export interface ChangeVectorConfig {
+  /**
+   * Minimum sessions (execution_profiles.session_count) required before
+   * computing a change vector for an applied hint. Default: 3.
+   * Matches the prompt optimizer's `minSessions` canary threshold.
+   */
+  minSessionsObserved?: number;
+}
 
 // ---------------------------------------------------------------------------
 // Categorised event helpers
@@ -112,15 +134,19 @@ export interface CurateResult {
   insightsReinforced: number;
   capped: boolean;
   insightsChanged: boolean;
+  /** Structured diagnostics from the change-vector sweep run. */
+  changeVectorSweep: ChangeVectorSweepResult;
 }
 
 /**
  * Main entry point: process unprocessed events in bounded batches,
  * detect patterns, store insights, and advance the cursor.
+ * Also sweeps for applied optimization hints that now have enough
+ * post-application sessions to compute change vectors.
  *
  * Each batch is wrapped in a transaction. Loops until caught up.
  */
-export function curate(): CurateResult {
+export function curate(changeVectorConfig?: ChangeVectorConfig): CurateResult {
   const startTime = Date.now();
   let totalProcessed = 0;
   let totalCreated = 0;
@@ -181,12 +207,15 @@ export function curate(): CurateResult {
 
   updateLastRunTimestamp();
 
+  const changeVectorSweep = sweepChangeVectors(changeVectorConfig);
+
   return {
     eventsProcessed: totalProcessed,
     insightsCreated: totalCreated,
     insightsReinforced: totalReinforced,
     capped,
     insightsChanged: totalCreated > 0 || totalReinforced > 0,
+    changeVectorSweep,
   };
 }
 
@@ -448,6 +477,233 @@ export function getCuratorStatus(): CuratorStatus {
     staleInsights: staleCount,
     prunedInsights: prunedCount,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Change vector sweep
+// ---------------------------------------------------------------------------
+
+interface MetricSnapshotShape {
+  driftScore?: number;
+  /** Cumulative total cost (nanoAIU) at snapshot time. Divide by sessionCount for per-session cost. */
+  tokenCostNanoAiu?: number;
+  successRate?: number;
+  convergenceTurns?: number;
+  cacheHitRate?: number;
+  /** profile.sessionCount at snapshot time — required for per-session cost delta. */
+  sessionCount?: number;
+}
+
+interface AppliedHintRow {
+  id: string;
+  skill_id: string;
+  metric_snapshot: string;
+}
+
+interface ProfileRow {
+  session_count: number;
+  drift_mean: number;
+  token_total_cost: number;
+  outcome_success_rate: number;
+  outcome_mean_convergence: number;
+  token_mean_cache_hit: number;
+}
+
+/**
+ * Structured diagnostic result from a change-vector sweep run.
+ * Replaces the single `vectorsComputed` counter with per-reason breakdowns.
+ */
+export interface ChangeVectorSweepResult {
+  /** Total applied hints scanned in this sweep. */
+  eligible: number;
+  /** Change vectors successfully inserted. */
+  computed: number;
+  /** Hints skipped because the profile didn't exist or hadn't accumulated enough sessions. */
+  skippedInsufficientSessions: number;
+  /** Hints skipped because metric_snapshot couldn't be parsed. */
+  skippedMalformedSnapshot: number;
+  /** Hints already had a vector (idempotent skip via INSERT OR IGNORE). */
+  alreadyComputed: number;
+  /**
+   * Hints whose cost delta was set to 0 because the snapshot predates per-session
+   * cost normalization (Phase 4.5 and earlier — no sessionCount in snapshot).
+   * Other deltas (drift, success, convergence, cacheHit) are still valid.
+   */
+  legacyCostSkipped: number;
+  /**
+   * Hints where profile.session_count < snapshot.sessionCount (counter reset or
+   * data anomaly). sessions_observed is clamped to 0 in these cases.
+   */
+  sessionCountReset: number;
+}
+
+/**
+ * Sweep applied optimization hints and compute change vectors for those with
+ * enough post-application sessions.
+ *
+ * Follows the "observe, don't block" Curator pattern — runs outside the event
+ * processing loop, fails silently per-hint on malformed snapshots.
+ * Idempotent: re-running over already-computed hints is safe; INSERT OR IGNORE
+ * on the UNIQUE(hint_id) constraint prevents duplicates.
+ *
+ * **Legacy snapshot handling:** Phase 4.5 and earlier snapshots do not carry a
+ * `sessionCount` field. Without it, per-session cost normalization is impossible —
+ * the snapshot stored cumulative `tokenCostNanoAiu` while the current profile
+ * tracks per-session cost, so a raw subtraction produces a massive spurious
+ * negative delta. When `snapshot.sessionCount` is undefined or <= 0, `deltaCost`
+ * is set to 0 and `result.legacyCostSkipped` is incremented. All other deltas
+ * (drift, success, convergence, cacheHit) are rates/means and remain valid.
+ * Re-applying the hint after a fresh snapshot will produce a complete cost delta.
+ *
+ * @returns Structured diagnostic counts for this sweep run.
+ */
+function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResult {
+  const minSessions = config?.minSessionsObserved ?? DEFAULT_MIN_SESSIONS;
+  const db = getDb();
+  const result: ChangeVectorSweepResult = {
+    eligible: 0,
+    computed: 0,
+    skippedInsufficientSessions: 0,
+    skippedMalformedSnapshot: 0,
+    alreadyComputed: 0,
+    legacyCostSkipped: 0,
+    sessionCountReset: 0,
+  };
+
+  // Scan only applied hints that don't yet have a change vector. The
+  // LEFT JOIN keeps sweep cost proportional to *new* work rather than the
+  // full historical applied-hint set, which would otherwise grow unbounded
+  // and drive linear growth in session-start latency. INSERT OR IGNORE
+  // below still guards against races between concurrent sweeps.
+  const appliedHints = db.prepare(
+    `SELECT oh.id, oh.skill_id, oh.metric_snapshot
+       FROM optimization_hints oh
+       LEFT JOIN change_vectors cv ON cv.hint_id = oh.id
+      WHERE oh.status = 'applied' AND cv.id IS NULL`
+  ).all() as AppliedHintRow[];
+
+  result.eligible = appliedHints.length;
+
+  for (const hint of appliedHints) {
+    // Lookup the per-skill global execution profile (canonical post-application snapshot)
+    const profile = db.prepare(
+      `SELECT session_count, drift_mean, token_total_cost,
+              outcome_success_rate, outcome_mean_convergence, token_mean_cache_hit
+         FROM execution_profiles
+        WHERE skill_id = ? AND granularity = 'per-skill' AND granularity_key = 'global'
+        LIMIT 1`
+    ).get(hint.skill_id) as ProfileRow | undefined;
+
+    if (!profile) {
+      result.skippedInsufficientSessions++;
+      continue;
+    }
+
+    let snapshot: MetricSnapshotShape;
+    try {
+      snapshot = JSON.parse(hint.metric_snapshot) as MetricSnapshotShape;
+    } catch {
+      result.skippedMalformedSnapshot++;
+      continue;
+    }
+
+    // Reliability gate: count only sessions observed *since* the hint was
+    // applied, not the profile's lifetime total. Otherwise a hint snapshotted
+    // at sessionCount=100 would pass the gate immediately at sessionCount=101
+    // even though only one post-application session has accumulated, defeating
+    // the minSessionsObserved threshold. Legacy snapshots (no sessionCount)
+    // fall back to the lifetime total so historical hints keep their prior
+    // gating behavior.
+    const snapshotSessionCount = snapshot.sessionCount ?? 0;
+    const rawSessionsObserved = profile.session_count - snapshotSessionCount;
+    if (snapshotSessionCount > 0 && rawSessionsObserved < 0) {
+      // Counter reset or data anomaly — diagnostic counter still fires so
+      // operators see the event, but we can't compute a meaningful delta.
+      result.sessionCountReset++;
+    }
+    const sessionsSinceHint = snapshotSessionCount > 0
+      ? rawSessionsObserved
+      : profile.session_count;
+    if (sessionsSinceHint < minSessions) {
+      result.skippedInsufficientSessions++;
+      continue;
+    }
+
+    const before = {
+      driftScore: snapshot.driftScore ?? 0,
+      successRate: snapshot.successRate ?? 0,
+      convergenceTurns: snapshot.convergenceTurns ?? 0,
+      cacheHitRate: snapshot.cacheHitRate ?? 0,
+    };
+
+    // Normalize cost to per-session on both sides to avoid cumulative skew.
+    // before: totalCost at snapshot time / sessions at snapshot time
+    // after:  totalCost now / sessions now
+    //
+    // Legacy guard: Phase 4.5 and earlier snapshots have no sessionCount.
+    // Their tokenCostNanoAiu is cumulative, not per-session, so computing
+    // afterCostPerSession - beforeCumulative yields a massive spurious negative.
+    // Skip cost delta entirely for these snapshots; other deltas remain valid.
+    let deltaCost: number;
+    let isLegacySnapshot = false;
+    if (snapshotSessionCount <= 0) {
+      deltaCost = 0;
+      isLegacySnapshot = true;
+    } else {
+      const afterCostPerSession = profile.token_total_cost / Math.max(1, profile.session_count);
+      const beforeCostPerSession = (snapshot.tokenCostNanoAiu ?? 0) / snapshotSessionCount;
+      deltaCost = afterCostPerSession - beforeCostPerSession;
+    }
+
+    const sessionsObserved = Math.max(0, rawSessionsObserved);
+
+    const deltas = {
+      deltaDrift: profile.drift_mean - before.driftScore,
+      deltaCost,
+      deltaSuccessRate: profile.outcome_success_rate - before.successRate,
+      deltaConvergence: profile.outcome_mean_convergence - before.convergenceTurns,
+      deltaCacheHit: profile.token_mean_cache_hit - before.cacheHitRate,
+    };
+
+    // INSERT OR IGNORE: the UNIQUE(hint_id) constraint handles idempotence
+    // against races; the LEFT JOIN filter above keeps steady-state work bounded.
+    // changes === 0 means a concurrent sweep beat us to the insert.
+    const insertResult = db.prepare(
+      `INSERT OR IGNORE INTO change_vectors
+         (hint_id, delta_drift, delta_cost, delta_success_rate,
+          delta_convergence, delta_cache_hit, net_impact,
+          sessions_observed, computed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      hint.id,
+      deltas.deltaDrift,
+      deltas.deltaCost,
+      deltas.deltaSuccessRate,
+      deltas.deltaConvergence,
+      deltas.deltaCacheHit,
+      computeNetImpact(deltas),
+      sessionsObserved,
+      new Date().toISOString(),
+    );
+
+    if (insertResult.changes > 0) {
+      result.computed++;
+      // Emit the legacy-snapshot warning only on the sweep that actually
+      // computes the vector. The LEFT JOIN above will exclude this hint from
+      // future sweeps, so the warning is naturally one-shot per hint instead
+      // of repeating every curate() call.
+      if (isLegacySnapshot) {
+        result.legacyCostSkipped++;
+        console.warn(
+          `sweepChangeVectors: legacy snapshot for hint ${hint.id} — cost delta skipped (no sessionCount; cumulative cost shape incompatible with per-session normalization)`,
+        );
+      }
+    } else {
+      result.alreadyComputed++;
+    }
+  }
+
+  return result;
 }
 
 /** Update the last_run_at timestamp in curator_state. */

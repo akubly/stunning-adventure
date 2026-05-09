@@ -126,12 +126,13 @@ export {
   type ProfileGranularity,
 } from "./telemetry/index.js";
 
-// --- Prescribers (Phase 4.5) ---
+// --- Prescribers (Phase 4.5/4.6) ---
 export {
   analyzePromptOptimizations,
   analyzeTokenOptimizations,
   type PromptOptimizerConfig,
   type TokenOptimizerConfig,
+  type ChangeVectorSummary,
   type MetricSnapshot,
   type OptimizationCategory,
   type OptimizationEvidence,
