@@ -79,9 +79,9 @@ export interface MetricSnapshot {
   /**
    * profile.sessionCount at snapshot time — required for per-session cost delta in change vectors.
    * Optional for backward compatibility: snapshots stored before Phase 4.6 cycle 2 will lack
-   * this field. The Curator's sweepChangeVectors handles absence via `?? 0` (treats as no
-   * prior sessions — cost delta falls back to raw cumulative, which is consistent with old behavior).
-   * buildSnapshot() always populates this field for new hints.
+   * this field. The Curator's sweepChangeVectors handles absence by setting deltaCost = 0 and
+   * incrementing legacyCostSkipped, flagging the hint as using legacy cost data incompatible
+   * with per-session normalization. buildSnapshot() always populates this field for new hints.
    */
   sessionCount?: number;
 }
