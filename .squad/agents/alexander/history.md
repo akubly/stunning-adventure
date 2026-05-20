@@ -23,7 +23,11 @@
 
 ## 2026-05-20: Phase 4.6 Wave 2 Scoping — @akubly/types Port + Cairn Adapter
 
-Wave 2 scope filed: `docs/forge-phase4.6-wave2-scope.md`. You own the types side: promote `ChangeVectorSummary` and define `ChangeVectorProvider` in `@akubly/types`, then implement `SqliteChangeVectorProvider` in Cairn. See `.squad/decisions.md` for the port architecture ADR.
+Wave 2 scope amended: `docs/forge-phase4.6-wave2-scope.md` updated with PrescriberOrchestrator port + negative-impact attenuation. New ADR merged to `.squad/decisions.md`. Invocation point: `Curator.curate()` post-vector-sweep. Attenuation: when `meanNetImpact < 0`, `confidenceBoost` ≤ 1.0 (minimum 0.3), preventing auto-apply of harmful prescriptions.
+
+---
+
+## 2026-05-20: Phase 4.6 Wave 2 Scoping — @akubly/types Port + Cairn Adapter
 
 ---
 

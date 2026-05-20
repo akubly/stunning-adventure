@@ -2,7 +2,11 @@
 
 ## 2026-05-20: Phase 4.6 Wave 2 Scoping — Cairn Wiring
 
-Wave 2 scope filed: `docs/forge-phase4.6-wave2-scope.md`. You own the Cairn wiring side of the `ChangeVectorProvider` port pattern. See `.squad/decisions.md` for the ADR.
+Wave 2 scope amended: `docs/forge-phase4.6-wave2-scope.md` updated with PrescriberOrchestrator port + negative-impact attenuation. New ADR merged to `.squad/decisions.md`. Invocation point: `Curator.curate()` post-vector-sweep. Attenuation: when `meanNetImpact < 0`, `confidenceBoost` ≤ 1.0 (minimum 0.3), preventing auto-apply of harmful prescriptions.
+
+---
+
+## 2026-05-20: Phase 4.6 Wave 2 Scoping — Cairn Wiring
 
 ---
 

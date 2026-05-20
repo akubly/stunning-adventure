@@ -117,3 +117,13 @@
 **Surprise:** No runtime call site for prescribers exists yet — they're only called from tests. The prescriber invocation point needs to be created or identified as part of Wave 2 (open question for Aaron: session lifecycle hook in Forge, receiving `ChangeVectorProvider` via injection).
 
 **Work decomposition:** 7 items, ~18 tests, 4 agents. Critical path: types → adapters → wiring → integration test.
+
+**Wave 2 Q3/Q4 Resolution (2026-05-05):**
+
+**Q3 — Negative-impact attenuation:** Recommended "do it now." Without attenuation, wiring allows auto-apply of historically harmful prescriptions (confidence stays ≥ baseline even when `meanNetImpact < 0`, so the applier's `autoApplyThreshold` doesn't catch it). The change is ~5 lines + 4 tests. Wave 1's deferral was safe when vectors weren't consumed at runtime; now that we're wiring them, the context has changed.
+
+**Q4 — Call site location (honest plan check):** The Phase 4.5 spec designed the trigger model (§ADR-P4.5-006: "manual in Forge, Curator-driven in Cairn") but never specified *which function or lifecycle event* invokes prescribers. The prescriber primitives were shipped as pure exported functions with no runtime caller — we are designing the invocation point now. This was made explicit by ADR-P4.6-006.
+
+**Q4 solution: PrescriberOrchestrator port.** Cairn's Curator is the designed autonomous trigger, but it can't import Forge prescribers (acyclic dep constraint). New `PrescriberOrchestrator` interface in `@akubly/types` — Forge implements (wraps both prescribers), Cairn receives via injection. Same pattern as `FeedbackSource` and `ExportQualityGate`. Invocation point: Curator's `curate()` after `sweepChangeVectors`.
+
+**Revised decomposition:** 10 items, ~27 tests. Added `PrescriberOrchestrator` port (W2-1b), `ForgePrescriberOrchestrator` impl (W2-5), Curator wiring (W2-6), attenuation (W2-7).

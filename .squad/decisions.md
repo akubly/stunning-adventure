@@ -2006,3 +2006,49 @@ Slightly more wiring than extending `FeedbackSource` (adding a new interface, ne
 - **Forge:** Rosella integrates provider injection + updates prescriber call sites
 - **Tests:** Laura covers provider contract, prescriber integration with mocked provider
 
+
+---
+
+# ADR: Wave 2 Wiring Shape — ChangeVectorProvider Port + PrescriberOrchestrator Port
+
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-20  
+**Status:** Approved — ready for implementation  
+**Phase:** 4.6 Wave 2
+
+---
+
+## ChangeVectorProvider
+
+**Decision:** Use a `ChangeVectorProvider` interface in `@akubly/types` with a Cairn-side `SqliteChangeVectorProvider` adapter.
+
+**Alternatives considered:**
+1. Direct DB query in applier (violates "Forge never imports Cairn")
+2. Extend `FeedbackSource` with `getChangeVectorSummaries` method (couples prediction concern to observation concern; less composable for Phase 5 cloud vectors)
+
+**Why this option:**
+- Follows the established injection pattern (`FeedbackSource` precedent)
+- Respects acyclic dependency constraint
+- Independently evolvable — Phase 5 can add `CloudChangeVectorProvider` without touching `FeedbackSource`
+- `ChangeVectorSummary` type promoted to `@akubly/types` eliminates the dual-copy maintenance burden
+- Small contract surface: one type + one single-method interface
+
+## PrescriberOrchestrator
+
+**Decision:** Add a `PrescriberOrchestrator` interface in `@akubly/types`. Forge implements it (wraps both prescribers). Cairn's Curator calls it via injection after the vector sweep.
+
+**Alternatives considered:**
+1. Cairn imports Forge prescribers directly (violates acyclic dep constraint)
+2. Forge-only manual invocation, defer Cairn-side (contradicts Phase 4.5 spec §ADR-P4.5-006 which designates Cairn as the autonomous trigger path)
+
+**Why this option:**
+- The Phase 4.5 spec explicitly designed two trigger paths: manual in Forge, Curator-driven in Cairn. The Curator is the primary production invocation path.
+- Prescribers are pure functions in Forge. Cairn needs to call them but can't import Forge. A port resolves this cleanly — same pattern as `FeedbackSource` and `ExportQualityGate`.
+- Single-method interface, minimal surface.
+
+## Negative-Impact Attenuation
+
+**Decision:** Implement attenuation in Wave 2 (not defer). When `meanNetImpact < 0`, `confidenceBoost` drops below 1.0 (clamped to ≥ 0.3). Without this, wiring would allow auto-apply of historically harmful prescriptions.
+
+**Trade-off named:** Adds ~5 lines of logic + 4 tests across two packages. Small scope increase for eliminating a known-bad production behavior.
+
