@@ -1918,3 +1918,91 @@ Making `sessionCount: number` required (which was the initial implementation). T
 
 The optional field means the type doesn't enforce the invariant at compile time. Mitigation: `buildSnapshot()` is the only factory for `MetricSnapshot` in production paths, and it always sets `sessionCount`. The `?? 0` fallback is documented in the type JSDoc.
 
+
+# ADR: Wave 2 Wiring Shape — ChangeVectorProvider Port
+
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-20  
+**Status:** Decision filed  
+**Related to:** Phase 4.6 Wave 2 — Wiring Curator change vectors → prescriber `historicalVectors`
+
+---
+
+## Problem
+
+Wave 1 ships with two disconnected halves:
+- **Producer:** Curator computes `summarizeChangeVectors()` but doesn't expose it to callers
+- **Consumer:** Prescribers accept optional `historicalVectors?: ChangeVectorSummary[]` but nothing passes them
+
+**Missing:** An orchestration adapter that queries Cairn and injects vectors into Forge prescriber calls, while respecting "Forge never imports Cairn" acyclic dependency constraint.
+
+---
+
+## Decision: `ChangeVectorProvider` Port + Cairn Adapter
+
+Define a new interface in `@akubly/types`:
+
+```typescript
+export interface ChangeVectorProvider {
+  getSummaries(skillId: string): ChangeVectorSummary[];
+}
+```
+
+Cairn implements `SqliteChangeVectorProvider: ChangeVectorProvider` with a single method that:
+1. Queries change_vectors table by skill_id
+2. Aggregates rows into `ChangeVectorSummary` objects
+3. Returns the array
+
+Forge receives the provider as an injected dependency. Prescriber call sites invoke `provider.getSummaries(skillId)` and pass the result to `historicalVectors`.
+
+---
+
+## Alternatives Considered
+
+### Option A: Direct DB query in applier/prescriber call site
+
+The caller imports `summarizeChangeVectors` from Cairn and calls it inline.
+
+| Pro | Con |
+|-----|-----|
+| Simplest. No new abstractions. | **Violates "Forge never imports Cairn" constraint.** Tightly couples. |
+| Zero new code. | Cannot unit-test call site without real DB. |
+
+**Verdict:** Ruled out — breaks acyclic dependency.
+
+### Option B: Extend `FeedbackSource` with `getChangeVectorSummaries` method
+
+Couple vectors to the existing feedback interface.
+
+| Pro | Con |
+|-----|-----|
+| No new interface. | **Conflates two concerns.** Vectors are observations; feedback is input signal. |
+| Single dependency injection. | Less composable for Phase 5 (cloud vectors) without touching FeedbackSource. |
+
+**Verdict:** Ruled out — poor separation of concerns.
+
+---
+
+## Why This Option
+
+- **Acyclic dependency:** Respects "Forge never imports Cairn." Provider is abstracted in types.
+- **Established pattern:** Mirrors `FeedbackSource` injection pattern already used.
+- **Independent evolution:** Phase 5 can add `CloudChangeVectorProvider` without touching `FeedbackSource`.
+- **Type promotion:** `ChangeVectorSummary` moves from being dual-copied (guarded only by Laura's test) to a single definition in `@akubly/types`.
+- **Small contract surface:** One type + one method interface.
+
+---
+
+## Trade-off Named
+
+Slightly more wiring than extending `FeedbackSource` (adding a new interface, new adapter), but the architectural return is worth it: better separation of concerns and independently evolvable subsystems for future phases.
+
+---
+
+## Implementation Ownership
+
+- **@akubly/types:** Alexander defines `ChangeVectorProvider` interface + promotes `ChangeVectorSummary` type
+- **Cairn:** Alexander/Roger implement `SqliteChangeVectorProvider` adapter
+- **Forge:** Rosella integrates provider injection + updates prescriber call sites
+- **Tests:** Laura covers provider contract, prescriber integration with mocked provider
+

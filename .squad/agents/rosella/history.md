@@ -1,5 +1,11 @@
 # Rosella — History (Summarized)
 
+## 2026-05-20: Phase 4.6 Wave 2 Scoping — Forge Integration
+
+Wave 2 scope filed: `docs/forge-phase4.6-wave2-scope.md`. You own the Forge side: provider injection + prescriber integration. See `.squad/decisions.md` for the `ChangeVectorProvider` port ADR.
+
+---
+
 **Older work archived to history-archive.md (2026-05-01 through 2026-05-03 Wave 1–3).**
 
 ---

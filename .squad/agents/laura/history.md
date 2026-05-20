@@ -1,5 +1,11 @@
 # Laura — History (Summarized)
 
+## 2026-05-20: Phase 4.6 Wave 2 Scoping — Test Coverage
+
+Wave 2 scope filed: `docs/forge-phase4.6-wave2-scope.md`. You own test coverage: provider contract tests, prescriber integration with mocked provider, and the L5 regression guard for drift weight consistency. See `.squad/decisions.md` for architectural context.
+
+---
+
 ## Project Context
 
 - **Project:** Cairn + Forge — an agentic software engineering platform

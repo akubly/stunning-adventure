@@ -1,5 +1,11 @@
 # Roger — History
 
+## 2026-05-20: Phase 4.6 Wave 2 Scoping — Cairn Wiring
+
+Wave 2 scope filed: `docs/forge-phase4.6-wave2-scope.md`. You own the Cairn wiring side of the `ChangeVectorProvider` port pattern. See `.squad/decisions.md` for the ADR.
+
+---
+
 ## Learnings (Phase 4.5 telemetry — 2026-05-02)
 
 **Architecture decisions made:**

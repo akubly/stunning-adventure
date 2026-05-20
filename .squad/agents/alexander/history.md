@@ -1,5 +1,11 @@
 # Alexander — History
 
+## 2026-05-20: Phase 4.6 Wave 2 Scoping — @akubly/types Port + Cairn Adapter
+
+Wave 2 scope filed: `docs/forge-phase4.6-wave2-scope.md`. You own the types side: promote `ChangeVectorSummary` and define `ChangeVectorProvider` in `@akubly/types`, then implement `SqliteChangeVectorProvider` in Cairn. See `.squad/decisions.md` for the port architecture ADR.
+
+---
+
 ## 2026-05-01: Finding 8 — FeedbackSource.getProfile granularityKey
 
 **Problem:** `FeedbackSource.getProfile(skillId, granularity?)` couldn't address per-user / per-model profiles. The DB key on `execution_profiles` is `(skill_id, granularity, granularity_key)`, so the contract was strictly less expressive than the storage.
