@@ -105,3 +105,15 @@
 **Brainstorm distillation:** 2 rounds × 10 agents = massive input. Spec writing is lossy compression. Aaron's explicit decisions are spec constraints, not suggestions.
 
 **Spike methodology:** Time-box with clear circuit breaker. Pre-defined threshold (Q1+Q2+Q4+Q5 = ✅) means verdict is mechanical, not ambiguous. Reusable for future tech evals.
+
+### Phase 4.6 Wave 2 — Wiring Scoping (2026-05-05)
+
+**Role:** Architect — scoping and architectural decision for runtime wiring.
+
+**Wiring decision:** `ChangeVectorProvider` port interface in `@akubly/types` + `SqliteChangeVectorProvider` adapter in Cairn. Follows the `FeedbackSource` injection precedent. Rejected direct DB import (breaks acyclic deps) and `FeedbackSource` extension (couples observation and prediction concerns; less composable for Phase 5 cloud vectors).
+
+**Key finding — dual type copies:** `ChangeVectorSummary` exists as two independent copies (forge/prescribers/types.ts and cairn/db/changeVectors.ts) guarded only by Laura's regression test. Wave 2 promotes the canonical shape to `@akubly/types` and eliminates the duplication.
+
+**Surprise:** No runtime call site for prescribers exists yet — they're only called from tests. The prescriber invocation point needs to be created or identified as part of Wave 2 (open question for Aaron: session lifecycle hook in Forge, receiving `ChangeVectorProvider` via injection).
+
+**Work decomposition:** 7 items, ~18 tests, 4 agents. Critical path: types → adapters → wiring → integration test.
