@@ -137,22 +137,22 @@ describe("runForgePrescribers", () => {
       expectedAutoApplyEligible: true,
     },
     {
-      name: "treats the gate boundary as still eligible",
+      name: "treats the gate boundary as blocked for auto-apply",
       providerMode: "vectors" as const,
       vectors: [
         makeSummary("convergence", {
           meanNetImpact: NEGATIVE_IMPACT_AUTO_APPLY_GATE,
           confidenceBoost: 0.8,
-          autoApplyEligible: true,
+          autoApplyEligible: false,
         }),
         makeSummary("cache-optimization", {
           meanNetImpact: NEGATIVE_IMPACT_AUTO_APPLY_GATE,
           confidenceBoost: 0.8,
-          autoApplyEligible: true,
+          autoApplyEligible: false,
         }),
       ],
-      expectedMultiplier: 1,
-      expectedAutoApplyEligible: true,
+      expectedMultiplier: 0.8,
+      expectedAutoApplyEligible: false,
     },
     {
       name: "attenuates mature vectors below the gate and blocks auto-apply",

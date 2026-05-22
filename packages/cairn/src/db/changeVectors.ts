@@ -264,7 +264,7 @@ export function summarizeChangeVectors(
   const meanNetImpact = row?.mean_net_impact ?? 0;
   const safeMin = Math.max(1, minVectors);
   const autoApplyEligible =
-    vectorCount < safeMin || meanNetImpact >= NEGATIVE_IMPACT_AUTO_APPLY_GATE;
+    vectorCount < safeMin || meanNetImpact > NEGATIVE_IMPACT_AUTO_APPLY_GATE;
   const confidenceBoost =
     vectorCount === 0
       ? 1.0

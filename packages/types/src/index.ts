@@ -241,7 +241,7 @@ export interface ChangeVectorSummary {
   meanNetImpact: number;
   vectorCount: number;
   confidenceBoost: number;
-  /** False when meanNetImpact < NEGATIVE_IMPACT_AUTO_APPLY_GATE and vectorCount >= minVectors. */
+  /** False when meanNetImpact <= NEGATIVE_IMPACT_AUTO_APPLY_GATE and vectorCount >= minVectors. */
   autoApplyEligible?: boolean;
 }
 

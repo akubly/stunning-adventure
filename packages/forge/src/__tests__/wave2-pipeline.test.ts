@@ -1,5 +1,6 @@
 import {
   ATTENUATION_FLOOR,
+  NEGATIVE_IMPACT_AUTO_APPLY_GATE,
   type ChangeVectorSummary as SharedChangeVectorSummary,
   type ExecutionProfile,
 } from '@akubly/types';
@@ -287,6 +288,35 @@ describe('Wave 2 full pipeline integration', () => {
     expect(applierResult.skipped.some((item) => item.hintId === convergenceHint.id)).toBe(
       !testCase.expectApplied,
     );
+  });
+
+  it('blocks auto-apply at the negative-impact gate boundary end to end', async () => {
+    const seededBoundaryImpact = NEGATIVE_IMPACT_AUTO_APPLY_GATE - Number.EPSILON;
+    const { summaries, convergenceHint } = await runScenario(
+      matureVectorCount,
+      seededBoundaryImpact,
+    );
+
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toMatchObject({
+      category: 'convergence',
+      vectorCount: matureVectorCount,
+      autoApplyEligible: false,
+    });
+    expect(summaries[0]!.meanNetImpact).toBeLessThanOrEqual(NEGATIVE_IMPACT_AUTO_APPLY_GATE);
+    expect(convergenceHint.predictedImpact).toBeLessThanOrEqual(NEGATIVE_IMPACT_AUTO_APPLY_GATE);
+    expect(convergenceHint.autoApplyEligible).toBe(false);
+    expect(convergenceHint.evidence.autoApplyEligible).toBe(false);
+    expect(convergenceHint.confidence).toBeGreaterThan(0);
+
+    const applierResult = applyOptimizations([convergenceHint], {
+      autoApplyThreshold: 0,
+    });
+    expect(applierResult.applied).toHaveLength(0);
+    expect(applierResult.skipped).toContainEqual({
+      hintId: convergenceHint.id,
+      reason: 'historical vectors indicate negative impact',
+    });
   });
 
   it('deduplicates persisted hints across repeated orchestrator runs', async () => {

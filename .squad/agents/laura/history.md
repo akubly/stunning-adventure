@@ -60,3 +60,10 @@ Graham's v3 scope finalized. Decisions archived. Ready for Wave 2 implementation
 - Contract surprise: spec §6.1's table says `meanNetImpact === -0.2` should block auto-apply, but Forge/Cairn code and Alexander's W2-5 tests treat the boundary as still eligible (`>=` gate). Logged that ambiguity in the decisions inbox and kept the integration test aligned with the live implementation + §4.5 semantics.
 - Final validation after the change: Cairn `570` passing, Forge `625` passing, runtime-cli `4` passing; root `npm test` + `npm run build` green.
 
+### 2026-05-22: W2-6 negative-impact boundary canary
+
+- Added one Wave 2 E2E pipeline test for the resolved inclusive boundary: seeding `meanNetImpact = NEGATIVE_IMPACT_AUTO_APPLY_GATE` with mature vector count now asserts the emitted convergence hint carries `autoApplyEligible: false`.
+- The test drives the full SQLite-backed path (provider → orchestrator → emitted hint → Cairn applier) and forces `autoApplyThreshold: 0` so any skip is provably from the historical negative-impact gate, not confidence.
+- This is the canary for Alexander's operator flip from strict-less-than to inclusive gating. If anyone regresses back to strict `<`, this test should fail immediately.
+- Boundary coverage is now locked E2E; it will catch any future regression that flips the gate back to strict-less-than.
+

@@ -28,13 +28,13 @@
 
 **Scope:** Attenuation boundary and hint eligibility signal for negative-impact vectors
 
-**Decision:** Gate boundary is **exclusive** at `-0.2`. Mature negative vectors attenuate and disable auto-apply only when `meanNetImpact < NEGATIVE_IMPACT_AUTO_APPLY_GATE` (value: `-0.2`). A summary at exactly `-0.2` remains eligible and keeps a neutral multiplier.
+**Decision:** Gate boundary is **inclusive** (`<=`) at `-0.2`. Mature negative vectors attenuate and disable auto-apply when `meanNetImpact <= NEGATIVE_IMPACT_AUTO_APPLY_GATE` (value: `-0.2`). A summary at exactly `-0.2` triggers auto-apply disable.
 
-**Rationale:** Matches Wave 2 v3.1 wording in `docs/forge-phase4.6-wave2-scope.md` §4.5: flag flips only when `meanNetImpact < NEGATIVE_IMPACT_AUTO_APPLY_GATE`. Keeping exact-boundary values neutral avoids silently widening the block range. Omitting `autoApplyEligible` for unmatched hints preserves Phase 4.5 backward compatibility while giving downstream readers explicit boolean whenever historical summaries inform the hint.
+**Rationale:** Safety asymmetry + FP fragility. Inclusive boundary prevents false positives at the exact threshold and provides stronger guard against brittle boundary conditions. Dual-layer testing locks behavior: unit test (alexander-2 maturity-gradient) expects gating at exactly -0.2; E2E canary (laura-1 wave2-pipeline) uses constant directly for drift-proof coverage.
 
-**Implementation:** Forge writes `true`/`false` onto matched hints and mirrors into `hint.evidence.autoApplyEligible`; unmatched hints omit field (stays eligible). Mild negative mature vectors use `confidenceBoost = 1.0` and remain eligible.
+**Implementation:** Gate comparison changed from `<` to `<=` in Forge prescribers and Cairn gate logic. Safety-boundary comment added at comparison site. Maturity-gradient test updated to expect gating at exactly -0.2. E2E pipeline canary uses `NEGATIVE_IMPACT_AUTO_APPLY_GATE` constant directly (prevents configuration drift).
 
-**Impact:** Applier now has explicit signal for hints informed by negative historical patterns; backward compatibility preserved via field omission.
+**Impact:** Negative-impact gate boundary now locked by dual-layer testing (unit + E2E); Applier receives explicit attenuation signal for hints at and below threshold; safety margin increased. Decided by Aaron 2026-05-22.
 
 ### W2-8: Active Status Set for Optimization Hints (Rosella)
 

@@ -43,7 +43,7 @@ export function buildSnapshot(profile: ExecutionProfile): MetricSnapshot {
  *
  * When `meanNetImpact` is omitted (or non-negative), the Wave 1 log-scaled boost
  * applies unchanged. Negative impacts stay neutral until evidence is mature and
- * falls strictly below `NEGATIVE_IMPACT_AUTO_APPLY_GATE`, at which point the
+ * at or below `NEGATIVE_IMPACT_AUTO_APPLY_GATE`, at which point the
  * multiplier attenuates to `max(ATTENUATION_FLOOR, 1 + meanNetImpact)`.
  */
 export function computeConfidenceBoost(
@@ -58,7 +58,8 @@ export function computeConfidenceBoost(
     return Math.max(1.0, Math.log(1 + vectorCount) / Math.log(1 + safeMin));
   }
 
-  if (vectorCount < safeMin || meanNetImpact >= NEGATIVE_IMPACT_AUTO_APPLY_GATE) {
+  // Inclusive boundary: exact -0.2 stays manual-review because false negatives hurt more.
+  if (vectorCount < safeMin || meanNetImpact > NEGATIVE_IMPACT_AUTO_APPLY_GATE) {
     return 1.0;
   }
 
@@ -71,7 +72,7 @@ export function computeAutoApplyEligible(
   minVectors: number = DEFAULT_MIN_SESSIONS,
 ): boolean {
   const safeMin = Math.max(1, minVectors);
-  return vectorCount < safeMin || meanNetImpact >= NEGATIVE_IMPACT_AUTO_APPLY_GATE;
+  return vectorCount < safeMin || meanNetImpact > NEGATIVE_IMPACT_AUTO_APPLY_GATE;
 }
 
 export function applyHistoricalVectors(
