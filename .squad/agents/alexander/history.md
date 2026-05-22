@@ -1,3 +1,4 @@
+📌 Team update (2026-05-22T20:16:40Z): **Wave 0 complete** — canonical types in @akubly/types, getAllCategories helper in Cairn. category field reconciled to OptimizationCategory union. — Scribe
 📌 Team update (2026-05-22T20:03:56Z): Wave 2 v3.1 scope final — autoApplyEligible propagates through OptimizationHint; constants NEGATIVE_IMPACT_AUTO_APPLY_GATE=-0.2 and ATTENUATION_FLOOR=0.1; CLI surface only — no MCP in Wave 2. — Graham Knight
 # Alexander — History
 
@@ -66,4 +67,12 @@ Wave 2 scope amended: `docs/forge-phase4.6-wave2-scope.md` updated with Prescrib
 **Key Lesson:** Advisory findings surface edge cases (null checks, boundary behavior) that happy-path code misses. Cycle 3's `safeMin` guard (`minVectors=0` → denominator `Math.log(1) = 0`) is exactly this.
 
 **Build status:** 1153 tests passing (baseline 990 + 163 new). Branch review-clean, all cycles complete.
+
+---
+
+## Learnings
+
+- Forge prescribers now consume the canonical `ChangeVectorSummary` from `@akubly/types` via a type re-export in `packages/forge/src/prescribers/types.ts`; existing imports in `promptOptimizer` and `tokenOptimizer` required no call-site changes because the shape remained identical.
+- Keeping Forge's local `OptimizationCategory` union in place is safe for W2-2 because Roger canonized the shared union to match Forge's stricter category set; the barrel contract stays structurally compatible in both directions.
+- Added `packages/forge/src/prescribers/types.contract.test.ts` with two guards: barrel-vs-canonical type assignability and a prompt-prescriber regression using a canonical summary carrying `autoApplyEligible`. Validation passed with `npm run build` from repo root and `npm test --workspace=@akubly/forge` (599 passed, 3 todo).
 

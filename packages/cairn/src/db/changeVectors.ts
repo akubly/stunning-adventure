@@ -13,6 +13,9 @@
  */
 
 import type Database from 'better-sqlite3';
+import type { ChangeVectorSummary, OptimizationCategory } from '@akubly/types';
+
+export type { ChangeVectorSummary } from '@akubly/types';
 
 // ---------------------------------------------------------------------------
 // Weight constants (mirror of DRIFT_WEIGHTS in packages/forge/src/telemetry/drift.ts)
@@ -82,22 +85,17 @@ export interface ChangeVectorRow {
   computedAt: string;
 }
 
-/**
- * Aggregated summary for a category+skillId pair.
- * Shape matches `ChangeVectorSummary` in forge's prescribers/types.ts (Rosella R1).
- * Verified by Laura's L5 regression test.
- */
-export interface ChangeVectorSummary {
-  category: string;
-  skillId: string;
-  meanNetImpact: number;
-  vectorCount: number;
-  /**
-   * Log-scaled confidence boost: 1.0 when no vectors OR sparse evidence;
-   * >1.0 only with sufficient evidence (vectorCount ≥ minVectors).
-   * Vectors never attenuate confidence — clamped to Math.max(1.0, formula).
-   */
-  confidenceBoost: number;
+const OPTIMIZATION_CATEGORIES: readonly OptimizationCategory[] = [
+  'prompt-structure',
+  'tool-guidance',
+  'context-management',
+  'cache-optimization',
+  'model-selection',
+  'convergence',
+];
+
+function isOptimizationCategory(category: string): category is OptimizationCategory {
+  return OPTIMIZATION_CATEGORIES.includes(category as OptimizationCategory);
 }
 
 // ---------------------------------------------------------------------------
@@ -208,6 +206,24 @@ export function getChangeVectorsByCategoryAndSkill(
 }
 
 /**
+ * Return distinct optimization hint categories for a skill, sorted alphabetically.
+ *
+ * The DB stores categories as free-form text, but the shared contract now uses the
+ * canonical OptimizationCategory union. Narrow once at this read boundary so the
+ * rest of Cairn can work with the stronger type safely.
+ */
+export function getAllCategories(db: Database.Database, skillId: string): OptimizationCategory[] {
+  const rows = db.prepare(
+    `SELECT DISTINCT category
+       FROM optimization_hints
+      WHERE skill_id = ?
+      ORDER BY category`
+  ).all(skillId) as Array<{ category: string }>;
+
+  return rows.map((row) => row.category).filter(isOptimizationCategory);
+}
+
+/**
  * Summarize change vectors for a category+skillId pair.
  * Returns a ChangeVectorSummary with mean net_impact, vector count,
  * and log-scaled confidence boost.
@@ -226,7 +242,7 @@ export function getChangeVectorsByCategoryAndSkill(
  */
 export function summarizeChangeVectors(
   db: Database.Database,
-  category: string,
+  category: OptimizationCategory,
   skillId: string,
   minVectors: number = DEFAULT_MIN_SESSIONS,
 ): ChangeVectorSummary {

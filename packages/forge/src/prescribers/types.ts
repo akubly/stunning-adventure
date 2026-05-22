@@ -10,24 +10,7 @@
 
 import type { ExecutionProfile } from "../telemetry/types.js";
 
-/**
- * Aggregated change vector data for a category+skillId pair.
- * Produced by the Cairn Curator sweep and passed into prescribers
- * to boost confidence and surface predicted impact.
- */
-export interface ChangeVectorSummary {
-  category: OptimizationCategory;
-  skillId: string;
-  meanNetImpact: number;
-  vectorCount: number;
-  /**
-   * Log-scaled confidence boost multiplier.
-   * Wave 1: clamped to ≥ 1.0 by computeConfidenceBoost (forge) and summarizeChangeVectors (cairn).
-   * Negative-impact attenuation is deferred to Wave 2 per Aaron's policy.
-   * >1.0 amplifies hint confidence; 1.0 is identity (no change).
-   */
-  confidenceBoost: number;
-}
+export type { ChangeVectorSummary } from "@akubly/types";
 
 export interface OptimizationHint {
   id: string;

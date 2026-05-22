@@ -95,6 +95,10 @@ in production. The main patterns:
 
 ---
 
+## Learnings
+- 2026-05-22: `getAllCategories(db, skillId)` lives in `packages/cairn/src/db/changeVectors.ts` beside the existing summary helpers. It reads distinct values from the `optimization_hints.category` column for a given `skill_id`, orders them alphabetically, and returns `[]` when no hints exist.
+- 2026-05-22: Added three `changeVectors.test.ts` cases covering empty, single-category, and duplicate multi-category enumeration. `npm test --workspace=@akubly/cairn` passed with 560 tests green after the helper landed.
+
 ## Learnings — Phase 4.6 Cycle 3 Advisory Fixes (2026-05-04)
 
 **What cycle-2 review surfaced about the cost normalization regression:**

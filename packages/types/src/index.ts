@@ -215,6 +215,38 @@ export interface StrategyParameters {
   [key: string]: unknown;
 }
 
+// ---------------------------------------------------------------------------
+// Phase 4.6 — Change vector contracts
+// ---------------------------------------------------------------------------
+
+/** Shared optimization categories for hints and learned change vectors. */
+export type OptimizationCategory =
+  | 'prompt-structure'
+  | 'tool-guidance'
+  | 'context-management'
+  | 'cache-optimization'
+  | 'model-selection'
+  | 'convergence';
+
+/** Threshold below which mature negative vectors should not auto-apply. */
+export const NEGATIVE_IMPACT_AUTO_APPLY_GATE = -0.2;
+
+/** Aggregated change vector data for a category+skillId pair. */
+export interface ChangeVectorSummary {
+  category: OptimizationCategory;
+  skillId: string;
+  meanNetImpact: number;
+  vectorCount: number;
+  confidenceBoost: number;
+  /** False when meanNetImpact < NEGATIVE_IMPACT_AUTO_APPLY_GATE and vectorCount >= minVectors. */
+  autoApplyEligible?: boolean;
+}
+
+/** Async source of historical change vector summaries for a skill (Phase 5 may fetch them remotely). */
+export interface ChangeVectorProvider {
+  getSummaries(skillId: string): Promise<ChangeVectorSummary[]>;
+}
+
 /**
  * Read-side complement to {@link TelemetrySink}. The Forge runtime consults
  * a FeedbackSource at session start to load the latest profile and apply

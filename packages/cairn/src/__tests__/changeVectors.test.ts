@@ -12,6 +12,7 @@ import {
   insertChangeVector,
   getChangeVectorsByHintId,
   getChangeVectorsByCategoryAndSkill,
+  getAllCategories,
   summarizeChangeVectors,
   computeNetImpact,
   CHANGE_VECTOR_WEIGHTS,
@@ -300,6 +301,40 @@ describe('getChangeVectorsByCategoryAndSkill', () => {
 
     const rows = getChangeVectorsByCategoryAndSkill(db, 'convergence', 'skill-OTHER');
     expect(rows).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getAllCategories
+// ---------------------------------------------------------------------------
+
+describe('getAllCategories', () => {
+  it('returns empty array when no hints exist for the skill', () => {
+    const db = getDb();
+
+    expect(getAllCategories(db, 'skill-a')).toEqual([]);
+  });
+
+  it('returns the single canonical category for a skill with one hint', () => {
+    const db = getDb();
+    insertOptimizationHint(makeHint({ skillId: 'skill-a', category: 'tool-guidance' }));
+
+    expect(getAllCategories(db, 'skill-a')).toEqual(['tool-guidance']);
+  });
+
+  it('returns deduplicated canonical categories in alphabetical order', () => {
+    const db = getDb();
+    insertOptimizationHint(makeHint({ skillId: 'skill-cats', category: 'prompt-structure' }));
+    insertOptimizationHint(makeHint({ skillId: 'skill-cats', category: 'cache-optimization' }));
+    insertOptimizationHint(makeHint({ skillId: 'skill-cats', category: 'prompt-structure' }));
+    insertOptimizationHint(makeHint({ skillId: 'skill-cats', category: 'convergence' }));
+    insertOptimizationHint(makeHint({ skillId: 'other-skill', category: 'context-management' }));
+
+    expect(getAllCategories(db, 'skill-cats')).toEqual([
+      'cache-optimization',
+      'convergence',
+      'prompt-structure',
+    ]);
   });
 });
 

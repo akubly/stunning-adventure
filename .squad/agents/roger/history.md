@@ -24,6 +24,12 @@ Wave 2 scope amended: `docs/forge-phase4.6-wave2-scope.md` updated with Prescrib
 
 ---
 
+## Learnings (2026-05-22 — Wave 2 W2-1 shared change-vector contract)
+
+- Canonical Wave 2 change-vector contracts now live in `packages/types/src/index.ts`: `ChangeVectorSummary`, `ChangeVectorProvider`, `NEGATIVE_IMPACT_AUTO_APPLY_GATE`, and shared `OptimizationCategory`.
+- Reconciled the two `ChangeVectorSummary` duplicates by taking Forge's stricter `OptimizationCategory` union instead of Cairn's plain `string`; everything else already matched. Added `autoApplyEligible?: boolean` as the additive v3.1 field on the shared contract.
+- Verification: root `npm run build` passed before and after the change; root `npm test` passed before and after the change (still green at the repo's 1153-test baseline).
+
 ## Learnings (Phase 4.5 telemetry — 2026-05-02)
 
 **Architecture decisions made:**

@@ -41,6 +41,7 @@ export { logEvent, getUnprocessedEvents } from './db/events.js';
 export { getPreference, setPreference } from './db/preferences.js';
 export { recordSkip, getSkips } from './db/skipBreadcrumbs.js';
 export { getLastProcessedEventId, advanceCursor } from './db/curatorState.js';
+export { SqliteChangeVectorProvider } from './db/sqliteChangeVectorProvider.js';
 export {
   createInsight,
   reinforceInsight,
