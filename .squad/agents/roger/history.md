@@ -1,4 +1,4 @@
-# Roger — History
+# Roger — History (Summarized)
 
 ## Summary
 
@@ -18,85 +18,33 @@
 **Recent decision:** Roger recommends packages/mem/ as pragmatic new package; can extract to separate repo later if org-tier backend service is needed.
 
 ---
-# Roger — History
 
-## Learnings (Phase 4.5 telemetry — 2026-05-02)
+## Archive (Summarized)
 
-**Architecture decisions made:**
-- `FeedbackSource` is the first new shared type in `@akubly/types` since Phase 2. It is the read-side complement to `TelemetrySink` (write side). To make it actually shareable I also moved `ProfileGranularity` and `ExecutionProfile` into `@akubly/types`, with `forge/telemetry/types.ts` re-exporting them so forge code keeps a single import surface.
-- `OptimizationHint` and `StrategyParameters` are open-shaped (`[key: string]: unknown`) in `@akubly/types`. Concrete prescribers extend the shape without forcing a churn-prone shared schema. Preserves the ADR-P4-005 instinct while still enabling cross-package wiring.
-- `LocalDBOMSink.emit()` is intentionally a no-op. The bridge event stream is consumed by collectors (HookObserver pattern, ADR-P4.5-001); only derived `SignalSample`s are worth persisting. Callers push samples via `enqueueSample()`. `emit()` exists only to satisfy the `TelemetrySink` contract.
-- Auto-flush on buffer full + fail-open on persistence error are both load-bearing. Telemetry must never kill a session.
+### Phase 4.5 Telemetry + Persona Review Fixes (2026-05-01 to 2026-05-02)
 
-**Spec deviations worth knowing:**
-- The spec accesses `event.payload?.toolName` directly, but `CairnBridgeEvent.payload` is a JSON string (see `@akubly/types` and `packages/forge/src/dbom/index.ts:276`). I added a `parsePayload()` helper that JSON-parses lazily and tolerates malformed input. Same pattern Curator and DBOM already use.
-- The spec convergence formula `convergedTurn / turnCount` is degenerate when `session_completed` arrives at the last turn (always 1.0 = max drift). I followed the spec literally but the GREEN-classification test now constructs a scenario with extra turns *after* completion to actually exercise the GREEN branch. Worth raising with Graham before Phase 5.
-- Spec §9.4 lists event types (`tool_call_started`, `usage_reported`, `turn_completed`, `session_completed`, `tool_call_failed`) that don't appear in the bridge `EVENT_MAP` (which uses `tool_use`, `model_call`, `turn_end`, `session_end`, etc.). Collectors are coded to the spec strings; wiring will need a thin remapper or an `EVENT_MAP` extension.
+**Scope:** Telemetry module hardening, 7 persona review findings fixed.
 
-**Patterns to remember:**
-- Test infra: vitest, files in `packages/forge/src/__tests__/`, ending in `.test.ts`. No setup/teardown — pure unit tests.
-- Property + metamorphic tests scale well: e.g. "replaying the same usage N times scales totals by N" catches a class of off-by-N bugs without enumerating cases.
-- Determinism > token cost is encoded in `DRIFT_WEIGHTS` (convergence 0.30 + toolEntropy 0.25 + promptStability 0.15 = 0.70 vs cost 0.30). Added a test asserting that inequality so any future tweak forces a conscious decision.
+**Key fixes:**
+- F1: Weighted mean aggregation (prevent overwrite of prior history)
+- F2: Convergence floor (fire on first success signal, not end-of-session)
+- F4: Event contract alignment (COLLECTOR_BRIDGE_EVENTS constant + contract test)
+- F5: Streaming percentile sketch (100-bucket histogram for [0,1] drift range)
+- F6a: Per-signal component means on ExecutionProfile.signals
+- F7: Silent error logging in sink
+- F11: typeof guards on payloads (toolName string, numeric guards)
 
-**Key file paths:**
-- `packages/forge/src/telemetry/{types,drift,collectors,aggregator,sink,index}.ts` — the whole module
-- `packages/forge/src/__tests__/telemetry-{drift,collectors,aggregator}.test.ts` — 56 tests
-- `packages/types/src/index.ts` — extended with FeedbackSource + ExecutionProfile + ProfileGranularity + OptimizationHint + StrategyParameters
-- `packages/forge/src/index.ts` — barrel updated to re-export telemetry surface
-- Build: `npm run build`. Forge tests: `cd packages/forge; npm test`. Repo: `npm test --workspaces --if-present`. Baseline 826 → 954 (forge 476 + cairn 478).
+**Architecture patterns:**
+- Shared symbol enums for cross-module contracts (bridge ↔ collectors)
+- Streaming quantile sketches for bounded metrics
+- weightedMean() helper prevents deflation-toward-zero failure mode
+- Fail-open principle: telemetry must never block session execution
 
+**Files touched:** 7 core files + 3 test files. Tests: +24 new. Build: 1012 passing (cairn 478 + forge 534).
 
+**Lessons:** When collector contract spans modules, enumerate shared symbols + enforce via contract test. Type-level coupling insufficient for JSON boundaries.
 
-## Learnings (2026-05-01 — Persona Review F1/F2/F4/F5/F6a/F7/F11 fixes)
-
-Fixed 7 persona review findings on the telemetry module. All landed in one session, build green, 1012 tests passing (cairn 478 + forge 534, +24 from new collector tests + new bridge contract test).
-
-**F1 — Aggregator overwrite bug.** `meanFromMeta()` averaged only the new batch, dropping prior history every aggregation. Replaced with a single `weightedMean(prevMean, prevCount, newSum, newCount, sessionCount)` helper applied uniformly to `meanInputTokens`, `meanOutputTokens`, `meanCacheHitRate`, `meanConvergenceTurns`, `toolErrorRate`, and the new per-signal means. Mirrors the existing `successRate` pattern. When the new batch contributes no samples for a signal, the prior mean is preserved (no deflation toward zero).
-
-**F2 — Convergence floor of 1.0.** The old code set `convergedTurn = turnCount` at `session_completed`, guaranteeing `convergence = 1.0`. Replaced with Aaron's Option A: `convergedTurn` is set on the FIRST occurrence of either a `tool_result` event with `success === true` OR a `plan_changed` event (whichever comes first). Both come from the bridge's EVENT_MAP. If neither fires, convergence stays at 1.0 — which is now legitimately "this session never showed early progress" rather than a phantom floor. Documented the semantics in the collector docstring.
-
-**F4 — Event-name drift between bridge and collectors.** Spec §9.4 strings (`tool_call_started`, `usage_reported`, etc.) never matched bridge EVENT_MAP keys (`tool_use`, `model_call`, `turn_end`, `session_end`, `tool_result`, `context_window`, `plan_changed`). Collectors received zero signal in production. Fixed by:
-1. Introducing exported `COLLECTOR_BRIDGE_EVENTS` const that names every Cairn event the collectors react to.
-2. Updating all `event.eventType` checks to use those names.
-3. Splitting the old `usage_reported` handling: token counts come from `model_call`, context window comes from `context_window`. Tool errors come from `tool_result` with `success === false` rather than a phantom `tool_call_failed`.
-4. New contract test `telemetry-bridge-contract.test.ts` enumerates `COLLECTOR_BRIDGE_EVENTS` and asserts every value is also a value in bridge `EVENT_MAP` — a future drift on either side fails CI fast.
-5. Updated `feedback-loop.test.ts` and `telemetry-collectors.test.ts` fixtures to emit bridge-shaped events with the correct payload field names (`currentTokens`/`tokenLimit`, `totalNanoAiu` instead of `costNanoAiu`, `success` boolean).
-
-**F5 — Per-batch percentiles.** Old p50/p95 came from sorting only the latest batch. Implemented a streaming sketch: a 100-bucket histogram of the [0,1] drift range stored on `ExecutionProfile.drift.sketch` (optional field, backward compatible). `aggregateSignals` clones+updates the sketch each call and derives p50/p95 by walking cumulative counts. Bucket midpoint precision = ±0.005, well below any threshold the prescribers care about. Sketch is omitted from the profile until the first drift sample lands so empty profiles stay clean.
-
-**F6a — Surface signal components.** Added `signals?: ProfileSignals` to `ExecutionProfile` in `@akubly/types` (optional → backward compat with older persisted rows). Aggregator pulls `metadata.signals` from each drift sample, sums each component (`convergence`, `tokenPressure`, `toolEntropy`, `contextBloat`, `promptStability`), and folds via the same `weightedMean` helper. Prescribers can now target a specific signal instead of only the composite drift score.
-
-**F7 — Silent error swallowing in sink.** Replaced empty catch with `console.warn` matching the bridge's `EventBridge` log format, and added `droppedCount` to the `LocalDBOMSink` interface so monitors can detect rising drop rates. Existing fail-open behavior preserved.
-
-**F11 — typeof guards on payloads.** Added a `typeof payload.toolName === "string"` guard in the drift collector (was using truthiness + String(...)). Token collector's numeric extractor now also guards with `Number.isFinite` to reject `NaN`/`Infinity`. Added a regression test asserting non-string `toolName` payloads are silently ignored rather than recorded as `[object Object]` in tool counts.
-
-**Patterns to remember:**
-- When the collector contract spans two modules (bridge → collectors), enumerate the shared symbols in a const + a contract test. Type-level coupling alone is not enough when one side reads JSON-encoded strings.
-- Streaming quantile sketches are simple when the input range is bounded — a fixed histogram beats t-digest complexity for [0,1]-valued metrics.
-- `weightedMean(prev, prevCount, newSum, newCount, totalCount)` returning `prevMean` when `newCount === 0` prevents the "deflation toward zero" failure mode that bit the original `successRate` code path's siblings.
-
-**Key file paths touched:**
-- `packages/types/src/index.ts` — added `DriftSketch`, `ProfileSignals`, optional `drift.sketch` and `signals` on `ExecutionProfile`
-- `packages/forge/src/telemetry/aggregator.ts` — full rewrite of mean math + sketch + signal aggregation
-- `packages/forge/src/telemetry/collectors.ts` — `COLLECTOR_BRIDGE_EVENTS`, F2 convergence rewrite, F11 guards, bridge event-name updates
-- `packages/forge/src/telemetry/sink.ts` — `droppedCount` + `console.warn`
-- `packages/forge/src/__tests__/telemetry-bridge-contract.test.ts` — NEW
-- `packages/forge/src/__tests__/telemetry-collectors.test.ts` — rewritten for bridge events
-- `packages/forge/src/__tests__/feedback-loop.test.ts` — fixtures rewritten for bridge events
-
-
-## 2026-05-02: Phase 4.5 Persona Review — Telemetry Module Hardening
-
-**Findings Fixed:** F1 (weighted means), F2 (convergence), F4 (event contract), F5 (sketch), F6a (signals), F7 (sink droppedCount), F11 (typeof guards).
-
-**Key Outputs:**
-- Single source of truth for collector → bridge event mapping: COLLECTOR_BRIDGE_EVENTS const
-- Contract test enforcing alignment: 	elemetry-bridge-contract.test.ts
-- Per-signal component means in ExecutionProfile.signals for prescriber targeting
-- 100-bucket histogram sketch for streaming quantile estimation
-- Early convergence semantics: convergedTurn fires on first successful outcome signal
-
-**Tests:** +24 new tests → Forge telemetry: 534 passing
+---
 
 **Downstream:** Prescribers now have signal-level granularity for targeting specific drift drivers (e.g., toolEntropy vs contextBloat).
 
@@ -199,5 +147,75 @@ Fixed 7 persona review findings on the telemetry module. All landed in one sessi
 Participated in Round 2 consulting on repo placement for new agentic brain/memory/learning system. Analyzed Aaron's five-dimension expansion (TIERS, KINDS, PROPERTIES, ACTIVITIES, REPRESENTATION, ACQUISITION) and refined position from Round 1.
 
 **Outcome:** Recommendation documented in .squad/orchestration-log/2026-05-22T20-25-51-roger-brain-refined.md. All deliberation merged to decisions.md for Aaron's consideration.
+
+---
+
+## 2026-05-23: Self-Fit Assessment — Brain/Memory Project Squad Readiness
+
+**Prompt:** Aaron asked: does this squad think they're the *right* squad for the brain project? Be candid about where Cairn knowledge transfers vs doesn't, whether I'm energized by the scope, and whether I'd stay on the squad.
+
+**Context:** Prior analysis debated repo placement (new repo vs monorepo). This session is different — not about architecture, but about personal expertise fit and energy alignment.
+
+### My Honest Answer
+
+**Infrastructure layers (TIERS, PROPERTIES, REPRESENTATION, ACQUISITION):** I'm ready. 9/10 confidence.  
+**Cognitive layers (ACTIVITIES like dream/meditate/pray; KINDS like linguistic/symbolic):** I'm not ready. 2/10 confidence.
+
+**What I'd do:** Own Phase 1–3 infrastructure. Bring in specialists for reasoning + knowledge modeling. Hand off after Phase 3 if brain becomes separate deployment.
+
+### Where Cairn Transfers (HIGH VALUE)
+
+1. **Event stream observability** → Multi-tier federation (cursor-based processing scales; contract patterns reusable)
+2. **Prescriber lifecycle** → Acquisition orchestration (8-state human-in-the-loop model maps to memory capture)
+3. **SQLite + Git locality** → Foundation for Phases 1–3 (proven deployment; monorepo patterns reusable)
+4. **Confidence + evidence tracking** → PROPERTIES (trustworthiness, recency, plasticity analog to confidence/evidence/last_fired)
+
+### Where Cairn Does NOT Transfer (LOW VALUE)
+
+1. **Pattern detection logic** — Cairn detects operational events (recurring errors, sequences); brain needs AST patterns, corpus analysis, guideline extraction. Evidence types incompatible. Transfer: ~0%.
+2. **ACTIVITIES (dream/meditate/pray/ideate)** — Cairn is reactive event processor; brain needs proactive reasoning loops. Runtime models incompatible. Transfer: ~0%.
+3. **Linguistic/Symbolic/Philosophical KINDS** — Requires expertise in NLP + domain modeling + epistemology. I have none. Transfer: ~0%.
+4. **Knowledge-graph representation** — Graphs, embeddings, semantic traversal outside my sweet spot. Transfer: ~5% (can scaffold, need specialist to optimize).
+
+### Energy Breakdown
+
+| Layer | Energy Level | Why |
+|-------|--------------|-----|
+| TIERS (federation/routing) | 🟢 HIGH | Bread and butter. |
+| PROPERTIES (metrics/signals) | 🟢 HIGH | Core platform skills. |
+| REPRESENTATION (SQLite/Git) | 🟢 HIGH | Databases/versioning/deployment. |
+| ACQUISITION (crawlers/hooks) | 🟡 MEDIUM | Automation + API design. Doable. |
+| ACTIVITIES (recall/re-evaluate) | 🟡 MEDIUM | Straightforward querying. Mechanical. |
+| ACTIVITIES (dream/meditate/pray) | 🔴 LOW | Agentic reasoning. Unfamiliar. Not energized. |
+| KINDS (semantic/linguistic/symbolic) | 🔴 LOW | Domain modeling beyond expertise. |
+
+### Would I Stay on the Squad?
+
+**Yes, with scoped role (Phase 1–3).**
+
+**Option A (Preferred):** Platform Lead for infrastructure layers. Own TIERS, PROPERTIES, REPRESENTATION, ACQUISITION. Delegate KINDS + reasoning ACTIVITIES to specialists. Timeline: 6–9 weeks.
+
+**Option B (Monorepo):** Ongoing platform engineer, same scope, longer commitment. Interface with Cairn for project-tier delegation.
+
+**Option C (Separate repo + backend service):** Hand off after Phase 3. Brain's domain shifts to org-tier federation with Postgres/Azure Functions — not my focus.
+
+### Specialists I'd Want Alongside
+
+1. **LLM-Augmented Reasoning Engineer** — dream/meditate/pray/ideate ACTIVITIES
+2. **Knowledge Ontology Specialist** (linguistics + domain modeling) — semantic/linguistic/symbolic/philosophical KINDS
+3. **Graph DB Specialist** (optional, if representation scales) — graph traversal optimization
+4. **Testing Automation Person** (nice to have) — acquisition pipeline regression suites
+
+### Where My Expertise Is Sharpest
+
+Cairn is my sweet spot (operational event processing, pattern detection, prescriber lifecycle, change vectors, SQLite/Git). Brain's infrastructure is a natural extension. Brain's cognitive layers require different expertise — and I'm honest enough to hand off rather than half-step.
+
+### Key Insight
+
+**Platform engineering is about building systems other people think in. The brain project is about what people think in. Related but different jobs.**
+
+I'm the right person for the foundation. But bring in specialists for the cognition.
+
+**File written:** `.squad/decisions/inbox/roger-self-fit.md` (detailed 10-section self-assessment with energy breakdown, options, and honest readiness evaluation)
 
 

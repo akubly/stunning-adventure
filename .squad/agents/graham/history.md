@@ -151,3 +151,72 @@ Participated in Round 2 consulting on repo placement for new agentic brain/memor
 
 **Outcome:** Recommendation documented in .squad/orchestration-log/2026-05-22T20-25-51-graham-brain-refined.md. All deliberation merged to decisions.md for Aaron's consideration.
 
+## Squad Fit Assessment: Brain Project (2026-05-23)
+
+**Date:** 2026-05-23  
+**Session:** Meta-evaluation — is this squad the *right* squad for the brain project?  
+**Requestor:** Aaron  
+**Artifact:** .squad/decisions/inbox/graham-squad-fit.md
+
+### Assessment
+
+**Honest verdict: This squad is fundamentally mismatched. Recommend fresh cast with epistemology/knowledge-graph expertise.**
+
+**Current squad expertise:**
+- Graham: SDK platform architecture
+- Roger: Backend/API/data layer
+- Rosella: Plugin/SDK/integration bridges
+- Gabriel: DevOps/CI/CD
+- Alexander: Copilot SDK runtime abstraction
+- Valanice: UX/human factors
+- Laura: Testing/verification
+
+**Brain project needs:**
+- Knowledge representation & graph systems (semantic ontologies, federation)
+- Epistemology/cognitive framing (learning primitives, memory tiers)
+- Agentic reasoning loops (meditate, dream, decide)
+- Graph DB / vector store expertise (neo4j, pgvector)
+- Distributed memory sync (federation, conflict resolution, versioning)
+- Cognitive science foundations (human learning models)
+
+**Gap analysis:** Squad is sized for SDK integration platform. Brain needs epistemology-first cognitive infrastructure. Different DNA entirely.
+
+**Missing expertise (hard gaps):**
+1. Knowledge Graph Architect
+2. ML/Vector Systems Engineer
+3. Epistemology/Knowledge Representation Theorist
+4. Distributed Systems Expert (federation, versioning)
+5. Cognitive Systems Designer (agentic loops, meta-learning)
+
+**Lead assessment:** Graham is excellent at SDK platform boundaries but would lead brain toward treating it as "another platform" (wrong) rather than "cognitive infrastructure" (correct).
+
+**Outcome:** Recommend new squad. This squad stays on Cairn/Forge stabilization. Graham + Valanice can consult on brain UX/boundaries.
+
+## Brain Project Proposal — Final Deliverable (2026-05-23)
+
+**Date:** 2026-05-23  
+**Session:** Round 5 — actionable charter and roster proposal  
+**Requestor:** Aaron  
+**Artifact:** `.squad/decisions/inbox/graham-brain-project-proposal.md`
+
+### Summary
+
+Produced consolidated deliverable with three sections:
+
+1. **Project Summary:** Elevator pitch, 6-dimension load-bearing claims, 5 design principles, explicit non-goals, 3 working name candidates (Engram, Nous, Anamnesis).
+
+2. **Roster Proposal:** 5 core + 2 advisors. Three "must hire" roles (Lead w/ epistemology background, Knowledge Rep Specialist, Learning Systems Specialist). Two "borrow from Cairn" (Roger as Platform Engineer, Alexander as Integration Engineer). Valanice + Laura as advisors. Universe vibe: contemplative/cognitive—not action heroes.
+
+3. **Cairn Loop-In Model:** Federated decisions with explicit boundaries. Cross-repo decisions ledger, shared `.squad/cross-team/` channel, `cross-team:*` issue labels. Decision propagation protocol with 48hr SLA. Time-boxing for Roger/Alexander (scoped sprints, handoff artifacts, escalation path). Weekly cross-team standup, biweekly boundary review.
+
+### Key Decisions
+
+- Graham will NOT lead Brain squad (self-assessment: wrong expertise)
+- Roger + Alexander contribute in 60/40 split during Phase 1
+- Coordination via federated decisions, not shared code
+- Brain is infrastructure, not product — user tier installs like .gitconfig
+
+### Lesson
+
+When producing a charter for a new squad, the most valuable section is the non-goals. Saying what something ISN'T prevents scope creep and gives the new team clear boundaries to defend.
+

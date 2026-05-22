@@ -170,4 +170,211 @@ See .squad/orchestration-log/2026-05-22T20-25-51-*.md for individual agent analy
 
 **Status:** Deliberation ongoing. Aaron to decide. Once decision is made, this section will either close as a decision or pivot to implementation planning.
 
+---
+
+# Open Question: Squad Fit for Brain/Memory/Learning System
+
+**Status:** Self-assessment complete (Round 3)  
+**Date:** 2026-05-22  
+**Requestor:** Aaron  
+**Self-Assessing Agents:** Graham Knight (Lead), Roger Wilco (Platform), Alexander (SDK/Runtime), Valanice (UX)
+
+---
+
+## Summary: Does This Squad Fit?
+
+**Unanimous honest verdict: NO. This squad is NOT the right primary owner for the brain project.**
+
+**Recommendation:** New squad with epistemology + knowledge-graph expertise. Current squad continues Cairn/Forge; offers advisory roles.
+
+---
+
+## The Core Mismatch
+
+**This squad was assembled for:** Cairn (observability/event pipeline) + Forge (SDK deterministic runtime) — a platform team  
+**Brain needs:** Cognitive infrastructure, knowledge representation, agentic reasoning loops, epistemology — a cognitive systems team
+
+**These are orthogonal problem domains.** Adding brain to this squad splits focus and dooms both Cairn/Forge stabilization and brain delivery.
+
+---
+
+## Graham Knight (Lead) — NEW SQUAD REQUIRED
+
+**Honest verdict:** NO for brain leadership.
+
+**Reason:** Graham excels at platform architecture (boundaries, technology trade-offs, systems design). Brain requires **epistemology-first** leadership. No shipping experience with ontologies, reasoning loops, or knowledge consolidation.
+
+**Can contribute:** Advisory role on system boundaries and technology selection (2-3 hrs/week).
+
+**Key finding:** Graham's brain recommendations so far focus on repo placement and scope boundaries (classic platform thinking). Brain's harder problems — "What makes knowledge durable?" "How do tiers consolidate learning?" — require someone with cognitive systems expertise.
+
+**Leadership profile needed:**
+- Epistemology/knowledge representation theorist (PhD-level)
+- Shipped graph-based learning systems or similar
+- Thinks in ontologies, not layers
+- Comfortable with uncertainty and probabilistic models
+
+---
+
+## Roger Wilco (Platform Dev) — PARTIAL FIT (PHASE 1-3 INFRASTRUCTURE)
+
+**Honest verdict:** YES for infrastructure, NO for cognition.
+
+**Energy breakdown:**
+- 🟢 HIGH: TIERS, PROPERTIES, REPRESENTATION, ACQUISITION (Cairn patterns transfer)
+- 🔴 LOW: ACTIVITIES (dream/meditate/pray), KINDS (semantic/linguistic/symbolic) — unfamiliar
+
+**Recommendation:** Stay as Platform Lead for Phase 1–3 infrastructure (storage, federation, acquisition). Hand off reasoning + ontology to specialists.
+
+**Can contribute:** Phase 1-3 infrastructure build. Phase 3+ transition to Cairn as brain's backend service needs emerge.
+
+**Needed alongside:** LLM/agentic specialist + knowledge ontology specialist + graph DB specialist (optional).
+
+---
+
+## Alexander (SDK/Runtime Dev) — BOUNDARY SPECIALIST ONLY
+
+**Honest verdict:** NO for core work. YES for boundaries and integration.
+
+**Design philosophy mismatch:**
+- Forge: "How do I make non-determinism safe?" (containment, control)
+- Brain: "How do I make non-determinism useful?" (autonomy, discovery)
+
+These are opposing philosophies. Knowledge representation, learning loops, agentic coordination — these are outside Alexander's expertise.
+
+**Can contribute:** Boundary specialist — design Brain ↔ Forge adapter, npm publishing strategy, type safety proofs.
+
+**Needed alongside:** Agentic systems architect + knowledge representation designer.
+
+---
+
+## Valanice (UX/Human Factors) — 70% YES, 30% NO
+
+**Honest verdict:** YES for UX/LX, NO for cognitive science.
+
+**Strong transfer (🟢 HIGH):**
+- Mental model boundaries (repo placement mirrors mental models)
+- Interaction design (pull-based, max 1 proactive insight per session)
+- LX optimization (MCP tools, context budgets, signal density)
+- Config surfaces (trust thresholds, recency gradients, plasticity policies)
+- Observable vs invisible design
+
+**Critical gaps (🔴 LOW):**
+- Cognitive science fundamentals (what does "meditation" mean neurologically?)
+- Knowledge ontology (are the five kinds exhaustive? mutually exclusive?)
+- Graph information architecture (traversal algorithms, semantic linking)
+- Learning primitives semantics (recency decay, trustworthiness measurement)
+
+**Recommendation:** Lead interaction design. Bring cognitive scientist + information architect alongside.
+
+**Can contribute:** 70% of team. Other 30% is cognitive science + knowledge management expertise. Without them, brain has beautiful UX on shaky assumptions.
+
+---
+
+## Squad Composition: Recommended Path
+
+**Current Squad Role:**
+- ✅ **Graham, Roger, Gabriel, Alexander, Rosella, Laura** — Continue Cairn/Forge
+- 🟡 **Graham + Valanice** — Advisory roles on brain (2-3 hrs/week) for boundaries/UX
+- 🟡 **Roger** — OPTIONAL: Phase 1-3 infrastructure if assigned
+
+**New Squad for Brain:**
+1. **Lead:** Epistemology/Knowledge Systems architect (PhD-level, shipped graph-based systems)
+2. **Graph/Vector Specialist:** neo4j/PostgreSQL + vector stores, ontology design
+3. **Distributed Systems Engineer:** Federation, conflict resolution, versioning
+4. **Agentic Learning Systems Engineer:** Reinforcement learning, meta-learning, reasoning loops
+5. **Observability/Testing Bridge:** Interface with Laura/Gabriel (observation-focused testing)
+
+---
+
+## Missing Expertise Clusters
+
+| Expertise | Current Squad | Brain Needs | Severity |
+|-----------|---------------|-------------|----------|
+| **Knowledge Graph Architecture** | ❌ None | ✅ Critical | 🔴 BLOCKER |
+| **Vector/ML Systems** | ❌ None | ✅ Important | 🔴 BLOCKER |
+| **Epistemology/Knowledge Representation** | ❌ None | ✅ Critical | 🔴 BLOCKER |
+| **Distributed Systems (federation)** | ❌ None | ✅ Important | 🔴 BLOCKER |
+| **Cognitive Systems/Agentic Loops** | ❌ None | ✅ Critical | 🔴 BLOCKER |
+| **Backend/Services** | ✅ Roger | ✅ Useful Phase 2+ | 🟡 SECONDARY |
+| **Testing/Verification** | ✅ Laura | ✅ Useful | 🟡 SECONDARY |
+| **DevOps/Deployment** | ✅ Gabriel | ✅ Useful Phase 3+ | 🟡 SECONDARY |
+
+---
+
+## Per-Member Recommendation
+
+### Can Stay on Cairn/Forge
+- ✅ Graham (architecture, boundaries)
+- ✅ Roger (backend, data layer)
+- ✅ Gabriel (deployment, CI/CD)
+- ✅ Laura (testing, verification)
+- ✅ Rosella (plugin architecture, SDK integration)
+- ✅ Alexander (SDK runtime, Forge coupling)
+
+### Can Contribute to Brain (Advisory Only)
+- 🟡 Graham — System boundaries, technology selection (not leadership)
+- 🟡 Valanice — Interaction design, LX optimization (60% contribution rate)
+
+### Should NOT Work on Brain (Wrong Domain)
+- ❌ Rosella — Plugin architecture is orthogonal
+- ❌ Alexander (core) — SDK abstraction is orthogonal (keep as boundary specialist)
+
+---
+
+## Three Options for Aaron
+
+### Option A: Fresh Squad (🟢 RECOMMENDED)
+**Brain gets its own squad** with epistemology + graph DB + distributed systems expertise.
+- **Outcome:** Brain gets undivided focus and right expertise. Cairn/Forge stabilization uninterrupted.
+- **Timeline:** Parallel to Phase 5 PGO work
+- **Risk:** New team ramp-up, version skew between brain and Cairn
+
+### Option B: Current Squad + 3 Specialists (❌ NOT RECOMMENDED)
+**Graft epistemology, graph DB, and distributed systems engineers** onto existing squad.
+- **Risk:** Graham still leads a domain he doesn't have DNA for. Cairn/Forge work stalls. Hybrid squads split focus and underdeliver both.
+
+### Option C: Keep Everything in Current Squad (❌ REJECT)
+**Suicide by overcommit.** Cairn/Forge doesn't stabilize, brain never ships.
+
+---
+
+## Open Questions for Aaron
+
+1. **Is brain Copilot-specific infrastructure or general agentic infrastructure?**
+   - If Copilot-specific → maybe this squad could own it (bad idea, but possible)
+   - If general → definitely needs new squad
+
+2. **What's the MVP timeline?**
+   - If 2 weeks → prototype in current squad (risky, rush job)
+   - If 2+ months → new squad (recommended)
+
+3. **How important is the epistemology layer?**
+   - If "storage only" → current squad could do it (still not ideal)
+   - If "learning system" → new squad required
+
+4. **Budget for 3–5 new hires?**
+   - If yes → new squad (go)
+   - If no → delay brain until Cairn/Forge done, then hire for it
+
+---
+
+## Artifacts
+
+**Orchestration logs (4 files):** `.squad/orchestration-log/2026-05-22T20-32-55Z-{agent}.md`
+- Graham: HIGH conviction, NEW SQUAD required
+- Roger: HIGH confidence, Phase 1-3 infrastructure only
+- Alexander: HIGH conviction, keep as boundary specialist
+- Valanice: MEDIUM conviction, 70% UX/LX yes, 30% cognitive science no
+
+**Session log (1 file):** `.squad/log/2026-05-22T20-32-55Z-brain-squad-fit.md`
+
+**Inbox files to delete (merged):**
+- `.squad/decisions/inbox/graham-squad-fit.md`
+- `.squad/decisions/inbox/roger-self-fit.md`
+- `.squad/decisions/inbox/alexander-self-fit.md`
+- `.squad/decisions/inbox/valanice-self-fit.md`
+
+**Status:** OPEN QUESTION — Strong recommendation toward fresh squad, awaiting Aaron's input on budget, timeline, and scope.
+
 
