@@ -24,6 +24,7 @@
   },
   "homepage": "https://github.com/akubly/stunning-adventure#readme",
   "devDependencies": {
+    "@akubly/runtime-cli": "*",
     "@eslint/js": "^10.0.1",
     "@typescript-eslint/eslint-plugin": "^8.57.2",
     "@typescript-eslint/parser": "^8.57.2",

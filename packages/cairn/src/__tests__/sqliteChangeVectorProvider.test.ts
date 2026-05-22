@@ -79,6 +79,7 @@ describe('SqliteChangeVectorProvider', () => {
         meanNetImpact: expectedImpact,
         vectorCount: 1,
         confidenceBoost: 1,
+        autoApplyEligible: true,
       },
     ]);
   });

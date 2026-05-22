@@ -43,6 +43,23 @@ export { recordSkip, getSkips } from './db/skipBreadcrumbs.js';
 export { getLastProcessedEventId, advanceCursor } from './db/curatorState.js';
 export { SqliteChangeVectorProvider } from './db/sqliteChangeVectorProvider.js';
 export {
+  upsertExecutionProfile,
+  getExecutionProfile,
+  listExecutionProfilesForSkill,
+  listExecutionProfiles,
+  deleteExecutionProfile,
+} from './db/executionProfiles.js';
+export {
+  insertOptimizationHint,
+  insertHintIfNew,
+  getOptimizationHint,
+  queryOptimizationHints,
+  listOptimizationHints,
+  updateOptimizationHintStatus,
+  deleteOptimizationHint,
+} from './db/optimizationHints.js';
+export { insertChangeVector } from './db/changeVectors.js';
+export {
   createInsight,
   reinforceInsight,
   getInsightByPattern,
@@ -74,6 +91,15 @@ export type {
   Insight,
   CuratorStatus,
 } from './types/index.js';
+export type { ExecutionProfileUpsert, ExecutionProfileRow } from './db/executionProfiles.js';
+export type {
+  HintSource,
+  HintStatus,
+  InsertHintIfNewResult,
+  OptimizationHintInsert,
+  OptimizationHintQuery,
+  OptimizationHintRow,
+} from './db/optimizationHints.js';
 export type { SessionSummary } from './agents/sessionState.js';
 export type { CurateResult } from './agents/curator.js';
 export type {

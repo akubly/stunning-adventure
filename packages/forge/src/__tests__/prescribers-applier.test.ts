@@ -301,10 +301,50 @@ describe("analyzeTokenOptimizations — determinism + metamorphic", () => {
 // ---------------------------------------------------------------------------
 
 describe("applyOptimizations — mechanism", () => {
-  it("skips hints below the confidence threshold", () => {
+  it("blocks auto-apply when evidence marks the hint as historically harmful", () => {
     const result = applyOptimizations([
-      makeHint({ id: "low", confidence: 0.5 }),
-      makeHint({ id: "high", confidence: 0.9 }),
+      makeHint({
+        id: "blocked",
+        confidence: 0.99,
+        evidence: { ...makeHint().evidence, autoApplyEligible: false },
+      }),
+    ]);
+
+    expect(result.applied).toEqual([]);
+    expect(result.skipped).toEqual([
+      { hintId: "blocked", reason: "historical vectors indicate negative impact" },
+    ]);
+  });
+
+  it("prefers the top-level autoApplyEligible flag over evidence", () => {
+    const result = applyOptimizations([
+      makeHint({
+        id: "top-level-blocked",
+        confidence: 0.99,
+        autoApplyEligible: false,
+        evidence: { ...makeHint().evidence, autoApplyEligible: true },
+      }),
+    ]);
+
+    expect(result.applied).toEqual([]);
+    expect(result.skipped).toEqual([
+      { hintId: "top-level-blocked", reason: "historical vectors indicate negative impact" },
+    ]);
+  });
+
+  it("uses the normal confidence threshold when autoApplyEligible is true", () => {
+    const result = applyOptimizations([
+      makeHint({ id: "low", confidence: 0.5, autoApplyEligible: true }),
+      makeHint({ id: "high", confidence: 0.9, autoApplyEligible: true }),
+    ]);
+    expect(result.applied.map((a) => a.hintId)).toEqual(["high"]);
+    expect(result.skipped.map((s) => s.hintId)).toEqual(["low"]);
+  });
+
+  it("uses the normal confidence threshold when autoApplyEligible is undefined", () => {
+    const result = applyOptimizations([
+      makeHint({ id: "low", confidence: 0.5, autoApplyEligible: undefined }),
+      makeHint({ id: "high", confidence: 0.9, autoApplyEligible: undefined }),
     ]);
     expect(result.applied.map((a) => a.hintId)).toEqual(["high"]);
     expect(result.skipped.map((s) => s.hintId)).toEqual(["low"]);

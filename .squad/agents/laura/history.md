@@ -1,3 +1,4 @@
+📌 Team update (2026-05-22T14:07:59Z): **Phase 4.6 Wave 2 complete** — ChangeVectorProvider + ForgePrescriberOrchestrator + autoApplyEligible safety gate + hint dedup + forge-prescribe CLI all shipped. 1199 tests passing, 9 work items landed, 4 decisions merged. Wave 3 (Curator-driven orchestration + composition root) deferred behind ADR. — Scribe
 📌 Team update (2026-05-22T20:35:00Z): **Wave 2 W2-5 complete** — ForgePrescriberOrchestrator shipped. Attenuation + autoApplyEligible propagation live. ATTENUATION_FLOOR=0.1 exported from @akubly/types. Fail-open on provider errors. Forge tests 609 passing (+10), root build green. — Scribe
 📌 Team update (2026-05-22T20:29:36Z): **Wave 1 complete** — canonical type adopted across packages, SqliteChangeVectorProvider live, zero-vector summaries filtered. Alexander (W2-2) + Rosella (W2-3/W2-7) complete. Forge 599 + Cairn 564 tests green. — Scribe
 📌 Team update (2026-05-22T20:16:40Z): **Wave 0 complete** — canonical types in @akubly/types, getAllCategories helper in Cairn. category field reconciled to OptimizationCategory union. — Scribe
@@ -48,4 +49,14 @@ Graham's v3 scope finalized. Decisions archived. Ready for Wave 2 implementation
 
 **Joined:** 2026-04-28  
 **Tech:** TypeScript/Node.js 20+, npm monorepo, Vitest, SQLite
+
+## Learnings
+
+### 2026-05-22: Wave 2 W2-6 full pipeline integration
+
+- Landed the E2E coverage in `packages/forge/src/__tests__/wave2-pipeline.test.ts`. Kept it in Forge because the orchestrator is the focal point, and excluded Forge test files from package build so the test can import real Cairn source without leaking cross-package test wiring into production output.
+- Covered the real SQLite-backed path: applied hint history → `curate()` vector sweep → `SqliteChangeVectorProvider` summaries → `runForgePrescribers()` enrichment → emitted hint attenuation / `autoApplyEligible` propagation → `applyOptimizations()` gate decisions.
+- Added the full maturity gradient table (`0 vectors`, sparse positive/negative, mature positive, mature mildly negative, mature very negative, mature catastrophic) plus regressions for dedup on repeated persistence, provider omission, provider fail-open behavior, and shared `ChangeVectorSummary` contract flow.
+- Contract surprise: spec §6.1's table says `meanNetImpact === -0.2` should block auto-apply, but Forge/Cairn code and Alexander's W2-5 tests treat the boundary as still eligible (`>=` gate). Logged that ambiguity in the decisions inbox and kept the integration test aligned with the live implementation + §4.5 semantics.
+- Final validation after the change: Cairn `570` passing, Forge `625` passing, runtime-cli `4` passing; root `npm test` + `npm run build` green.
 

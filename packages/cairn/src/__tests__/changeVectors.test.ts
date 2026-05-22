@@ -7,6 +7,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { ATTENUATION_FLOOR } from '@akubly/types';
 import { getDb, closeDb } from '../db/index.js';
 import {
   insertChangeVector,
@@ -411,15 +412,6 @@ describe('summarizeChangeVectors', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Policy placeholder
-// ---------------------------------------------------------------------------
-
-describe('change vector policy', () => {
-  it.todo(
-    'penalizes confidence on negative meanNetImpact (Wave 2 — deferred per Aaron policy 2026-05-03)',
-  );
-});
 
 // ---------------------------------------------------------------------------
 // DEFAULT_MIN_SESSIONS — constant regression pin (Phase 4.6 cycle 2, Finding #15)
@@ -438,47 +430,94 @@ describe('DEFAULT_MIN_SESSIONS — cairn constant regression pin', () => {
 // summarizeChangeVectors — confidence clamp regression (Phase 4.6 cycle 2, Finding #2)
 // ---------------------------------------------------------------------------
 
-describe('summarizeChangeVectors — confidence clamp (vectors never attenuate)', () => {
-  it('confidenceBoost is exactly 1.0 when vectorCount === 1 and minVectors === 3 (clamp applied)', () => {
-    // Before cycle-2 fix: log(2)/log(4) ≈ 0.5 would halve confidence.
-    // After fix: Math.max(1.0, 0.5) = 1.0 — sparse evidence is neutral, not penalising.
+describe('summarizeChangeVectors — maturity gradient attenuation', () => {
+  it('keeps sparse evidence neutral and auto-apply eligible', () => {
     const db = getDb();
-    const hintId = insertOptimizationHint(makeHint({ skillId: 'skill-clamp', category: 'convergence' }));
-    insertChangeVector(db, { hintId, deltas: makeDeltas(), sessionsObserved: 3, computedAt: '2026-05-03T20:59:53.000Z' });
+    const h1 = insertOptimizationHint(makeHint({ skillId: 'skill-sparse', category: 'convergence' }));
+    const h2 = insertOptimizationHint(makeHint({ skillId: 'skill-sparse', category: 'convergence' }));
+    insertChangeVector(db, {
+      hintId: h1,
+      deltas: makeDeltas({
+        deltaDrift: 0,
+        deltaCost: 0,
+        deltaSuccessRate: 0,
+        deltaConvergence: 2 / CHANGE_VECTOR_WEIGHTS.deltaConvergence,
+        deltaCacheHit: 0,
+      }),
+      sessionsObserved: 3,
+      computedAt: '2026-05-03T20:00:00.000Z',
+    });
+    insertChangeVector(db, {
+      hintId: h2,
+      deltas: makeDeltas({
+        deltaDrift: 0,
+        deltaCost: 0,
+        deltaSuccessRate: 0,
+        deltaConvergence: 1 / CHANGE_VECTOR_WEIGHTS.deltaConvergence,
+        deltaCacheHit: 0,
+      }),
+      sessionsObserved: 3,
+      computedAt: '2026-05-03T21:00:00.000Z',
+    });
 
-    const summary = summarizeChangeVectors(db, 'convergence', 'skill-clamp', 3);
-    expect(summary.vectorCount).toBe(1);
-    expect(summary.confidenceBoost).toBe(1.0);
-  });
-
-  it('confidenceBoost is exactly 1.0 when vectorCount === 2 and minVectors === 3 (clamp applied)', () => {
-    const db = getDb();
-    const h1 = insertOptimizationHint(makeHint({ skillId: 'skill-clamp2', category: 'convergence' }));
-    const h2 = insertOptimizationHint(makeHint({ skillId: 'skill-clamp2', category: 'convergence' }));
-    insertChangeVector(db, { hintId: h1, deltas: makeDeltas(), sessionsObserved: 3, computedAt: '2026-05-03T20:00:00.000Z' });
-    insertChangeVector(db, { hintId: h2, deltas: makeDeltas(), sessionsObserved: 3, computedAt: '2026-05-03T21:00:00.000Z' });
-
-    const summary = summarizeChangeVectors(db, 'convergence', 'skill-clamp2', 3);
+    const summary = summarizeChangeVectors(db, 'convergence', 'skill-sparse', 3);
     expect(summary.vectorCount).toBe(2);
-    // log(3)/log(4) ≈ 0.79 — clamped to 1.0
     expect(summary.confidenceBoost).toBe(1.0);
+    expect(summary.autoApplyEligible).toBe(true);
   });
 
-  it('vectors never attenuate confidence — confidenceBoost is always >= 1.0', () => {
-    // Wave 1 policy: positive boost only (Aaron, 2026-05-03).
-    // For any vectorCount from 0..minVectors, confidenceBoost must never drop below 1.0.
+  it('attenuates mature negative evidence below the gate and blocks auto-apply', () => {
     const db = getDb();
-    const hints = [
-      insertOptimizationHint(makeHint({ skillId: 'skill-noatt', category: 'convergence' })),
-      insertOptimizationHint(makeHint({ skillId: 'skill-noatt', category: 'convergence' })),
-    ];
-    for (const hintId of hints) {
-      insertChangeVector(db, { hintId, deltas: makeDeltas(), sessionsObserved: 3, computedAt: '2026-05-03T20:59:53.000Z' });
+    for (let index = 0; index < 4; index += 1) {
+      const hintId = insertOptimizationHint(
+        makeHint({ skillId: 'skill-negative', category: 'convergence' }),
+      );
+      insertChangeVector(db, {
+        hintId,
+        deltas: makeDeltas({
+          deltaDrift: 0,
+          deltaCost: 0,
+          deltaSuccessRate: 0,
+          deltaConvergence: 0.5 / CHANGE_VECTOR_WEIGHTS.deltaConvergence,
+          deltaCacheHit: 0,
+        }),
+        sessionsObserved: 3,
+        computedAt: `2026-05-03T0${index}:00:00.000Z`,
+      });
     }
 
-    // Test with minVectors = 10 (sparse vectors would give log(3)/log(11) ≈ 0.46 without clamp)
-    const summary = summarizeChangeVectors(db, 'convergence', 'skill-noatt', 10);
-    expect(summary.confidenceBoost).toBeGreaterThanOrEqual(1.0);
+    const summary = summarizeChangeVectors(db, 'convergence', 'skill-negative', 3);
+    expect(summary.vectorCount).toBe(4);
+    expect(summary.meanNetImpact).toBeCloseTo(-0.5, 10);
+    expect(summary.confidenceBoost).toBeCloseTo(0.5, 10);
+    expect(summary.autoApplyEligible).toBe(false);
+  });
+
+  it('floors catastrophic mature evidence at ATTENUATION_FLOOR', () => {
+    const db = getDb();
+    for (let index = 0; index < 4; index += 1) {
+      const hintId = insertOptimizationHint(
+        makeHint({ skillId: 'skill-catastrophic', category: 'convergence' }),
+      );
+      insertChangeVector(db, {
+        hintId,
+        deltas: makeDeltas({
+          deltaDrift: 0,
+          deltaCost: 0,
+          deltaSuccessRate: 0,
+          deltaConvergence: 0.95 / CHANGE_VECTOR_WEIGHTS.deltaConvergence,
+          deltaCacheHit: 0,
+        }),
+        sessionsObserved: 3,
+        computedAt: `2026-05-03T1${index}:00:00.000Z`,
+      });
+    }
+
+    const summary = summarizeChangeVectors(db, 'convergence', 'skill-catastrophic', 3);
+    expect(summary.vectorCount).toBe(4);
+    expect(summary.meanNetImpact).toBeCloseTo(-0.95, 10);
+    expect(summary.confidenceBoost).toBe(ATTENUATION_FLOOR);
+    expect(summary.autoApplyEligible).toBe(false);
   });
 });
 

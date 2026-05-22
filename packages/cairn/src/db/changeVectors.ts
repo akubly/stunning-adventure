@@ -13,7 +13,12 @@
  */
 
 import type Database from 'better-sqlite3';
-import type { ChangeVectorSummary, OptimizationCategory } from '@akubly/types';
+import {
+  ATTENUATION_FLOOR,
+  NEGATIVE_IMPACT_AUTO_APPLY_GATE,
+  type ChangeVectorSummary,
+  type OptimizationCategory,
+} from '@akubly/types';
 
 export type { ChangeVectorSummary } from '@akubly/types';
 
@@ -257,14 +262,24 @@ export function summarizeChangeVectors(
 
   const vectorCount = row?.vector_count ?? 0;
   const meanNetImpact = row?.mean_net_impact ?? 0;
+  const safeMin = Math.max(1, minVectors);
+  const autoApplyEligible =
+    vectorCount < safeMin || meanNetImpact >= NEGATIVE_IMPACT_AUTO_APPLY_GATE;
   const confidenceBoost =
     vectorCount === 0
       ? 1.0
-      : (() => {
-          // Guard against minVectors=0: log(1+0)/log(1+0) = 0/0 = NaN.
-          const safeMin = Math.max(1, minVectors);
-          return Math.max(1.0, Math.log(1 + vectorCount) / Math.log(1 + safeMin));
-        })();
+      : meanNetImpact >= 0
+        ? Math.max(1.0, Math.log(1 + vectorCount) / Math.log(1 + safeMin))
+        : autoApplyEligible
+          ? 1.0
+          : Math.max(ATTENUATION_FLOOR, 1.0 + meanNetImpact);
 
-  return { category, skillId, meanNetImpact, vectorCount, confidenceBoost };
+  return {
+    category,
+    skillId,
+    meanNetImpact,
+    vectorCount,
+    confidenceBoost,
+    autoApplyEligible,
+  };
 }
