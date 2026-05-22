@@ -2052,3 +2052,42 @@ Slightly more wiring than extending `FeedbackSource` (adding a new interface, ne
 
 **Trade-off named:** Adds ~5 lines of logic + 4 tests across two packages. Small scope increase for eliminating a known-bad production behavior.
 
+---
+
+# ADR: Wave 2 v3 — Wiring Shape + Scope Split + Safety Gates
+
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-21  
+**Status:** Approved — ready for implementation  
+**Phase:** 4.6 Wave 2 v3 (revision of 2026-05-20 ADR, incorporates duck critique and scope refinement)
+
+---
+
+## ChangeVectorProvider Port
+
+**Decision:** `ChangeVectorProvider` interface in `@akubly/types` with async return type (`Promise<ChangeVectorSummary[]>`). Cairn implements via `SqliteChangeVectorProvider`.
+
+**Reasoning:** Same as v1 (follows FeedbackSource pattern, respects acyclic deps). v3 adds `Promise` return type for Phase 5 readiness — avoids interface churn when cloud providers land.
+
+## Wave 2/3 Split
+
+**Decision:** Wave 2 = data plumbing + manual invocation via top-level composition script. Wave 3 = Curator-driven automatic orchestration.
+
+**Reasoning:** `curate()` is a module-level function in Cairn with no injection points, called from Cairn-only entrypoints (hooks, MCP). Injecting a Forge-implemented orchestrator requires a composition root that imports both packages. No such root exists today. Creating one is a package boundary decision that deserves its own ADR, not a wiring detail buried in Wave 2.
+
+**Trade-off named:** Wave 2 only delivers manual invocation. The autonomous Curator path (primary production trigger per Phase 4.5 spec) is deferred. But the hard parts (type promotion, safety gates, provider adapter) ship in Wave 2; Wave 3 is pure wiring once composition ownership is decided.
+
+## Hint Deduplication
+
+**Decision:** `(skillId, source, category)` dedup key with active-status filter (`pending`, `accepted`, `deferred`). Skip insertion if match exists. No upsert — preserves audit trail.
+
+**Reasoning:** Prescribers generate fresh UUIDs every invocation. Without dedup, repeated runs create unbounded duplicate hints. The existing Cairn prescriber uses `hasActivePrescription(insightId)` for the same purpose. Same pattern, different key.
+
+## Negative-Impact Attenuation
+
+**Decision:** Two-layer defense:
+1. Confidence scaling: `confidenceBoost = max(0.1, 1.0 + meanNetImpact)` when mature evidence + negative impact. Sparse evidence: no attenuation (boost stays 1.0).
+2. Eligibility flag: `autoApplyEligible = false` when `meanNetImpact < -0.2` and `vectorCount >= minVectors`.
+
+**Reasoning:** Confidence scaling alone with a floor of 0.3 (v2) could still pass permissive auto-apply thresholds. The `autoApplyEligible` flag is defense-in-depth — the applier checks it independently of confidence math. Strongly negative categories cannot auto-apply regardless of threshold configuration.
+

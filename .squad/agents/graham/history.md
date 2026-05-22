@@ -127,3 +127,19 @@
 **Q4 solution: PrescriberOrchestrator port.** Cairn's Curator is the designed autonomous trigger, but it can't import Forge prescribers (acyclic dep constraint). New `PrescriberOrchestrator` interface in `@akubly/types` — Forge implements (wraps both prescribers), Cairn receives via injection. Same pattern as `FeedbackSource` and `ExportQualityGate`. Invocation point: Curator's `curate()` after `sweepChangeVectors`.
 
 **Revised decomposition:** 10 items, ~27 tests. Added `PrescriberOrchestrator` port (W2-1b), `ForgePrescriberOrchestrator` impl (W2-5), Curator wiring (W2-6), attenuation (W2-7).
+
+### Wave 2 v3 — Rubber-Duck Review Response (2026-05-05)
+
+**9-finding review revealed three structural flaws in v2:**
+
+1. **Composition root problem (BLOCKING).** v2 proposed `PrescriberOrchestrator` port so Curator could call Forge prescribers via injection. But `curate()` is a module-level function called from two Cairn-only entrypoints (sessionStart.ts:68, mcp/server.ts:327) with no injection points and no composition root that imports both packages. Creating one is a package boundary decision, not a wiring detail.
+
+2. **Internal inconsistency (BLOCKING).** v2 was confused about who queries vectors — Forge orchestrator internally, or Curator externally? Resolved: orchestrator is pure (`profile, provider → hints`). Provider is passed in by the caller.
+
+3. **Missing hint dedup (BLOCKING).** Prescribers generate fresh UUID hints every invocation. Without dedup, repeated runs create unbounded duplicates. Added `(skillId, source, category)` dedup policy — same pattern as existing Cairn prescriber's `hasActivePrescription`.
+
+**Key decision: Split Wave 2/3.** Wave 2 = data plumbing + safety gates + manual invocation (composition script). Wave 3 = Curator-driven orchestration (requires composition root ADR). The hard parts ship in Wave 2; Wave 3 is pure wiring.
+
+**Attenuation refined:** Two-layer defense — confidence scaling (`max(0.1, 1+impact)`) for statistical attenuation PLUS `autoApplyEligible` boolean flag as defense-in-depth policy gate. Strongly negative categories blocked from auto-apply regardless of confidence threshold configuration.
+
+**Lesson:** When you propose an injection port, you must also identify who constructs and passes the implementation. "Inject via config parameter" is not a plan if nobody owns the injection site. The composition root is a first-class architectural decision, not a wiring detail.

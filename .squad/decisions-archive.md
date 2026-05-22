@@ -1,484 +1,2093 @@
-# Squad Decisions Archive
+# Squad Decisions
 
-**Status:** Archived decisions from pre-Phase 7 period (2026-03-28 through 2026-04-06)
+## Active Decisions
 
-This archive contains all decisions made during the Recon and Brainstorm phases (Rounds 1–5) and early implementation planning. These decisions remain active and should be referenced, but are archived to reduce the size of the main decisions.md file during Phase 7+ implementation.
+
+# Phase 4.6 Kickoff — Change Vector Learning
+
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-03  
+**Status:** Kickoff — ready for team spawn  
+**Branch:** `squad/phase4.6-change-vectors`
 
 ---
 
-## Active Decisions (Archived)
+## 1. Branch Decision
 
-### 2026-03-28T07-22-14: User Directive — Claude Opus 4.6 Context Window
+**Decision:** New branch `squad/phase4.6-change-vectors` from `squad/phase4-export-pipeline`.
 
-**Author:** Aaron (via Copilot)  
-**Type:** Infrastructure  
+**Rationale:**
+- Phase 4.5 is complete (1012 tests, review-hardened). Clean phase boundary.
+- PR-per-phase pattern established in Phases 3, 4, 4.5.
+- Keeps the diff reviewable — Phase 4.6 is ~200 LOC, but will have its own test surface.
+- If Phase 4.6 needs to bake longer, it doesn't block Phase 4.5 merge to main.
+
+**Alternative rejected:** Continue on current branch. Would blur the PR boundary and make rollback harder if change vectors need iteration.
+
+---
+
+## 2. Spec Clarifications (Resolved)
+
+### 2.1 Migration 012 Placement
+
+**Resolved:** `packages/cairn/src/db/migrations/012-change-vectors.ts`, registered in `schema.ts` (version 12). Follows exact pattern of migrations 010/011.
+
+### 2.2 Where `change_vectors` Writes Happen
+
+**Resolved:** New CRUD module `packages/cairn/src/db/changeVectors.ts` owns reads/writes. The **computation trigger** is the Curator sweep — when aggregating profiles, if a hint with status `'applied'` has a subsequent metric snapshot available (from a later execution_profile update), the Curator computes and inserts the change vector. This is NOT in the prescriber or applier — it's a post-hoc observation.
+
+**Rationale:** The Curator already owns cursor-based aggregation sweeps. Adding vector computation to the sweep is O(applied_hints) per sweep, naturally rate-limited, and consistent with the "observe, don't block" principle.
+
+### 2.3 `historicalVectors` Integration with Prescriber Signatures
+
+**Resolved:** Add optional third parameter to both prescribers:
+
+```typescript
+// Before (Phase 4.5):
+analyzePromptOptimizations(profile: ExecutionProfile, config?: PromptOptimizerConfig): PrescriberResult
+
+// After (Phase 4.6):
+analyzePromptOptimizations(profile: ExecutionProfile, config?: PromptOptimizerConfig, historicalVectors?: ChangeVectorSummary[]): PrescriberResult
+```
+
+**Type definition** (in `prescribers/types.ts`):
+```typescript
+export interface ChangeVectorSummary {
+  category: OptimizationCategory;
+  skillId: string;
+  meanNetImpact: number;
+  vectorCount: number;
+  confidence: number; // log-scaled boost
+}
+```
+
+**Why optional param, not config:** Config is static per-invocation. Vectors are dynamic data queried per-skill. Semantic distinction matters for testability — tests can pass vectors directly without mocking a DB query.
+
+### 2.4 "Before/After Metric Snapshots" — Concrete Meaning
+
+**Resolved:**
+- **Before:** `optimization_hints.metric_snapshot` JSON column (captured at hint generation time, already exists in migration 011).
+- **After:** The `execution_profiles` row for the same `skill_id` at the time the Curator sweep runs (post-application).
+- **Delta:** `after_value - before_value` for each of the 5 metric fields in `MetricSnapshot`.
+
+No new "snapshot" table needed — the before is already stored, the after is the live profile.
+
+### 2.5 Min `sessions_observed` Window
+
+**Decision:** Configurable with sensible default.
+
+```typescript
+export interface ChangeVectorConfig {
+  /** Minimum sessions between before/after to consider vector valid. Default: 3. */
+  minSessionsObserved?: number;
+}
+```
+
+**Rationale:** Fixed value is too rigid. A skill used 100x/day needs fewer sessions than one used 2x/week. Default 3 matches the prompt optimizer's `minSessions` canary threshold.
+
+### 2.6 Net Impact Weighting
+
+**Decision:** Same weights as drift score (from `telemetry/drift.ts`).
+
+The roadmap spec explicitly states: `net_impact = Σ(delta_i × weight_i) // same weights as drift score`. This means:
+- convergence: 0.30
+- toolEntropy: 0.25 (maps to `delta_drift` since drift subsumes entropy)
+- promptStability: 0.15
+- cacheHit: 0.15
+- cost: 0.15
+
+**Import the weight constants** from `telemetry/drift.ts` rather than duplicating. Single source of truth.
+
+---
+
+## 3. Work Decomposition
+
+### Wave 1 — Foundation (Alexander, parallel with Rosella type work)
+
+| # | Owner | Item | Description | Depends On |
+|---|-------|------|-------------|------------|
+| A1 | Alexander | Migration 012 | `012-change-vectors.ts` — CREATE TABLE + indices per roadmap §1.2 | — |
+| A2 | Alexander | Schema registration | Import + register migration012 in `schema.ts`, version bump to 12 | A1 |
+| A3 | Alexander | CRUD module | `packages/cairn/src/db/changeVectors.ts` — insert, getByHintId, getByCategory, computeNetImpact | A1 |
+| A4 | Alexander | Curator integration | Add vector computation to Curator sweep: for each `applied` hint with sufficient post-application sessions, compute + insert vector | A3 |
+
+### Wave 2 — Prescriber Enhancement (Rosella)
+
+| # | Owner | Item | Description | Depends On |
+|---|-------|------|-------------|------------|
+| R1 | Rosella | Types | `ChangeVectorSummary` interface in `prescribers/types.ts` | — |
+| R2 | Rosella | Confidence scaling | `computeConfidenceBoost(vectorCount, minVectors)` utility in `prescribers/utils.ts` | R1 |
+| R3 | Rosella | Prompt prescriber integration | Add `historicalVectors?` param to `analyzePromptOptimizations`, apply confidence boost + predicted impact ranking | R1, R2 |
+| R4 | Rosella | Token prescriber integration | Same for `analyzeTokenOptimizations` | R1, R2 |
+| R5 | Rosella | Weight import | Import drift weights from `telemetry/drift.ts` for `computeNetImpact` — ensure single source of truth | — |
+
+### Wave 3 — Tests (Laura)
+
+| # | Owner | Item | Description | Depends On |
+|---|-------|------|-------------|------------|
+| L1 | Laura | Migration tests | 012 applies cleanly, idempotent re-run, table/index existence | A1 |
+| L2 | Laura | CRUD tests | Insert/query/net-impact-computation for changeVectors module | A3 |
+| L3 | Laura | Prescriber integration tests | Both prescribers with/without historicalVectors — verify confidence boost, ranking changes, edge cases (empty vectors, single vector, negative impact) | R3, R4 |
+| L4 | Laura | Curator vector computation test | End-to-end: applied hint → profile update → sweep → vector appears | A4 |
+| L5 | Laura | Weight consistency test | Assert net_impact weights match drift score weights (regression guard) | R5 |
+
+### Critical Path
+
+```
+A1 → A2 (trivial)
+A1 → A3 → A4
+R1 → R2 → R3/R4
+A3 + R3/R4 → L3
+A4 → L4
+```
+
+**Estimated scope:** ~200 LOC production, ~150 LOC tests, 15-20 new tests. 1-day sprint for the team.
+
+---
+
+## 4. ADRs for This Phase
+
+### ADR-P4.6-001: Curator owns vector computation (not prescriber, not applier)
+
+Vectors are post-hoc observations about prescription efficacy. The Curator already sweeps periodically. Adding computation here keeps the prescriber pure (stateless analysis) and the applier focused on writes.
+
+**Alternative rejected:** Compute in the applier after applying a hint. Problem: the "after" snapshot isn't available yet at application time — you need subsequent sessions to measure the effect.
+
+### ADR-P4.6-002: Optional parameter over config object for historicalVectors
+
+Keeps the prescriber testable without mocking a database. Tests pass vectors directly. Production code queries them from CRUD and passes in.
+
+**Alternative rejected:** Add `vectorSource: () => ChangeVectorSummary[]` to config. Over-abstracted for a single call site.
+
+### ADR-P4.6-003: Same weights as drift score
+
+Single source of truth for "what matters" (Determinism > Cost). No independent weight tuning for net impact — if drift weights change, net impact changes too. Avoids divergent optimization signals.
+
+---
+
+## 5. Open Questions for Aaron
+
+1. **Vector TTL:** Should old change vectors expire? The roadmap doesn't specify. My recommendation: no TTL for now — vectors are small and historical accuracy improves with data. Revisit if table exceeds 10K rows.
+
+2. **Negative vectors:** If a prescription made things worse (negative net_impact), should it influence future confidence negatively (reduce confidence below baseline)? My recommendation: yes — `confidence_boost = log(1 + vectors_count) / log(1 + min_vectors)` only handles positive correlation. We should also apply a penalty multiplier when `meanNetImpact < 0`. But this is an enhancement we can add in Wave 2 without blocking Wave 1.
+
+---
+
+## 6. Ready to Spawn
+
+**Status: YES — ready to spawn.**
+
+All ambiguities resolved. Work items are concrete. No blockers.
+
+
+# Decision: Weight Constants in Cairn (ADR-P4.6-003 Implementation)
+
+**Author:** Alexander (SDK/Runtime Dev)  
+**Date:** 2026-05-03  
+**Status:** Decided  
+**Relates to:** ADR-P4.6-003 (same weights as drift score, single source of truth)
+
+---
+
+## Context
+
+The `computeNetImpact` function in `packages/cairn/src/db/changeVectors.ts` requires the
+same drift-signal weights used by `DRIFT_WEIGHTS` in `packages/forge/src/telemetry/drift.ts`.
+
+ADR-P4.6-003 mandates a single source of truth: if drift weights change, net_impact must
+change with them.
+
+## Problem
+
+Cairn cannot import from Forge. The dependency graph constraint is acyclic: Forge never
+imports Cairn, and Cairn has no `@akubly/forge` dependency in its `package.json`. Adding
+one would introduce a circular dependency (`@akubly/cairn` ← `@akubly/forge` ← ... ← back).
+
+The kickoff doc §2.3/A3 explicitly acknowledged this risk and provided the fallback:
+> "If there's a circular dep risk between cairn and forge, instead define the weight constants
+> in cairn AND add a Laura-checked regression test (L5) confirming they match."
+
+## Decision
+
+**Mirror the constants in Cairn with explicit mapping documentation.**
+
+`packages/cairn/src/db/changeVectors.ts` exports `CHANGE_VECTOR_WEIGHTS` with values
+mirrored from `DRIFT_WEIGHTS`, with the delta-field → drift-signal mapping documented inline:
+
+```typescript
+export const CHANGE_VECTOR_WEIGHTS = Object.freeze({
+  deltaDrift:        0.25,  // DRIFT_WEIGHTS.toolEntropy (drift subsumes entropy)
+  deltaCost:         0.15,  // DRIFT_WEIGHTS.contextBloat (cost ↔ context utilization)
+  deltaSuccessRate:  0.15,  // DRIFT_WEIGHTS.promptStability
+  deltaConvergence:  0.30,  // DRIFT_WEIGHTS.convergence
+  deltaCacheHit:     0.15,  // DRIFT_WEIGHTS.tokenPressure (cache ↔ token efficiency)
+});
+```
+
+## Net-Impact Sign Convention
+
+Deltas are stored as `after - before`. For lower-is-better metrics (drift, cost, convergence),
+a negative delta = improvement. `computeNetImpact` negates these before weighting so that
+**positive net_impact = prescription was beneficial**:
+
+```
+net_impact = -deltaDrift * 0.25
+           + -deltaCost * 0.15
+           + deltaSuccessRate * 0.15
+           + -deltaConvergence * 0.30
+           + deltaCacheHit * 0.15
+```
+
+This makes `meanNetImpact` in `ChangeVectorSummary` directly comparable: positive = good,
+negative = prescription made things worse (Wave 2 penalty hook point).
+
+## Rationale for Rejection of Alternatives
+
+| Alternative | Rejection reason |
+|-------------|-----------------|
+| Import DRIFT_WEIGHTS from forge into cairn | Creates circular dep |
+| Extract weights to `@akubly/types` | Adds coupling for no composability gain; types pkg is for shared types, not algorithmic constants |
+| Pass weights as parameter to computeNetImpact | Over-abstracted; only one caller, weights are stable constants |
+
+## Regression Guard
+
+Laura's **L5 test** (`curatorVectors.test.ts` or dedicated file) must assert:
+```typescript
+// cairn CHANGE_VECTOR_WEIGHTS values match forge DRIFT_WEIGHTS values
+expect(CHANGE_VECTOR_WEIGHTS.deltaConvergence).toBe(DRIFT_WEIGHTS.convergence);    // 0.30
+expect(CHANGE_VECTOR_WEIGHTS.deltaDrift).toBe(DRIFT_WEIGHTS.toolEntropy);          // 0.25
+expect(CHANGE_VECTOR_WEIGHTS.deltaSuccessRate).toBe(DRIFT_WEIGHTS.promptStability); // 0.15
+expect(CHANGE_VECTOR_WEIGHTS.deltaCacheHit).toBe(DRIFT_WEIGHTS.tokenPressure);     // 0.15
+expect(CHANGE_VECTOR_WEIGHTS.deltaCost).toBe(DRIFT_WEIGHTS.contextBloat);          // 0.15
+```
+
+This test imports from both packages from the monorepo root and will fail if either set
+of constants drifts. It is the enforcement mechanism for ADR-P4.6-003.
+
+## Sessions-Observed Proxy
+
+A secondary decision: the Curator sweep uses `execution_profiles.session_count` as the
+proxy for "sessions since hint applied". The `metric_snapshot` stored at hint-generation
+time does not include session count (not in `MetricSnapshot`), so exact delta is not
+available. Using total session count as the minimum guard (≥ minSessionsObserved = 3) is
+conservative and safe: it means vectors are only computed once a skill has at least 3
+sessions, which is the same threshold the prompt optimizer uses for canary decisions.
+The `sessions_observed` field in the inserted row records the actual total session count
+at computation time, giving downstream consumers full context.
+
+
+# R5 — Drift Weight Export Verification + Alexander Coordination
+
+**Author:** Rosella (Plugin Dev)  
+**Date:** 2026-05-03  
+**Status:** Decision documented — no code change needed
+
+---
+
+## Finding
+
+`DRIFT_WEIGHTS` is **already exported** as a named `const` from
+`packages/forge/src/telemetry/drift.ts`:
+
+```typescript
+export const DRIFT_WEIGHTS: Readonly<Record<keyof DriftSignals, number>> = Object.freeze({
+  convergence:    0.30,
+  tokenPressure:  0.15,
+  toolEntropy:    0.25,
+  contextBloat:   0.15,
+  promptStability: 0.15,
+});
+```
+
+No changes required on my side — the single source of truth is in place.
+
+---
+
+## Weight Mapping Note (for Alexander)
+
+The kickoff §2.6 lists net-impact weights as:
+> convergence: 0.30, toolEntropy: 0.25, promptStability: 0.15, cacheHit: 0.15, cost: 0.15
+
+These map to `DRIFT_WEIGHTS` fields as follows:
+
+| net_impact term  | DRIFT_WEIGHTS key | Weight |
+|------------------|-------------------|--------|
+| convergence      | convergence       | 0.30   |
+| toolEntropy      | toolEntropy       | 0.25   |
+| promptStability  | promptStability   | 0.15   |
+| cacheHit         | contextBloat      | 0.15   |
+| cost             | tokenPressure     | 0.15   |
+
+> ⚠️ Note: `cacheHit` delta maps to `contextBloat` weight, and `cost` delta maps
+> to `tokenPressure` weight. The drift score uses context bloat and token pressure
+> as proxies for cache efficiency and cost respectively. Alexander should use the
+> same key ordering in `computeNetImpact` to maintain the single source of truth.
+
+---
+
+## Dependency Decision: cairn↔forge import
+
+**Question:** Should `packages/cairn` import `DRIFT_WEIGHTS` directly from
+`packages/forge`, or duplicate the constants?
+
+**Recommendation:** **Import from forge** if the package dependency already
+exists (cairn uses forge types). If adding a cairn→forge dep creates a circular
+graph, **duplicate the constants** in cairn and rely on Laura's L5 regression
+test to flag divergence.
+
+Alexander should check `packages/cairn/package.json` for the existing dep graph
+before deciding. If he duplicates, he should add a comment pointing at the forge
+source of truth:
+
+```typescript
+// Mirrors DRIFT_WEIGHTS from packages/forge/src/telemetry/drift.ts.
+// Laura's L5 regression test asserts these match — do not edit independently.
+```
+
+---
+
+## Action Items
+
+- **Alexander:** Decide import-vs-duplicate. Either path is acceptable; document
+  in your own inbox decision.
+- **Laura:** L5 regression test should assert that the weights in `computeNetImpact`
+  match `DRIFT_WEIGHTS` from drift.ts — this is the guard regardless of import strategy.
+- **Rosella:** No further action. `DRIFT_WEIGHTS` is exported, discoverable, frozen.
+
+
+# Defect Flag: `summarizeChangeVectors` confidence=0 inconsistency
+
+**From:** Laura (Tester)  
+**Date:** 2026-05-03  
+**Phase:** 4.6 — Change Vector Learning  
+**Severity:** Latent risk (not a production path today)  
+**Assigned to:** Team (Graham to triage)
+
+---
+
+## Summary
+
+`summarizeChangeVectors` returns `confidence: 0` when `vectorCount === 0`,
+but `computeConfidenceBoost(0)` returns `1.0`. These two are inconsistent,
+and the inconsistency can cause silent confidence zeroing if a zero-vector
+summary is ever passed to a prescriber.
+
+---
+
+## Details
+
+### `computeConfidenceBoost(n: number)` (forge, Rosella R1)
+
+```ts
+export function computeConfidenceBoost(vectorCount: number): number {
+  // returns 1.0 when vectorCount === 0 (no evidence → no change)
+  if (vectorCount === 0) return 1.0;
+  // ...
+}
+```
+
+Rosella's design intent: absence of evidence = neutral (multiply by 1.0,
+no modification to existing confidence).
+
+### `summarizeChangeVectors(...)` (cairn, Alexander A3)
+
+```ts
+if (rows.length === 0) {
+  return { vectorCount: 0, meanNetImpact: 0, confidence: 0 };
+}
+```
+
+Alexander's current behavior: absence of vectors → `confidence: 0`.
+
+### The conflict
+
+If a prescriber receives a summary with `confidence: 0` and applies the
+confidence boost formula:
+
+```ts
+hint.confidence *= summary.confidence; // 0 → zeroes out all confidence
+```
+
+Every hint's confidence would be zeroed. This is **not a current production
+path** — the prescribers currently only call `computeConfidenceBoost(summary.vectorCount)`,
+not `hint.confidence *= summary.confidence`. But the inconsistency is a
+latent trap for future developers.
+
+---
+
+## Expected behavior (my read)
+
+When `vectorCount === 0`, `summarizeChangeVectors` should return
+`confidence: 1.0` to match `computeConfidenceBoost(0)`.
+
+OR: the field name should be changed to make the zero-default semantics
+explicit (e.g., `rawConfidence` vs `boost`).
+
+---
+
+## Impact
+
+- **Current production:** No impact. Prescribers call `computeConfidenceBoost(vectorCount)`,
+  not `summary.confidence`.
+- **Latent risk:** Any future code that does `hint.confidence *= summary.confidence`
+  will silently zero confidence when there are no vectors.
+- **Test coverage:** `changeVectors.test.ts` L2 has an `it.todo` for
+  `'summarizeChangeVectors — confidence behavior with vectorCount 0 matches computeConfidenceBoost(0)'`
+  which documents this expected fix.
+
+---
+
+## Suggested resolution
+
+Option A (minimal): Change `confidence: 0` to `confidence: 1.0` in the
+zero-vector branch of `summarizeChangeVectors`.
+
+Option B (clarifying): Rename the field to make the semantic explicit, and
+document the "no vectors = no change" contract in JSDoc.
+
+Option C (defer): Accept the inconsistency as intentional (zero confidence
+= "we have no data, don't trust this hint") and update `computeConfidenceBoost`
+to also return 0 for vectorCount=0. Then the prescriber logic becomes "if
+confidence=0, skip the hint."
+
+---
+
+## Next action
+
+Graham to decide between A/B/C in the next decision meeting. If Option A or
+B is chosen, Alexander to patch `changeVectors.ts` and Laura to upgrade the
+`it.todo` in `changeVectors.test.ts`.
+
+
+# Verdict: `summarizeChangeVectors` confidence=0 inconsistency
+
+**Author:** Graham Knight (Lead / Architect)
+**Date:** 2026-05-03
+**Phase:** 4.6 — Change Vector Learning
+**Triggered by:** Laura's defect flag (`laura-phase4.6-summarize-confidence-zero.md`)
+**Status:** DECIDED
+
+---
+
+## Verdict: B — Rename field to `confidenceBoost`
+
+### Rationale
+
+Aaron's analysis is correct and I'm adopting it. A confidence *level* and a
+confidence *boost* occupy different mathematical spaces:
+
+- **Level** ∈ [0, 1]: "how sure are we?" — 0 = no confidence, 1 = full confidence.
+- **Boost** ∈ ℝ⁺ (multiplicative): "how much should we scale existing confidence?" — 1.0 = identity (no change), >1.0 = amplify, <1.0 = attenuate.
+
+The field is named `confidence` but the JSDoc (my own kickoff doc, §2.3) says
+"log-scaled boost" and `computeConfidenceBoost(0)` returns `1.0`. The field
+name lies about what it contains. That is the root cause — Alexander's `0`
+makes perfect sense *if* confidence is a level, and Rosella's `1.0` makes
+perfect sense *if* confidence is a boost. Both implementations are internally
+consistent; the bug is the ambiguous type definition.
+
+Option A (patch value to 1.0) would fix the symptom but leave the misleading
+name in place — the next developer who reads `confidence: number` will assume
+level semantics and write `if (summary.confidence === 0)` instead of
+`if (summary.confidenceBoost === 1.0)`.
+
+Option C is rejected outright: returning 0 for zero vectors would zero out
+every hint's confidence at cold start (no vectors yet), which defeats the
+canary bootstrap from Phase 4.5. That's a functional regression, not a fix.
+
+### New field name: `confidenceBoost`
+
+Alternatives considered:
+
+| Name | Pros | Cons | Decision |
+|------|------|------|----------|
+| `confidenceBoost` | Self-documenting, matches `computeConfidenceBoost()` function name | Slightly long | **Chosen** |
+| `boostFactor` | Short | Generic — doesn't say *what* it boosts | Rejected |
+| `vectorBoost` | Ties to source data | Doesn't communicate that it scales *confidence* | Rejected |
+
+`confidenceBoost` wins because it mirrors the existing function name
+`computeConfidenceBoost()` — one name, one concept, zero ambiguity.
+
+---
+
+## Files to change
+
+| # | File | Change | Current owner |
+|---|------|--------|---------------|
+| 1 | `packages/forge/src/prescribers/types.ts` | `confidence` → `confidenceBoost` in `ChangeVectorSummary`; update JSDoc | Rosella (R1) |
+| 2 | `packages/cairn/src/db/changeVectors.ts` | `confidence` → `confidenceBoost` in local `ChangeVectorSummary` + `summarizeChangeVectors` return; fix zero-vector case from `0` → `1.0` | Alexander (A3) |
+| 3 | `packages/forge/src/prescribers/promptOptimizer.ts` | `summary.confidence` → `summary.confidenceBoost` | Rosella (R3) |
+| 4 | `packages/forge/src/prescribers/tokenOptimizer.ts` | `summary.confidence` → `summary.confidenceBoost` | Rosella (R4) |
+| 5 | Tests (multiple files) | Update all references to `.confidence` on `ChangeVectorSummary` objects | Laura (L2, L3) |
+
+---
+
+## Fix routing (Reviewer Rejection Protocol §lockout)
+
+The lockout rule: the author of the buggy code may NOT be the one to fix it.
+A different agent must make the correction.
+
+| Code to fix | Written by | Fixed by | Rationale |
+|-------------|-----------|----------|-----------|
+| `packages/cairn/src/db/changeVectors.ts` — rename field + fix `0` → `1.0` | Alexander (A3) | **Rosella** | Alexander wrote the zero-default; lockout applies |
+| `packages/forge/src/prescribers/types.ts` — rename field in interface | Rosella (R1) | **Alexander** | Rosella defined the type; lockout applies |
+| `packages/forge/src/prescribers/promptOptimizer.ts` — update reference | Rosella (R3) | **Alexander** | Same author, same lockout |
+| `packages/forge/src/prescribers/tokenOptimizer.ts` — update reference | Rosella (R4) | **Alexander** | Same author, same lockout |
+| Tests (`changeVectors.test.ts`, `prescribers-vectors.test.ts`, etc.) | Laura | **Laura** | Test updates are Laura's domain regardless of lockout |
+
+**Summary:**
+- **Alexander** fixes: `types.ts`, `promptOptimizer.ts`, `tokenOptimizer.ts` (Rosella's code)
+- **Rosella** fixes: `changeVectors.ts` (Alexander's code)
+- **Laura** fixes: all affected test files
+
+---
+
+## ADR reference
+
+This verdict extends ADR-P4.6-002 (§4 of kickoff doc): the `ChangeVectorSummary`
+type's `confidenceBoost` field carries boost-multiplier semantics with identity
+value 1.0. Prescribers apply it as `hint.confidence *= summary.confidenceBoost`.
+
+---
+
+## Verification criteria
+
+1. `computeConfidenceBoost(0)` returns `1.0` ✓ (already correct, no change needed)
+2. `summarizeChangeVectors(db, cat, skill)` returns `confidenceBoost: 1.0` when vectorCount === 0
+3. No remaining references to `summary.confidence` in prescriber or CRUD code
+4. All existing tests pass after rename
+5. Laura's `it.todo` for "confidence behavior with vectorCount 0 matches computeConfidenceBoost(0)" is upgraded to a passing test
+
+
+
+### 2026-05-01: Phase 4 Export Pipeline Architecture
+
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-01  
+**Type:** Architecture  
+**Status:** Implemented
+
+Phase 4 introduces the Export Pipeline — the third integration seam from the Forge build kickoff. It converts persisted `CairnBridgeEvent`s into certified SKILL.md files with DBOM provenance in YAML frontmatter.
+
+**Key Decisions:**
+
+#### ADR-P4-001: Fixed pure-function pipeline (not plugin architecture)
+Four stages: Extract → Strip → Attach → QualityGate. Pure functions composed by `runExportPipeline()`. Dynamic stage registration rejected as YAGNI.
+
+#### ADR-P4-002: Quality gate as injected function
+`ExportQualityGate` is a function type in Forge. Cairn satisfies it at the call site. Consistent with `createModelCatalog(listFn)` pattern. Forge never imports Cairn.
+
+#### ADR-P4-003: DBOM upsert (replace) semantics
+One DBOM per session. Re-export replaces. Versioned history rejected — no current consumer.
+
+#### ADR-P4-004: Soft quality gate failure
+Gate failure returns `success: false` with the compiled skill still included. Caller decides write policy. DBOM persistence failures are fail-open.
+
+#### ADR-P4-005: No new shared types
+All Phase 4 types stay package-internal. Continues ADR-P3-004 precedent.
+
+**Impact:**
+- **New files:** `packages/forge/src/export/` (5 files), `packages/cairn/src/db/migrations/010-dbom-artifacts.ts`, `packages/cairn/src/db/dbomArtifacts.ts`
+- **Modified files:** `packages/cairn/src/db/schema.ts` (register migration), `packages/forge/src/index.ts` (barrel update)
+- **Tests:** 99 total (62 contract + 37 production)
+
+**Specification:** Full spec at `docs/forge-phase4-spec.md`.
+
+---
+
+### 2026-05-01: Export Pipeline — Function Types over Shared Interfaces
+
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-05-01  
+**Type:** Architecture  
+**Status:** Implemented
+
+Phase 4 export pipeline needs a quality gate that runs Cairn's linter/validator on compiled SKILL.md content. Forge must never import @akubly/cairn directly (acyclic dependency graph constraint).
+
+**Decision:**
+Quality gate is a simple function type `(skillContent: string) => QualityGateResult` defined in `forge/export/types.ts`. The caller (Cairn MCP tool or CLI) wires Cairn's functions into this shape. No shared interface in `@akubly/types`.
+
+All Phase 4 types (`ExportDiagnostic`, `QualityGateResult`, `CompiledSkill`, `SkillFrontmatterInput`, `StageContext`, pipeline config/result types) stay package-internal in forge.
+
+**Rationale:**
+- Only one call site needs this contract — a shared interface in @akubly/types adds coupling for no composability gain.
+- Function types are the simplest contract. If the quality gate signature changes, only forge and the one wiring site update.
+- Consistent with Phase 3 pattern (`createModelCatalog(listFn)`).
+- No new shared types means zero risk of cross-package type churn.
+
+**Impact:**
+- 5 new files in `packages/forge/src/export/`
+- 32 new unit tests, 99 total export tests
+- Forge test count: 326 → 388
+
+---
+
+### 2026-05-01: Export Pipeline Quality Gate Semantics
+
+**Author:** Laura (Tester)  
+**Type:** Test Contract  
+**Status:** Implemented  
+**Date:** 2026-05-01 (updated from 2026-04-30)
+
+Phase 4 export pipeline uses quality gates before emitting a compiled SKILL.md. Now aligned with `docs/forge-phase4-spec.md` §4.4, §4.5, §7.
+
+**Decision (spec-aligned):**
+- Quality gate is an injected `ExportQualityGate = (skillContent: string) => QualityGateResult`
+- `QualityGateResult.passed === false` → `ExportPipelineResult.success = false`
+- Quality gate failure is **fail-closed but soft**: compiled skill is still returned for inspection, `qualityGatePassed = false`
+- DBOM persistence failure is **fail-open**: warning diagnostic, pipeline continues
+- Gate results propagate: `lintErrors`, `lintWarnings`, `validationScore` flow to pipeline result
+- If the quality gate function **throws**, spec §7.1 says catch + diagnostic. Current inline implementation propagates — Roger should add try/catch in production (implemented by Coordinator).
+
+**Key Finding:**
+`validateStage` did NOT catch exceptions from the injected quality gate. Spec §7.1 explicitly says "Catch + diagnostic" for this case. Test documents this gap — production `validateStage` must wrap the gate call in try/catch. **Coordinator fixed in production implementation.**
+
+**Impact:**
+- 62 contract tests + 37 production tests in `export.test.ts` (99 total)
+- `ExportQualityGate` replaces the old `CairnToolkit` interface (simpler, one function vs five)
+- Forge never imports `@akubly/cairn` — gate is wired at call site per §5.2
+- All 99 tests passing (100%)
+
+---
+
+### 2026-04-30: Event Dedup Guard — bridgeAttached flag
+
+**Author:** Alexander (SDK/Runtime Dev)
+**Type:** Defensive Correctness
+**Status:** Implemented
+
+ADR-P3-005 defines dual event paths: `SessionConfig.onEvent` captures events during `createSession()` (before `session.on()` is wired), and `session.on()` captures events after `ForgeSession` construction. Design reviewers independently flagged that if the SDK fires events via `onEvent` after `createSession` resolves — during the gap before `ForgeSession` wires `session.on()` — both paths would emit the same event, causing duplicate `CairnBridgeEvent`s. This corrupts `TokenTracker` accumulation and `DBOM` reconstruction.
+
+Added a `bridgeAttached` boolean flag in `ForgeClient.createSession()`. The `onEvent` closure checks this flag and returns early if `true`. The flag is set immediately before `ForgeSession` construction (which wires `session.on()` in its constructor).
+
+**Alternatives Considered:**
+1. Hash-based dedup (eventId or type+timestamp LRU) — More robust against unknown overlap patterns, but adds complexity (LRU cache, hash computation) for a problem that has a clean temporal boundary. Rejected as over-engineering for a Technical Preview SDK.
+2. No guard — Relies on SDK honoring the non-overlapping window contract. Rejected because the SDK has shipped 52 versions in 3 months — behavioral contracts are unstable.
+
+**Impact:**
+- `packages/forge/src/runtime/client.ts` — ~4 LOC added (flag declaration, check, set)
+- `packages/forge/src/__tests__/runtime.test.ts` — 2 new tests (overlap prevention + pre-bridge capture confirmation)
+- All 289 tests pass, zero regressions
+
+---
+
+### 2026-04-29: Mock Session Unsubscribe Semantics
+
+**Author:** Laura (Tester)
+**Type:** Test Infrastructure
+**Status:** Observation
+
+While writing L6 Token Tracker integration tests, the shared mock session's `on()` returns a no-op unsubscribe function. This works fine for ForgeSession's bridge wiring (which only uses unsubscribe at disconnect time, where the whole session is torn down), but breaks any test that needs to verify real unsubscribe behavior — the handler keeps firing after "unsubscribing."
+
+For tests requiring real unsubscribe semantics, build a dedicated `EventSource` adapter with `Set<handler>`-based subscribe/unsubscribe rather than trying to enhance the mock session. The mock session is designed for ForgeSession/ForgeClient lifecycle testing; the EventSource interface is the correct abstraction for lower-level eventing tests.
+
+**Impact:** No changes to shared helpers needed. This is a documented pattern for future test authors: when testing event unsubscription, build a standalone EventSource, don't use `createMockSession()`.
+
+---
+
+### 2026-04-29: HookComposer Uses Live Observer Set
+
+**Author:** Alexander (SDK/Runtime Dev)
+**Type:** Architecture
+**Status:** Implemented
+
+HookComposer class holds a live `Set<HookObserver>`. The `compose()` method returns hooks that reference the live set, so add/remove after composition takes effect on the next hook invocation without re-registering with the SDK.
+
+**Tradeoffs:**
+- **Pro:** Dynamic observer management without SDK re-registration — critical for decision gates added/removed mid-session.
+- **Pro:** Each `add()` returns a dispose function — clean RAII-style cleanup.
+- **Con:** Slightly more complex than a pure function; the composed hooks capture `this`.
+- **Accepted:** Complexity justified because Cairn's architecture requires dynamic gate registration.
+
+**Affects:**
+- `packages/forge/src/hooks/index.ts`
+- Any future code that registers decision gates or telemetry observers mid-session
+
+---
+
+### 2026-04-28: Forge Test Infrastructure Pattern
+
+**Author:** Roger Wilco (Platform Dev)
+**Type:** Infrastructure
+**Status:** Implemented
+
+Forge test infrastructure uses SDK mocks rather than live CLI integration for all unit tests.
+
+**Three Test Helper Modules:**
+1. **mock-sdk** — `createMockSession()` / `createMockClient()` with `vi.fn()` stubs and `_emit()` for event dispatch testing.
+2. **event-factory** — Type-safe `SessionEvent` builders for all 6 core event types.
+3. **type-assertions** — Runtime shape validation for `CairnBridgeEvent` conformance.
+
+**Rationale:**
+- SDK requires running Copilot CLI process for real sessions — unit tests must be offline.
+- Event factory ensures tests use correctly-typed SDK events without fragile manual construction.
+- Type assertion helpers serve double duty: test validation now, production runtime guards later.
+
+**Rule:** All Forge tests must import from `./helpers/index.js`. No test may instantiate `CopilotClient` or `CopilotSession` directly.
+
+---
+
+### 2026-04-28: Hook Composer Must Isolate Observer Errors
+
+**Author:** Laura (Tester)
+**Type:** Implementation Requirement
+**Status:** Implemented
+
+The production `composeHooks` implementation MUST wrap each observer call in try/catch, logging errors but continuing to the next observer.
+
+**Context:**
+Spike's `composeHooks` propagates errors — if one observer's `onPreToolUse` throws, subsequent observers never run. This is dangerous in production: a buggy telemetry observer would kill the decision gate observer, silently removing safety checks.
+
+**Implementation:**
+Each observer call wrapped in try/catch. Errors logged but don't prevent subsequent observers from running.
+
+**Test Coverage:**
+- `"one observer throwing does not kill others"` — verifies isolated behavior (passing)
+- `"spike composeHooks propagates errors"` — documents the spike's known gap (baseline)
+
+**Impact:**
+Telemetry observers are now safe in production. Error in one observer cannot cascade to disable decision gates or other critical observers.
+
+---
+
+### 2026-04-28: Alexander — SDK Interface Types for Runtime Module
+
+**Author:** Alexander (SDK/Runtime Dev)  
+**Type:** Architecture  
+**Status:** Implemented
+
+ForgeClient and ForgeSession depend on thin interface types (`SDKClient`, `SDKSession`) rather than importing CopilotClient/CopilotSession classes directly.
+
+**Rationale:**
+1. **Testability** — Mock objects from the test helpers satisfy the interface without needing the real SDK classes (which require a running Copilot CLI process).
+2. **SDK churn isolation** — If the SDK adds/removes methods, only the interface definitions need updating, not every consumer.
+3. **Dependency inversion** — The runtime module is constructor-injected with an `SDKClient`, making it composable and mockable at every level.
+
+**Tradeoffs:**
+- **Pro:** Tests run offline, no SDK instantiation needed.
+- **Pro:** SDK method additions don't break existing code until we choose to adopt them.
+- **Con:** Must manually keep interfaces in sync with the SDK surface we actually use.
+- **Accepted:** The interface surface is small (~5 methods on SDKClient, ~5 on SDKSession), so maintenance cost is negligible.
+
+**Affects:**
+- `packages/forge/src/runtime/client.ts` — `SDKClient` interface
+- `packages/forge/src/runtime/session.ts` — `SDKSession` interface
+- All test code that uses `createMockClient()` / `createMockSession()`
+
+---
+
+### 2026-05-01T18:14:00Z: Phase 4.5 Local Feedback Loop — Aaron's Scope Decisions
+
+**Author:** Aaron Kubly (via Copilot)  
+**Date:** 2026-05-01T18:14:00Z  
+**Type:** Direction / Scope  
 **Status:** Active
 
-Always use Claude Opus 4.6 (1M context) model for agents that might have large contexts. Ensures agents working on substantive tasks have the full 1M token context window available.
+Phase 4.5 brainstorm Round 2 follow-up captured six major decisions:
+
+#### 1. Loop Trigger Model
+- **Forge:** Feedback loop is deliberate (manual) — user-initiated review of prescriptions
+- **Cairn:** Feedback loop is automatic — pattern detection triggers prescription generation
+
+#### 2. Profile Granularity
+All four levels are viable and serve different purposes:
+- **Per-skill:** Improves artifacts directly
+- **Per-user:** Surfaces human insights (Cairn's core mission)
+- **Per-model:** Exploratory/feedback data for determining best model per task
+- **Global:** Dashboard of overall trends ("proving our pudding")
+
+#### 3. Cold Start Strategy
+Canary bootstrap is the natural choice. Training sessions deferred to Phase 4.75.
+
+#### 4. Ancestry Graph Optimization Exploration
+- Track prescription ancestry (which changes caused which drift)
+- Derive heuristics about what types of changes cause directional drift
+- Long-term: graph math for intelligent exploration of metric space
+- Detect local optima via convergence patterns
+- When wild cards come online (self-annealing, genetic programming), use graph to introduce evolutions and escape local maxima
+
+#### 5. Feedback Loop Frequency — Maximum Detail Preferred
+Aaron's prior stance: "Why would we not want as much detail as possible?" The tradeoffs need to be articulated explicitly before any future pruning decisions.
+
+#### 6. Wild Card Ideas
+All six wild cards from brainstorm are approved as future backlog items:
+1. Time-Travel Debugging (rewind state to any decision point, replay with different model/parameters)
+2. Predictive Cache Warming (pre-fetch likely-needed artifacts before user requests)
+3. Self-Annealing Prescriptions (feedback loop automatically re-ranks prescriptions)
+4. Genetic Programming Ancestry (crossover + mutation of decision graphs)
+5. Karpathy Wiki Integration (encode knowledge graph as executable wiki)
+6. Adaptive Skill Ranking (vector-based skill retrieval with user feedback)
+
+**Rationale:** Team decisions from Phase 4.5 brainstorm follow-up — captured for team memory. Cascades to Phase 4.5 implementation planning, Phase 5 canary configuration, and Phase 6+ feature backlog.
+
+**Impact:**
+- Ancestry tracking: 200 LOC MVP planned for Phase 4.5
+- Caching strategy: 4-layer hierarchy (L1 in-memory → L2 session → L3 short-TTL → L4 long-TTL)
+- Vector search: Deferred to Phase 4.75 (non-blocking)
+- Graph storage: Recursive CTEs in SQLite for ancestry queries
+- Max detail: Capture everything, filter on read (downstream filtering strategy)
 
 ---
 
-### 2026-03-28: Copilot Extensibility Architecture — Plugin System as Primary Distribution Unit
+### 2026-04-30T22:25:00Z: Phase 5 (PGO Telemetry) Deferred — Budget & Data Protection
+
+**Author:** Aaron Kubly (via Copilot)  
+**Date:** 2026-04-30T22:25:00Z  
+**Type:** Scope / Risk  
+**Status:** Active
+
+Phase 5 (PGO Telemetry) is deferred as future work.
+
+**Reasons:**
+1. **Azure budget constraints** — Application Insights is expensive. Cost-benefit unclear until Phase 4.5 canary metrics available.
+2. **Corporate data protection** — Requirements for emitting telemetry from work environments must be resolved before telemetry collection begins. Legal review pending.
+
+**Timeline:** Revisit for Phase 4.75 (post-canary) if budget approved and compliance cleared.
+
+**Impact:** Phase 5 planning deferred. Phase 4.5 canary proceeds without integrated telemetry pipeline; manual metrics collection via CLI query tools only.
+
+---
+
+## Governance
+
+- All meaningful changes require team consensus
+- Document architectural decisions here
+- Keep history focused on work, decisions focused on direction
+
+---
+### 2026-05-02: Phase 4.5 Architecture — Local Feedback Loop
+
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-02  
+**Type:** Architecture  
+**Status:** Proposed
+
+Phase 4.5 introduces the Local Feedback Loop — a profile-guided optimization engine that runs entirely on local SQLite. Sessions produce telemetry → collectors aggregate signals → prescribers generate optimization hints → the applier writes improved SKILL.md v2 artifacts.
+
+**Key Decisions:**
+
+#### ADR-P4.5-001: Collectors as HookObservers, not a separate event bus
+Telemetry collectors implement `HookObserver` and register via `ForgeSession.addObserver()`. No separate telemetry pipeline. Collectors see the same event stream as decision gates. O(1) per event, defer analysis to flush.
+
+#### ADR-P4.5-002: Three tables, not one universal signal table
+Separate `signal_samples`, `execution_profiles`, and `optimization_hints` tables. Each has different access patterns and indexes. Same reasoning as Phase 4's separate `dbom_artifacts`/`dbom_decisions`.
+
+#### ADR-P4.5-003: TTL and row caps enforced by Curator, not DB triggers
+7-day TTL and 10K row cap on `signal_samples` managed by Curator's existing sweep mechanism. Consistent with existing patterns, avoids synchronous trigger overhead on INSERT.
+
+#### ADR-P4.5-004: Fixed drift weights, not learned
+Drift signal weights are constants (convergence: 0.30, toolEntropy: 0.25, tokenPressure: 0.15, contextBloat: 0.15, promptStability: 0.15). Determinism signals get 70% total weight per Aaron's "Determinism > Token Cost" constraint.
+
+#### ADR-P4.5-005: FeedbackSource as new shared type
+`FeedbackSource` added to `@akubly/types`. First new shared type since Phase 2. Justified: both Forge (session start) and Cairn (Curator) consume this contract.
+
+#### ADR-P4.5-006: Manual loop trigger in Forge, Curator-driven in Cairn
+Forge caller controls `compute()` and `getSink()` invocation timing. Cairn's Curator drives feedback loops via session start + periodic checks. Manual in Forge (library control), autonomous in Cairn (always-on platform).
+
+---
+
+## Phase 4.5 Implementation Decisions (Session 2026-05-02T04:35:00Z)
+
+### 2026-05-02: Phase 4.5 DB CRUD modules use the singleton `getDb()` pattern
+
+**Author:** Alexander (SDK/Runtime Dev)
+**Date:** 2026-05-02
+**Type:** Convention
+**Status:** Implemented
+
+#### Context
+
+The Phase 4.5 spec asked for three new CRUD modules in `packages/cairn/src/db/`
+covering signal samples, execution profiles, and optimization hints. The task
+brief suggested each module export pure functions accepting a
+`Database.Database` parameter. Every existing CRUD module in `packages/cairn/src/db/`
+(including the named reference, `dbomArtifacts.ts`) uses the singleton
+`getDb()` pattern, and the test harness depends on it via
+`beforeEach: closeDb(); getDb(':memory:')`.
+
+#### Decision
+
+The three new modules — `signalSamples.ts`, `executionProfiles.ts`,
+`optimizationHints.ts` — call `getDb()` internally rather than accepting a
+`Database.Database` argument. This matches every other CRUD module in the
+package and lets the existing test harness work unmodified.
+
+#### Rationale
+
+- **Consistency** — Mixing two patterns in `packages/cairn/src/db/` would force
+  every future contributor to ask which one applies.
+- **Test reuse** — The `closeDb(); getDb(':memory:')` lifecycle is the package
+  convention. New tests for these modules use it directly, no plumbing.
+- **Reversibility** — If we ever need DI for cross-DB scenarios, refactoring
+  the whole `db/` layer in one pass is cleaner than gradually drifting toward
+  it module-by-module.
+
+#### Impact
+
+- 3 new CRUD modules + migration 011 + 40 new tests, all green.
+- Existing tests asserting `schema_version` count/max (`db.test.ts`,
+  `discovery.test.ts`, `prescriptions.test.ts`) bumped from 10 → 11.
+- **Note for downstream consumers (Curator):** TTL sweep and row cap
+  enforcement live on the Curator, not in the DB. `sweepSignalSamples(cutoffIso)`
+  and `enforceSignalSampleCap(cap)` are the primitives to schedule.
+
+---
+
+### 2026-05-02: Phase 4.5 feedback-loop test strategy
+
+**Author:** Laura (Tester)
+**Date:** 2026-05-02
+**Status:** Implemented
+
+#### Context
+
+Phase 4.5 ships a closed feedback loop: collectors → sink → aggregator →
+prescribers → applier → (operator updates skill) → improved next cycle. The
+loop is causally complete only when an operator actually edits a SKILL.md and
+re-runs sessions. In tests, we cannot close that loop with real model calls.
+
+#### Decision
+
+Adopt **process-invariant testing** for the feedback loop, codified in
+`feedback-loop.test.ts`:
+
+1. **Convergence is asserted by *response curve*, not by terminal state.**
+   We assert that hint count is monotone non-increasing as profile drift
+   decreases across simulated cycles, and that the maximum impact score is
+   likewise non-increasing. We do not assert "the system reaches GREEN" —
+   that depends on the operator.
+
+2. **The operator's effect is simulated at the profile level.** Each "next
+   cycle" feeds the prescriber a profile whose drift mean is lower than the
+   previous cycle's. We are testing the system's *response* to improving
+   inputs, not the operator's quality.
+
+3. **Efficiency bounds are intentionally generous.** Hot-path collectors are
+   capped at 250ms / 10k events (vs. spec implication of ~25µs/event). Tight
+   enough to catch O(N) regressions, loose enough to survive CI variability.
+
+4. **Property-based tests use an in-file LCG, not fast-check.** Keeps the
+   test suite zero-dep and reproducible. Coverage is sufficient for the
+   small-dimensional invariants we care about (drift score bounds,
+   classification monotonicity, aggregator commutativity).
+
+#### Implications for Other Agents
+
+- **Alexander / runtime:** if any collector implementation regresses to per-
+  event O(N) (e.g., recomputing entropy from a growing list), the L5 tests
+  will catch it before it ships.
+- **Roger / sink:** the L2 integration test exercises `enqueueSample` at
+  buffer-size 1 and 16 and asserts every sample reaches `persistSample`.
+  Future sinks (e.g., AppInsightsSink) should pass the same shape of test.
+- **Anyone touching the drift gate:** §11.4 metamorphic test pins the gate
+  at >= 0.3 and probes 0.1 / 0.3 / 0.5. Moving the threshold requires
+  updating that test in lockstep.
+
+#### Alternatives Considered
+
+- **Run real Copilot CLI sessions in CI:** rejected — too slow, too flaky,
+  and would obscure regressions in the loop logic itself behind model noise.
+- **Add fast-check for property tests:** rejected for now — current
+  invariants are simple enough that an LCG suffices, and the dependency
+  cost outweighs the marginal coverage gain.
+- **Snapshot the applier output:** rejected — snapshots would lock in
+  *artifacts* (hint text, counts) rather than *processes*. A snapshot would
+  fire on every recommendation-string tweak.
+
+---
+
+### 2026-05-02: Promote ExecutionProfile / ProfileGranularity to @akubly/types alongside FeedbackSource
+
+**Author:** Roger Wilco (Platform Dev)
+**Date:** 2026-05-02
+**Type:** Architecture
+**Status:** Implemented (Phase 4.5)
+
+#### Context
+
+Spec §9.3 declares `FeedbackSource` as the first new shared type in
+`@akubly/types` since Phase 2. The interface signature references
+`ExecutionProfile`, `ProfileGranularity`, `OptimizationHint`, and
+`StrategyParameters` — types the spec otherwise defines inside
+`packages/forge/src/telemetry/` and `packages/forge/src/prescribers/`.
+
+`@akubly/types` cannot depend on `@akubly/forge` (acyclic dependency graph,
+ADR-P4-002), so `FeedbackSource` cannot literally use forge-private types.
+
+#### Decision
+
+Two of the four referenced types are now defined in `@akubly/types`:
+
+- `ProfileGranularity` — string union, fully shared.
+- `ExecutionProfile` — full structural definition (drift / tokens / outcomes
+  blocks). `packages/forge/src/telemetry/types.ts` re-exports them so forge
+  code retains a single import path.
+
+The remaining two are defined as **open-shaped** interfaces in `@akubly/types`:
+
+- `OptimizationHint` — required keys (`id`, `source`, `skillId`, `category`,
+  `description`) plus `[key: string]: unknown` for prescriber-specific fields.
+- `StrategyParameters` — pure `[key: string]: unknown` map.
+
+Concrete prescribers extend these without forcing schema changes in
+`@akubly/types`.
+
+#### Rationale
+
+- `ExecutionProfile` is genuinely shared: Cairn's curator and prescribers
+  both need to read profiles produced by Forge. Putting it in `@akubly/types`
+  matches its actual lifetime as a cross-package contract.
+- Open-shaped `OptimizationHint` / `StrategyParameters` honour the
+  ADR-P4-005 "minimum shared types" instinct. The required keys are the
+  invariant identity (every hint has an id, source, skill, category,
+  description); everything else varies by prescriber.
+- This avoids two anti-patterns: (1) widening `FeedbackSource` to use
+  `unknown` everywhere (kills compile-time safety), and (2) duplicating the
+  hint/strategy schemas across packages (kills the contract).
+
+#### Impact
+
+- `packages/types/src/index.ts` — +5 exports (`ProfileGranularity`,
+  `ExecutionProfile`, `OptimizationHint`, `StrategyParameters`,
+  `FeedbackSource`). No removals, no breaking changes.
+- Forge's `telemetry/types.ts` re-exports `ProfileGranularity` and
+  `ExecutionProfile` so `import { ExecutionProfile } from "../telemetry/types.js"` keeps working.
+- Tests: 826 baseline → 954 passing (forge 476 + cairn 478). Telemetry
+  module contributes 56 of the new tests.
+
+#### Follow-ups for the team
+
+1. **Spec event-type mismatch (for Graham / wiring task):** spec §9.4 names
+   `tool_call_started`, `usage_reported`, `turn_completed`,
+   `session_completed`, `tool_call_failed`. The bridge `EVENT_MAP` uses
+   `tool_use`, `model_call`, `turn_end`, `session_end`. The collectors are
+   coded to the spec strings; wiring will need either a remapper at the
+   collector boundary or an `EVENT_MAP` extension.
+2. **Convergence formula (for Graham):** `convergedTurn / turnCount` is
+   degenerate at typical session shapes (always 1.0 when `session_completed`
+   arrives last). Worth a redesign before Phase 5 — perhaps
+   `convergedTurn / expectedTurns` against a per-skill expected-turns
+   parameter from `StrategyParameters`.
+
+---
+
+### 2026-05-02: Phase 4.5 Prescribers + Applier — Determinism Mechanisms
+
+**Author:** Princess Rosella (Plugin Dev)
+**Date:** 2026-05-02
+**Type:** Architecture / Implementation
+**Status:** Implemented (S1–S8)
+
+#### Context
+
+The Phase 4.5 spec (§3–§4) prescribes the prescriber → applier pipeline and
+states the ordering rule "Determinism > Token Cost (Aaron's constraint)" as
+prose. While implementing, I had to choose how strongly to encode that
+constraint. Two options:
+
+1. **Soft prioritization** — token optimizer always runs, but its hints carry
+   lower impact scores than prompt-optimizer hints.
+2. **Hard gate** — token optimizer returns an empty hint set entirely when
+   drift is RED, regardless of cache/cost signals.
+
+#### Decision
+
+I chose **(2) hard gate**, exposed as ``TokenOptimizerConfig.driftGate``
+(default ``0.3``). ``analyzeTokenOptimizations`` exits early with no hints when
+``profile.drift.mean >= driftGate``. This matches the spec text at line 933
+("Guard: Don't optimize tokens if drift is RED — fix determinism first") and
+makes the constraint structurally enforced rather than score-balancing
+dependent.
+
+I also made the **applier order-stable**: sort key is
+``(impactScore desc, id asc)``. Without the id tiebreaker, two hints with
+identical impact scores could swap positions across runs depending on input
+order, breaking SKILL.md compilation reproducibility.
+
+#### Other team-relevant choices
+
+- ``DEFAULT_STRATEGY_PARAMS`` is ``Object.freeze``-d. Cross-package consumers
+  (Cairn, runtime, future loop-driver) cannot mutate it accidentally.
+- ``EXPLORATION_FLOOR = 0.15`` is a module constant, not a config knob.
+  Aaron's directive ("diminishing returns worth it when scaled across future
+  of software engineering") means this is policy, not preference.
+- ``ApplierConfig.now: () => Date`` is injectable for deterministic tests of
+  ``frontmatterPatch.optimizationHints[].appliedAt``. The export pipeline can
+  use this to thread its own clock if it ever needs to backdate patches.
+- ``cacheableTools`` extraction reads from ``evidence.triggerMetrics`` keys
+  prefixed with ``tool:`` and an optional ``evidence.cacheableTools`` array.
+  Forward-compatible with telemetry adding tool-level signals — Roger and I
+  should align on which path becomes canonical when the loop-driver lands.
+
+#### Implications
+
+- **Cairn / loop-driver:** When feeding hints back through the loop, expect
+  zero token-optimization hints during RED drift periods — this is by design,
+  not a bug. Test fixtures should not assume token hints are always present.
+- **Export pipeline (Phase 4):** ``SkillFrontmatterPatch`` is the contract
+  between applier and ``attachStage``. Adding new patch fields requires
+  coordinated changes here.
+- **Telemetry team (Roger):** ``ExecutionProfile`` shape is now relied upon
+  by both telemetry and prescribers. Changes to drift/tokens/outcomes nesting
+  will ripple into 27 prescriber tests.
+
+#### Verification
+
+- ``npm run build --workspace=@akubly/forge`` passes.
+- 27 new tests in ``packages/forge/src/__tests__/prescribers-applier.test.ts``
+  all pass (mechanism × determinism × metamorphic).
+- 475/476 forge tests pass overall. The one unrelated failure
+  (``telemetry-collectors.test.ts > classifies ... as GREEN``) is in
+  Roger's collectors module and predates my work.
+Forge is the development tool (human in loop). Cairn is autonomous (Curator decides). Shared analysis logic, two trigger paths.
+
+#### ADR-P4.5-007: Determinism > Token Cost ordering
+All prescriber priority, drift weights, and optimization ordering enforces determinism first. Token optimizer gates on drift level — won't prescribe if drift is RED. This is Aaron's design constraint, not a decision.
+
+**Impact:**
+- **New files:** `packages/forge/src/telemetry/` (6 files), `packages/forge/src/prescribers/` (4 files), `packages/forge/src/applier/` (3 files), `packages/cairn/src/db/migrations/011-telemetry-feedback.ts`, 3 new CRUD modules
+- **Modified files:** `packages/cairn/src/db/schema.ts`, `packages/forge/src/index.ts`, `packages/types/src/index.ts` (FeedbackSource)
+- **Estimated LOC:** ~1200 production + ~600-800 tests
+- **Estimated tests:** 61-80
+
+**Specification:**
+- Full spec: `docs/forge-phase4.5-spec.md`
+- Roadmap (4.6/5): `docs/forge-phase5-roadmap.md`
+  title: 'List Prescriptions',
+  description:
+    'List improvement suggestions the Prescriber has generated from detected patterns. ' +
+    'Filter by lifecycle status or see all. Each result includes confidence level in plain ' +
+    'language and a hint about pending suggestions worth reviewing. ' +
+    'Use this after completing a task to check for improvement opportunities.',
+  inputSchema: {
+    status: z.enum([
+      'generated', 'accepted', 'rejected', 'deferred',
+      'applied', 'failed', 'expired', 'suppressed'
+    ]).optional()
+      .describe('Filter by lifecycle status. Omit to return all statuses.'),
+    limit: z.number().int().min(1).max(50).default(10)
+      .describe('Maximum results to return (default 10).'),
+  },
+  annotations: { readOnlyHint: true },
+}, handler);
+```
+
+#### New Tool: `get_prescription`
+
+```typescript
+server.registerTool('get_prescription', {
+  title: 'Get Prescription',
+  description:
+    'Get full detail about a specific improvement suggestion, including the pattern ' +
+    'that triggered it, what Cairn observed, the suggested change, where it would be ' +
+    'applied, and a diff preview. Use this to understand a suggestion before deciding.',
+  inputSchema: {
+    prescription_id: z.number().int().positive()
+      .describe('The prescription ID to retrieve.'),
+  },
+  annotations: { readOnlyHint: true },
+}, handler);
+```
+
+#### New Tool: `resolve_prescription`
+
+```typescript
+server.registerTool('resolve_prescription', {
+  title: 'Resolve Prescription',
+  description:
+    'Act on an improvement suggestion: accept (applies the change), reject (dismisses ' +
+    'permanently), or defer (revisit later). Rejection is the simplest action — no reason ' +
+    'required. Acceptance applies the change to a sidecar instruction file. ' +
+    'Deferral sets a cooldown before the suggestion resurfaces.',
+  inputSchema: {
+    prescription_id: z.number().int().positive()
+      .describe('The prescription to act on.'),
+    disposition: z.enum(['accept', 'reject', 'defer'])
+      .describe('How to resolve: accept (apply change), reject (dismiss), defer (revisit later).'),
+    reason: z.string().optional()
+      .describe('Optional reason for rejection or deferral. Helps Cairn learn preferences.'),
+  },
+  annotations: { readOnlyHint: false },
+}, handler);
+```
+
+#### New Tool: `show_growth`
+
+```typescript
+server.registerTool('show_growth', {
+  title: 'Show Growth',
+  description:
+    'See a summary of patterns Cairn has helped resolve and overall improvement trends. ' +
+    'Leads with wins — shows resolved patterns first, then active ones. ' +
+    'Uses natural language, not percentages. Use this to reflect on progress.',
+  annotations: { readOnlyHint: true },
+}, handler);
+```
+
+#### Modified Tool: `run_curate` (DP1)
+
+Updated description:
+```typescript
+description:
+  'Trigger the curator to process unprocessed events and discover patterns. ' +
+  'The curator scans the event stream for recurring errors, error sequences, ' +
+  'and skip frequency, then creates or reinforces insights with prescriptions. ' +
+  'Also generates new improvement suggestions when insights are created or reinforced. ' +
+  'Returns the number of events processed, insights discovered, and any new suggestions. ' +
+  'Use this when you want fresh analysis of recent activity.',
+```
+
+---
+
+## Dependency Graph
+
+```
+7A ─────────────────────────────────────────────────┐
+│                                                    │
+├──→ 7B (Artifact Discovery) ──┬──→ 7D (Prescription Engine) ──┐
+│                               │                                │
+├──→ 7C (Infrastructure) ──────┤──→ 7E (Apply Engine) ──────────┤
+│                               │                                │
+└───────────────────────────────┘               7F (MCP + UX) ◄─┘
+```
+
+- **7A** has no dependencies (foundation)
+- **7B, 7C** depend only on 7A (can run in parallel)
+- **7D, 7E** depend on 7A + 7B (can run in parallel after 7B)
+- **7F** depends on 7C + 7D + 7E (final integration phase)
+
+**Critical path:** 7A → 7B → 7D → 7F  
+**Parallel opportunities:** 7B ∥ 7C, then 7D ∥ 7E
+
+---
+
+## Execution Schedule
+
+| Phase | Owner | Depends On | Parallel With | Est. New Tests |
+|-------|-------|------------|---------------|----------------|
+| 7A | Roger | — | — | ~25 |
+| 7B | Rosella | 7A | 7C | ~20 |
+| 7C | Gabriel | 7A | 7B | ~10 |
+| 7D | Roger | 7A, 7B | 7E | ~25 |
+| 7E | Rosella | 7A, 7B | 7D | ~15 |
+| 7F | Roger + Valanice | 7C, 7D, 7E | — | ~20 |
+| **Total** | | | | **~115** |
+
+**Final test count target:** ~250 (134 existing + ~115 new)
+
+---
+
+## Acceptance Criteria
+
+The Prescriber is complete when:
+
+1. ✅ `run_curate` chains `prescribe()` automatically when insights change
+2. ✅ `preToolUse` chains `prescribe()` at session start when insights change
+3. ✅ `curate()` respects 3-second time budget
+4. ✅ 8-state lifecycle enforced in DB and code
+5. ✅ 4 new MCP tools registered and functional
+6. ✅ Full 4-phase artifact scanner with 5-minute SQLite cache
+7. ✅ All 10 UX principles verifiable in tool output
+8. ✅ Sidecar instruction files written (not user-owned files modified)
+9. ✅ managed_artifacts tracks all Prescriber-written files
+10. ✅ Rollback capability functional
+11. ✅ Drift detection via checksum comparison
+12. ✅ 7 preference keys configurable
+13. ✅ Deferral cooldown (3 sessions default)
+14. ✅ Auto-suppression after 3 deferrals
+15. ✅ Growth tracking via `show_growth`
+16. ✅ All existing 134 tests still pass
+17. ✅ ~115 new tests pass
+18. ✅ Clean build, clean lint
+19. ✅ Dogfooded: Aaron has accepted ≥1 real prescription
+
+
+---
+
+## Phase 7D Decisions — Roger
+
+### recencyWeight Capped at 1.0
+
+The spec formula Math.max(0.5, 1.0 - (sessionsAgo - 5) * (0.5 / 15)) produces values >1.0 when sessionsAgo < 5. Added Math.min(1.0, ...) to match the spec description "1.0 within 5 sessions, decays to 0.5 by 20 sessions."
+
+**Impact:** Priority scores are bounded [0, 1.0] as expected. No bonus for very recent insights.
+
+### Event Logging is Fail-Soft
+
+logEvent() requires a FK-valid session ID. The prescriber looks up the most recent active session from the DB. If none exists (e.g., during sessionStart before the new session is created), event logging is silently skipped.
+
+**Rationale:** Prescriber runs in two contexts: (1) sessionStart (before new session exists) and (2) MCP run_curate (session may exist). Logging is informational, not critical. Fail-soft is consistent with the project's fail-open philosophy.
+
+**Impact:** Phase 7F tools that read prescription events should be aware that some prescription_generated events may be missing for prescriptions generated during session startup.
+
+### shouldResurface Compensates for Session Counter Timing
+
+incrementSessionCounter() runs AFTER prescribe() in sessionStart.ts. The shouldResurface() function uses currentSession + 1 >= deferUntilSession to compensate, so deferral cooldowns are honored correctly.
+
+**Impact:** Deferral cooldowns are accurate. Phase 7F should use the same shouldResurface() function if needed.
+
+### Rejected Prescriptions Block Re-Prescription
+
+'rejected' is added to the set of statuses that prevent generating a new prescription from the same insight. An insight with a rejected prescription won't be re-prescribed until the rejected prescription is manually expired or the insight itself changes.
+
+**Rationale:** Rejected is terminal per the spec. Without this, rejected insights would get re-prescribed on every prescribe() run, spamming the user.
+
+**Impact:** If a user rejects a prescription but later wants to reconsider, they'll need to explicitly re-enable (possibly via unsuppress or manual expiration in Phase 7F).
+
+### checkAutoSuppress Exported for Phase 7F
+
+The auto-suppression check (deferCount >= threshold → suppress) is exported as checkAutoSuppress(prescriptionId, deferCount). Phase 7F's resolve_prescription MCP tool should call this after each deferral.
+
+**Impact:** Phase 7F must call checkAutoSuppress() after deferPrescription() in the defer flow.
+
+---
+
+## Phase 7E Decisions — Rosella
+
+### LIFO Rollback for Multi-Prescription Sidecars
+
+**Context:** managed_artifacts has UNIQUE(path). Multiple prescriptions can append to the same sidecar file, but only one row can exist per path.
+
+**Decision:** When appending, remove the old managed_artifact row and re-track with the latest prescription's ID. Rollback only supports the latest writer (LIFO). Rolling back a middle prescription in a multi-append stack is not supported in this phase.
+
+**Rationale:** The existing schema supports this cleanly. Full multi-level undo would require a separate history table — overkill for Phase 7E scope. If needed later, we add a managed_artifact_history table.
+
+### File-Based Drift Detection
+
+**Context:** The DAL's detectDrift() compares original_checksum vs current_checksum in the DB only — it doesn't read disk.
+
+**Decision:** checkDrift() in applier.ts reads the actual file, computes SHA-256, and compares to stored current_checksum. This is the on-disk drift check. The DAL function is for DB-internal consistency.
+
+**Rationale:** Users need to know if someone hand-edited the sidecar file. That requires a disk read, not a DB lookup.
+
+### Apply Blocks on Drift
+
+**Context:** Should pplyPrescription proceed if the sidecar has drifted since last write?
+
+**Decision:** Block with error. The user must resolve drift before new content is applied.
+
+**Rationale:** Silently overwriting user edits violates the "safe defaults" principle from DP6. The user should explicitly acknowledge changes before Cairn writes again.
+
+---
+
+## Phase 8D — Skill Test Harness
+
+### 2026-04-30: Phase 3 Architecture — ForgeClient & SDK Abstraction (Graham)
 
 **Author:** Graham Knight (Lead)  
 **Type:** Architecture  
 **Status:** Active
 
-The team should design around the **plugin system** as the primary distribution format, with `plugin.json` + `marketplace.json` as our core data models.
+# Graham — Phase 3 Architecture Decisions
 
-**Rationale:**
-1. Plugins are the composition unit — everything else (agents, skills, hooks, MCP servers) are components that plugins bundle together.
-2. `marketplace.json` is the distribution contract. Simple JSON registry in a Git repo. Two default marketplaces ship with Copilot CLI (`github/copilot-plugins`, `github/awesome-copilot`).
-3. MCP is the integration standard going forward. GitHub App-based Copilot Extensions are sunset (Nov 10, 2025).
-4. Cross-platform reach: Skills and agents work across Copilot CLI, VS Code, GitHub.com. Plugins are CLI-specific (may change).
-5. Open standards emerging: Agent Skills spec and AGENTS.md (Linux Foundation AAIF) are becoming cross-vendor standards.
-
-**Trade-offs:**
-- Plugin marketplace format is simple (no semver enforcement, no dependency resolution, no quality gates)
-- Hook security surface is broad — hooks run with full user permissions
-- No built-in testing framework for skills/agents/hooks
-
-**Full Report:** `.squad/agents/graham/recon-copilot-docs.md`
+**Date:** 2026-04-30  
+**Author:** Graham Knight (Lead / Architect)  
+**Context:** Phase 3 architecture specification for `@akubly/forge` — live SDK integration
 
 ---
 
-### 2026-03-28: Copilot SDK & API Landscape — Integration Depth Decision Required
+## ADR-P3-001: ForgeClient wraps CopilotClient 1:1
+
+**Decision:** Each ForgeClient owns exactly one CopilotClient. No shared instances.
+
+**Alternatives:**
+1. Shared client singleton — lifecycle confusion, race conditions on concurrent session creation.
+2. No wrapper / expose CopilotClient directly — breaks "SDK types don't leak" contract.
+3. **1:1 wrapper (chosen)** — clear ownership, deterministic cleanup.
+
+**Trade-off:** Slightly more memory if multiple ForgeClients exist. Clear lifecycle wins.
+
+---
+
+## ADR-P3-002: EventSource interface over direct CopilotSession coupling
+
+**Decision:** `attachBridge()` and `createTokenTracker()` accept `EventSource { on(handler): () => void }` rather than `CopilotSession`.
+
+**Alternatives:**
+1. Accept CopilotSession directly — simpler types, but couples to SDK and complicates testing.
+2. **EventSource interface (chosen)** — enables mock event sources, keeps Phase 2 bridge SDK-free.
+
+**Trade-off:** One extra interface definition for massive test simplification.
+
+---
+
+## ADR-P3-003: ModelCatalog uses injection over ForgeClient reference
+
+**Decision:** `createModelCatalog()` takes a `listFn: () => Promise<ModelSnapshot[]>` rather than a ForgeClient reference.
+
+**Alternatives:**
+1. Pass ForgeClient — simpler call site, untestable without live client.
+2. **Injection (chosen)** — testable with static array, matches Phase 2 pattern.
+
+**Trade-off:** Caller wires one line of glue for full testability.
+
+---
+
+## ADR-P3-004: No new shared types in @akubly/types
+
+**Decision:** Phase 3 types (ForgeClientOptions, ForgeSessionConfig, TokenBudget, ModelCatalog) stay Forge-internal.
+
+**Rationale:** Cairn consumes CairnBridgeEvent, not TokenBudget. Types graduate to shared only when two packages actually import them.
+
+**Trade-off:** If Cairn needs TokenBudget later, one PR to migrate. Smaller shared surface now.
+
+---
+
+## ADR-P3-005: Dual event paths — onEvent for setup, attachBridge for runtime
+
+**Decision:** Use SessionConfig.onEvent for events during createSession(), attachBridge() after session exists. No dedup needed.
+
+**Rationale:** SDK guarantees non-overlapping windows. Matches spike pattern.
+
+**Trade-off:** Relies on SDK behavior guarantee. Low risk.
+
+---
+
+## ADR-P3-006: Strategies as plain functions, not class hierarchy
+
+**Decision:** ModelStrategy is a function type. Built-in strategies are a Record<string, ModelStrategy>.
+
+**Alternatives:**
+1. Strategy class hierarchy — overkill for 3 strategies, adds constructor ceremony.
+2. **Function type (chosen)** — easy to test, compose, override.
+
+**Trade-off:** No runtime type-checking of strategy names. Acceptable for developer-facing API.
+
+
+---
+
+### 2026-04-29: Phase 3 Test Strategy — Inline Contract Testing (Laura)
+
+**Author:** Laura (Tester)  
+**Type:** Testing  
+**Status:** Active
+
+# Laura — Phase 3 Test Strategy: Inline Contract Testing
+
+**Author:** Laura (Tester)
+**Type:** Test Strategy
+**Status:** Proposed
+**Date:** 2026-04-29
+
+## Decision
+
+Phase 3 test contracts use **inline implementations** of the expected API surface (ForgeClient, ForgeSession, ModelCatalog, ModelSwitcher, TokenBudgetTracker) rather than importing from non-existent modules. Each inline class defines the behavioral contract. When Alexander builds the production modules, tests switch imports — any divergence breaks tests immediately.
+
+## Rationale
+
+1. **TDD red-phase compatibility:** Tests must be runnable NOW, before production code exists. Importing from `../runtime/index.js` would produce compile errors.
+2. **Contract precision:** Inline implementations encode expected behavior (e.g., "disconnect is idempotent", "bridge events are returned as copies") that pure type signatures cannot express.
+3. **Proven pattern:** Phase 2 used the same approach (inline bridge/hooks) and the migration to production imports was smooth — documented in history.md.
+
+## Migration Path
+
+When production modules are built:
+1. Delete inline class definitions from test files
+2. Replace TODO import comments with real imports
+3. Run tests — failures reveal behavioral divergence
+4. Resolve divergence (fix production code or update contract if intentional)
+
+## Mock SDK Extensions
+
+Extended `helpers/mock-sdk.ts` for Phase 3 needs:
+- **MockCopilotSession:** Added `setModel`, typed event handler map, unsubscribe returns
+- **MockCopilotClient:** Added `resumeSession`, `listModels`, `listSessions`, `getAuthStatus`, `getStatus`
+- **makeModelInfo:** Shared factory for constructing valid `ModelInfo` objects
+
+These extensions are backward-compatible — existing Phase 2 tests continue to pass unchanged.
+
+## Test Coverage Summary
+
+| Module | Tests | Key Behaviors |
+|--------|-------|---------------|
+| runtime.test.ts | 35 | Session lifecycle, bridge wiring, hook composition, decision gates, disconnect semantics |
+| models.test.ts | 52 | Model catalog CRUD, snapshot extraction, mid-session switching, token budget tracking, selection strategies |
+
+## Risks
+
+- Inline implementations may drift from what Alexander builds. Mitigation: clear TODO markers and documented migration path.
+- Mock SDK extensions add maintenance surface. Mitigation: centralized in helpers/, barrel-exported.
+
+---
+
+### 2026-04-30: Phase 3 Persona Review Fixes — Runtime (Alexander)
+
+**Author:** Alexander (SDK/Runtime Dev)  
+**Type:** Implementation  
+**Status:** Implemented  
+**Date:** 2026-04-30
+
+## Summary
+
+Addressed 7 persona review findings for `packages/forge/src/runtime/`. 6 accepted with fixes, 1 partially rejected (spec-vs-implementation gap with no test contracts).
+
+## Key Decisions
+
+**Spec Surface Gap — Partial Reject (F2)**
+
+Rejected: `listModels`, `listSessions`, `getAuthStatus`, `getStatus` — these are in the architecture spec but have no test contracts and no consumers. They can be added when a consumer needs them.
+
+Accepted from same finding: `onEvent` bridge for pre-session events and `model_change` tracking — these are correctness concerns with spec backing.
+
+**Session Map Lifecycle (F6)**
+
+Added `onDisconnect` callback pattern: ForgeClient passes a cleanup callback when creating ForgeSession. On disconnect, the session auto-removes itself from the client's tracking map. This means `sessionCount` stays accurate without manual cleanup.
+
+**decisionGate Removed from Config (F5)**
+
+`decisionGate` predicate was defined in `ForgeSessionConfig` but never wired. Decision gating is already handled through the observer pattern (`HookObserver.onPreToolUse`). Removed to avoid misleading API surface.
+
+## Fixes Applied
+
+| Finding | Description | Fix |
+|---------|-------------|-----|
+| F1 | stop() error isolation | Added try/catch per session; errors logged separately |
+| F3 | onEvent bridge missing | Wired pre-session event bridge (ADR-P3-005) |
+| F4 | model_change tracking | Integrated into ModelChangeRecord[], persisted in events |
+| F5 | decisionGate config field | Removed (not wired; gating handled by HookObserver) |
+| F6 | Bridge handler guards | Added _disconnected guard + try/catch wrapper |
+| F7 | Session map lifecycle | Added onDisconnect callback; auto-removal on disconnect |
+
+## Files Changed
+
+- `packages/forge/src/runtime/client.ts`
+- `packages/forge/src/runtime/session.ts`
+
+## Test Impact
+
+All 268 tests pass. Zero regressions.
+
+---
+
+### 2026-04-30: Phase 3 Persona Review Fixes — Models (Roger)
+
+**Author:** Roger (Platform Dev)  
+**Type:** Implementation  
+**Status:** Implemented  
+**Date:** 2026-04-30
+
+## Summary
+
+9 persona reviewers surfaced 5 findings against the models/ module. Triaged as:
+- **4 accepted and fixed** (F2–F5)
+- **1 rejected** (F1)
+
+## Key Decisions
+
+**Rejected: F1 — sort() Mutates Input Array**
+
+The Architect flagged `sort()` in `cheapest`/`smartest` strategies as mutating the input `models` array. This is a false positive: `filter()` already returns a new array, so `sort()` only mutates the filtered copy. No caller's data is affected.
+
+## Fixes Applied
+
+| Finding | Description | Fix |
+|---------|-------------|-----|
+| F2 | readonly bypass on TokenBudget.contextWindow | Introduced MutableContextWindow internal type; external API stays readonly |
+| F3 | Dual EventSource subscriptions | Merged into single source.on() handler with if/else on event.type |
+| F4 | Test field drift (reasoningEffort vs newReasoningEffort) | Updated test's ModelChangeRecord, makeModelChangeEvent, and assertions |
+| F5 | Division by zero in budgetAware | Added guard: `if (context.budgetLimitNanoAiu <= 0) return cheapest(...)` |
+
+## Files Changed
+
+- `packages/forge/src/models/strategy.ts`
+- `packages/forge/src/models/token-budget.ts`
+- `packages/forge/src/__tests__/models.test.ts`
+
+## Test Impact
+
+- `npm run build` — clean
+- `npx vitest run` — 268/268 tests pass
+
+
+
+### 2026-05-01: Telemetry Collector ↔ Bridge Event-Name Contract
 
 **Author:** Roger Wilco (Platform Dev)  
-**Type:** Technical  
-**Status:** Active
-
-The Copilot extensibility ecosystem has three distinct SDK layers. The team needs to understand which layer(s) apply to our vision.
-
-**Three SDKs, Three Use Cases:**
-1. `@github/copilot-sdk` (Technical Preview) — Embed full Copilot agentic runtime in any app. Multi-language. JSON-RPC to Copilot CLI. BYOK support. **Most relevant for programmatic embedding.**
-2. `@copilot-extensions/preview-sdk` (Alpha) — Build Copilot Chat extensions as GitHub Apps. SSE streaming. Two patterns: skillsets (lightweight REST) vs agents (full control). **Most relevant for distribution.**
-3. `@github/copilot-engine-sdk` (Early) — Build custom engines for coding agent platform. **Advanced — only if building alternative agents.**
-
-**Protocol Standards:**
-- MCP (Model Context Protocol) is the standard tool integration protocol (stdio/HTTP).
-- SSE is the response streaming protocol for Copilot Extensions.
-- JSON-RPC is the protocol between CLI SDK and Copilot CLI server.
-
-**Auth Evolution:**
-- Extensions moving from `X-GitHub-Token` to OIDC
-- Signature verification uses public keys from `api.github.com/meta/public_keys/copilot_api`
-- CLI SDK supports GitHub OAuth, environment tokens, BYOK
-
-**Recommendation:** Decide integration depth (embedding vs. distribution) before committing to SDK. CLI SDK and Extensions SDK serve fundamentally different architectures.
-
-**Full Report:** `.squad/agents/roger/recon-copilot-sdk.md`
-
----
-
-### 2026-03-28: Plugin Marketplace Landscape — Standardize & Integrate, Don't Rebuild
-
-**Author:** Rosella Chen (Plugin Dev)  
-**Type:** Strategy  
-**Status:** Active
-
-**Key Findings:**
-1. `awesome-copilot` (github/awesome-copilot) is the dominant marketplace: 170+ agents, 240+ skills, 170+ instructions, 55+ plugins. Officially maintained by GitHub.
-2. Three standard artifact formats: `.agent.md` (YAML + prompt), `SKILL.md` (agentskills.io open standard, cross-platform), `plugin.json` (Claude Code spec for bundling).
-3. MCP is replacing legacy GitHub App extensions. Official MCP Registry (registry.modelcontextprotocol.io) is the discovery hub.
-4. Our project has suggest-awesome-* skills. This is the right approach — consume the ecosystem.
-
-**Recommendation:**
-- Standardize on SKILL.md format for any skills we author (cross-platform, future-proof)
-- Use plugin.json (Claude Code spec) for packaging bundles
-- Don't build a custom marketplace — integrate with awesome-copilot
-- Consider submitting our plugins to awesome-copilot's external.json for discovery
-- Track MCP Registry evolution for tool integration opportunities
-
-**Impact:** How we structure, package, and distribute any plugins or skills.
-
-**Full Report:** `.squad/agents/rosella/recon-marketplaces.md`
-
----
-
-### 2026-03-28: Prior Infrastructure Reuse & Best Practices Adoption
-
-**Author:** Gabriel Knight (Infrastructure)  
-**Type:** Architecture  
-**Status:** Active
-
-**Directly Reusable from Prior Infrastructure (akubly/.copilot):**
-1. Knowledge taxonomy — `concepts/` (transferable domain judgment) vs `technologies/` (tool-specific HOW) vs `skills/` (orchestrated workflows). Aaron's innovation, ahead of community consensus.
-2. Workflow gates — Decision-Point Gate (stop at forks, present options) + Pre-Output Persona Review Gate (review all deliverables). Proven over months.
-3. Anti-anchoring discipline — "First thought might be wrong" + generate alternative hypotheses.
-4. Skill template — Standardized structure (frontmatter, triggers, inputs, workflow, error recovery, session DB, constraints).
-5. Observability SQL schema — `skill_execution_log`, `session_config`, `error_breadcrumbs` tables for cross-skill tracking.
-6. Tool guards architecture — Pre-tool safety hooks with fail-open design, approval tokens, caching. Five guard types.
-7. Persona review skill — Parallel persona subagents → merge → deduplicate → severity-map → human disposition tracking.
-
-**Pattern-Portable (adapt, don't copy):**
-8. Multi-source code review — Parallel-reviewers-with-merge pattern
-9. Session persistence pipeline — Post-tool tracking → error tracking → session summary → cross-session recall
-10. Cross-skill session DB contracts — Pipeline tables with producer/consumer relationships
-
-**Most Actionable Community Best Practices:**
-1. Context engineering over prompt engineering — Finite resource, optimize for compaction
-2. Context replication over splitting — Each specialist gets full relevant context
-3. Drop-box pattern for decisions — Structured decision recording as async memory
-4. AGENTS.md compatibility — Emerging vendor-neutral standard
-5. Progressive disclosure — Agents discover context via lightweight references
-
-**Recommendation:** Adopt items 1-7 as foundational infrastructure. Build marketplace on these proven patterns. Items 8-10 as we develop domain-specific skills. Prioritize context engineering and context replication.
-
-**Risks:**
-- Over-copying Windows-specific patterns
-- Knowledge taxonomy may need adjustment
-- Tool guards need platform-specific adaptation
-
-**Full Report:** `.squad/agents/gabriel/recon-infra-and-practices.md`
-
-### 2026-03-28T23-32-36: User Directives — Round 3 Course Corrections
-
-**Author:** Aaron (via Copilot)  
-**Type:** Platform Direction  
-**Status:** Active
-
-1. **Squad Decoupling** — squad is a 3rd-party solution/CLI plugin — not part of our platform. Decouple naming/concepts.
-2. **Personalization First-Class** — BYO plugins, interop with other agentic systems (plan mode, squad, SA), personalization as feature-set.
-3. **Track Everything** — First principle: "create the best output." Don't arbitrarily cap features like teach-back. Track /skip everywhere.
-4. **Memory Alternatives** — Memory MCP is primitive — explore better alternatives, possibly build our own.
-5. **Curator Agent** — Need a dedicated curator/custodian agent — always working, processing errors, insights, pruning knowledge.
-6. **Agent Identity Pragmatism** — Identity is NOT about reinventing squad — focus on natural language interactions. Identity as deep concern only if intentional.
-7. **Balance Complexity** — Keep manageable and effective; forward-thinking without over-complicating.
-8. **RCA-Driven Guardrails** — RCAs should inform future human guardrail decisions, not hard-coded rules.
-
-**Rationale:** Foundational constraints for platform design, emerging from professional plugin work and multi-agent orchestration experience.
-
-**Impact:** All architectural decisions in Round 3 aligned to these directives.
-
----
-
-### 2026-03-29T00-15-58: User Insight — Queryable Session State
-
-**Author:** Aaron (via Copilot)  
-**Type:** UX Requirement  
-**Status:** Active
-
-The platform should support queryable session state. Humans should be able to ask "Have we done a review yet? Have we run the tests?" and get an instant answer.
-
-**Rationale:** Real need from Aaron's professional plugin work. Humans need to orient themselves within a workflow at any time without reconstructing state from logs.
-
-**Impact:** Drives design of knowledge.db schema, skip tracking, preference cascade (Roger's Round 3 contribution).
-
----
-
-### 2026-03-29T00-30-44: Architectural Decision — Platform vs. Pure Plugins
-
-**Author:** Aaron (via Copilot)  
-**Type:** Architecture  
-**Status:** Active
-
-The unreliable sessionEnd hook is a solid argument FOR a platform layer, not just standalone plugins. Something needs to initiate subagent/background tasks reliably and specifically when it's most valuable. Pure plugins can't orchestrate their own lifecycle — they need a coordinator that understands timing, sequencing, and reliability.
-
-**Rationale:** Aaron's response to the Graham vs. Rosella debate. This settles the R3 tension: we DO need some degree of platform, not just a bag of plugins. The platform's job is reliable orchestration of when things run.
-
-**Impact:** Validates 3-layer architecture (R4 outcome). Platform orchestrator ≠ platform runtime.
-
----
-
-### 2026-03-29T00-47-40: Architectural Decisions + R4 Direction
-
-**Author:** Aaron (via Copilot)  
-**Type:** Platform Direction  
-**Status:** Active
-
-**Eight Sub-Decisions:**
-
-1. **Squad Independence (Non-negotiable)** — NO dependency on squad. Must work independently. Must also coexist peacefully — no collisions.
-2. **Simplicity Means Elegant Composability** — Not simplicity for simplicity's sake. R3 over-corrected. Sum greater than parts, emergent complexity from simple interactions.
-3. **First Thought Wrong is Foundational** — Already in Aaron's existing gates. Devil's advocate is core, not optional.
-4. **Rename Scribe (Squad Collision)** — Candidates: Archivist, Secretary, Registrar, Annalist. (Resolution: Chronicler, from Valanice's narrative principle)
-5. **Explore SQLite-in-Git Viability** — For knowledge.db (vector search, mapping/linking).
-6. **Linter vs. Compiler Distinction** — What sets them apart in our plan?
-7. **CLI Namespace Clarification** — What is it, how would we implement it?
-8. **Peopleware Foundation** — Seed next brainstorm round with organizational intelligence: DeMarco & Lister.
-
-**Rationale:** Course correction on R3's over-simplification. Aaron wants elegant emergent complexity, not stripped-down minimalism.
-
-**Impact:** Drives R4 focus on architecture convergence, Peopleware foundations, naming clarity.
-
----
-
-### 2026-03-29T01-04-09: R4 Additional Inputs
-
-**Author:** Aaron (via Copilot)  
-**Type:** Architecture  
-**Status:** Active
-
-**Four Sub-Decisions:**
-
-1. **Git LFS for knowledge.db** — Explore as alternative to user-local-only. (Resolution: Git LFS rejected; user-local primary + optional JSON export)
-2. **Squad Subsystem Leverage** — Do NOT depend on squad subsystems even when present. Too risky (what if squad goes away?). Painful to mirror, but independence is non-negotiable.
-3. **Naming: Registrar Feels Off** — Archivist is closer. Recorder almost right. Still open. (Resolution: Chronicler, validated in R4)
-4. **Artifact Validation Model** — Prompt + artifact → LLM → compare response against expected response. Scored on correctness vectors. Copilot SDK provides controlled LLM access.
-
-**Rationale:** Architectural clarifications before full R4 fan-out.
-
-**Impact:** Validated in R4 as 5-stage bundler with LLM-as-judge validation (5 correctness vectors).
-
----
-
-### 2026-03-29T01-31-29: Open Items Resolved
-
-**Author:** Aaron (via Copilot)  
-**Type:** Architecture  
-**Status:** Active
-
-**Curator Event Processing:**
-- Curator tracks unprocessed events via event_log table status flags
-- INSERT cost is minimal in SQLite (indexed by session_id)
-- Curator runs continuously in sidecar; no session-time restrictions needed
-- Event batching via trigger-based cascades reduces individual INSERT overhead
-
-**Decision Alternatives Requirement:**
-- Require explicit listing of considered alternatives in all architecture decisions
-- Document why alternatives were ruled out (not "no alternatives exist")
-- Closes tension between comprehensive consideration and decision velocity
-
-**Rationale:** Ensures decision quality and provides future context for design evolution.
-
----
-
-### 2026-03-29T01-35-11: Round 5 Seeds — Dual Environment + Sidecar Storage
-
-**Author:** Aaron (via Copilot)  
-**Type:** Architecture  
-**Status:** Active
-
-**Three New Design Requirements:**
-
-1. **DUAL ENVIRONMENT:** Platform must work equally in corporate/controlled environments (Windows OS monorepo, limited MCP/plugins) AND personal/open environments (many 3rd-party plugins). Different constraint sets, equal effectiveness.
-
-2. **SIDECAR STORAGE:** At work, don't commit platform artifacts to work repo. Design external/sidecar storage location that keeps platform state separate from repo state. Enable multi-repo, multi-environment workflows.
-
-3. **COPILOT SDK EXPLORATION:** Beyond artifact validation, what else is possible? Full capability audit needed.
-
-**Rationale:** Real-world deployment constraints from Aaron's professional work. Platform must be environment-aware and location-aware.
-
-**Impact:** Drives R5 brainstorm focus (dual environments, sidecar-as-platform, SDK deep dive).
-
----
-
-### 2026-03-29T08-25-00: Brainstorm Round 4 Convergence — Composable Toolkit Architecture
-
-**Author:** Graham Knight (Lead), Roger Wilco, Rosella Chen, Gabriel Knight, Valanice Chen  
-**Type:** Architecture  
-**Status:** Active
-
-**Converged Decisions (R4 Outcomes):**
-
-1. **3-Layer Composable Toolkit Architecture**
-   - Layer 1: Primitive agents (Curator, Compiler)
-   - Layer 2: Assemblers (Plugin Manager, Session Store adapters)
-   - Layer 3: User-facing experiences (CLI, marketplace UI, hooks)
-   - Foundation: SQLite-as-platform (knowledge.db as durable contract)
-
-2. **2-Agent Core**
-   - Curator: Always-running knowledge custodian, error processor, artifact validator
-   - Compiler: Compiles BYO plugins (TypeScript, Python, Go) to executable agents/skills
-
-3. **SQLite Convergence**
-   - Event bus via SQLite INSERT → trigger architecture
-   - 8-table core schema (sessions, preferences, skip_breadcrumbs, artifacts, errors, event_log, plugin_registry, knowledge_index)
-   - User-local knowledge.db (primary); optional JSON export for interop
-   - Git LFS rejected; Git-based sync deferred
-
-4. **5-Stage Bundler Pipeline** (Plugin Dev)
-   - Parse → Compile → Validate → Package → Distribute
-   - .cpkg output format (ZIP + manifest + hash)
-   - LLM-as-judge validation (Copilot SDK) with 5 correctness vectors
-
-5. **Curator Full Specification** (Infrastructure)
-   - 4 triggers: event bus, periodic check, session completion, user request
-   - 5-stage RCA pipeline (Detect → Categorize → Root Cause → Prescribe → Enforce)
-   - Peopleware guard-rails: authority bright line (humans decide, not auto-enforce)
-   - RCA informs guardrails, not hard-coded rules
-
-6. **Narrative-First UX** (Human Factors)
-   - "Narrate work not worker" — organize UX around what's happening
-   - Queryable state design — humans ask "Have we done X?" in natural language
-   - Chronicler naming recommendation (replaces Scribe; avoids squad collision)
-   - Error-as-narrative taxonomy (what happened → why → what to do next)
-
-7. **Technical Clarifications**
-   - **Linter vs. Compiler:** Linters report problems; Compiler produces executables
-   - **CLI Namespace:** Scoped commands (e.g., `/skill discover`, `/agent list`) map to Compiler product types
-   - **Squad Independence:** NO squad subsystem leverage; independence non-negotiable
-
-**Rationale:** R4 synthesizes team input (recon, R3 decisions, Aaron's directives) into coherent, integrated architecture.
-
-**Impact:** Architecture converged and validated. Ready for implementation sprint.
-
----
-
-### 2026-03-30T09-00-00: Brainstorm Round 5 Convergence — Sidecar Architecture + Dual Environments
-
-**Author:** Graham Knight (Lead), Roger Wilco, Rosella Chen, Gabriel Knight, Valanice Chen  
-**Type:** Architecture  
-**Status:** Active
-
-**Converged Decisions (R5 Outcomes):**
-
-1. **Sidecar-as-Platform Architecture**
-   - Stateless CLI + Stateful Sidecar + Foundation Layer
-   - Environment context flows through sidecar lifecycle
-   - JSON-RPC contract between CLI and sidecar
-   - Foundation layer handles environment abstraction
-
-2. **Dual Environment Profiles**
-   - Corporate: Org-scoped, audit-logged, read-only repos
-   - Local: User-scoped, no restrictions
-   - Sandbox: Ephemeral test data, no persistence
-   - Sensitivity tagging (4-level cascade) propagates through all operations
-
-3. **Sidecar Data Layer (knowledge.db)**
-   - User-local placement: `%LOCALAPPDATA%\Copilot\sidecar\knowledge.db`
-   - 8-table core schema with trigger-based event bus
-   - Slugified repo keys for safe serialization
-   - WAL mode for concurrent sidecar access
-   - Double-locked export with integrity guarantees
-   - No Git LFS; no cloud sync in R5
-
-4. **Copilot SDK as MCP Server**
-   - 8-tool intelligence server (semantic search, decision support, artifact validation, RCA, environment inspection, etc.)
-   - BYOK (Bring Your Own Key) escape hatch for corporate environments
-   - Private LLM endpoints in corporate; fail-safe fallback
-   - Capability registry for runtime tool discovery
-
-5. **Corporate Compliance Patterns**
-   - Read-Only Repo Adapter: Clone without write access
-   - Pre-Commit as Portable Enforcement: Hooks travel with sidecar, not embedded in repos
-   - Split Curator Mode: Corporate (read-only) vs. Local (full validation)
-   - Audit logging built into sidecar event bus
-
-6. **Narrative-First UX**
-   - "Commute not switch" metaphor for environment transitions
-   - Environment location explicit in chat context and status bar
-   - Sensitivity explained in natural language ("corporate-only" vs. codes)
-   - Privacy decisions framed as choices, not constraints
-
-7. **Critical Decisions Validated**
-   - Sidecar independence from squad (non-negotiable)
-   - Environment as first-class architecture concern
-   - User-local data only (no system-wide installation)
-   - MCP as integration standard (non-negotiable)
-   - BYOK as primary corporate pattern
-   - WAL-mode concurrency for sidecar required
-   - Sensitivity tagging mandatory, not optional
-
-**Alternatives Considered:**
-- **Cloud sync instead of user-local:** Rejected — corporate compliance, offline capability, privacy
-- **System-wide installation:** Rejected — corporate policy conflicts, isolation concerns
-- **REST API instead of MCP:** Rejected — MCP is vendor-neutral standard, better portability
-- **Auto-enforcement of constraints:** Rejected — humans make policy decisions, RCA informs guardrails
-
-**Rationale:** R5 synthesizes R4 architecture with Aaron's dual-environment requirements and real-world deployment constraints.
-
-**Impact:** Sidecar becomes first-class platform component. Ready for R6 implementation sprint. No blocking issues.
-
----
-
-### 2026-03-29T01-53-50: Final Brainstorm Decisions Before Planning
-
-**Author:** Aaron (via Copilot)  
-**Type:** Architecture  
-**Status:** Active
-
-1. **Auto-Roam Personal Profile** — Option to sync personal sidecar via akubly/.copilot repo. Personal profile is portable.
-2. **Profile Default** — Personal is the DEFAULT. Corporate is a deliberate FORK at the repo level — the repo declares "I'm corporate" rather than the user declaring "I'm at work."
-3. **BYOK Strategy** — Design for it, but not a key requirement now. Standard Copilot SDK models are the primary path.
-4. **All 10 SDK Use Cases Approved** — Embeddings, classification, summarization, conflict resolution, panel calibration, NL queries, devil's advocate, teach-back, auto-test-gen, predictive error prevention.
-5. **Archivist Naming** — Confirmed as the logging agent name.
-
-**Rationale:** Closes all R5 follow-up questions. Architecture is complete and ready for planning.
-
----
-
-### 2026-03-29T01-56-52: Corporate Deployment Model Clarification
-
-**Author:** Aaron (via Copilot)  
-**Type:** Architecture  
-**Status:** Active
-
-**Definition:** "Corporate" = repo declares identity in `repo.json` (e.g., `{ "environment": "corporate" }`).
-
-**Default Behavior (personal mode):**
-- Personal sidecar location: `%LOCALAPPDATA%\Copilot\sidecar\`
-- All write access, full plugin support
-- Personal profile syncs across machines via `akubly/.copilot`
-
-**Corporate Mode (opt-in repo declaration):**
-- Read-only repo access (clone without write)
-- Audit logging in sidecar (not in repo commit log)
-- Pre-Commit as portable enforcement (hooks in sidecar)
-- Sensitivity tagging cascade limits data exposure
-- BYOK for private LLM endpoints (optional fallback to standard models)
-
-**Rationale:** Real deployment constraint from Aaron's work. Personal is default; corporate is deliberate fork.
-
-**Impact:** Deployment strategy validated. Ready for Phase 6 implementation.
-
----
-
-### 2026-04-02T04-58-00Z: Session Start Hook Fix (Phase 5)
-
-**Author:** Gabriel Knight (Infrastructure)  
-**Type:** Technical  
-**Phase:** 5  
-**Status:** Complete
-
-Fixed unreliable sessionEnd hook by replacing with preToolUse hook that calls `curate()` via `session.js` integration. Hook now fires reliably at start of each tool invocation.
-
-**Decision:** Use preToolUse + shared session.js state (not sessionEnd hook).
-
-**Impact:** Curator now runs reliably every session start, enabling real-time pattern detection and insight generation.
-
----
-
-### 2026-04-02T05-05: MCP Server Implementation (Phase 5)
-
-**Author:** Roger Wilco (Platform Dev)  
-**Type:** Technical  
-**Phase:** 5  
-**Status:** Complete
-
-Implemented MCP server with 6 core tools: `run_curate`, `list_insights`, `get_insight`, `list_events`, `skip_event`, `get_status`. TypeScript, stdio transport, proper error handling.
+**Date:** 2026-05-01  
+**Type:** Contract + Telemetry  
+**Status:** Implemented
+
+Context: Persona review F4 caught that telemetry collectors checked for event type strings that never appear in the bridge's EVENT_MAP. Bridge maps SDK events to different vocabulary (	ool_use vs 	ool_call_started, etc.). Result: collectors silently received nothing in production.
 
 **Key Decisions:**
-1. **run_curate output structure:** `{ curate: {...}, prescriptions: null | {...} }` after 7C/7F integration
-2. **No backward compatibility wrapper** — Pre-1.0 acceptable
 
-**Impact:** MCP tools enable Copilot CLI integration; async trigger for curator.
+#### ADR-TLM-001: Single source of truth for collector event interest
+New exported COLLECTOR_BRIDGE_EVENTS const in packages/forge/src/telemetry/collectors.ts names every Cairn event type collectors react to.
+
+#### ADR-TLM-002: Contract test enforces bridge alignment
+New test packages/forge/src/__tests__/telemetry-bridge-contract.test.ts enumerates COLLECTOR_BRIDGE_EVENTS and asserts every value is in EVENT_MAP. CI fails fast if either side drifts.
+
+#### ADR-TLM-003: F2 early-convergence semantics
+convergedTurn set on FIRST occurrence of successful 	ool_result or plan_changed event. If neither fires, convergence stays at 1.0 (legitimate "no early progress" rather than phantom 0.30 floor).
+
+#### ADR-TLM-004: F5 streaming quantiles via histogram sketch
+Stored as optional drift.sketch on ExecutionProfile; backward compatible.
+
+#### ADR-TLM-005: F6a per-signal means
+New optional signals field on ExecutionProfile carries individual means for convergence, 	okenPressure, 	oolEntropy, contextBloat, promptStability.
+
+**Impact:**
+- Bridge owners: if you remove/rename a value in COLLECTOR_BRIDGE_EVENTS, contract test fails.
+- Prescriber authors: ExecutionProfile.signals populated; targeting specific signals now mechanical.
+- Persisted-profile readers: drift.sketch and signals optional; old rows keep working.
+- Sink consumers: LocalDBOMSink now exposes droppedCount.
 
 ---
 
-### 2026-04-02T23-51-00Z: Plugin Infrastructure (Phase 6)
+### 2026-05-01: Persona Review Fixes — Prescribers + Applier (F3, F6b, F9, F10)
 
-**Author:** Rosella Chen (Plugin Dev)  
-**Type:** Technical  
-**Phase:** 6  
-**Status:** Complete
+**Author:** Rosella (Plugin Dev)  
+**Date:** 2026-05-01  
+**Type:** Implementation  
+**Status:** Implemented
 
-Implemented plugin infrastructure: `.github/plugin/plugin.json`, `mcp-config.json` with stdlib patterns, `package.json` with proper bin entries.
+Four findings from Phase 4.5 persona review.
 
 **Key Decisions:**
-1. **Plugin format:** Claude Code spec (plugin.json)
-2. **MCP config:** stdio transport, default port 3000
-3. **Distribution:** npm publish with GitHub registry
 
-**Impact:** Plugin ready for npm publish and ecosystem distribution.
+#### ADR-PSC-001: tuneParameters gains context argument
+Third arg context: TuneContext carries udgetLimitNanoAiu. Defaults to DEFAULT_BUDGET_LIMIT_NANO_AIU = 1_000_000 so existing call-sites don't break. 	okenPressure normalized to [0,1] against this limit.
+
+#### ADR-PSC-002: Prescribers consume signal-level entropy
+Prescribers use profile.signals.toolEntropy (Roger's new field) for tool-guidance trigger, with fallback to drift.p95 for legacy profiles. Composite drift never masquerades as single-signal threshold.
+
+#### ADR-PSC-003: Shared buildSnapshot utility
+uildSnapshot lives in packages/forge/src/prescribers/utils.ts, sources driftLevel from classifyDriftLevel(). Single source of truth for GREEN/YELLOW/RED boundaries.
+
+#### ADR-PSC-004: Adaptive exploration budget
+GREEN → * 0.9 (decay), RED → * 1.1 (grow), YELLOW → hold. Hard floor EXPLORATION_FLOOR = 0.15, ceiling 1.0.
+
+**Cross-team implications:**
+- Roger: Aggregator writes profile.signals from metadata.signals on drift samples.
+- 	uneParameters third arg optional; no caller updates required.
+- Pre-existing gap: packages/forge/src/telemetry/collectors.ts missing on disk; 15 tests fail (outside this scope).
+
+**Verification:** prescribers-applier.test.ts 36/36 pass (+8 new tests). Forge suite 514/529; 15 failures pre-date this work.
 
 ---
 
-## Archive Summary
+### 2026-05-02: Phase 4.5 Persona Review — All 11 Findings Fixed
 
-This file contains all decisions from the Recon and Brainstorm phases (2026-03-28 through early 2026-04-06), plus foundational Phase 5–6 architectural decisions.
+**Author:** Scribe (Session Log)  
+**Date:** 2026-05-02  
+**Type:** Meta  
+**Status:** Complete
 
-All decisions remain **Active** and should be referenced during Phase 8+ work.
+Phase 4.5 persona review findings consolidated and resolved across three team members:
 
-**For Phase 7+ decisions, see:** `.squad/decisions.md` (main file, Phase 7A–7F decisions)
+- **Roger (Platform Dev):** F1 (weighted means), F2 (convergence), F4 (contract), F5 (sketch), F6a (signals), F7 (sink warn), F11 (typeof). +24 tests → 534 Forge tests.
+- **Rosella (Plugin Dev):** F3 (budgetContext), F6b (prescriber entropy), F9 (buildSnapshot), F10 (adaptive budget). +8 tests → 478 Cairn tests.
+- **Alexander (SDK Dev):** F8 (granularityKey in FeedbackSource).
+
+**Result:** 1,012 total tests passing (Forge 534 + Cairn 478), up from 990 pre-review. Build clean. All persona review findings hardened and deployed.
+
+---
+
+# Phase 4.6 — Cycle 1 Triage (Code Panel Findings)
+
+**Lead:** Graham (Architect)
+**Date:** 2026-05-03
+**Branch:** `squad/phase4.6-change-vectors`
+**Trigger:** 15-finding Code Panel review, Aaron selected squad-mode autonomous triage.
+
+---
+
+## Architectural Decisions
+
+### ADR-P4.6-004: Edit migration 012 in place (Finding #4)
+
+**Decision:** Edit migration 012 to add `UNIQUE(hint_id)` — do NOT create migration 013.
+
+**Rationale:** Migration immutability is a *production safety* convention. Phase 4.6 lives
+on a feature branch with no production data and no downstream consumers of the migration
+sequence. Adding a 013 that only exists to patch a 012 that never shipped creates dead
+weight in the migration history. The sweep should also switch to `INSERT OR IGNORE` to
+rely on the constraint rather than the read-check-then-write pattern.
+
+**Trade-off named:** If another branch concurrently builds on migration 012, this edit
+creates a merge conflict. Risk is low — Phase 4.6 is the only active consumer.
+
+**Alternative rejected:** Migration 013 (immutability convention). Convention exists to
+protect deployed schemas; pre-ship, it's ceremony without safety benefit.
+
+---
+
+### ADR-P4.6-005: Mirror ChangeVectorSummary with regression test (Finding #7)
+
+**Decision:** Do NOT promote `ChangeVectorSummary` to `@akubly/types`. Mirror the type
+in both packages and add a regression test that asserts structural compatibility.
+
+**Rationale:** Same pattern as ADR-P4.6-003 (drift weight mirroring). `OptimizationCategory`
+is a prescriber-internal concept — promoting it to the shared types package couples that
+package to prescriber domain semantics. The regression test (Laura's L5 suite) already
+validates shape; extend it to assert that all category values returned by
+`summarizeChangeVectors` are valid `OptimizationCategory` members.
+
+**Cost lands in:** Phase 4.6 (test addition). Promotion to `@akubly/types` deferred to
+Phase 5 if a third consumer emerges.
+
+**Trade-off named:** Duck-typing can drift silently between releases if the regression test
+is skipped. Mitigation: test runs in CI on every PR.
+
+**Alternative rejected:** Promote to `@akubly/types` now — premature coupling for a
+single cross-package consumer.
+
+---
+
+### ADR-P4.6-006: Ship primitives only; defer runtime wiring (Finding #9)
+
+**Decision:** Ship Phase 4.6 as "primitives only." The Curator sweep, CRUD layer,
+`computeNetImpact`, `summarizeChangeVectors`, and prescriber ranking integration are
+independently testable and correct. Runtime wiring (connecting Curator output to
+prescriber input in the live loop) is deferred to a tracked follow-up issue.
+
+**Rationale:** Phase 4.6 scope was always the computation and ranking primitives.
+Wiring requires runtime orchestration changes (Curator → prescriber pipeline in the
+session lifecycle) that expand scope, risk, and review surface significantly. The
+primitives are the hard part; wiring is mechanical once the contract is stable.
+
+**Trade-off named:** Phase 4.6 code is dormant at runtime until wiring lands. Tests
+prove correctness, but no production validation until the follow-up ships.
+
+**Follow-up issue:**
+- **Title:** `Wire Curator change vectors to prescriber historicalVectors at runtime`
+- **Body:** Phase 4.6 (ADR-P4.6-006) shipped computation primitives and prescriber
+  ranking support, but no production caller passes `historicalVectors` to
+  `analyzePromptOptimizations` / `analyzeTokenOptimizations`. The Curator sweep
+  computes vectors and `summarizeChangeVectors` aggregates them, but nothing in the
+  runtime session lifecycle queries summaries and feeds them to prescribers.
+  Scope: add the orchestration glue in the Curator's periodic sweep or a new
+  runtime hook that queries summaries and passes them to prescriber invocations.
+  Depends on: Phase 4.6 merged.
+
+---
+
+## Per-Finding Triage
+
+| # | Sev | Disposition | Fix Agent | Notes |
+|---|-----|------------|-----------|-------|
+| 1 | 🔴 | **ACCEPT** | Rosella | `deltaCost` uses cumulative `token_total_cost` (monotonic). Normalize to per-session cost before computing delta. Curator.ts is Alexander's code → Rosella fixes per lockout. |
+| 2 | 🟡 | **ACCEPT** | Alexander (utils.ts) + Rosella (changeVectors.ts) | Confidence cliff: `vectorCount=1, minVectors=3` → boost 0.5, which *halves* confidence. Contradicts Wave 1 "positive boost only" policy. Fix: clamp to `Math.max(1.0, log(…)/log(…))` so vectors only amplify, never attenuate. Split across packages per lockout. |
+| 3 | 🟡 | **ACCEPT** | Rosella | `sessionsObserved` stores cumulative `session_count` but migration comment says "between before/after." The proxy was a deliberate decision (see decisions.md §Sessions-Observed Proxy), but column docs are misleading. Fix: update column comment in migration 012 (being edited per ADR-P4.6-004 anyway) to say "cumulative session count at vector computation time." |
+| 4 | 🟡 | **ACCEPT** | Rosella | Add `UNIQUE(hint_id)` to migration 012 per ADR-P4.6-004. Switch sweep to `INSERT OR IGNORE`. Both are Alexander's code → Rosella per lockout. |
+| 5 | 🟡 | **ACCEPT** | Alexander | Sort bug: unmatched hints (predictedImpact undefined → 0) outrank matched hints with negative impact. Fix: partition matched/unmatched; sort matched by predictedImpact desc; append unmatched in original impactScore order. Both optimizers are Rosella's → Alexander per lockout. |
+| 6 | 🟡 | **ACCEPT** | Rosella | `sweepChangeVectors` returns a single counter conflating 4 skip reasons. Add structured diagnostic: `{ eligible, skippedInsufficientSessions, skippedMalformed, alreadyComputed, computed }`. Curator.ts is Alexander's → Rosella per lockout. |
+| 7 | 🟡 | **ACCEPT** | Laura | Per ADR-P4.6-005: add regression test asserting Cairn's `ChangeVectorSummary.category` values are valid `OptimizationCategory` members. Laura owns tests; lockout N/A. |
+| 8 | 🟡 | **ACCEPT** | Alexander | `ChangeVectorSummary` missing from `@akubly/forge` root barrel re-export. Add to the prescribers re-export block in `forge/src/index.ts`. Adjacent to Rosella's module → Alexander per lockout. |
+| 9 | 🟡 | **DEFER** | — | Per ADR-P4.6-006: ship primitives only. Follow-up issue: "Wire Curator change vectors to prescriber historicalVectors at runtime." |
+| 10 | ⚪ | **ACCEPT** | Rosella | `computeNetImpact` inline negations are fragile. Extract named contributions: `const driftContrib = -deltaDrift * weights.deltaDrift;` etc. changeVectors.ts is Alexander's → Rosella per lockout. |
+| 11 | ⚪ | **REJECT** | — | ADR-P4.6-002 explicitly chose the optional positional parameter over a config/options object. Finding contradicts an existing architectural decision. If the pattern proves painful at more call sites, revisit in Phase 5. |
+| 12 | ⚪ | **DEFER** | — | DB injection style (explicit `db` param vs `getDb()`) is a repo-wide convention question, not Phase 4.6 scope. Follow-up issue: "Standardize DB access pattern: explicit injection vs internal getDb()." |
+| 13 | ⚪ | **ACCEPT** | Laura | Describe block says "cross-module weight consistency" but test only validates local `DRIFT_WEIGHTS`. Rename to reflect actual scope; `it.todo` already marks the cross-module aspiration. Laura owns tests; lockout N/A. |
+| 14 | ⚪ | **ACCEPT** | Alexander | `computeConfidenceBoost` re-exported publicly from `prescribers/index.ts` but it's an internal helper (Cairn mirrors the formula, can't import). Drop from public re-export. prescribers/index.ts is Rosella's → Alexander per lockout. |
+| 15 | ⚪ | **ACCEPT** | Alexander (forge) + Rosella (cairn) | Four sites use `?? 3` for minSessions default. Extract `DEFAULT_MIN_SESSIONS = 3` constant. Rosella defines it in cairn's changeVectors.ts (Alexander's code → lockout). Alexander updates forge's utils.ts + optimizers (Rosella's code → lockout). |
+
+---
+
+## Summary
+
+- **Accepted:** 12 findings
+- **Rejected:** 1 (finding #11 — contradicts ADR-P4.6-002)
+- **Deferred:** 2 (findings #9 and #12 — follow-up issues)
+- **Escalated:** 0
+
+### Agent Dispatch
+
+| Agent | Finding #s | Count |
+|-------|-----------|-------|
+| Rosella | 1, 2 (changeVectors.ts), 3, 4, 6, 10, 15 (cairn) | 7 |
+| Alexander | 2 (utils.ts), 5, 8, 14, 15 (forge) | 5 |
+| Laura | 7, 13 | 2 |
+
+### Cycle 2 Concerns
+
+1. **Rosella's load is heavy** (7 items). Findings 1, 3, 4 all touch curator.ts — they
+   should be batched in a single pass to avoid merge churn. Finding 4 (migration edit)
+   and finding 3 (column comment) are the same file change.
+2. **Finding #1 is the only blocker.** Rosella should prioritize it. The deltaCost bug
+   produces materially wrong net_impact values that cascade into ranking.
+3. **Finding #2 (confidence clamp) touches both packages.** Alexander and Rosella must
+   coordinate — the formula change should be identical in both locations.
+4. **Finding #15 (constant extraction) is low-risk but cross-package.** Can be done last.
+
+---
+
+# Decision: Two-Tier Sort Formulation for Matched vs Unmatched Hints (Finding #5)
+
+**Author:** Alexander (SDK/Runtime Dev)
+**Date:** 2026-05-03
+**Branch:** `squad/phase4.6-change-vectors`
+**Finding:** #5 — sort fallback for unmatched hints
+
+---
+
+## Problem
+
+When `historicalVectors` are provided, hints were sorted with:
+
+```ts
+hints.sort((a, b) => (b.predictedImpact ?? 0) - (a.predictedImpact ?? 0));
+```
+
+This conflates two cases:
+- **Unmatched hints** — no summary found; `predictedImpact` remains `undefined`, coerced to `0`.
+- **Matched hints with negative impact** — summary found; `predictedImpact` is set to a negative `meanNetImpact`.
+
+Result: an unmatched hint (0) outranks a matched hint with measured negative impact (e.g., -0.1). This is a behavioral regression — measured-bad evidence is treated as worse than no evidence at all.
+
+---
+
+## Options Considered
+
+### Option A: Stable-sort comparator with undefined as a separate equivalence class
+
+```ts
+hints.sort((a, b) => {
+  const aMatched = a.predictedImpact !== undefined;
+  const bMatched = b.predictedImpact !== undefined;
+  if (aMatched && bMatched) return b.predictedImpact! - a.predictedImpact!;
+  if (aMatched) return -1;  // matched before unmatched
+  if (bMatched) return 1;
+  return b.impactScore - a.impactScore;  // both unmatched: Phase 4.5 order
+});
+```
+
+**Pro:** Single pass, no array copy.  
+**Con:** The four-branch comparator obscures the semantic intent. The sort guarantee for unmatched items requires understanding that `b.impactScore - a.impactScore` preserves Phase 4.5 order *only* when input is already sorted by impactScore — which it is in the current implementation, but that's an implicit assumption.
+
+### Option B: Explicit partition then concatenate ✅ CHOSEN
+
+```ts
+const matched = hints.filter((h) => h.predictedImpact !== undefined);
+const unmatched = hints.filter((h) => h.predictedImpact === undefined);
+matched.sort((a, b) => b.predictedImpact! - a.predictedImpact!);
+unmatched.sort((a, b) => b.impactScore - a.impactScore);
+hints.length = 0;
+hints.push(...matched, ...unmatched);
+```
+
+**Pro:** The invariant is explicit and self-documenting — matched first, unmatched after, each with its own clear sort key. No implicit reliance on pre-existing hint order.  
+**Con:** Two filter passes + two sorts + array reassignment. At the scale of prescriber hints (≤10 items typically), this is not a performance concern.
+
+---
+
+## Decision
+
+**Option B** (explicit partition). The prescriber hint lists are small (≤10 items in typical profiles), so there is no performance argument for a single-pass comparator. The partition approach makes the invariant self-documenting and eliminates the implicit assumption about pre-existing hint order that Option A carries.
+
+**Modified-in-place via `hints.length = 0; hints.push(...)` pattern** instead of returning a new array, because the surrounding code pattern (`const hints: OptimizationHint[] = []`) mutates and returns the same reference — maintaining that pattern avoids any possibility of the result reference diverging.
+
+---
+
+## Impact
+
+- Both `promptOptimizer.ts` and `tokenOptimizer.ts` receive the identical fix.
+- Laura's L3 "ranking with predicted impact" test continues to pass.
+- The new edge case (unmatched-hint vs negative-matched-hint ordering) is covered by Laura's forthcoming addition.
+
+---
+
+# Decision: MetricSnapshot.sessionCount is optional (not required)
+
+**Author:** Rosella (Plugin Dev)
+**Date:** 2026-05-03
+**Branch:** `squad/phase4.6-change-vectors`
+**Context:** Phase 4.6 cycle 2, Finding #1 — deltaCost normalization requires sessionCount in MetricSnapshot.
+
+---
+
+## Decision
+
+`MetricSnapshot.sessionCount` is declared as **optional** (`sessionCount?: number`) rather than required.
+
+## Rationale
+
+1. **Backward compatibility with stored JSON.** `MetricSnapshot` is serialized to `optimization_hints.metric_snapshot` (a JSON column). Hints created before Phase 4.6 cycle 2 will not have `sessionCount` in their stored JSON. Making the field required would silently cause `undefined` at runtime for those rows — worse than a `?? 0` fallback.
+
+2. **Test fixture compatibility.** Laura's test fixtures (`feedback-loop.test.ts`, `prescribers-applier.test.ts`) use inline `metricSnapshot` objects built before this field existed. Making the field required broke the build (2 TS errors). Optional avoids forcing Laura to update fixtures just to unblock the build, while letting her add `sessionCount` values in her cycle-2 test updates naturally.
+
+3. **Safe fallback exists.** `sweepChangeVectors` in curator.ts already handles missing `sessionCount` via `snapshot.sessionCount ?? 0`. When sessionCount is absent, the cost delta falls back to `tokenCostNanoAiu` (raw cumulative, no per-session normalization) — identical to pre-cycle-2 behavior. This is a graceful degradation, not a correctness cliff.
+
+4. **`buildSnapshot()` always populates it.** New hints created after this cycle will always have `sessionCount`, so the fallback only fires for historical data.
+
+## Alternative Rejected
+
+Making `sessionCount: number` required (which was the initial implementation). This caused 2 TypeScript compilation errors in test files owned by Laura. Forcing her to update fixtures just to accommodate my type change violates the "each agent owns their scope" principle and would serialize our parallel work.
+
+## Trade-off
+
+The optional field means the type doesn't enforce the invariant at compile time. Mitigation: `buildSnapshot()` is the only factory for `MetricSnapshot` in production paths, and it always sets `sessionCount`. The `?? 0` fallback is documented in the type JSDoc.
+
+
+# ADR: Wave 2 Wiring Shape — ChangeVectorProvider Port
+
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-20  
+**Status:** Decision filed  
+**Related to:** Phase 4.6 Wave 2 — Wiring Curator change vectors → prescriber `historicalVectors`
+
+---
+
+## Problem
+
+Wave 1 ships with two disconnected halves:
+- **Producer:** Curator computes `summarizeChangeVectors()` but doesn't expose it to callers
+- **Consumer:** Prescribers accept optional `historicalVectors?: ChangeVectorSummary[]` but nothing passes them
+
+**Missing:** An orchestration adapter that queries Cairn and injects vectors into Forge prescriber calls, while respecting "Forge never imports Cairn" acyclic dependency constraint.
+
+---
+
+## Decision: `ChangeVectorProvider` Port + Cairn Adapter
+
+Define a new interface in `@akubly/types`:
+
+```typescript
+export interface ChangeVectorProvider {
+  getSummaries(skillId: string): ChangeVectorSummary[];
+}
+```
+
+Cairn implements `SqliteChangeVectorProvider: ChangeVectorProvider` with a single method that:
+1. Queries change_vectors table by skill_id
+2. Aggregates rows into `ChangeVectorSummary` objects
+3. Returns the array
+
+Forge receives the provider as an injected dependency. Prescriber call sites invoke `provider.getSummaries(skillId)` and pass the result to `historicalVectors`.
+
+---
+
+## Alternatives Considered
+
+### Option A: Direct DB query in applier/prescriber call site
+
+The caller imports `summarizeChangeVectors` from Cairn and calls it inline.
+
+| Pro | Con |
+|-----|-----|
+| Simplest. No new abstractions. | **Violates "Forge never imports Cairn" constraint.** Tightly couples. |
+| Zero new code. | Cannot unit-test call site without real DB. |
+
+**Verdict:** Ruled out — breaks acyclic dependency.
+
+### Option B: Extend `FeedbackSource` with `getChangeVectorSummaries` method
+
+Couple vectors to the existing feedback interface.
+
+| Pro | Con |
+|-----|-----|
+| No new interface. | **Conflates two concerns.** Vectors are observations; feedback is input signal. |
+| Single dependency injection. | Less composable for Phase 5 (cloud vectors) without touching FeedbackSource. |
+
+**Verdict:** Ruled out — poor separation of concerns.
+
+---
+
+## Why This Option
+
+- **Acyclic dependency:** Respects "Forge never imports Cairn." Provider is abstracted in types.
+- **Established pattern:** Mirrors `FeedbackSource` injection pattern already used.
+- **Independent evolution:** Phase 5 can add `CloudChangeVectorProvider` without touching `FeedbackSource`.
+- **Type promotion:** `ChangeVectorSummary` moves from being dual-copied (guarded only by Laura's test) to a single definition in `@akubly/types`.
+- **Small contract surface:** One type + one method interface.
+
+---
+
+## Trade-off Named
+
+Slightly more wiring than extending `FeedbackSource` (adding a new interface, new adapter), but the architectural return is worth it: better separation of concerns and independently evolvable subsystems for future phases.
+
+---
+
+## Implementation Ownership
+
+- **@akubly/types:** Alexander defines `ChangeVectorProvider` interface + promotes `ChangeVectorSummary` type
+- **Cairn:** Alexander/Roger implement `SqliteChangeVectorProvider` adapter
+- **Forge:** Rosella integrates provider injection + updates prescriber call sites
+- **Tests:** Laura covers provider contract, prescriber integration with mocked provider
+
+
+---
+
+# ADR: Wave 2 Wiring Shape — ChangeVectorProvider Port + PrescriberOrchestrator Port
+
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-20  
+**Status:** Approved — ready for implementation  
+**Phase:** 4.6 Wave 2
+
+---
+
+## ChangeVectorProvider
+
+**Decision:** Use a `ChangeVectorProvider` interface in `@akubly/types` with a Cairn-side `SqliteChangeVectorProvider` adapter.
+
+**Alternatives considered:**
+1. Direct DB query in applier (violates "Forge never imports Cairn")
+2. Extend `FeedbackSource` with `getChangeVectorSummaries` method (couples prediction concern to observation concern; less composable for Phase 5 cloud vectors)
+
+**Why this option:**
+- Follows the established injection pattern (`FeedbackSource` precedent)
+- Respects acyclic dependency constraint
+- Independently evolvable — Phase 5 can add `CloudChangeVectorProvider` without touching `FeedbackSource`
+- `ChangeVectorSummary` type promoted to `@akubly/types` eliminates the dual-copy maintenance burden
+- Small contract surface: one type + one single-method interface
+
+## PrescriberOrchestrator
+
+**Decision:** Add a `PrescriberOrchestrator` interface in `@akubly/types`. Forge implements it (wraps both prescribers). Cairn's Curator calls it via injection after the vector sweep.
+
+**Alternatives considered:**
+1. Cairn imports Forge prescribers directly (violates acyclic dep constraint)
+2. Forge-only manual invocation, defer Cairn-side (contradicts Phase 4.5 spec §ADR-P4.5-006 which designates Cairn as the autonomous trigger path)
+
+**Why this option:**
+- The Phase 4.5 spec explicitly designed two trigger paths: manual in Forge, Curator-driven in Cairn. The Curator is the primary production invocation path.
+- Prescribers are pure functions in Forge. Cairn needs to call them but can't import Forge. A port resolves this cleanly — same pattern as `FeedbackSource` and `ExportQualityGate`.
+- Single-method interface, minimal surface.
+
+## Negative-Impact Attenuation
+
+**Decision:** Implement attenuation in Wave 2 (not defer). When `meanNetImpact < 0`, `confidenceBoost` drops below 1.0 (clamped to ≥ 0.3). Without this, wiring would allow auto-apply of historically harmful prescriptions.
+
+**Trade-off named:** Adds ~5 lines of logic + 4 tests across two packages. Small scope increase for eliminating a known-bad production behavior.
+
+---
+
+# ADR: Wave 2 v3 — Wiring Shape + Scope Split + Safety Gates
+
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-21  
+**Status:** Approved — ready for implementation  
+**Phase:** 4.6 Wave 2 v3 (revision of 2026-05-20 ADR, incorporates duck critique and scope refinement)
+
+---
+
+## ChangeVectorProvider Port
+
+**Decision:** `ChangeVectorProvider` interface in `@akubly/types` with async return type (`Promise<ChangeVectorSummary[]>`). Cairn implements via `SqliteChangeVectorProvider`.
+
+**Reasoning:** Same as v1 (follows FeedbackSource pattern, respects acyclic deps). v3 adds `Promise` return type for Phase 5 readiness — avoids interface churn when cloud providers land.
+
+## Wave 2/3 Split
+
+**Decision:** Wave 2 = data plumbing + manual invocation via top-level composition script. Wave 3 = Curator-driven automatic orchestration.
+
+**Reasoning:** `curate()` is a module-level function in Cairn with no injection points, called from Cairn-only entrypoints (hooks, MCP). Injecting a Forge-implemented orchestrator requires a composition root that imports both packages. No such root exists today. Creating one is a package boundary decision that deserves its own ADR, not a wiring detail buried in Wave 2.
+
+**Trade-off named:** Wave 2 only delivers manual invocation. The autonomous Curator path (primary production trigger per Phase 4.5 spec) is deferred. But the hard parts (type promotion, safety gates, provider adapter) ship in Wave 2; Wave 3 is pure wiring once composition ownership is decided.
+
+## Hint Deduplication
+
+**Decision:** `(skillId, source, category)` dedup key with active-status filter (`pending`, `accepted`, `deferred`). Skip insertion if match exists. No upsert — preserves audit trail.
+
+**Reasoning:** Prescribers generate fresh UUIDs every invocation. Without dedup, repeated runs create unbounded duplicate hints. The existing Cairn prescriber uses `hasActivePrescription(insightId)` for the same purpose. Same pattern, different key.
+
+## Negative-Impact Attenuation
+
+**Decision:** Two-layer defense:
+1. Confidence scaling: `confidenceBoost = max(0.1, 1.0 + meanNetImpact)` when mature evidence + negative impact. Sparse evidence: no attenuation (boost stays 1.0).
+2. Eligibility flag: `autoApplyEligible = false` when `meanNetImpact < -0.2` and `vectorCount >= minVectors`.
+
+**Reasoning:** Confidence scaling alone with a floor of 0.3 (v2) could still pass permissive auto-apply thresholds. The `autoApplyEligible` flag is defense-in-depth — the applier checks it independently of confidence math. Strongly negative categories cannot auto-apply regardless of threshold configuration.
+

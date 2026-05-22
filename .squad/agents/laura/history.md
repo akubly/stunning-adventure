@@ -1,6 +1,19 @@
 # Laura — History (Summarized)
 
+## 2026-05-21: Wave 2 v3 Scope Ready — Curator Wiring Deferred to Wave 3
+
+Scribe orchestration complete: Graham's v3 scope finalized and merged to `.squad/decisions.md`. Key scope decisions:
+- **ChangeVectorProvider** port with async return type for Phase 5 cloud readiness
+- **Wave 2/3 split:** Manual invocation in Wave 2; Curator-driven automatic orchestration deferred to Wave 3 (requires composition-root decision)
+- **Hint deduplication** via `(skillId, source, category)` key with active-status filter
+- **Two-layer negative-impact attenuation:** Confidence scaling + eligibility flag (`autoApplyEligible`)
+
+Decisions archived; all decisions.md > 20KB now. Ready for implementation on Wave 2 primitives (computation + ranking only; runtime wiring follows in Wave 3).
+
+---
+
 ## 2026-05-20: Phase 4.6 Wave 2 Scoping — Test Coverage
+
 
 Wave 2 scope amended: `docs/forge-phase4.6-wave2-scope.md` updated with PrescriberOrchestrator port + negative-impact attenuation. New ADR merged to `.squad/decisions.md`. Invocation point: `Curator.curate()` post-vector-sweep. Attenuation: when `meanNetImpact < 0`, `confidenceBoost` ≤ 1.0 (minimum 0.3), preventing auto-apply of harmful prescriptions.
 
