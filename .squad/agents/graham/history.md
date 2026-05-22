@@ -143,3 +143,17 @@
 **Attenuation refined:** Two-layer defense — confidence scaling (`max(0.1, 1+impact)`) for statistical attenuation PLUS `autoApplyEligible` boolean flag as defense-in-depth policy gate. Strongly negative categories blocked from auto-apply regardless of confidence threshold configuration.
 
 **Lesson:** When you propose an injection port, you must also identify who constructs and passes the implementation. "Inject via config parameter" is not a plan if nobody owns the injection site. The composition root is a first-class architectural decision, not a wiring detail.
+
+### Wave 2 v3.1 — Sanity-Check Review Fixes (2026-05-05)
+
+**4 findings (2 BLOCKING, 2 STRONG) — all fixable, no redesign needed:**
+
+1. **Stale Cairn-MCP wording (BLOCKING).** Residual "MCP tool" references in W2-9 and §3.4/§5.1/§5.2 contradicted the Wave 2/3 split. Scrubbed all Cairn-MCP references; MCP explicitly deferred to Wave 3 §9.
+
+2. **autoApplyEligible has no persistence path (BLOCKING).** The flag lived on `ChangeVectorSummary` but was lost between prescription and application. Added full propagation spec (§4.5): summary → `OptimizationHint` field → `evidence` JSON blob → applier gate. Chose evidence blob over new DB column because no SQL query ever needs `WHERE autoApplyEligible = false`.
+
+3. **Attenuation threshold inconsistency (STRONG).** Named the constants: `NEGATIVE_IMPACT_AUTO_APPLY_GATE = -0.2` (policy gate at drift tier boundary), `ATTENUATION_FLOOR = 0.1` (minimum confidence boost). Two thresholds because they serve different purposes — proportional statistical penalty vs. hard policy cutoff.
+
+4. **CLI surface underspecified (STRONG).** Added §5.1: `--skill` flag, profile load strategy, JSON-ish output format, exit codes (0/1/2).
+
+**Lesson:** When a review finding says "this flag has no persistence path," trace the full data lifecycle: where is it born, who copies it, where is it stored, who reads it back. If any link is missing, the flag is decoration.

@@ -1,3 +1,4 @@
+📌 Team update (2026-05-22T20:03:56Z): Wave 2 v3.1 scope final — autoApplyEligible propagates through OptimizationHint; constants NEGATIVE_IMPACT_AUTO_APPLY_GATE=-0.2 and ATTENUATION_FLOOR=0.1; CLI surface only — no MCP in Wave 2. — Graham Knight
 # Alexander — History
 
 ## 2026-05-21: Wave 2 v3 Scope Ready — Curator Wiring Deferred to Wave 3
