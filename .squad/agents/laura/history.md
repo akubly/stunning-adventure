@@ -1,5 +1,25 @@
 # Laura — History (Summarized)
 
+## Summary
+
+**Total entries:** 5 major contributions spanning Phase 2-4.6 testing + Round 2 brain system consulting + Round 2 roster proposal
+
+| Date | Event | Status |
+|------|-------|--------|
+| 2026-04-28 | Phase 2 Runtime Verification | ✅ Completed |
+| 2026-04-29 | Phase 3 Cross-Module Integration | ✅ Completed |
+| 2026-05-02–2026-05-04 | Phase 4.5–4.6 Review Cycle (Feedback Loop + Change Vectors) | ✅ Completed |
+| 2026-05-22 | Brain System Consulting (Test Architecture Lens) | ✅ Completed |
+| 2026-05-22 | Brain Project Roster Proposal (Test Advisor Role) | 🟡 Proposal pending Aaron |
+
+**Key themes:**
+- Contract-first testing: Inline implementations before real modules, switch imports with zero test changes
+- Phase 4.6 lifecycle: 15 findings consolidated, 3-cycle review with Lockout-compliant cross-assignment
+- Brain project: Proposed on-call Test Advisor role, applying contract-first patterns to stochastic/agentic testing
+- Brain roster: Proposed Test Advisor (advisory, on-call) for Brain project with primary Cairn commitment
+
+**Recent decision:** Laura positioned as on-call test architect for Brain; contract-first patterns and coordinated testing expertise directly applicable to learning/memory activities validation. Primary focus: Cairn.
+
 ## Project Context
 
 - **Project:** Cairn + Forge — an agentic software engineering platform
@@ -158,3 +178,28 @@
 **Lesson (Cycle 3 integration):** When running test suites after fixes land, always verify live source (Get-Content) if a test passes unexpectedly — cached views can mask live-source changes. Additionally, cycle-3 advisory tests revealed that safeMin guards needed validation across all formula call sites. A single missing guard in any prescriber would silently pass test boundaries but fail in production. Pattern: enumerate all formula call sites and apply the guard consistently.
 
 **Lockout Observation:** Test updates for findings in both forge and cairn required coordination across Alexander and Rosella's fixes. Laura ran tests after each fix wave, preventing integration gaps. Tests became the integration contract between parallel implementations.
+
+---
+
+## Brain Project — Proposed Role (2026-05-22)
+
+**Status:** Proposal pending Aaron approval
+
+**Role:** Test Advisor (advisory) for Brain project
+
+**Allocation:** On-call consult capacity
+
+**Mandate:** Test patterns for stochastic/agentic behavior; verification strategies
+
+**Contribution Model:**
+- On-call specialist for test architecture decisions
+- No ongoing commitment; primary focus Cairn
+- When Brain team faces test verification challenges, Laura provides guidance
+
+**Scope:**
+- How to test learning/memory activities (meditation, recall)
+- Verification of plasticity (memory evolution)
+- Stochastic behavior validation
+- Trust metadata verification
+
+**Notes:** Laura's cycle-based test architecture experience (contract-first, incremental validation) and pattern expertise on coordinated testing across parallel implementations directly applicable to Brain's testing challenges. Primary commitment: Cairn.

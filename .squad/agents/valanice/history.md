@@ -2,18 +2,20 @@
 
 ## Summary
 
-**Total entries:** 2 major consultations spanning Phase 4.5 UX + Round 2 brain system consulting
+**Total entries:** 3 major consultations spanning Phase 4.5 UX + Round 2 brain system consulting + Round 2 roster proposal
 
 | Date | Event | Status |
 |------|-------|--------|
 | 2026-04-28 | Phase 4.5 Prescriber UX Learnings | ✅ Completed |
-| 2026-05-22 | Brain System Consulting (Round 2, UX Lens) | 🟡 Deliberation |
+| 2026-05-22 | Brain System Consulting (Round 2, UX Lens) | ✅ Completed |
+| 2026-05-22 | Brain Project Roster Proposal (UX Advisor Role) | 🟡 Proposal pending Aaron |
 
 **Key themes:**
 - Prescriber UX: Max 1 proactive insight per session, pull-based interface, observability on demand
-- Brain system: Infrastructure positioning (like Git), mental model boundaries, phased extraction strategy
+- Brain system: Infrastructure positioning (like Git), mental model boundaries, phased extraction strategy, 70% UX owner / 30% cognitive science gap
+- Brain roster: Proposed UX Advisor (advisory, 20%) for Brain project with primary Cairn commitment
 
-**Recent decision:** Valanice recommends NEW REPO with phased extraction—prototype in monorepo, extract when brain has independent release cadence.
+**Recent decision:** Valanice positioned as strong on UX/LX (70% of Brain's interaction design), but flagged cognitive foundations (30%) as requiring specialist. Proposes advisory role with 20% allocation and primary Cairn focus.
 
 ---
 
@@ -218,5 +220,29 @@ Participated in Round 2 consulting on repo placement for new agentic brain/memor
 **Artifact:** `.squad/decisions/inbox/valanice-self-fit.md` — full confidence matrix, squad composition recommendation, and honest assessment of scope
 
 **Recommendation:** Brain project is **70% interaction design (Valanice owns) + 30% cognitive science/IA (needs specialist)**. Proceed with prototype, but validate cognitive foundations BEFORE full design. Don't ask me to defend what "meditation" means — bring someone who can.
+
+---
+
+## Brain Project — Proposed Role (2026-05-22)
+
+**Status:** Proposal pending Aaron approval
+
+**Role:** UX Advisor (advisory) for Brain project
+
+**Allocation:** 20% named advisor capacity
+
+**Mandate:** Config surface design, observability UX, "is this usable?" gut checks
+
+**Contribution Model:**
+- Advisory capacity only; no blocking dependencies
+- No ongoing commitment; focused review feedback
+- Primary commitment: Cairn
+
+**Scope:**
+- User tier configuration surface (how does user ~/ brain work?)
+- Activity observability (making meditation/recall visible)
+- Mental models and learnability
+
+**Notes:** Valanice positioned as 70% UX owner for Brain's interaction design layer; 30% (cognitive foundations) requires specialist. Recommendation: proceed with prototype, validate cognitive foundations BEFORE full design. Brain needs epistemology/learning systems specialists for the cognition layer.
 
 

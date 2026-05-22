@@ -2,21 +2,23 @@
 
 ## Summary
 
-**Total entries:** 4 major consultations spanning Phase 4.5 SDK + Phase 4.6 change vectors + Q&A + Round 2 brain system consulting
+**Total entries:** 5 major consultations spanning Phase 4.5 SDK + Phase 4.6 change vectors + Q&A + Round 2 brain system consulting + Round 2 roster proposal
 
 | Date | Event | Status |
 |------|-------|--------|
 | 2026-05-05 | Initial Brain Sizing (Q&A) | ✅ Completed |
 | 2026-05-06 | Phase 4.6 Spec Clarifications | ✅ Completed |
 | 2026-05-01 | Change Vector Questions (F1-F2 analysis) | ✅ Completed |
-| 2026-05-22 | Brain System Consulting (Round 2, Refined) | 🟡 Deliberation |
+| 2026-05-05–2026-05-22 | Brain System Consulting & Architecture Analysis (Round 1–2) | ✅ Completed |
+| 2026-05-22 | Brain Project Roster Proposal (Integration Engineer Core Role) | 🟡 Proposal pending Aaron |
 
 **Key themes:**
 - SDK runtime: Forge execution model, decision gates, DBOM provenance
 - Change vectors: Before/after metric snapshots, min sessions observed, net impact weighting
-- Brain system: Flipped from "monorepo packages/brain/" to "NEW REPO" (Q3 backend service argument)
+- Brain system: Evolved from "monorepo packages/brain/" → "NEW REPO" → "Integration Engineer Phase 1 on-call, data boundaries specialist"
+- Brain roster: Proposed Integration Engineer (core) on-call role with Cairn-primary commitment
 
-**Recent decision:** Alexander recommends new repo stunning-adventure-brain because org-tier federation wants Postgres + backend service = separate deployment boundary.
+**Recent decision:** Alexander proposes Integration Engineer on-call role for Brain adapters + MCP tools; recommends new repo with Postgres backend + deployment boundary. Core strength is data-oriented boundaries; Brain needs agentic cognition specialists.
 
 ---
 
@@ -237,5 +239,32 @@ Participated in Round 2 consulting on repo placement for new agentic brain/memor
 **Core insight:** Good architectural analysis (I nailed the repo placement) ≠ domain expertise (I lack agentic cognition experience). Lesson: Hire the cognition specialists; keep me for the boundaries.
 
 **Artifact:** `.squad/decisions/inbox/alexander-self-fit.md` (detailed transfer analysis, philosophy mismatch, specialist profiles).
+
+---
+
+## Brain Project — Proposed Role (2026-05-22)
+
+**Status:** Proposal pending Aaron approval
+
+**Role:** Integration Engineer (core) for Brain project
+
+**Allocation:** Borrow from Cairn — on-call for adapter work (primary Cairn, secondary Brain)
+
+**Mandate:** Brain↔Forge adapters, MCP tools, npm publishing
+
+**Deliverables Phase 1:**
+- MCP tools exposing recall/integrate activities
+- Forge can push captured decisions to Brain user tier
+
+**Coordination model:**
+- Time-boxed contributions from Cairn duties
+- Boundary-specialist on-call for adapter implementation
+- Weekly cross-team standup visibility
+
+**Sync ceremonies:**
+- Weekly cross-team standup with Brain Lead + Cairn Lead
+- Biweekly boundary review (Brain schema changes affecting Cairn adapters)
+
+**Notes:** Alexander recommends new repo with Postgres backend + service deployment boundary; strong architectural analysis on federation models. Core strength is data-oriented boundaries; Brain needs cognitive systems expertise beyond integration scope.
 
 

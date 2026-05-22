@@ -2,20 +2,22 @@
 
 ## Summary
 
-**Total entries:** 3 major consultations spanning Phase 4.5 telemetry + Phase 4.6 change vectors + Round 2 brain system consulting
+**Total entries:** 4 major consultations spanning Phase 4.5 telemetry + Phase 4.6 change vectors + Round 2 brain system consulting + Round 2 roster proposal
 
 | Date | Event | Status |
 |------|-------|--------|
 | 2026-05-02 | Phase 4.5 Telemetry Learnings | ✅ Completed |
 | 2026-05-01 | Persona Review Fixes (F1-F7) | ✅ Completed |
-| 2026-05-22 | Brain System Consulting (Round 2) | 🟡 Deliberation |
+| 2026-05-03–2026-05-22 | Brain System Consulting & Architecture Analysis (Round 1–2) | ✅ Completed |
+| 2026-05-22 | Brain Project Roster Proposal (Platform Engineer Core Role) | 🟡 Proposal pending Aaron |
 
 **Key themes:**
 - Telemetry aggregation: meanFromMeta() fix, convergence floor, signal component surface
 - Bridge event contracts: EVENT_MAP alignment, COLLECTOR_BRIDGE_EVENTS constant, contract test
-- Brain system: Flipped from "extend Curator" to "NEW PACKAGE in monorepo" (pragmatic approach)
+- Brain system: Evolved from "extend Curator" → "new package monorepo" → "new repo with Platform Engineer Phase 1–3 lead"
+- Brain roster: Proposed Platform Engineer (core) role with 60/40 Cairn/Brain split during Phase 1
 
-**Recent decision:** Roger recommends packages/mem/ as pragmatic new package; can extract to separate repo later if org-tier backend service is needed.
+**Recent decision:** Roger proposes Platform Engineer role for Brain Phase 1–3 infrastructure (tiers, properties, representation, acquisition); recommends bringing in specialists for cognitive layers (KINDS, reasoning ACTIVITIES).
 
 ---
 
@@ -217,5 +219,33 @@ Cairn is my sweet spot (operational event processing, pattern detection, prescri
 I'm the right person for the foundation. But bring in specialists for the cognition.
 
 **File written:** `.squad/decisions/inbox/roger-self-fit.md` (detailed 10-section self-assessment with energy breakdown, options, and honest readiness evaluation)
+
+---
+
+## Brain Project — Proposed Role (2026-05-22)
+
+**Status:** Proposal pending Aaron approval
+
+**Role:** Platform Engineer (core) for Brain project
+
+**Allocation:** Borrow from Cairn — 60/40 split during Phase 1 (primary Cairn, secondary Brain)
+
+**Mandate:** Storage layer, federation protocol, tier resolution
+
+**Deliverables Phase 1:**
+- User tier installed and persisting
+- Project tier federating to user
+
+**Coordination model:**
+- Scoped 1-week sprints with defined deliverables
+- Handoff docs: what was done, what's next, who owns it
+- No interleaving within a day
+- Escalation to Aaron if Brain work threatens Cairn timeline (Brain defers)
+
+**Sync ceremonies:**
+- Weekly cross-team standup with Brain Lead + Cairn Lead
+- Biweekly boundary review
+
+**Notes:** Roger recommends new repo (separate deployment boundary for org-tier federation); pragmatic to extract later if monorepo prototype needed first. Confidence in Platform role high; Brain needs epistemology/learning systems specialists for the cognitive layer.
 
 
