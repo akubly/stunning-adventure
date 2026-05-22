@@ -267,4 +267,48 @@ Participated in Round 2 consulting on repo placement for new agentic brain/memor
 
 **Notes:** Alexander recommends new repo with Postgres backend + service deployment boundary; strong architectural analysis on federation models. Core strength is data-oriented boundaries; Brain needs cognitive systems expertise beyond integration scope.
 
+---
+
+## Eureka Project Kickoff (2026-05-22)
+
+**Date:** 2026-05-22  
+**Event:** Aaron approved project name + hired 3 specialists; monorepo placement decided  
+**New Colleagues:** Genesta (Cognitive Systems Lead), Crispin (Knowledge Representation), Edgar (Learning Systems)  
+**Role:** Integration Engineer (boundary specialist) — Eureka ↔ Forge adapters; continue Cairn as primary
+
+### Context & Rationale
+
+Aaron decided: Build Eureka in `packages/eureka/` (monorepo), not separate repo.
+- Round 2 deliberation: Alexander recommended NEW REPO (deployment boundary for org-tier Postgres backend)
+- Round 3 self-assessment: Alexander identified philosophy collision (Forge = deterministic frame around chaos; Brain = make non-determinism useful) and positioned as **boundary specialist** rather than core cognitive architect
+- ✅ New hires (Genesta, Crispin, Edgar) handle cognitive layers; Alexander stays as adapter/integration point
+
+### Impact on Alexander
+
+**Primary focus:** Continue Forge SDK runtime abstraction (decision gates, DBOM provenance, determinism safety)
+
+**Secondary focus:** Eureka ↔ Forge integration seams — MCP tools + data adapters  
+- How does Forge push decisions to Eureka?
+- How does Eureka surface recalls/meditations to Forge hooks?
+- What's the npm publishing boundary?
+
+**Cross-project responsibility:**
+- Design integration contract: Forge ↔ Eureka adapter (what data moves, in which direction?)
+- MCP tool naming + LX consistency between Forge + Eureka
+- Data boundary verification (Eureka can't leak determinism assumptions back into Forge)
+
+**Key context:**
+- Philosophy mismatch is real: Forge is about containment/safety; Eureka is about autonomy/discovery. Alexander is the containment expert, not the autonomy designer.
+- Genesta/Crispin/Edgar handle agentic loops + reasoning + knowledge graphs
+- Alexander's boundary expertise (deployment topology, adapter patterns, npm strategies) makes him the integration point, not the cognitive architect
+
+### Design Pattern: The Seam
+
+**What Forge provides:** Decision context (what was tried? what worked? what failed?)  
+**What Eureka consumes:** That context as learning signal (update trust, recency, plasticity properties)  
+**What Eureka provides:** Recommendations/patterns/analogies from past experience  
+**What Forge consumes:** Those as prescriber input candidates
+
+**Alexander's job:** Design the seam so data flows cleanly without Forge bleeding into Eureka's reasoning. Type boundaries + adapter functions.
+
 

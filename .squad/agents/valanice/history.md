@@ -245,4 +245,52 @@ Participated in Round 2 consulting on repo placement for new agentic brain/memor
 
 **Notes:** Valanice positioned as 70% UX owner for Brain's interaction design layer; 30% (cognitive foundations) requires specialist. Recommendation: proceed with prototype, validate cognitive foundations BEFORE full design. Brain needs epistemology/learning systems specialists for the cognition layer.
 
+---
+
+## Eureka Project Kickoff (2026-05-22)
+
+**Date:** 2026-05-22  
+**Event:** Aaron approved project name + hired 3 specialists; primary focus shift to Eureka  
+**New Colleagues:** Genesta (Cognitive Systems Lead), Crispin (Knowledge Representation), Edgar (Learning Systems)  
+**Role:** UX/LX Lead for Eureka; 60% allocation (Cairn advisory: 40%)
+
+### Context & Rationale
+
+Aaron decided: Build Eureka in `packages/eureka/` (monorepo); hire domain specialists to fill cognitive science gaps.
+
+Round 3 self-assessment outcome:
+- Valanice identified: 70% UX/LX transfer (mental models, config surfaces, pull-based observability, signal density)
+- Valanice identified: 30% cognitive science gap (can't defend what "meditation" means neurologically; can't validate kinds ontology; graph architecture outside UX domain)
+- ✅ New hires fill the cognitive gap; Valanice owns UX surface design with specialist input
+
+### Impact on Valanice
+
+**Primary focus:** Eureka UX/LX design (60% allocation)
+- Config file surfaces (`.brain/config.yml` — global defaults + per-repo overrides, analogous to `.gitconfig`)
+- Activity observability (making meditation/recall/dream observable without overwhelming the user)
+- MCP tool naming + command semantics (verb_noun patterns from Phase 5)
+- Decision UI for Eureka ↔ Forge integration (how does a human review Eureka's suggestions?)
+- Max-1-proactive insight design (Prescriber pattern transfer to Eureka)
+
+**Secondary focus:** Cairn advisory (40% allocation)
+- Continue UX/LX consultancy on Prescriber design
+- Maintain LX Heuristics reference (10 principles) for cross-project consistency
+
+**Cross-project responsibility:**
+- UX principle alignment: Cairn's "context budget" principle applies to Eureka memory recall (don't overwhelm the agent with every stored memory)
+- Signal density optimization: Which insights surface, which stay quiet
+- Mental model boundaries: Eureka is "infrastructure like Git," not "feature of Forge"
+
+**Key context:**
+- Genesta (Cognitive Systems Lead) brings epistemology expertise to validate activities taxonomy
+- Crispin (Knowledge Representation Specialist) brings ontology + graph architecture to inform config surfaces
+- Edgar (Learning Systems Specialist) brings learning primitives expertise to ground trust/plasticity/recency policies
+- Valanice's 70% UX transfer is maximized with their 30% cognitive science + 100% agentic reasoning expertise alongside
+
+### Design Partnership
+
+**Valanice owns:** How Eureka's knowledge surfaces to humans  
+**Specialists own:** What Eureka's knowledge *means* cognitively  
+**Interface:** Config files as the agreed-upon "source of truth" — Valanice designs UI to set policies; specialists define what those policies mean
+
 

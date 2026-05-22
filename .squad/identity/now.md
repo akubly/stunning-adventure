@@ -1,7 +1,9 @@
 ---
-updated_at: 2026-05-04T00:58:00Z
-focus_area: Phase 4.6 ✅ COMPLETE — Change Vector Learning + 3-cycle persona review (1153 tests, 39 commits, primitives only — wiring deferred to Wave 2)
+updated_at: 2026-05-22T20:44:15Z
+focus_area: Eureka kickoff — new package `packages/eureka/` (agentic brain/memory/thinking/learning) + 3 hires (Genesta/Crispin/Edgar)
 active_issues:
+  - "Eureka Phase 0: Genesta to scaffold packages/eureka/ charter, design principles, initial module layout"
+  - "Phase 4.6 ✅ COMPLETE — Change Vector Learning + 3-cycle persona review (1153 tests, 39 commits, primitives only — wiring deferred to Wave 2)"
   - "Phase 1: Monorepo restructuring ✅ COMPLETE"
   - "Phase 2: Live runtime verification ✅ COMPLETE (5/5 modules)"
   - "Phase 3: CopilotClient Integration ✅ COMPLETE (7 modules, 289 tests, 9-persona review)"

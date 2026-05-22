@@ -203,3 +203,47 @@
 - Trust metadata verification
 
 **Notes:** Laura's cycle-based test architecture experience (contract-first, incremental validation) and pattern expertise on coordinated testing across parallel implementations directly applicable to Brain's testing challenges. Primary commitment: Cairn.
+
+---
+
+## Eureka Project Kickoff (2026-05-22)
+
+**Date:** 2026-05-22  
+**Event:** Aaron approved project name + hired 3 specialists  
+**New Colleagues:** Genesta (Cognitive Systems Lead), Crispin (Knowledge Representation), Edgar (Learning Systems)  
+**Role:** Test Advisor (on-call specialist) for Eureka; continue Cairn as primary
+
+### Context & Rationale
+
+Aaron decided: Build Eureka in `packages/eureka/` (monorepo); hire domain specialists.
+- Round 3 self-assessment: Current squad identified expertise gaps (cognitive science, epistemology, agentic loops)
+- ✅ New hires (Genesta, Crispin, Edgar) bring cognitive systems expertise
+- Laura positioned as on-call test architect for Eureka's learning/stochastic behavior validation
+
+### Impact on Laura
+
+**Primary focus:** Continue Cairn testing (427 tests, contract-first patterns, phase-by-phase verification)
+
+**Secondary focus:** Eureka test strategy consultation (on-call)
+- Contract-first testing for agentic behavior (define activities' expected contracts before implementation)
+- Stochastic behavior validation (how to test non-deterministic operations? metamorphic testing?)
+- Learning verification (how do we assert that trust/plasticity/recency properties behave as designed?)
+- Parallel implementation coordination (if Genesta/Crispin/Edgar work on different layers, how do tests prevent integration gaps?)
+
+**Cross-project responsibility:**
+- Test architecture continuity: Eureka's stochastic testing patterns should follow Cairn's contract-first discipline
+- Bridge contract design: How should tests guard the Eureka ↔ Forge adapter boundary?
+- Measurement design: Eureka activities like "meditate" and "dream" are non-deterministic; what's the test strategy?
+
+**Key context:**
+- Genesta/Crispin/Edgar handle agentic reasoning + knowledge representation
+- Laura's phase-by-phase test pattern (L1–L5 from Phase 4.6) directly transfers to Eureka's layer-based implementation (tiers/kinds/properties/activities)
+- Laura's metamorphic testing expertise (response curves, not terminal states) applies to learning system validation (plasticity increases over time, trustworthiness tracks accuracy)
+
+### Test Strategy Alignment
+
+**Cairn pattern (Phase 4.6):** Define expected API types → inline implementations → swap imports → test continuity
+**Eureka pattern (anticipated):** Define activities contracts → implement in isolation → validate federation → test learning curves
+
+**Laura as the bridge:** Brings contract-first discipline to Eureka; ensures Genesta/Crispin/Edgar follow the same testing rigor that hardened Cairn.
+

@@ -248,4 +248,45 @@ I'm the right person for the foundation. But bring in specialists for the cognit
 
 **Notes:** Roger recommends new repo (separate deployment boundary for org-tier federation); pragmatic to extract later if monorepo prototype needed first. Confidence in Platform role high; Brain needs epistemology/learning systems specialists for the cognitive layer.
 
+---
+
+## Eureka Project Kickoff (2026-05-22)
+
+**Date:** 2026-05-22  
+**Event:** Aaron approved project name + hired 3 specialists; monorepo placement decided  
+**New Colleagues:** Genesta (Cognitive Systems Lead), Crispin (Knowledge Representation), Edgar (Learning Systems)  
+**Role:** Platform Engineer (infrastructure) for Eureka Phase 1–3; continue Cairn as primary
+
+### Context & Rationale
+
+Aaron decided: Build Eureka in `packages/eureka/` (monorepo), not separate repo.
+- Round 2 deliberation: Roger recommended NEW PACKAGE (pragmatic, extract later if needed)
+- Round 3 self-assessment: Roger identified expertise gaps (cognitive science, epistemology, agentic loops) and recommended hiring specialists
+- ✅ New hires fill those gaps, allowing Roger's infrastructure expertise to be leveraged without overextending into cognitive domains
+
+### Impact on Roger
+
+**Primary focus:** Continue Cairn platform work (federation, observability, prescriber lifecycle)
+
+**Secondary focus:** Eureka infrastructure (Phases 1–3) — at reduced allocation from initial proposal
+- Original proposal: 60/40 split (Cairn/Brain)
+- Revised (post-hiring): Ad-hoc consultation on tier federation + back-pressure; primary commitment stays Cairn
+
+**Cross-project responsibility:**
+- Design project-tier delegation: How does `packages/eureka/` wrap Cairn Curator for practical-pattern tiers?
+- Advise on federation protocol: Tier resolution, conflict handling, cwd-aware routing
+- Coordinate Eureka ↔ Cairn integration seams
+
+**Key context:**
+- Genesta (Cognitive Systems Lead) handles epistemology + agentic reasoning loops (the gap Roger identified)
+- Crispin (Knowledge Representation Specialist) handles KINDS ontology + graph design (the gap Roger identified)
+- Edgar (Learning Systems Specialist) handles ACTIVITIES + meta-learning (the gap Roger identified)
+- Roger's infrastructure strengths (tiers, properties, representation, acquisition) now team expertise, not solo responsibility
+
+### Delegation Pattern
+
+**What Roger owns:** Storage layer, federation protocol, SQLite + Git infrastructure  
+**What specialists own:** Cognitive layers, ontology design, reasoning loops  
+**Interface:** Clean TIERS abstraction — Eureka calls `project_tier.get()` which delegates to Cairn; Eureka manages user/organizational tiers separately
+
 

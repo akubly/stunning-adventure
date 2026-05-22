@@ -220,3 +220,29 @@ Produced consolidated deliverable with three sections:
 
 When producing a charter for a new squad, the most valuable section is the non-goals. Saying what something ISN'T prevents scope creep and gives the new team clear boundaries to defend.
 
+---
+
+## Eureka Project Kickoff (2026-05-22)
+
+**Date:** 2026-05-22  
+**Event:** Aaron approved project name + hired 3 specialists  
+**New Colleagues:** Genesta (Cognitive Systems Lead), Crispin (Knowledge Representation), Edgar (Learning Systems)  
+**Decision:** Build in `packages/eureka/` (monorepo); add new squad to existing team
+
+### Impact on Graham
+
+**Role shift:**
+- Continue Lead role on Cairn/Forge stabilization (primary focus)
+- Advisory capacity on Eureka architecture & system boundaries (2–3 hrs/week)
+- Not leading Brain/Eureka project (per Round 3 self-assessment, Graham correctly identified epistemology expertise gap)
+
+**Cross-project responsibility:**
+- Co-architect repo-wide package boundaries (Cairn/Forge/Eureka three-pillar model)
+- Design Eureka ↔ Forge integration points (where Genesta/Crispin/Edgar adapt agentic cognition to Forge execution)
+- Facilitate decision routing between Cairn and Eureka squads
+
+**Key context:**
+- Eureka is the third pillar of the agentic platform (Cairn observes → Forge executes → Eureka thinks)
+- New specialists bring the epistemology/cognitive systems expertise that Graham's Round 3 assessment identified as missing
+- Graham's strength (platform architecture) remains valuable at boundaries; leadership stays with Eureka specialists
+

@@ -21,6 +21,9 @@
 | Valanice | UX / Human Factors | `.squad/agents/valanice/charter.md` | ✅ Active |
 | Alexander | SDK/Runtime Dev | `.squad/agents/alexander/charter.md` | ✅ Active |
 | Laura | Tester | `.squad/agents/laura/charter.md` | ✅ Active |
+| Genesta | Cognitive Systems Lead (Eureka) | `.squad/agents/genesta/charter.md` | ✅ Active |
+| Crispin | Knowledge Representation Specialist (Eureka) | `.squad/agents/crispin/charter.md` | ✅ Active |
+| Edgar | Learning Systems Specialist (Eureka) | `.squad/agents/edgar/charter.md` | ✅ Active |
 
 ## Project Context
 
