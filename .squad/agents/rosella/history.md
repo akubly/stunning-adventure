@@ -98,6 +98,10 @@ in production. The main patterns:
 ## Learnings
 - 2026-05-22: `getAllCategories(db, skillId)` lives in `packages/cairn/src/db/changeVectors.ts` beside the existing summary helpers. It reads distinct values from the `optimization_hints.category` column for a given `skill_id`, orders them alphabetically, and returns `[]` when no hints exist.
 - 2026-05-22: Added three `changeVectors.test.ts` cases covering empty, single-category, and duplicate multi-category enumeration. `npm test --workspace=@akubly/cairn` passed with 560 tests green after the helper landed.
+- 2026-05-22: `SqliteChangeVectorProvider` now lives in `packages/cairn/src/db/sqliteChangeVectorProvider.ts` and is exported from Cairn's top-level `src/index.ts` barrel so callers can construct it directly from a SQLite `Database`.
+- 2026-05-22: Type reconciliation stayed at the DB boundary: `getAllCategories()` filters raw SQLite category strings through the canonical `OptimizationCategory` union from `@akubly/types`, then `summarizeChangeVectors()` only accepts narrowed categories. This kept the shared `ChangeVectorSummary` contract strict without widening it back to `string` inside Cairn.
+- 2026-05-22: `SqliteChangeVectorProvider.getSummaries()` deliberately drops zero-vector summaries. Empty categories carry no historical signal, so returning `[]` keeps downstream orchestration in the same Phase 4.5 fallback mode as "no learned vectors yet."
+- 2026-05-22: Verification after the provider landed: `npm run build`, `npm test --workspace=@akubly/cairn`, and root `npm test` all passed. Cairn is now at 564 passing tests plus 1 todo; the monorepo run also kept Forge green (20 files, 599 passing, 3 todo).
 
 ## Learnings — Phase 4.6 Cycle 3 Advisory Fixes (2026-05-04)
 
