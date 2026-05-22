@@ -45,9 +45,9 @@ describe("prescriber ChangeVectorSummary contract", () => {
     const canonical: CanonicalChangeVectorSummary = {
       category: "convergence",
       skillId: "skill-alpha",
-      meanNetImpact: 0.42,
+      meanNetImpact: -0.5,
       vectorCount: 6,
-      confidenceBoost: 1.5,
+      confidenceBoost: 0.5,
       autoApplyEligible: false,
     };
 
@@ -57,15 +57,15 @@ describe("prescriber ChangeVectorSummary contract", () => {
     expect(roundTrip).toEqual(canonical);
   });
 
-  it("accepts canonical summaries without changing prompt hint shape", () => {
+  it("accepts canonical summaries and propagates auto-apply metadata onto prompt hints", () => {
     const profile = makePromptProfile();
     const vectors: CanonicalChangeVectorSummary[] = [
       {
         category: "convergence",
         skillId: profile.skillId,
-        meanNetImpact: 0.42,
+        meanNetImpact: -0.5,
         vectorCount: 6,
-        confidenceBoost: 1.5,
+        confidenceBoost: 0.5,
         autoApplyEligible: false,
       },
     ];
@@ -80,10 +80,12 @@ describe("prescriber ChangeVectorSummary contract", () => {
       description: "High convergence turns (mean: 12.0)",
       recommendation: "Add explicit completion criteria to skill prompt. Include 'done when' clause.",
       impactScore: 0.8,
-      confidence: 1,
-      predictedImpact: 0.42,
+      confidence: 0.5,
+      predictedImpact: -0.5,
+      autoApplyEligible: false,
       evidence: {
         triggerMetrics: { convergenceTurns: 12 },
+        autoApplyEligible: false,
       },
       metricSnapshot: {
         driftScore: 0.1,
@@ -95,7 +97,6 @@ describe("prescriber ChangeVectorSummary contract", () => {
         sessionCount: 10,
       },
     });
-    expect(result.hints[0]).not.toHaveProperty("autoApplyEligible");
     expect(typeof result.hints[0]?.id).toBe("string");
     expect(typeof result.hints[0]?.generatedAt).toBe("string");
   });

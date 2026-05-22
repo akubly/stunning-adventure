@@ -1,3 +1,4 @@
+📌 Team update (2026-05-22T20:35:00Z): **Wave 2 W2-5 complete** — ForgePrescriberOrchestrator shipped. Attenuation + autoApplyEligible propagation live. ATTENUATION_FLOOR=0.1 exported from @akubly/types. Fail-open on provider errors. Forge tests 609 passing (+10), root build green. — Scribe
 📌 Team update (2026-05-22T20:03:56Z): Wave 2 v3.1 scope final — autoApplyEligible propagates through OptimizationHint; constants NEGATIVE_IMPACT_AUTO_APPLY_GATE=-0.2 and ATTENUATION_FLOOR=0.1; CLI surface only — no MCP in Wave 2. — Graham Knight
 # Rosella — History (Summarized)
 
@@ -179,3 +180,4 @@ silently corrupt old data if the new field is optional.
 - **Delegation under lockout:** Alexander fixed my changeVectors.ts naming bug in wave 3. I fixed his two-tier sort bug in cycle 1. Cross-review prevents blind spots — each implementation looked correct in its own context.
 
 **Lesson (Cycle 3):** Advisory findings from focused re-review often surface edge cases (null checks, guard conditions) that the initial implementation missed because it was optimizing for the happy path. My cycle-1 deltaCost fix worked for new hints; it would have silently poisoned legacy snapshots. Cycle 3's legacyCostSkipped counter + skip-with-diagnostic pattern is the right approach: acknowledge the limitation, surface it, provide an honest value (0, not misleading), and document the remediation path.
+

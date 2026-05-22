@@ -28,6 +28,8 @@ export interface OptimizationHint {
    * Present only when `historicalVectors` were supplied to the prescriber.
    */
   predictedImpact?: number;
+  /** Whether historical vectors still allow this hint to be auto-applied. */
+  autoApplyEligible?: boolean;
   evidence: OptimizationEvidence;
   /** Provenance: which prescription generated this hint. */
   parentPrescriptionId?: string;
@@ -48,6 +50,8 @@ export interface OptimizationEvidence {
   profile: ExecutionProfile;
   triggerMetrics: Record<string, number>;
   baseline?: ExecutionProfile;
+  /** Persisted prescriber-side eligibility metadata for downstream appliers. */
+  autoApplyEligible?: boolean;
 }
 
 /** Metric snapshot for provenance tracking. */
@@ -67,6 +71,11 @@ export interface MetricSnapshot {
    * with per-session normalization. buildSnapshot() always populates this field for new hints.
    */
   sessionCount?: number;
+}
+
+export interface PrescriberConfig {
+  prompt?: import("./promptOptimizer.js").PromptOptimizerConfig;
+  token?: import("./tokenOptimizer.js").TokenOptimizerConfig;
 }
 
 export interface PrescriberResult {

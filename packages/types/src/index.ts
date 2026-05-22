@@ -231,6 +231,9 @@ export type OptimizationCategory =
 /** Threshold below which mature negative vectors should not auto-apply. */
 export const NEGATIVE_IMPACT_AUTO_APPLY_GATE = -0.2;
 
+/** Minimum mature-negative confidence boost after attenuation. */
+export const ATTENUATION_FLOOR = 0.1;
+
 /** Aggregated change vector data for a category+skillId pair. */
 export interface ChangeVectorSummary {
   category: OptimizationCategory;
