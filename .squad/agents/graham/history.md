@@ -105,3 +105,49 @@
 **Brainstorm distillation:** 2 rounds × 10 agents = massive input. Spec writing is lossy compression. Aaron's explicit decisions are spec constraints, not suggestions.
 
 **Spike methodology:** Time-box with clear circuit breaker. Pre-defined threshold (Q1+Q2+Q4+Q5 = ✅) means verdict is mechanical, not ambiguous. Reusable for future tech evals.
+
+### Repo Placement Decision Framework (2026-05-22)
+
+**Context:** Aaron asked whether a new "brain/memory/thinking/learning" system should be added to this monorepo or live in a new repo.
+
+**Key heuristic:** "Can the system be useful to someone who doesn't run the existing packages?" If YES → new repo. If NO → same repo.
+
+**Bounded context test:** If adding a package requires changing the repo's elevator pitch (from "Copilot SDK integration platform" to "Copilot SDK + general AI cognition"), that's a signal the bounded context is being stretched.
+
+**Dependency direction principle:** When uncertain, prefer the option that keeps dependency direction explicit and versioned (new repo can depend on existing packages as npm dependencies) over implicit and fragile (shared workspace where casual imports create hidden coupling).
+
+**Squad attention principle:** Emerging work with different expertise requirements deserves undivided attention. Adding to an existing squad splits focus and delays both the new work and the stabilizing work.
+
+### Brain/Memory System — Refined Recommendation (2026-05-22)
+
+**Context:** Aaron provided detailed brain dump with five dimensions: TIERS (agent → org → project → user), KINDS (practical, semantic, etc.), PROPERTIES (recency, trustworthiness, plasticity), ACTIVITIES (meditate, dream, pray, decide), and REPRESENTATION/ACQUISITION patterns.
+
+**Analysis outcome:** Brain dump **confirmed and strengthened** the new-repo recommendation:
+
+1. **User-memory tier** lives outside any repo (cwd-aware hooks, global tooling) — different installation surface
+2. **Activities** imply agentic runtime with own loops, not storage — different execution model  
+3. **Tiers** describe cross-repo federation protocol — broader than SDK integration
+4. **Zero hard dependencies** on Cairn/Forge required — clean dependency direction
+
+**Verdict:** NEW REPO — not a close call. This is a product, not an extension.
+
+**Recommendation filed:** `.squad/decisions/inbox/graham-brain-refined.md`
+
+**Open questions:**
+- Existing Copilot memory API integration?
+- User-memory installation mechanism (extension vs CLI vs daemon)?
+- Per-tier versioning strategy?
+
+## Consultation: Brain/Memory System Repo Placement (Round 2)
+
+**Date:** 2026-05-22  
+**Session:** Refined recommendation following Aaron's brain dump clarification  
+**Artifact:** .squad/orchestration-log/2026-05-22T20-25-51-graham-*.md  
+**Merged into:** .squad/decisions.md as "Open Question: Brain/Memory/Learning System"
+
+### Summary
+
+Participated in Round 2 consulting on repo placement for new agentic brain/memory/learning system. Analyzed Aaron's five-dimension expansion (TIERS, KINDS, PROPERTIES, ACTIVITIES, REPRESENTATION, ACQUISITION) and refined position from Round 1.
+
+**Outcome:** Recommendation documented in .squad/orchestration-log/2026-05-22T20-25-51-graham-brain-refined.md. All deliberation merged to decisions.md for Aaron's consideration.
+

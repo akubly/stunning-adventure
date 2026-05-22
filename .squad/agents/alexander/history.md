@@ -1,5 +1,26 @@
 # Alexander — History
 
+## Summary
+
+**Total entries:** 4 major consultations spanning Phase 4.5 SDK + Phase 4.6 change vectors + Q&A + Round 2 brain system consulting
+
+| Date | Event | Status |
+|------|-------|--------|
+| 2026-05-05 | Initial Brain Sizing (Q&A) | ✅ Completed |
+| 2026-05-06 | Phase 4.6 Spec Clarifications | ✅ Completed |
+| 2026-05-01 | Change Vector Questions (F1-F2 analysis) | ✅ Completed |
+| 2026-05-22 | Brain System Consulting (Round 2, Refined) | 🟡 Deliberation |
+
+**Key themes:**
+- SDK runtime: Forge execution model, decision gates, DBOM provenance
+- Change vectors: Before/after metric snapshots, min sessions observed, net impact weighting
+- Brain system: Flipped from "monorepo packages/brain/" to "NEW REPO" (Q3 backend service argument)
+
+**Recent decision:** Alexander recommends new repo stunning-adventure-brain because org-tier federation wants Postgres + backend service = separate deployment boundary.
+
+---
+# Alexander — History
+
 ## 2026-05-01: Finding 8 — FeedbackSource.getProfile granularityKey
 
 **Problem:** `FeedbackSource.getProfile(skillId, granularity?)` couldn't address per-user / per-model profiles. The DB key on `execution_profiles` is `(skill_id, granularity, granularity_key)`, so the contract was strictly less expressive than the storage.
@@ -126,4 +147,99 @@
 **Pattern Applied:** Lockout-compliant cross-assignment enabled safe parallel fixing. Each agent fixed the other's code per review findings, preventing author bias.
 
 **Lesson (Cycle 3 application):** Advisory findings from focused re-review often surface edge cases (null checks, guard conditions) that the original implementation missed because it was optimizing for the happy path. Cycle 3's safeMin guard for minVectors=0 is exactly this — Alexander's initial code worked for typical N≥1 but failed silently at the mathematical boundary. The fix is to document the invariant in JSDoc so Wave 2 work doesn't inadvertently remove the guard.
+
+## 2026-05-05: Forge Coupling Analysis for Brain/Memory/Thinking/Learning System
+
+**Context:** Aaron considering agentic brain system with possible Forge coupling. Question: in this repo or new repo?
+
+**Analysis scope:**
+- Reviewed all Forge subsystems: telemetry, decisions, DBOM, prescribers, bridge, hooks, session, runtime, applier
+- Identified natural coupling points (telemetry→memory, decisions→memory, memory→learning→prescribers, hooks→thinking)
+- Evaluated dependency direction in monorepo vs. separate repo scenarios
+- Assessed standalone usability requirement
+
+**Key findings:**
+1. **Coupling is data-oriented, not runtime-oriented** — all integration points use data interfaces (TelemetrySink, HookObserver, ChangeVectorSummary), not control flow
+2. **Dependency direction is clean** — Brain → Forge types, never Forge → Brain (no circular deps)
+3. **Cairn already implements "mini-brain" logic** — changeVectors.ts and executionProfiles.ts are learning/memory modules that naturally belong in Brain package
+4. **Adapter pattern enables standalone use** — Brain core can be Forge-agnostic, with adapters/ subpackage for Forge-specific integration
+5. **Monorepo velocity advantage** — refactoring, shared types, integration testing all 10x easier in monorepo
+
+**Position taken:** **Build Brain in this monorepo as packages/brain/**
+
+**Rationale:**
+- All coupling points are data interfaces (TelemetrySink, callbacks, optional params)
+- Natural evolution: migrate Cairn's changeVectors/executionProfiles to Brain package
+- Single test suite catches Brain+Forge+Cairn interactions
+- No version skew (workspace deps resolve to local code)
+- Publishing flexibility: adapter pattern + selective npm publish enables standalone use later
+- Refactoring is trivial (move types between packages in single PR)
+
+**Alternative rejected:** Separate repo would require publishing Forge to npm, introduce version skew risk, duplicate Cairn's learning logic, and complicate integration testing with no architectural benefit.
+
+**Lesson:** When evaluating monorepo vs. separate repo for a new subsystem, the critical factor is **coupling type, not coupling degree**. Data-oriented coupling (interfaces, types, callbacks) favors monorepo even when coupling is extensive. Runtime-oriented coupling (circular imports, control flow dependencies) favors separation. Forge→Brain coupling is 100% data-oriented — every integration point is a pure function, interface, or callback. This is the ideal monorepo candidate.
+
+**Decision artifact:** `.squad/decisions/inbox/alexander-forge-coupling-analysis.md` (24KB, comprehensive with file paths and concrete integration examples).
+
+## 2026-05-22: Brain Refined Analysis — Scope Expansion Forces Position Reversal
+
+**Context:** Aaron's brain dump expanded scope 10x with 5 dimensions (TIERS, KINDS, PROPERTIES, ACTIVITIES, REPRESENTATION). Re-evaluated whether `packages/brain/` still holds.
+
+**New dimensions analyzed:**
+- **TIERS:** agent/subagent, organizational, project, user (cross-repo, cwd-aware)
+- **KINDS:** Practical, Semantic, Syntactic, Linguistic, Symbolic, Philosophical
+- **PROPERTIES:** recency (gradient), trustworthiness, plasticity
+- **ACTIVITIES:** recall, integrate, meditate, explore, ideate, dream, decide, pray, re-evaluate
+- **REPRESENTATION:** graph, cross-ref, markdown; persistence/versioning
+- **ACQUISITION:** codebase exploration, periodic discovery, journaling
+
+**Three critical questions answered:**
+
+1. **Runtime coupling?** Brain's "activities" are a runtime/agentic loop (meditate, dream, decide, etc.), not just data storage. Brain is a Forge **sibling** (peer runtime), not a layer on Forge. They compose via orchestrator (Cairn or user code).
+
+2. **User-tier distribution?** User-memory tier is cross-repo and cwd-aware. CAN work from monorepo via npm publish, BUT separate repo enforces "no accidental Forge deps" boundary and avoids coupling confusion.
+
+3. **Multi-tier federation?** Org tier wants Postgres + backend service (Azure Functions). SQLite-locality model breaks for multi-writer federation. Brain will need its own deployment unit.
+
+**Position: REVERSED from monorepo to NEW REPO `stunning-adventure-brain`**
+
+**Why I flipped:**
+
+Original analysis (2026-05-05) was correct for original scope (data layer for Forge prescriptions). But expanded scope is:
+- General-purpose cognitive infrastructure (not Cairn-specific)
+- Runtime activities (not just storage)
+- Backend service for org tier (separate deployment unit)
+- Cross-repo user tier (must work without Forge)
+- 60+ modules estimated (TIERS × KINDS × PROPERTIES × ACTIVITIES)
+
+**The 5-dimension expansion is a system boundary shift.** Brain is no longer a Forge submodule, it's a cognitive platform that Forge/Cairn can consume.
+
+**Concrete recommendation:**
+- New repo: `stunning-adventure-brain` with 3 packages: `brain` (core), `brain-forge-adapter` (integration), `brain-backend` (Azure Functions)
+- This repo publishes `@akubly/forge` and `@akubly/types` to npm
+- Cairn installs `@stunning/brain` + adapter as regular deps
+- Migration path: Phase 1 (core + user tier), Phase 2 (Forge adapter), Phase 3 (org tier backend), Phase 4 (migrate Cairn's changeVectors.ts to Brain)
+
+**Key insight from Q3:** If Brain's org tier needs its own Postgres + backend deployment, it's a separate *system*, not just a separate *module*. Deployment boundaries should match repository boundaries.
+
+**Lesson:** When a scope expands from "subsystem module" to "platform with its own backend service," the monorepo calculus inverts. Original coupling analysis was sound (data-oriented coupling favors monorepo), but backend deployment requirement is the tipping point. A system that deploys independently should live in its own repo.
+
+**Comparison with Graham's position:** Graham recommended new repo based on bounded context + standalone usability. I initially argued monorepo based on data coupling + refactoring velocity. The backend service requirement (Q3) is the evidence that resolves the disagreement — it's not just about coupling or velocity, it's about deployment topology.
+
+**Decision artifact:** `.squad/decisions/inbox/alexander-brain-refined.md` (comprehensive 3-question analysis + module breakdown + migration path).
+
+
+## Consultation: Brain/Memory System Repo Placement (Round 2)
+
+**Date:** 2026-05-22  
+**Session:** Refined recommendation following Aaron's brain dump clarification  
+**Artifact:** .squad/orchestration-log/2026-05-22T20-25-51-alexander-*.md  
+**Merged into:** .squad/decisions.md as "Open Question: Brain/Memory/Learning System"
+
+### Summary
+
+Participated in Round 2 consulting on repo placement for new agentic brain/memory/learning system. Analyzed Aaron's five-dimension expansion (TIERS, KINDS, PROPERTIES, ACTIVITIES, REPRESENTATION, ACQUISITION) and refined position from Round 1.
+
+**Outcome:** Recommendation documented in .squad/orchestration-log/2026-05-22T20-25-51-alexander-brain-refined.md. All deliberation merged to decisions.md for Aaron's consideration.
+
 

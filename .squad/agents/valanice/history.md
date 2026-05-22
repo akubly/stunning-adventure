@@ -1,5 +1,23 @@
 # Valanice — History
 
+## Summary
+
+**Total entries:** 2 major consultations spanning Phase 4.5 UX + Round 2 brain system consulting
+
+| Date | Event | Status |
+|------|-------|--------|
+| 2026-04-28 | Phase 4.5 Prescriber UX Learnings | ✅ Completed |
+| 2026-05-22 | Brain System Consulting (Round 2, UX Lens) | 🟡 Deliberation |
+
+**Key themes:**
+- Prescriber UX: Max 1 proactive insight per session, pull-based interface, observability on demand
+- Brain system: Infrastructure positioning (like Git), mental model boundaries, phased extraction strategy
+
+**Recent decision:** Valanice recommends NEW REPO with phased extraction—prototype in monorepo, extract when brain has independent release cadence.
+
+---
+# Valanice — History
+
 ## Project Context
 - **Project:** stunning-adventure — Industrial-grade agentic software engineering platform
 - **User:** Aaron
@@ -181,3 +199,94 @@
 - Auto-trigger threshold calibration (start at 3+ Altitude ≥ 2, adapt via amendment/overturn rates)
 - Confabulation measurement methodology
 - Ceremony cost budget in tokens
+
+### 2025-01-18: Brain/Memory System — UX Lens and Repo Placement
+
+**Task:** Provide UX/human factors analysis for Aaron's brain/memory/thinking/learning system sizing. Graham, Roger, and Alexander handling technical sizing; Valanice addresses human experience implications and repo placement decision.
+
+**Aaron's Brain Dump:**
+- TIERS: agent/subagent, organizational (team/vertical/discipline), project (per repo), user (local/global, cwd-aware via hooks)
+- KINDS: Practical, Semantic, Syntactic, Linguistic, Symbolic (code graph), Philosophical
+- PROPERTIES: recency (gradient?), trustworthiness, plasticity
+- ACTIVITIES: recall, integrate, meditate, explore, ideate, dream, decide, pray, re-evaluate
+- REPRESENTATION: graph, cross-ref, markdown
+- ACQUISITION: codebase exploration, periodic discovery, journaling
+
+**Key UX Questions Addressed:**
+
+1. **User-memory tier identity: USER product or DEV TOOL?**
+   - Answer: **BOTH — infrastructure that feels like a product** (like Git, not VS Code Settings Sync).
+   - Installation model: Global install (`npm install -g @akubly/brain`), per-repo opt-in (`.brain/config.yml`), agents auto-discover via MCP.
+   - Identity determines repo placement: If `@akubly/brain`, it's part of the ecosystem. If standalone brand (Synapse, Mneme), it's infrastructure.
+
+2. **Knowledge activities: Observable or invisible?**
+   - Answer: **Invisible by default, observable on demand** (pull interface, not push notifications).
+   - Silent activities: recall (cache-like), integrate (post-session), explore (background indexing), meditate (scheduled reflection), re-evaluate (trust decay).
+   - Observable activities: ideate ("What does my brain think about X?"), dream ("Show me surprising connections"), decide ("Should I use pattern X?").
+   - **UX Principle:** Max 1 proactive insight per session, only after first success (Prescriber pattern). Default is pull, not push.
+
+3. **Trust/plasticity/recency settings: CLI, GUI, config, MCP, IDE?**
+   - Answer: **Config files as source of truth + MCP for runtime queries + CLI for curation.**
+   - Config files (`.brain/config.yml` per repo, `~/.brain/global.yml` globally): trust thresholds, recency gradients, plasticity policies. Versionable, auditable, follows Git's `.gitconfig` model.
+   - MCP server: agent-facing interface (`brain_recall`, `brain_ideate`, `brain_decide`, `brain_list_memories`). LX-optimized, follows verb_noun conventions.
+   - CLI: human curation (`brain list`, `brain forget`, `brain lock`, `brain stats`, `brain meditate --now`). Power user interface.
+   - GUI: Not recommended unless "dream" (graph visualization) becomes a killer feature. Phase 10+, not MVP.
+
+4. **Branding/positioning: Does the brain want its own identity?**
+   - Answer: **YES, if infrastructure. NO, if Cairn-specific extension.**
+   - Branding test: If the brain is meant for use by other tools (not just Cairn/Forge), it needs standalone identity (Synapse, Mneme, Cortex).
+   - Current architecture: Cairn (observer) + Forge (executor) + Brain (cognition). Three pillars argue for three brands IF the brain is infrastructure.
+   - Evidence from Aaron's dump: "user-memory tier follows the user," "cross-repo," "cwd-aware via hooks," "dynamically configures harness" — all suggest **upstream infrastructure**, not downstream feature.
+
+**Recommendation: NEW REPO**
+
+**Rationale:**
+1. **Mental model boundary**: The brain is infrastructure (like Git, Redis), not a Cairn feature. Users install globally, configure per-repo, serves multiple tools.
+2. **Installation story**: `npm install -g @akubly/brain`. Cairn/Forge detect via MCP discovery. Per-repo config via `.brain/config.yml`.
+3. **Branding**: Needs distinct identity — "the memory layer for agentic systems," not "Cairn's memory." Naming candidates: Synapse, Mneme, Cortex, Engram.
+4. **Development velocity**: Separate repo = separate release cadence. Brain can ship v2.0 without forcing Cairn/Forge to upgrade.
+5. **Dependency direction**: Cairn/Forge depend on brain, not vice versa. Upstream shouldn't be bundled with downstream.
+6. **User discoverability**: Infrastructure wants broad reach (npm search, GitHub trending). Separate repo maximizes visibility.
+7. **Governance**: Separate repo clarifies contribution boundaries, attracts contributors building other agent frameworks.
+
+**Phased Approach:**
+- Prototype in Cairn/Forge monorepo under `experiments/brain/` or `packages/brain/` to validate concept.
+- Extract to new repo once brain has: its own CLI, its own MCP server, its own test suite, branding decision made.
+- **Threshold: "Does the brain have its own release cadence and changelog?" If yes, separate repo.**
+
+**UX Interfaces (Priority Order):**
+1. Config files (source of truth, versionable, declarative)
+2. MCP server (agent queries, LX-first)
+3. CLI (human curation, power users)
+4. IDE plugin (Phase N, only if usage warrants)
+5. GUI (Phase 10+, only if visual graph exploration becomes killer feature)
+
+**Key UX Principles Applied:**
+- Mental model boundaries → repo boundaries (users think "install separately" → separate repo)
+- Dependency direction → upstream separation (brain is upstream of Cairn/Forge)
+- Discoverability → branding independence (infrastructure wants broad reach)
+- Installation story → source of truth (global install argues for separate repo)
+
+**Open Questions for Aaron:**
+1. Is brain Cairn/Forge-exclusive or infrastructure for any agent?
+2. What's MVP scope (2 weeks prototype vs 2 months with CLI+MCP)?
+3. Who is primary user (agents via LX, or humans via UX)?
+4. Does brain need visual interface (text queries vs graph visualization)?
+
+**Artifacts:**
+- `.squad/decisions/inbox/valanice-brain-ux.md` — full UX analysis and recommendation
+
+## Consultation: Brain/Memory System Repo Placement (Round 2)
+
+**Date:** 2026-05-22  
+**Session:** Refined recommendation following Aaron's brain dump clarification  
+**Artifact:** .squad/orchestration-log/2026-05-22T20-25-51-valanice-*.md  
+**Merged into:** .squad/decisions.md as "Open Question: Brain/Memory/Learning System"
+
+### Summary
+
+Participated in Round 2 consulting on repo placement for new agentic brain/memory/learning system. Analyzed Aaron's five-dimension expansion (TIERS, KINDS, PROPERTIES, ACTIVITIES, REPRESENTATION, ACQUISITION) and refined position from Round 1.
+
+**Outcome:** Recommendation documented in .squad/orchestration-log/2026-05-22T20-25-51-valanice-brain-refined.md. All deliberation merged to decisions.md for Aaron's consideration.
+
+
