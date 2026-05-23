@@ -77,41 +77,55 @@
 
 **Impact:** Real SQLite path fully validated; attenuation + `autoApplyEligible` propagation verified end-to-end; provider fail-open semantics confirmed.
 
----
+### W3-D1: Composition Root → R2 (`@akubly/skillsmith-runtime`)
 
-## Pending Decisions
+**Scope:** Where should the runtime that imports both `@akubly/cairn` and `@akubly/forge` live?
 
-### Wave 3: Composition Root ADR — Aaron's Review Required (Graham)
+**Decision:** Adopt R2 — new `@akubly/skillsmith-runtime` library package (composition layer importing both) plus thin `@akubly/runtime-cli` wrapper.
 
-**Scope:** Where should the runtime that imports both `@akubly/cairn` and `@akubly/forge` live? ADR evaluates five options (R1–R5).
+**Rationale:** Clean separation of concerns, best test isolation, zero build-order risks, Phase 5-portable. Roger and Alexander independently converged on this architecture.
 
-**Status:** PROPOSAL — Awaiting Aaron approval.
+**Status:** Accepted by Aaron 2026-05-22
 
-**Recommendation:** **R2 — New `@akubly/runtime` library package + thin `@akubly/runtime-cli` wrapper.**
+**Impact:** Unblocks all Wave 3 work items
 
-Strong consensus across three agents (Roger, Alexander, Graham). Cleanest role separation, best test isolation, Phase 5-ready.
+### W3-D2: Package Name → `@akubly/skillsmith-runtime`
 
-**Open Questions for Aaron:**
+**Scope:** What name for the new composition library package?
 
-| # | Question | Impact | Recommendation |
-|---|----------|--------|----------------|
-| Q1 | Approve R2 as composition root? | Blocks all Wave 3 work | Yes — R2 |
-| Q2 | MCP tool in Cairn's server or separate? | Operator UX | Cairn's server |
-| Q3 | Automatic hook invocation in v1? | Rollout safety | Always-on (safety rails in place) |
-| Q4 | Package name `@akubly/runtime`? | Naming clarity | Keep `runtime` |
+**Decision:** Use `@akubly/skillsmith-runtime` (domain-specific, not generic `@akubly/runtime`).
 
-**Key Design Decisions Made:**
-- Hint persistence stays in orchestrator (not Forge, not Curator) — continues Wave 2 model
-- Fail-open policy codified — prescriber failures never abort Curator
-- Profile selection: trigger-driven only — defer global tier fallback to Wave 4
-- Hybrid invocation — automatic via Curator hook + manual via MCP tool
-- Terminology reconciliation — Roger's and Alexander's option labels mapped to canonical R1–R5
+**Rationale:** Domain-specific naming (a) fits the cairn/forge metaphor, (b) describes what operates on (skills), (c) leaves room for future additions (scheduler, dashboard, policy engine).
 
-**Deliverables:**
-- `docs/forge-phase4.6-wave3-scope.md` — Full Wave 3 scope (10 sections, 9 work items)
-- `docs/adr/0001-composition-root.md` — Composition root ADR with detailed option analysis
+**Status:** Accepted by Aaron 2026-05-22
 
-**Action:** Aaron to review and approve R2 recommendation + answer open questions Q1–Q4.
+**Impact:** Naming locked; packaging can proceed
+
+### W3-D3: MCP Tool Exposure → Dropped from Wave 3
+
+**Scope:** Should Wave 3 include an MCP tool for manual prescriber invocation?
+
+**Decision:** No — Wave 3 ships with no MCP tool exposure. Curator hook is autonomous surface; CLI is manual surface.
+
+**Rationale:** Proposed `run_prescriber_optimization` tool offers no net-new capability over existing CLI. Defer to later wave when concrete operator need surfaces. Removes W3-6, W3-7, ~2 MCP scenarios from W3-9 (~7 items, ~18 tests).
+
+**Status:** Accepted by Aaron 2026-05-22
+
+**Impact:** Wave 3 scope reduced; MCP tool re-opens only when operator need materializes
+
+### W3-D4: Curator Hook Invocation → Always-On
+
+**Scope:** Should Curator automatically invoke prescriber orchestration in v1?
+
+**Decision:** Yes — automatic invocation always enabled. No opt-in flag in v1.
+
+**Rationale:** Existing safety rails (negative-impact attenuation, hint dedup, fail-open semantics) are sufficient. Opt-in flag adds config without meaningful safety benefit.
+
+**Status:** Accepted by Aaron 2026-05-22
+
+**Locked Design:** Hint persistence stays in orchestrator; fail-open codified; profile selection trigger-driven only (global fallback deferred to Wave 4).
+
+**Impact:** Unlocks automatic hint flow; enables Wave 3 implementation
 
 ---
 

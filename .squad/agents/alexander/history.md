@@ -98,9 +98,13 @@ Completed comprehensive integration surface analysis for Wave 3 Curator-driven o
 
 Analysis is **mechanical once composition root is decided**. Hard parts (data plumbing, attenuation, dedup) already in Wave 2. Full report: `.squad/agents/alexander/wave3-integration-analysis.md`.
 
-## Learnings
+## Learnings (2026-05-23 — Wave 3 Decisions Accepted by Aaron)
 
-- Forge prescribers now consume the canonical `ChangeVectorSummary` from `@akubly/types` via a type re-export in `packages/forge/src/prescribers/types.ts`; existing imports in `promptOptimizer` and `tokenOptimizer` required no call-site changes because the shape remained identical.
+- **W3-D1: Composition Root → R2 ACCEPTED** — New `@akubly/skillsmith-runtime` library package (composition layer importing both `@akubly/cairn` and `@akubly/forge`) + thin `@akubly/runtime-cli` wrapper. Clean separation, best test isolation, Phase 5-ready. Unblocks all Wave 3 work items.
+- **W3-D3: MCP Tool → Dropped from Wave 3** — No MCP tool exposure in Wave 3. Curator hook is autonomous surface; `forge-prescribe` CLI is manual surface. `run_prescriber_optimization` MCP tool deferred to later wave when concrete operator need surfaces. Removes ~7 items, ~18 tests from Wave 3 scope.
+- **W3-D4: Curator Hook → Always-On** — Automatic prescriber orchestration invocation enabled always. No opt-in flag in v1. Existing safety rails (negative-impact attenuation, hint dedup, fail-open semantics) sufficient. Profile selection trigger-driven only; global tier fallback deferred to Wave 4.
+
+## Learnings (2026-05-22: Wave 3 Integration Analysis — Curator–MCP Wiring Mapped)
 - Keeping Forge's local `OptimizationCategory` union in place is safe for W2-2 because Roger canonized the shared union to match Forge's stricter category set; the barrel contract stays structurally compatible in both directions.
 - Added `packages/forge/src/prescribers/types.contract.test.ts` with two guards: barrel-vs-canonical type assignability and a prompt-prescriber regression using a canonical summary carrying `autoApplyEligible`. Validation passed with `npm run build` from repo root and `npm test --workspace=@akubly/forge` (599 passed, 3 todo).
 - `runForgePrescribers()` now lives in `packages/forge/src/prescribers/forgePrescriberOrchestrator.ts`, queries an optional `ChangeVectorProvider`, and returns the combined prompt/token hint list without dedup or persistence.

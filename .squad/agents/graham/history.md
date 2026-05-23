@@ -1,3 +1,4 @@
+📌 Team update (2026-05-23): **Wave 3 decisions accepted** — R2 approved as `@akubly/skillsmith-runtime`; MCP dropped from Wave 3; always-on Curator hook; 7 work items, ~18 tests. Docs revised, ready to fan out. — Graham Knight
 📌 Team update (2026-05-23): **Wave 3 scope + ADR drafted** — `docs/forge-phase4.6-wave3-scope.md` (9 work items, 4 open questions) + `docs/adr/0001-composition-root.md` (5 options R1–R5, recommending R2). Awaiting Aaron's approval. — Graham Knight
 📌 Team update (2026-05-22T20:29:36Z): **Wave 1 complete** — canonical type adopted across packages, SqliteChangeVectorProvider live, zero-vector summaries filtered. Alexander (W2-2) + Rosella (W2-3/W2-7) complete. Forge 599 + Cairn 564 tests green. — Scribe
 📌 Team update (2026-05-22T20:16:40Z): **Wave 0 complete** — canonical types in @akubly/types, getAllCategories helper in Cairn. category field reconciled to OptimizationCategory union. — Scribe
