@@ -24,6 +24,7 @@
 | Genesta | Cognitive Systems Lead (Eureka) | `.squad/agents/genesta/charter.md` | ✅ Active |
 | Crispin | Knowledge Representation Specialist (Eureka) | `.squad/agents/crispin/charter.md` | ✅ Active |
 | Edgar | Learning Systems Specialist (Eureka) | `.squad/agents/edgar/charter.md` | ✅ Active |
+| Cassima | Product Manager (Eureka) | `.squad/agents/cassima/charter.md` | ✅ Active |
 
 ## Project Context
 

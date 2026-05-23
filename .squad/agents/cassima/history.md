@@ -1,0 +1,129 @@
+# Cassima — History
+
+## Core Context
+
+**Project:** Eureka — a knowledge retention and recall system for agentic systems, designed from first principles on top of the existing Cairn (storage) and Forge (runtime) packages in this monorepo. User is Aaron Kubly.
+
+**Aaron's R5 brain-dump (verbatim, 2026-05-22):**
+
+> Eureka is a knowledge retention and recall system for agentic systems.
+> With Eureka, agents (GitHub Copilot coding agents and subagents primarily, but by no means exclusively) can:
+> - store information
+> - extract information from source material
+> - retrieve information
+> - leverage relevance during retrieval
+> - strengthen or weaken prior knowledge over time
+>   - in the presence of new information
+>   - by persistent access or a lack thereof
+>   - through reflection and meditation
+> - draw connections between related information
+> - use the relationship between information to discover insights
+> - use the combination of unrelated information, or patterns therein, to ideate
+> - work with symbols and navigate graphs
+> - keep context at a minimum by opportunistically paging in only the data it needs
+> - reason over concepts, deliberate, and make decisions based on facts, inductive reasoning, or deduction
+>
+> The user story might involve:
+> - an agent familiarizing itself with a codebase
+> - when asked to add a new feature, the same agent:
+>   - can use its knowledge of the existing functionality to surface design questions, gaps, etc.
+>   - knows where the integration points should be without re-reading the codebase
+>   - uses existing patterns in the new code with minimal need for reference material
+>
+> Another user story might involve:
+> - replacing the charter/journal/history/decisions/inbox system used by https://github.com/bradygaster/squad with Eureka
+> - each team member has its own silo of knowledge and learnings and can evolve it over time *without* substantially bloating their per-turn context costs
+> - the team and/or a particular project itself can have its own communal knowledge and learnings
+>
+> Key technical requirements:
+> - how information is stored is decoupled from where information is stored
+> - information can be shared between agents, projects, developers, machines, etc. e.g. not isolated to local storage on a single machine
+> - use progressive disclosure, tags, pointers, references, etc. effectively to optimize context consumption
+
+**Where Eureka stands at your spawn (2026-05-22):**
+- R1-R4 of a first-principles design ceremony are complete. The trio is Genesta (facilitator), Crispin (representation), Edgar (learning dynamics).
+- Hard rule still active through R5: **no reading of `packages/cairn/src/` or `packages/forge/src/`**. Lifts at R6.
+- 12 design docs sit in `.squad/decisions/inbox/` (R1 first-principles, R2 cross-pollination, R3 prior-art survey, R4 prior-art cross-pollination). Most tensions converged via hybrid composition.
+- **Best single read for catching up:** `genesta-prior-art-v3.md`. Schema specifics: `crispin-prior-art-v3.md`. Tensions story: `edgar-prior-art-v3.md`.
+
+**Your job (R5):** Aaron brain-dumped above. You ideate, ask clarifying questions, draft, refine. R4 left 5 arbitration questions open — answer them during R5 as requirements crystallize:
+1. Importance vs Trust — separate or merge?
+2. Importance: stored column or computed on-demand?
+3. Scope vs Temperature — two columns or one?
+4. Community detection — batch or incremental?
+5. `pray` semantics — cross-encoder re-rank or contemplative-read?
+
+**Existing roadmap:** R5 (you) → R6 (integration, hard rule lifts) → R7 (integration cross-pollination) → R8 (final consolidation into single `eureka-design.md`).
+
+## Learnings
+
+### Session 2025-06-15: First PRD Draft (R5 v1)
+
+**What I drafted:**
+Created `cassima-requirements-r5-v1.md` (~650 lines) covering:
+- Problem statement (Aaron's vision for agent memory)
+- Personas (primary: GitHub Copilot agents; secondary: IDE assistants; tertiary: humans)
+- 5 user stories with acceptance criteria (codebase familiarization, Squad migration, trust-weighted retrieval, progressive disclosure, cross-session continuity)
+- 8 functional requirement sections (storage, retrieval, trust tracking, activities, recency, importance, storage abstraction, progressive disclosure)
+- 5 non-functional requirement sections (performance, scalability, reliability, observability, security)
+- 10 explicit non-goals (multi-modal, real-time collaboration, cross-org sharing, automated eviction, community detection, symbolic reasoning, explainability, human UI, migration tools, distributed consensus)
+- 23 open questions clustered into 7 topics (scope/personas, R4 arbitration, storage/sharing, activities/reflection, trust/provenance, failure modes, Squad migration)
+- R4 arbitration stances table with my recommendations on all 5 questions
+- 5 tensions surfaced with trade-offs and recommendations
+- Dependencies, risks, success metrics
+
+**Tool error learned:**
+Made 10+ failed `create` calls before realizing I was omitting the `file_text` parameter entirely. The error message "Invalid input: 'file_text': Required" was literal—I provided `path` but not content. Root cause: I was thinking about the PRD structure instead of the tool invocation mechanics. **Takeaway:** When tool calls fail repeatedly with "required parameter" errors, check that I'm actually *passing* the parameter, not just mentally planning its content.
+
+**Key decisions made in PRD:**
+
+1. **R4-Q1 (Importance vs Trust):** Recommended **separate**. Importance = salience (how critical), Trust = reliability (how confident). Example: "React usage" (high imp, high trust) vs "Possible race condition" (high imp, low trust).
+
+2. **R4-Q2 (Importance storage):** Recommended **stored column**. Importance is stable over time (unlike recency which changes on every access). Computing on-demand wastes tokens re-evaluating salience.
+
+3. **R4-Q3 (Scope vs Temperature):** Confirmed **two columns** (persistence_tier + attention_tier). Already decided by Crispin's v3—orthogonal concerns.
+
+4. **R4-Q4 (Community detection):** Recommended **defer to v2, then batch**. BM25 sufficient for v1. When implemented, batch clustering (nightly) is simpler than incremental.
+
+5. **R4-Q5 (`pray` semantics):** Recommended **rename**. "Pray" is ambiguous—use `rerank` (cross-encoder) or `contemplate` (deep-read).
+
+6. **Plasticity semantics tension:** Resolved by adopting Crispin's definition (high = easy to update) and recommending rename to `revisability` for clarity. Low revisability = stable/protected (human-authored facts). High revisability = speculative (LLM-inferred).
+
+7. **Trust decay tension:** Recommended coupling decay to recency. If fact recently accessed, no decay. If untouched for 30+ days, decay kicks in. Targets "forgotten" facts, not "stable" truths.
+
+8. **Retrieval ranking tension:** Recommended query-time weighting for composite score. Single multiplicative formula (`recency * importance * trust * BM25`) doesn't fit all use cases. Agents tune weights per task type.
+
+9. **Storage location tension:** Recommended hybrid topology. Agent-scoped (local `~/.copilot/eureka/`), Project/User/Org-scoped (cloud-backed, location-agnostic). Accept network dependency for shared tiers.
+
+**Top 3 questions Aaron needs to answer to unblock R6:**
+
+1. **Q3 (Killer Demo):** Which ONE scenario must work flawlessly in v1? Squad migration, codebase familiarization, or cross-session continuity? This drives scope decisions.
+
+2. **Q9 (Sharing Topology):** Local-first with sync, server-required, or hybrid? Impacts storage backend choice and API design.
+
+3. **Q4-Q8 (R4 Arbitration):** Confirm or override my stances on the 5 R4 questions. My recommendations are in the PRD, but Aaron's input is authoritative.
+
+**Unresolved tension that needs Aaron's input:**
+
+**Tension 1 (Simplicity vs Completeness):** Aaron's brain-dump lists many capabilities (tags, pointers, progressive disclosure, symbolic reasoning, reflection/meditation). But R4 deferred several activities to v2+. Squad migration requires richer feature set than codebase familiarization alone. Trade-off: Narrow v1 to one killer scenario (simpler, faster to ship) OR keep Squad migration in v1 (dogfooding forcing function, but larger scope). My recommendation: Dogfood Squad migration in v1 for decisions/history only, keep charter/journal as files for now. But this needs Aaron's blessing—it's a strategic scope call.
+
+**What I learned about product management:**
+
+- **Sharp questions > vague questions:** Clustered 23 questions into 7 topics so Aaron can think in coherent chunks, not random list.
+- **Stances with rationale > just listing options:** For R4 arbitration, I didn't just say "Importance vs Trust could be separate or merged"—I picked a side, explained why, gave examples. Aaron can override, but now there's a baseline to react to.
+- **Tensions are features, not bugs:** Surfacing tensions (trust decay vs stability, retrieval ranking formula, storage location vs sharing) is PM's job. Each tension has trade-offs—documenting them helps Aaron make informed decisions.
+- **Non-goals are as important as goals:** Explicit non-goals section (10 items) prevents scope creep and sets expectations. "We're NOT doing multi-modal/real-time collab/cross-org sharing in v1" is a deliverable in itself.
+- **Acceptance criteria need "TBD-with-context":** Some ACs are testable now (AC-1.1: "Agent can store facts"), others need open questions resolved first (AC-4.4: "Does Eureka store hierarchical summarization?"). Flagging these as TBD keeps PRD grounded without blocking progress.
+
+**What I'd do differently next time:**
+
+- **Read R4 docs more strategically:** I hit file size limits on all three v3 docs. Next time, use `view_range` to read specific sections (e.g., "Tensions" heading in Edgar's doc) rather than starting from line 1. The summary helped, but I could've been more surgical.
+- **Front-load arbitration questions:** The 5 R4 questions are THE most important inputs to R5. I should've asked Aaron to arbitrate them BEFORE drafting the PRD, not embedded them as open questions within the PRD. Now R6 is blocked until Aaron answers Q4-Q8.
+- **Prototype one user story:** Instead of drafting a 650-line PRD, I could've proposed a lightweight prototype: "Let's implement US-1 (codebase familiarization) with JUST recall/integrate activities, BM25 retrieval, and agent-scoped storage. Ship that in 2 days, then iterate." PRDs are planning theater if we don't validate assumptions. (But maybe Aaron wants the full PRD first—this is a forcing function for clarifying questions.)
+
+**Context for next session:**
+
+- PRD is draft v1—Aaron will likely provide feedback, answer open questions, or arbitrate R4 tensions.
+- Next deliverable (R6) is integration design—how Eureka fits with Cairn (storage) and Forge (runtime). Hard rule lifts at R6, so I'll finally be able to read those packages.
+- If Aaron approves the "one killer scenario" framing (Q3), R6 should design around that scenario end-to-end, not try to solve all 5 user stories simultaneously.
+- Watch for Aaron's signal on dogfooding timeline (Q21). If he wants Squad migration ASAP, R6/R7 will be aggressive. If he wants codebase familiarization first, Squad migration can wait.
