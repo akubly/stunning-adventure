@@ -20,46 +20,100 @@
 
 ## Learnings
 
-### 2026-05-22: Representation v0 Design (Eureka v0 Ceremony)
+### 2026-05-22: Representation v0 & v1 Design (Eureka v0–v1 Ceremony)
 
-**Contribution:** `.squad/decisions/inbox/crispin-representation-v0.md` — First-principles design for Eureka's knowledge representation layer.
+**Contribution:** `.squad/decisions/inbox/crispin-representation-v0.md` (v0) and `.squad/decisions/inbox/crispin-representation-v1.md` (v1)
 
-**Key decisions made:**
+**V0 Design Summary:**
+- Schema: Two-table graph (nodes + edges), multi-kind tagging, hybrid persistence (SQLite + JSON)
+- Cross-reference model: Hard/soft/symbolic pointers, supersession chains (5-hop limit)
+- Provenance first-class (`sources`, `derivations` on nodes/edges)
+- Properties for Edgar's algorithms: `trust`, `recency_weight`, `plasticity` (mutable); `content`/`kinds` (immutable)
+- Open questions: Immutability boundaries, kind-based query performance, philosophical trust overrides (deferred to v1)
 
-1. **Kinds are tags, not types** — Rejected schema-per-kind approach. Memories can belong to multiple kinds simultaneously (practical + semantic + linguistic for "Always use bcrypt"). Single node table with multi-valued `kinds` field. Taxonomically honest: real knowledge doesn't fit neat categories.
+**V1 Revisions (Cross-Pollination with Edgar/Genesta):**
+- Removed stored `recency_weight` — Edgar computes it on-read from `last_accessed` timestamp (cache invalidation eliminated)
+- Added `corroboration_history` array for trust audit trail (supports re-evaluate forensics)
+- Added fields for Edgar's activity contracts: `last_accessed`, `last_updated`, `decision_rationale`, `superseded_by`
+- Schema/algorithm fit validated: All of Edgar's mutations have clean homes on MemoryNode
+- Tensions documented (6 total): Kind-query performance, corroboration growth, plasticity decay scheduling, philosophical overrides. All deferrable to v1 as "monitor and react" issues.
 
-2. **Two-table graph schema** — `memories` (nodes) + `edges` (relationships). Typed relations (15 types: `is_tool_for`, `contradicts`, `derives_from`, etc.). Provenance first-class on both nodes and edges (`sources`, `derivations`). Properties (`trust`, `recency_weight`, `plasticity`) live on nodes as mutable fields — Edgar's learning algorithms read/write these.
+---
 
-3. **Hybrid persistence (SQLite + JSON)** — SQLite for fast queries (runtime), JSON files for Git-friendly durability (one file per memory/edge, clean diffs). Snapshot + delta versioning. Human-readable, tool-independent, version-controllable.
 
-4. **Cross-reference model: Three pointer types** — Hard (by ID), soft (by query), symbolic (by name). Dereference automatically follows supersession chains (up to 5 hops). Handles forgotten memories gracefully (tombstones for hard pointers, fallback queries for soft).
 
-5. **Deferred to v1** — Vector search (SQLite FTS5 sufficient for v0), kind-relation compatibility matrix (learn from usage before enforcing), plasticity decay functions (Edgar's domain), tier federation conflict resolution (no multi-tier in v0), lossless Markdown ↔ graph round-trip (one-way works, reverse is lossy).
+### 2026-05-22: Prior Art Survey — v0 → v2 (ROUND 3)
 
-**Taxonomic stance defended:** Practical (actionable rules), Semantic (concept relationships), Syntactic (code patterns), Linguistic (phrasing templates), Symbolic (abstract principles), Philosophical (meta-knowledge/epistemic annotations). Each kind has distinct schema shape: nodes, edges, or node-with-edge-properties. Overlaps are features, not bugs — seams between kinds are where knowledge representation gets interesting.
+**Objective:** Survey external knowledge representation systems. Context for schema choices Aaron should validate.
 
-**Interface contracts established:**
-- **To Edgar:** Read/write `trust`, `recency_weight`, `plasticity`. Create/delete edges. Mark supersessions. Do NOT mutate `content`/`kinds`/`kind_data` (immutable post-creation).
-- **To Genesta:** Provide schema stability, query performance, representation integrity. Genesta orchestrates *use* of graph; Crispin guarantees *shape* of graph.
+**Systems surveyed:** Neo4j (property graphs), Helix (versioned graphs), RDF (semantic web), OWL (ontology language), PROV-O (provenance tracking), vector stores (semantic similarity), knowledge base systems
 
-**Open questions punted:** Should memories be strictly immutable or allow in-place edits? (v0: immutable content, mutable properties). Do we need separate observation log table? (v0: `sources` array sufficient). How do philosophical memories override calculated trust? (Deferred to Edgar + Genesta).
+**Key findings:**
 
-**What I learned:**
-- First-principles design without reference implementations forces clarity. No crutches, no "copy this pattern." Pure epistemology.
-- Multi-kind tagging is defensible but adds query complexity. Filtering by kind requires array intersection in SQLite (`JSON_EXTRACT` + `JSON_EACH`). Performance unknown until load-tested.
-- Provenance is non-negotiable for trust. Every memory must answer "where did this come from?" and "how confident am I?"
-- Git-friendly persistence (one file per entity) is architecturally correct but operationally annoying (thousands of small files). May need tooling for bulk operations in v1.
-- Deferring vector search is risky. If semantic similarity queries become critical in first month, SQLite FTS5 won't cut it. But premature vector store adds maintenance cost. Stance: monitor query patterns, add vector store reactively in v1 if needed.
+1. **Property graphs vs RDF:** Eureka chose property graphs (nodes + edges + properties). RDF uses triples (subject-predicate-object). Property graphs are superior for mutable agentic state (properties change over time). RDF better for semantic web interop but harder to model agentic evolution.
 
-**Nervous about:**
-- `kind_data` as untyped JSON blob. Flexible but footgun. TypeScript can't catch schema errors. May need Zod validation or kind-specific type guards.
-- Supersession chains growing unbounded. Long chains degrade dereference performance. Need periodic compaction strategy.
-- Kind multiplicity increasing query complexity. `WHERE JSON_ARRAY_LENGTH(kinds) > 0` is slower than `WHERE kind = 'practical'`. Indexes don't help with JSON arrays. May need kind-specific indexes or denormalized kind flags in v1.
+2. **Schema implications from precedents:**
+   - Neo4j uses labels (like Eureka's kinds), but labels are structural not semantic. Eureka's multi-kind tagging is more flexible.
+   - RDF requires reification for properties on edges (n-ary relations) — expensive. Eureka's direct edge properties are simpler.
+   - Helix tracks versions via chain of commits; Eureka tracks supersessions via edges. Both valid, different tradeoffs.
+   - Vector stores suggest embedding layer. Eureka defers to v1, but schema should allow embedding materialization.
 
-**Confident about:**
-- Two-table schema (nodes + edges) is the right primitive. Clean, flexible, scalable.
-- Provenance model (`sources` + `derivations`) gives full lineage. Necessary for trust propagation.
-- Hybrid persistence (SQLite + JSON). Best of both worlds: query speed + durability + Git-friendliness.
-- Typed relationships (15 relation types). Semantics matter for reasoning. Generic "related_to" edge is useless.
+3. **Schema implementation details:**
+   - 5 new columns needed: `embedding_vector` (for semantic search), `audit_log` (for PROV-O compliance), `namespace` (for federation), `version_id` (for Helix-style history), `materialized_path` (for fast traversal)
+   - 2 new tables: `schema_history` (track schema migrations), `integration_log` (PROV-O triples for interop)
+   - 4 new indexes: `ix_embedding_search`, `ix_namespace_partition`, `ix_kind_array_coverage` (for multi-kind queries), `ix_trust_recency_composite` (for recall ranking)
 
-**Collaboration model validated:** Specialist contributor in ceremony format. Genesta integrating docs from Crispin (representation) + Edgar (learning). Parallel work streams, synchronous merge. Efficient for v0 design phase.
+4. **3 open questions for v1+:**
+   - Should Eureka export to RDF for semantic web compliance? (adds complexity, increases interop)
+   - Should embeddings be computed on-write (slow) or on-read (stale)? (tradeoff: consistency vs performance)
+   - Should version_id track full history or use snapshot+delta? (full history helps audit, deltas save space)
+
+**Tension vs v1 representation:** Schema adds cost (5 cols × schema size + 2 tables + 4 indexes). But all are optional for v0 minimum viable schema. Can defer embeddings/audit/versioning to v1+ if performance is acceptable without them.
+
+**Artifact:** `.squad/decisions/inbox/crispin-prior-art-v2.md`
+
+---
+
+### 2026-05-22: Prior Art Cross-Pollination — v2 → v3 (ROUND 4)
+
+**Objective:** Cross-read Genesta v2 (cognitive systems prior art) and Edgar v2 (learning prior art). Refine schema implementation and resolve tradeoffs.
+
+**Genesta's prior art context:** Eureka's activities map to SOAR (problem spaces), ACT-R (activation), GraphRAG (augmented retrieval). No schema implications from cognitive systems; mostly semantic validation.
+
+**Edgar's prior art context:** Ebbinghaus curves + spaced rep + RAG + EWC. No direct schema implications, but suggests what queries the learning layer will make.
+- Spaced repetition needs `last_reviewed` timestamp and access history (Eureka's `corroboration_history` handles this)
+- RAG needs semantic similarity queries (suggests embedding materialization in v1)
+- EWC needs task-specific weight metadata (suggests `task_id` column for task isolation)
+
+**Schema v3 finalization:**
+
+5 columns (mandatory for v0):
+- `embedding_vector` — deferred to v1, but schema prepared
+- `audit_log` — JSON array of (timestamp, agent, mutation) for PROV-O compliance
+- `version_id` — snapshot ID for point-in-time queries
+- `materialized_path` — denormalized path for fast ancestor traversal (prevents 5-hop chains)
+- `task_id` — for EWC task isolation (Edgar's v2 revealed this need)
+
+2 tables (mandatory for v0):
+- `schema_history` — track schema migrations for forward compatibility
+- `relation_metadata` — typed relationship properties (weight, confidence, directionality)
+
+4 indexes (mandatory for v0):
+- `ix_kind_array_coverage` — multi-kind query performance (`WHERE kinds[] contains X`)
+- `ix_trust_recency_composite` — recall ranking performance (`ORDER BY trust DESC, recency DESC`)
+- `ix_task_partition` — task isolation for EWC (`WHERE task_id = X`)
+- `ix_materialized_path` — ancestor traversal (`WHERE materialized_path STARTS_WITH X`)
+
+**3 open questions for Aaron (to resolve before v1 finalization):**
+1. Should embeddings be required in v0 schema or optional? (Required = assumes semantic search is critical; Optional = defer to v1 if not needed)
+2. Should audit_log be full PROV-O compliance or simplified provenance? (Full = interop, Simplified = perf)
+3. Should task_id be mandatory (enforces task isolation) or optional (allows single-task systems)? (Mandatory = safe, Optional = simpler)
+
+**Confidence bumps:**
+- Schema passes pressure tests from Edgar (EWC task isolation) and Genesta (traversal performance)
+- Tensions about performance (kind array queries, corroboration_history growth) are addressable with indexes
+- 5 new columns + 2 tables + 4 indexes is manageable scope; v0 schema doesn't bloat
+
+**Artifact:** `.squad/decisions/inbox/crispin-prior-art-v3.md` (schema spec + 3 open Qs)
+
+**Status:** v3 is ready for implementation. All representation design complete (v0 → v1 → v2 → v3). Awaiting Aaron's eureka ceremony decisions on open questions.
