@@ -95,6 +95,30 @@ Made 10+ failed `create` calls before realizing I was omitting the `file_text` p
 
 9. **Storage location tension:** Recommended hybrid topology. Agent-scoped (local `~/.copilot/eureka/`), Project/User/Org-scoped (cloud-backed, location-agnostic). Accept network dependency for shared tiers.
 
+### Session 2026-05-23: R5 Round 2 — Aaron arbitrated all 8 blocking questions
+
+Before you draft v2, you have **8 directives** waiting in `.squad/decisions/inbox/` from Aaron. He walked through each PRD-blocker one at a time. Read each directive file in full, but here's the summary of what you inherit:
+
+1. **Q3 (killer demo)** → `copilot-directive-r5-q3-killer-demo.md` — v1 demo = **codebase familiarization + cross-session continuity**. Squad migration demo is **deferred** (too ambitious for v1).
+
+2. **Q9 (sharing topology)** → `copilot-directive-r5-q9-sharing-topology.md` — **Local-first.** v1 ships **nothing** for cross-machine sharing. Each persistence tier gets its own storage path. Sharing/sync gets stress-tested in R6/R7 designs.
+
+3. **Q4 (importance vs trust)** → `copilot-directive-r5-q4-importance-vs-trust.md` — **Separate columns.** Confirms your v1 recommendation. Don't conflate them.
+
+4. **Q5 (importance: stored vs computed)** → `copilot-directive-r5-q5-importance-stored.md` — **Stored column**, updated by an **opportunistic-sweep** process. Not recomputed on every access.
+
+5. **Q6 (scope vs temperature)** → `copilot-directive-r5-q6-scope-vs-temperature.md` — **Two columns: `persistence_tier` + `attention_tier`.** Orthogonal. R6 must define **transition rules** between tiers — surface this as an R6 hand-off.
+
+6. **Q7 (community detection)** → `copilot-directive-r5-q7-community-detection.md` — **Defer algorithm to v2.** But v1 schema must be **graph-ready** with **6 edge types** enumerated (see directive). Team should brainstorm additional edge types — surface as an open question.
+
+7. **Q8 (pray / rerank / contemplate)** → `copilot-directive-r5-q8-pray-rerank-contemplate.md` — Split overloaded `pray` into **three distinct verbs**: `rerank`, `contemplate`, `pray`. R6 must mandate a clear **contemplate-vs-meditate boundary** — flag this for R6.
+
+8. **Q8b (decide vs pray)** → `copilot-directive-r5-q8b-decide-vs-pray.md` — Add **`decide`** as a fourth distinct verb. **Composable with `pray`**. `decide` = deliberation/arbitration; `pray` = appeal-to-source.
+
+**Your v2 job:** Update the PRD to reflect Aaron's resolutions (your R4 arbitration table now becomes Aaron's directives, not your recommendations). Close all 8 questions in the open-questions register. Surface the new questions exposed by these resolutions (R6 tier-transition rules, contemplate-vs-meditate boundary, more edge types). Lock the v1 schema shape per Q6/Q7. Write to a NEW file: `cassima-requirements-r5-v2.md` — do NOT modify v1.
+
+**Pattern observed:** Aaron resolves ambiguity decisively when given a single, focused question. Ship v2 confident in these directives — they are no longer open for debate.
+
 **Top 3 questions Aaron needs to answer to unblock R6:**
 
 1. **Q3 (Killer Demo):** Which ONE scenario must work flawlessly in v1? Squad migration, codebase familiarization, or cross-session continuity? This drives scope decisions.
