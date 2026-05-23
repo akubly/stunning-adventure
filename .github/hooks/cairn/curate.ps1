@@ -18,15 +18,32 @@ try {
     if (-not $script) {
         $root = & npm root -g 2>$null
         if ($root) {
-            $p = Join-Path $root '@akubly\cairn\dist\hooks\sessionStart.js'
-            if (Test-Path $p) { $script = $p }
+            $candidates = @(
+                (Join-Path $root '@akubly\skillsmith-runtime\dist\hooks\sessionStart.js'),
+                (Join-Path $root '@akubly\cairn\dist\hooks\sessionStart.js')
+            )
+            foreach ($candidate in $candidates) {
+                if (Test-Path $candidate) {
+                    $script = $candidate
+                    break
+                }
+            }
         }
     }
 
     # 3. Repo checkout (this script lives at .github/hooks/cairn/)
     if (-not $script) {
-        $p = "$PSScriptRoot\..\..\..\dist\hooks\sessionStart.js"
-        if (Test-Path $p) { $script = $p }
+        $candidates = @(
+            (Join-Path $PSScriptRoot '..\..\..\packages\skillsmith-runtime\dist\hooks\sessionStart.js'),
+            (Join-Path $PSScriptRoot '..\..\..\packages\cairn\dist\hooks\sessionStart.js'),
+            "$PSScriptRoot\..\..\..\dist\hooks\sessionStart.js"
+        )
+        foreach ($candidate in $candidates) {
+            if (Test-Path $candidate) {
+                $script = $candidate
+                break
+            }
+        }
     }
 
     if (-not $script) { exit 0 }
