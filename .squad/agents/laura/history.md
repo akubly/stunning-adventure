@@ -67,3 +67,22 @@ Graham's v3 scope finalized. Decisions archived. Ready for Wave 2 implementation
 - This is the canary for Alexander's operator flip from strict-less-than to inclusive gating. If anyone regresses back to strict `<`, this test should fail immediately.
 - Boundary coverage is now locked E2E; it will catch any future regression that flips the gate back to strict-less-than.
 
+### 2026-05-23: Wave 3 W3-7 always-on bootstrap E2E
+
+- Added `packages/forge/src/__tests__/wave3-pipeline.test.ts` as the Wave 3 sequel to the Wave 2 pipeline test. Kept it in Forge again because the integration contract ends at persisted optimization hints, and Forge test files are already allowed to reach into Cairn + skillsmith-runtime source without polluting production boundaries.
+- The reusable pattern is: file-backed SQLite DB (not `:memory:` because `runSessionStartHook()` closes the handle), seed real applied hints + execution profiles, override `process.stdin` with hook JSON, then call Cairn's `runSessionStartHook()` with the same factory `packages/skillsmith-runtime/src/hooks/sessionStart.ts` uses. Spy on `curate()` to recover the real `CurateResult` while still exercising the always-on bootstrap path.
+- Highest-regression scenarios are (a) trigger-driven auto path stops wiring the runtime factory, (b) dedup no longer suppresses repeat pending hints across later Curator cycles, (c) fail-open stops returning the per-skill `hintsError: 1` stub when one skill explodes, and (d) orchestration starts throwing instead of zero-count skipping when the profile disappears between sweep and `runForSkill()`.
+- Not covered here: PowerShell wrapper resolution in `.github/hooks/cairn/curate.ps1`, manual CLI behavior, unit details of `createPrescriberOrchestrationConfig()`, or the impossible-on-unchanged-state case where trigger-driven orchestration would need to re-run with `computedSkillIds = []`. Logged that last surprise to the decisions inbox.
+
+## 2026-05-23: 📌 Wave 3 Complete — Curator-Driven Prescriber Orchestration Shipped
+
+**Status:** ✓ All 7 work items shipped  
+
+**W3-7 shipped:**
+- 4 E2E scenarios covering auto trigger (computedSkillIds), dedup (eligibility-gated), fail-open, profile-miss skip
+- Real SQLite-backed path exercised end-to-end
+- Forge integration tests: 630/630 passing
+- **Behavioral finding flagged for Aaron:** Trigger-driven orchestration (W3-D4) only reruns for skills with newly-computed vectors. Unchanged DB state cannot produce dedup-visible rerun behavior on back-to-back starts — defer broader trigger semantics to Wave 4 with explicit product direction.
+
+Wave 3 delivers fully-realized E2E validation of Curator-driven orchestration. Integration path locked; regression scenarios identified; open questions documented.
+

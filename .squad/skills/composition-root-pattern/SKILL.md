@@ -107,6 +107,24 @@ export function curate(config?: CurateConfig) {
 - [ ] **Build order verification:** Document which packages must build first (if any).
 - [ ] **Reusability:** Can the composition logic be imported by a third consumer (Cloud Curator, MCP server, etc.)? If not, rethink the boundary.
 
+### Monorepo Scaffold Recipe (learned in W3-1)
+
+1. Create a leaf workspace package with `package.json`, composite `tsconfig.json`, `src/index.ts`, and `src/__tests__/`.
+2. Match repo build conventions: `build: tsc`, `test: vitest run`, `include: ["src"]`, `exclude: ["node_modules", "dist", "src/__tests__"]`, and project references to upstream packages.
+3. Add the new package to the root TypeScript project references. If the repo already uses a broad workspace glob like `packages/*`, a separate root workspaces edit is unnecessary.
+4. Add a smoke test that imports the package by its published name (not a relative path) so package wiring is verified early.
+5. Run `npm install` after scaffolding so the workspace is linked into `package-lock.json` before root build/test verification.
+6. If local npm rejects `workspace:*`, fall back to the repo's established `"*"` internal dependency specifier pattern and document the reason.
+
+### Thin Wrapper Follow-through (learned in W3-2)
+
+7. Once the composition function exists in the new runtime package, make the old CLI surface a **pure facade**: keep arg parsing / console formatting in the bin layer, and turn the package-level orchestration export into a direct re-export from the composition library.
+8. Preserve operator behavior by reusing the old result contract verbatim in the library first, then swapping the CLI package to import/re-export it. This avoids accidental exit-code or output drift during boundary moves.
+9. Add one explicit delegation test at the thin package boundary (identity or spy-based) so future contributors can't quietly re-inline composition logic into the CLI.
+10. In this repo, package-name imports inside tests resolve via the built workspace `dist/` export. Rebuild before test runs whenever the delegated library implementation changes.
+11. When a second consumer (for example Curator after a CLI-first rollout) needs the same composition flow, extract a shared per-skill helper that owns provider creation, Forge invocation, and dedup/persistence. Keep consumer-specific profile selection and result-shaping in thin adapters so the composition body does not drift across entry points.
+12. **Never re-import the composition root into a leaf package.** If Cairn needs behavior that only `@akubly/skillsmith-runtime` can assemble, inject a port (or a tiny factory) into the Cairn hook and move the always-on bootstrap script to the runtime package. Reaching back from Cairn into the runtime package recreates the cycle the composition root was meant to remove.
+
 ---
 
 ## Related Patterns

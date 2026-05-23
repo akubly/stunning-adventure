@@ -6,6 +6,7 @@ import {
   insertOptimizationHint,
   upsertExecutionProfile,
 } from '@akubly/cairn';
+import { runForgePrescribe as skillsmithRunForgePrescribe } from '@akubly/skillsmith-runtime';
 import type { OptimizationHintInsert } from '@akubly/cairn';
 import { runForgePrescribe } from '../index.js';
 
@@ -94,6 +95,10 @@ afterEach(() => {
 });
 
 describe('runForgePrescribe', () => {
+  it('delegates to @akubly/skillsmith-runtime', () => {
+    expect(runForgePrescribe).toBe(skillsmithRunForgePrescribe);
+  });
+
   it('uses the global fallback profile, runs prescribers, and persists generated hints', async () => {
     upsertExecutionProfile(makeProfile('skill-alpha', { granularity: 'global' }));
     seedVector('skill-alpha', 'convergence', 'prompt-optimizer');

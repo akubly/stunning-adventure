@@ -157,7 +157,7 @@ async function runScenario(vectorCount: number, meanNetImpact?: number) {
   const profile = makeProfile();
   if (meanNetImpact !== undefined && vectorCount > 0) {
     seedHistory(profile, vectorCount, meanNetImpact);
-    const result = curate();
+    const result = await curate();
     expect(result.changeVectorSweep.computed).toBe(vectorCount);
   }
 
@@ -322,7 +322,7 @@ describe('Wave 2 full pipeline integration', () => {
   it('deduplicates persisted hints across repeated orchestrator runs', async () => {
     const profile = makeProfile({ skillId: 'skill-dedup' });
     seedHistory(profile, matureVectorCount, 0.4);
-    expect(curate().changeVectorSweep.computed).toBe(matureVectorCount);
+    expect((await curate()).changeVectorSweep.computed).toBe(matureVectorCount);
 
     const provider = new SqliteChangeVectorProvider(getDb());
     const run1 = await runForgePrescribers(profile, profile.skillId, { provider });
@@ -341,7 +341,7 @@ describe('Wave 2 full pipeline integration', () => {
   it('omitting the provider matches Phase 4.5 baseline behaviour', async () => {
     const profile = makeProfile({ skillId: 'skill-no-provider' });
     seedHistory(profile, matureVectorCount, 0.4);
-    expect(curate().changeVectorSweep.computed).toBe(matureVectorCount);
+    expect((await curate()).changeVectorSweep.computed).toBe(matureVectorCount);
 
     const baseline = await runForgePrescribers(profile, profile.skillId);
     const withoutProvider = await runForgePrescribers(profile, profile.skillId, {});
@@ -380,7 +380,7 @@ describe('Wave 2 full pipeline integration', () => {
   it('keeps the shared ChangeVectorSummary contract intact across packages', async () => {
     const profile = makeProfile({ skillId: 'skill-contract' });
     seedHistory(profile, matureVectorCount, 0.4);
-    expect(curate().changeVectorSweep.computed).toBe(matureVectorCount);
+    expect((await curate()).changeVectorSweep.computed).toBe(matureVectorCount);
 
     const provider = new SqliteChangeVectorProvider(getDb());
     const sharedSummaries: SharedChangeVectorSummary[] = await provider.getSummaries(profile.skillId);

@@ -34,6 +34,10 @@ export {
   AGENT_NAME as CURATOR_AGENT_NAME,
 } from './agents/curator.js';
 
+// Hooks
+export { runSessionStart, runSessionStartHook } from './hooks/sessionStart.js';
+export type { SessionStartOrchestrationFactory } from './hooks/sessionStart.js';
+
 // Database (low-level — prefer agent APIs above)
 export { getDb, closeDb } from './db/index.js';
 export { createSession, endSession, getActiveSession, getMostRecentActiveSession } from './db/sessions.js';
@@ -45,6 +49,7 @@ export { SqliteChangeVectorProvider } from './db/sqliteChangeVectorProvider.js';
 export {
   upsertExecutionProfile,
   getExecutionProfile,
+  getExecutionProfileWithDb,
   listExecutionProfilesForSkill,
   listExecutionProfiles,
   deleteExecutionProfile,

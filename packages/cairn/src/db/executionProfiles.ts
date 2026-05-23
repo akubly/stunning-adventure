@@ -151,18 +151,27 @@ export function upsertExecutionProfile(profile: ExecutionProfileUpsert): number 
   return row?.id ?? 0;
 }
 
+/** Get a single profile by composite key from a specific database handle. Returns null if none. */
+export function getExecutionProfileWithDb(
+  db: ReturnType<typeof getDb>,
+  skillId: string,
+  granularity: ProfileGranularity,
+  granularityKey: string = 'global',
+): ExecutionProfileRow | null {
+  const row = db.prepare(
+    `SELECT * FROM execution_profiles
+       WHERE skill_id = ? AND granularity = ? AND granularity_key = ?`
+  ).get(skillId, granularity, granularityKey) as Record<string, unknown> | undefined;
+  return row ? mapRow(row) : null;
+}
+
 /** Get a single profile by composite key. Returns null if none. */
 export function getExecutionProfile(
   skillId: string,
   granularity: ProfileGranularity,
   granularityKey: string = 'global',
 ): ExecutionProfileRow | null {
-  const db = getDb();
-  const row = db.prepare(
-    `SELECT * FROM execution_profiles
-       WHERE skill_id = ? AND granularity = ? AND granularity_key = ?`
-  ).get(skillId, granularity, granularityKey) as Record<string, unknown> | undefined;
-  return row ? mapRow(row) : null;
+  return getExecutionProfileWithDb(getDb(), skillId, granularity, granularityKey);
 }
 
 /** List all profiles for a skill (across granularities). */

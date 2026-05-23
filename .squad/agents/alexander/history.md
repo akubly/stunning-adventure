@@ -114,4 +114,40 @@ Analysis is **mechanical once composition root is decided**. Hard parts (data pl
 - Negative-impact auto-apply gating is now inclusive at `<= NEGATIVE_IMPACT_AUTO_APPLY_GATE` (`-0.2`), keeping exact-boundary cases on the manual-review side because the safety asymmetry favors false positives over false negatives.
 - Wave 3 integration is **injection-based**: Curator accepts an optional orchestrator config (not a direct Forge import). This preserves the acyclic dependency boundary and allows composition root to wire both packages independently. The orchestrator is a simple function pointer (`runForSkill`), not a class — keeps it lightweight and testable.
 
+## Learnings (2026-05-23 — W3-3 Prescriber orchestration types)
+- `ExecutionProfile` was already canonized in `@akubly/types`, so W3-3 should extend that package in place instead of duplicating or structurally mirroring the shape from Cairn. That keeps the dependency boundary acyclic and avoids type drift between Curator, Forge, and the composition root.
+- `loadProfile` stays **synchronous** for Wave 3 because today's loader shape (`FeedbackSource.getProfile()` and Cairn DB accessors) is synchronous. If Phase 5 cloud/profile fetching makes this async later, evolve the shared contract then rather than widening early without a caller.
+- `packages/skillsmith-runtime/src/index.ts` now re-exports the canonical `PrescriberOrchestrationConfig` / `PrescriberRunResult` types from `@akubly/types`; W3-5 can wire real implementations against those exports without changing the scaffold API.
+- W3-4 should consume `PrescriberOrchestrationConfig.loadProfile()` as an optional sync hook and treat null as a skip path; W3-5 should return `PrescriberRunResult` counts aligned with Forge's raw hint generation and Cairn dedup/persistence outcomes.
 
+## Learnings (2026-05-23 — W3-5 Prescriber orchestration factory)
+- Extracted a shared `executePrescriberRun()` helper in `packages/skillsmith-runtime/src/index.ts` so both `runForgePrescribe()` and `createPrescriberOrchestrationConfig().runForSkill()` reuse the same provider → Forge prescriber → dedup/persist pipeline. The CLI keeps its Wave 2 result contract and global fallback behavior, while the Curator-facing factory stays a thin adapter.
+- Factory profile loading is **per-skill only** and `runForSkill()` calls the exact same `loadProfile` closure it exposes. Missing profile or `sessionCount < minSessions` returns a zero-count `PrescriberRunResult` as the skip semantic; W3-6 does not need an extra skip flag.
+- `CreatePrescriberOrchestrationConfigOpts` now accepts either an owned SQLite handle (`db`) or `dbPath`; local row loading avoids Cairn singleton coupling when the caller already has a DB connection.
+
+## Learnings (2026-05-23 — W3-4 curate() signature extension)
+- `curate()` had to become `async` because `PrescriberOrchestrationConfig.runForSkill()` is async. That propagated to every live sync consumer: `packages/cairn/src/hooks/sessionStart.ts`, `packages/cairn/src/mcp/server.ts`, Cairn curate tests, and Forge's `wave2-pipeline` integration test now all `await` the Curator result.
+- The smallest viable trigger signal is a distinct `computedSkillIds` array on `ChangeVectorSweepResult`, populated only when a new change vector row is inserted this sweep. That keeps W3-4 trigger-driven without re-querying history or inventing a second notion of eligibility.
+- `minSessions` should come from the existing `ChangeVectorConfig.minSessionsObserved` fallback chain (`DEFAULT_MIN_SESSIONS`), and Curator should pass that same value into `runForSkill(skillId, minSessions)` so vector gating and prescriber gating stay aligned. Curator itself should not pre-filter via `loadProfile()`; skip semantics stay inside the orchestrator closure.
+- The qualifying-skill list should be sorted before orchestration/tests consume it. SQLite's natural row order is not a contract, so sorting `computedSkillIds` prevents flaky call-order assertions and keeps operator output stable.
+- Fail-open needs to be visible in two places: `console.warn` for operators and an inline `PrescriberRunResult` error row (`hintsGenerated/Inserted/Duplicated = 0`, `hintsError = 1`) so W3-5/W3-6 can surface partial-success counts without special-case plumbing.
+
+## 2026-05-23: 📌 Wave 3 Complete — Curator-Driven Prescriber Orchestration Shipped
+
+**Status:** ✓ All 7 work items shipped  
+
+**W3-3, W3-4, W3-5 shipped:**
+- W3-3: `PrescriberOrchestrationConfig` + `PrescriberRunResult` types canonized in `@akubly/types`
+- W3-4: `curate()` async, trigger-driven orchestration loop, fail-open semantics, 4 new + 32 updated tests
+- W3-5: Shared `executePrescriberRun()` helper extracted; `createPrescriberOrchestrationConfig()` factory wired; Cairn `getExecutionProfileWithDb()` convenience added
+
+**Final Test Counts:**
+- Cairn: 576/576 passing
+- Forge: 630/630 passing
+- Skillsmith-Runtime: 6/6 passing
+
+Wave 3 delivers fully-realized Curator-driven orchestration. Type contracts locked in `@akubly/types`. Per-skill execution pipeline centralized. Factory ready for W3-6 hook wiring.
+
+---
+
+**Older learnings archived to history-archive.md**

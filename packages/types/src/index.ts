@@ -250,6 +250,25 @@ export interface ChangeVectorProvider {
   getSummaries(skillId: string): Promise<ChangeVectorSummary[]>;
 }
 
+// ---------------------------------------------------------------------------
+// Wave 3 — Prescriber orchestration contracts
+// ---------------------------------------------------------------------------
+
+/** What the prescriber orchestrator reports after processing one skill. */
+export interface PrescriberRunResult {
+  skillId: string;
+  hintsGenerated: number;
+  hintsInserted: number;
+  hintsDuplicated: number;
+  hintsError: number;
+}
+
+/** Curator-facing port for running prescribers against one skill. */
+export interface PrescriberOrchestrationConfig {
+  runForSkill: (skillId: string, minSessions: number) => Promise<PrescriberRunResult>;
+  loadProfile?: (skillId: string) => ExecutionProfile | null;
+}
+
 /**
  * Read-side complement to {@link TelemetrySink}. The Forge runtime consults
  * a FeedbackSource at session start to load the latest profile and apply
