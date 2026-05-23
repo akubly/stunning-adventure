@@ -76,3 +76,111 @@
 **Test Coverage:** Full maturity gradient (0 vectors → mature catastrophic), dedup regression on repeated persistence, provider omission, fail-open behavior, shared `ChangeVectorSummary` contract flow.
 
 **Impact:** Real SQLite path fully validated; attenuation + `autoApplyEligible` propagation verified end-to-end; provider fail-open semantics confirmed.
+
+---
+
+## Pending Decisions
+
+### Wave 3: Composition Root ADR — Aaron's Review Required (Graham)
+
+**Scope:** Where should the runtime that imports both `@akubly/cairn` and `@akubly/forge` live? ADR evaluates five options (R1–R5).
+
+**Status:** PROPOSAL — Awaiting Aaron approval.
+
+**Recommendation:** **R2 — New `@akubly/runtime` library package + thin `@akubly/runtime-cli` wrapper.**
+
+Strong consensus across three agents (Roger, Alexander, Graham). Cleanest role separation, best test isolation, Phase 5-ready.
+
+**Open Questions for Aaron:**
+
+| # | Question | Impact | Recommendation |
+|---|----------|--------|----------------|
+| Q1 | Approve R2 as composition root? | Blocks all Wave 3 work | Yes — R2 |
+| Q2 | MCP tool in Cairn's server or separate? | Operator UX | Cairn's server |
+| Q3 | Automatic hook invocation in v1? | Rollout safety | Always-on (safety rails in place) |
+| Q4 | Package name `@akubly/runtime`? | Naming clarity | Keep `runtime` |
+
+**Key Design Decisions Made:**
+- Hint persistence stays in orchestrator (not Forge, not Curator) — continues Wave 2 model
+- Fail-open policy codified — prescriber failures never abort Curator
+- Profile selection: trigger-driven only — defer global tier fallback to Wave 4
+- Hybrid invocation — automatic via Curator hook + manual via MCP tool
+- Terminology reconciliation — Roger's and Alexander's option labels mapped to canonical R1–R5
+
+**Deliverables:**
+- `docs/forge-phase4.6-wave3-scope.md` — Full Wave 3 scope (10 sections, 9 work items)
+- `docs/adr/0001-composition-root.md` — Composition root ADR with detailed option analysis
+
+**Action:** Aaron to review and approve R2 recommendation + answer open questions Q1–Q4.
+
+---
+
+## Wave 3 Research Notes
+
+### Research: Composition Root Audit (Roger)
+
+**Date:** 2026-05-23  
+**Status:** Research input, delivered to ADR synthesis
+
+**Scope:** Five options for where the runtime that imports both `@akubly/cairn` and `@akubly/forge` should live.
+
+**Option Summary:**
+
+| Option | Package Structure | Build Risk | Test Isolation | Phase 5 Portability | Recommendation |
+|--------|-------------------|------------|-----------------|-------------------|-----------------|
+| R1 | Forge imports Cairn | Medium | Medium | Low | Do not use |
+| R2 | New runtime package | Low | High | High | ✓ Recommended |
+| R3 | Optional Cairn import of Forge | Medium | Medium | Medium | Fallback |
+| R4 | Runtime-cli dual-mode | Low | Medium | High | Alternative |
+| R5 | New curator package | Low | High | High | Alternative |
+
+**Recommendation:** **R2** — Separate `@akubly/runtime` (composition library) + thin `@akubly/runtime-cli` (CLI wrapper).
+
+**Why:** Clean roles, best test isolation, zero build risks, Phase 5-ready. Library stays portable.
+
+**Fallback:** R4 (new `@akubly/curator` package) if team prefers explicit orchestrator semantics.
+
+**Do not use:** R3 (inject Forge into Cairn hooks). Test coupling + build-order risks unacceptable.
+
+**Full Audit:** `docs/wave3-composition-root-audit.md`
+
+---
+
+### Research: Curator/MCP Integration Surface (Alexander)
+
+**Date:** 2026-05-22  
+**Status:** Research input, delivered to ADR synthesis
+
+**Scope:** Wave 3 Curator–MCP integration requirements, architectural decisions, and open questions.
+
+**Key Findings:**
+
+1. **Composition Root Location:** New `@akubly/runtime` package (aligns with Roger's R2 recommendation).
+2. **Invocation Strategy:** Hybrid — automatic via Curator hook + manual via MCP tool.
+3. **Profile Selection (v1):** Trigger-driven only; defer global tier fallback to Wave 4.
+
+**Secondary Decisions:**
+- Eager Forge import (both packages co-deployed by assumption)
+- `force=true` behavior: skip dedup (matches Wave 2 intent)
+- Observable metrics: skills processed/skipped, hints generated/inserted/dedup'd, categories matched/attenuated
+- Profile selection override: low-priority for v1; defer to Wave 4
+
+**Curator API Changes:**
+```typescript
+export interface PrescriberOrchestrationConfig {
+  runForSkill: (skillId: string, minSessions: number) 
+    => Promise<{ skillId, hintsGenerated, hintsInserted, hintsDuplicated, hintsError }>;
+  loadProfile?: (skillId: string) => ExecutionProfile | null;
+}
+
+export function curate(
+  changeVectorConfig?: ChangeVectorConfig,
+  prescriberOrchestrationConfig?: PrescriberOrchestrationConfig,
+): CurateResult {
+  // Signature is backward compatible (new param optional)
+}
+```
+
+**MCP Tool:** `run_prescriber_optimization` (triggers orchestrator, returns structured output).
+
+**Full Analysis:** `.squad/agents/alexander/wave3-integration-analysis.md`

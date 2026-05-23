@@ -71,6 +71,33 @@ Wave 2 scope amended: `docs/forge-phase4.6-wave2-scope.md` updated with Prescrib
 
 ---
 
+## 2026-05-22: Wave 3 Integration Analysis — Curator–MCP Wiring Mapped
+
+Completed comprehensive integration surface analysis for Wave 3 Curator-driven orchestration. All five requested sections delivered:
+
+**1. Curator surface today:**
+- `curate(changeVectorConfig?)` exports from `packages/cairn/src/agents/curator.ts`; returns `CurateResult` with `changeVectorSweep` metadata
+- Call sites: `sessionStart.ts:68` and `mcp/server.ts:327` (both read-only in Wave 2)
+- Vector sweep identifies skills with newly computed categories; invocation hook for Wave 3 injector
+
+**2. Profile selection strategy (three independent dimensions):**
+- **Trigger set:** Trigger-driven (skills with new vectors) vs. global vs. hybrid batching. **Recommended:** Trigger-driven for v1.
+- **Granularity tier:** Per-skill only vs. all tiers. **Recommended:** Per-skill only (matches vector computation scope).
+- **Skip conditions:** No profile, immature sessionCount, stale profile. **Recommended:** v1 skips on no-profile or `sessionCount < minSessions`.
+- Operators observe: skills processed, skipped, hint volume, dedup stats.
+
+**3. MCP tool shape:** `run_prescriber_optimization(force?: boolean)` with output: success, skills processed, hints (generated/inserted/dedup'd), vector applicability, next steps.
+
+**4. Curator config surface:** Backward-compatible signature addition: `curate(changeVectorConfig?, prescriberOrchestrationConfig?)`. Orchestrator is an injectable dependency (`runForSkill` function + optional profile loader). Composition root constructs and passes it.
+
+**5. ADR blockers identified:**
+- Composition root choice (A–D from Roger's track) gates implementation
+- Hook vs. MCP tool vs. both (invocation model)
+- Eager vs. lazy Forge import (startup cost, optional dependency handling)
+- Profile expansion (explicit skill list, global tier fallback, staleness) deferred to Wave 4
+
+Analysis is **mechanical once composition root is decided**. Hard parts (data plumbing, attenuation, dedup) already in Wave 2. Full report: `.squad/agents/alexander/wave3-integration-analysis.md`.
+
 ## Learnings
 
 - Forge prescribers now consume the canonical `ChangeVectorSummary` from `@akubly/types` via a type re-export in `packages/forge/src/prescribers/types.ts`; existing imports in `promptOptimizer` and `tokenOptimizer` required no call-site changes because the shape remained identical.
@@ -81,5 +108,6 @@ Wave 2 scope amended: `docs/forge-phase4.6-wave2-scope.md` updated with Prescrib
 - `autoApplyEligible` is stored on matched hints both as a top-level field and in `hint.evidence.autoApplyEligible`; unmatched hints omit the field so Phase 4.5 callers still read absence as eligible.
 - Added `packages/forge/src/prescribers/forgePrescriberOrchestrator.test.ts` with ten cases (nine maturity-gradient scenarios plus provider-failure fallback); validation passed with `npm test --workspace=@akubly/forge` (609 passed, 3 todo), root `npm test`, and root `npm run build`.
 - Negative-impact auto-apply gating is now inclusive at `<= NEGATIVE_IMPACT_AUTO_APPLY_GATE` (`-0.2`), keeping exact-boundary cases on the manual-review side because the safety asymmetry favors false positives over false negatives.
+- Wave 3 integration is **injection-based**: Curator accepts an optional orchestrator config (not a direct Forge import). This preserves the acyclic dependency boundary and allows composition root to wire both packages independently. The orchestrator is a simple function pointer (`runForSkill`), not a class — keeps it lightweight and testable.
 
 
