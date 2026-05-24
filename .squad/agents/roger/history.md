@@ -74,6 +74,12 @@ Ready for Wave 2 implementation (computation + ranking only; runtime wiring foll
 
 Wave 3 implementation delivered autonomous Curator-driven orchestration. Composition root (R2: `@akubly/skillsmith-runtime`) is the only place importing both `@akubly/cairn` and `@akubly/forge`. Phase 5-ready architecture in place.
 
+## Learnings
+
+### Wave 3 Shipped (2026-05-23 ~21:08Z)
+
+PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end-to-end: composition root R2 (`@akubly/skillsmith-runtime`), Curator hook wiring, per-skill orchestration, E2E tests, Phase 5-ready acyclic boundaries. 14 Copilot findings addressed across 4 review cycles. 1 deferral approved: insertHintIfNew atomicity (partial UNIQUE + BEGIN IMMEDIATE) → Wave 4.
+
 ---
 
 **Older learnings archived to history-archive.md**

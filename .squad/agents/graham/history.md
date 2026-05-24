@@ -79,6 +79,10 @@ Roger (W2-1) + Rosella (W2-4): canonical `ChangeVectorSummary`, `ChangeVectorPro
 
 ## Learnings
 
+### Wave 3 Shipped (2026-05-23 ~21:08Z)
+
+PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end-to-end: composition root R2 (`@akubly/skillsmith-runtime`), Curator hook wiring, per-skill orchestration, E2E tests, Phase 5-ready acyclic boundaries. 14 Copilot findings addressed across 4 review cycles. 1 deferral approved: insertHintIfNew atomicity (partial UNIQUE + BEGIN IMMEDIATE) → Wave 4. Wave 4 scope being drafted by Graham.
+
 ### Wave 3 Scope Design + ADR Reasoning (2026-05-23)
 
 **Terminology reconciliation is first-class work.** Roger and Alexander used overlapping option labels (Roger's A–E, Alexander's A–D) that mapped to different options. Without a canonical mapping table (R1–R5), Aaron would face label confusion that obscures the actual decision. Lesson: when multiple contributors analyze the same design space independently, reconcile labels before presenting to decision-maker.
@@ -88,3 +92,11 @@ Roger (W2-1) + Rosella (W2-4): canonical `ChangeVectorSummary`, `ChangeVectorPro
 **Composition root is a durability decision, not a naming decision.** R2 (`@akubly/runtime`) vs R4 (`@akubly/curator`) is really about commitment level: R2 makes a weak, durable claim ("composition library"); R4 makes a strong, potentially brittle claim ("Curator is a package"). Prefer weaker claims when Phase 5 may reshape the architecture. Cost of R2→R4 migration is low; cost of wrong R4 commitment is high.
 
 **Wave structure works for incremental delivery.** Wave 0 (types) → Wave 1 (primitives) → Wave 2 (plumbing + safety) → Wave 3 (wiring) is a clean decomposition where each wave is self-contained and testable. The "hard parts ship early, wiring ships later" pattern reduces risk: Wave 3 is mechanically straightforward because Wave 2 solved the data and safety problems.
+
+### Wave 3 Ship + Wave 4 Triage (2026-05-23)
+
+**Wave 3 shipped clean.** PR #21 (squash f27a537) merged after four cloud-review cycles processing 14 Copilot findings. One finding explicitly deferred: `insertHintIfNew()` atomicity race under concurrent writers. The deferred thread cites a partial UNIQUE index on `optimization_hints (skill_id, source, category) WHERE status IN ('pending','accepted','deferred')` plus `BEGIN IMMEDIATE` transaction wrap as the planned fix.
+
+**Wave 4 proposal prioritizes foundation over features.** Seven documented follow-ups on the table. Recommended tight Wave 4 (3 work items): (1) insertHintIfNew atomicity (publicly committed), (2) Curator observability gap via CairnEvent extensions (architectural foundation for future re-prescribe triggers), (3) force-overwrite knob (operator need, simple API). Deferred: global tier fallback (cross-granularity design needed), staleness check (UX design required), dashboard (product clarity needed), DB convention standardization (repo-wide question).
+
+**Observability gap is the hidden dependency.** Investigation of Laura's Wave 3 trigger ambiguity surfaced a deeper architectural gap: Curator has no read surface into hint state transitions, profile schema versioning, or profile change history. Without observability instrumentation, Wave 5+ re-prescribe triggers (on hint rejection, on profile bump, on staleness) are unimplementable. Solving the atomicity race plus the observability gap in Wave 4 unblocks richer operator workflows in Wave 5.

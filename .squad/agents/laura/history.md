@@ -86,3 +86,9 @@ Graham's v3 scope finalized. Decisions archived. Ready for Wave 2 implementation
 
 Wave 3 delivers fully-realized E2E validation of Curator-driven orchestration. Integration path locked; regression scenarios identified; open questions documented.
 
+## Learnings
+
+### Wave 3 Shipped (2026-05-23 ~21:08Z)
+
+PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end-to-end: composition root R2 (`@akubly/skillsmith-runtime`), Curator hook wiring, per-skill orchestration, E2E tests, Phase 5-ready acyclic boundaries. 14 Copilot findings addressed across 4 review cycles. 1 deferral approved: insertHintIfNew atomicity (partial UNIQUE + BEGIN IMMEDIATE) → Wave 4.
+
