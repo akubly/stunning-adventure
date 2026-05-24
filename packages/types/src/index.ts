@@ -261,6 +261,12 @@ export interface PrescriberRunResult {
   hintsInserted: number;
   hintsDuplicated: number;
   hintsError: number;
+  /**
+   * Reason this skill's run was skipped (e.g. orchestrator hit its time
+   * budget). Absent when the skill was processed normally — even with
+   * zero hints generated.
+   */
+  skippedReason?: 'time-budget-exceeded';
 }
 
 /** Curator-facing port for running prescribers against one skill. */

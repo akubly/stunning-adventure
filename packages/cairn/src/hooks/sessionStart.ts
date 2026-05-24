@@ -18,7 +18,7 @@ import { getDb, closeDb } from '../db/index.js';
 import { getActiveSession } from '../db/sessions.js';
 import { getLastEventTime } from '../db/events.js';
 import { catchUpPreviousSession } from '../agents/archivist.js';
-import { curate } from '../agents/curator.js';
+import { curate, type CurateResult } from '../agents/curator.js';
 import { prescribe } from '../agents/prescriber.js';
 import { incrementSessionCounter } from '../db/prescriptions.js';
 import { getRepoKey } from './gitContext.js';
@@ -62,6 +62,7 @@ function isStaleSession(session: { id: string; startedAt: string }): boolean {
 export async function runSessionStart(
   repoKey: string,
   prescriberOrchestrationConfig?: PrescriberOrchestrationConfig,
+  afterCurate?: (curateResult: CurateResult) => void,
 ): Promise<{ fastPath: boolean }> {
   const existing = getActiveSession(repoKey);
   if (existing && !isStaleSession(existing)) {
@@ -71,6 +72,13 @@ export async function runSessionStart(
   // Either no active session or the active session is stale (orphan).
   catchUpPreviousSession(repoKey);
   const curateResult = await curate(undefined, prescriberOrchestrationConfig);
+  try {
+    afterCurate?.(curateResult);
+  } catch (error) {
+    console.warn(
+      `sessionStart: afterCurate callback failed; continuing without post-curate hook: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 
   // Increment session counter BEFORE prescribe() so shouldResurface()
   // sees the correct session number without needing an off-by-one hack.
@@ -94,6 +102,7 @@ export type SessionStartOrchestrationFactory = (
 
 export async function runSessionStartHook(
   createPrescriberOrchestrationConfig?: SessionStartOrchestrationFactory,
+  afterCurate?: (curateResult: CurateResult) => void,
 ): Promise<void> {
   let raw = '';
   for await (const chunk of process.stdin) {
@@ -123,10 +132,13 @@ export async function runSessionStartHook(
     let prescriberOrchestrationConfig: PrescriberOrchestrationConfig | undefined;
     try {
       prescriberOrchestrationConfig = createPrescriberOrchestrationConfig?.(db);
-    } catch {
+    } catch (error) {
+      console.warn(
+        `sessionStart: prescriber orchestration factory failed; continuing without orchestration: ${error instanceof Error ? error.message : String(error)}`,
+      );
       prescriberOrchestrationConfig = undefined;
     }
-    await runSessionStart(repoKey, prescriberOrchestrationConfig);
+    await runSessionStart(repoKey, prescriberOrchestrationConfig, afterCurate);
   } catch {
     // Fail open — hooks must never break the user's workflow
   } finally {

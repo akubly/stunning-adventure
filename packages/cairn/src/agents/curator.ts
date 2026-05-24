@@ -125,6 +125,9 @@ const BATCH_SIZE = 1000;
 /** Soft time cap (ms) for curate() — checked between batches. */
 export const TIME_BUDGET_MS = 3000;
 
+/** Soft time cap (ms) for post-sweep prescriber orchestration. */
+export const PRESCRIBER_TIME_BUDGET_MS = 5000;
+
 // ---------------------------------------------------------------------------
 // Core pipeline
 // ---------------------------------------------------------------------------
@@ -240,8 +243,27 @@ async function runPrescribersForComputedSkills(
 ): Promise<PrescriberRunResult[]> {
   const minSessions = changeVectorConfig?.minSessionsObserved ?? DEFAULT_MIN_SESSIONS;
   const results: PrescriberRunResult[] = [];
+  const prescriberStart = Date.now();
+  const totalSkills = changeVectorSweep.computedSkillIds.length;
 
-  for (const skillId of changeVectorSweep.computedSkillIds) {
+  for (const [index, skillId] of changeVectorSweep.computedSkillIds.entries()) {
+    if (Date.now() - prescriberStart >= PRESCRIBER_TIME_BUDGET_MS) {
+      console.warn(
+        `runPrescribersForComputedSkills: time budget ${PRESCRIBER_TIME_BUDGET_MS}ms exceeded after ${results.length}/${totalSkills} skills; skipping remaining`,
+      );
+      results.push(
+        ...changeVectorSweep.computedSkillIds.slice(index).map((remainingSkillId) => ({
+          skillId: remainingSkillId,
+          hintsGenerated: 0,
+          hintsInserted: 0,
+          hintsDuplicated: 0,
+          hintsError: 0,
+          skippedReason: 'time-budget-exceeded' as const,
+        })),
+      );
+      break;
+    }
+
     try {
       results.push(await prescriberOrchestrationConfig.runForSkill(skillId, minSessions));
     } catch (error: unknown) {
