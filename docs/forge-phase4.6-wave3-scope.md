@@ -50,15 +50,15 @@ Full reasoning, all five options, and trade-off matrix in the ADR.
 export function curate(changeVectorConfig?: ChangeVectorConfig): CurateResult;
 ```
 
-**Wave 3 (backward compatible):**
+**Wave 3 (shipped):**
 ```typescript
-export function curate(
+export async function curate(
   changeVectorConfig?: ChangeVectorConfig,
   prescriberOrchestrationConfig?: PrescriberOrchestrationConfig,
-): CurateResult;
+): Promise<CurateResult>;
 ```
 
-Existing call sites (`sessionStart.ts`, `run_curate` MCP tool) pass no orchestration config → behavior unchanged.
+> **Cycle-1 fix:** The return type changed from `CurateResult` to `Promise<CurateResult>` — this is a type-breaking change, not an additive one. All workspace callers were updated as part of the cycle-1 fix.
 
 ### 3.2 `PrescriberOrchestrationConfig` (Alexander's design)
 
@@ -108,19 +108,22 @@ This is consistent with Phase 4.5 fail-open policy and Wave 2's provider error h
 ```typescript
 export interface CurateResult {
   // ... existing fields (unchanged) ...
-  
-  prescribers?: {
-    skillsProcessed: number;
-    skillsSkipped: number;
-    hintsGenerated: number;
-    hintsInserted: number;
-    hintsDeduplicated: number;
-    errors: number;
-  };
+
+  prescribers?: PrescriberRunResult[]; // one entry per skill; absent if prescriberOrchestrationConfig not provided
+}
+
+// Shape of each entry (from @akubly/types):
+export interface PrescriberRunResult {
+  skillId: string;
+  hintsGenerated: number;
+  hintsInserted: number;
+  hintsDuplicated: number;
+  hintsError: number;
+  skippedReason?: string; // set when the skill was skipped (e.g. 'time-budget-exceeded')
 }
 ```
 
-Field is absent when no `prescriberOrchestrationConfig` is provided (backward compatible).
+`prescribers` is a per-skill array — one `PrescriberRunResult` per skill attempted (including skipped skills). Callers that need aggregate counts can compute them by reducing the array (e.g. `result.prescribers.reduce((sum, r) => sum + r.hintsInserted, 0)`).
 
 ---
 
@@ -140,10 +143,10 @@ Field is absent when no `prescriberOrchestrationConfig` is provided (backward co
 
 | Scenario | What the operator sees |
 |----------|----------------------|
-| Curator runs, 3 skills have new vectors | `prescribers.skillsProcessed: 3` in CurateResult |
-| 1 of 3 skills has no profile | `prescribers.skillsSkipped: 1` (operator can create profile to enable) |
-| Dedup blocks 2 of 5 hints | `prescribers.hintsDeduplicated: 2` (active hints already exist) |
-| Prescriber fails for 1 skill | `prescribers.errors: 1` + warning log (other skills unaffected) |
+| Curator runs, 3 skills have new vectors | `prescribers` array has 3 entries (one per skill) |
+| 1 of 3 skills has no profile | 1 entry has `skippedReason` set; operator can create a profile to enable optimization |
+| Dedup blocks 2 of 5 hints | sum of `hintsDuplicated` across entries = 2 (active hints already exist) |
+| Prescriber fails for 1 skill | 1 entry has `hintsError: 1` + warning log (other skills unaffected) |
 | No new vectors this cycle | `prescribers` field absent (prescribers didn't run) |
 
 ---
@@ -199,9 +202,15 @@ Field is absent when no `prescriberOrchestrationConfig` is provided (backward co
 
 ## 8. Out of Scope (Deferred)
 
+## Migration Notes
+
+After Wave 3, prescriber hints generate automatically at session start for skills with ≥3 sessions and an execution profile. This replaces manual-only invocation. The CLI path (`forge-prescribe --skill <id>`) remains available. To suppress automatic generation for a skill, ensure it has no execution profile or fewer than 3 sessions.
+
+---
+
 | Item | Deferred to | Rationale |
 |------|------------|-----------|
-| MCP tool exposure (`run_prescriber_optimization`) | Later wave | No net-new capability vs. existing CLI; Curator hook handles auto path; re-open when concrete operator need surfaces |
+| MCP tool exposure (`run_prescriber_optimization`) | Later wave | No net-new capability vs. existing CLI; Curator hook handles auto path. The manual invocation surface (`forge-prescribe` CLI) assumes operator has local shell access to the repo. If a future agent-driven recovery path needs to trigger prescribers from a context without shell access, that's the concrete operator need that justifies reopening MCP. |
 | MCP-driven `skillIds` override | Later wave | Depends on MCP tool; CLI is the manual surface for now |
 | Global tier fallback (per-skill → global profile chain) | Wave 4 | Requires cross-granularity category matching + dedup reconsideration |
 | Staleness check (skip stale profiles) | Wave 4 | Needs staleness constant, UX design for "profile stale" messaging |
