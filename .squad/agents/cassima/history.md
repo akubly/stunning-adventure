@@ -173,3 +173,19 @@ Before you draft v2, you have **8 directives** waiting in `.squad/decisions/inbo
 **Files:** 9 directive files added to inbox (`copilot-directive-r5-oq{1-9}-*.md`). Cassima v3 spawned to produce final R5 PRD integrating all directives.
 
 **Hard rule observed:** Eureka inbox files NOT merged into decisions.md; inbox files left in place for Aaron's review per standing rule.
+
+### Session 2026-05-24: R5 Round 4 — Verb-Model Probe Patches (Scribe Log)
+
+**What Aaron probed:**
+1. **Acid test:** Does `pray` as a first-class verb survive agent-perspective scrutiny?
+2. **Conceptual:** What philosophical frame justifies integration as ongoing system behavior?
+3. **Reflection API:** Are dream/ideate/contemplate/meditate separate verbs or parametric modes?
+
+**What shipped:**
+- `cassima-requirements-r5-v3.md` grew 472→500 lines (+7.6KB)
+- Probe 1 verdict (c): `pray` retired; `commit` promoted with full mechanics (hot tier, registry, retire, commit_floor); aspirations encoded as kind=aspiration within integrate
+- Probe 2: New Conceptual Model section (Jungian framing; integration as system property)
+- Probe 3: FR-10 notes dream/ideate/contemplate/meditate as likely parametric reflection-engine modes
+- FR-11 renamed "Commitment Registry"; new stale_aspiration flag; US-6 restructured for commit/aspiration adjacency
+
+**Methodology learned:** The agent-perspective acid test (model what an agent does when it executes the verb) reveals semantic collapses. `pray` reduces to `integrate(kind=aspiration)`—prayers are aspirations waiting to be committed. This technique surfaces hidden dependencies and over-abstraction in verb design.
