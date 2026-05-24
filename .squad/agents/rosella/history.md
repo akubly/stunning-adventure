@@ -1,6 +1,38 @@
 📌 Team update (2026-05-22T14:07:59Z): **Phase 4.6 Wave 2 complete** — ChangeVectorProvider + ForgePrescriberOrchestrator + autoApplyEligible safety gate + hint dedup + forge-prescribe CLI all shipped. 1199 tests passing, 9 work items landed, 4 decisions merged. Wave 3 (Curator-driven orchestration + composition root) deferred behind ADR. — Scribe
 📌 Team update (2026-05-22T20:35:00Z): **Wave 2 W2-5 complete** — ForgePrescriberOrchestrator shipped. Attenuation + autoApplyEligible propagation live. ATTENUATION_FLOOR=0.1 exported from @akubly/types. Fail-open on provider errors. Forge tests 609 passing (+10), root build green. — Scribe
 📌 Team update (2026-05-22T20:03:56Z): Wave 2 v3.1 scope final — autoApplyEligible propagates through OptimizationHint; constants NEGATIVE_IMPACT_AUTO_APPLY_GATE=-0.2 and ATTENUATION_FLOOR=0.1; CLI surface only — no MCP in Wave 2. — Graham Knight
+## W4-3: forceRegenerate CLI Knob (2026-05-23)
+
+Shipped `--force` flag for `forge-prescribe` CLI to bypass dedup and re-emit hints.
+
+**Call chain traced:**
+- CLI (`packages/runtime-cli/src/cli.ts`) → `runForgePrescribe()` (`packages/skillsmith-runtime/src/index.ts`) → `executePrescriberRun()` → `expireActiveHints()` + `cairn.insertHintIfNew()`
+
+**Implementation:**
+- Added `forceRegenerate?: boolean` parameter to `RunForgePrescribeOptions` interface
+- When `true`, `executePrescriberRun()` calls `expireActiveHints()` before each `insertHintIfNew()` call
+- `expireActiveHints()` UPDATEs hints WHERE (skill_id, source, category) match AND status IN ('pending', 'accepted', 'deferred')
+- CLI flag: `--force` (boolean, default: false)
+- MCP surface: EXCLUDED per Aaron's D2 decision (Wave 4 scope: CLI only)
+
+**Tests added:**
+- 4 new tests in `packages/runtime-cli/src/__tests__/forgePrescribe.test.ts`:
+  - forceRegenerate reduces skipped count when active duplicates exist
+  - Only expires hints matching (skill_id, source, category)
+  - Does not expire terminal-status hints (applied, rejected, expired, etc.)
+  - Verification of dedup bypass behavior
+
+**Files modified:**
+- `packages/skillsmith-runtime/src/index.ts` — added `expireActiveHints()` helper + `forceRegenerate` parameter threading
+- `packages/runtime-cli/src/cli.ts` — added `--force` flag + usage text
+- `packages/runtime-cli/src/__tests__/forgePrescribe.test.ts` — added 4 tests
+
+**Verification:** `npm test --workspace=@akubly/runtime-cli` ✅ 8 passing, `npm run build` ✅ green.
+
+**Coordination note for Roger:** W4-3 assumes expire-then-insert semantics. When W4-1 atomicity lands, the UNIQUE constraint will prevent race conditions during the expire→insert window. W4-3 implementation is compatible with W4-1's partial UNIQUE index.
+
+---
+
 # Rosella — History
 
 ## 2026-05-21: Wave 2 v3 Scope Ready — Curator Wiring Deferred to Wave 3
