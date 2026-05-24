@@ -1,13 +1,44 @@
+import type Database from 'better-sqlite3';
 import { getDb } from './index.js';
 import type { CairnEvent } from '../types/index.js';
 
-/** Append an event to the log. Returns the new event id. */
-export function logEvent(sessionId: string, eventType: string, payload: object): number {
-  const db = getDb();
+function isDatabase(value: unknown): value is Database.Database {
+  return typeof value === 'object' && value !== null && 'prepare' in value;
+}
+
+/** Append an event to the log using an explicit database handle. Returns the new event id. */
+export function logEvent(
+  db: Database.Database,
+  sessionId: string,
+  eventType: string,
+  payload: object,
+): number;
+/** @deprecated Prefer logEvent(db, ...) or logEventWithDefaultDb(...) to avoid hidden DB coupling. */
+export function logEvent(sessionId: string, eventType: string, payload: object): number;
+export function logEvent(
+  dbOrSessionId: Database.Database | string,
+  sessionIdOrEventType: string,
+  eventTypeOrPayload: string | object,
+  maybePayload?: object,
+): number {
+  const db = isDatabase(dbOrSessionId) ? dbOrSessionId : getDb();
+  const sessionId = isDatabase(dbOrSessionId) ? sessionIdOrEventType : dbOrSessionId;
+  const eventType = isDatabase(dbOrSessionId) ? (eventTypeOrPayload as string) : sessionIdOrEventType;
+  const payload = isDatabase(dbOrSessionId) ? maybePayload : (eventTypeOrPayload as object);
+
   const result = db
     .prepare('INSERT INTO event_log (session_id, event_type, payload) VALUES (?, ?, ?)')
-    .run(sessionId, eventType, JSON.stringify(payload));
+    .run(sessionId, eventType, JSON.stringify(payload ?? {}));
   return Number(result.lastInsertRowid);
+}
+
+/** Append an event using the process default database. Prefer logEvent(db, ...) in DB-layer code. */
+export function logEventWithDefaultDb(
+  sessionId: string,
+  eventType: string,
+  payload: object,
+): number {
+  return logEvent(getDb(), sessionId, eventType, payload);
 }
 
 /** Return the timestamp of the most recent event for a session, or undefined.

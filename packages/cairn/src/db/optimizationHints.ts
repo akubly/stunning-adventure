@@ -69,6 +69,13 @@ export interface InsertHintIfNewResult {
   existingHintId?: string;
 }
 
+export interface ReplaceActiveHintsAtomicallyResult {
+  expired: number;
+  inserted: number;
+  skipped: number;
+  results: InsertHintIfNewResult[];
+}
+
 export const ACTIVE_HINT_STATUSES: readonly HintStatus[] = ['pending', 'accepted', 'deferred'];
 
 // Allowed forward transitions from each status. The initial `pending` state
@@ -154,6 +161,13 @@ function insertOptimizationHintWithDb(db: Database.Database, hint: OptimizationH
   return hint.id;
 }
 
+function getOptimizationHintWithDb(db: Database.Database, id: string): OptimizationHintRow | null {
+  const row = db.prepare('SELECT * FROM optimization_hints WHERE id = ?').get(id) as
+    | Record<string, unknown>
+    | undefined;
+  return row ? mapRow(row) : null;
+}
+
 function findActiveHintId(
   db: Database.Database,
   skillId: string,
@@ -172,6 +186,54 @@ function findActiveHintId(
   ).get(skillId, source, category, ...ACTIVE_HINT_STATUSES) as { id: string } | undefined;
 
   return row?.id;
+}
+
+function emitHintTransitionEvent(
+  db: Database.Database,
+  skillId: string,
+  hintId: string,
+  fromState: HintStatus | null,
+  toState: HintStatus,
+): void {
+  const sessionId = ensureSystemSession(db);
+  logEvent(db, sessionId, 'hint_state_transition', {
+    skill_id: skillId,
+    hint_id: hintId,
+    from_state: fromState,
+    to_state: toState,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+function insertHintIfNewWithinTransaction(
+  db: Database.Database,
+  hint: OptimizationHintInsert,
+): InsertHintIfNewResult {
+  const existingHintId = findActiveHintId(db, hint.skillId, hint.source, hint.category);
+  if (existingHintId) {
+    return {
+      inserted: false,
+      existingHintId,
+    };
+  }
+
+  try {
+    insertOptimizationHintWithDb(db, hint);
+    emitHintTransitionEvent(db, hint.skillId, hint.id, null, hint.status ?? 'pending');
+    return { inserted: true };
+  } catch (err) {
+    // UNIQUE constraint violation on the partial index means another transaction
+    // concurrently inserted this (skill_id, source, category) into an active status.
+    // Treat as duplicate.
+    if (err instanceof Error && err.message.includes('UNIQUE constraint failed')) {
+      const duplicateHintId = findActiveHintId(db, hint.skillId, hint.source, hint.category);
+      return {
+        inserted: false,
+        existingHintId: duplicateHintId,
+      };
+    }
+    throw err;
+  }
 }
 
 /** Insert a new optimization hint, suppressing active duplicates. Returns the inserted or existing hint id. */
@@ -195,58 +257,57 @@ export function insertHintIfNew(
   db: Database.Database,
   hint: OptimizationHintInsert,
 ): InsertHintIfNewResult {
-  // Use BEGIN IMMEDIATE for write lock upfront, preventing concurrent inserts
-  const txn = db.transaction(() => {
-    const existingHintId = findActiveHintId(db, hint.skillId, hint.source, hint.category);
-    if (existingHintId) {
-      return {
-        inserted: false,
-        existingHintId,
-      };
-    }
+  // Use BEGIN IMMEDIATE for write lock upfront, preventing concurrent inserts.
+  return db.transaction(() => insertHintIfNewWithinTransaction(db, hint)).immediate();
+}
 
-    try {
-      insertOptimizationHintWithDb(db, hint);
-      return { inserted: true };
-    } catch (err) {
-      // UNIQUE constraint violation on the partial index means another transaction
-      // concurrently inserted this (skill_id, source, category) into an active status.
-      // Treat as duplicate.
-      if (err instanceof Error && err.message.includes('UNIQUE constraint failed')) {
-        const duplicateHintId = findActiveHintId(db, hint.skillId, hint.source, hint.category);
-        return {
-          inserted: false,
-          existingHintId: duplicateHintId,
-        };
-      }
-      throw err;
-    }
-  });
+/**
+ * Atomically expire active hints for one tuple and insert their replacements.
+ * Emits one aggregate `hints_force_expired` event for the batch rather than per-hint
+ * expiration so the force-regenerate path remains cheap and observable.
+ */
+export function replaceActiveHintsAtomically(
+  db: Database.Database,
+  skillId: string,
+  source: HintSource,
+  category: string,
+  newHints: OptimizationHintInsert[],
+): ReplaceActiveHintsAtomicallyResult {
+  return db.transaction(() => {
+    const placeholders = ACTIVE_HINT_STATUSES.map(() => '?').join(', ');
+    const expireResult = db.prepare(
+      `UPDATE optimization_hints
+          SET status = 'expired'
+        WHERE skill_id = ?
+          AND source = ?
+          AND category = ?
+          AND status IN (${placeholders})`
+    ).run(skillId, source, category, ...ACTIVE_HINT_STATUSES);
 
-  const result = txn.immediate();
-  
-  // Emit hint_inserted event AFTER transaction commits
-  if (result.inserted) {
-    const sessionId = ensureSystemSession();
-    logEvent(sessionId, 'hint_state_transition', {
-      skill_id: hint.skillId,
-      hint_id: hint.id,
-      from_state: null,
-      to_state: hint.status ?? 'pending',
-      timestamp: new Date().toISOString(),
+    const expired = expireResult.changes;
+    const sessionId = ensureSystemSession(db);
+    logEvent(db, sessionId, 'hints_force_expired', {
+      skillId,
+      source,
+      category,
+      count: expired,
+      actor: 'runtime:--force',
     });
-  }
-  
-  return result;
+
+    const results = newHints.map((hint) => insertHintIfNewWithinTransaction(db, hint));
+    const inserted = results.filter((result) => result.inserted).length;
+    return {
+      expired,
+      inserted,
+      skipped: results.length - inserted,
+      results,
+    };
+  }).immediate();
 }
 
 /** Get a single hint by id. */
 export function getOptimizationHint(id: string): OptimizationHintRow | null {
-  const db = getDb();
-  const row = db.prepare('SELECT * FROM optimization_hints WHERE id = ?').get(id) as
-    | Record<string, unknown>
-    | undefined;
-  return row ? mapRow(row) : null;
+  return getOptimizationHintWithDb(getDb(), id);
 }
 
 /** Query hints by skill, status, source, and/or parent prescription. */
@@ -311,43 +372,38 @@ export function updateOptimizationHintStatus(
   options: { appliedAt?: string; force?: boolean } = {},
 ): boolean {
   const db = getDb();
-  const current = getOptimizationHint(id);
-  if (!current) return false;
-  if (current.status === nextStatus) return false;
 
-  if (!options.force) {
-    const allowed = STATUS_TRANSITIONS[current.status] ?? [];
-    if (!allowed.includes(nextStatus)) {
-      throw new Error(
-        `Illegal hint status transition: ${current.status} -> ${nextStatus} (id=${id})`,
-      );
+  return db.transaction(() => {
+    const current = getOptimizationHintWithDb(db, id);
+    if (!current) return false;
+    if (current.status === nextStatus) return false;
+
+    if (!options.force) {
+      const allowed = STATUS_TRANSITIONS[current.status] ?? [];
+      if (!allowed.includes(nextStatus)) {
+        throw new Error(
+          `Illegal hint status transition: ${current.status} -> ${nextStatus} (id=${id})`,
+        );
+      }
     }
-  }
 
-  const appliedAt =
-    nextStatus === 'applied'
-      ? (options.appliedAt ?? new Date().toISOString())
-      : current.appliedAt;
+    const appliedAt =
+      nextStatus === 'applied'
+        ? (options.appliedAt ?? new Date().toISOString())
+        : current.appliedAt;
 
-  const res = db.prepare(
-    `UPDATE optimization_hints
-       SET status = ?, applied_at = ?
+    const res = db.prepare(
+      `UPDATE optimization_hints
+         SET status = ?, applied_at = ?
        WHERE id = ?`
-  ).run(nextStatus, appliedAt, id);
+    ).run(nextStatus, appliedAt, id);
 
-  if (res.changes > 0) {
-    // Emit hint state transition event
-    const sessionId = ensureSystemSession();
-    logEvent(sessionId, 'hint_state_transition', {
-      skill_id: current.skillId,
-      hint_id: id,
-      from_state: current.status,
-      to_state: nextStatus,
-      timestamp: new Date().toISOString(),
-    });
-  }
+    if (res.changes > 0) {
+      emitHintTransitionEvent(db, current.skillId, id, current.status, nextStatus);
+    }
 
-  return res.changes > 0;
+    return res.changes > 0;
+  }).immediate();
 }
 
 /** Delete a hint by id. */
