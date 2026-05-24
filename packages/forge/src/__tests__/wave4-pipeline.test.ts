@@ -12,7 +12,7 @@
  */
 
 import type Database from 'better-sqlite3';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   closeDb,
   getDb,
@@ -352,42 +352,30 @@ describe('Wave 4 Group B — CairnEvent Observability', () => {
     expect(() => getUnprocessedEvents(0)).not.toThrow();
   });
 
-  it('events are emitted in the same transaction as the underlying write (no orphans on rollback)', () => {
-    // Test scenario: Start a transaction, insert a hint, then rollback.
-    // Verify that the CairnEvent is also rolled back and doesn't exist
-    // as an orphan in the events table.
-    //
-    // Roger's implementation wraps insertHintIfNew in a BEGIN IMMEDIATE
-    // transaction, so both the hint insert and event emission should be
-    // atomic. If the transaction rolls back, both should disappear.
-    //
-    // Setup: Get DB handle and manually test transaction behavior.
-    // Action: Insert hint in transaction, query events, then rollback.
-    // Assert: Neither hint nor event exist after rollback.
-
+  it('rolls back hint insert when hint event emission fails', () => {
     const skillId = 'skill-txn-rollback';
     const hint = makeHint(skillId, 'convergence', 'prompt-optimizer', {
       id: 'h-rollback-1',
     });
 
     const db = reopenDb();
-    const beforeEventCount = getUnprocessedEvents(0).length;
-    const beforeHintCount = queryOptimizationHints({ skillId }).length;
+    db.exec(`
+      CREATE TEMP TRIGGER fail_hint_state_transition_event
+      BEFORE INSERT ON event_log
+      WHEN NEW.event_type = 'hint_state_transition'
+      BEGIN
+        SELECT RAISE(FAIL, 'forced hint_state_transition failure');
+      END;
+    `);
 
-    // Insert hint (which internally uses a transaction)
-    insertHintIfNew(db, hint);
+    expect(() => insertHintIfNew(db, hint)).toThrow('forced hint_state_transition failure');
 
-    // Verify hint and event exist
-    const afterHintCount = queryOptimizationHints({ skillId }).length;
-    const afterEventCount = getUnprocessedEvents(0).length;
-
-    expect(afterHintCount).toBeGreaterThan(beforeHintCount);
-    expect(afterEventCount).toBeGreaterThan(beforeEventCount);
-
-    // Transactional integrity is validated by the fact that insertHintIfNew
-    // uses BEGIN IMMEDIATE. If the transaction were to rollback (which we
-    // can't easily test without manual SQL), both would disappear.
-    // This test confirms the happy path atomicity.
+    expect(queryOptimizationHints({ skillId })).toHaveLength(0);
+    const orphanEvent = getUnprocessedEvents(0).find((event) => {
+      const payload = JSON.parse(event.payload) as { hint_id?: string };
+      return payload.hint_id === hint.id;
+    });
+    expect(orphanEvent).toBeUndefined();
   });
 });
 
@@ -521,27 +509,33 @@ describe('Wave 4 Group C — forceRegenerate CLI Knob', () => {
     expect(expiredHints.length).toBeGreaterThan(0);
   });
 
-  it('MCP surface does NOT expose the forceRegenerate flag (negative test)', () => {
-    // Test scenario: Verify that the MCP tool definition for forge-prescribe
-    // does NOT expose a forceRegenerate parameter, ensuring the flag is
-    // CLI-only as per Wave 4 design decision D2.
-    //
-    // This is an inspection-based validation. The MCP tool is defined in
-    // packages/skillsmith-runtime/src/mcp/tools.ts (or similar). We verify
-    // that the forge_prescribe tool schema does not include a forceRegenerate
-    // parameter.
-    //
-    // Since we don't have direct access to the MCP schema in this test file,
-    // we validate this through code review and by checking that the
-    // runForgePrescribe function signature in the MCP handler does not
-    // expose forceRegenerate.
-    //
-    // For now, this is a documentation test — the actual MCP schema is
-    // validated through manual inspection or separate MCP-specific tests.
+  it('MCP surface does NOT expose the forceRegenerate flag (negative test)', async () => {
+    type RegisteredTool = { name: string; config: { inputSchema?: Record<string, unknown> } };
+    const registeredTools: RegisteredTool[] = [];
 
-    // This test is a placeholder for human inspection of the MCP schema.
-    // The actual validation happens in the MCP tool definition file.
-    expect(true).toBe(true);
+    vi.doMock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
+      McpServer: class {
+        registerTool(name: string, config: RegisteredTool['config']): void {
+          registeredTools.push({ name, config });
+        }
+
+        async connect(): Promise<void> {}
+      },
+    }));
+
+    try {
+      await import('../../../cairn/src/mcp/server.js');
+
+      expect(registeredTools.length).toBeGreaterThan(0);
+      const exposedParameters = registeredTools.flatMap((tool) =>
+        Object.keys(tool.config.inputSchema ?? {}).map((parameter) => `${tool.name}.${parameter}`),
+      );
+
+      expect(exposedParameters).not.toContain('forge_prescribe.forceRegenerate');
+      expect(exposedParameters.filter((parameter) => /(?:^|\.)force(?:Regenerate)?$/i.test(parameter))).toEqual([]);
+    } finally {
+      vi.doUnmock('@modelcontextprotocol/sdk/server/mcp.js');
+    }
   });
 });
 
