@@ -151,3 +151,25 @@ Before you draft v2, you have **8 directives** waiting in `.squad/decisions/inbo
 - Next deliverable (R6) is integration design—how Eureka fits with Cairn (storage) and Forge (runtime). Hard rule lifts at R6, so I'll finally be able to read those packages.
 - If Aaron approves the "one killer scenario" framing (Q3), R6 should design around that scenario end-to-end, not try to solve all 5 user stories simultaneously.
 - Watch for Aaron's signal on dogfooding timeline (Q21). If he wants Squad migration ASAP, R6/R7 will be aggressive. If he wants codebase familiarization first, Squad migration can wait.
+
+### Session 2026-05-23: R5 Round 3 — Aaron resolved 9 OQ (Open Questions) from Cassima v2 PRD
+
+**Context:** Cassima v2 PRD was delivered with 9 blocking open questions. Aaron walked each one systematically; resolutions captured as directive files in `.squad/decisions/inbox/`. Cassima v3 spawning in parallel to integrate.
+
+**9 OQ Resolutions:**
+
+| OQ | Topic | Resolution |
+|---|---|---|
+| OQ-1 | attention_tier transitions | default warm; pray→hot; retire→warm; sweep-aged demotion (session-count hysteresis, N/M R6-tunable); no auto-promotion; precedence explicit > pray > sweep-aged > default |
+| OQ-2 | storage primitive | Strawman: SQLite + sqlite-vec, per-tier uniform .db files (agent/project/user at FR-7.2 paths); embedder injected; pending R6 review against Cairn |
+| OQ-3 | pray follow-through | v1 pull-with-boost only; v1.5 list_active_commitments() caller-initiated; retire() explicit-only + sweep stale-flag (no auto-retire); v2 soft floor via commit_floor? opt-in |
+| OQ-4 | decide schema | {question, options:[{id,label,rationale?,rejected_for?}], chosen, rationale, principal_id (renamed from decider), confidence?, supersedes_decision_id? (auto-emits edge), revisit_at?, timestamp}; chosen∈options[].id validated |
+| OQ-5 | edge types | Three tiers. Tier 1 eager: derived_from, references, contradicts, supersedes, part_of, instance_of, precedes, defined_in, decided_by, committed_in. Tier 2 sweep: similar_to, co_accessed_with. Tier 3 parking lot: caused_by, useful_for, equivalent_to, responds_to, requires, analogous_to. `tags` excluded. |
+| OQ-6 | contemplate | OMITTED from v1 exports entirely (no stub, no type-only); reserved in FR-10 table only |
+| OQ-7 | trust decay | No automatic decay (closes T2). Trust event-driven only (contemplate/verification/contradiction/explicit_write). time_since_last_verification = derived field. Sweep emits stale_trust flag. |
+| OQ-8 | ranker defaults | raw = 0.5·rel + 0.2·imp + 0.2·trust + 0.1·recency; final = raw × attention_mult (hot=1.20, warm=1.0, cold=0.80); trust floor 0.15 gate (configurable); closes T3 |
+| OQ-9 | session continuity | Sessions are kind=session facts (NOT sibling table, NOT origin_session_id field). Edges: originated_in, modified_in, referenced_in (Tier 1 eager) + recalled_in (Tier 2 sweep, per-session dedup). Summary REQUIRED in v1 (caller supplies). Amends OQ-5 with 4 new edge types. |
+
+**Files:** 9 directive files added to inbox (`copilot-directive-r5-oq{1-9}-*.md`). Cassima v3 spawned to produce final R5 PRD integrating all directives.
+
+**Hard rule observed:** Eureka inbox files NOT merged into decisions.md; inbox files left in place for Aaron's review per standing rule.
