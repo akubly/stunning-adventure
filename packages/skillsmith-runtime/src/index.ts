@@ -195,9 +195,7 @@ async function executePrescriberRun({
     try {
       const hintInsert = toOptimizationHintInsert(hint);
       const insertResult = forceRegenerate
-        ? cairn.replaceActiveHintsAtomically(db, hint.skillId, hint.source, hint.category, [
-            hintInsert,
-          ]).results[0]
+        ? cairn.replaceActiveHintAtomically(db, hintInsert, { actor: 'runtime:--force' })
         : cairn.insertHintIfNew(db, hintInsert);
 
       if (isSkippedInsert(insertResult)) {

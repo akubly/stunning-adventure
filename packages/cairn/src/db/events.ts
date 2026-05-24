@@ -3,7 +3,13 @@ import { getDb } from './index.js';
 import type { CairnEvent } from '../types/index.js';
 
 function isDatabase(value: unknown): value is Database.Database {
-  return typeof value === 'object' && value !== null && 'prepare' in value;
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'prepare' in value &&
+    'pragma' in value &&
+    'transaction' in value
+  );
 }
 
 /** Append an event to the log using an explicit database handle. Returns the new event id. */

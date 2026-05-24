@@ -64,6 +64,7 @@ export {
 export {
   insertOptimizationHint,
   insertHintIfNew,
+  replaceActiveHintAtomically,
   replaceActiveHintsAtomically,
   getOptimizationHint,
   queryOptimizationHints,

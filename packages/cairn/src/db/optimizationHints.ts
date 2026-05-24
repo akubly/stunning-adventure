@@ -72,6 +72,7 @@ export interface InsertHintIfNewResult {
 export interface ReplaceActiveHintsAtomicallyResult {
   expired: number;
   inserted: number;
+  /** Hints not inserted because an active replacement already existed by insert time. Normally 0. */
   skipped: number;
   results: InsertHintIfNewResult[];
 }
@@ -272,7 +273,16 @@ export function replaceActiveHintsAtomically(
   source: HintSource,
   category: string,
   newHints: OptimizationHintInsert[],
+  options: { actor?: string } = {},
 ): ReplaceActiveHintsAtomicallyResult {
+  for (const hint of newHints) {
+    if (hint.skillId !== skillId || hint.source !== source || hint.category !== category) {
+      throw new Error(
+        `Replacement hint tuple mismatch: expected ${skillId}/${source}/${category}, got ${hint.skillId}/${hint.source}/${hint.category}`,
+      );
+    }
+  }
+
   return db.transaction(() => {
     const placeholders = ACTIVE_HINT_STATUSES.map(() => '?').join(', ');
     const expireResult = db.prepare(
@@ -287,11 +297,11 @@ export function replaceActiveHintsAtomically(
     const expired = expireResult.changes;
     const sessionId = ensureSystemSession(db);
     logEvent(db, sessionId, 'hints_force_expired', {
-      skillId,
+      skill_id: skillId,
       source,
       category,
       count: expired,
-      actor: 'runtime:--force',
+      actor: options.actor ?? 'runtime:--force',
     });
 
     const results = newHints.map((hint) => insertHintIfNewWithinTransaction(db, hint));
@@ -303,6 +313,23 @@ export function replaceActiveHintsAtomically(
       results,
     };
   }).immediate();
+}
+
+/** Atomically expire and replace one active hint tuple, returning the insert result directly. */
+export function replaceActiveHintAtomically(
+  db: Database.Database,
+  hint: OptimizationHintInsert,
+  options: { actor?: string } = {},
+): InsertHintIfNewResult {
+  const result = replaceActiveHintsAtomically(db, hint.skillId, hint.source, hint.category, [
+    hint,
+  ], options).results[0];
+
+  if (!result) {
+    throw new Error(`Replacement did not produce an insert result for hint ${hint.id}`);
+  }
+
+  return result;
 }
 
 /** Get a single hint by id. */
