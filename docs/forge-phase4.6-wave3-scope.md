@@ -126,7 +126,7 @@ export interface PrescriberRunResult {
   hintsInserted: number;
   hintsDuplicated: number;
   hintsError: number;
-  skippedReason?: string; // set when the skill was skipped (e.g. 'time-budget-exceeded')
+  skippedReason?: 'time-budget-exceeded'; // set when the skill was skipped before prescribers ran
 }
 ```
 
