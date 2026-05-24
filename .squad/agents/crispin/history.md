@@ -117,3 +117,73 @@
 **Artifact:** `.squad/decisions/inbox/crispin-prior-art-v3.md` (schema spec + 3 open Qs)
 
 **Status:** v3 is ready for implementation. All representation design complete (v0 → v1 → v2 → v3). Awaiting Aaron's eureka ceremony decisions on open questions.
+
+---
+
+### 2026-05-24: R6 Reconciliation — PRD v3 vs Cairn/Forge Reality
+
+**Objective:** Reconcile PRD v3's knowledge representation design against actual Cairn DB layer and Forge data-shape layer. R6 ceremony lifted the "no reading Cairn/Forge source" hard rule. Task: grade v3's schema/edge-tier/session-as-entry design against the schema that already exists in Cairn migrations and Forge models.
+
+**Sources read:**
+- `packages/cairn/src/db/schema.ts` + migrations 001-012
+- `packages/cairn/src/types/index.ts`
+- `packages/forge/src/{decisions,session,dbom,models}/index.ts`
+- `packages/types/src/index.ts` (shared contracts)
+- `packages/cairn/package.json` (dependencies: `better-sqlite3`, no `sqlite-vec`)
+
+**Key findings — substrate truths that changed my mind:**
+
+1. **Cairn is not a knowledge graph.** It is an **observability pipeline** (sessions → events → insights → prescriptions). Schema is table-per-concern (12 migrations, 15+ tables), not node-and-edge. Zero graph infrastructure (no relations table, no edge types, no traversal logic).
+
+2. **Vector support does not exist.** Migration 012 (`change_vectors`) is a misnomer — it's prescription learning deltas (metric diffs like `delta_drift`, `delta_cost`), not embeddings. No `sqlite-vec` dependency, no vector index, no semantic search. PRD v3's storage strawman (SQLite + `sqlite-vec`) is **greenfield**, not reuse.
+
+3. **Sessions are first-class entities, not facts.** Cairn has a `sessions` table (migration 001, line 8) with foreign keys from `event_log`, `skip_breadcrumbs`, `errors`. PRD v3's `kind=session` facts model is **incompatible by design** — collapsing sessions into a unified fact store would break foreign keys and require full schema rewrite.
+
+4. **`DecisionRecord` ≠ `decide` schema.** Forge's `DecisionRecord` (`packages/types/src/index.ts:50`) is a flat hook-observer audit trail (`chosenOption: string`, `alternatives: string[]`, `confidence: 'high'|'medium'|'low'`). PRD v3's structured `decide` schema (`options: Array<{id, label, rationale?, rejected_for?}>`, `chosen` validated ∈ options[].id, `confidence: number` 0..1) is irreconcilable without migration. Different data shapes for different use cases (audit trail vs deliberative junction).
+
+5. **Per-tier storage ≠ single database.** Cairn uses a single `~/.cairn/knowledge.db` file. PRD v3 proposes per-tier `.db` files (`~/.copilot/eureka/agent.db`, `<repo>/.eureka/project.db`, `~/.copilot/eureka/user.db`). Architectural mismatch — Cairn's design assumes session-scoped isolation in a shared database, not multi-database query coordination.
+
+6. **No edge machinery.** Zero edge types, zero relations table. `change_vectors.hint_id REFERENCES optimization_hints(id)` is a table join, not a graph edge. Adding Tier 1/2/3 edges (13+3+6 types per PRD v3) is a greenfield build, not a reuse of Cairn infrastructure.
+
+**Schema collisions that block PRD v3-as-written:**
+
+| Collision | PRD v3 | Cairn/Forge reality | Severity |
+|---|---|---|---|
+| Session model | `kind=session` facts in unified store | `sessions` table with FKs | CRITICAL — incompatible by design |
+| Decide schema | Structured `DecisionPayload` with `options[]` | Flat `DecisionRecord` with `alternatives[]` | HIGH — irreconcilable |
+| Storage primitive | SQLite + `sqlite-vec`, per-tier `.db` | `better-sqlite3`, single `knowledge.db` | HIGH — architectural mismatch |
+| Graph edges | Tier 1/2/3 edge enum, `relations` table | Foreign keys only, no graph | MEDIUM — greenfield build needed |
+
+**Judgment for v4:**
+
+PRD v3 describes a **new system** that happens to share vocabulary with Cairn (sessions, decisions, events), but the schema, storage primitive, and conceptual model are orthogonal. Two paths forward:
+
+**Path A (RECOMMENDED): Clean-slate Eureka**
+- Build Eureka as standalone package (`packages/eureka/`) with its own schema
+- Storage: `~/.copilot/eureka/{agent,project,user}.db` with `sqlite-vec`
+- Schema: unified facts + edges + kinds + trust/attention/importance
+- Cairn remains unchanged — Eureka consumes Cairn's *events* (via bridge) but does not share Cairn's *storage*
+- Evidence: Cairn's schema is optimized for observability; Eureka's for knowledge representation. Forcing convergence creates a schema that serves neither well.
+
+**Path B (NOT RECOMMENDED): Cairn extension**
+- Rewrite v4 to accept Cairn's schema as ground truth
+- Sessions stay as table (not facts)
+- Decisions use Forge's `DecisionRecord` shape
+- Add edges as migration 013, vector support as migration 014
+- Eureka becomes a Cairn plugin, not a sibling
+
+**Confidence:** HIGH. R6 reads of Cairn source confirm that v3's assumption "reuse Cairn's schema" is not grounded. Cairn and Eureka have different information models.
+
+**Artifact:** `.squad/decisions/inbox/crispin-r6-reconcile-v1.md` (22KB report with file:line citations, comparison tables, cost estimates)
+
+**What this changes about my v0-v3 representation design:**
+
+My R5 representation v0-v3 design assumed Eureka would be built on a **clean-slate graph schema** (nodes + edges, multi-kind tagging, hybrid persistence). R6 reconciliation confirms this assumption was correct — Cairn's table-per-concern schema is not a reuse path. The v0-v3 design stands. No revisions needed. The critical clarification is: **Eureka builds its own storage layer; it does not extend Cairn's**.
+
+**Open questions for R6+:**
+
+1. **Six-kind taxonomy (Practical/Semantic/Syntactic/Linguistic/Symbolic/Philosophical):** My charter says these are load-bearing, but PRD v3's `kind` enum is activity-oriented (`fact`, `decision`, `committed_intent`, `aspiration`, `session`), not epistemological. Is the six-kind taxonomy (a) a v1 requirement (add `epistemology` field), (b) a v2 refinement (defer), or (c) a misalignment in my charter (six kinds were exploratory, not locked)?
+
+2. **Cairn event ingestion:** If Eureka builds its own storage, how does it consume Cairn's events? PRD v3 is silent. Options: (a) Cairn bridge emits to both Cairn DB and Eureka fact store, (b) Eureka polls Cairn's event_log, (c) Cairn emits to a shared event bus.
+
+3. **Session linking:** If Cairn's `sessions` table and Eureka's `kind=session` facts coexist, how do they reference each other? Shared UUID? Session facts have a `cairn_session_id` foreign field?

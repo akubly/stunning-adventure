@@ -152,3 +152,63 @@
 **Artifact:** `.squad/decisions/inbox/genesta-prior-art-v3.md` (5 conflicts + synthesis)
 
 **Status:** Ready for Aaron's eureka ceremony. All three rounds (2–4) complete. 9 artifacts (3 v1s + 6 prior-art v2/v3) in inbox awaiting Aaron's decision-making.
+
+---
+
+### 2025-01-22: R6 Reconciliation — PRD v3 vs Cairn/Forge Substrate
+
+**Objective:** Grade cassima-requirements-r5-v3.md (the canonical PRD) against actual Cairn/Forge source code. First time reading implementation reality after 5 design rounds in isolation.
+
+**What I found (positive surprises):**
+
+1. **Substrate has more cognitive infrastructure than expected.** Cairn already has:
+   - Insights table with pattern_type, confidence 0-1, evidence (packages/cairn/src/db/migrations/003-insights.ts)
+   - Curator agent: event processor with pattern detection, cursor-based streaming (packages/cairn/src/agents/curator.ts)
+   - Event log with session_id FK (packages/cairn/src/db/migrations/001-initial.ts)
+   - SQLite with better-sqlite3, migration infrastructure
+   
+   This is basically a working prototype of Eureka's sweep+meditate model. Curator's pattern detection maps directly to meditate verb; cursor consumption maps to sweep triggers.
+
+2. **Convergent design on trust/confidence.** Cairn uses `confidence REAL 0-1` for insights; PRD v3 uses `trust 0-1` for facts. Identical semantics, different vocabulary. Both rejected binary in favor of gradient. Independent validation of our design.
+
+3. **Drift scoring as ranker precedent.** Forge has weighted composite drift scoring (convergence 0.30, toolEntropy 0.25, tokenPressure 0.15, contextBloat 0.15, promptStability 0.15) at packages/forge/src/telemetry/drift.ts. Same pattern as PRD's composite ranker (relevance 0.50, importance 0.20, trust 0.20, recency 0.10). Substrate already uses this algorithmic shape.
+
+4. **DBOM for provenance.** Forge's decision bill of materials (SHA-256 hashing, source classification) at packages/forge/src/dbom/index.ts is a robust provenance chain. Eureka could reuse this for fact provenance (FR-6).
+
+**What I found (conflicts requiring resolution):**
+
+1. **Sessions: MAJOR NAME COLLISION.** Cairn already has a `sessions` table (id, repo_key, branch, started_at, ended_at, status) at packages/cairn/src/db/sessions.ts. PRD v3 proposes sessions as `kind=session` facts with trust/importance/attention semantics (FR-13). Two incompatible models, same name. Needs rename — proposed `kind=conversation` for PRD to avoid collision.
+
+2. **Decisions: SCHEMA MISMATCH.** Forge has DecisionRecord (question, chosenOption, alternatives, evidence, confidence enum, source, toolName/toolArgs) at packages/forge/src/decisions/index.ts. PRD v3 has DecisionPayload (question, options[{id, label, rationale, rejected_for}], chosen, rationale, principal_id, confidence 0-1, supersedes_decision_id, revisit_at) at FR-10. Forge is audit-trail focused; PRD is decision-support focused. Can coexist (different purposes) but confidence type diverges (enum vs 0-1).
+
+3. **Vector search: NOT FOUND.** PRD v3 assumes sqlite-vec is available (FR-7.3, FR-2.3 relevance scoring). Grepped entire substrate for "sqlite-vec", "vec0", "vector", "embedding" — found NONE. Relevance scoring depends on vector similarity; without sqlite-vec, FR-2.3 degrades to keyword/FTS-only. HIGH RISK. Need explicit decision: (a) scope-in sqlite-vec for v1, (b) defer to v1.5, (c) revise FR-2.3.
+
+4. **Storage paths diverge.** Cairn uses `~/.cairn/knowledge.db` (packages/cairn/src/config/paths.ts). PRD proposes `~/.copilot/eureka/{agent,user}.db` and `<repo>/.eureka/project.db` (FR-7.3). Namespace conflict. Proposed harmonization: both use `~/.copilot/` (cairn at `~/.copilot/cairn/`, eureka at `~/.copilot/eureka/`).
+
+**Architectural boundary question:** Should Eureka layer on Cairn's SQLite infrastructure or build parallel?
+
+- **Option A (layer on Cairn):** Single SQLite instance, shared event log, curator handles sweep. Pro: reuse migration infra. Con: tight coupling to Cairn schema evolution.
+- **Option B (parallel):** Eureka owns its DBs at ~/.copilot/eureka/. Pro: clean separation, independent evolution. Con: duplicate event log, duplicate cursor.
+- **Hybrid (recommended):** Eureka owns storage (parallel DBs), reuses Cairn's cursor/event-streaming primitives (shared infra), curator becomes Eureka's sweep orchestrator (shared runtime). Preserves PRD's three-tier model without infrastructure duplication.
+
+**Grade: B+** — Structurally sound, needs 4 patches before v1 lock:
+1. Rename `kind: 'session'` → `kind: 'conversation'` (FR-13)
+2. Add sqlite-vec reality check to FR-7.3 (not present, need explicit decision)
+3. Clarify Forge DecisionRecord coexistence in FR-10 (both can live, different purposes)
+4. Propose `~/.copilot/` path harmonization (FR-7.3, coordination with Cairn)
+
+**Verdict:** PRD v3 STANDS with v3.1 patch. No full v4 rewrite needed. Core architecture (facts, trust, activities, ranker) is substrate-aligned. Name conflicts are resolvable. Vector gap is serious but fixable.
+
+**What I learned:**
+
+1. **Isolation was worth it.** Designing v0→v1→v2→v3 without reading source code prevented anchoring on Cairn's implementation choices. Result: convergent design on fundamentals (confidence 0-1, event-driven, composite scoring) but with cleaner abstractions (facts vs insights, trust vs confidence, activities vs curator).
+
+2. **Substrate is more capable than "just observability."** Cairn's insights/curator is cognitive infrastructure, not just telemetry. Eureka isn't building from zero — it's extending an existing cognitive layer.
+
+3. **Name collisions are inevitable in monorepos.** "Sessions" and "decisions" are natural vocabulary overlaps. Need namespace discipline (Cairn owns operational state, Eureka owns cognitive memory).
+
+4. **Vector search is load-bearing assumption.** PRD's relevance scoring (FR-2.3) depends on embeddings. Without sqlite-vec, retrieval quality degrades. This is a v1 scope risk that needs Aaron's call.
+
+**Artifact:** `.squad/decisions/inbox/genesta-r6-reconcile-v1.md` (17KB reconciliation report)
+
+**Next:** Wait for Aaron's review. Cassima will draft v3.1 patch addressing 4 findings. Squad decides vector search scope (in/out/defer).

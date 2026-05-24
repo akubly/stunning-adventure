@@ -170,3 +170,75 @@
 **Artifact:** `.squad/decisions/inbox/edgar-prior-art-v3.md` (hybrid learning model + v1+ roadmap)
 
 **Status:** v3 is ready for implementation. All learning design complete (v0 → v1 → v2 → v3). Hybrid compositions resolve all 4 tensions. Awaiting Aaron's eureka ceremony decisions on scheduling/temperature/task-isolation defaults.
+
+---
+
+### 2025-01-23: R6 Reconciliation — PRD v3 vs Forge/Cairn Substrate
+
+**Objective:** Read Forge/Cairn source (R6 rule lift) and reconcile PRD v3's learning mechanics against actual substrate capabilities.
+
+**What I found:**
+
+1. **Sweep exists — it's Cairn's Curator + prescriber pipeline.**
+   - `hooks/sessionStart.ts:runSessionStart()` triggers `curate()` → `prescribe()` on session start
+   - Curator does cursor-based polling, importance decay (`computePriority` with recency weight 1.0 → 0.5 over 5-20 sessions), Tier 2 edge population (`change_vectors`), stale-flag emission (`shouldResurface`)
+   - **Collision:** Curator is prescription-locked (operates on `Insight`/`Prescription`, not generic facts). v3's sweep is a general-purpose graph maintenance primitive.
+   - File evidence: `cairn/src/agents/curator.ts:1-100`, `cairn/src/agents/prescriber.ts:76-96`, `cairn/src/hooks/sessionStart.ts:60-84`
+
+2. **Ranker formula exists — under a different name.**
+   - Cairn's `computePriority()` uses `confidence × recencyWeight × availabilityFactor` — structurally identical to v3's `raw = 0.5·rel + 0.2·imp + 0.2·trust + 0.1·rec`.
+   - Cairn already computes a 3-term weighted sum per prescription in O(1). Adding v3's `relevance` and `attention_multiplier` is trivial.
+   - **No performance blocker.** Formula is proven in production.
+   - File: `cairn/src/agents/prescriber.ts:76-96`
+
+3. **Trust is already event-driven — but schema-locked.**
+   - Cairn's `optimization_hints.confidence` is updated only via `change_vectors` computation (Curator sweep) — matches v3's "no automatic decay" model.
+   - Recency decay is separate from confidence (file: `cairn/src/agents/prescriber.ts:76-96`).
+   - **Schema collision:** `confidence` lives on `optimization_hints` (prescriptions only). v3 needs `trust` on every fact.
+   - Files: `cairn/src/db/changeVectors.ts:115-123`, `cairn/src/db/migrations/011-telemetry-feedback.ts:61`
+
+4. **Activity verbs: partial substrate support.**
+   - `decide` is **already built** — Forge's `makeDecisionRecord()` matches PRD v3's `DecisionPayload` schema exactly (file: `forge/src/decisions/index.ts:40-61`).
+   - `recall` has **no substrate** — Cairn stores insights/prescriptions but has no BM25, no vector retrieval, no semantic search (grepped all of `cairn/src/` — confirmed absent).
+   - `integrate` is **domain-specific** — Cairn's `createInsight()` only handles error patterns (file: `cairn/src/db/insights.ts`). Generic fact storage (`kind=fact`, `kind=aspiration`, `kind=session`) doesn't exist.
+   - `commit` / `retire` / commitment registry are **entirely missing** — no `committed` flag, no hot-tier boost, no stale-commitment tracking anywhere in substrate.
+
+5. **Hooks are orthogonal (no collision).**
+   - **Cairn hooks** = CLI scripts (`sessionStart.ts`, `postToolUse.ts`) called by PowerShell wrappers, read stdin JSON, exit 0 (file: `cairn/src/hooks/`).
+   - **Forge hooks** = SDK `SessionHooks` composition (`HookComposer` class, file: `forge/src/hooks/index.ts`).
+   - These are different layers (CLI integration vs SDK integration). Eureka's verbs don't need to "register as hooks" in either sense — Eureka is a library, activities are function calls.
+
+6. **Capability surprises (v3 doesn't leverage):**
+   - **Bridge** (`forge/src/bridge/index.ts`) — SDK `SessionEvent` → `CairnBridgeEvent` adapter with provenance classification. Eureka can reuse for `originated_in` session edges.
+   - **Telemetry** (`forge/src/telemetry/`) — signal sampling + aggregation into `ExecutionProfile`. v3's FR-6 importance scoring can reuse this (importance = aggregated usage signals).
+   - **Export** (`forge/src/export/pipeline.ts`) — session → SKILL.md compiler. v3's FR-13 session facts can lean on Forge's export when "export session summary" ships.
+
+**What changed my mind:**
+
+- **Before read:** Assumed sweep was net-new. **After read:** Sweep exists (Curator). Architecture is sound; domain lock is the problem.
+- **Before read:** Assumed ranker formula was unproven. **After read:** Cairn computes 3-term weighted sum in production. Adding 2 more terms is a non-issue.
+- **Before read:** Assumed trust decay was baked in. **After read:** Cairn's confidence is already event-driven. v3's "no decay" is status quo.
+- **Biggest surprise:** Forge's `decide` API already exists and matches v3 schema. One fewer thing to build.
+
+**Structural recommendation:**
+
+Extract Cairn's sweep/ranker/trust into a **shared learning kernel** (`packages/learning-kernel/`) that both Cairn and Eureka compose. Don't duplicate. Cairn's `Prescription` and Eureka's `MemoryNode` both become clients of the kernel.
+
+**Mapping summary (v3 FRs → substrate):**
+
+| v3 FR | Substrate | Status |
+|---|---|---|
+| FR-1 (fact storage) | Cairn `insights` (partial) | 🔴 Domain-specific, build generic `facts` table |
+| FR-2 (recall + ranker) | Cairn `computePriority()` (structure only) | 🟡 Exists, domain-locked; extract ranker kernel, build retrieval |
+| FR-3 (trust) | Cairn `confidence` + `change_vectors` | 🟡 Exists, schema-locked; generalize to `trust` column |
+| FR-4 (activity verbs) | Forge `makeDecisionRecord()` (decide only) | 🟡 Partial (`decide` done); build `integrate`, `recall`, `commit`, `retire` |
+| FR-5 (recency) | Cairn `recencyWeight` (linear decay) | 🟡 Exists, wrong formula; replace with ACT-R power-law |
+| FR-6 (importance) | Cairn `confidence × availability` | 🟡 Exists, coupled; decouple into standalone `importance` |
+| FR-7 (storage) | Cairn SQLite (`knowledge.db`) | 🟢 Reusable; extend schema, add `sqlite-vec` |
+| FR-9 (edges) | Cairn `change_vectors` (Tier 2 only) | 🟡 Partial; build full edge store (Tier 1 + 2 + 3) |
+| FR-10 (decide schema) | Forge `DecisionRecord` | 🟢 Done; adopt Forge's schema |
+| FR-11 (commit registry) | (none) | 🔴 Missing; build from scratch |
+| FR-12 (sweep) | Cairn Curator + prescriber | 🟡 Exists, domain-locked; extract sweep kernel |
+| FR-13 (sessions as facts) | Cairn `sessions` table | 🟡 Separate table; migrate to `kind=session` facts |
+
+**Artifact:** `.squad/decisions/inbox/edgar-r6-reconcile-v1.md` (full reconciliation report with file:line citations, 20KB)

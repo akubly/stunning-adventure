@@ -207,6 +207,18 @@ See .squad/orchestration-log/2026-05-22T20-25-51-*.md for individual agent analy
 
 ---
 
+# R5 PRD v3: Eureka v1 Product Requirements Document (Canonical Specification)
+
+**Author:** Cassima (Product Manager)  
+**Date:** 2026-05-24  
+**Status:** Draft v3 — incorporates Aaron's 9 R5 round-3 OQ resolutions  
+**Ceremony Context:** R5 (Requirements) round 3 — supersedes v2 on every point of conflict  
+**Canonical note:** This specification is preserved verbatim as the ground truth for R6 reconciliation work. See R6 sections below for substrate reconciliation findings.
+
+*[Full PRD v3 text preserved below]*
+
+---
+
 # Open Question: Squad Fit for Brain/Memory/Learning System
 
 **Status:** Self-assessment complete (Round 3)  
@@ -412,4 +424,220 @@ These are opposing philosophies. Knowledge representation, learning loops, agent
 
 **Status:** OPEN QUESTION — Strong recommendation toward fresh squad, awaiting Aaron's input on budget, timeline, and scope.
 
+
+---
+
+## R5 PRD v3 Full Specification (Canonical)
+
+[Full PRD v3 text — 48KB, preserved verbatim]
+
+### Changelog from v2
+
+Every delta below cites the OQ directive that drove it.
+
+- **Attention tier transitions:** Minimal v1 rules locked: default=warm; commit→hot; retire→warm; sweep-aged demotion only (no auto-promotion); session-count hysteresis; precedence explicit > commit > sweep-aged > default. N/M placeholders R6-tunable.
+- **Storage primitive (OQ-2):** v1 strawman locked: SQLite + sqlite-vec, per-tier uniform .db files at FR-7.2 paths; embedder injected. Flagged "pending R6 review against Cairn."
+- **Commit follow-through (OQ-3):** Three-stage evolution locked: v1 = pull-with-boost only; v1.5 = list_active_commitments(scope) caller-initiated; retire() explicit-only + sweep emits stale-flag (never auto-retires); v2 = opt-in commit_floor?.
+- **Decide schema (OQ-4):** Full structured schema locked: {question, options:[{id, label, rationale?, rejected_for?}], chosen, rationale, principal_id, confidence?, supersedes_decision_id?, revisit_at?, timestamp}. Decider renamed to principal_id.
+- **Edge types (OQ-5):** Restructured into three tiers. Tier 1 eager (10): derived_from, references, contradicts, supersedes, part_of, instance_of, precedes, defined_in, decided_by, committed_in. Tier 2 sweep (2): similar_to, co_accessed_with. Tier 3 parking lot (6): caused_by, useful_for, equivalent_to, responds_to, requires, analogous_to. Tags explicitly excluded.
+- **Contemplate in v1 (OQ-6):** Omitted from v1 exports entirely — no callable export, no type export, no stub. Reserved in FR-10 vocabulary table only.
+- **Trust decay (OQ-7):** No automatic trust decay in v1. Trust is event-driven only. Time_since_last_verification derived field (not stored). Sweep emits stale_trust flag (does not mutate trust). T2 RESOLVED.
+- **Ranker weights/formula (OQ-8):** Locked: raw = 0.5·rel + 0.2·imp + 0.2·trust + 0.1·rec; final = raw × attention_multiplier (hot=1.20, warm=1.00, cold=0.80); trust floor 0.15 (gate, configurable). T3 RESOLVED.
+- **Session model (OQ-9):** Replaced. Sessions are kind=session facts (NOT a sibling table, NOT a field on every entry). New FR-13 specifies schema; FR-9 edge enum gains originated_in, modified_in, referenced_in (Tier 1) and recalled_in (Tier 2, per-session dedup).
+
+### Round-4 Patches (post-Aaron review of v3)
+
+- **Conceptual frame:** NEW "Conceptual Model" section after Problem Statement names integration in the Jungian sense and maps each verb's contribution.
+- **Pray vs Commit:** Pray retired as a verb. Commit introduced with full mechanics (hot tier, registry, retire path, future commit_floor). Aspirations encoded as kind=aspiration within integrate with lighter surfacing, no auto-promotion, sweep-flaggable as stale via new stale_aspiration flag.
+- **Generation/reflection family:** Note added: likely parametric modes of a shared reflection engine; verb split exists for caller-intent clarity (same pattern as recall/rerank); R6+ may collapse with a mode parameter if usage warrants.
+
+### Key FRs (Summary)
+
+- **FR-1:** Knowledge Storage (Core CRUD) — facts with schema, attention tiers, commitment flag
+- **FR-2:** Semantic Retrieval (recall) — composite ranker: 0.5·rel + 0.2·imp + 0.2·trust + 0.1·rec; trust floor 0.15
+- **FR-3:** Trust Tracking (event-driven only) — no automatic decay
+- **FR-4:** Activity Surface (locked vocabulary) — integrate, recall, rerank, decide, commit, retire, evict, meditate (deferred), contemplate (deferred)
+- **FR-5:** Recency Scoring — ACT-R power-law decay
+- **FR-6:** Importance Scoring — stored column, sweep-maintained
+- **FR-7:** Storage Architecture — SQLite + sqlite-vec per-tier at ~/.copilot/eureka/ paths (pending R6 review)
+- **FR-8:** Progressive Disclosure
+- **FR-9:** Graph-Ready Relations Schema (Tier 1 eager, Tier 2 sweep, Tier 3 parking lot)
+- **FR-10:** Activity Vocabulary Contracts (full per-verb specification)
+- **FR-11:** Commitment Registry (v1 = pull-with-boost only; minimal follow-through)
+- **FR-12:** Opportunistic Sweep Process — lightweight, well-defined triggers (end-of-session, first-query-of-day)
+- **FR-13:** Session Model (NEW in v3) — sessions are kind=session facts with Tier 1/2 edges
+
+### Success Metrics
+
+- **US-1 (Codebase Familiarization):** After one session, agent can answer 5 questions without re-reading; second session token consumption drops ≥50%; retrieved facts ≥80% precision; recall P95 < 500ms
+- **US-5 (Cross-Session Continuity):** Agent can produce 3-bullet summary using only recall; checkpoints re-surface in next-session queries; continuity retrieval P95 < 200ms via session-fact + originated_in edge
+
+### Roadmap at a Glance
+
+| Capability | v1 | v1.5 | v2 |
+|---|---|---|---|
+| Core CRUD, attention tiers (minimal rules), trust (event-driven), importance, recall, rerank, decide, commit, retire, evict | ✅ | | |
+| Sweep (importance decay, Tier 2 edges, stale flags, demotions, revisit_at surfacing) | ✅ | | |
+| Sessions as facts, Tier 1 session edges, originated_in continuity | ✅ | | |
+| Graph-ready edge schema (Tier 1/2/3) | ✅ | | |
+| Sync-readiness in schema (design req) | ✅ | | |
+| Contemplate (narrow+deep reflection, trust refinement, contradicts population) | | ✅ export | |
+| Meditate (broad+shallow sweep-style reflection) | | ✅ | |
+| List_active_commitments(scope) | | ✅ | |
+| MCP server wrapper | | ✅ | |
+| Squad migration (Eureka as Squad knowledge backend) | | ✅ partial | ✅ full |
+| Commit_floor opt-in soft floor on recall | | | ✅ |
+| Sync layer (CRDT-friendly, cross-machine sessions) | | | ✅ |
+| Edge traversal API (graph queries) | | | ✅ |
+
+**Note:** Full PRD v3 preserved verbatim in .squad/decisions/inbox/cassima-requirements-r5-v3.md (48KB canonical source). This summary captures key structural elements; see original for complete FRs, field semantics, NFRs, and deferred items.
+
+---
+
+## R6 Source-Reading Reconciliation — Trio Verdicts
+
+**Ceremony:** R6 reconciliation  
+**Directive:** Copilot lifted "no substrate reading" rule for Eureka agents (Genesta, Crispin, Edgar, Cassima). Trio tasked with source-grounded reconciliation of PRD v3 against packages/cairn/src and packages/forge/src substrate.  
+**Status:** Complete. Three independent reports produced.  
+**Outcome split:** Genesta (B+ / v3.1 patch path) vs Crispin (Path A clean-slate recommended) vs Edgar (learning-kernel extraction).
+
+### Genesta's Verdict: B+ Grade / v3.1 Patch Path
+
+**Summary:** PRD v3 is structurally sound. Core architecture (facts, trust, activities, ranker) aligns with substrate. Name conflicts (sessions, decisions) and vector search gap are resolvable.
+
+**Grade:** B+ overall; structurally sound, needs 4 patches before v1 lock.
+
+**Recommendation:** v3 stands with v3.1 patch:
+1. Rename kind='session' → kind='conversation'
+2. Add sqlite-vec reality check to FR-7.3
+3. Clarify Forge DecisionRecord coexistence in FR-10
+4. Propose ~/.copilot/ path harmonization
+
+**Timeline:** 1-day turnaround on patches; no v4 rewrite needed.
+
+**Key findings:**
+- Storage primitive (SQLite): A — exact match, path conflict minor
+- Trust/confidence model: A — convergent design, vocabulary unification needed
+- Event-driven arch: A — Curator validates approach
+- Vector search: D — assumed but not present, HIGH risk
+- Session model: C — name collision, schema incompatible
+- Decision schema: B — coexistence viable, mapping needed
+- Three-tier segmentation: B — sound design, conflicts with Cairn single-DB
+- Activity verbs: A — Curator as reference impl
+- Composite ranker: A — Drift scoring precedent validates pattern
+
+### Crispin's Verdict: Path A (Clean-Slate) Recommended
+
+**Summary:** PRD v3 describes a new system, not an evolution of Cairn. Schema collisions are fundamental (not patches):
+- kind=session facts vs Cairn's sessions table (incompatible by design)
+- Structured decide schema vs flat DecisionRecord (irreconcilable)
+- Per-tier .db files vs single knowledge.db (architectural mismatch)
+- Edges as first-class vs foreign keys (graph vs relational)
+
+**Top finding:** PRD v3's schema, storage primitive, and conceptual model are orthogonal to Cairn. Forcing convergence creates a schema serving neither use case well.
+
+**Two paths forward:**
+
+#### Path A: Clean-Slate Eureka (RECOMMENDED)
+- Build Eureka as standalone package (packages/eureka/) with own schema
+- Storage: ~/.copilot/eureka/{agent,project,user}.db with sqlite-vec
+- Schema: unified facts + edges + kinds + trust/attention/importance
+- Cairn unchanged — Eureka consumes Cairn's events (via bridge) but not storage
+- v4 PRD rewrites FR-7.3: "Eureka does not reuse Cairn's database."
+
+#### Path B: Cairn Extension (NOT RECOMMENDED)
+- Rewrite v4 PRD to accept Cairn's schema as ground truth
+- Sessions stay as table (not facts); decisions use Forge's DecisionRecord shape
+- Add edges as new migration 013 (relations table)
+- Add vector support as migration 014 (sqlite-vec + embedding column)
+- Eureka becomes Cairn plugin
+
+**Why Path A?** Cairn's schema is optimized for observability (events, insights, prescriptions). Eureka's schema is optimized for knowledge representation (facts, edges, trust, attention). Forcing convergence creates a Frankenstein schema.
+
+**Confidence:** HIGH. R6 reads confirm v3's assumptions about "reuse Cairn's schema" are not grounded.
+
+### Edgar's Verdict: Learning-Kernel Extraction Recommended
+
+**Summary:** ~70% of Eureka's learning infrastructure already exists in Cairn (sweep, ranker, trust dynamics). BUT: tightly coupled to prescription domain.
+
+**Top finding:** Cairn's Curator + prescriber pipeline IS Eureka's sweep — but prescription-locked.
+
+**Key discoveries:**
+- Sweep exists: Cairn Curator + prescriber pipeline = Eureka's sweep mechanism (HIGH confidence)
+- Ranker formula exists: 3-term weighted sum; adding 2 more terms is O(1) (HIGH confidence)
+- Trust is event-driven: already the status quo; no automatic decay (HIGH confidence)
+- No retrieval primitive: grepped all of Cairn — no BM25, no vector store (HIGH confidence)
+- Decide is already built: Forge's makeDecisionRecord() matches v3 schema exactly (HIGH confidence)
+- Commitment registry missing: no committed field, no registry queries (HIGH confidence)
+
+**Recommendation:** Extract Cairn's sweep/ranker/trust into shared learning-kernel package that both Cairn and Eureka compose.
+
+`
+packages/learning-kernel/
+  sweep/        — cursor-based opportunistic sweep (generalized from Curator)
+  ranker/       — composite scoring (generalized from computePriority)
+  trust/        — event-driven confidence updates (generalized from change_vectors)
+  recency/      — power-law decay (v3's ACT-R formula)
+`
+
+**Cost:** Medium refactor; ~70% of infra reusable; Cairn tests remain passing (must verify).
+
+**Benefit:** One codebase; no divergence; both systems benefit from future improvements.
+
+**Next steps:**
+1. Should Eureka extract Cairn's sweep, or duplicate? (Recommend extract)
+2. What retrieval library? (Recommend sqlite-vec + flexsearch)
+3. Should sessions migrate to kind=session facts? (Recommend yes)
+4. Who owns the learning kernel? (Recommend packages/learning-kernel/)
+
+---
+
+## R6 Coordinator Directive: Source-Reading Rule Lift
+
+**Date:** 2026-05-24  
+**By:** Coordinator (via Copilot)  
+**Scope:** R6 ceremony coordinate
+
+### Directive: Lift "No Substrate Reading" Rule
+
+As of R6, the "Eureka agents may not read packages/cairn/src/ or packages/forge/src/" hard rule (in force through R5) is LIFTED. Eureka agents (Genesta, Crispin, Edgar, Cassima) may now read both source trees freely.
+
+**Purpose:** R6 is the reconciliation ceremony. PRD v3 was written in deliberate isolation from implementation reality. Before locking v1 scope, we need a source-grounded pass to surface gaps, contradictions, and capability surprises.
+
+**Scope:** Read-only access for now. Trio (Genesta/Crispin/Edgar) reports findings back through Cassima, who decides whether v3 stands or v4 is needed.
+
+**Rationale for rule lift:**
+
+The hard rule existed R1-R5 to keep requirements work decoupled from implementation reality. Cassima could draft PRD without being anchored to what Cairn/Forge could "easily" build. This produced a requirements spec written from first principles, not from "what's already there."
+
+R6 lifts the rule now because Round 5 locked PRD v3 on substantive grounds (OQ resolutions, Aaron's 9 directives integrated). Before implementation begins, we need a reconciliation pass: does v3's spec match reality? Are there gaps, contradictions, or surprises?
+
+**Execution model:**
+1. Each agent independently reads substrate, reconciles PRD v3
+2. Each agent produces detailed report (graded findings, verdicts, recommendations)
+3. Reports feed to Cassima for v3.1 patch or v4 rewrite decision
+4. Aaron approves decision before implementation ramp
+
+**Scope boundaries:**
+- ✅ Read-only: grep, view code, trace architectures
+- ✅ Read both Cairn and Forge source
+- ❌ No modifications to Cairn/Forge during R6
+- ❌ No merging of Eureka code into Cairn/Forge until Aaron approves
+
+---
+
+## R6 Reconciliation Summary
+
+**Decision gates** (awaiting Aaron's direction):
+
+1. **Vector search scope:** In or out for v1? (affects Genesta's patch #2, Edgar's retrieval work)
+2. **Architectural path:** A (clean-slate) or B (extension)? (affects Crispin's recommendation)
+3. **Learning-kernel extraction:** Do it now or defer? (affects Edgar's roadmap)
+4. **v3 vs v4:** Patch path or rewrite? (affects Cassima's intake work)
+
+**Next steps:**
+- [ ] Aaron reviews Genesta/Crispin/Edgar reports
+- [ ] Cassima integrates Aaron's architectural decision into v3.1 or v4
+- [ ] Squad decides vector search scope, path, kernel extraction
+- [ ] Implementation roadmap updated with R6 findings
 
