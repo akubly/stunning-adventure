@@ -15,18 +15,14 @@ try {
     if (Test-Path $p) { $script = $p }
 
     # 2. Global npm install
+    $usingCairnFallback = $false
     if (-not $script) {
         $root = & npm root -g 2>$null
         if ($root) {
-            $candidates = @(
-                (Join-Path $root '@akubly\skillsmith-runtime\dist\hooks\sessionStart.js'),
-                (Join-Path $root '@akubly\cairn\dist\hooks\sessionStart.js')
-            )
-            foreach ($candidate in $candidates) {
-                if (Test-Path $candidate) {
-                    $script = $candidate
-                    break
-                }
+            $candidate = Join-Path $root '@akubly\cairn\dist\hooks\sessionStart.js'
+            if (Test-Path $candidate) {
+                $script = $candidate
+                $usingCairnFallback = $true
             }
         }
     }
@@ -34,13 +30,13 @@ try {
     # 3. Repo checkout (this script lives at .github/hooks/cairn/)
     if (-not $script) {
         $candidates = @(
-            (Join-Path $PSScriptRoot '..\..\..\packages\skillsmith-runtime\dist\hooks\sessionStart.js'),
             (Join-Path $PSScriptRoot '..\..\..\packages\cairn\dist\hooks\sessionStart.js'),
             "$PSScriptRoot\..\..\..\dist\hooks\sessionStart.js"
         )
         foreach ($candidate in $candidates) {
             if (Test-Path $candidate) {
                 $script = $candidate
+                $usingCairnFallback = $true
                 break
             }
         }
@@ -48,7 +44,11 @@ try {
 
     if (-not $script) { exit 0 }
 
-    $hookData | node $script 2>$null
+    if ($usingCairnFallback) {
+        Write-Warning "skillsmith-runtime hook entry not configured; using cairn hook (Wave 2 behavior, no prescribers)"
+    }
+
+    $hookData | node $script
 } catch {
     # Fail open — hooks must never break the user's workflow
 }
