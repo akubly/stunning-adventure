@@ -254,3 +254,52 @@ describe('optimization hints persistence', () => {
     ]);
   });
 });
+
+describe('W4-1: insertHintIfNew atomicity', () => {
+  it('single insert succeeds normally', () => {
+    const db = getDb();
+    const result = insertHintIfNew(db, hint({ id: 'atomic-1', category: 'verbosity-atomic' }));
+    expect(result).toEqual({ inserted: true });
+    expect(getOptimizationHint('atomic-1')?.id).toBe('atomic-1');
+  });
+
+  it('duplicate insert returns existing hint id', () => {
+    const db = getDb();
+    insertHintIfNew(db, hint({ id: 'atomic-dup-1', category: 'verbosity-dup', status: 'pending' }));
+    const result = insertHintIfNew(db, hint({ id: 'atomic-dup-2', category: 'verbosity-dup' }));
+
+    expect(result).toEqual({ inserted: false, existingHintId: 'atomic-dup-1' });
+    expect(getOptimizationHint('atomic-dup-2')).toBeNull();
+  });
+
+  it('concurrent inserts: only one wins via partial UNIQUE index', () => {
+    const db = getDb();
+    const category = 'verbosity-concurrent';
+
+    // Simulate two concurrent transactions attempting the same insert.
+    // The partial UNIQUE index ensures only one succeeds.
+    const txn1 = db.transaction(() => {
+      return insertHintIfNew(db, hint({ id: 'concurrent-1', category, status: 'pending' }));
+    });
+    const txn2 = db.transaction(() => {
+      return insertHintIfNew(db, hint({ id: 'concurrent-2', category, status: 'pending' }));
+    });
+
+    const result1 = txn1.immediate();
+    const result2 = txn2.immediate();
+
+    // Exactly one should succeed
+    const successes = [result1, result2].filter((r) => r.inserted);
+    const failures = [result1, result2].filter((r) => !r.inserted);
+    expect(successes).toHaveLength(1);
+    expect(failures).toHaveLength(1);
+
+    // The failed one should get the winner's ID
+    expect(failures[0].existingHintId).toBe(successes[0].inserted ? (result1.inserted ? 'concurrent-1' : 'concurrent-2') : undefined);
+
+    // Only the winner is persisted
+    const all = queryOptimizationHints({ skillId: 'skill-a', status: 'pending' })
+      .filter((r) => r.category === category);
+    expect(all).toHaveLength(1);
+  });
+});

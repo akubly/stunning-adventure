@@ -193,16 +193,35 @@ export function insertHintIfNew(
   db: Database.Database,
   hint: OptimizationHintInsert,
 ): InsertHintIfNewResult {
-  const existingHintId = findActiveHintId(db, hint.skillId, hint.source, hint.category);
-  if (existingHintId) {
-    return {
-      inserted: false,
-      existingHintId,
-    };
-  }
+  // Use BEGIN IMMEDIATE for write lock upfront, preventing concurrent inserts
+  const txn = db.transaction(() => {
+    const existingHintId = findActiveHintId(db, hint.skillId, hint.source, hint.category);
+    if (existingHintId) {
+      return {
+        inserted: false,
+        existingHintId,
+      };
+    }
 
-  insertOptimizationHintWithDb(db, hint);
-  return { inserted: true };
+    try {
+      insertOptimizationHintWithDb(db, hint);
+      return { inserted: true };
+    } catch (err) {
+      // UNIQUE constraint violation on the partial index means another transaction
+      // concurrently inserted this (skill_id, source, category) into an active status.
+      // Treat as duplicate.
+      if (err instanceof Error && err.message.includes('UNIQUE constraint failed')) {
+        const duplicateHintId = findActiveHintId(db, hint.skillId, hint.source, hint.category);
+        return {
+          inserted: false,
+          existingHintId: duplicateHintId,
+        };
+      }
+      throw err;
+    }
+  });
+
+  return txn.immediate();
 }
 
 /** Get a single hint by id. */

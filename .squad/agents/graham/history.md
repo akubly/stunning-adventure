@@ -79,6 +79,20 @@ Roger (W2-1) + Rosella (W2-4): canonical `ChangeVectorSummary`, `ChangeVectorPro
 
 ## Learnings
 
+### Wave 4 Scope Approved (2026-05-23)
+
+Aaron approved Wave 4 scope with both design decisions resolved. Decision inbox entry filed at `.squad/decisions/inbox/graham-wave4-ratified.md`. Scope is tight and foundational: three work items (insertHintIfNew atomicity, CairnEvent extensions, forceRegenerate knob) plus integration tests. Team ownership assigned (Roger: W4-1/W4-2; Rosella: W4-3; Laura: W4-4). Branch `phase-4.6/wave-4` created and ready for team execution.
+
+**D1 Resolved — CairnEvent Observability = Option 1**
+
+Option 1 (additive CairnEvents) wins on principle: smallest delta, fully backward-compatible, establishes foundation for Wave 5 triggers without committing to richer alternatives. Trade-off accepted: Options 2 (dedicated channel) and 3 (unified refactor) deferred. Why now? Observability gap is blocking. Without hint state transitions and profile changes observable, Wave 5 re-prescribe triggers (on rejection, on profile bump, on staleness) cannot be built. Wave 4 solves the blocker; Wave 5 solves the polish.
+
+**D2 Resolved — forceRegenerate = CLI Only**
+
+CLI surface for operator escape hatch (force override prescriber dedup). Trade-off accepted: MCP generalization deferred to Wave 5. Why now? Operator need is urgent (recovery/retry when hint rejection cascades). CLI closes the gap immediately. MCP can generalize later with full Phase 5 scope clarity. Keeps Wave 4 tight; unblocks Wave 5 architecture design.
+
+**Leadership insight: Deferred items form coherent Wave 5 scope.** Global tier fallback (cross-granularity design), staleness check (UX design), dashboard (product clarity), DB convention standardization (repo-wide question). None are blockers for Wave 4. Each requires cross-cutting design input that doesn't fit Wave 4's tight window. Wave 5 can address them together once Phase 5 clarity settles.
+
 ### Wave 3 Shipped (2026-05-23 ~21:08Z)
 
 PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end-to-end: composition root R2 (`@akubly/skillsmith-runtime`), Curator hook wiring, per-skill orchestration, E2E tests, Phase 5-ready acyclic boundaries. 14 Copilot findings addressed across 4 review cycles. 1 deferral approved: insertHintIfNew atomicity (partial UNIQUE + BEGIN IMMEDIATE) → Wave 4. Wave 4 scope being drafted by Graham.
