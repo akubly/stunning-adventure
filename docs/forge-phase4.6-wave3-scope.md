@@ -144,7 +144,8 @@ export interface PrescriberRunResult {
 | Scenario | What the operator sees |
 |----------|----------------------|
 | Curator runs, 3 skills have new vectors | `prescribers` array has 3 entries (one per skill) |
-| 1 of 3 skills has no profile | 1 entry has `skippedReason` set; operator can create a profile to enable optimization |
+| 1 of 3 skills has no profile | 1 entry has zero counts (no `skippedReason`); operator can create a profile to enable optimization |
+| Time budget exhausted mid-batch | Remaining entries have `skippedReason: 'time-budget-exceeded'` and zero counts |
 | Dedup blocks 2 of 5 hints | sum of `hintsDuplicated` across entries = 2 (active hints already exist) |
 | Prescriber fails for 1 skill | 1 entry has `hintsError: 1` + warning log (other skills unaffected) |
 | No new vectors this cycle | `prescribers` field absent (prescribers didn't run) |
@@ -157,13 +158,13 @@ export interface PrescriberRunResult {
 
 **Flow:**
 1. `runForSkill()` in `@akubly/skillsmith-runtime` calls `runForgePrescribers()` → receives `OptimizationHint[]`
-2. For each hint: calls `hasActiveOptimizationHint(skillId, source, category)` from Cairn
-3. If no active hint: calls `insertOptimizationHint(db, hint)` with `autoApplyEligible` in evidence blob
+2. For each hint: calls `insertHintIfNew(db, hint)` from Cairn (atomic check-and-insert; returns `{ inserted: boolean }`)
+3. Counts: `inserted=true` → `hintsInserted++`; `inserted=false` → `hintsDuplicated++`; thrown error → `hintsError++`
 4. Returns `PrescriberRunResult` with insert/dedup/error counts
 
 **Rationale:** Forge prescribers are pure functions — they generate hints without DB access. Persistence is a composition concern (needs DB handle + dedup policy). Keeping it in the composition root means Forge stays portable and testable without SQLite.
 
-**`force=true` behavior:** Skip dedup check entirely. Regenerate and persist even if active hints exist for same `(skillId, source, category)`. Matches Wave 2 intent: hints are immutable; lifecycle controls repetition.
+**Force-overwrite (deferred to Wave 4):** No `force=true` knob is exposed in Wave 3. `insertHintIfNew()` is the only persistence path; duplicate hints for the same `(skillId, source, category)` always dedup. If operators need to regenerate hints, the current path is to retire the active hint via lifecycle, then re-run.
 
 ---
 

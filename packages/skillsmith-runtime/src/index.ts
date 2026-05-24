@@ -56,10 +56,6 @@ export interface ForgePrescribeFailureResult {
 export type ForgePrescribeResult = ForgePrescribeSuccessResult | ForgePrescribeFailureResult;
 
 type RuntimeDb = Database.Database;
-type ProfileGranularity = Extract<
-  NonNullable<ReturnType<typeof cairn.getExecutionProfileWithDb>>['granularity'],
-  'per-skill' | 'global'
->;
 
 interface LoadedExecutionProfile {
   profile: ExecutionProfile;

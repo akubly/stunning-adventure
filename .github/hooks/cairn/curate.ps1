@@ -14,26 +14,45 @@ try {
     $p = Join-Path $HOME '.cairn\hook\sessionStart.mjs'
     if (Test-Path $p) { $script = $p }
 
-    # 2. Global npm install
     $usingCairnFallback = $false
+
+    # 2. Global npm install — prefer skillsmith-runtime (Wave 3 composition root)
     if (-not $script) {
         $root = & npm root -g 2>$null
         if ($root) {
-            $candidate = Join-Path $root '@akubly\cairn\dist\hooks\sessionStart.js'
-            if (Test-Path $candidate) {
-                $script = $candidate
-                $usingCairnFallback = $true
+            $runtimeCandidate = Join-Path $root '@akubly\skillsmith-runtime\dist\hooks\sessionStart.js'
+            if (Test-Path $runtimeCandidate) {
+                $script = $runtimeCandidate
+            } else {
+                $cairnCandidate = Join-Path $root '@akubly\cairn\dist\hooks\sessionStart.js'
+                if (Test-Path $cairnCandidate) {
+                    $script = $cairnCandidate
+                    $usingCairnFallback = $true
+                }
             }
         }
     }
 
-    # 3. Repo checkout (this script lives at .github/hooks/cairn/)
+    # 3. Repo checkout (this script lives at .github/hooks/cairn/) — prefer skillsmith-runtime
     if (-not $script) {
-        $candidates = @(
+        $runtimeCandidates = @(
+            (Join-Path $PSScriptRoot '..\..\..\packages\skillsmith-runtime\dist\hooks\sessionStart.js')
+        )
+        foreach ($candidate in $runtimeCandidates) {
+            if (Test-Path $candidate) {
+                $script = $candidate
+                break
+            }
+        }
+    }
+
+    # 4. Repo checkout cairn fallback (Wave 2 behavior, no prescribers)
+    if (-not $script) {
+        $cairnCandidates = @(
             (Join-Path $PSScriptRoot '..\..\..\packages\cairn\dist\hooks\sessionStart.js'),
             "$PSScriptRoot\..\..\..\dist\hooks\sessionStart.js"
         )
-        foreach ($candidate in $candidates) {
+        foreach ($candidate in $cairnCandidates) {
             if (Test-Path $candidate) {
                 $script = $candidate
                 $usingCairnFallback = $true
