@@ -55,17 +55,11 @@ afterEach(() => {
 describe('W4-2: CairnEvent extensions for hint state transitions', () => {
   it('emits hint_state_transition event on insertHintIfNew', () => {
     const db = getDb();
-    const beforeEventCount = getUnprocessedEvents(0).length;
     
     insertHintIfNew(db, hint({ id: 'h-event-1', category: 'verbosity-event' }));
     
     const allEvents = getUnprocessedEvents(0);
     const hintEvents = allEvents.filter((e) => e.eventType === 'hint_state_transition');
-    
-    // Debug: log all events if test fails
-    if (hintEvents.length === 0) {
-      console.log('All events:', allEvents.map((e) => e.eventType));
-    }
     
     expect(hintEvents.length).toBeGreaterThan(0);
     
