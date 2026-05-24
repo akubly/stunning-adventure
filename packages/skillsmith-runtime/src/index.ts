@@ -169,22 +169,6 @@ function resolveRuntimeDb(options: CreatePrescriberOrchestrationConfigOpts = {})
   return cairn.getDb(options.dbPath);
 }
 
-function expireActiveHints(
-  db: RuntimeDb,
-  skillId: string,
-  source: string,
-  category: string,
-): void {
-  db.prepare(
-    `UPDATE optimization_hints
-        SET status = 'expired'
-      WHERE skill_id = ?
-        AND source = ?
-        AND category = ?
-        AND status IN ('pending', 'accepted', 'deferred')`
-  ).run(skillId, source, category);
-}
-
 async function executePrescriberRun({
   db,
   skillId,
@@ -209,11 +193,13 @@ async function executePrescriberRun({
 
   for (const hint of hints) {
     try {
-      if (forceRegenerate) {
-        expireActiveHints(db, hint.skillId, hint.source, hint.category);
-      }
+      const hintInsert = toOptimizationHintInsert(hint);
+      const insertResult = forceRegenerate
+        ? cairn.replaceActiveHintsAtomically(db, hint.skillId, hint.source, hint.category, [
+            hintInsert,
+          ]).results[0]
+        : cairn.insertHintIfNew(db, hintInsert);
 
-      const insertResult = cairn.insertHintIfNew(db, toOptimizationHintInsert(hint));
       if (isSkippedInsert(insertResult)) {
         result.hintsDuplicated += 1;
         continue;
