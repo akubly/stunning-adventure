@@ -220,3 +220,283 @@ Router event schema + property-test scaffold → NEW-16 CI determinism smoke tes
 ## Team updates 2026-05-24
 
 T5 resolved — Crucible built on Copilot SDK, replaces Copilot CLI as Aaron's daily driver. Sonny hired as debugger-lens specialist; see his US-S-1..US-S-9 stories and L5 (Investigation Surface) structural proposal in decisions.md.
+
+## 2026-05-24 Round 3: Pre-commit hook bus — Router verdict
+
+# Gabriel — Round 3: Pre-commit hook bus — Router verdict
+**Date:** 2026-05-24T2300Z
+**Re:** Alexander Round 3 reply to Sonny — `{continue, observe, pause}` pre-commit
+hook bus shared by L3/L4/L5; only `pause` reaches L4 (Router).
+**Verdict:** **ENDORSE WITH REFINEMENTS** (4 hard requirements, 1 dep on Roger).
+
+This extends my Round 2 thesis ("Router is the single load-bearing safety
+component") rather than re-litigating it. The bus split is a *concentration* of
+Router load onto the verdicts that actually matter for safety, not a
+fragmentation. But the bus inherits enough Router-grade requirements that I want
+them named explicitly before it gets built.
+
+---
+
+## 1. Does the bus fragment the Router's role?
+
+**No — it sharpens it, provided the four refinements below land.**
+
+My Round 2 claim was that the Router is the single safety choke-point because
+*every action that mutates the world goes through approval policy*. Alexander's
+bus doesn't dilute that — it adds a *pre-filter* (predicate evaluation) whose
+only safety-relevant output is `pause`, which still routes to the Router. The
+Router remains the only component that can stop the world.
+
+What changes: the Router is no longer the *only* component with structured
+observation responsibilities. The bus is now a **second load-bearing component**,
+but in a different axis:
+
+| Component | Load-bearing for |
+|---|---|
+| Router (L4) | **Safety** — gating mutations, recording approval policy decisions |
+| Hook bus (L1-adjacent) | **Routing correctness** — verdict dispatch, no lost `pause`, no leaked `observe`-→-`pause` confusion |
+
+These are different failure modes. Router failure = unsafe action commits. Bus
+failure = either (a) a `pause` is dropped → unsafe action commits anyway (same
+failure as Router failure), or (b) `observe` floods the Router (DoS the safety
+queue). Both are fatal. **So yes, the bus is now equally load-bearing — just in
+a narrower correctness sense than the Router itself.**
+
+Architectural framing I want adopted: *the bus is part of the safety perimeter,
+not infrastructure beneath it*. It gets Router-grade treatment for observability,
+fuzzing, and replay. See refinements R1–R4.
+
+## 2. Property / fuzz target (extends US-Ga-NEW-15)
+
+**R1 — The bus inherits US-Ga-NEW-15's fuzz/property obligations.** Non-negotiable.
+
+Properties the bus must satisfy under property-based testing and the recorded-
+input replay corpus:
+
+- **P1 (no-leak):** No `observe` verdict ever produces a Router-side state
+  change. Stated negatively for fuzzing: `forall trace, count(router.state_mutation where verdict=observe) == 0`.
+- **P2 (exactly-once-pause):** Every `pause` verdict reaches the Router exactly
+  once. `forall verdict=pause, count(router.received_for(verdict.id)) == 1`.
+  This is the property that fails silently in most bus implementations and kills
+  people; it must be the top fuzz target.
+- **P3 (closed enum):** The verdict enum is `{continue, observe, pause}` and
+  rejected at the bus boundary if extended at runtime. Extension goes through
+  schema migration, not field overloading. (Lesson learned from US-S-9's
+  "extensible verdict enum" — extensibility is a *schema-time* property, not a
+  *runtime* property.)
+- **P4 (ordering within primitive):** All verdicts for a given candidate write
+  resolve before the write commits. `forall write w, all_verdicts(w) precedes commit(w)`.
+  This is the property that makes the bus a *pre-commit* hook rather than a
+  best-effort observer.
+- **P5 (no continue-side-effect):** `continue` verdicts produce zero observable
+  state change anywhere (no log line, no counter, no event). This is what makes
+  it the "zero-cost default" Alexander promised; if it isn't actually zero-cost
+  we'll discover it under fuzz at p99 budget violations, not in production.
+
+The Router-side properties from US-Ga-NEW-15 (policy version in every decision,
+deterministic verdict given identical input + policy version) carry forward
+unchanged — they just now apply to a smaller, sharper input set.
+
+## 3. Replay over recorded inputs
+
+**R2 — The bus's verdict stream is part of the replay substrate. The bus *itself*
+is stateless dispatch and does not.**
+
+Distinction:
+- **Bus runtime** (the dispatcher): stateless function `(candidate, predicates) → verdicts[]`.
+  Replay derives from re-running predicates over recorded input. No record needed.
+- **Predicate registry** (L5's registries per Alexander's diagram): stateful.
+  Per-fork. Already covered by my NEW-13 (branch metadata in Cairn schema).
+- **Verdict stream** (what the bus emitted): **must be recorded**. This is the
+  attribution trail. Without it, a replay can't distinguish "the predicate
+  registry was different" from "the bus dispatched incorrectly." Recording the
+  emitted verdicts makes the bus *falsifiable* against replay.
+
+**Record requirements for each non-`continue` verdict:**
+- `verdict` (observe | pause)
+- `predicate_id` and `predicate_version` (which predicate fired)
+- `policy_version` (active Router policy at evaluation time — see §5)
+- `candidate_primitive_hash` (content-addressed input)
+- `read_set_hash` (Sonny's US-S-3 — the bus inherits this)
+- `evaluation_timestamp` (monotonic, not wall)
+- `fork_id` (Alexander's "predicates don't back-propagate" rule needs this in the record)
+
+`continue` verdicts are not recorded individually (would violate P5). A periodic
+counter is sufficient: "N continue verdicts since last non-continue, span
+[t0, t1]." That gives replay enough to verify completeness without paying per-
+verdict cost.
+
+## 4. Volume / fan-out — the noisy-neighbor risk
+
+This is the refinement I feel most strongly about. Alexander mentions predicate
+cost on the hot path but frames it as a *per-evaluation* cost (the 1ms p99
+budget). The bus has a second cost axis: **fan-out**.
+
+**Scenario that worries me:** Aaron sets a logpoint on a hot primitive
+("observe-only watch on every `Decision` write in the planner subtree"). During
+a single-step session against a Forge run that does ~500 Decision writes/sec,
+the bus emits ~500 `observe` verdicts/sec. Subscribers:
+
+- L2 Salsa (writes Observation, invalidates queries) — designed for this load
+- L4 Router — must **not** see these (P1) — fine
+- L5 registries — updates predicate state (hit counter) — designed for this
+- Mirror — pushes summary to UI — **not designed for 500 Hz fan-out**
+- Curator — writes insight rows — **definitely not designed for 500 Hz**
+- Alchemist — irrelevant for observe-only, should not subscribe
+
+**R3 — Bus subscriber contract:**
+
+1. **Explicit subscription per verdict type.** Mirror and Curator subscribe to
+   `pause` only, never `observe`, unless they explicitly opt in *and* declare a
+   sampling rate. Default is "no observe traffic" because most subscribers
+   can't handle it.
+2. **Bounded queues per subscriber, with documented drop policy.** If a
+   subscriber's queue fills, the bus drops the *oldest* `observe` for that
+   subscriber and increments a drop counter that Mirror surfaces. **Never
+   silently drop.** `pause` queues are unbounded (back-pressure to the writer
+   is correct here — if Router is wedged, blocking the writer is the safe
+   failure mode).
+3. **Sampling at the bus boundary, not at the subscriber.** "Pause every 100th"
+   sampling predicates (Alexander's example) emit verdicts at the sampled rate,
+   not at the raw rate. The bus must support `verdict_rate ∈ {full, sampled(N), threshold}` as a first-class
+   registration parameter. Otherwise Aaron's 500 Hz logpoint becomes a 500 Hz
+   bus dispatch even if only every 100th is "interesting" — wasted CPU.
+4. **Subscriber budget reporting.** Each subscriber declares a max
+   verdicts/sec it can handle. The bus refuses registrations that would
+   exceed declared budgets at predicate-registration time, not at runtime.
+   Surface in `cairn ops bus status`.
+
+**Bottleneck verdict:** with R3 the bus is *not* a bottleneck. Without R3, a
+naive fan-out implementation will be Aaron's first p99 outage during his first
+serious debugging session, and we'll spend a week back-patching backpressure
+into a system that should have shipped with it.
+
+## 5. Policy-version-in-ledger
+
+**R4 — Policy version tags every `pause` verdict (mandatory) and every `observe`
+verdict (mandatory). Continue verdicts skip (per P5).**
+
+Round 2 commitment: every Router decision records the active policy version.
+That commitment now extends:
+
+- **`pause` verdicts** carry the policy version that *will be* used by the
+  Router to evaluate them. This is the version at *bus emission time*, not at
+  *Router receipt time* — otherwise a policy hot-swap mid-flight produces a
+  verdict that can't be reproduced under replay.
+- **`observe` verdicts** carry policy version too, for a different reason: the
+  observation is attribution evidence ("under policy vN, this primitive matched
+  predicate P"). If Aaron later asks "why did we observe this?" the answer
+  requires the policy version. Same record cost, much higher debug value.
+- **`continue` verdicts** are uncounted/unrecorded (P5), so they trivially
+  inherit "no version" — they're not evidence of anything.
+
+This also resolves an ambiguity in Alexander's proposal: he says "L4 approval
+policy" registers predicates on the bus. Those predicates are themselves
+policy-versioned artifacts. So we have *predicate version* (L5 registration
+identity) AND *policy version* (L4 active policy at evaluation time). Both must
+ride every recorded verdict; they answer different questions ("which predicate
+fired" vs "under what policy did it fire").
+
+## 6. Verdict — ENDORSE WITH REFINEMENTS
+
+I endorse Alexander's bus split. It strengthens the Router-as-safety-choke-point
+thesis by *removing* observe-traffic from the safety surface, which was
+something my Round 2 didn't think hard enough about. US-S-9's collapse holds
+where it matters (pause = approval), and Alexander's refinement is correct
+that logpoints/sampling should not wake L4.
+
+### Router-side contract (what L4 commits to)
+
+Given the bus delivers verdicts to L4:
+
+1. **L4 receives `pause` only.** If L4 ever receives `observe` or `continue`,
+   that is a bus bug and L4 logs a structured error + drops. (Defense in depth
+   for P1.)
+2. **L4 acknowledges receipt within 50ms** (bus → Router transit budget). A
+   missing ack within budget is a bus alarm (P2 violation candidate).
+3. **L4 records, per `pause` verdict received:**
+   - All bus-side record fields (predicate id+version, policy version, primitive
+     hash, read-set hash, fork id, evaluation timestamp)
+   - Router-side fields (Router policy version at receipt, Router decision,
+     decision timestamp, decision latency)
+   - Approval outcome (approved | rejected | escalated | timeout)
+4. **L4 emits a `RouterDecision` event onto the bus's *outbound* channel** (L2
+   subscribes — replay derives Router behavior from this stream). This closes
+   the loop: bus → Router → bus → L2.
+5. **L4's state is replayable from the recorded `pause` verdict stream + policy
+   versions alone.** No hidden state, no clock dependence beyond recorded
+   timestamps. Fuzz target: replay-equivalence.
+
+### What I'm *not* endorsing (yet)
+
+- **No commitment yet on bus location in the dependency graph.** Alexander
+  draws it as "L1's pre-commit hook bus." I'd accept that *if* the bus's
+  verdict stream is in the WAL (see Roger dependency). If it's not in the WAL,
+  the bus is logically L1.5 — between commit and ledger — and that's a
+  layering smell we should debate explicitly in Round 4.
+- **No commitment on Mirror/Curator/Alchemist as subscribers.** R3 mandates
+  explicit per-verdict-type subscription; the default is "you don't get observe
+  traffic." Mirror is welcome to subscribe to `pause` for UI; Curator and
+  Alchemist should justify any subscription in writing.
+
+## 7. Dependency on Roger (WAL/L1 verdict — HARD)
+
+**Roger must confirm that the bus's verdict stream lands in the WAL before
+subscriber dispatch.**
+
+Specifically:
+- Recorded verdicts (per §3) hit the WAL *before* the bus dispatches to any
+  subscriber.
+- Crash mid-dispatch: on restart, the bus re-reads the WAL tail and re-dispatches
+  any verdicts whose subscriber-ack records are missing. This makes P2 (exactly-
+  once-pause) survivable across crash; without WAL-first, P2 is best-effort and
+  the safety property degrades to at-most-once, which is *unsafe*.
+- The WAL record format for verdicts is a Roger contract, not mine. I need it
+  to be queryable by `predicate_id`, `policy_version`, `fork_id`, and time
+  range for replay/bisect (NEW-12) and fuzz harness inputs (NEW-15).
+
+**If Roger's verdict is "WAL doesn't carry bus traffic" — I withdraw the
+endorsement.** P2 (exactly-once-pause) is not achievable without durable
+ordering ahead of dispatch, and exactly-once-pause is the property that prevents
+unsafe commits during crash windows. Soft fallback (in-memory queue + periodic
+checkpoint) is acceptable for `observe` traffic; *not* acceptable for `pause`.
+
+The narrowest viable Roger commitment that keeps my endorsement intact: *"pause
+verdicts are durable in the WAL before bus dispatch; observe verdicts may use
+a lighter-weight ring buffer with bounded replay window."* That split mirrors
+the safety/observability split nicely.
+
+---
+
+## Summary (for coordinator)
+
+**ENDORSE WITH REFINEMENTS.** Alexander's `{continue, observe, pause}` bus split
+*strengthens* the Router-as-single-safety-choke-point thesis by removing observe
+traffic from L4 — the Router still owns every pause, and pause is the only verdict
+that can mutate the world. Four refinements are mandatory (R1: bus inherits the
+US-Ga-NEW-15 fuzz/property regime; R2: non-`continue` verdicts are recorded with
+predicate+policy versions and read-set hash; R3: explicit per-verdict-type
+subscription with bounded queues and bus-side sampling; R4: policy version tags
+every pause and observe verdict). Router-side contract is in §6 (L4 receives
+pause only, acks within 50ms, records full lineage, emits `RouterDecision` onto
+outbound channel, is replayable from the recorded stream alone). **Hard dependency
+on Roger:** pause verdicts must land in the WAL before bus dispatch, or
+exactly-once-pause (P2) collapses to at-most-once and the safety property is
+lost; observe verdicts can use a lighter ring buffer. If Roger says "WAL doesn't
+carry bus traffic," I withdraw and we go to Round 4.
+
+
+## 2026-05-24 Round 4: Phase B reconciliation against `stunning-adventure`
+
+**Inbox:** `.squad/decisions/inbox/gabriel-reconciliation-2026-05-24T2330Z.md`
+
+**Headlines:**
+- ALREADY-EXISTS: 0. PARTIALLY-EXISTS: 4. NET-NEW: 6. CONTRADICTS-EXISTING: 1.
+- The existing `packages/forge/src/decisions/` module is the closest analog to the Crucible Router: `createDecisionGate` is a hook observer that returns `permissionDecision: "ask"` to delegate to the SDK's native permission handler. Recording is fail-open. No verdict taxonomy, no policy version, no ack channel.
+- **No property-based or fuzz tests exist anywhere in `packages/`** (`grep fast-check|fc\.` is zero). My NEW-15 + Phase-A R1 fuzz regime is net-new infrastructure, not an extension of an existing harness.
+- The `LocalDBOMSink` (forge/telemetry/sink.ts) is the *exact* fail-open + observable-drop-counter pattern my R3 mandates — at the persistence layer, not the dispatch layer. Worth citing as the model, not reinventing.
+- `CairnBridgeEvent` extractors already redact tool args and result content (forge/bridge/index.ts:130–146). Tension #6 (privacy) is **already pre-decided** in production code; hermetic-replay must reconcile or rebuild the redaction discipline.
+- **Defer-to-owner (Graham + Alexander):** my Round-3 §6 commitment to ≤50ms ack between bus and Router is **unachievable on the existing primitives** — there is no Router process distinct from the hook observer, no monotonic clock, no ack channel. The 50ms budget stands as the *new* contract; I flag it as contradicting existing reality, not silently relax it.
+- **Hard dep still standing on Roger:** Cairn's `journal_mode = WAL` is SQLite storage WAL, not a verdict-dispatch WAL. Phase-A §7 (pause-verdict-WAL-before-dispatch) is achievable via per-verdict SQLite transaction wrapping, but Roger has to confirm L1 supports fsync-before-callback on the `pause` path.
+
+**Summary:** Reconciled my six Round-2 stories + four Round-3 refinements + Phase-A signoff content against the existing Cairn + Forge + skillsmith-runtime + runtime-cli + types packages. The good news: the *structural patterns* the Crucible Router needs (HookComposer fail-open isolation, DecisionRecord schema, ProvenanceTier {internal, certification} split, telemetry sink observable-drop discipline, fail-open + console.warn pattern at every boundary) already exist in production code and should be cited as the deployment baseline rather than reinvented. The bad news: nothing that's actually load-bearing for Router safety exists today — no verdict enum, no policy versioning, no read-set capture, no replay driver, no property/fuzz harness, no Router process distinct from the SDK permission handler, no WAL ordering on dispatch, and the entire `decisions` module is one fail-open recording call away from the spec I committed to in Round 3. Ten of eleven items I checked are net-new or substantially net-new; one contradicts existing reality (≤50ms ack, deferred to Graham + Alexander as L4 owners); zero are already-exists. The reconciliation does *not* invalidate any of my Round-2/3 stories — it confirms they are necessary new infrastructure, not redundant restatements.

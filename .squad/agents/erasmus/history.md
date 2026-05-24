@@ -125,3 +125,32 @@ Original four (determinism, optimization noise, ledger bottleneck, cold-start te
 ## Team updates 2026-05-24
 
 T5 resolved — Crucible built on Copilot SDK, replaces Copilot CLI as Aaron's daily driver. Sonny hired as debugger-lens specialist; see his US-S-1..US-S-9 stories and L5 (Investigation Surface) structural proposal in decisions.md.
+
+## Round 4 — Reconciliation against existing monorepo (2026-05-24T23:30Z)
+
+**Task:** Reconcile my 12 stories (US-E-1..10, US-E-NEW-11/12) against `D:\git\stunning-adventure` (Cairn + Forge + skillsmith-runtime + runtime-cli). Read-only.
+
+**Counts:** 1 ALREADY-EXISTS (US-E-NEW-12 — and contradicted by Aaron's round-3 decision), 5 PARTIALLY-EXISTS (US-E-2 rewind half, US-E-3 model tier, US-E-4 substrate, US-E-7 audit half, US-E-NEW-11 content-addressing half), 6 NET-NEW (US-E-1, US-E-2 branching half, US-E-8, US-E-9, US-E-10, US-E-4 lineage diff).
+
+**Headline:** branching/forking sessions does NOT exist anywhere in shipping code. `sessions` table has no parent column (`migrations/001-initial.ts:8-15`). SDK has a *destructive* `session.snapshot_rewind` primitive (`session-events.d.ts:630-643`) — Cairn observes it but doesn't preserve the rewound branch. Round-3 architecture (`decisions.md:511-515`) commits to non-destructive COW branching as forward design. Substrate is half-there: SDK already chains events with `parentId` (`session-events.d.ts:626-628`) but Cairn discards the chain at ingest (`packages/cairn/src/db/events.ts:34-38`).
+
+**Big surprises in-tree (novel patterns nobody has captured as stories):**
+- **DBOM Merkle chain** (`packages/forge/src/dbom/index.ts:24-80`) — canonical-JSON + SHA-256 + parentHash over decisions. Exactly the content-addressing scheme I called for in US-E-NEW-11, already shipped but scoped to the audit subset.
+- **`HookComposer` with error isolation** (`packages/forge/src/hooks/index.ts`) — the Router-shaped primitive I argued for in round 2, applied to hooks. Could generalize into L4 contract.
+- **DecisionRecord ships `alternatives` + `confidence` + `evidence`** (`packages/forge/src/decisions/index.ts:40-60`) — the road-not-taken is already serialized on every recorded decision. Substrate for US-E-2 counterfactual is sitting unwired.
+- **DriftSketch** (`packages/forge/src/telemetry/aggregator.ts:16-57`) — bucket quantile sketch (t-digest-lite). Applied streaming statistics, unnamed.
+- **SDK `subagent.selected/deselected` events exist but are NOT bridged** by Cairn (`session-events.d.ts:2260, 2295` vs `bridge/index.ts:85-87`). One missing mapping entry is between us and real sub-agent routing telemetry.
+
+**Story-level reversals I owe Aaron:**
+- US-E-NEW-12 (Crucible as Copilot CLI sub-conversation) is **withdrawn**. Aaron's round-3 decision (`decisions.md:456-458`) explicitly went parent-camp — Crucible *replaces* Copilot CLI as the daily driver, on the SDK directly. My framing was wrong on the strong form; the weak form (plugin/MCP path) already exists. Aaron's rationale (hermetic capture at LLM boundary, branching, deterministic replay) needs SDK-level access that a tool-call payload couldn't provide.
+- US-E-3 should shrink: model-strategy half is shipped (`packages/forge/src/models/strategy.ts:29-46`); the sub-agent half is one bridge-mapping plus a strategy invocation away from real. Smaller scope than originally drawn.
+- US-E-NEW-11 should shrink: extend the existing DBOM canonical-JSON+SHA-256+parentHash idiom to an observation-capture sibling store (already a round-3 commitment per `decisions.md:513-514`), don't design a new scheme.
+
+**Defer-to-owner items in inbox:**
+1. SDK `snapshot_rewind` is destructive — Crucible's branching must override or precede it (Alexander/Roger).
+2. Ingest `parentId` at Cairn boundary — cheapest unlock for bisect/lineage/causal-slice (Roger/Rosella).
+3. Bridge `subagent.selected/deselected` — unlocks US-E-3 and Sonny US-S-5 (Alexander).
+
+**Output:** Inbox file `D:\git\harness\.squad\decisions\inbox\erasmus-reconciliation-2026-05-24T2330Z.md` — full per-story reconciliation with file:line cites; surprises section names eight in-tree patterns worth promoting; gaps and recommended follow-ups close the loop.
+
+**Summary paragraph:** The existing monorepo contains more outsider DNA than I expected — DBOM's Merkle chain, the HookComposer's error-isolated dynamic registration, DriftSketch's streaming quantiles, and `DecisionRecord.alternatives` are all latent versions of primitives I called for from outside the walls, shipped but unnamed and not yet promoted to architectural status. What is genuinely absent is the *capabilities* layer: there is no session genealogy, no fork primitive, no DAG scheduler, no replay engine, no observation capture, no interactive surface beyond MCP — and the SDK's own `parentId`-chained event log and `subagent.selected/deselected` telemetry are being discarded at the Cairn ingest boundary, leaving free upstream substrate on the table. My most useful round-4 contribution is to (a) withdraw US-E-NEW-12 (overtaken by Aaron's round-3 "Crucible replaces Copilot CLI" decision), (b) flag that the SDK's `snapshot_rewind` is destructive and contradicts US-E-2's non-destructive-fork semantics — needing an explicit decision — and (c) point at the cheap "preserve parentId at ingest" story that unblocks US-E-1, US-E-2, US-E-4, US-S-3, and US-S-6 at near-zero cost.

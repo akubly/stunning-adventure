@@ -389,13 +389,182 @@ export function curate(
 
 ---
 
-### Harness Vision Q&A — Round 2 (Aaron's follow-up answers)
-
 **Date:** 2026-05-24T07:07Z  
 **By:** Aaron Kubly  
 **Context:** Follow-up clarifications on Q1 items that came back ambiguous.
 
 **Decided:**
+
+1. **Curator authority model (resolves Q2):** Curator has detection + proposal authority only — never approval authority. Per-category treatment:
+   - ✅ auto-apply: hint prioritization only
+   - 📨 auto-notify (lands in user-pull notification feed): staleness, Alchemist triggers, skill recommendations
+   - ⚠️ detect & propose, require explicit user ACK/REJECT: hypothesis reversion, policy proposals
+   - ❌ never auto: low-confidence hint apply, policy guardrail changes
+   - The vision-doc framing of "append-then-review vs propose-then-commit" dissolves — it's per-category, and consequential decisions always stage for human gate.
+
+2. **Turn definition (resolves Q3):** **Thick turn with intra-turn primitives, revealable on demand.** One user message → one assistant response, with sub-agents and tool calls nested inside. Reveal pattern modeled on Copilot CLI's Ctrl+E / Ctrl+T — internals are accessible but not in the user's face by default. Primitives are recorded at intra-turn granularity (each tool call, each sub-agent invocation, each decision) so replay fidelity is preserved without fragmenting the user-visible exchange.
+
+3. **Hash-chain semantics (resolves Q4):** Keep cheap hash-linking in the ledger (self-audit value for Aaron-the-sole-user, ~1% storage cost). Defer SBOM-style witness/notary/signature infrastructure to a later wave — migration is backward-compatible. Threat model in scope: "did I really approve that 6 months ago?" Threat model out of scope: external attestation, multi-party tamper detection.
+
+---
+
+## Phase A Signoffs (2026-05-24 Round 3)
+
+### Laura — causalReadSet Signoff
+
+**Date:** 2026-05-24T23:00Z  
+**Scope:** Equivalence claim: "Laura's `causalReadSet` ≡ Roger's WAL `causal_read_set_hash`. Same bytes, one pipeline."
+
+**Verdict:** ENDORSE with one refinement. Fields are content-addressed equivalents (Laura's typed object → Roger's hash), not literal bytes. **Proposal schema locked at 8 fields** with `causalReadSet?: ReadSetEntry[]` as the 8th field. Pipeline: L3-declares `ReadSetEntry[]` → L4-canonicalizes-and-hashes → L1-commits hash to WAL, with determinism conformance suite adding 4 assertions (A1: hash integrity via CBOR canonical serialization; A2: reference resolvability; A3: replay equivalence — load-bearing for determinism; A4: population completeness).
+
+**Impact:** `causalReadSet` orthogonal to `evidence` (provenance vs persuasion). Pareto fitness gains read-set cardinality axis. Conformance assertions strengthen W2-5 determinism contract. L2↔L3 `ReadSetBuilder` helper pushes generators toward Salsa-mediated reads (cheap A3 path).
+
+**Read set definition locked:** 8 fields (category, confidence, rationale, preview, fitnessContract, evidence, costEstimate, reversibility, determinismClass, causalReadSet).
+
+---
+
+### Roger — Hook Bus Signoff (L1 verdict)
+
+**Date:** 2026-05-24T23:00Z  
+**Author:** Roger (Platform Dev, L1/Ledger owner)
+
+**Verdict:** ENDORSE with refinements. Pre-commit hook bus **per-row, inside group-commit window, before fsync barrier** — after `causal_read_set_hash` computed, before row sealed. Pause mid-batch: **seal-and-split** (rows 1..N fsync with durable verdicts, rows N+1..end return to staging queue). Bus is load-bearing for correctness (alongside Router for safety).
+
+**Critical refinements locked:**
+
+1. **Property/fuzz regime (US-Ga-NEW-15):** P1 (no-observe leak), P2 (exactly-once-pause), P3 (closed enum), P4 (ordering within primitive), P5 (continue zero-cost).
+2. **Replay recording:** Non-continue verdicts recorded with predicate_id+version, policy_version, candidate_hash, read_set_hash, fork_id, timestamp; `continue` verdicts uncounted per P5.
+3. **Subscriber backpressure (R3):** Explicit per-verdict-type subscription, bounded queues (observe droppable, pause unbounded), sampling at bus boundary, per-subscriber budget declaration.
+4. **Policy version on every verdict (R4):** Both pause and observe carry active policy version at evaluation time (predicate attribution answer: "why did we observe this?").
+
+**WAL-first mandate:** Pause verdicts durable in WAL before bus dispatch (exactly-once-pause via crash recovery); observe may use ring buffer. If Roger says "WAL doesn't carry bus traffic," endorsement withdrawn (exactly-once degrades to at-most-once, safety collapses).
+
+**Predicate SLA:** ≤80µs row-stage budget via pre-registration + compilation + kind-indexed dispatch + no L2 projection calls at evaluate time. Up to ~50 compiled predicates per primitive_kind stays safe. Read-set predicates first-class (pause if Decision read Observation tagged 'secret').
+
+**WAL schema extension:** Two new fields on `WalRecord`: `hook_verdict: u8?` (0=continue, 1=observe, 2=pause; NULL if no predicate matched) and `hook_verdict_witness: blake3?` (CAS body with predicate_ids_fired + outputs; NULL if verdict=continue). Cost: +1 byte always, +32 bytes when non-continue verdict fires.
+
+---
+
+### Gabriel — Hook Bus Router Verdict
+
+**Date:** 2026-05-24T23:00Z  
+**Author:** Gabriel Knight (Router / observability / safety)
+
+**Verdict:** ENDORSE WITH REFINEMENTS. Alexander's `{continue, observe, pause}` split **strengthens** Router-as-single-safety-choke-point by removing observe traffic from L4. Router still owns every pause (only verdict that mutates the world); pause is the load-bearing failure mode for safety.
+
+**4 mandatory refinements:**
+
+1. **Bus inherits US-Ga-NEW-15 fuzz/property regime** (P1–P5 locked per Roger).
+2. **Non-continue verdicts recorded with predicate+policy versions, read-set hash** (enabling replay falsifiability and attribution).
+3. **Per-verdict-type subscription with explicit opt-in and bounded queues** (Mirror/Curator do NOT get observe traffic by default; bus-side sampling only).
+4. **Policy version tags pause and observe verdicts** (not continue per P5). Resolves ambiguity: predicate version (L5 registration identity) vs policy version (L4 active policy at eval time) both ride every recorded verdict.
+
+**Router-side contract (§6):**
+- L4 receives `pause` only; `observe`/`continue` is a bus bug → structured error log + drop
+- L4 acks within 50ms (transit budget) — missing ack within budget is bus alarm (P2 violation)
+- L4 records all bus fields + Router fields + approval outcome (approved/rejected/escalated/timeout)
+- L4 emits `RouterDecision` event onto bus outbound channel (L2 subscribes, closes loop for replay)
+- L4 state replayable from recorded `pause` verdict stream + policy versions alone (no hidden state, no clock dependence beyond recorded timestamps)
+
+**What NOT yet endorsing:** (a) bus location in dependency graph pending Roger WAL verdict; (b) Mirror/Curator/Alchemist as subscribers without explicit per-verdict-type justification in writing.
+
+---
+
+## Phase B Reconciliations (2026-05-24 23:30Z)
+
+Reconciliation of all 9 core agents against `D:\git\stunning-adventure` monorepo. Summary: **Crucible is greenfield architecturally**; existing repo (Cairn + Forge + skillsmith-runtime) is prefiguration of L3 (Prescribers) and partial L4 (Applier + DecisionGate) with strong post-hoc Merkle-chain DBOM substrate in spike/. No per-row WAL, no pre-commit hook bus, no replay, no branching, no Salsa-style derived layer, no investigation surface. Each reconciliation file is 14–30KB with detailed citations; below are 1–2 para summaries per author linking to original inbox path for full evidence.
+
+### Alexander — Phase B Reconciliation
+
+**Classification summary:** 0 ALREADY-EXISTS, 4 PARTIALLY-EXISTS (US-A-1, US-A-7, US-A-10, US-A-NEW-2), 10 NET-NEW, 1 CONTRADICTS (US-A-NEW-5 ledger-append vs current event_log).
+
+**Headline:** `@akubly/skillsmith-runtime` (323 lines) is **not a runtime** — it is Cairn↔Forge prescriber composition root. `runtime-cli` is 9-line re-export. **Zero message-loop semantics anywhere.** No sub-agent spawn, no interactive prompt, synchronous one-shot orchestrator. The actual SDK runtime lives in `@akubly/forge/src/runtime/` (`ForgeClient` + `ForgeSession` wrapping SDK 1:1); Cairn `sessionStart` hook glues everything together via `runSessionStartHook(factory, afterCurate)` — invoked by Copilot CLI shell, not owned by this repo.
+
+**NET-NEW axis:** Crucible-level `invoke(request, config)` multi-turn driver, SDK session ↔ Cairn session linking, cross-process primitive handoff serialization, hermetic observation capture at LLM boundary. (Full reconciliation: `.squad/decisions/inbox/alexander-reconciliation-2026-05-24T2330Z.md`)
+
+### Erasmus — Phase B Reconciliation
+
+**Classification summary:** 1 ALREADY-EXISTS (US-E-NEW-12), 5 PARTIALLY-EXISTS, 6 NET-NEW, 0 CONTRADICTS, 1 DEFER-TO-OWNER (rewind destructive in SDK; US-E-2 needs non-destructive fork).
+
+**Headline:** Sessions are flat with no parentage; event log is sequential autoincrement with no parent-hash chain (SDK has `parentId` chaining upstream, Cairn discards it at boundary). **SDK `snapshot_rewind` is destructive** (removes events from session), **not non-destructive fork.** Merkle-chained provenance + decision alternatives already serialized (substrate for counterfactual); no branching primitive exists. Determinism conformance suite (A1–A4 assertions) is NET-NEW, with A3 (replay equivalence) load-bearing for hermetic validation.
+
+**NET-NEW axis:** Preserve `parentId` chain at Cairn boundary, non-destructive fork-at-decision primitive, COW snapshot metadata schema, replay harness, bisect tooling. (Full reconciliation: `.squad/decisions/inbox/erasmus-reconciliation-2026-05-24T2330Z.md`)
+
+### Gabriel — Phase B Reconciliation
+
+**Classification summary:** 0 ALREADY-EXISTS, 4 PARTIALLY-EXISTS (replay-from-stream, snapshotting, Router observability, subscriber backpressure), 6 NET-NEW, 1 CONTRADICTS (ack budget 50ms vs not yet implemented).
+
+**Headline:** No Router layer today. `HookComposer` merges observers with last-writer-wins on `permissionDecision` (tool-call boundary, not per-primitive-row). Hermetic replay boundary: capture spine exists (bridge records 22 event types, emits `CairnBridgeEvent`), but LLM-call content capture weak (beyond PAYLOAD_EXTRACTORS fields dropped) and tool-result capture absent (only `{toolCallId, success, error}` recorded, replay can't re-derive output). DBOM hash-chain (SHA-256 over canonical JSON + parent-hash) exists in spike/dbom-generator.ts but not live WAL. Five-layer Crucible entirely greenfield.
+
+**NET-NEW axis:** Hermetic observation capture, bisect CLI, branch metadata in schema, determinism CI conformance runner, bus fuzz regime, verdict-stream recording, policy version on verdicts. (Full reconciliation: `.squad/decisions/inbox/gabriel-reconciliation-2026-05-24T2330Z.md`)
+
+### Graham — Phase B Reconciliation
+
+**Classification summary:** 0 ALREADY-EXISTS, 4 PARTIALLY-EXISTS, 5 NET-NEW, 1 CONTRADICTS (closed enum ProposalGenerator vs open SDK contract), 2 WITHDRAWN.
+
+**Headline:** ~0% of the locked 5-layer Crucible stack exists as load-bearing structure. Existing repo is **prefiguration of L3** (Prescribers via `OptimizationHint` emit) **and partial L4** (Applier + DecisionGate hooks) with strong post-hoc Merkle analog (DBOM) but no per-row content-addressing, no WAL, no group-commit, no replay, no branching, no Salsa, no investigation surface. **Crucible is greenfield architecturally**; repo gives us production-tested patterns (canonical JSON hashing, hook composition, fail-open discipline, async Curator) and a clean L3/L4 v0 to borrow.
+
+**Impact:** Confirms greenfield framing (not incremental). Skunkworks in `packages/cairn/src/spike/` shows what was explored (SDK spikes promoted to production like dbom-generator → forge/dbom/index.ts); no spikes for forking, replay, dashboards, DAGs confirms those are NET-NEW. (Full reconciliation: `.squad/decisions/inbox/graham-reconciliation-2026-05-24T2330Z.md`)
+
+### Laura — Phase B Reconciliation
+
+**Classification summary:** 0 ALREADY-EXISTS, 9 PARTIALLY-EXISTS, 9 NET-NEW, 2 CONTRADICTS (canonical serialization DBOM=JSON+SHA256 vs my lock of CBOR+BLAKE3; evidence shape existing string[] vs typed EvidenceEntry[]).
+
+**Headline:** Pareto fitness entirely absent (only scalar reductions: drift weight-sum, hint priority score, single QualityVector tier). 5-axis `QualityVector` exists (clarity/completeness/concreteness/consistency/containment, each tier {1=deterministic, 2=LLM-judge, 3=simulation}) — closest semantic match to Aaron's "simulation + live A/B + synthetic benchmarks" but tiers 2–3 unimplemented (only tier 1 runs). Determinism-test pattern exists but only intra-process (no hermetic replay harness). Conformance runner needed: persisted-input → reload → re-run → byte-compare. **No multi-objective fronts, no dominance computation, no leaderboard.**
+
+**NET-NEW axis:** Pareto frontier, dominance computation, curriculum acceptance/rejection, sim↔live drift, branching-as-eval, debugger acceptance harness, A3 replay re-derivation assertion, five new proposal fields (fitnessContract, costEstimate, reversibility, determinismClass, causalReadSet), `ReadSetBuilder`. Canonical serialization conflict with Roger on CBOR vs JSON+SHA256. (Full reconciliation: `.squad/decisions/inbox/laura-reconciliation-2026-05-24T2330Z.md`)
+
+### Roger — Phase B Reconciliation
+
+**Classification summary:** 2 ALREADY-EXISTS, 6 PARTIALLY-EXISTS, 7 NET-NEW, 2 CONTRADICTS (group-commit WAL vs SQLite WAL, ledger primitives).
+
+**Headline:** Cairn `event_log` is flat autoincrement (id, event_type, payload JSON, session_id, created_at) with single-cursor Curator polling — no primitive-kind taxonomy, no parent_seq causal chain, no Merkle root per row, no content-addressing. Merkle-chain (SHA-256 canonical JSON + parent-hash) exists only in spike/dbom-artifacts export, not live WAL. Zero snapshot tables, zero `refs` table, zero CAS blob store, zero COW snapshots, zero ledger-branch metadata. The SDK parentId-chained event log (serialized by SDK, discarded by Cairn at boundary) means substrate for replay exists upstream and is being collapsed.
+
+**NET-NEW axis:** Fork+replay primitives, cross-session provenance walk, federation/multi-tenant (cheap: add `tenant_id NOT NULL DEFAULT 'local'` to 5 tables), snapshot/compaction cadence, WAL-first ledger semantics with group-commit + fsync barrier, observation capture. Existing backpressure-via-dedup (`ACTIVE_HINT_STATUSES` on optimization_hints) is already-exists win; pattern-mining surface real but flat. (Full reconciliation: `.squad/decisions/inbox/roger-reconciliation-2026-05-24T2330Z.md`)
+
+### Rosella — Phase B Reconciliation
+
+**Classification summary:** 1 ALREADY-EXISTS, 5 PARTIALLY-EXISTS, 4 NET-NEW, 0 CONTRADICTS, 1 latent-conflict risk (US-Ro-3).
+
+**Headline:** **Real plugin host already exists — in Cairn, not Forge.** `packages/cairn/src/agents/discovery.ts` (482 lines) walks entire Copilot CLI install (user, project, plugin, marketplace), emits typed `DiscoveredArtifact` with SHA-256 checksums and owner tags, runs cross-scope conflict detection. `ArtifactType` union = {instruction, agent, skill, hook, mcp_server, plugin_manifest, command}. Plugin manifests (plugin.json) only consume `name` field today — version/integrity/dependency exist on disk but not typed. `HookComposer` is SDK hook merger (not generic bus; Phase A bus lives in WAL group-commit). Forge prescriber/model-strategy/runtime are three extension points (hardcoded today, no registry).
+
+**Impact:** discovery.ts is huge head-start on US-Ro-NEW-3 (registry+tiers) and US-Ro-NEW-2 (plugin-pinned branching). Export pipeline (CompiledSkill with DBOM provenance in YAML) is existing hermetic-skill-emission format to reuse. SDKClient interface is Provider-swap seam (only Copilot SDK behind it today). (Full reconciliation: `.squad/decisions/inbox/rosella-reconciliation-2026-05-24T2330Z.md`)
+
+### Sonny — Phase B Reconciliation
+
+**Classification summary:** 0 ALREADY-EXISTS, 3 PARTIALLY-EXISTS (US-S-1, US-S-2, US-S-9), 6 NET-NEW, 1 CONTRADICTS (provenance vocabulary collision).
+
+**Headline:** **No debugger today.** No DAP, no inspector, no REPL, no breakpoint registry, no watch, no bisect, no minimizer, no causal slice. L5 Investigation Surface greenfield cleanest sense. But substrate is better than expected: `HookComposer` + `permissionDecision` verdicts (tool-boundary, not per-primitive-row) + `event_log` cursor-based reader + DBOM hash chains + MCP tools (get_status, list_insights, search_events ≤500 limit, check_event, run_curate, list_prescriptions). **Existing surfaces:** MCP query/mutate (the only Aaron-facing debug UX today), hook composer error isolation, event log with (session_id, created_at) index, cursor-based polling.
+
+**Gaps:** No event_log payload schema exposure, no temporal query, no causal query (no read_set column, no hook_verdict column, no causal_read_set_hash), no cross-session navigation, no fork concept, no breakpoint/step/step-into verdicts (only allow/deny/ask). Verdict enum maps 1:1 to US-S-1 (predicate breakpoint) but fires per-tool-call, not per-primitive-row-write. Vocabulary collision: "provenance" already means evidentiary tier {internal, certification, deployment}, not the concept Sonny terms provenance. (Full reconciliation: `.squad/decisions/inbox/sonny-reconciliation-2026-05-24T2330Z.md`)
+
+### Valanice — Phase B Reconciliation
+
+**Classification summary:** 1 ALREADY-EXISTS, 3 PARTIALLY-EXISTS, 8 NET-NEW, 2 CONTRADICTS (Mirror vs Narrator; Aaron in Copilot CLI vs Crucible as CLI shell).
+
+**Headline:** **No UX layer resembling Mirror.** User-facing surface = ten MCP tools returning JSON text + one banner CLI (`🪨 Cairn v0.1.0`). No session/export renderer beyond SKILL.md YAML frontmatter emission (CompiledSkill with DBOM provenance). **Saved-query grammar greenfield.** Existing surfaces: `list_prescriptions` proactive_hint (max 1/session, only unviewed generated prescriptions) + `resolve_prescription` emoji replies (✅ Applied / 👍 Noted / ⏳ Deferred / ❌ Failed) + `show_growth` trend messages (observational, opinion-free). Preferences table exists; MCP mirrors none of it to UI. Harness-vision proposes **Narrator** chamber (diary-style, not team-facing v1) overlapping design space with Round-2/3 "Mirror" — collision risk flagged for Graham.
+
+**Impact:** Confirms no existing Mirror semantics to borrow. Confidence wording exists (`high/med/low` on DecisionRecord, numeric [0,1] on hints); export path (CompiledSkill format) is reusable template. Naming collision (Mirror vs Narrator) deferred to Aaron/Graham decision. (Full reconciliation: `.squad/decisions/inbox/valanice-reconciliation-2026-05-24T2330Z.md`)
+
+---
+
+## Vocabulary
+
+**Canonical terms (locked for all agents, effective Round 5 onward):**
+
+| Canonical (use henceforth) | Replaces | Reason | Citation |
+|---|---|---|---|
+| **prescription** | `proposal` | `prescription` already ships in Cairn (`list_prescriptions`, `resolve_prescription`, MCP server). Adopting verbatim eliminates retitling. | Valanice Phase B; `cairn/src/mcp/server.ts:466-472,569,610` |
+| **trail** | `breadcrumb` | `breadcrumb` is taken in repo: `cairn/src/db/skipBreadcrumbs.ts` = intentional skip record. Distinct concept; do not overload. | Valanice Phase B |
+| **causal_read_set** / `causalReadSet` | any use of `provenance` for this concept | `provenance` is taken: evidentiary tier (`'internal' \| 'certification' \| 'deployment'`). Phase A already named the field correctly; NO ONE may rebrand it `provenance`. | Sonny Phase B; `cairn/src/types/index.ts` ProvenanceTier |
+| **(rename TBD — owner: Alexander)** | `skillsmith-runtime` package name | `@akubly/skillsmith-runtime` is a 323-line Cairn↔Forge composition root, NOT a runtime. Name actively misleads every reader and poisons reconciliation. | Alexander Phase B |
+
+**Action items:**
+1. **All authors** — use `prescription` / `trail` / `causal_read_set` from Round 5 onward. Older inbox files are drift, not authority.
+2. **Alexander** — propose new name for `skillsmith-runtime` in Round 5 (suggested: `@akubly/composition`, `@akubly/wiring`, or similar). Physical rename queued for eventual Crucible-monorepo merge, NOT now.
+3. **Round 5 spike agents** — already prompted with these terms.
+
+**Not in scope:** Mirror/Narrator naming (Graham + Aaron), Investigation Layer rename (L5 locked), existing DBOM/hooks/decisions module names.
 
 1. **Curator authority model (resolves Q2):** Curator has detection + proposal authority only — never approval authority. Per-category treatment:
    - ✅ auto-apply: hint prioritization only

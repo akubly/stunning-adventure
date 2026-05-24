@@ -504,3 +504,56 @@ Ship it together?
 ## Team updates 2026-05-24
 
 T5 resolved — Crucible built on Copilot SDK, replaces Copilot CLI as Aaron's daily driver. Sonny hired as debugger-lens specialist; see his US-S-1..US-S-9 stories and L5 (Investigation Surface) structural proposal in decisions.md.
+
+## 2026-05-24 Round 4: Phase B Reconciliation against D:\git\stunning-adventure
+
+**Inbox:** .squad/decisions/inbox/alexander-reconciliation-2026-05-24T2330Z.md.
+
+### Counts
+- ALREADY-EXISTS: 0
+- PARTIALLY-EXISTS: 4 (US-A-1, US-A-7, US-A-10, US-A-NEW-2)
+- NET-NEW: 10 (US-A-2/3/4/5/6/8/9, US-A-NEW-1/3/4)
+- CONTRADICTS-EXISTING: 1 (US-A-NEW-5 vs current vent_log; defer to Rosella)
+
+### Headline findings
+- **The package named @akubly/skillsmith-runtime is not a runtime.** It is a 323-line Cairn↔Forge prescriber composition root (packages/skillsmith-runtime/src/index.ts:1-323). @akubly/runtime-cli is a 9-line re-export plus a one-shot orge-prescribe batch CLI (packages/runtime-cli/src/index.ts:1-9, cli.ts:1-94). **There is no top-level message loop in this repo.** The Copilot CLI process owns the loop; everything Forge does is invoked from CLI hooks via stdin JSON (cairn/src/hooks/sessionStart.ts:107-110, postToolUse.ts:27-41).
+- **The real SDK wrapper IS Forge.** ForgeClient (orge/src/runtime/client.ts:56-171) and ForgeSession (orge/src/runtime/session.ts:61-172) wrap @github/copilot-sdk's CopilotClient/CopilotSession 1:1 with hook composition + bridge wiring. ridge/index.ts:65-93 is the single SDK→Cairn event-mapping file by design.
+- **Hook composition exists and is well-disciplined.** HookComposer (orge/src/hooks/index.ts:58-235) merges observers of onPreToolUse | onPostToolUse | onSessionStart | onSessionEnd | onUserPromptSubmitted | onErrorOccurred with last-writer-wins shallow-merge and error isolation. **But it fires on tool calls, not on primitive/ledger appends** — wrong granularity for the Phase A pre-commit hook bus I synthesized with Sonny. The pattern is directly transferable; the L1 substrate (primitive ledger with content-addressed appends + read-set capture) is NET-NEW.
+- **State mutation today:** journal_mode=WAL (cairn/db/index.ts:29); db.transaction(...).immediate() pattern pervasive (8 call sites). Event log appends are single-row INSERTs (db/events.ts:35-38) — atomic per call but **no group-commit, no decision-boundary batching, no p99 budget, no fsync semantics**. US-A-NEW-5 has zero coverage.
+- **Sub-agents:** SDK emits subagent.* events; Forge observes (ridge/index.ts:84-92) but does not spawn. No DAG, no spawn(agent, {deps}), no failure isolation. US-A-2 / US-A-NEW-4 are entirely NET-NEW.
+- **Branching:** No ork(). sessions table has no parent/forkPoint columns (cairn/db/sessions.ts:9-17). SDK's session.snapshot_rewind event is bridged but unused.
+- **Two session-ID systems coexist unlinked** (SDK sessionId vs Cairn sessions.id keyed on epo_key). US-A-NEW-1 and US-A-NEW-3 both need this resolved.
+- **Replay:** No call-boundary interceptor, no MockRegistry, no request-hash recording. US-A-NEW-3 is entirely NET-NEW.
+
+### T5 realizability (Crucible-on-Copilot-SDK)
+Realizable. Forge's wrapper discipline is the right pattern to generalize. ForgeClient/ForgeSession provide L0.5; Crucible's L0-loop (multi-turn driver) and L1 (primitive ledger + hook bus + group-commit) are NET-NEW additive layers on top. The "runtime in the middle, thin shells around it" pattern is proven at the prescriber scope (skillsmith-runtime/untime-cli); generalize it to crucible-runtime + crucible-cli + crucible-copilot-plugin + crucible-mcp-server.
+
+### Hook bus implementability
+Half-yes. The HookComposer error-isolation + merge engine + SDKSession.on(handler) + db.transaction(...).immediate() are the right reusable pieces. Missing: candidate-write object, read-set capture, three-verdict trichotomy ({continue, observe, pause} vs SDK's llow|deny|ask), L2 derived-query layer for compiled-predicate caching. Pre-commit bus is implementable but is NOT "add an observer to HookComposer" — needs L1 first.
+
+### Defer-to-owner
+- **Rosella (Cairn ledger):** US-A-NEW-5 contradicts current vent_log shape (loosely — event_log is audit, not the contemplated L1 primitive ledger). Two paths: reshape event_log into L1, or introduce parallel primitive store and demote event_log to audit. Cairn owner picks.
+- **Erasmus + Sonny (L1 read-set + pre-commit boundary):** L1 must exist before my hook bus is implementable. My round-3 invariants stand.
+
+### Gaps not previously captured
+1. Hook stdin protocol (Crucible must compat or supersede).
+2. Stale-session shim (hooks/sessionStart.ts:41-54) papers over absence of crash semantics; US-A-NEW-5 must subsume it.
+3. Dual session-ID problem.
+4. HookComposer error-isolation discipline (hooks/index.ts:106-111) — I had not committed to this explicitly in pre-commit hook bus spec; doing so now.
+5. Bridge-as-single-absorption-point discipline should extend to MCP, sub-agent providers, terminal IO.
+6. SessionStartOrchestrationFactory (hooks/sessionStart.ts:99-101) is the existing IoC seam for US-A-7 webhooks.
+7. Worth a 1-hour spike: does SDK already expose sub-agent spawning that ForgeClient just doesn't surface? subagent.* events suggest yes.
+
+### Recommended follow-ups
+1. **Rename @akubly/skillsmith-runtime** — it is not a runtime; the name will poison every future reconciliation. Flag to Scribe + Rosella.
+2. Defer to Rosella on US-A-NEW-5 vs event_log path.
+3. Adopt verbatim from existing repo: HookComposer pattern, single-bridge-file discipline, composition-root pattern, db.transaction(...).immediate() for group-commit.
+4. Subsume the 2-minute heartbeat stale-session shim explicitly in the US-A-NEW-5 crash-recovery contract.
+5. Cross-team: Valanice/Sonny — ForgeSession already exists with send/sendAndWait/on/disconnect; their daily-driver and debugger surfaces can sit on top of it.
+
+---
+
+### Round-4 Summary (one paragraph)
+
+Phase B reconciliation against `D:\git\stunning-adventure` confirms a brutal truth: **the package named `@akubly/skillsmith-runtime` is not a runtime** — it is a 323-line Cairn↔Forge prescriber composition root, and `@akubly/runtime-cli` is a 9-line re-export plus a one-shot batch CLI. The actual SDK wrapping lives in `@akubly/forge/src/runtime/` (`ForgeClient`/`ForgeSession`, 1:1 wrappers around `@github/copilot-sdk`), with a disciplined single-file bridge for SDK→Cairn event mapping and a well-built `HookComposer` that merges observers with error isolation and last-writer-wins semantics. Of my 14 stories (US-A-1..10 + US-A-NEW-1..5 minus US-A-3 which merged), 0 already-exist, 4 partially-exist (US-A-1 SDK surface, US-A-7 Curator stdin trigger, US-A-10 Cairn MCP, US-A-NEW-2 hook composition pattern), 10 are net-new (all sub-agent/DAG/replay/fork/routing/Mirror work), and 1 contradicts existing (US-A-NEW-5 vs current event_log — defer to Rosella). The HookComposer fires on tool calls not on primitive appends, so the Phase A pre-commit hook bus needs the L1 primitive ledger before it is implementable — the composition discipline transfers, the substrate does not exist. T5 (Crucible-on-Copilot-SDK as Aaron's daily driver) is realizable: Forge's wrapper discipline is the right pattern to generalize, `ForgeClient`/`ForgeSession` provide L0.5, and the multi-turn loop + L1 ledger are additive layers on top — no replacement needed. Headline follow-up: rename `skillsmith-runtime` before it poisons every future conversation; cross-team alert that `ForgeSession` already exists so Valanice's daily-driver UX and Sonny's debugger surfaces can sit on top of it rather than designing around a hypothetical SDK.
+

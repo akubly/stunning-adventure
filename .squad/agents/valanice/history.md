@@ -586,3 +586,57 @@ Endorse Sonny's Layer 5 as drawn, with one rename ("Investigation Layer" over "S
 ## Team updates 2026-05-24
 
 T5 resolved — Crucible built on Copilot SDK, replaces Copilot CLI as Aaron's daily driver. Sonny hired as debugger-lens specialist; see his US-S-1..US-S-9 stories and L5 (Investigation Surface) structural proposal in decisions.md.
+
+## 2026-05-24 Round 4: Reconciliation against D:\git\stunning-adventure
+
+**Scope:** Read-only audit of the existing monorepo (cairn + forge + skillsmith-runtime + runtime-cli + types) against my US-V-* stories and Round-2/3 commitments. Full detail in .squad/decisions/inbox/valanice-reconciliation-2026-05-24T2330Z.md.
+
+### Headline findings
+
+- **No Mirror exists.** "Mirror" appears only as a metaphor in README.md:3 and as the verb "mirror" (copy) in code comments. The user-facing surface today is **ten MCP tools** in packages/cairn/src/mcp/server.ts returning JSON blobs, plus one banner CLI (packages/cairn/src/cli.ts:2) and one one-shot orchestrator CLI (packages/runtime-cli/src/cli.ts, orge-prescribe --skill <id>). **runtime-cli is not a shell**; it cannot host @lobby / @inbox / @today — that's a new surface entirely.
+- **One genuine win in code**: list_prescriptions ships ccept / reject / defer as the disposition triad on esolve_prescription (server.ts:569, 610) and uses a proactive_hint rate-limited to 1 per session (server.ts:466-472). This is the existing precedent for our anti-fan-out Phase A decision — we should adopt verbatim and document it as the Router cadence. US-V-NEW-4 is PARTIALLY-EXISTS only because of this code.
+- **DBOM frontmatter is the only existing "render from ledger" path** (orge/src/export/compiler.ts:59-104, enderFrontmatter()). It's SKILL.md export, not a Mirror view, but it proves "deterministic projection of provenance" is solved.
+- **Vocabulary collisions** (full table in inbox):
+  - readcrumb is already a DB concept (db/skipBreadcrumbs.ts, schema.ts) for intentional skips. **Rename my US-V-NEW-1 surface from "breadcrumb" to "trail."**
+  - chamber is load-bearing in docs/harness-vision.md:40-60 (six-chamber taxonomy). Round-2's "Mirror=view, not chamber" directly contradicts. **Defer to Graham.**
+  - Narrator chamber (harness-vision.md:59-60, status: "Doesn't exist; design needed") occupies adjacent design space to Mirror (post-session digest vs live views). **Defer to Graham — does Mirror replace, augment, or coexist with Narrator?**
+  - prescription is shipped; we say proposal. Recommend keeping prescription and treating it as the Forge-flavored proposal type.
+  - step / breakpoint / frame / watch are not yet leaked into Aaron-facing strings — Round-3's vocabulary fence is still defensible. Now is the time to write the gdb-speak ↔ Aaron-speak translation table for Sonny.
+
+### Per-story summary
+
+| Story | Status |
+|---|---|
+| US-V-1 (rewind) | NET-NEW |
+| US-V-2 (Ctrl+E explode) | NET-NEW — also needs 	urn defined as a primitive |
+| US-V-3 (show me why you're wrong) | PARTIALLY-EXISTS — confidenceToWords shipped, @doubts view missing |
+| US-V-4 (notifications) | DISSOLVED (per Round 2) → US-V-NEW-4 |
+| US-V-5 (orchestrate 3 agents) | NET-NEW |
+| US-V-6 (catch me twice) | NET-NEW data side exists (skip_breadcrumbs), no UX |
+| US-V-7 (variants) | MERGED into US-V-NEW-1 |
+| US-V-8 (mine now) | PARTIALLY-EXISTS — preferences table cascades; Forge-from-telemetry loop unclosed |
+| US-V-NEW-1 (trail / branches) | NET-NEW + rename breadcrumb→trail |
+| US-V-NEW-2 (Mirror=view) | NET-NEW + CONTRADICTS-EXISTING vs harness-vision chamber model |
+| US-V-NEW-3 (time-travel sans debugger smell) | NET-NEW — vocab fence still defensible |
+| US-V-NEW-4 (one inbox) | PARTIALLY-EXISTS — best-case story in the repo |
+| US-V-NEW-5 (↻ / ~ badge) | PARTIALLY-EXISTS — DBOM substrate yes, hermetic/best-effort flag no |
+| US-V-NEW-6 (bisect-as-conversation) | NET-NEW |
+
+### Defer-to-owner
+
+- **Graham** — Mirror/Narrator/chamber reconciliation (his vision doc).
+- **Erasmus** — derived-query substrate and the channel for ambient surfaces (MCP request/response can't host an always-visible trail).
+- **Sonny** — accept the gdb→Aaron translation table I owe him before L5 ships any user-facing text.
+
+### Asks of myself for Round 5
+
+1. Draft and circulate the gdb↔Aaron vocabulary translation table.
+2. Propose US-V-NEW-7: "expand list_prescriptions into @inbox" (highest-ROI Mirror surface; substrate already proven).
+3. Update all my stories to use 	rail instead of readcrumb and prescription instead of proposal.
+4. Add an explicit story or note that runtime-cli is not where Mirror lives — Mirror surfaces through Copilot CLI via MCP + slash commands + status-line hooks.
+
+---
+
+### 1-paragraph summary (for coordinator)
+
+The existing repo has not built anything resembling Mirror — runtime-cli is a one-shot orge-prescribe --skill invocation, the Cairn CLI is a banner, and all user-facing UX lives in ten MCP tools returning JSON. The single bright spot is list_prescriptions + esolve_prescription, which already ships our ccept/reject/defer triad and a max-one-per-session proactive_hint — the existing precedent for Phase A's anti-fan-out rule, which I recommend we adopt verbatim. The biggest unresolved tension is not in code but in docs/harness-vision.md: it defines a fixed six-chamber taxonomy including a **Narrator** chamber whose mission (end-of-session reflection digest) overlaps Mirror's, and our Round-2 stance ("Mirror is a view, not a chamber") was reached without reconciling with that document. Graham owns it; I'm deferring. Secondary collisions: readcrumb is already a DB concept (I'm renaming my surface to 	rail), prescription is the shipped term for what we've been calling proposal (recommend adopting), and the gdb-speak vocabulary fence is still defensible because no L5 user-facing text exists yet — but it won't stay that way long, so I owe Sonny a translation table this round.
