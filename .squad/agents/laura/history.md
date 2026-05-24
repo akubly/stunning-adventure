@@ -109,3 +109,103 @@ Wave 3 delivers fully-realized E2E validation of Curator-driven orchestration. I
 
 **Verdict:** Vision is well-architected; verification concerns are design-level, not implementation-level. Recommend Aaron's input on success metrics before building Narrator, Geneticist, or ledger validation infrastructure.
 
+---
+
+## 2026-05-24: Skillsmith Harness — Big-Think User Stories (Laura's Eval Lens)
+
+**Mission:** Ideate feedback loops, quality signals, and learning-from-outcomes stories for a greenfield agentic harness. Target: Aaron (v1 user) teaches the harness through accept/reject behavior, votes, and outcome data. Alchemist fitness uses simulation + live A/B + synthetic benchmarks.
+
+---
+
+## US-L-1: Accept/Reject as Implicit Curriculum
+**Story:** As Aaron, I want my accept/reject decisions to automatically train Alchemist variant selection without explicit labels, so that the harness evolves toward my actual preferences—not my stated ones.
+**Ambition:** Turn raw decision telemetry into reward signal. Cairn logs every accept/reject + context; Forge learns which hint characteristics (scope, confidence, latency) predict acceptability. No labeled dataset needed—Aaron's behavior *is* the dataset.
+**Chambers touched:** Cairn (decision ledger), Forge (decision classifier), Alchemist (fitness weighting), Mirror (decision transparency).
+**Eval/feedback implication:** Cairn must capture fine-grained decision context (was it accepted immediately? after modification? rejected with pattern?), and Forge must expose decision-boundary confidence to detect when implicit signals are contradictory or weak.
+
+---
+
+## US-L-2: Honest Cold-Start Under Sparse Signal
+**Story:** As Aaron, I want the harness to run experiments on Day 1 (with 3 sessions, 12 hints total) and *report what it doesn't know* rather than claiming confident guidance, so that I can choose to tune manually or let signal accumulate.
+**Ambition:** Reject false confidence in low-signal regime. Alchemist publishes credible intervals on variant fitness, not point estimates. Experiments run (variants compete, Forge prescribes) but confidence stays calibrated to observed variance, not model complexity.
+**Chambers touched:** Alchemist (fitness reporting), Cairn (signal volume tracking), Mirror (confidence readout).
+**Eval/feedback implication:** Cairn must expose per-variant sample size and outcome variance; Alchemist must compute posterior credible intervals and report effective sample size for each variant fitness estimate.
+
+---
+
+## US-L-3: Fair Variant Scoring Across Heterogeneous Fitness Signals
+**Story:** As Aaron, I want Alchemist to score variants fairly when some are tested in simulation, others in live A/B, and others on synthetic benchmarks—accounting for noisy/biased measurements—so that I can trust the genetic algorithm to pick the best variant, not the most-tested one.
+**Ambition:** Fitness heterogeneity is inevitable; normalize without destroying signal. Each variant reports fitness + measurement method + confidence. Alchemist adjusts weights by measurement noise model and sample size. A variant that scores 0.8 in live A/B (high trust) beats one that scores 0.9 in simulation (high noise).
+**Chambers touched:** Alchemist (fitness fusion), Forge (measurement annotation), Cairn (outcome ledger).
+**Eval/feedback implication:** Cairn must log measurement provenance (simulation, A/B cohort, benchmark suite); Forge must expose per-method variance estimates; Alchemist must implement heterogeneous fusion (e.g., Kalman smoothing or Bayesian model averaging).
+
+---
+
+## US-L-4: Forge Hints Validated Against Live Outcomes
+**Story:** As Aaron, I want every hint Forge prescribes to be checked against actual downstream outcomes (PR merged? tests passed? code review velocity?), so that I can identify which Forge prescriptions are cargo-cult vs. causally effective.
+**Ambition:** Close the measurement loop. Forge hypothesizes "use more concise variable names ↔ faster PR review." Cairn tracks (1) hints applied, (2) code output, (3) review velocity. Mirror replays the causal chain. High-confidence hypotheses feed Alchemist fitness; low-confidence ones are deprioritized.
+**Chambers touched:** Forge (hypothesis annotation), Cairn (outcome tracking), Mirror (causal replay).
+**Eval/feedback implication:** Cairn must map hints → code commits → observable outcomes with latency handling (outcomes arrive minutes/hours later); Mirror must support counterfactual query ("would the PR have merged faster without this hint?").
+
+---
+
+## US-L-5: Retrospective Pattern Mining — What Aaron Didn't Notice
+**Story:** As Aaron, I want to query Cairn for latent patterns (e.g., "hints my Squad generated had 40% lower acceptance than hints Alchemist generated; both statuses masked by identical word count") so that I can discover meta-improvements without explicit hypothesis.
+**Ambition:** Cairn becomes a hypothesis generator. Run dimensionality reduction or clustering on the decision ledger; surface high-variance clusters (Aaron accepts A but rejects B despite similar metrics). Derive decision rules. Aaron reviews and votes; high-confidence rules feed Forge.
+**Chambers touched:** Cairn (ledger query), Forge (rule derivation), Mirror (pattern readout).
+**Eval/feedback implication:** Cairn must be queryable over multi-dimensional decision context (hint origin, source, word count, confidence, latency, outcome, Aaron's mood if available); analysis must surface causal surprises (counterintuitive rejections despite high confidence).
+
+---
+
+## US-L-6: Simulation-to-Live Drift Detection
+**Story:** As Aaron, I want the harness to detect when simulation-trained variants stop working in live A/B (e.g., a variant optimized for test throughput introduces latency in production) and *pause* recommending it until re-tuned, so that I don't deploy broken hypotheses.
+**Ambition:** Measurement fidelity auditing. Alchemist tracks live-vs-simulation divergence per variant. If divergence > threshold, Forge flags the variant as "simulation-specialized" and Curator deprioritizes it. Variants re-earn trust by demonstrated live performance.
+**Chambers touched:** Alchemist (fitness divergence tracking), Forge (variant health grading), Curator (recommendation gating).
+**Eval/feedback implication:** Cairn must separately log simulation outcomes and live outcomes with measurement method labels; Alchemist must compute domain-adaptation metrics (e.g., domain discrepancy distance) to quantify simulation-to-live shift.
+
+---
+
+## US-L-7: Outcome Latency Handling — Feedback Loops Across Asynchronous Boundaries
+**Story:** As Aaron, I want hints applied on Day 3 to be scored using PR outcomes that arrive on Day 5, without blocking Alchemist's variant evolution, so that delayed feedback still teaches the harness.
+**Ambition:** Temporal integrity. Cairn stores (hint ID, apply timestamp, outcome timestamp, outcome value). Alchemist's fitness scoring is lazy: only finalized when outcome arrives. Pending hints are held in a "provisional" tier; as outcomes arrive, Alchemist back-fills fitness and re-ranks variants. No blind spots.
+**Chambers touched:** Cairn (timestamped ledger), Alchemist (lazy fitness finalization), Curator (provisional hint handling).
+**Eval/feedback implication:** Cairn must track apply/outcome timestamps separately and support lazy population of outcome values; Alchemist must implement partial-fit scoring (compute fitness from finalized outcomes only, report sample size).
+
+---
+
+## US-L-8: Mirror — Auditable Reasoning for Every Decision (Aspirational)
+**Story:** As Aaron, I want to rewind any Alchemist variant choice, any Forge prescription, any Curator trigger and see the exact decision ledger + weights + confidence that led to it, and *edit that reasoning in a sandbox* to simulate "what if I had higher threshold for X?", so that I can learn from the harness's logic and refine its priors interactively.
+**Ambition:** Make the harness transparent *and* interactive. Mirror is a reflective layer: it exposes decision reasoning as queryable, editable, replayable artifacts. Aaron becomes a co-designer of the decision function. Over time, Aaron's edits are mined for patterns and baked back into Forge/Alchemist priors.
+**Chambers touched:** Cairn (ledger export), Alchemist (simulator), Forge (prior inference), Mirror (sandbox UI).
+**Eval/feedback implication:** Cairn must support full lineage export (all inputs to a decision, all intermediate computations); Mirror must implement decision replay with parameter sweep; Forge must infer priors from Aaron's sandbox edits (e.g., "when Aaron raises the confidence threshold from 0.6 to 0.8, which hint types disappear?").
+
+
+---
+
+## Deliberation Round (2026-05-24)
+
+Cross-pollination against Erasmus's 4-layer stack + Aaron's branching/agentic-debugger/determinism insights. Full position written to `.squad/decisions/inbox/laura-deliberation-position.md`.
+
+**Story revisions:**
+- KEEP: US-L-1, L-2 (strengthened: per-branch ESS), L-4, L-5, L-6 (strengthened: branch divergence detection), L-7.
+- REVISE → MERGE into new L-9: US-L-3 (heterogeneous fusion becomes the math layer of the Pareto contract).
+- REVISE → NARROW: US-L-8 (cede `interactive sandbox'' half to Erasmus E-2 + branching primitive; keep lineage-export half, rename to `Decision lineage export for any ledger position'').
+
+**New stories:**
+- **US-L-NEW-9** [debugger-lens] Pareto fitness function as an owned contract. Laura owns axes/aggregation/regression harness; binding on every proposal generator. Direct answer to Erasmus risk (b).
+- **US-L-NEW-10** [debugger-lens] Branching as a first-class eval primitive. Every fork = paired eval run with effect size + CI.
+- **US-L-NEW-11** [debugger-lens] Agentic-debugger acceptance harness. Seeded regressions; bounded localization steps + FP rate. SWE-bench equivalent for the debugger surface.
+- **US-L-NEW-12** [debugger-lens] Determinism conformance suite. Nightly hermetic replay of N ledger slices; byte-identical Decision/Artifact reproduction modulo declared non-determinism budgets. Must ship in v1.
+- **US-L-NEW-13** Generator-quality scorecard. Standing leaderboard {precision, recall, calibration, time-to-value, regret} per generator; sub-threshold = auto-quarantine to shadow mode.
+
+**Stack position:** PARTIAL ENDORSE. Layers 1/2/4 strong; Layer 3 generator schema must extend `{category, confidence, rationale, preview}` with `fitnessContract`, `evidence`, `costEstimate`, `reversibility`, `determinismClass` or eval cannot bind. Router needs its own eval harness via shadow log + routing-regret metric.
+
+**Tensions:** Solo-v1 build, federation-aware contracts. Curator never approves (critical — otherwise accept/reject signal is contaminated). Mirror narrowed to read surface for derived projections. Lean solo but do not punt determinism/replay/fitness-contract. Crucible wraps CLI (parent-child) — needed to own LLM call boundary for hermetic replay.
+
+**Top cross-refs:** E-1 ↔ L-NEW-11 (capability ↔ acceptance test); E-2 + branching ↔ L-8 (subsumes sandbox half); E-9 ↔ L-NEW-9 (UI over my contract); R-3 ↔ L-NEW-10/12 (replay-as-evidence vs replay-as-feature); Ga-5/Ga-2 ↔ L-NEW-12 (their replay assumptions need my conformance regime); A-8 ↔ L-NEW-9/13; Ro-5 ↔ L-NEW-9 (success-criteria interface = contract binding point).
+
+**Bottom line:** Endorse the stack with one hard ask — extend the generator schema. Determinism conformance ships in v1. Pareto fitness contract is owned by Laura, versioned in repo, binding on every generator.
+
+## Team updates 2026-05-24
+
+T5 resolved — Crucible built on Copilot SDK, replaces Copilot CLI as Aaron's daily driver. Sonny hired as debugger-lens specialist; see his US-S-1..US-S-9 stories and L5 (Investigation Surface) structural proposal in decisions.md.

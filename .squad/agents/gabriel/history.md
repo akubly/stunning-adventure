@@ -140,3 +140,83 @@
 **Impact for Gabriel:** The monorepo structure enables infrastructure separation — hook infrastructure stays in cairn (close to MCP tools), but Forge runtime can have independent tooling chains. This pattern keeps infra concerns decoupled and scalable as phases progress.
 
 **Next Phase:** Phase 2 (live runtime verification) validates type contracts during SDK harness integration.
+
+### 2026-04-XX — Skillsmith Harness: Big-Think Ideation
+
+**Mission:** Ops/DevOps-lens user story ideation for greenfield agentic coding harness v1. Target: Aaron on Windows/PowerShell. "Think big"—operability, observability, lifecycle, environment, trust-of-runtime stories.
+
+**Delivered: 10 User Stories**
+
+Coverage mandates met:
+- **Background safety (US-1):** Alchemist experiments run isolated, silent, without context bleed into active Crucible work.
+- **Failure recovery (US-2):** Sub-agent crash detection with state reconstruction from Cairn checkpoints + uncommitted artifact buffer.
+- **Credentials/guardrails (US-3, US-9):** Policy-enforced secrets rotation with sub-agent attestation acks; passive credential leak detection with hard stop before Cairn commit.
+- **Observability (US-4, US-10):** Live resource/model-spend dashboard + budget forecasts; pre-flight capability gap analysis before task assignment.
+- **Reproducibility (US-5):** Session/variant replay from Cairn with branch-at-decision capability for counterfactual exploration and debugging.
+- **Aspirational (US-6, US-7, US-8):** Autonomous rollback of expensive bad decisions (Curator anomaly detection); cross-harness collaborative Cairn ledger for squad work; hash-chained Cairn audit trail.
+
+**Key Themes:**
+- **Isolation:** Active work ≠ background experiments; separate process trees, token budgets, sandboxes.
+- **Auditability:** Cairn-as-truth; hash linking; cheap but effective integrity checking.
+- **Transparency:** Mirror pushes summaries; never gates flow. Observations and spend are queryable.
+- **Recovery:** Write-Ahead-Log discipline at decision boundaries; state reconstruction after failure.
+- **Policy Binding:** Secrets are versioned Cairn primitives, not env vars. Rotation + attestation protocol. Curator watches policy events.
+
+**Runtime Implications (Architecture Anchors):**
+- Crucible must support replay mode with branch-at-node semantics.
+- Cairn checkpoints on Decision entry (not per-Primitive); supports efficient branching and log slicing.
+- Sub-agents must implement attestation ack protocol for credential version checks.
+- Alchemist queue persists across cold starts; experiment failures are isolated, never cascade.
+- Mirror needs federation model for cross-harness aggregation (US-7).
+- Curator runs both policy watches (credentials, anomalies) and leak detection; never approves—only proposes.
+- Forge must support fast (<5s) pre-flight forecasting without simulation.
+
+**Phasing Recommendation:** Start with US-2 (recovery) and US-4 (observability) — both unlock live feedback and confidence. US-3 (secrets) is non-negotiable for multi-secret scenarios. US-5 (replay) is debugging force multiplier. US-1 (isolation) is foundational for Alchemist safety. US-6/7/8 are longer-horizon innovations (Q2+).
+
+**Stories saved to `.squad/agents/gabriel/stories.md` for reference.**
+
+
+## Deliberation Round (2026-05-24)
+
+**Round purpose:** Cross-pollinate against 6 internal lenses + Erasmus's outside
+specialist take. React to Aaron's three new insights (branching sessions as
+first-class, agentic-debugger vision seed, determinism load-bearing) and
+position on Erasmus's 4-layer stack + 5 open tensions.
+
+**Deliverable:** `.squad/decisions/inbox/gabriel-deliberation-position.md`
+
+**Headlines:**
+- KEEP 5, REVISE 4, WITHDRAW 1, MERGE 1 of my 10 original ops stories.
+- Added 6 NEW stories (US-Ga-NEW-11..16), all centered on the now-load-bearing
+  determinism/observation-capture/hermetic-replay/Router-observability stack.
+- ENDORSED Erasmus's 4-layer stack with a strong caveat: the Router is the
+  single load-bearing safety choke-point and must be the most-observed,
+  most-tested component — structured events, replay corpus, property tests,
+  policy versioning, Mirror as view-only.
+- **Tension #4 (mine — heavyweight ops vs solo user) resolved:** trim
+  aggressively for v1 (drop attestation broadcast, federation, ML leak detection,
+  standalone forecasting); keep WAL/checkpoint, hermetic replay, bisect, branch
+  primitive, regex leak detection, spend dashboard, hash-linking, Router
+  observability, determinism CI smoke test. Re-promotion of the heavyweight
+  layer is additive, not breaking.
+
+**Key cross-references found:**
+- Erasmus US-E-1/E-2 + Aaron Insight #1 + my US-Ga-5 = same primitive (hermetic
+  replay with branch-at-position) seen from four angles. Merged.
+- Roger US-R-3 + Alexander US-A-3 + my US-Ga-5 = same replay story from data,
+  SDK, infra lenses. Strong product signal.
+- Valanice US-V-1/V-2 UX surfaces are *invalidated* without hermetic replay
+  (NEW-11). Determinism is the contract her UX depends on.
+- Rosella US-Ro-5 evolution loop *requires* my US-Ga-1 isolation infra.
+- Graham Q-B already pre-resolves my US-Ga-8 scope (KEEP hash-link, DEFER
+  witness/notary).
+
+**Standing infra commitment:** If Aaron approves the v1 cut, my next-cycle
+deliverables are (in dependency order): NEW-11 recording shim contract → NEW-13
+branch metadata in Cairn schema → NEW-14 snapshot/compaction contract → NEW-15
+Router event schema + property-test scaffold → NEW-16 CI determinism smoke test
+→ NEW-12 bisect CLI.
+
+## Team updates 2026-05-24
+
+T5 resolved — Crucible built on Copilot SDK, replaces Copilot CLI as Aaron's daily driver. Sonny hired as debugger-lens specialist; see his US-S-1..US-S-9 stories and L5 (Investigation Surface) structural proposal in decisions.md.

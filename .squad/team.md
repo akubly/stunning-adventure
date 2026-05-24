@@ -21,6 +21,8 @@
 | Valanice | UX / Human Factors | `.squad/agents/valanice/charter.md` | ✅ Active |
 | Alexander | SDK/Runtime Dev | `.squad/agents/alexander/charter.md` | ✅ Active |
 | Laura | Tester | `.squad/agents/laura/charter.md` | ✅ Active |
+| Erasmus | 🧙 Consultant (Dev Tools / Agentic Harnesses) | `.squad/agents/erasmus/charter.md` | ✅ Active |
+| Sonny | 🔍 Consultant (Debugger UX / Time-Travel Debugging) | `.squad/agents/sonny/charter.md` | ✅ Active |
 
 ## Project Context
 

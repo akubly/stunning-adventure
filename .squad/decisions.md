@@ -344,3 +344,331 @@ export function curate(
 **MCP Tool:** `run_prescriber_optimization` (triggers orchestrator, returns structured output).
 
 **Full Analysis:** `.squad/agents/alexander/wave3-integration-analysis.md`
+
+---
+
+## Harness Vision & Architecture (2026-05-24)
+
+### User Directive: Cairn/Forge Legacy Guardrail
+
+**Date:** 2026-05-24T06:56Z  
+**By:** Aaron Kubly  
+**What:** The harness-vision.md doc has substantial awareness of Cairn and Forge. Going forward, treat those systems as legacy context only — they exist, but they MUST NOT dictate the shape of the new harness. When evaluating designs, agents should ask "does this serve the harness?" not "does this match Cairn/Forge?" If a vision-doc claim is downstream of a Cairn/Forge implementation detail rather than a requirement, flag it for revisit.  
+**Why:** User-stated guardrail to keep the new design honest about being greenfield, despite legacy-aware source material.
+
+---
+
+### Harness Vision Q&A — Round 1 (Aaron's answers)
+
+**Date:** 2026-05-24T06:56Z  
+**By:** Aaron Kubly  
+**Context:** Round 1 of vision-clarification questions raised by Graham, Alexander, Valanice, Rosella, Laura. Session log: harness-vision-discovery. Three sub-questions remain open (autonomy decision scope, turn definition, tamper-evidence threat model) and are routed to lightweight follow-ups.
+
+**Decided:**
+
+1. **Target user at v1: Aaron only.** Personal trust-building tool. SDK surface can stay internal; Narrator can be diary-style. Does not need to be team-facing on day one.
+
+2. **Genetic-loop fitness measurement: all three (simulation + live A/B + synthetic benchmarks).** Don't pick one — design Alchemist to support layered evaluation. Synthetic for cold-start, simulation for replay-driven evaluation, live A/B for ground truth.
+
+3. **Cold-start behavior (before ~10 sessions of data):** The harness is active from session 1, but its early-life work is bounded: tease/report observations and emerging trends, propose micro-optimizations, and run genetic experiments in the background. Loud claims and high-confidence hints wait until data warrants them.
+
+4. **Narrator cadence:** Hybrid push/pull. Harness accumulates notifications when something interesting happens (social-media-activity-indicator style). User can view at any time. An on-demand dashboard is also available. Do NOT interrupt session work; do NOT gate flow on Narrator output.
+
+5. **Sub-agent execution model: flexible (persistent + parallel preferred).** Anchor reference: Copilot CLI's `task` tool — long-lived sub-agents that can run concurrently, accept follow-up messages, and be polled for results. Sequential single-active-agent is too constrained.
+
+6. **Extensibility: fully extensible at v1.** Industry-parity functionality (custom skills, model provider plug-points, MCP, hook surfaces) is required to do anything interesting. Doesn't have to be a public marketplace — but the seams must exist from day one.
+
+7. **Primitive schema typing: design decision, deferred.** Should be dictated by requirements. Revisit once we know what enforcement guarantees the ledger needs (replay fidelity, chamber-contract validation, migration story).
+
+**Standing guardrail:** Cairn/Forge are legacy context, not a design template. The new harness is greenfield.
+
+**Open (routed to follow-up agents):**
+- Q2 (autonomy/approval model) — needs concrete enumeration of what Curator actually decides
+- Q3 (turn definition) — Alexander to survey prior art and recommend a default
+- Q4 (hash-chain tamper-evidence) — Graham to propose concrete threat models
+
+---
+
+### Harness Vision Q&A — Round 2 (Aaron's follow-up answers)
+
+**Date:** 2026-05-24T07:07Z  
+**By:** Aaron Kubly  
+**Context:** Follow-up clarifications on Q1 items that came back ambiguous.
+
+**Decided:**
+
+1. **Curator authority model (resolves Q2):** Curator has detection + proposal authority only — never approval authority. Per-category treatment:
+   - ✅ auto-apply: hint prioritization only
+   - 📨 auto-notify (lands in user-pull notification feed): staleness, Alchemist triggers, skill recommendations
+   - ⚠️ detect & propose, require explicit user ACK/REJECT: hypothesis reversion, policy proposals
+   - ❌ never auto: low-confidence hint apply, policy guardrail changes
+   - The vision-doc framing of "append-then-review vs propose-then-commit" dissolves — it's per-category, and consequential decisions always stage for human gate.
+
+2. **Turn definition (resolves Q3):** **Thick turn with intra-turn primitives, revealable on demand.** One user message → one assistant response, with sub-agents and tool calls nested inside. Reveal pattern modeled on Copilot CLI's Ctrl+E / Ctrl+T — internals are accessible but not in the user's face by default. Primitives are recorded at intra-turn granularity (each tool call, each sub-agent invocation, each decision) so replay fidelity is preserved without fragmenting the user-visible exchange.
+
+3. **Hash-chain semantics (resolves Q4):** Keep cheap hash-linking in the ledger (self-audit value for Aaron-the-sole-user, ~1% storage cost). Defer SBOM-style witness/notary/signature infrastructure to a later wave — migration is backward-compatible. Threat model in scope: "did I really approve that 6 months ago?" Threat model out of scope: external attestation, multi-party tamper detection.
+
+---
+
+### Skillsmith Harness — Vocabulary (locked)
+
+**Date:** 2026-05-24T07:25Z  
+**By:** Aaron Kubly  
+**Context:** First-principles naming pass complete (Graham + Valanice independent reviews + Aaron's meta-call). Theme = mixed: flavor names preferred at project level, inherited-functional names acceptable for substrate.
+
+**Decided vocabulary (final for v1 design phase):**
+
+| Concept | Name | Origin | Notes |
+|---|---|---|---|
+| CLI shell / message loop | **Crucible** | New flavor name | Upgraded from "Harness" — flavor-system coherence |
+| Typed primitive ledger | **Cairn** | Inherited, deliberately chosen | Graham and Valanice both proposed "Ledger"; Aaron kept Cairn as deliberate flavor pick |
+| Optimization prescriber | **Forge** | Inherited, deliberately chosen | Graham proposed "Prescriber"; Aaron kept Forge as flavor |
+| Autonomous trigger layer | **Curator** | Inherited, deliberately chosen | Both agents proposed "Trigger"; Aaron noted Curator acceptable as inherited-functional, kept |
+| Variant transformation loop | **Alchemist** | New flavor name | Was "Geneticist"; Aaron's instinct "Mixologist" → settled on Alchemist (transforms base material via experimentation; more storied) |
+| Reflective trust-building surface | **Mirror** | New flavor name | Was "Narrator"; Mirror = self-reflective trust-building, shows harness's reasoning + user's work reflected back |
+
+**Five primitives (kept verbatim):** Request, Artifact, Observation, Decision, Question.
+
+**Open footnotes for design phase:**
+- Graham: Artifact sub-types should be explicitly schema-typed to avoid silent divergence.
+- Valanice: Question semantics should be documented operationally.
+
+---
+
+### Aaron's Post-Erasmus Insights
+
+**Date:** 2026-05-24T20:55Z  
+**By:** Aaron Kubly  
+**Context:** Aaron's reaction to Erasmus's outside-specialist story set + 4-layer structural critique.
+
+**Insight 1 — Branching sessions is a functional requirement:** Erasmus's US-E-2 (counterfactual replay — "what would have happened if I'd accepted that past proposal?") elevates session forking from a debug convenience to a **first-class workflow primitive**. The user must be able to fork from any ledger position and explore an alternate path. This is downstream of the hash-linked ledger commitment but is now a named, load-bearing capability — not merely an emergent property.
+
+**Insight 2 — "Agentic debugger" is a new vision seed:** Erasmus's phrasing ("ledger is a debugger's dream") landed with Aaron as a new product/positioning angle. The harness may be (or have, as a first-class capability) an **agentic debugger** — bisect, counterfactual, time-travel, hermetic replay, observation capture. Future stories and architecture should be evaluated through this lens: if a story is doubly compelling under "this thing is also a debugger," that's a strong signal.
+
+**Insight 3 — Determinism is now load-bearing:** Erasmus's risk #1 ("determinism is not free — replay requires observation capture + hermetic replay of external dependencies") becomes an architectural requirement, not a deferred concern.
+
+---
+
+### T5 Resolution: Crucible Built on Copilot SDK
+
+**Date:** 2026-05-24T21:33Z  
+**By:** Aaron  
+**What:** Crucible is built on the Copilot SDK and **replaces** Copilot CLI as Aaron's daily driver. Crucible owns the top-level message loop, primitive ledger, Router, and chamber orchestration. Copilot SDK provides the model/tool substrate Crucible builds on. Not a sub-conversation of Copilot CLI; not a peer; not a plugin.  
+**Why:** *"This is the only way we get the access we need to satisfy all of our requirements."* Resolves the deliberation-round split (5 parent / 3 child) in favor of parent-camp with a concrete SDK-based mechanism. Unblocks: hermetic observation capture at the LLM-call boundary, branching sessions, deterministic replay, the agentic-debugger thesis.  
+**Implications:** Crucible CLI is its own shell (not Copilot's). Alexander US-A-10 (Crucible as MCP server) becomes additive, not load-bearing. The "thin shells around a runtime" architectural shape Alexander proposed still applies — runtime in the middle, Crucible CLI as one shell, MCP-server surface as another.
+
+---
+
+### Hiring: Sonny (Debugger Specialist)
+
+**Date:** 2026-05-24T21:33Z  
+**By:** Aaron  
+**What:** Sonny (Sonny Bonds, Police Quest) joins as **Debugger Specialist** consultant. Charter parallel to Erasmus's outside-specialist role but lens-narrow: agentic-debugger UX, DAP-shaped primitives, breakpoint/watch/step/bisect semantics, observation-capture-as-debugger-substrate.  
+**Why:** Alexander US-A-NEW-2 explicitly requested a debugger-lens specialist ("out of my depth on debugger UX/protocol design"). Aaron's vision-seed #2 from last round is itself a separate product direction. Universe note: Sonny is the second Sierra-cast outside-specialist (Erasmus was Quest for Glory, Sonny is Police Quest) — both fit "Sierra On-Line" assignment universe.
+
+---
+
+## Deliberation Round Cross-Pollination (2026-05-24)
+
+*Nine orchestration-log entries exist in `.squad/orchestration-log/2026-05-24T2133Z-{agent}.md` for detailed agent positions. Summary: Erasmus (4-layer stack validation), Graham (architecture lead), Roger (data/scale), Rosella (extensibility), Gabriel (infra), Valanice (UX), Laura (eval), Alexander (SDK/runtime), Sonny (debugger). This section aggregates cross-cutting decisions.*
+
+### Erasmus: 4-Layer Stack Validated
+
+**Decision:** Accept 4-layer architecture (Conductor+Ledger merged, Derived Query Layer Salsa-style, pluggable Proposal Generators, Approval+Notification Router as single policy choke-point).
+
+**Rationale:** Honest qualification: Mirror = view layer (renderer), not subsumed by Router. Router = policy; Mirror = view; Derived Query Layer = analysis; Cairn = storage.
+
+**New risks surfaced:** Conway's-Law package fragmentation (cap at ~4 packages; treat chambers as modules).
+
+**New stories:** US-E-NEW-11 (Hermetic Replay Boundary), US-E-NEW-12 (Crucible as sub-conversation, now resolved by T5).
+
+---
+
+### Graham: Architecture Lead Cross-Pollination
+
+**Positions:**
+- PARTIAL-ENDORSE 4-layer stack (pushback: Conductor write path must be transactional, L2 scaling caveat, Mirror remains bidirectional UX surface)
+- T5 (Crucible ↔ Copilot CLI) **unresolved and blocking** (Graham position: Crucible is parent; Copilot CLI is provider)
+- New tension surfaced: **Determinism vs LLM non-determinism** — replay is honest (does not re-execute LLM calls), must be explicit doctrine
+
+**New stories:** US-G-NEW-1 (Cairn snapshotting & compaction), US-G-NEW-2 (Determinism contract: observation capture + hermetic replay).
+
+**Five stories flagged ★ (doubly compelling under debugger):** US-G-2, US-G-6, US-G-7, US-G-NEW-1, US-G-NEW-2.
+
+---
+
+### Roger: Data/Scale Lens
+
+**Positions:**
+- L1 (Conductor+Ledger) endorsed; endorse per-tool-call append if no fsync-per-append (WAL2 with group-commit at decision boundaries gives ~1ms p99)
+- L2 (Derived Query) endorses if snapshot caching prevents bottleneck relocation
+- L3 (ProposalGenerators) strong endorse
+- L4 (Router) strong endorse with single-writer invariant
+- T5: sub-agent IO must flow through observation-capture or replay breaks at agent boundary
+- New Tension 6 raised: capture cost vs throughput vs privacy
+
+**Critical v1 commitments:**
+- Append-only WAL, batched fsync; primitives ≤256B typical, large payloads spilled
+- Snapshot at every Decision; Merkle-rooted → branching is COW, verification O(depth-diff)
+- Observation-capture sibling store, 5–10× ledger volume, same content-addressing
+
+**Story consolidation:** 8 stories depend on shared branching/replay/bisect mechanism.
+
+---
+
+### Rosella: Plugin Dev / Extensibility Lens
+
+**Positions:**
+- PARTIAL-ENDORSE 4-layer (L3 ProposalGenerator interface is 85% correct but has 15% structural-mutation leak)
+- **Proposed dual-interface split:** DataProposalGenerator (85% of generators) + StructuralProposalGenerator (Alchemist, skill-induction cases)
+- Same Router (L4), separate policy routing for structural proposals (higher-friction defaults)
+
+**New stories:** US-Ro-NEW-1..4 (Generator SDK, branching as plugin-safe, plugin registry+tiers, structural-change proposals).
+
+**Owns:** Determinism + model-provider hermetic boundary.
+
+---
+
+### Gabriel: Infrastructure / Observability Lens
+
+**Positions:**
+- Endorsed 4-layer with Router caveat (Router is THE single safety choke-point, needs observability + property testing)
+- T4 (heavyweight ops) resolved: cut attestation/multi-secret, keep determinism + compaction + crash recovery
+- Determinism + observation capture = load-bearing v1 invariants
+
+**New stories:** US-Ga-NEW-11..16 (Hermetic Replay, Bisect Tooling, Branch Primitives, Snapshotting, Router Observability, Determinism Smoke Test).
+
+**Owns:** Router observability + failure-mode testing.
+
+---
+
+### Valanice: UX / Product Lens
+
+**Positions:**
+- Endorsed 4-layer with UX caveat (Mirror=view model loses discoverable landing surface; propose @lobby default)
+- **T3 (Mirror scope creep) RESOLVED:** Mirror is a view (query over router queue + ledger), not a chamber
+- **T5 (Crucible/CLI inversion) STANCE:** Aaron stays in Copilot CLI; Crucible is ambient (MCP/slash-commands), not separate shell
+
+**New stories:** US-V-NEW-1..6 (Branch navigation, Mirror=view, time-travel UX, one inbox, replayability badges, bisect-as-conversation).
+
+**UX metaphor discipline:** rewind/what-if > debugger language (no step/breakpoint/frame).
+
+---
+
+### Laura: Eval / Feedback Lens
+
+**Positions:**
+- PARTIAL-ENDORSE 4-layer (L3 under-specified for eval)
+- L3 schema extension needed: fitnessContract, evidence, costEstimate, reversibility, determinismClass
+- T4: lean toward solo but keep determinism+replay+fitness (three load-bearing pieces)
+- T5: sub-agent IO must flow through observation-capture or replay breaks
+
+**New stories:** US-L-NEW-9..13 (Pareto fitness contract owned by Laura, branching as paired-eval, agentic-debugger acceptance harness, determinism conformance suite, generator-quality scorecard).
+
+**Owns:** Pareto fitness contract + debugger acceptance test harness.
+
+---
+
+### Alexander: SDK / Runtime Dev Lens
+
+**Positions:**
+- PARTIAL-ENDORSE 4-layer (strong on L2/L3/L4)
+- **T5 RESOLVED:** Crucible is host; Copilot CLI is one Provider (MCP IO for sub-agent invocation; Copilot SDK substrate)
+- **US-A-NEW-5 (ledger-append transactional contract) is load-bearing prerequisite** before Conductor implementation
+
+**New stories:** US-A-NEW-1..5 (Branching Sessions, Debugger Hooks, Hermetic Replay, DAG Dependency Support, Transactional Contract).
+
+**Request:** Spawn debugger-lens specialist (out of depth on DAP/breakpoints) → Sonny hired.
+
+**Architectural shape:** Runtime in middle; thin shells (CLI, plugin, MCP-server) around it (same pattern as skillsmith-runtime).
+
+---
+
+### Sonny: Debugger Specialist (Round 1)
+
+**Engagement:** Responded to Alexander US-A-NEW-2; proposed agentic-debugger surface; contradicted two framings.
+
+**Nine debugger stories:** US-S-1..9 (predicates-as-breakpoints, watches via L2 queries, backward causal slicing, retroactive projections, DAG step-into, cairn-bisect, dual surfaces, delta-debug, breakpoint-as-approval-request).
+
+**Proposed Layer 5:** Investigation Surface (DAP sidecar + investigator REPL + breakpoint registry, reaching into L4 and L2).
+
+**Three v1 invariants flagged as load-bearing:**
+1. Read-set capture on every primitive write (US-S-3 backward causal slicing)
+2. L2 queries are pure functions of (ledger-prefix, plugin-versions)
+3. L4 verdict enum is extensible for debugger verdicts
+
+**Highest-priority ask:** US-S-3 (backward causal slice) — "why is this primitive here?" — must lock read-set capture into L1 before implementation, impossible to retrofit.
+
+---
+
+## Five Tensions: Assessment Summary
+
+### Tension #1 — Solo-v1 vs Federation
+
+**Resolution:** Solo-v1 for build; federation-aware contracts from day one (cheap discipline now, defer expensive infrastructure).
+
+**Impl:** Namespace/tenant_id column from day one (default `'local'`).
+
+### Tension #2 — Curator Never Approves
+
+**Resolution:** DISSOLVED by Router (Layer 4). Curator = detection + proposal only. Router holds approval authority + policy choke-point.
+
+**Impl:** Single Router module (not a rename); all generators (Curator, Forge, Alchemist, etc.) flow through it symmetrically.
+
+### Tension #3 — Mirror Scope Creep
+
+**Resolution:** Mirror = view layer only (queries over router queue + ledger). Analysis pushed to L2 (Derived Query), editing to branching primitives.
+
+**Impl:** Mirror is a verb (`mirror @doubts`), not a chamber. Default landing surface: @lobby (saved query).
+
+### Tension #4 — Heavyweight Ops vs Solo User
+
+**Resolution:** Bias hard toward solo; cut SLSA attestation, multi-secret rotation, federated Cairn. Keep determinism + ledger compaction + crash recovery.
+
+**Impl:** Heavy capabilities (cross-session mining, federation, multi-tenant Cairn) ship as plugins, not core.
+
+### Tension #5 — Crucible vs Copilot CLI Parent-Child
+
+**Resolution:** **Crucible is built on Copilot SDK and replaces CLI as Aaron's daily driver.** Crucible owns trunk (runtime in middle); Copilot CLI is one Provider shell; MCP-server surface is another.
+
+**Impl:** Runtime SDK (`@akubly/crucible-runtime`), CLI (`crucible`), plugin (`crucible-copilot-plugin`), MCP surface (optional). Copilot CLI invokes Crucible via MCP when delegating to harness.
+
+---
+
+## New Tension (Sonny)
+
+### Tension #6 — Capture Cost vs Throughput vs Privacy
+
+**Issue:** Observation-capture will eventually contain secrets. Needs: capture compression, redaction ProposalGenerator before commit, explicit policy on replay across key rotation.
+
+**Status:** Flagged for Wave 4+ planning.
+
+---
+
+## Architecture Adds
+
+### Layer 5: Investigation Surface (Sonny Proposal)
+
+Not a new chamber; a labeled surface above L2 bundling debugger-facing concerns:
+- DAP server (sidecar process)
+- Native investigator REPL
+- Breakpoint / watchpoint / logpoint registries
+- Causal-slice engine
+- Bisect orchestrator
+- Delta-debug / minimization driver
+
+**Why Layer 5 is real:** Stateful registries (lifecycle independent of any L2 query), cross-cutting authority (reaches into L4, L2, L1), two protocol surfaces (DAP + REPL), honest naming (Mirror is "seeing"; L5 is "asking why").
+
+---
+
+## Architectural Prerequisites (Load-Bearing)
+
+Locked before Conductor implementation:
+
+1. **US-A-NEW-5: Ledger-Append Transactional Contract.** SQLite WAL2, group-commit at decision boundaries, ≤1ms p99 appends, durability = ≤1 turn on crash.
+
+2. **US-S-3: Backward Causal Slice.** Every primitive write must record read-set (set of primitives, projections, external inputs consulted). Read-set capture locked into L1 append contract; impossible to retrofit.
+
+3. **L2 Query Purity.** L2 queries are pure functions of (ledger-prefix, plugin-versions), enabling retroactive projections (US-S-4) and determinism conformance.
+
+4. **L4 Verdict Extensibility.** L4 Router verdict enum extendable to carry debugger verdicts (continue, step, step-into, step-out, abort, edit-and-continue) for single-pause-mechanism alignment.
