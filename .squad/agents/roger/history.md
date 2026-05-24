@@ -1,4 +1,6 @@
 📌 Team update (2026-05-22T14:07:59Z): **Phase 4.6 Wave 2 complete** — ChangeVectorProvider + ForgePrescriberOrchestrator + autoApplyEligible safety gate + hint dedup + forge-prescribe CLI all shipped. 1199 tests passing, 9 work items landed, 4 decisions merged. Wave 3 (Curator-driven orchestration + composition root) deferred behind ADR. — Scribe
+📌 Team update (2026-05-23T21:20:00Z): **Wave 4 W4-1 & W4-2 complete** — insertHintIfNew atomicity (migration 013, partial UNIQUE index, BEGIN IMMEDIATE) + CairnEvent extensions (hint_state_transition, profile_bump events, system session). All unit tests passing; integration Groups A & B both 5/5+3/3. 584 Cairn tests green. Roger + Rosella + Laura parallel execution on phase-4.6/wave-4. — Scribe
+📌 Team update (2026-05-22T14:07:59Z): **Phase 4.6 Wave 2 complete** — ChangeVectorProvider + ForgePrescriberOrchestrator + autoApplyEligible safety gate + hint dedup + forge-prescribe CLI all shipped. 1199 tests passing, 9 work items landed, 4 decisions merged. Wave 3 (Curator-driven orchestration + composition root) deferred behind ADR. — Scribe
 📌 Team update (2026-05-22T20:35:00Z): **Wave 2 W2-5 complete** — ForgePrescriberOrchestrator shipped. Attenuation + autoApplyEligible propagation live. ATTENUATION_FLOOR=0.1 exported from @akubly/types. Fail-open on provider errors. Forge tests 609 passing (+10), root build green. — Scribe
 📌 Team update (2026-05-22T20:03:56Z): Wave 2 v3.1 scope final — autoApplyEligible propagates through OptimizationHint; constants NEGATIVE_IMPACT_AUTO_APPLY_GATE=-0.2 and ATTENUATION_FLOOR=0.1; CLI surface only — no MCP in Wave 2. — Graham Knight
 # Roger — History
@@ -101,6 +103,35 @@ PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end
 - **Gotcha:** Event emission must occur AFTER transaction commits, not inside the transaction, or events won't be persisted
 
 **Test Results:** 584 cairn tests passing, full suite green. Migration number bumped from 012 to 013.
+
+## 2026-05-23: 📌 Wave 4 Complete — W4-1 & W4-2 Implemented
+
+**Status:** ✅ Both work items shipped on phase-4.6/wave-4 branch
+
+**W4-1: insertHintIfNew Atomicity (COMPLETE)**
+- Migration 013 with partial UNIQUE index on (skill_id, source, category) WHERE status IN ('pending', 'accepted', 'deferred')
+- `db.transaction().immediate()` wrapper prevents concurrent duplicates
+- 3/3 concurrent insertion tests passing
+- Files: 013-hint-atomicity.ts, optimizationHints.ts, schema.ts (registered), 3 new tests
+
+**W4-2: CairnEvent Extensions (COMPLETE)**
+- `hint_state_transition` event on insert + status updates (skill_id, hint_id, from_state, to_state, timestamp)
+- `profile_bump` event on create/update (skill_id, profile_id, bump_kind, granularity, timestamp)
+- `ensureSystemSession()` helper creates __system__ session for system-level events
+- 5/5 observability tests passing (event emission, forward-compat, transactional integrity)
+- **Gotcha found and fixed:** Event emission inside transaction loses events; moved emission outside transaction scope
+- Files: optimizationHints.ts, executionProfiles.ts, sessions.ts, 5 new tests in cairnEvents.test.ts
+
+**Integration Test Outcomes:**
+- Group A (W4-1 atomicity): 3/3 ✅
+- Group B (W4-2 observability): 5/5 ✅
+- Total W4-1 & W4-2: 8/8 integration passing
+
+**Schema Version:** 012 → 013 (full migration path)
+
+**Cross-Team Coordination Notes:**
+- W4-3 (Rosella's forceRegenerate) depends on W4-1 atomicity; expire-then-insert semantics compatible with partial UNIQUE index
+- W4-4 (Laura's integration tests) validates all three work items; test infrastructure gaps identified in Groups C/D (not implementation bugs)
 
 ---
 

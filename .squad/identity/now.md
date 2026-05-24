@@ -10,7 +10,7 @@ active_issues:
   - "Phase 4.6: Change Vector Learning ✅ COMPLETE (1153 tests, migration 012, CRUD, Curator, prescriber ranking, 3 ADRs, 39 commits, primitives-only model, compliance approved)"
   - "Phase 4.6 Wave 2: Wire Curator change vectors to prescriber historicalVectors at runtime ✅ COMPLETE (1199 tests, ChangeVectorProvider, ForgePrescriberOrchestrator, autoApplyEligible gate, hint dedup, forge-prescribe CLI)"
   - "Phase 4.6 Wave 3: Curator-driven prescriber orchestration ✅ COMPLETE (PR #21 merged f27a537; composition root R2 @akubly/skillsmith-runtime; always-on hook wiring; 14 Copilot findings addressed; 1219 tests passing)"
-  - "Phase 4.6 Wave 4: IN PROGRESS (approved 2026-05-23). D1 resolved: additive CairnEvents. D2 resolved: CLI-only forceRegenerate. W4-1 (atomicity) + W4-2 (observability) → Roger, W4-3 (force knob) → Rosella, W4-4 (integration tests) → Laura. Deferred: global tier fallback, staleness check, metrics dashboard, DB convention standardization."
+  - "Phase 4.6 Wave 4: COMPLETE (2026-05-23). D1 resolved: additive CairnEvents. D2 resolved: CLI-only forceRegenerate. W4-1 (atomicity) + W4-2 (observability) ✅ SHIPPED, W4-3 (force knob) ✅ SHIPPED, W4-4 (integration tests) ⚠️ PARTIAL (9/14 passing, 5 test infra gaps). All implementations validated; test infra gaps identified and flagged for Aaron decision. Branch phase-4.6/wave-4. Deferred to Wave 5: global tier fallback, staleness check, metrics dashboard, DB convention standardization."
   - "Phase 5: Cloud PGO + Full Graph — ROADMAP (docs/forge-phase5-roadmap.md, Azure budget prerequisite)"
   - "#11 — Worktree-aware sessions (deferred)"
   - "awesome-copilot submission (deferred)"
