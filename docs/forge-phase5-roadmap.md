@@ -97,7 +97,12 @@ Local development → Export → Deploy → Production telemetry
 
 **Phase boundary rule:** "If it needs cloud infrastructure or Azure budget, it's Phase 5."
 
-### 2.2 AppInsightsSink
+### 2.2 Wave 4 cycle-1 architecture debt
+
+- Known issue: MCP fallback can return `__system__` session. See cycle-1 review I5. Wave 5 should add `session_kind` and user-only MCP fallback lookup.
+- Decide whether Curator should consume system-attributed `profile_bump` events. If Wave 5 filters `__system__` events, it must still advance the raw-event cursor. See cycle-1 review I10.
+
+### 2.3 AppInsightsSink
 
 The `TelemetrySink` abstraction from Phase 4.5 pays off here:
 

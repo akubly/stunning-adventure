@@ -87,6 +87,7 @@ function ensureSystemSessionInTransaction(db: Database.Database, repoKey: string
 
 /**
  * Ensures a system session exists for logging system-level events (hint state transitions, profile bumps).
+ * Known issue: system sessions created here can be returned by MCP's getMostRecentActiveSession() fallback. See cycle-1 review I5; Wave 5 should add session_kind and user-only fallback lookup.
  * Returns the session ID to use for system events.
  */
 export function ensureSystemSession(db: Database.Database, repoKey?: string): string;

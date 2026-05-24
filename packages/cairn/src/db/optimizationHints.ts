@@ -77,6 +77,7 @@ export interface ReplaceActiveHintsAtomicallyResult {
   results: InsertHintIfNewResult[];
 }
 
+// Keep in sync with migration 013's partial UNIQUE index predicate; Wave 5 should consider a generated column or migration-time template for I8.
 export const ACTIVE_HINT_STATUSES: readonly HintStatus[] = ['pending', 'accepted', 'deferred'];
 
 // Allowed forward transitions from each status. The initial `pending` state
