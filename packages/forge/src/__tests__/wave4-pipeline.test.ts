@@ -538,7 +538,10 @@ describe('Wave 4 Group D — End-to-End Pipeline', () => {
     const result = await runForgePrescribe({ skillId, dbPath, forceRegenerate: true });
 
     expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    if (!result.ok) {
+      console.error('runForgePrescribe failed:', result.message);
+      return;
+    }
 
     // Prior hint should be expired
     const expiredHint = queryOptimizationHints({ skillId, status: 'expired' }).find(
@@ -577,7 +580,7 @@ describe('Wave 4 Group D — End-to-End Pipeline', () => {
     //
     // Setup: Force-regenerate to create hints.
     // Action: Call runForgePrescribe again without forceRegenerate.
-    // Assert: No new hints inserted (hintsDuplicated > 0).
+    // Assert: skipped count > 0 (hints were deduplicated).
 
     const skillId = 'skill-dedup-after-force';
     upsertExecutionProfile(makeProfile(skillId, 10));
@@ -585,20 +588,26 @@ describe('Wave 4 Group D — End-to-End Pipeline', () => {
     // First call with forceRegenerate to establish baseline
     const result1 = await runForgePrescribe({ skillId, dbPath, forceRegenerate: true });
     expect(result1.ok).toBe(true);
-    if (!result1.ok) return;
+    if (!result1.ok) {
+      console.error('First runForgePrescribe failed:', result1.message);
+      return;
+    }
 
-    expect(result1.hintsInserted).toBeGreaterThan(0);
+    expect(result1.inserted).toBeGreaterThan(0);
 
     const afterForceHintCount = queryOptimizationHints({ skillId, status: ['pending', 'accepted'] }).length;
 
     // Second call without forceRegenerate — should dedup
     const result2 = await runForgePrescribe({ skillId, dbPath, forceRegenerate: false });
     expect(result2.ok).toBe(true);
-    if (!result2.ok) return;
+    if (!result2.ok) {
+      console.error('Second runForgePrescribe failed:', result2.message);
+      return;
+    }
 
-    expect(result2.hintsGenerated).toBeGreaterThan(0);
-    expect(result2.hintsDuplicated).toBeGreaterThan(0);
-    expect(result2.hintsInserted).toBe(0);
+    expect(result2.totalHints).toBeGreaterThan(0);
+    expect(result2.skipped).toBeGreaterThan(0);
+    expect(result2.inserted).toBe(0);
 
     // Hint count should remain the same (no new inserts)
     const afterDedupHintCount = queryOptimizationHints({ skillId, status: ['pending', 'accepted'] }).length;
