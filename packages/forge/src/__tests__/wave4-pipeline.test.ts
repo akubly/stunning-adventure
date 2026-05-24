@@ -372,8 +372,12 @@ describe('Wave 4 Group B — CairnEvent Observability', () => {
 
     expect(queryOptimizationHints({ skillId })).toHaveLength(0);
     const orphanEvent = getUnprocessedEvents(0).find((event) => {
-      const payload = JSON.parse(event.payload) as { hint_id?: string };
-      return payload.hint_id === hint.id;
+      try {
+        const payload = JSON.parse(event.payload) as { hint_id?: string };
+        return payload.hint_id === hint.id;
+      } catch {
+        return false;
+      }
     });
     expect(orphanEvent).toBeUndefined();
   });
@@ -513,6 +517,7 @@ describe('Wave 4 Group C — forceRegenerate CLI Knob', () => {
     type RegisteredTool = { name: string; config: { inputSchema?: Record<string, unknown> } };
     const registeredTools: RegisteredTool[] = [];
 
+    vi.resetModules();
     vi.doMock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
       McpServer: class {
         registerTool(name: string, config: RegisteredTool['config']): void {
@@ -527,12 +532,13 @@ describe('Wave 4 Group C — forceRegenerate CLI Knob', () => {
       await import('../../../cairn/src/mcp/server.js');
 
       expect(registeredTools.length).toBeGreaterThan(0);
+      const toolNames = registeredTools.map((tool) => tool.name);
       const exposedParameters = registeredTools.flatMap((tool) =>
         Object.keys(tool.config.inputSchema ?? {}).map((parameter) => `${tool.name}.${parameter}`),
       );
 
-      expect(exposedParameters).not.toContain('forge_prescribe.forceRegenerate');
-      expect(exposedParameters.filter((parameter) => /(?:^|\.)force(?:Regenerate)?$/i.test(parameter))).toEqual([]);
+      expect(toolNames).not.toContain('forge_prescribe');
+      expect(exposedParameters.filter((parameter) => /\.force(?:Regenerate)?$/i.test(parameter))).toEqual([]);
     } finally {
       vi.doUnmock('@modelcontextprotocol/sdk/server/mcp.js');
     }
