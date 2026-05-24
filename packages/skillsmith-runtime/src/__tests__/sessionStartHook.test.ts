@@ -22,7 +22,7 @@ describe('skillsmith-runtime session-start bootstrap', () => {
     mockRunSessionStartHook.mockReset();
     mockCreatePrescriberOrchestrationConfig.mockReset();
     mockCreatePrescriberOrchestrationConfig.mockReturnValue({ runForSkill: vi.fn() });
-    vi.spyOn(process, 'exit').mockImplementation(((code?: string | number | null) => undefined) as never);
+    vi.spyOn(process, 'exit').mockImplementation(((_code?: string | number | null) => undefined) as never);
   });
 
   afterEach(() => {

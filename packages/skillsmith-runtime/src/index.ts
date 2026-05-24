@@ -197,7 +197,11 @@ async function executePrescriberRun({
       }
 
       result.hintsInserted += 1;
-    } catch {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[skillsmith-runtime] Failed to persist hint for skill=${skillId} category=${hint.category} source=${hint.source}: ${message}`,
+      );
       result.hintsError += 1;
     }
   }
