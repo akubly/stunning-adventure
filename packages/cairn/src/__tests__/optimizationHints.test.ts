@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { getDb, closeDb } from '../db/index.js';
 import {
   insertOptimizationHint,
+  insertHintIfNew,
   getOptimizationHint,
+  hasActiveOptimizationHint,
   queryOptimizationHints,
   listOptimizationHints,
   updateOptimizationHintStatus,
@@ -45,6 +47,7 @@ describe('optimization hints persistence', () => {
       hint({
         id: 'h-1',
         evidence: { detail: 'x' },
+        autoApplyEligible: false,
         metricSnapshot: { snap: 1 },
       }),
     );
@@ -57,7 +60,8 @@ describe('optimization hints persistence', () => {
     expect(loaded!.skillId).toBe('skill-a');
     expect(loaded!.category).toBe('verbosity');
     expect(loaded!.status).toBe('pending');
-    expect(loaded!.evidence).toEqual({ detail: 'x' });
+    expect(loaded!.evidence).toEqual({ detail: 'x', autoApplyEligible: false });
+    expect(loaded!.autoApplyEligible).toBe(false);
     expect(loaded!.metricSnapshot).toEqual({ snap: 1 });
     expect(loaded!.appliedAt).toBeNull();
     expect(loaded!.parentPrescriptionId).toBeNull();
@@ -68,19 +72,33 @@ describe('optimization hints persistence', () => {
     expect(getOptimizationHint('nope')).toBeNull();
   });
 
+  it('preserves evidence.autoApplyEligible when the top-level field is omitted', () => {
+    insertOptimizationHint(
+      hint({
+        id: 'h-evidence-only',
+        evidence: { detail: 'x', autoApplyEligible: false },
+        metricSnapshot: { snap: 2 },
+      }),
+    );
+
+    const loaded = getOptimizationHint('h-evidence-only');
+    expect(loaded?.evidence).toEqual({ detail: 'x', autoApplyEligible: false });
+    expect(loaded?.autoApplyEligible).toBe(false);
+  });
+
   it('queries by skill', () => {
     insertOptimizationHint(hint({ skillId: 'skill-a' }));
-    insertOptimizationHint(hint({ skillId: 'skill-b' }));
-    insertOptimizationHint(hint({ skillId: 'skill-b' }));
+    insertOptimizationHint(hint({ skillId: 'skill-b', category: 'verbosity-b' }));
+    insertOptimizationHint(hint({ skillId: 'skill-b', category: 'convergence' }));
 
     expect(queryOptimizationHints({ skillId: 'skill-a' })).toHaveLength(1);
     expect(queryOptimizationHints({ skillId: 'skill-b' })).toHaveLength(2);
   });
 
   it('queries by status (single and array)', () => {
-    insertOptimizationHint(hint({ status: 'pending' }));
-    insertOptimizationHint(hint({ status: 'accepted' }));
-    insertOptimizationHint(hint({ status: 'applied' }));
+    insertOptimizationHint(hint({ status: 'pending', category: 'verbosity-pending' }));
+    insertOptimizationHint(hint({ status: 'accepted', category: 'verbosity-accepted' }));
+    insertOptimizationHint(hint({ status: 'applied', category: 'verbosity-applied' }));
 
     expect(queryOptimizationHints({ status: 'pending' })).toHaveLength(1);
     expect(queryOptimizationHints({ status: ['pending', 'accepted'] })).toHaveLength(2);
@@ -95,23 +113,23 @@ describe('optimization hints persistence', () => {
 
   it('queries by parent prescription id', () => {
     insertOptimizationHint(hint({ parentPrescriptionId: 'parent-1' }));
-    insertOptimizationHint(hint({ parentPrescriptionId: 'parent-2' }));
+    insertOptimizationHint(hint({ parentPrescriptionId: 'parent-2', category: 'verbosity-parent-2' }));
     expect(queryOptimizationHints({ parentPrescriptionId: 'parent-1' })).toHaveLength(1);
   });
 
   it('orders results by impact_score DESC', () => {
-    insertOptimizationHint(hint({ id: 'low', impactScore: 0.1 }));
-    insertOptimizationHint(hint({ id: 'high', impactScore: 0.9 }));
-    insertOptimizationHint(hint({ id: 'mid', impactScore: 0.5 }));
+    insertOptimizationHint(hint({ id: 'low', impactScore: 0.1, category: 'verbosity-low' }));
+    insertOptimizationHint(hint({ id: 'high', impactScore: 0.9, category: 'verbosity-high' }));
+    insertOptimizationHint(hint({ id: 'mid', impactScore: 0.5, category: 'verbosity-mid' }));
 
     const rows = listOptimizationHints();
     expect(rows.map((r) => r.id)).toEqual(['high', 'mid', 'low']);
   });
 
   it('respects limit', () => {
-    insertOptimizationHint(hint());
-    insertOptimizationHint(hint());
-    insertOptimizationHint(hint());
+    insertOptimizationHint(hint({ category: 'verbosity-limit-1' }));
+    insertOptimizationHint(hint({ category: 'verbosity-limit-2' }));
+    insertOptimizationHint(hint({ category: 'verbosity-limit-3' }));
     expect(listOptimizationHints(2)).toHaveLength(2);
   });
 
@@ -177,5 +195,62 @@ describe('optimization hints persistence', () => {
     expect(deleteOptimizationHint('h-del')).toBe(true);
     expect(getOptimizationHint('h-del')).toBeNull();
     expect(deleteOptimizationHint('h-del')).toBe(false);
+  });
+
+  it('hasActiveOptimizationHint returns false when no active hint matches', () => {
+    const db = getDb();
+    insertOptimizationHint(hint({ id: 'other-skill', skillId: 'skill-b', category: 'verbosity-other' }));
+
+    expect(hasActiveOptimizationHint(db, 'skill-a', 'prompt-optimizer', 'verbosity')).toBe(false);
+  });
+
+  it('hasActiveOptimizationHint returns true for an exact active match', () => {
+    const db = getDb();
+    insertOptimizationHint(hint({ id: 'active-existing', category: 'verbosity', status: 'pending' }));
+
+    expect(hasActiveOptimizationHint(db, 'skill-a', 'prompt-optimizer', 'verbosity')).toBe(true);
+  });
+
+  it('insertHintIfNew inserts a fresh hint and ignores terminal-only matches', () => {
+    const db = getDb();
+    insertOptimizationHint(hint({ id: 'applied-existing', category: 'verbosity-terminal', status: 'applied' }));
+
+    const result = insertHintIfNew(db, hint({ id: 'fresh', category: 'verbosity-fresh' }));
+    const terminalResult = insertHintIfNew(
+      db,
+      hint({ id: 'replacement', category: 'verbosity-terminal' }),
+    );
+
+    expect(result).toEqual({ inserted: true });
+    expect(terminalResult).toEqual({ inserted: true });
+    expect(getOptimizationHint('fresh')?.id).toBe('fresh');
+    expect(getOptimizationHint('replacement')?.id).toBe('replacement');
+  });
+
+  it('insertHintIfNew suppresses an active duplicate for the same skill/source/category tuple', () => {
+    const db = getDb();
+    insertOptimizationHint(hint({ id: 'pending-existing', category: 'verbosity-active', status: 'pending' }));
+
+    const result = insertHintIfNew(
+      db,
+      hint({ id: 'active-duplicate', category: 'verbosity-active' }),
+    );
+
+    expect(result).toEqual({ inserted: false, existingHintId: 'pending-existing' });
+    expect(getOptimizationHint('active-duplicate')).toBeNull();
+  });
+
+  it('insertHintIfNew allows different categories for the same skill', () => {
+    const db = getDb();
+
+    const first = insertHintIfNew(db, hint({ id: 'cat-a', category: 'verbosity-cat-a' }));
+    const second = insertHintIfNew(db, hint({ id: 'cat-b', category: 'verbosity-cat-b' }));
+
+    expect(first).toEqual({ inserted: true });
+    expect(second).toEqual({ inserted: true });
+    expect(queryOptimizationHints({ skillId: 'skill-a' }).map((row) => row.id).sort()).toEqual([
+      'cat-a',
+      'cat-b',
+    ]);
   });
 });

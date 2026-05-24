@@ -130,13 +130,16 @@ export {
 export {
   analyzePromptOptimizations,
   analyzeTokenOptimizations,
+  runForgePrescribers,
   type PromptOptimizerConfig,
   type TokenOptimizerConfig,
+  type ForgePrescriberOrchestratorOptions,
   type ChangeVectorSummary,
   type MetricSnapshot,
   type OptimizationCategory,
   type OptimizationEvidence,
   type OptimizationHint,
+  type PrescriberConfig,
   type PrescriberResult,
 } from "./prescribers/index.js";
 

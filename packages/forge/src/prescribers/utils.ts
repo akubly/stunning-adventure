@@ -11,9 +11,17 @@
  * boost used when `historicalVectors` are passed to the prescribers.
  */
 
+import {
+  ATTENUATION_FLOOR,
+  NEGATIVE_IMPACT_AUTO_APPLY_GATE,
+} from "@akubly/types";
 import { classifyDriftLevel } from "../telemetry/drift.js";
 import type { ExecutionProfile } from "../telemetry/types.js";
-import type { MetricSnapshot, OptimizationHint } from "./types.js";
+import type {
+  ChangeVectorSummary,
+  MetricSnapshot,
+  OptimizationHint,
+} from "./types.js";
 
 /** Minimum observed vectors for baseline confidence saturation. Mirrored in packages/cairn/src/db/changeVectors.ts — keep in sync. */
 export const DEFAULT_MIN_SESSIONS = 3;
@@ -31,28 +39,77 @@ export function buildSnapshot(profile: ExecutionProfile): MetricSnapshot {
 }
 
 /**
- * Log-scaled confidence boost based on the number of observed change vectors.
+ * Confidence multiplier derived from historical change vectors.
  *
- * Formula: `Math.max(1.0, log(1 + vectorCount) / log(1 + minVectors))`
- *
- * - `vectorCount === 0` → returns `1.0` (no boost; baseline confidence preserved).
- * - `0 < vectorCount < minVectors` → returns `1.0` (sparse evidence; clamp prevents penalty).
- * - `vectorCount === minVectors` → returns `1.0` (baseline saturation point).
- * - `vectorCount > minVectors` → returns > 1.0 (amplifies confidence).
- *
- * Returns 1.0 when no vectors OR sparse evidence; > 1.0 only when
- * vectorCount >= minVectors. Vectors can amplify confidence but never attenuate it.
- *
- * Wave 1 policy (Aaron, 2026-05-03): positive boost only. Negative-impact
- * penalty multiplier is deferred to Wave 2.
- *
- * @param vectorCount  Number of change vectors observed for this category+skillId.
- * @param minVectors   Minimum vectors for baseline confidence. Defaults to DEFAULT_MIN_SESSIONS.
+ * When `meanNetImpact` is omitted (or non-negative), the Wave 1 log-scaled boost
+ * applies unchanged. Negative impacts stay neutral until evidence is mature and
+ * at or below `NEGATIVE_IMPACT_AUTO_APPLY_GATE`, at which point the
+ * multiplier attenuates to `max(ATTENUATION_FLOOR, 1 + meanNetImpact)`.
  */
-export function computeConfidenceBoost(vectorCount: number, minVectors: number = DEFAULT_MIN_SESSIONS): number {
+export function computeConfidenceBoost(
+  vectorCount: number,
+  minVectors: number = DEFAULT_MIN_SESSIONS,
+  meanNetImpact?: number,
+): number {
   if (vectorCount <= 0) return 1.0;
+
   const safeMin = Math.max(1, minVectors);
-  return Math.max(1.0, Math.log(1 + vectorCount) / Math.log(1 + safeMin));
+  if (meanNetImpact === undefined || meanNetImpact >= 0) {
+    return Math.max(1.0, Math.log(1 + vectorCount) / Math.log(1 + safeMin));
+  }
+
+  // Inclusive boundary: exact -0.2 stays manual-review because false negatives hurt more.
+  if (vectorCount < safeMin || meanNetImpact > NEGATIVE_IMPACT_AUTO_APPLY_GATE) {
+    return 1.0;
+  }
+
+  return Math.max(ATTENUATION_FLOOR, 1.0 + meanNetImpact);
+}
+
+export function computeAutoApplyEligible(
+  vectorCount: number,
+  meanNetImpact: number,
+  minVectors: number = DEFAULT_MIN_SESSIONS,
+): boolean {
+  const safeMin = Math.max(1, minVectors);
+  return vectorCount < safeMin || meanNetImpact > NEGATIVE_IMPACT_AUTO_APPLY_GATE;
+}
+
+export function applyHistoricalVectors(
+  hints: OptimizationHint[],
+  historicalVectors?: ChangeVectorSummary[],
+  minVectors: number = DEFAULT_MIN_SESSIONS,
+): OptimizationHint[] {
+  if (!historicalVectors?.length) {
+    return hints;
+  }
+
+  for (const hint of hints) {
+    const summary = historicalVectors.find(
+      (vector) => vector.category === hint.category && vector.skillId === hint.skillId,
+    );
+    if (!summary) {
+      continue;
+    }
+
+    const autoApplyEligible =
+      summary.autoApplyEligible ??
+      computeAutoApplyEligible(summary.vectorCount, summary.meanNetImpact, minVectors);
+    const confidenceBoost =
+      summary.meanNetImpact >= 0
+        ? summary.confidenceBoost
+        : computeConfidenceBoost(summary.vectorCount, minVectors, summary.meanNetImpact);
+
+    hint.confidence = Math.min(1, hint.confidence * confidenceBoost);
+    hint.predictedImpact = summary.meanNetImpact;
+    hint.autoApplyEligible = autoApplyEligible;
+    hint.evidence = {
+      ...hint.evidence,
+      autoApplyEligible,
+    };
+  }
+
+  return applyHistoricalVectorOrdering(hints);
 }
 
 /**

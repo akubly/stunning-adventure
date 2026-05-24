@@ -1,83 +1,79 @@
+📌 Team update (2026-05-22T14:07:59Z): **Phase 4.6 Wave 2 complete** — ChangeVectorProvider + ForgePrescriberOrchestrator + autoApplyEligible safety gate + hint dedup + forge-prescribe CLI all shipped. 1199 tests passing, 9 work items landed, 4 decisions merged. Wave 3 (Curator-driven orchestration + composition root) deferred behind ADR. — Scribe
+📌 Team update (2026-05-22T20:35:00Z): **Wave 2 W2-5 complete** — ForgePrescriberOrchestrator shipped. Attenuation + autoApplyEligible propagation live. ATTENUATION_FLOOR=0.1 exported from @akubly/types. Fail-open on provider errors. Forge tests 609 passing (+10), root build green. — Scribe
+📌 Team update (2026-05-22T20:03:56Z): Wave 2 v3.1 scope final — autoApplyEligible propagates through OptimizationHint; constants NEGATIVE_IMPACT_AUTO_APPLY_GATE=-0.2 and ATTENUATION_FLOOR=0.1; CLI surface only — no MCP in Wave 2. — Graham Knight
 # Roger — History
 
-## Learnings (Phase 4.5 telemetry — 2026-05-02)
+## 2026-05-21: Wave 2 v3 Scope Ready — Curator Wiring Deferred to Wave 3
 
-**Architecture decisions made:**
-- `FeedbackSource` is the first new shared type in `@akubly/types` since Phase 2. It is the read-side complement to `TelemetrySink` (write side). To make it actually shareable I also moved `ProfileGranularity` and `ExecutionProfile` into `@akubly/types`, with `forge/telemetry/types.ts` re-exporting them so forge code keeps a single import surface.
-- `OptimizationHint` and `StrategyParameters` are open-shaped (`[key: string]: unknown`) in `@akubly/types`. Concrete prescribers extend the shape without forcing a churn-prone shared schema. Preserves the ADR-P4-005 instinct while still enabling cross-package wiring.
-- `LocalDBOMSink.emit()` is intentionally a no-op. The bridge event stream is consumed by collectors (HookObserver pattern, ADR-P4.5-001); only derived `SignalSample`s are worth persisting. Callers push samples via `enqueueSample()`. `emit()` exists only to satisfy the `TelemetrySink` contract.
-- Auto-flush on buffer full + fail-open on persistence error are both load-bearing. Telemetry must never kill a session.
+Scribe orchestration complete: Graham's v3 scope finalized and merged to .squad/decisions.md. Key scope decisions:
+- ChangeVectorProvider port with async return type for Phase 5 cloud readiness
+- Wave 2/3 split: Manual invocation in Wave 2; Curator-driven automatic orchestration deferred to Wave 3
+- Hint deduplication via (skillId, source, category) key with active-status filter
+- Two-layer negative-impact attenuation: Confidence scaling + eligibility flag (autoApplyEligible)
 
-**Spec deviations worth knowing:**
-- The spec accesses `event.payload?.toolName` directly, but `CairnBridgeEvent.payload` is a JSON string (see `@akubly/types` and `packages/forge/src/dbom/index.ts:276`). I added a `parsePayload()` helper that JSON-parses lazily and tolerates malformed input. Same pattern Curator and DBOM already use.
-- The spec convergence formula `convergedTurn / turnCount` is degenerate when `session_completed` arrives at the last turn (always 1.0 = max drift). I followed the spec literally but the GREEN-classification test now constructs a scenario with extra turns *after* completion to actually exercise the GREEN branch. Worth raising with Graham before Phase 5.
-- Spec §9.4 lists event types (`tool_call_started`, `usage_reported`, `turn_completed`, `session_completed`, `tool_call_failed`) that don't appear in the bridge `EVENT_MAP` (which uses `tool_use`, `model_call`, `turn_end`, `session_end`, etc.). Collectors are coded to the spec strings; wiring will need a thin remapper or an `EVENT_MAP` extension.
+Ready for Wave 2 implementation (computation + ranking only; runtime wiring follows in Wave 3).
 
-**Patterns to remember:**
-- Test infra: vitest, files in `packages/forge/src/__tests__/`, ending in `.test.ts`. No setup/teardown — pure unit tests.
-- Property + metamorphic tests scale well: e.g. "replaying the same usage N times scales totals by N" catches a class of off-by-N bugs without enumerating cases.
-- Determinism > token cost is encoded in `DRIFT_WEIGHTS` (convergence 0.30 + toolEntropy 0.25 + promptStability 0.15 = 0.70 vs cost 0.30). Added a test asserting that inequality so any future tweak forces a conscious decision.
+## Learnings (2026-05-23 — W3-1 skillsmith-runtime scaffold)
 
-**Key file paths:**
-- `packages/forge/src/telemetry/{types,drift,collectors,aggregator,sink,index}.ts` — the whole module
-- `packages/forge/src/__tests__/telemetry-{drift,collectors,aggregator}.test.ts` — 56 tests
-- `packages/types/src/index.ts` — extended with FeedbackSource + ExecutionProfile + ProfileGranularity + OptimizationHint + StrategyParameters
-- `packages/forge/src/index.ts` — barrel updated to re-export telemetry surface
-- Build: `npm run build`. Forge tests: `cd packages/forge; npm test`. Repo: `npm test --workspaces --if-present`. Baseline 826 → 954 (forge 476 + cairn 478).
+- `packages/skillsmith-runtime/` follows the repo's standard library package shape: package.json + composite tsconfig + `src/index.ts` + `src/__tests__/` with tests excluded from TypeScript build output.
+- Root workspace registration needed only a `tsconfig.json` project reference because the repo already uses the broad `packages/*` workspaces glob. `npm install` then linked the new package into `package-lock.json` automatically.
+- This environment's npm rejected `workspace:*` dependency specifiers (`EUNSUPPORTEDPROTOCOL`), so the new package uses the repo's established `"*"` workspace dependency pattern instead.
+- W3-1 intentionally leaves `createPrescriberOrchestrationConfig()` and `runForgePrescribe()` as throwing stubs. W3-5 will wire Cairn + Forge composition; W3-2 will make `runtime-cli` delegate into this package.
 
+## Learnings (2026-05-23 — Wave 3 Decisions Accepted by Aaron)
 
+- **W3-D1: Composition Root → R2 ACCEPTED** — New `@akubly/skillsmith-runtime` library package (composition layer importing both `@akubly/cairn` and `@akubly/forge`) + thin `@akubly/runtime-cli` wrapper. Unblocks all Wave 3 work items. Roger owns composition root and runtime-cli packaging.
+- **W3-D3: MCP Tool → Dropped from Wave 3** — No MCP tool for manual prescriber invocation in Wave 3. Curator hook is autonomous surface; existing `forge-prescribe` CLI is manual surface. Re-open MCP tool only when concrete operator need materializes.
+- **W3-D4: Curator Hook → Always-On** — Automatic invocation enabled; no opt-in flag in v1. Safety margins verified via Wave 2 E2E tests. Profile selection trigger-driven only; global fallback deferred to Wave 4.
 
-## Learnings (2026-05-01 — Persona Review F1/F2/F4/F5/F6a/F7/F11 fixes)
+## Learnings (2026-05-23 — Wave 3 Composition Root Audit)
 
-Fixed 7 persona review findings on the telemetry module. All landed in one session, build green, 1012 tests passing (cairn 478 + forge 534, +24 from new collector tests + new bridge contract test).
+- **Five composition root options evaluated** for Wave 3. Current architecture: Cairn and Forge have zero direct coupling (acyclic, port-based). Only `packages/runtime-cli/` bridges them (Wave 2 stepping stone). Audit document: `docs/wave3-composition-root-audit.md`.
+- **Recommendation: Option B** (separate `@akubly/runtime` library + thin `runtime-cli` wrapper). Reasoning: Best test isolation, zero build risks, Phase 5-ready architecture. Library stays portable; CLI stays thin.
+- **Do not use Option C** (inject Forge into Cairn hooks) — test coupling and build-order dependencies are unacceptable. Create a package instead.
+- **Known unknowns deferred to Graham's ADR:** Profile selection strategy (all vs. only-with-vectors), hint persistence ownership, MCP tool shape for prescriber optimization, fail-open semantics on Forge failure during Curator.
 
-**F1 — Aggregator overwrite bug.** `meanFromMeta()` averaged only the new batch, dropping prior history every aggregation. Replaced with a single `weightedMean(prevMean, prevCount, newSum, newCount, sessionCount)` helper applied uniformly to `meanInputTokens`, `meanOutputTokens`, `meanCacheHitRate`, `meanConvergenceTurns`, `toolErrorRate`, and the new per-signal means. Mirrors the existing `successRate` pattern. When the new batch contributes no samples for a signal, the prior mean is preserved (no deflation toward zero).
+## Learnings (2026-05-22 — Wave 2 W2-9 manual CLI surface)
 
-**F2 — Convergence floor of 1.0.** The old code set `convergedTurn = turnCount` at `session_completed`, guaranteeing `convergence = 1.0`. Replaced with Aaron's Option A: `convergedTurn` is set on the FIRST occurrence of either a `tool_result` event with `success === true` OR a `plan_changed` event (whichever comes first). Both come from the bridge's EVENT_MAP. If neither fires, convergence stays at 1.0 — which is now legitimately "this session never showed early progress" rather than a phantom floor. Documented the semantics in the collector docstring.
+- Wave 2's explicit composition root now lives in `packages/runtime-cli/` with bin name `forge-prescribe`; it's the one package allowed to import both `@akubly/cairn` and `@akubly/forge` without violating the package boundary.
+- Local invocation pattern from the repo root is `npx forge-prescribe --skill <id> [--db <path>]`; the root workspace keeps `@akubly/runtime-cli` as a dev dependency so the bin is linked into the local toolchain after `npm install`.
+- Profile loading is deterministic: try the canonical per-skill aggregate first (`granularity='per-skill', granularity_key='global'`), then fall back to a skill-scoped `global/global` profile before failing with a clean no-profile result.
+- Exit semantics are simple: 0 on successful orchestration (including zero generated hints or dedup skips), 1 when no execution profile exists, and 2 for argument, database, or persistence failures.
 
-**F4 — Event-name drift between bridge and collectors.** Spec §9.4 strings (`tool_call_started`, `usage_reported`, etc.) never matched bridge EVENT_MAP keys (`tool_use`, `model_call`, `turn_end`, `session_end`, `tool_result`, `context_window`, `plan_changed`). Collectors received zero signal in production. Fixed by:
-1. Introducing exported `COLLECTOR_BRIDGE_EVENTS` const that names every Cairn event the collectors react to.
-2. Updating all `event.eventType` checks to use those names.
-3. Splitting the old `usage_reported` handling: token counts come from `model_call`, context window comes from `context_window`. Tool errors come from `tool_result` with `success === false` rather than a phantom `tool_call_failed`.
-4. New contract test `telemetry-bridge-contract.test.ts` enumerates `COLLECTOR_BRIDGE_EVENTS` and asserts every value is also a value in bridge `EVENT_MAP` — a future drift on either side fails CI fast.
-5. Updated `feedback-loop.test.ts` and `telemetry-collectors.test.ts` fixtures to emit bridge-shaped events with the correct payload field names (`currentTokens`/`tokenLimit`, `totalNanoAiu` instead of `costNanoAiu`, `success` boolean).
+## Learnings (2026-05-22 — Wave 2 W2-1 shared change-vector contract)
 
-**F5 — Per-batch percentiles.** Old p50/p95 came from sorting only the latest batch. Implemented a streaming sketch: a 100-bucket histogram of the [0,1] drift range stored on `ExecutionProfile.drift.sketch` (optional field, backward compatible). `aggregateSignals` clones+updates the sketch each call and derives p50/p95 by walking cumulative counts. Bucket midpoint precision = ±0.005, well below any threshold the prescribers care about. Sketch is omitted from the profile until the first drift sample lands so empty profiles stay clean.
+- Canonical Wave 2 change-vector contracts now live in packages/types/src/index.ts: ChangeVectorSummary, ChangeVectorProvider, NEGATIVE_IMPACT_AUTO_APPLY_GATE, and shared OptimizationCategory.
+- Reconciled the two ChangeVectorSummary duplicates by taking Forge's stricter OptimizationCategory union instead of Cairn's plain string. Added autoApplyEligible?: boolean as the additive v3.1 field on the shared contract.
+- Verification: root npm run build and root npm test passed before and after the change (1153-test baseline green).
 
-**F6a — Surface signal components.** Added `signals?: ProfileSignals` to `ExecutionProfile` in `@akubly/types` (optional → backward compat with older persisted rows). Aggregator pulls `metadata.signals` from each drift sample, sums each component (`convergence`, `tokenPressure`, `toolEntropy`, `contextBloat`, `promptStability`), and folds via the same `weightedMean` helper. Prescribers can now target a specific signal instead of only the composite drift score.
+## Learnings (2026-05-23 — W3-2 thin runtime-cli)
 
-**F7 — Silent error swallowing in sink.** Replaced empty catch with `console.warn` matching the bridge's `EventBridge` log format, and added `droppedCount` to the `LocalDBOMSink` interface so monitors can detect rising drop rates. Existing fail-open behavior preserved.
+- Picked **Option A** for W3-2: `packages/skillsmith-runtime/src/index.ts` now owns the existing `runForgePrescribe()` composition flow (profile load, `SqliteChangeVectorProvider`, Forge prescribers, dedup + persistence) and `packages/runtime-cli/src/index.ts` is just a re-export facade.
+- The thinnest stable CLI refactor here is **function re-export + unchanged CLI formatter**. That preserved operator-visible behavior and let the new delegation test assert identity (`runtime-cli` export === `@akubly/skillsmith-runtime` export) without introducing fragile ESM mocking around the bin entry.
+- Alexander no longer needs to move manual CLI composition into `skillsmith-runtime` for W3-5; that surface is already live. W3-5 can stay focused on `createPrescriberOrchestrationConfig()` and Curator-facing factory wiring.
+- After this refactor, remember to build before package tests that import `@akubly/skillsmith-runtime` by package name; those tests resolve the built workspace export (`dist/`), not the source file directly.
 
-**F11 — typeof guards on payloads.** Added a `typeof payload.toolName === "string"` guard in the drift collector (was using truthiness + String(...)). Token collector's numeric extractor now also guards with `Number.isFinite` to reject `NaN`/`Infinity`. Added a regression test asserting non-string `toolName` payloads are silently ignored rather than recorded as `[object Object]` in tool counts.
+## Learnings (2026-05-23 — W3-6 hook injection bootstrap)
 
-**Patterns to remember:**
-- When the collector contract spans two modules (bridge → collectors), enumerate the shared symbols in a const + a contract test. Type-level coupling alone is not enough when one side reads JSON-encoded strings.
-- Streaming quantile sketches are simple when the input range is bounded — a fixed histogram beats t-digest complexity for [0,1]-valued metrics.
-- `weightedMean(prev, prevCount, newSum, newCount, totalCount)` returning `prevMean` when `newCount === 0` prevents the "deflation toward zero" failure mode that bit the original `successRate` code path's siblings.
+- Picked **R-Hook-A (injection)** for Curator session-start wiring: `packages/cairn/src/hooks/sessionStart.ts` now accepts an optional `PrescriberOrchestrationConfig` and forwards it to `curate()`; Cairn itself still does not import `@akubly/skillsmith-runtime`.
+- The production always-on bootstrap now lives in `packages/skillsmith-runtime/src/hooks/sessionStart.ts`, and `.github/hooks/cairn/curate.ps1` resolves that compiled script first. Laura's W3-7 integration test should enter through that skillsmith-runtime hook path, not the bare Cairn hook, so the real orchestration config is present.
+- Keeping the script-level composition in the runtime package preserves W3-D1's boundary: Cairn owns hook mechanics, skillsmith-runtime owns cross-package wiring, and the PowerShell wrapper chooses the composition entrypoint.
 
-**Key file paths touched:**
-- `packages/types/src/index.ts` — added `DriftSketch`, `ProfileSignals`, optional `drift.sketch` and `signals` on `ExecutionProfile`
-- `packages/forge/src/telemetry/aggregator.ts` — full rewrite of mean math + sketch + signal aggregation
-- `packages/forge/src/telemetry/collectors.ts` — `COLLECTOR_BRIDGE_EVENTS`, F2 convergence rewrite, F11 guards, bridge event-name updates
-- `packages/forge/src/telemetry/sink.ts` — `droppedCount` + `console.warn`
-- `packages/forge/src/__tests__/telemetry-bridge-contract.test.ts` — NEW
-- `packages/forge/src/__tests__/telemetry-collectors.test.ts` — rewritten for bridge events
-- `packages/forge/src/__tests__/feedback-loop.test.ts` — fixtures rewritten for bridge events
+## 2026-05-23: 📌 Wave 3 Complete — Curator-Driven Prescriber Orchestration Shipped
 
+**Status:** ✓ All 7 work items shipped  
 
-## 2026-05-02: Phase 4.5 Persona Review — Telemetry Module Hardening
+**Final Test Counts:**
+- Cairn: 576/576 passing
+- Forge: 630/630 passing
+- Runtime-CLI: 5/5 passing
+- Skillsmith-Runtime: 6/6 passing
 
-**Findings Fixed:** F1 (weighted means), F2 (convergence), F4 (event contract), F5 (sketch), F6a (signals), F7 (sink droppedCount), F11 (typeof guards).
+**W3-1 & W3-2 shipped:** Scaffolding + thin CLI done.  
+**W3-6 shipped:** Hook wiring complete — always-on bootstrap via injected config. Composition boundary preserved (cairn ↔ skillsmith-runtime acyclic).  
 
-**Key Outputs:**
-- Single source of truth for collector → bridge event mapping: COLLECTOR_BRIDGE_EVENTS const
-- Contract test enforcing alignment: 	elemetry-bridge-contract.test.ts
-- Per-signal component means in ExecutionProfile.signals for prescriber targeting
-- 100-bucket histogram sketch for streaming quantile estimation
-- Early convergence semantics: convergedTurn fires on first successful outcome signal
+Wave 3 implementation delivered autonomous Curator-driven orchestration. Composition root (R2: `@akubly/skillsmith-runtime`) is the only place importing both `@akubly/cairn` and `@akubly/forge`. Phase 5-ready architecture in place.
 
-**Tests:** +24 new tests → Forge telemetry: 534 passing
+---
 
-**Downstream:** Prescribers now have signal-level granularity for targeting specific drift drivers (e.g., toolEntropy vs contextBloat).
-
-
+**Older learnings archived to history-archive.md**

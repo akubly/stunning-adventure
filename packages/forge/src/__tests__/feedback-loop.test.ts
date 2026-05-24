@@ -442,6 +442,35 @@ describe("L4: regression — applier output is stable & non-degrading", () => {
     expect(r.applied.map((a) => a.hintId)).toEqual(["c", "a", "b"]);
   });
 
+  it("applier rejects hints marked autoApplyEligible=false even above the threshold", () => {
+    const hints = [
+      hint({ id: "blocked", confidence: 0.95, autoApplyEligible: false }),
+      hint({ id: "allowed", confidence: 0.95, autoApplyEligible: true }),
+    ];
+    const r = applyOptimizations(hints, { autoApplyThreshold: 0.7 });
+    expect(r.applied.map((a) => a.hintId)).toEqual(["allowed"]);
+    expect(r.skipped).toContainEqual({
+      hintId: "blocked",
+      reason: "historical vectors indicate negative impact",
+    });
+  });
+
+  it("applier also honors evidence.autoApplyEligible=false when the top-level field is absent", () => {
+    const hints = [
+      hint({
+        id: "evidence-only",
+        confidence: 0.95,
+        evidence: { profile: profile(), triggerMetrics: {}, autoApplyEligible: false },
+      }),
+    ];
+    const r = applyOptimizations(hints, { autoApplyThreshold: 0.7 });
+    expect(r.applied).toEqual([]);
+    expect(r.skipped).toContainEqual({
+      hintId: "evidence-only",
+      reason: "historical vectors indicate negative impact",
+    });
+  });
+
   it("applier never applies a hint whose confidence is below the threshold", () => {
     const hints = [
       hint({ id: "lo", confidence: 0.4 }),

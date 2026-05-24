@@ -13,6 +13,14 @@
  */
 
 import type Database from 'better-sqlite3';
+import {
+  ATTENUATION_FLOOR,
+  NEGATIVE_IMPACT_AUTO_APPLY_GATE,
+  type ChangeVectorSummary,
+  type OptimizationCategory,
+} from '@akubly/types';
+
+export type { ChangeVectorSummary } from '@akubly/types';
 
 // ---------------------------------------------------------------------------
 // Weight constants (mirror of DRIFT_WEIGHTS in packages/forge/src/telemetry/drift.ts)
@@ -82,22 +90,17 @@ export interface ChangeVectorRow {
   computedAt: string;
 }
 
-/**
- * Aggregated summary for a category+skillId pair.
- * Shape matches `ChangeVectorSummary` in forge's prescribers/types.ts (Rosella R1).
- * Verified by Laura's L5 regression test.
- */
-export interface ChangeVectorSummary {
-  category: string;
-  skillId: string;
-  meanNetImpact: number;
-  vectorCount: number;
-  /**
-   * Log-scaled confidence boost: 1.0 when no vectors OR sparse evidence;
-   * >1.0 only with sufficient evidence (vectorCount ≥ minVectors).
-   * Vectors never attenuate confidence — clamped to Math.max(1.0, formula).
-   */
-  confidenceBoost: number;
+const OPTIMIZATION_CATEGORIES: readonly OptimizationCategory[] = [
+  'prompt-structure',
+  'tool-guidance',
+  'context-management',
+  'cache-optimization',
+  'model-selection',
+  'convergence',
+];
+
+function isOptimizationCategory(category: string): category is OptimizationCategory {
+  return OPTIMIZATION_CATEGORIES.includes(category as OptimizationCategory);
 }
 
 // ---------------------------------------------------------------------------
@@ -208,25 +211,52 @@ export function getChangeVectorsByCategoryAndSkill(
 }
 
 /**
+ * Return distinct optimization hint categories for a skill, sorted alphabetically.
+ *
+ * The DB stores categories as free-form text, but the shared contract now uses the
+ * canonical OptimizationCategory union. Narrow once at this read boundary so the
+ * rest of Cairn can work with the stronger type safely.
+ */
+export function getAllCategories(db: Database.Database, skillId: string): OptimizationCategory[] {
+  const rows = db.prepare(
+    `SELECT DISTINCT category
+       FROM optimization_hints
+      WHERE skill_id = ?
+      ORDER BY category`
+  ).all(skillId) as Array<{ category: string }>;
+
+  return rows.map((row) => row.category).filter(isOptimizationCategory);
+}
+
+/**
  * Summarize change vectors for a category+skillId pair.
  * Returns a ChangeVectorSummary with mean net_impact, vector count,
- * and log-scaled confidence boost.
+ * log-scaled confidence boost, and an autoApplyEligible gate.
  *
- * When vectorCount === 0, returns confidenceBoost: 1.0 (no boost, no penalty —
- * baseline confidence is preserved). This matches computeConfidenceBoost(0) and
- * ensures empty summaries do not zero out hint confidence.
+ * Confidence boost semantics (Wave 3):
+ *  - vectorCount === 0 → 1.0 (baseline; matches computeConfidenceBoost(0))
+ *  - vectorCount > 0 with meanNetImpact >= 0 → Math.max(1.0, log-scaled boost).
+ *    Sparse positive evidence (vectorCount < minVectors) stays clamped at 1.0;
+ *    amplification (>1.0) only kicks in once vectorCount ≥ minVectors. This
+ *    preserves the Wave 1 "positive boost only" policy on the upside.
+ *  - vectorCount >= minVectors with meanNetImpact < 0 → attenuated below 1.0
+ *    via `Math.max(ATTENUATION_FLOOR, 1.0 + meanNetImpact)`. Mature negative
+ *    evidence is now allowed to pull confidence down (Wave 3 change from the
+ *    Wave 1 hard floor at 1.0); callers MUST NOT assume confidenceBoost >= 1.0.
+ *  - Sparse negative evidence (vectorCount < minVectors with meanNetImpact < 0)
+ *    stays at 1.0 — we wait for `minVectors` samples before penalizing.
  *
- * When vectorCount > 0 but < minVectors (sparse evidence), the formula is
- * clamped to Math.max(1.0, …) so sparse vectors never attenuate confidence
- * below the neutral baseline. Amplification (>1.0) only occurs once
- * vectorCount ≥ minVectors — consistent with Wave 1 "positive boost only" policy.
+ * autoApplyEligible is true when evidence is sparse (vectorCount < minVectors)
+ * OR meanNetImpact > NEGATIVE_IMPACT_AUTO_APPLY_GATE. Mature negative outcomes
+ * disable auto-apply so the hint is surfaced for human review instead of
+ * applied silently.
  *
  * @param minVectors - Minimum vectors for full confidence boost (default 3, matches
  *   ChangeVectorConfig.minSessionsObserved and prompt optimizer canary threshold).
  */
 export function summarizeChangeVectors(
   db: Database.Database,
-  category: string,
+  category: OptimizationCategory,
   skillId: string,
   minVectors: number = DEFAULT_MIN_SESSIONS,
 ): ChangeVectorSummary {
@@ -241,14 +271,24 @@ export function summarizeChangeVectors(
 
   const vectorCount = row?.vector_count ?? 0;
   const meanNetImpact = row?.mean_net_impact ?? 0;
+  const safeMin = Math.max(1, minVectors);
+  const autoApplyEligible =
+    vectorCount < safeMin || meanNetImpact > NEGATIVE_IMPACT_AUTO_APPLY_GATE;
   const confidenceBoost =
     vectorCount === 0
       ? 1.0
-      : (() => {
-          // Guard against minVectors=0: log(1+0)/log(1+0) = 0/0 = NaN.
-          const safeMin = Math.max(1, minVectors);
-          return Math.max(1.0, Math.log(1 + vectorCount) / Math.log(1 + safeMin));
-        })();
+      : meanNetImpact >= 0
+        ? Math.max(1.0, Math.log(1 + vectorCount) / Math.log(1 + safeMin))
+        : autoApplyEligible
+          ? 1.0
+          : Math.max(ATTENUATION_FLOOR, 1.0 + meanNetImpact);
 
-  return { category, skillId, meanNetImpact, vectorCount, confidenceBoost };
+  return {
+    category,
+    skillId,
+    meanNetImpact,
+    vectorCount,
+    confidenceBoost,
+    autoApplyEligible,
+  };
 }

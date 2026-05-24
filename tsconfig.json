@@ -3,6 +3,8 @@
   "references": [
     { "path": "packages/types" },
     { "path": "packages/cairn" },
-    { "path": "packages/forge" }
+    { "path": "packages/forge" },
+    { "path": "packages/skillsmith-runtime" },
+    { "path": "packages/runtime-cli" }
   ]
 }

@@ -8,7 +8,7 @@
 import { randomUUID } from "node:crypto";
 import type { ExecutionProfile } from "../telemetry/types.js";
 import type { ChangeVectorSummary, OptimizationHint, PrescriberResult } from "./types.js";
-import { buildSnapshot, DEFAULT_MIN_SESSIONS, applyHistoricalVectorOrdering } from "./utils.js";
+import { buildSnapshot, DEFAULT_MIN_SESSIONS, applyHistoricalVectors } from "./utils.js";
 
 export interface PromptOptimizerConfig {
   /** Minimum sessions before prescribing. Default: 3. */
@@ -136,16 +136,7 @@ export function analyzePromptOptimizations(
   //   outranking matched hints with measured negative impact.
   // When historicalVectors is omitted, behavior is identical to Phase 4.5.
   if (historicalVectors && historicalVectors.length > 0) {
-    for (const hint of hints) {
-      const summary = historicalVectors.find(
-        (v) => v.category === hint.category && v.skillId === hint.skillId,
-      );
-      if (summary) {
-        hint.confidence = Math.min(1, hint.confidence * summary.confidenceBoost);
-        hint.predictedImpact = summary.meanNetImpact;
-      }
-    }
-    const sortedHints = applyHistoricalVectorOrdering(hints);
+    const sortedHints = applyHistoricalVectors(hints, historicalVectors);
     hints.length = 0;
     hints.push(...sortedHints);
   }

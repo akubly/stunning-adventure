@@ -10,24 +10,7 @@
 
 import type { ExecutionProfile } from "../telemetry/types.js";
 
-/**
- * Aggregated change vector data for a category+skillId pair.
- * Produced by the Cairn Curator sweep and passed into prescribers
- * to boost confidence and surface predicted impact.
- */
-export interface ChangeVectorSummary {
-  category: OptimizationCategory;
-  skillId: string;
-  meanNetImpact: number;
-  vectorCount: number;
-  /**
-   * Log-scaled confidence boost multiplier.
-   * Wave 1: clamped to ≥ 1.0 by computeConfidenceBoost (forge) and summarizeChangeVectors (cairn).
-   * Negative-impact attenuation is deferred to Wave 2 per Aaron's policy.
-   * >1.0 amplifies hint confidence; 1.0 is identity (no change).
-   */
-  confidenceBoost: number;
-}
+export type { ChangeVectorSummary } from "@akubly/types";
 
 export interface OptimizationHint {
   id: string;
@@ -45,6 +28,8 @@ export interface OptimizationHint {
    * Present only when `historicalVectors` were supplied to the prescriber.
    */
   predictedImpact?: number;
+  /** Whether historical vectors still allow this hint to be auto-applied. */
+  autoApplyEligible?: boolean;
   evidence: OptimizationEvidence;
   /** Provenance: which prescription generated this hint. */
   parentPrescriptionId?: string;
@@ -65,6 +50,8 @@ export interface OptimizationEvidence {
   profile: ExecutionProfile;
   triggerMetrics: Record<string, number>;
   baseline?: ExecutionProfile;
+  /** Persisted prescriber-side eligibility metadata for downstream appliers. */
+  autoApplyEligible?: boolean;
 }
 
 /** Metric snapshot for provenance tracking. */
@@ -84,6 +71,11 @@ export interface MetricSnapshot {
    * with per-session normalization. buildSnapshot() always populates this field for new hints.
    */
   sessionCount?: number;
+}
+
+export interface PrescriberConfig {
+  prompt?: import("./promptOptimizer.js").PromptOptimizerConfig;
+  token?: import("./tokenOptimizer.js").TokenOptimizerConfig;
 }
 
 export interface PrescriberResult {

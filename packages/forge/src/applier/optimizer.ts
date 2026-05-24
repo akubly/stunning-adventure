@@ -47,6 +47,14 @@ export interface OptimizationApplierResult {
   frontmatterPatch: SkillFrontmatterPatch;
 }
 
+function isAutoApplyEligible(hint: OptimizationHint): boolean {
+  if (hint.autoApplyEligible !== undefined) {
+    return hint.autoApplyEligible;
+  }
+
+  return hint.evidence.autoApplyEligible !== false;
+}
+
 export function applyOptimizations(
   hints: OptimizationHint[],
   config?: ApplierConfig,
@@ -68,6 +76,14 @@ export function applyOptimizations(
   for (const hint of sorted) {
     if (applied.length >= maxHints) {
       skipped.push({ hintId: hint.id, reason: "max hints per cycle reached" });
+      continue;
+    }
+
+    if (!isAutoApplyEligible(hint)) {
+      skipped.push({
+        hintId: hint.id,
+        reason: 'historical vectors indicate negative impact',
+      });
       continue;
     }
 

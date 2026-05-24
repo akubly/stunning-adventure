@@ -1,3 +1,4 @@
+import type Database from 'better-sqlite3';
 import { getDb } from './index.js';
 
 // ---------------------------------------------------------------------------
@@ -26,6 +27,7 @@ export interface OptimizationHintInsert {
   impactScore?: number;
   confidence?: number;
   evidence?: Record<string, unknown>;
+  autoApplyEligible?: boolean;
   parentPrescriptionId?: string | null;
   metricSnapshot?: Record<string, unknown>;
   status?: HintStatus;
@@ -43,6 +45,7 @@ export interface OptimizationHintRow {
   impactScore: number;
   confidence: number;
   evidence: Record<string, unknown>;
+  autoApplyEligible?: boolean;
   parentPrescriptionId: string | null;
   metricSnapshot: Record<string, unknown>;
   status: HintStatus;
@@ -58,6 +61,13 @@ export interface OptimizationHintQuery {
   parentPrescriptionId?: string;
   limit?: number;
 }
+
+export interface InsertHintIfNewResult {
+  inserted: boolean;
+  existingHintId?: string;
+}
+
+export const ACTIVE_HINT_STATUSES: readonly HintStatus[] = ['pending', 'accepted', 'deferred'];
 
 // Allowed forward transitions from each status. The initial `pending` state
 // can move to any terminal-or-intermediate state; once `applied`/`rejected`/
@@ -78,6 +88,10 @@ const STATUS_TRANSITIONS: Record<HintStatus, HintStatus[]> = {
 // ---------------------------------------------------------------------------
 
 function mapRow(row: Record<string, unknown>): OptimizationHintRow {
+  const evidence = JSON.parse(row.evidence as string) as Record<string, unknown>;
+  const autoApplyEligible =
+    typeof evidence.autoApplyEligible === 'boolean' ? evidence.autoApplyEligible : undefined;
+
   return {
     id: row.id as string,
     source: row.source as HintSource,
@@ -87,7 +101,8 @@ function mapRow(row: Record<string, unknown>): OptimizationHintRow {
     recommendation: row.recommendation as string,
     impactScore: row.impact_score as number,
     confidence: row.confidence as number,
-    evidence: JSON.parse(row.evidence as string) as Record<string, unknown>,
+    evidence,
+    autoApplyEligible,
     parentPrescriptionId: (row.parent_prescription_id as string | null) ?? null,
     metricSnapshot: JSON.parse(row.metric_snapshot as string) as Record<string, unknown>,
     status: row.status as HintStatus,
@@ -101,9 +116,16 @@ function mapRow(row: Record<string, unknown>): OptimizationHintRow {
 // CRUD
 // ---------------------------------------------------------------------------
 
-/** Insert a new optimization hint. Returns the hint id. */
-export function insertOptimizationHint(hint: OptimizationHintInsert): string {
-  const db = getDb();
+function serializeEvidence(hint: OptimizationHintInsert): string {
+  return JSON.stringify({
+    ...(hint.evidence ?? {}),
+    ...(hint.autoApplyEligible === undefined
+      ? {}
+      : { autoApplyEligible: hint.autoApplyEligible }),
+  });
+}
+
+function insertOptimizationHintWithDb(db: Database.Database, hint: OptimizationHintInsert): string {
   db.prepare(
     `INSERT INTO optimization_hints
        (id, source, skill_id, category, description, recommendation,
@@ -120,7 +142,7 @@ export function insertOptimizationHint(hint: OptimizationHintInsert): string {
     hint.recommendation,
     hint.impactScore ?? 0,
     hint.confidence ?? 0,
-    JSON.stringify(hint.evidence ?? {}),
+    serializeEvidence(hint),
     hint.parentPrescriptionId ?? null,
     JSON.stringify(hint.metricSnapshot ?? {}),
     hint.status ?? 'pending',
@@ -128,6 +150,59 @@ export function insertOptimizationHint(hint: OptimizationHintInsert): string {
     hint.appliedAt ?? null,
   );
   return hint.id;
+}
+
+function findActiveHintId(
+  db: Database.Database,
+  skillId: string,
+  source: HintSource,
+  category: string,
+): string | undefined {
+  const placeholders = ACTIVE_HINT_STATUSES.map(() => '?').join(', ');
+  const row = db.prepare(
+    `SELECT id
+       FROM optimization_hints
+      WHERE skill_id = ?
+        AND source = ?
+        AND category = ?
+        AND status IN (${placeholders})
+      LIMIT 1`
+  ).get(skillId, source, category, ...ACTIVE_HINT_STATUSES) as { id: string } | undefined;
+
+  return row?.id;
+}
+
+/** Insert a new optimization hint, suppressing active duplicates. Returns the inserted or existing hint id. */
+export function insertOptimizationHint(hint: OptimizationHintInsert): string {
+  const result = insertHintIfNew(getDb(), hint);
+  return result.inserted ? hint.id : (result.existingHintId ?? hint.id);
+}
+
+/** Return true when a skill already has an active hint for the same source+category. */
+export function hasActiveOptimizationHint(
+  db: Database.Database,
+  skillId: string,
+  source: HintSource,
+  category: string,
+): boolean {
+  return findActiveHintId(db, skillId, source, category) !== undefined;
+}
+
+/** Insert a hint only when no active hint with the same skill+source+category exists. */
+export function insertHintIfNew(
+  db: Database.Database,
+  hint: OptimizationHintInsert,
+): InsertHintIfNewResult {
+  const existingHintId = findActiveHintId(db, hint.skillId, hint.source, hint.category);
+  if (existingHintId) {
+    return {
+      inserted: false,
+      existingHintId,
+    };
+  }
+
+  insertOptimizationHintWithDb(db, hint);
+  return { inserted: true };
 }
 
 /** Get a single hint by id. */

@@ -9,6 +9,7 @@
  * Uses cursor-based polling from Phase 1b infrastructure.
  */
 
+import type { PrescriberOrchestrationConfig, PrescriberRunResult } from '@akubly/types';
 import { getDb } from '../db/index.js';
 import { getUnprocessedEvents } from '../db/events.js';
 import { getLastProcessedEventId, advanceCursor } from '../db/curatorState.js';
@@ -124,6 +125,9 @@ const BATCH_SIZE = 1000;
 /** Soft time cap (ms) for curate() — checked between batches. */
 export const TIME_BUDGET_MS = 3000;
 
+/** Soft time cap (ms) for post-sweep prescriber orchestration. */
+export const PRESCRIBER_TIME_BUDGET_MS = 5000;
+
 // ---------------------------------------------------------------------------
 // Core pipeline
 // ---------------------------------------------------------------------------
@@ -136,6 +140,8 @@ export interface CurateResult {
   insightsChanged: boolean;
   /** Structured diagnostics from the change-vector sweep run. */
   changeVectorSweep: ChangeVectorSweepResult;
+  /** Per-skill prescriber orchestration results for skills whose vectors were just computed. */
+  prescribers?: PrescriberRunResult[];
 }
 
 /**
@@ -146,7 +152,10 @@ export interface CurateResult {
  *
  * Each batch is wrapped in a transaction. Loops until caught up.
  */
-export function curate(changeVectorConfig?: ChangeVectorConfig): CurateResult {
+export async function curate(
+  changeVectorConfig?: ChangeVectorConfig,
+  prescriberOrchestrationConfig?: PrescriberOrchestrationConfig,
+): Promise<CurateResult> {
   const startTime = Date.now();
   let totalProcessed = 0;
   let totalCreated = 0;
@@ -208,6 +217,13 @@ export function curate(changeVectorConfig?: ChangeVectorConfig): CurateResult {
   updateLastRunTimestamp();
 
   const changeVectorSweep = sweepChangeVectors(changeVectorConfig);
+  const prescribers = prescriberOrchestrationConfig
+    ? await runPrescribersForComputedSkills(
+        changeVectorSweep,
+        changeVectorConfig,
+        prescriberOrchestrationConfig,
+      )
+    : undefined;
 
   return {
     eventsProcessed: totalProcessed,
@@ -216,7 +232,54 @@ export function curate(changeVectorConfig?: ChangeVectorConfig): CurateResult {
     capped,
     insightsChanged: totalCreated > 0 || totalReinforced > 0,
     changeVectorSweep,
+    ...(prescribers !== undefined ? { prescribers } : {}),
   };
+}
+
+async function runPrescribersForComputedSkills(
+  changeVectorSweep: ChangeVectorSweepResult,
+  changeVectorConfig: ChangeVectorConfig | undefined,
+  prescriberOrchestrationConfig: PrescriberOrchestrationConfig,
+): Promise<PrescriberRunResult[]> {
+  const minSessions = changeVectorConfig?.minSessionsObserved ?? DEFAULT_MIN_SESSIONS;
+  const results: PrescriberRunResult[] = [];
+  const prescriberStart = Date.now();
+  const totalSkills = changeVectorSweep.computedSkillIds.length;
+
+  for (const [index, skillId] of changeVectorSweep.computedSkillIds.entries()) {
+    if (Date.now() - prescriberStart >= PRESCRIBER_TIME_BUDGET_MS) {
+      console.warn(
+        `runPrescribersForComputedSkills: time budget ${PRESCRIBER_TIME_BUDGET_MS}ms exceeded after ${results.length}/${totalSkills} skills; skipping remaining`,
+      );
+      results.push(
+        ...changeVectorSweep.computedSkillIds.slice(index).map((remainingSkillId) => ({
+          skillId: remainingSkillId,
+          hintsGenerated: 0,
+          hintsInserted: 0,
+          hintsDuplicated: 0,
+          hintsError: 0,
+          skippedReason: 'time-budget-exceeded' as const,
+        })),
+      );
+      break;
+    }
+
+    try {
+      results.push(await prescriberOrchestrationConfig.runForSkill(skillId, minSessions));
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`curate: prescriber orchestration failed for skill ${skillId}: ${message}`);
+      results.push({
+        skillId,
+        hintsGenerated: 0,
+        hintsInserted: 0,
+        hintsDuplicated: 0,
+        hintsError: 1,
+      });
+    }
+  }
+
+  return results;
 }
 
 // ---------------------------------------------------------------------------
@@ -518,6 +581,8 @@ export interface ChangeVectorSweepResult {
   eligible: number;
   /** Change vectors successfully inserted. */
   computed: number;
+  /** Distinct skill IDs whose vectors were newly computed in this sweep cycle. */
+  computedSkillIds: string[];
   /** Hints skipped because the profile didn't exist or hadn't accumulated enough sessions. */
   skippedInsufficientSessions: number;
   /** Hints skipped because metric_snapshot couldn't be parsed. */
@@ -560,9 +625,11 @@ export interface ChangeVectorSweepResult {
 function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResult {
   const minSessions = config?.minSessionsObserved ?? DEFAULT_MIN_SESSIONS;
   const db = getDb();
+  const computedSkillIds = new Set<string>();
   const result: ChangeVectorSweepResult = {
     eligible: 0,
     computed: 0,
+    computedSkillIds: [],
     skippedInsufficientSessions: 0,
     skippedMalformedSnapshot: 0,
     alreadyComputed: 0,
@@ -688,6 +755,7 @@ function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResul
 
     if (insertResult.changes > 0) {
       result.computed++;
+      computedSkillIds.add(hint.skill_id);
       // Emit the legacy-snapshot warning only on the sweep that actually
       // computes the vector. The LEFT JOIN above will exclude this hint from
       // future sweeps, so the warning is naturally one-shot per hint instead
@@ -703,6 +771,7 @@ function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResul
     }
   }
 
+  result.computedSkillIds = [...computedSkillIds].sort();
   return result;
 }
 

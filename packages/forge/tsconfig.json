@@ -13,6 +13,7 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": ["src"],
+  "exclude": ["src/__tests__", "src/**/*.test.ts"],
   "references": [
     { "path": "../types" }
   ]

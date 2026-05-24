@@ -324,7 +324,7 @@ server.registerTool(
     try {
       ensureDb();
 
-      const result = curate();
+      const result = await curate();
 
       // Chain prescribe() when insights changed (DP1 hybrid trigger)
       let prescribeResult = null;

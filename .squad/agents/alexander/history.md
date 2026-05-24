@@ -1,129 +1,153 @@
+📌 Team update (2026-05-22T20:35:00Z): **Wave 2 W2-5 complete** — ForgePrescriberOrchestrator shipped. Attenuation + autoApplyEligible propagation live. ATTENUATION_FLOOR=0.1 exported from @akubly/types. Fail-open on provider errors. Forge tests 609 passing (+10), root build green. — Scribe
+📌 Team update (2026-05-22T20:16:40Z): **Wave 0 complete** — canonical types in @akubly/types, getAllCategories helper in Cairn. category field reconciled to OptimizationCategory union. — Scribe
+📌 Team update (2026-05-22T20:03:56Z): Wave 2 v3.1 scope final — autoApplyEligible propagates through OptimizationHint; constants NEGATIVE_IMPACT_AUTO_APPLY_GATE=-0.2 and ATTENUATION_FLOOR=0.1; CLI surface only — no MCP in Wave 2. — Graham Knight
 # Alexander — History
+
+## 2026-05-21: Wave 2 v3 Scope Ready — Curator Wiring Deferred to Wave 3
+
+Scribe orchestration complete: Graham's v3 scope finalized and merged to `.squad/decisions.md`. Key scope decisions:
+- **ChangeVectorProvider** port with async return type for Phase 5 cloud readiness
+- **Wave 2/3 split:** Manual invocation in Wave 2; Curator-driven automatic orchestration deferred to Wave 3 (requires composition-root decision)
+- **Hint deduplication** via `(skillId, source, category)` key with active-status filter
+- **Two-layer negative-impact attenuation:** Confidence scaling + eligibility flag (`autoApplyEligible`)
+
+Decisions archived; all decisions.md > 20KB now. Ready for implementation on Wave 2 primitives (computation + ranking only; runtime wiring follows in Wave 3).
+
+---
+
+## Core Context
+
+
+**Role:** SDK/Runtime Dev  
+**Joined:** 2026-04-28  
+**Specialization:** Monorepo migration patterns, circular dependency resolution, migration framework expertise, prescriber CRUD integration
+
+**Key Patterns Mastered:**
+- Migration framework: single `migration.up(db)` with all DDL, versioning tied to filename, idempotent re-runs via `schema_version` table
+- Circular dependency management: Cairn↔Forge import constraint solved via mirror + regression test guard (Laura L5)
+- CRUD patterns: explicit `db` parameter for transactional control vs internal getDb() calls; anti-join for compute-once guards
+- Type field naming: encode semantic space (confidence level vs confidenceBoost multiplier) to prevent latent traps
+- Two-tier sort partition (matched vs unmatched) for correct ranking when optional keys diverge negative
+- Lockout-routing pattern: cross-assignment fixes prevent author bias; each agent fixes other's code per review
+
+**Recent Work (Phase 4.6 W1–3):**
+- Wave 1: A1–A4 completed (migration 012, schema v12, changeVectors CRUD, Curator sweep integration); weight constants decision: mirror in cairn + L5 guard
+- Wave 3: Lockout-fixed Rosella's prescriber code (confidence → confidenceBoost); extracted duplicate sort to utils.ts; 3 advisory fixes (safeMin guard, JSDoc, DRY)
+- Current: Wave 2 owner for @akubly/types — promote ChangeVectorSummary, define ChangeVectorProvider port, implement SqliteChangeVectorProvider in Cairn
+
+---
+
+## 2026-05-20: Phase 4.6 Wave 2 Scoping — @akubly/types Port + Cairn Adapter
+
+Wave 2 scope amended: `docs/forge-phase4.6-wave2-scope.md` updated with PrescriberOrchestrator port + negative-impact attenuation. New ADR merged to `.squad/decisions.md`. Invocation point: `Curator.curate()` post-vector-sweep. Attenuation: when `meanNetImpact < 0`, `confidenceBoost` ≤ 1.0 (minimum 0.3), preventing auto-apply of harmful prescriptions.
+
+---
+
+## 2026-05-20: Phase 4.6 Wave 2 Scoping — @akubly/types Port + Cairn Adapter
+
+---
 
 ## 2026-05-01: Finding 8 — FeedbackSource.getProfile granularityKey
 
-**Problem:** `FeedbackSource.getProfile(skillId, granularity?)` couldn't address per-user / per-model profiles. The DB key on `execution_profiles` is `(skill_id, granularity, granularity_key)`, so the contract was strictly less expressive than the storage.
+**Problem:** `FeedbackSource.getProfile(skillId, granularity?)` couldn't address per-user / per-model profiles. DB key is `(skill_id, granularity, granularity_key)`.
 
-**Fix:** Added optional `granularityKey?: string` third parameter to `FeedbackSource.getProfile` in `packages/types/src/index.ts`. Expanded JSDoc to document the composite key, the per-tier semantics (user id for per-user, model id for per-model, defaults to 'global' otherwise), and that the key is required to address non-global profiles.
+**Fix:** Added optional `granularityKey?: string` third parameter. Updated JSDoc with per-tier semantics (user id for per-user, model id for per-model, 'global' default).
 
-**Companion functions reviewed, left alone (with rationale in JSDoc):**
-- `getPendingHints`: `optimization_hints` table is keyed only on `id` with `skill_id` index — no granularity column. Adding granularity to the contract would have been speculative.
-- `getStrategyParameters`: no DB backing exists yet; type is open-shaped. Granularity dimensions aren't modeled in the contract.
+**Verification:** `npm run build` clean; `npm test` 512/512 passing. No call sites changed (optional, additive).
 
-**CRUD module check:** `packages/cairn/src/db/executionProfiles.ts` `getExecutionProfile(skillId, granularity, granularityKey='global')` already satisfies the new interface — no change needed.
+**Lesson:** Treat unexpressive shared contracts as bugs, not feature gaps — additive optional parameters carry low risk.
 
-**Verification:** `npm run build` clean; `npm test` 512/512 passing across all packages. No call sites needed to change (the parameter is optional and additive).
+---
 
-**Lesson:** When a shared contract is strictly less expressive than its storage, treat it as a contract bug, not a feature gap — additive optional parameters carry near-zero risk and unblock real use cases.
+## 2026-05-03–04: Phase 4.6 Waves 1 & 3 Summary
 
+**Wave 1 (Foundation):** A1–A4 completed. Decision: mirror weight constants in cairn + Laura L5 regression test to guard against drift. Curator sweep integration: post-event-loop call, not per-batch, keeps transaction model clean.
 
-## 2026-05-03: Phase 4.6 Wave 1 — Change Vector Foundation
+**Wave 3 (Lockout Fixes):** Fixed Rosella's prescriber code—renamed `confidence` → `confidenceBoost` (semantic distinction: level vs multiplier). Extracted 8-line duplicate sort block from both prescribers to `utils.ts` (12 lines removed, one call each).
 
-**Work items completed:** A1 (migration 012), A2 (schema v12), A3 (changeVectors CRUD), A4 (Curator sweep).
+**Key Lesson:** Advisory findings surface edge cases (null checks, boundary behavior) that happy-path code misses. Cycle 3's `safeMin` guard (`minVectors=0` → denominator `Math.log(1) = 0`) is exactly this.
 
-**Migration patterns learned:**
-- The 011 pattern is the definitive template: a single `migration.up(db)` that runs one `db.exec()` with all DDL inside. No conditionals, no idempotency logic (the migration framework handles that via `schema_version` table). Keep the `version` and `description` consistent with the file name.
-- Tests hardcode `MAX(version)` and `COUNT(*)` against `schema_version` — every migration bump breaks them and requires updating. Pattern: grep for `toBe(11)` after bumping to 12.
+**Build status:** 1153 tests passing (baseline 990 + 163 new). Branch review-clean, all cycles complete.
 
-**CRUD module patterns:**
-- `optimizationHints.ts` uses internal `getDb()` calls. For changeVectors, the spec required explicit `db` parameter for Curator transactional control. Both patterns are valid; explicit `db` is cleaner for modules called inside transactions.
-- The `JOIN optimization_hints` pattern in `getChangeVectorsByCategoryAndSkill` works cleanly because SQLite's query planner handles it efficiently with the `idx_change_vectors_hint` index.
+---
 
-## 2026-05-03: Phase 4.6 Wave 3 — Lockout-Compliant Fixes
+## 2026-05-22: Wave 3 Integration Analysis — Curator–MCP Wiring Mapped
 
-**Role:** Executor (Wave 1 foundation), then lockout-constrained fixer (Wave 3)
+Completed comprehensive integration surface analysis for Wave 3 Curator-driven orchestration. All five requested sections delivered:
 
-**Wave 1 completion:**
-- A1–A4 completed: migration 012, schema v12 registration, changeVectors CRUD module, Curator sweep integration
-- Decision on weight constants: duplicate in Cairn with regression test guard (Laura L5) because cairn↔forge import would create circular dep
-- First commit: 8a53253 (all foundation work)
+**1. Curator surface today:**
+- `curate(changeVectorConfig?)` exports from `packages/cairn/src/agents/curator.ts`; returns `CurateResult` with `changeVectorSweep` metadata
+- Call sites: `sessionStart.ts:68` and `mcp/server.ts:327` (both read-only in Wave 2)
+- Vector sweep identifies skills with newly computed categories; invocation hook for Wave 3 injector
 
-**Wave 3 (lockout):**
-- Defect triage assigned me to fix Rosella's code (lockout rule: not the original author)
-- Changes: `prescribers/types.ts`, `promptOptimizer.ts`, `tokenOptimizer.ts` (renamed confidence → confidenceBoost, updated references)
-- Second commit: d592838 — renamed Rosella's files, confident the refactor surfaces the semantic fix Laura identified
+**2. Profile selection strategy (three independent dimensions):**
+- **Trigger set:** Trigger-driven (skills with new vectors) vs. global vs. hybrid batching. **Recommended:** Trigger-driven for v1.
+- **Granularity tier:** Per-skill only vs. all tiers. **Recommended:** Per-skill only (matches vector computation scope).
+- **Skip conditions:** No profile, immature sessionCount, stale profile. **Recommended:** v1 skips on no-profile or `sessionCount < minSessions`.
+- Operators observe: skills processed, skipped, hint volume, dedup stats.
 
-**Lesson:** Lockout rule is a real safety mechanism. When I fixed my own changeVectors.ts zero-initialization bug in wave 1, Rosella's follow-up caught it. Cross-review under lockout prevents blind spots that single review misses.
+**3. MCP tool shape:** `run_prescriber_optimization(force?: boolean)` with output: success, skills processed, hints (generated/inserted/dedup'd), vector applicability, next steps.
 
-**Curator sweep integration:**
-- The Curator's `curate()` function processes events in batches (cursor-based). The change-vector sweep is fundamentally different — it's a scan of `optimization_hints` for `applied` status, not event-driven. Adding it as a post-event-loop call (after `updateLastRunTimestamp`) is clean: it runs once per `curate()` invocation, not per batch. This keeps per-batch transaction overhead low.
-- The "NOT IN (SELECT DISTINCT hint_id FROM change_vectors)" anti-join is the right idiom for "compute only once per hint". SQLite optimizes this well with the `idx_change_vectors_hint` index.
-- Soft-fail on missing profile or malformed snapshot (continue, don't throw) is the correct Curator pattern. Vectors will be computed on the next sweep when conditions are met.
+**4. Curator config surface:** Backward-compatible signature addition: `curate(changeVectorConfig?, prescriberOrchestrationConfig?)`. Orchestrator is an injectable dependency (`runForSkill` function + optional profile loader). Composition root constructs and passes it.
 
-**Circular dependency management:**
-- Cairn cannot import Forge. When ADR-P4.6-003 says "same weights as drift score", the implementation answer is: mirror + regression test (L5). Document the mapping explicitly so if DRIFT_WEIGHTS ever changes, the L5 test fails loudly before anyone notices meanNetImpact diverged.
-- Decision recorded in `.squad/decisions/inbox/alexander-phase4.6-weight-constants.md`.
+**5. ADR blockers identified:**
+- Composition root choice (A–D from Roger's track) gates implementation
+- Hook vs. MCP tool vs. both (invocation model)
+- Eager vs. lazy Forge import (startup cost, optional dependency handling)
+- Profile expansion (explicit skill list, global tier fallback, staleness) deferred to Wave 4
 
-**Sign convention decision:**
-- Deltas stored as `after - before` (raw arithmetic). `computeNetImpact` negates lower-is-better metrics so positive net_impact = beneficial prescription. This convention is critical for Wave 2's negative penalty logic to work correctly — negative meanNetImpact means the prescription hurt, which is the signal for the penalty multiplier.
+Analysis is **mechanical once composition root is decided**. Hard parts (data plumbing, attenuation, dedup) already in Wave 2. Full report: `.squad/agents/alexander/wave3-integration-analysis.md`.
 
-**Build/test status at completion:**
-- `npm run build` clean in cairn
-- cairn: 478 passing, 44 todos (Laura's L1/L2/L4 stubs)
-- forge: 556+ passing, 2 todos
-- Phase 4.5 baseline was 990; current total ≈ 1034+ (healthy growth)
+## Learnings (2026-05-23 — Wave 3 Decisions Accepted by Aaron)
 
-## 2026-05-04: Phase 4.6 Cycle 3 — Advisory Fixes (Lockout Round)
+- **W3-D1: Composition Root → R2 ACCEPTED** — New `@akubly/skillsmith-runtime` library package (composition layer importing both `@akubly/cairn` and `@akubly/forge`) + thin `@akubly/runtime-cli` wrapper. Clean separation, best test isolation, Phase 5-ready. Unblocks all Wave 3 work items.
+- **W3-D3: MCP Tool → Dropped from Wave 3** — No MCP tool exposure in Wave 3. Curator hook is autonomous surface; `forge-prescribe` CLI is manual surface. `run_prescriber_optimization` MCP tool deferred to later wave when concrete operator need surfaces. Removes ~7 items, ~18 tests from Wave 3 scope.
+- **W3-D4: Curator Hook → Always-On** — Automatic prescriber orchestration invocation enabled always. No opt-in flag in v1. Existing safety rails (negative-impact attenuation, hint dedup, fail-open semantics) sufficient. Profile selection trigger-driven only; global tier fallback deferred to Wave 4.
 
-**Items completed:** 3 advisory fixes in forge prescribers.
+## Learnings (2026-05-22: Wave 3 Integration Analysis — Curator–MCP Wiring Mapped)
+- Keeping Forge's local `OptimizationCategory` union in place is safe for W2-2 because Roger canonized the shared union to match Forge's stricter category set; the barrel contract stays structurally compatible in both directions.
+- Added `packages/forge/src/prescribers/types.contract.test.ts` with two guards: barrel-vs-canonical type assignability and a prompt-prescriber regression using a canonical summary carrying `autoApplyEligible`. Validation passed with `npm run build` from repo root and `npm test --workspace=@akubly/forge` (599 passed, 3 todo).
+- `runForgePrescribers()` now lives in `packages/forge/src/prescribers/forgePrescriberOrchestrator.ts`, queries an optional `ChangeVectorProvider`, and returns the combined prompt/token hint list without dedup or persistence.
+- Forge attenuation semantics are now: mature vectors with `meanNetImpact <= -0.2` attenuate confidence to `max(0.1, 1 + meanNetImpact)` and force `autoApplyEligible = false`; sparse negatives or mature negatives above `-0.2` stay neutral at `confidenceBoost = 1.0`.
+- `autoApplyEligible` is stored on matched hints both as a top-level field and in `hint.evidence.autoApplyEligible`; unmatched hints omit the field so Phase 4.5 callers still read absence as eligible.
+- Added `packages/forge/src/prescribers/forgePrescriberOrchestrator.test.ts` with ten cases (nine maturity-gradient scenarios plus provider-failure fallback); validation passed with `npm test --workspace=@akubly/forge` (609 passed, 3 todo), root `npm test`, and root `npm run build`.
+- Negative-impact auto-apply gating is now inclusive at `<= NEGATIVE_IMPACT_AUTO_APPLY_GATE` (`-0.2`), keeping exact-boundary cases on the manual-review side because the safety asymmetry favors false positives over false negatives.
+- Wave 3 integration is **injection-based**: Curator accepts an optional orchestrator config (not a direct Forge import). This preserves the acyclic dependency boundary and allows composition root to wire both packages independently. The orchestrator is a simple function pointer (`runForSkill`), not a class — keeps it lightweight and testable.
 
-**Item 1 — safeMin guard in computeConfidenceBoost:**
-- `minVectors=0` made the log-denominator `Math.log(1) = 0`, yielding Infinity for vc>0. Added `const safeMin = Math.max(1, minVectors)` before the division; denominator now minimum `Math.log(2)`.
-- Mirrors the identical guard Rosella is placing in cairn's `summarizeChangeVectors`. Pattern: whenever a formula divides by `Math.log(1 + n)`, the `n` must be clamped to ≥1 before use.
+## Learnings (2026-05-23 — W3-3 Prescriber orchestration types)
+- `ExecutionProfile` was already canonized in `@akubly/types`, so W3-3 should extend that package in place instead of duplicating or structurally mirroring the shape from Cairn. That keeps the dependency boundary acyclic and avoids type drift between Curator, Forge, and the composition root.
+- `loadProfile` stays **synchronous** for Wave 3 because today's loader shape (`FeedbackSource.getProfile()` and Cairn DB accessors) is synchronous. If Phase 5 cloud/profile fetching makes this async later, evolve the shared contract then rather than widening early without a caller.
+- `packages/skillsmith-runtime/src/index.ts` now re-exports the canonical `PrescriberOrchestrationConfig` / `PrescriberRunResult` types from `@akubly/types`; W3-5 can wire real implementations against those exports without changing the scaffold API.
+- W3-4 should consume `PrescriberOrchestrationConfig.loadProfile()` as an optional sync hook and treat null as a skip path; W3-5 should return `PrescriberRunResult` counts aligned with Forge's raw hint generation and Cairn dedup/persistence outcomes.
 
-**Item 2 — confidenceBoost JSDoc:**
-- Stale comment claimed `<1.0 attenuates`. Wave 1 clamp (`Math.max(1.0, …)`) makes this impossible. Updated JSDoc names both enforcement sites (forge + cairn), defers attenuation explicitly to Wave 2.
-- Lesson: JSDoc on a type field that depends on a runtime invariant should name the code location that enforces the invariant — not just describe the conceptual intent.
+## Learnings (2026-05-23 — W3-5 Prescriber orchestration factory)
+- Extracted a shared `executePrescriberRun()` helper in `packages/skillsmith-runtime/src/index.ts` so both `runForgePrescribe()` and `createPrescriberOrchestrationConfig().runForSkill()` reuse the same provider → Forge prescriber → dedup/persist pipeline. The CLI keeps its Wave 2 result contract and global fallback behavior, while the Curator-facing factory stays a thin adapter.
+- Factory profile loading is **per-skill only** and `runForSkill()` calls the exact same `loadProfile` closure it exposes. Missing profile or `sessionCount < minSessions` returns a zero-count `PrescriberRunResult` as the skip semantic; W3-6 does not need an extra skip flag.
+- `CreatePrescriberOrchestrationConfigOpts` now accepts either an owned SQLite handle (`db`) or `dbPath`; local row loading avoids Cairn singleton coupling when the caller already has a DB connection.
 
-**Item 3 — applyHistoricalVectorOrdering DRY extraction:**
-- Identical 8-line two-tier sort block existed in promptOptimizer and tokenOptimizer. tokenOptimizer even had a "Same logic as promptOptimizer" comment — a textbook "extract this" signal.
-- Extracted to `utils.ts` as a pure, exported function. Both prescribers now delegate with one call each, removing 12 lines of duplication.
-- Pattern: when a comment in code says "same as [other place]", treat it as a TODO:extract, not just documentation.
+## Learnings (2026-05-23 — W3-4 curate() signature extension)
+- `curate()` had to become `async` because `PrescriberOrchestrationConfig.runForSkill()` is async. That propagated to every live sync consumer: `packages/cairn/src/hooks/sessionStart.ts`, `packages/cairn/src/mcp/server.ts`, Cairn curate tests, and Forge's `wave2-pipeline` integration test now all `await` the Curator result.
+- The smallest viable trigger signal is a distinct `computedSkillIds` array on `ChangeVectorSweepResult`, populated only when a new change vector row is inserted this sweep. That keeps W3-4 trigger-driven without re-querying history or inventing a second notion of eligibility.
+- `minSessions` should come from the existing `ChangeVectorConfig.minSessionsObserved` fallback chain (`DEFAULT_MIN_SESSIONS`), and Curator should pass that same value into `runForSkill(skillId, minSessions)` so vector gating and prescriber gating stay aligned. Curator itself should not pre-filter via `loadProfile()`; skip semantics stay inside the orchestrator closure.
+- The qualifying-skill list should be sorted before orchestration/tests consume it. SQLite's natural row order is not a contract, so sorting `computedSkillIds` prevents flaky call-order assertions and keeps operator output stable.
+- Fail-open needs to be visible in two places: `console.warn` for operators and an inline `PrescriberRunResult` error row (`hintsGenerated/Inserted/Duplicated = 0`, `hintsError = 1`) so W3-5/W3-6 can surface partial-success counts without special-case plumbing.
 
-**Build:** forge package clean (`tsc --project packages/forge/tsconfig.json` exit 0). Full monorepo build has a pre-existing error in cairn's `curator.ts:631` (Rosella's work-in-progress, not touched here).
+## 2026-05-23: 📌 Wave 3 Complete — Curator-Driven Prescriber Orchestration Shipped
 
-**Commits:** fc897a0, 8f16ad1, 04f02b0
+**Status:** ✓ All 7 work items shipped  
 
-## Learnings
+**W3-3, W3-4, W3-5 shipped:**
+- W3-3: `PrescriberOrchestrationConfig` + `PrescriberRunResult` types canonized in `@akubly/types`
+- W3-4: `curate()` async, trigger-driven orchestration loop, fail-open semantics, 4 new + 32 updated tests
+- W3-5: Shared `executePrescriberRun()` helper extracted; `createPrescriberOrchestrationConfig()` factory wired; Cairn `getExecutionProfileWithDb()` convenience added
 
-- Always grep test files for hardcoded schema version numbers after adding a migration. The pattern `toBe(11)` appears in at least 3 test files; it's predictable churn.
-- The `edit` tool's `old_str` must include enough context to be unique, and must match the closing braces exactly. Missing a `});` from the old_str pattern silently truncates the file. Always verify with a view after edits to test files.
-- The Curator is event-loop-centric by design. Non-event sweeps (like change vectors) slot naturally after the event loop, not inside it. This keeps the batch transaction model clean.
-- **Lockout-routing pattern (2026-05-03):** When a reviewer rejects an artifact and the Reviewer Rejection Lockout applies, the *author* of the buggy code cannot fix it. A second agent is assigned instead. This creates a symmetric cross-assignment: Alexander fixes Rosella's files, Rosella fixes Alexander's file. The coordinator must sequence commits so both sides land before the full build is clean — partial commits with clear notes are correct mid-flight behavior, not a problem.
-- **Cost of misnamed types:** `confidence` and `confidenceBoost` occupy different mathematical spaces (level ∈ [0,1] vs multiplier ∈ ℝ⁺). A type that *looks* like a level but *behaves* like a multiplier becomes a latent trap — the next developer writes `if (summary.confidence === 0)` and silently zeroes every hint. Field names must encode semantic space, not just intent. When a function is already named `computeConfidenceBoost()`, the field it produces should be `confidenceBoost` — one name, one concept.
-- **Confidence clamp pattern (2026-05-03 cycle 2):** A formula that can return sub-1.0 for under-threshold input contradicts a "positive boost only" policy. The fix is always `Math.max(1.0, formula)`, not a caller-side clamp — the invariant belongs at the source. Document it in JSDoc so Wave 2 penalty work doesn't inadvertently remove the clamp when it should instead add a penalty pathway.
-- **Two-tier sort over null-coalescing sort (2026-05-03 cycle 2):** When a sort key can be absent vs present with a negative value, coalescing absent to 0 creates a ranking inversion: unmatched (0) outranks measured-bad (e.g., -0.1). Fix: explicit partition into matched/unmatched, sort each tier independently, concatenate. At small N (≤10 prescriber hints), the clarity of the partition form outweighs the marginal overhead of two filter passes. Decision: `.squad/decisions/inbox/alexander-phase4.6-cycle2-two-tier-sort.md`.
-- **Barrel re-export completeness (2026-05-03 cycle 2):** Every type that appears in a public function signature must be re-exported from the package root. If `analyzePromptOptimizations(..., historicalVectors?: ChangeVectorSummary[])` is in the barrel, then `ChangeVectorSummary` must be too — otherwise callers must reach into internal paths to type their arguments. Check function signatures against root barrel on every new type addition.
-- **Internal helper re-export hygiene (2026-05-03 cycle 2):** A function exported from a prescribers barrel but not importable by the only cross-package consumer (cairn) creates a phantom API surface. The signal: if the only legitimate call sites are package-internal tests and the function is already imported directly from its source file, remove it from the barrel. The barrel is for the public contract; internal utilities belong only in their module.
-- **Commit granularity note:** When a constant (DEFAULT_MIN_SESSIONS) is introduced and immediately consumed in the same logical change, bundling constant + consumer into the same commit (or across two tightly-coupled commits) is cleaner than a separate constant-only commit. The mapping commit #1 (utils.ts) → commit #2 (promptOptimizer.ts) captures this correctly.
+**Final Test Counts:**
+- Cairn: 576/576 passing
+- Forge: 630/630 passing
+- Skillsmith-Runtime: 6/6 passing
 
+Wave 3 delivers fully-realized Curator-driven orchestration. Type contracts locked in `@akubly/types`. Per-skill execution pipeline centralized. Factory ready for W3-6 hook wiring.
 
+---
 
-
-**Finding Fixed:** F8 (granularityKey in FeedbackSource.getProfile).
-
-**Key Output:**
-- FeedbackSource.getProfile(profileId, granularityKey) enables signal-level profile filtering
-- Integrates with Roger's per-signal ExecutionProfile.signals and Rosella's prescriber signal targeting
-
-**Integration:** Feedback loop can now query specific signal data, enabling closed-loop tuning per drift driver.
-
-## 2026-05-04: Phase 4.6 Review Cycle Completion
-
-**Role:** Executor (Wave 1) + Lockout Fixer (Waves 2–3)
-
-**Final Outcome:**
-- 1153 tests passing (baseline 990 + 163 new)
-- Branch review-clean, compliance approved, correctness 7/7 passed
-- All three cycles complete: personas → triage → advisory fixes
-
-**Cycle 1–3 Summary:**
-- Cycle 1: 15 findings consolidated, 12 accepted, 1 rejected, 2 deferred
-- Cycle 1 fixes: alexander-2 (5 forge items), rosella-2 (7 cairn items), laura-3/4 (test expansion)
-- Cycle 2: 10 advisory findings (0B / 3I / 7M)
-- Cycle 3: alexander-3 (3 forge), rosella-3 (4 cairn), laura-5 (20 tests)
-
-**Pattern Applied:** Lockout-compliant cross-assignment enabled safe parallel fixing. Each agent fixed the other's code per review findings, preventing author bias.
-
-**Lesson (Cycle 3 application):** Advisory findings from focused re-review often surface edge cases (null checks, guard conditions) that the original implementation missed because it was optimizing for the happy path. Cycle 3's safeMin guard for minVectors=0 is exactly this — Alexander's initial code worked for typical N≥1 but failed silently at the mathematical boundary. The fix is to document the invariant in JSDoc so Wave 2 work doesn't inadvertently remove the guard.
-
+**Older learnings archived to history-archive.md**
