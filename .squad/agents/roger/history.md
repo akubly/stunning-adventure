@@ -80,6 +80,28 @@ Wave 3 implementation delivered autonomous Curator-driven orchestration. Composi
 
 PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end-to-end: composition root R2 (`@akubly/skillsmith-runtime`), Curator hook wiring, per-skill orchestration, E2E tests, Phase 5-ready acyclic boundaries. 14 Copilot findings addressed across 4 review cycles. 1 deferral approved: insertHintIfNew atomicity (partial UNIQUE + BEGIN IMMEDIATE) → Wave 4.
 
+### Wave 4.1 & 4.2 Shipped (2026-05-04)
+
+**W4-1: insertHintIfNew Atomicity**
+
+- Created migration 013 with partial UNIQUE index on `(skill_id, source, category) WHERE status IN ('pending', 'accepted', 'deferred')`
+- Wrapped `insertHintIfNew()` in `BEGIN IMMEDIATE` transaction with `.immediate()` call
+- UNIQUE constraint violations treated as duplicates (fetch existing hint id)
+- Added 3 unit tests: single insert, duplicate detection, concurrent insert simulation
+- Files: `packages/cairn/src/db/migrations/013-hint-atomicity.ts`, `packages/cairn/src/db/optimizationHints.ts`, `packages/cairn/src/__tests__/optimizationHints.test.ts`
+
+**W4-2: CairnEvent Extensions (D1 Option 1)**
+
+- Added `hint_state_transition` event emitted on hint insert and status updates
+- Added `profile_bump` event emitted on profile create/update
+- Events logged to `__system__` session created via `ensureSystemSession()` helper
+- Payload structure: `{skill_id, hint_id/profile_id, from_state/to_state or bump_kind, granularity, timestamp}`
+- Added 5 unit tests covering event emission scenarios
+- Files: `packages/cairn/src/db/optimizationHints.ts`, `packages/cairn/src/db/executionProfiles.ts`, `packages/cairn/src/db/sessions.ts`, `packages/cairn/src/__tests__/cairnEvents.test.ts`
+- **Gotcha:** Event emission must occur AFTER transaction commits, not inside the transaction, or events won't be persisted
+
+**Test Results:** 584 cairn tests passing, full suite green. Migration number bumped from 012 to 013.
+
 ---
 
 **Older learnings archived to history-archive.md**

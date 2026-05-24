@@ -316,8 +316,8 @@ describe('Wave 4 Group B — CairnEvent Observability', () => {
     const db = reopenDb();
     const { logEvent } = await import('../../../cairn/src/db/events.js');
 
-    // Insert a future event type
-    logEvent('future_event_type', { detail: 'Wave 5 feature' }, sessionId);
+    // Insert a future event type (note: logEvent signature is sessionId, eventType, payload)
+    logEvent(sessionId, 'future_event_type', { detail: 'Wave 5 feature' });
 
     const events = getUnprocessedEvents(0);
     const futureEvent = events.find((e) => e.eventType === 'future_event_type');
@@ -378,7 +378,7 @@ describe('Wave 4 Group C — forceRegenerate CLI Knob', () => {
     //
     // Setup: Insert a pending hint for skillId.
     // Action: Call runForgePrescribe with default options.
-    // Assert: No new hints inserted (hintsDuplicated > 0).
+    // Assert: skipped count > 0 (hints were deduplicated).
 
     const skillId = 'skill-dedup-default';
     upsertExecutionProfile(makeProfile(skillId, 10));
@@ -392,12 +392,15 @@ describe('Wave 4 Group C — forceRegenerate CLI Knob', () => {
     const result = await runForgePrescribe({ skillId, dbPath });
 
     expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    if (!result.ok) {
+      console.error('runForgePrescribe failed:', result.message);
+      return;
+    }
 
-    // Should have generated hints but duplicated (not inserted)
-    expect(result.hintsGenerated).toBeGreaterThan(0);
-    expect(result.hintsDuplicated).toBeGreaterThan(0);
-    expect(result.hintsInserted).toBe(0);
+    // Should have generated hints but skipped (not inserted) due to dedup
+    expect(result.totalHints).toBeGreaterThan(0);
+    expect(result.skipped).toBeGreaterThan(0);
+    expect(result.inserted).toBe(0);
   });
 
   it('forceRegenerate: true re-emits hints even when active hints exist', async () => {
@@ -423,11 +426,14 @@ describe('Wave 4 Group C — forceRegenerate CLI Knob', () => {
     const result = await runForgePrescribe({ skillId, dbPath, forceRegenerate: true });
 
     expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    if (!result.ok) {
+      console.error('runForgePrescribe failed:', result.message);
+      return;
+    }
 
     // Should have generated and inserted hints
-    expect(result.hintsGenerated).toBeGreaterThan(0);
-    expect(result.hintsInserted).toBeGreaterThan(0);
+    expect(result.totalHints).toBeGreaterThan(0);
+    expect(result.inserted).toBeGreaterThan(0);
 
     // Prior hint should be expired
     const expiredHint = queryOptimizationHints({ skillId, status: 'expired' }).find(
@@ -465,9 +471,12 @@ describe('Wave 4 Group C — forceRegenerate CLI Knob', () => {
     const result = await runForgePrescribe({ skillId, dbPath, forceRegenerate: true });
 
     expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    if (!result.ok) {
+      console.error('runForgePrescribe failed:', result.message);
+      return;
+    }
 
-    expect(result.hintsInserted).toBeGreaterThan(0);
+    expect(result.inserted).toBeGreaterThan(0);
     
     // Verify the CLI wiring by checking that the expired hint exists
     const expiredHints = queryOptimizationHints({ skillId, status: 'expired' });
