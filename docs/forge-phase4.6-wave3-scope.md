@@ -75,6 +75,12 @@ export interface PrescriberRunResult {
   hintsInserted: number;
   hintsDuplicated: number;
   hintsError: number;
+  /**
+   * Set when the orchestrator skipped this skill without running it
+   * (e.g. time budget exhausted). Absent for normally-processed skills,
+   * even when they produced zero hints.
+   */
+  skippedReason?: 'time-budget-exceeded';
 }
 ```
 
@@ -84,14 +90,15 @@ The **composition root** (`@akubly/skillsmith-runtime`) constructs this config b
 
 After `sweepChangeVectors()` completes inside `curate()`:
 
-1. If `prescriberOrchestrationConfig` is provided AND `changeVectorSweep.skillsProcessed > 0`:
+1. If `prescriberOrchestrationConfig` was provided, iterate `changeVectorSweep.computedSkillIds` (may be empty — see §4.2):
 2. For each skill with newly computed vectors:
    - Load profile (per-skill granularity, `granularity_key='global'`)
    - Skip if no profile or `sessionCount < minSessions` (default 3)
    - Call `runForSkill(skillId, minSessions)`
    - On success: accumulate results
    - On failure: log warning, continue to next skill (fail-open)
-3. Append prescriber results to `CurateResult.prescribers` field
+3. The orchestrator enforces a `PRESCRIBER_TIME_BUDGET_MS` (5s) across the batch. When exhausted mid-loop, remaining skills are appended with zero counts and `skippedReason: 'time-budget-exceeded'`.
+4. Append prescriber results to `CurateResult.prescribers` field (present as `[]` when config provided but no skills computed; omitted entirely when no config was passed).
 
 ### 3.4 Fail-Open Semantics
 
@@ -148,7 +155,8 @@ export interface PrescriberRunResult {
 | Time budget exhausted mid-batch | Remaining entries have `skippedReason: 'time-budget-exceeded'` and zero counts |
 | Dedup blocks 2 of 5 hints | sum of `hintsDuplicated` across entries = 2 (active hints already exist) |
 | Prescriber fails for 1 skill | 1 entry has `hintsError: 1` + warning log (other skills unaffected) |
-| No new vectors this cycle | `prescribers` field absent (prescribers didn't run) |
+| No new vectors this cycle, config provided | `prescribers: []` (config was supplied; loop ran zero iterations) |
+| No new vectors this cycle, no config | `prescribers` field absent from `CurateResult` |
 
 ---
 
@@ -158,11 +166,13 @@ export interface PrescriberRunResult {
 
 **Flow:**
 1. `runForSkill()` in `@akubly/skillsmith-runtime` calls `runForgePrescribers()` → receives `OptimizationHint[]`
-2. For each hint: calls `insertHintIfNew(db, hint)` from Cairn (atomic check-and-insert; returns `{ inserted: boolean }`)
+2. For each hint: calls `insertHintIfNew(db, hint)` from Cairn (best-effort check-and-insert: `SELECT` for any active hint matching `(skillId, source, category)`, then `INSERT` if none found; returns `{ inserted: boolean }`)
 3. Counts: `inserted=true` → `hintsInserted++`; `inserted=false` → `hintsDuplicated++`; thrown error → `hintsError++`
 4. Returns `PrescriberRunResult` with insert/dedup/error counts
 
 **Rationale:** Forge prescribers are pure functions — they generate hints without DB access. Persistence is a composition concern (needs DB handle + dedup policy). Keeping it in the composition root means Forge stays portable and testable without SQLite.
+
+**Concurrency note (Wave 4 follow-up):** `insertHintIfNew()` performs the existence check and the insert as separate statements — it is **not** transactional and there is no DB-level uniqueness constraint on `(skill_id, source, category)` filtered by active status. Under concurrent writers (two hook processes running simultaneously) duplicate hints could land. The single-process curate hook is the only writer today, so this is tolerated for now. Wave 4 will add a partial UNIQUE index (e.g. `ON optimization_hints (skill_id, source, category) WHERE status IN ('pending','accepted','deferred')`) and/or wrap the check+insert in a `BEGIN IMMEDIATE` transaction.
 
 **Force-overwrite (deferred to Wave 4):** No `force=true` knob is exposed in Wave 3. `insertHintIfNew()` is the only persistence path; duplicate hints for the same `(skillId, source, category)` always dedup. If operators need to regenerate hints, the current path is to retire the active hint via lifecycle, then re-run.
 
