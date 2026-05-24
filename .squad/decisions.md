@@ -109,31 +109,62 @@ CREATE UNIQUE INDEX idx_optimization_hints_active_dedup
 - `packages/cairn/src/db/optimizationHints.ts` (transaction wrapper)
 - `packages/cairn/src/__tests__/optimizationHints.test.ts` (3 new tests)
 
-### Integration Test Status — W4-4 (Laura, 2026-05-23)
+### Integration Test Pattern: Monorepo Singletons (Laura, 2026-05-24)
 
-**Status:** ⚠️ Partial — 9/14 passing; 5 infrastructure-level failures identified (not implementation bugs)
+**Status:** ✅ Resolved — Module import standardization + `:memory:` DB pattern
 
-**Test Groups:**
-- **Group A (Atomicity):** 3/3 ✅ — Roger's W4-1 implementation solid
-- **Group B (Observability):** 5/5 ✅ — Roger's W4-2 event emission validated
-- **Group C (forceRegenerate):** 1/4 ⚠️ — Rosella's unit tests pass; integration failures = test infra
-- **Group D (E2E):** 0/2 ⚠️ — Same root cause as Group C
+**Root Cause Identified:** TypeScript module singleton fragmentation from mixed import paths in integration tests.
 
-**Root Cause:** File-backed SQLite DB tests fail at `runForgePrescribe` returning ok:false. Likely causes:
-1. Execution profile not persisting across `getDb(dbPath)` calls
-2. Change vector seeding not initialized
-3. DB migration state not set up in file-backed DBs
+**Problem:** Test setup imported from source paths (`../../../cairn/src/...`); implementation from package barrels (`@akubly/cairn`). These resolved to different module instances in TypeScript's dependency graph, each maintaining separate singleton state. Test beforeEach seeded DB in one instance; runForgePrescribe opened DB in the other.
 
-**Evidence:** Runtime-cli unit tests (`:memory:` DBs) pass; integration tests (file-backed) fail.
+**Decision:** Standardize integration test pattern to match wave2/wave3 conventions:
 
-**Recommendations:**
-- Option A: Switch to `:memory:` DBs like wave2-pipeline/wave3-pipeline
-- Option B: Add explicit DB migration + profile initialization helpers
-- Fix Windows EBUSY cleanup issue on rmSync()
+1. **Import from package barrels only** — No source path imports
+   - `import { getDb, closeDb, ... } from '@akubly/cairn'` ✅
+   - NOT `import { getDb } from '../../../cairn/src/db/index.js'` ❌
 
-**Files:**
-- `packages/forge/src/__tests__/wave4-pipeline.test.ts` (14 tests, ~420 LOC)
-- `.squad/decisions/inbox/laura-w4-4-coverage.md` (detailed report)
+2. **Use `:memory:` DB singleton pattern**
+   ```typescript
+   beforeEach(() => {
+     closeDb();
+     getDb(':memory:');  // Creates singleton
+   });
+   
+   afterEach(() => {
+     closeDb();  // No file cleanup needed
+   });
+   ```
+
+3. **Pass `dbPath: ':memory:'` to functions** — Reuses singleton from beforeEach
+
+4. **Test helper functions** for setting up test data with seeded vectors
+
+**Rationale:**
+- Singleton behavior only guaranteed if all code imports from the same module path
+- `:memory:` DBs auto-close; eliminates Windows EBUSY cleanup errors
+- Matches established patterns in wave2-pipeline/wave3-pipeline/runtime-cli tests
+- Faster test execution (in-memory vs file-backed)
+
+**Implementation:** Commit 472e77d
+
+**Test Results Before Fix:** 9/14 passing (5 infrastructure failures in Groups C & D)  
+**Test Results After Fix:** 14/14 passing ✅  
+**Repo-wide:** 644/647 tests passing
+
+**Files Modified:**
+- `packages/forge/src/__tests__/wave4-pipeline.test.ts` — Imports fixed, DB pattern standardized, all tests green
+
+**Consequences:**
+- ✅ Wave 4 integration tests now fully passing
+- ✅ All three work items (W4-1, W4-2, W4-3) validated end-to-end
+- ✅ Windows EBUSY cleanup issue eliminated
+- ✅ Pattern documented for future test authors
+- Trade-off: Cannot test file-based DB persistence in integration suite (acceptable; unit tests can cover if needed)
+
+**Related Evidence:**
+- wave2-pipeline.test.ts (established pattern)
+- wave3-pipeline.test.ts (reference implementation)
+- runtime-cli forgePrescribe.test.ts (unit test reference)
 
 
 ### Decision: Harness Vision Document Drafted (Graham, 2026-05-23)

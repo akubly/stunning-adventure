@@ -1,6 +1,6 @@
 ---
-updated_at: 2026-05-23T21:08:00Z
-focus_area: Phase 4.6 Wave 3 ✅ COMPLETE — PR #21 merged (f27a537), 1219 tests on main. Wave 4 planning in progress.
+updated_at: 2026-05-24T07:27:41Z
+focus_area: Phase 4.6 Wave 4 ✅ COMPLETE — All work items implemented and validated. Integration test infrastructure fixed. 644/647 tests passing on phase-4.6/wave-4 branch. Aaron to open PR manually.
 active_issues:
   - "Phase 1: Monorepo restructuring ✅ COMPLETE"
   - "Phase 2: Live runtime verification ✅ COMPLETE (5/5 modules)"
@@ -10,7 +10,7 @@ active_issues:
   - "Phase 4.6: Change Vector Learning ✅ COMPLETE (1153 tests, migration 012, CRUD, Curator, prescriber ranking, 3 ADRs, 39 commits, primitives-only model, compliance approved)"
   - "Phase 4.6 Wave 2: Wire Curator change vectors to prescriber historicalVectors at runtime ✅ COMPLETE (1199 tests, ChangeVectorProvider, ForgePrescriberOrchestrator, autoApplyEligible gate, hint dedup, forge-prescribe CLI)"
   - "Phase 4.6 Wave 3: Curator-driven prescriber orchestration ✅ COMPLETE (PR #21 merged f27a537; composition root R2 @akubly/skillsmith-runtime; always-on hook wiring; 14 Copilot findings addressed; 1219 tests passing)"
-  - "Phase 4.6 Wave 4: COMPLETE (2026-05-23). D1 resolved: additive CairnEvents. D2 resolved: CLI-only forceRegenerate. W4-1 (atomicity) + W4-2 (observability) ✅ SHIPPED, W4-3 (force knob) ✅ SHIPPED, W4-4 (integration tests) ⚠️ PARTIAL (9/14 passing, 5 test infra gaps). All implementations validated; test infra gaps identified and flagged for Aaron decision. Branch phase-4.6/wave-4. Deferred to Wave 5: global tier fallback, staleness check, metrics dashboard, DB convention standardization."
+  - "Phase 4.6 Wave 4: COMPLETE ✅ (2026-05-24). W4-1 insertHintIfNew atomicity + W4-2 CairnEvent observability + W4-3 forceRegenerate CLI knob + W4-4 integration test infrastructure — all SHIPPED and VALIDATED. Result: 14/14 integration tests passing, 644/647 repo tests green. Branch phase-4.6/wave-4 ready for PR. Aaron to open PR manually (open_pr=false). Deferred to Wave 5: global tier fallback, staleness check, metrics dashboard, DB convention standardization."
   - "Phase 5: Cloud PGO + Full Graph — ROADMAP (docs/forge-phase5-roadmap.md, Azure budget prerequisite)"
   - "#11 — Worktree-aware sessions (deferred)"
   - "awesome-copilot submission (deferred)"
@@ -18,23 +18,29 @@ active_issues:
 
 # What We're Focused On
 
-Wave 3 just shipped. Wave 4 scope is being drafted by Graham — TBD pending Aaron's approval. See .squad/decisions.md for deferred items list and recent Wave 4 design notes.
+Wave 4 is COMPLETE and ready for PR. Branch phase-4.6/wave-4 has all four work items implemented and validated end-to-end. Aaron will open the PR manually.
 
-**PR #21 merged as f27a537 on main @ 2026-05-23 ~21:05Z**
-- Composition root R2 (`@akubly/skillsmith-runtime`) implemented
-- Curator-driven prescriber orchestration wired end-to-end
-- Always-on hook bootstrap via injected configuration
-- 1219 tests passing on main
-- 14 Copilot findings addressed across 4 review cycles
-- 1 deferral approved: insertHintIfNew atomicity → Wave 4 (partial UNIQUE + BEGIN IMMEDIATE)
+**Wave 4 Completion Summary (2026-05-24):**
+- ✅ **W4-1:** insertHintIfNew atomicity (migration 013, partial UNIQUE index, BEGIN IMMEDIATE)
+- ✅ **W4-2:** CairnEvent observability (hint_state_transition, profile_bump events, system session)
+- ✅ **W4-3:** forceRegenerate CLI knob (--force flag for forge-prescribe, expire-then-insert semantics)
+- ✅ **W4-4:** Integration test infrastructure (module singleton pattern fixed, 14/14 tests passing)
 
-**Wave 4 Deferred Work:**
-- insertHintIfNew atomicity guard (partial UNIQUE index on skill_id + source + category, BEGIN IMMEDIATE transaction)
+**Test Status:** 644/647 passing on phase-4.6/wave-4
+- Wave 4 integration tests: 14/14 ✅
+- Repo-wide: 644/647 (3 TODOs in other modules)
+
+**Decision Outcomes:**
+- ✅ **D1 (CairnEvent Observability):** Additive events pattern ratified
+- ✅ **D2 (forceRegenerate Surface):** CLI-only for Wave 4; MCP deferred to Wave 5
+- ✅ **W4-1 (insertHintIfNew Atomicity):** Implemented with partial UNIQUE index + BEGIN IMMEDIATE
+- ✅ **Integration Test Pattern:** Module singleton fragmentation root cause identified and fixed
+
+**Wave 5 Deferred:**
 - Global tier fallback for profile selection (expand from per-skill only)
 - Staleness check on loaded profiles
-- Curator observability gap (CairnEvent additional event types)
-- force=true knob for manual prescriber override
 - Metrics dashboard for prescriber diagnostics
 - DB convention standardization (explicit injection vs internal getDb() calls)
+- MCP surface for forceRegenerate (with confirmation prompts, safety guards)
 
 
