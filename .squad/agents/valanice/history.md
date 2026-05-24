@@ -181,3 +181,38 @@
 - Auto-trigger threshold calibration (start at 3+ Altitude ≥ 2, adapt via amendment/overturn rates)
 - Confabulation measurement methodology
 - Ceremony cost budget in tokens
+
+### 2026-05-23: Skillsmith Harness Vision UX Read
+
+**Task:** Analyze the Skillsmith Harness vision for UX/human-factors ambiguities and surface clarifying questions for Aaron.
+
+**Approach:**
+- Read charter and harness-vision.md (6-chamber architecture, primitives, genetic loop, Narrator trust layer)
+- Web research on human experience with agentic coding tools (trust calibration, autonomy vs. approval fatigue, CLI/IDE/chat tradeoffs)
+- Identified 8 UX tensions, 8 clarifying questions
+
+**Key Findings:**
+
+1. **Session continuity ambiguous.** Vision frames cross-session learning as core, but harness is CLI — does learning surface across discrete invocations, or only within a single session? Latency of felt improvement matters for trust.
+
+2. **Narrator fatigue risk.** Digest-at-session-end becomes dismissal-by-default if user context-switches or impatience. When does "showing growth" become nagging?
+
+3. **Confidence calibration brittle.** Hints must carry honest confidence, but if harness says 87% and is wrong 40% of the time, trust collapses. Precision on confidence is prerequisite to trust narrative.
+
+4. **Autonomy model unclear.** Can Curator auto-apply hints? Geneticist auto-propose variants? Ledger records "who decided," but delegation scope not yet bounded. Multi-user is out-of-scope, but decision ledger implies auditability—for whom?
+
+5. **Approval friction unspecified.** CLI hints require approval/rejection. Inline prompt blocks workflow; deferred session risks forgetting; async notification risks noise. Choice shapes "partnership" vs. "interruption" feel.
+
+6. **Trust attribution muddled.** When users see "token usage down 12%," is that the harness learning or the user learning to use the harness better? Misalignment here breaks the learning narrative.
+
+7. **Trigger cadence untuned.** Curator's hint-surfacing policy (every change vector vs. staleness threshold) controls workflow rhythm. Too frequent = interruption; too infrequent = stale.
+
+8. **User profile unclear.** Is v1 harness primarily for Aaron (personal trust-building tool), or for broader engineering team? Shapes Narrator voice, approval friction tolerance, and whether ledger's auditability is justified.
+
+**Artifacts:**
+- 8 clarifying questions for Aaron (targeting user, approval flow, ledger purpose, failed experiment communication, auto-apply semantics, trigger cadence, session continuity, trust attribution)
+
+**Next Steps:**
+- Await Aaron feedback on questions
+- Once user profile and autonomy model locked, design Narrator voice and hint-surfacing policy
+- Recommend persona-review on Narrator content before implementation

@@ -86,3 +86,26 @@ Graham's v3 scope finalized. Decisions archived. Ready for Wave 2 implementation
 
 Wave 3 delivers fully-realized E2E validation of Curator-driven orchestration. Integration path locked; regression scenarios identified; open questions documented.
 
+## 2026-05-23: Skillsmith Harness Vision — Verification Read
+
+**Task:** Read harness-vision.md, survey prior art on agentic system evaluation, identify verification ambiguities, produce clarifying questions for Aaron.
+
+**Prior art surveyed:**
+1. **SWE-bench Verified** — End-to-end benchmarking of agentic code systems: issue solving measured via test suite + human verification.
+2. **Test-as-Spec + Self-Verification** — Behavioral guarantees via runtime self-checking against test specifications.
+3. **OpenHands Trajectory Eval** — Multi-dimensional trajectory-based evaluation (sequences, metrics, comprehensive logging).
+4. **METR QA** — Human-in-the-loop double-blind review, standardized protocols, red teaming, audit trails for autonomous agents.
+
+**Key findings:** Vision is strong on *what* (auditable ledger, Narrator trust layer, genetic loops) but leaves 7 critical verification gaps:
+- Narrator readability metrics don't measure comprehension or behavior change
+- Confidence calibration unresolved in cold-start (<10 sessions)
+- "Failed hypothesis" threshold undefined (manual vs automatic?)
+- Decision ledger "100% fidelity" test strategy undefined (sample vs exhaustive?)
+- Genetic loop fitness function uses historical per-skill data, not variant-specific measurements
+- Hint acceptance gate (>60%) lacks decision rules for when to escalate
+- "Boring reliability" has no quantitative metric (monotonic? threshold variance?)
+
+**Clarifying questions escalated to Aaron:** 7 questions covering Narrator's user verification loop, confidence cold-start handling, failure thresholds, ledger fidelity validation, genetic loop fitness measurement, hint acceptance gates, and boring-improvement metrics. Logged in decisions inbox.
+
+**Verdict:** Vision is well-architected; verification concerns are design-level, not implementation-level. Recommend Aaron's input on success metrics before building Narrator, Geneticist, or ledger validation infrastructure.
+

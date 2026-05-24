@@ -25,4 +25,22 @@ Scribe orchestration complete: Graham's v3 scope finalized. Key scope decisions:
 
 ---
 
+## 2026-05-23: Extensibility Read — 7 Clarifying Questions for Aaron
+
+Completed vision review + prior art survey (MCP, Copilot skills/commands, Cline agentic tools, Continue LLM providers). Identified 7 critical design ambiguities:
+
+1. **Extension authorship scope v1**: User-authored custom skills, or team-only baseline?
+2. **Hook system vs. discrete types**: Unified hooks or Skills/Commands/Personas/Providers contracts?
+3. **Skill/agent mutation ownership**: User-approved or autonomous within confidence gates?
+4. **Extension distribution model**: Local-only v1, or baked-in versioning/metadata for future marketplace?
+5. **LLM provider extensibility**: Pluggable provider layer v1, or fixed to configured set?
+6. **Persona/agent/skill taxonomy**: Three separate extension types or unified under one model?
+7. **Skill rollback & versioning**: Archive, replace, or version skill variants after genetic loop?
+
+Generated `extensibility-read.md` with vision summary, prior art details, tensions, and questions. Ready for Aaron's input on extensibility model before Chamber SDK design begins.
+
+**Artifact:** `/extensibility-read.md`
+
+---
+
 **Older phase 4.6 cycle work archived to history-archive.md**

@@ -150,4 +150,12 @@ Wave 3 delivers fully-realized Curator-driven orchestration. Type contracts lock
 
 ---
 
+## Learnings (2026-05-23 — Harness Vision Runtime Analysis)
+- Vision defines six chambers (Harness, Cairn, Forge, Geneticist, Curator, Narrator) but doesn't specify runtime execution model for the Harness chamber itself. Turn structure, tool invocation loop, model routing, and sub-agent spawning are orthogonal to chamber responsibilities — these are runtime execution concerns.
+- Prior art (ReAct, OpenHands, LangGraph, AutoGen, Aider, Claude Computer Use SDK) converges on common patterns: (1) ReAct-style thought→action→observation loops with history-based reasoning, (2) explicit state persistence across turns, (3) structured turn management with message passing, (4) conditional sub-agent spawning based on state, (5) approval gates embedded in execution loop before risky actions, (6) model routing policies (rule-based or context-driven).
+- Core unresolved execution tensions: (a) Single persistent loop vs. ephemeral sub-agent spawns, (b) Tool selection authority (LLM decides vs. orchestrator routes), (c) Primitive recording timing (pre-execution vs. post-execution vs. both), (d) Decision ledger write-ahead vs. write-behind semantics, (e) Sub-agent context inheritance (isolated vs. full parent state), (f) Approval gate blocking semantics (user prompt vs. queue-and-continue), (g) Model routing trigger conditions (per-turn vs. per-skill vs. capability-based).
+- Key questions emerge around turn atomicity (what's the unit of replay?), state shape (what gets serialized between turns?), tool execution ownership (inline vs. delegated to sub-agents), and primitive recording hooks (orchestrator vs. model middleware).
+
+---
+
 **Older learnings archived to history-archive.md**
