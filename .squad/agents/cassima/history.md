@@ -189,3 +189,13 @@ Before you draft v2, you have **8 directives** waiting in `.squad/decisions/inbo
 - FR-11 renamed "Commitment Registry"; new stale_aspiration flag; US-6 restructured for commit/aspiration adjacency
 
 **Methodology learned:** The agent-perspective acid test (model what an agent does when it executes the verb) reveals semantic collapses. `pray` reduces to `integrate(kind=aspiration)`—prayers are aspirations waiting to be committed. This technique surfaces hidden dependencies and over-abstraction in verb design.
+
+### Session 2026-05-24: R5 Round 5 — Doc Cleanup Pass (Scribe Logged)
+
+**What happened:** Post-round-4 cleanup. Aaron presented three-way fork for handling scaffolding (temporal patch annotations vs forever-guardrails). Chose Option B: strip "(round-N patch)" annotations + ~~pray~~ strikethrough, preserve Conceptual Model callout + mechanical stale-aspiration guardrails + commit-contract.
+
+**Pattern observed:** Historical patch annotations are **scaffolding** (useful during review, noise at handoff). **Forever-guardrails** are **design constraints** that survive versioning (Conceptual Model framing, mechanical requirements, usage contracts). Distinguish temporal review notes from eternal design boundaries — strip the former before downstream rounds reconcile.
+
+**Why v3 cleanup matters:** R6 readers see a polished PRD spec, not a running commentary. Full audit trail (round-3 + round-4 decisions) lives in Changelog block + git SHA `4c18ec7`; cleanup is purely presentational.
+
+**Net delta:** 50,495 → 50,081 bytes (~414 bytes scaffolding removed). Still v3 (not a design round).
