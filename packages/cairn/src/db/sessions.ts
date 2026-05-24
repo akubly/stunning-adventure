@@ -68,3 +68,16 @@ export function getMostRecentActiveSession(): Session | undefined {
     status: row.status as string,
   };
 }
+
+/**
+ * Ensures a system session exists for logging system-level events (hint state transitions, profile bumps).
+ * Returns the session ID to use for system events.
+ */
+export function ensureSystemSession(): string {
+  const systemRepoKey = '__system__';
+  let session = getActiveSession(systemRepoKey);
+  if (!session) {
+    return createSession(systemRepoKey, 'main');
+  }
+  return session.id;
+}

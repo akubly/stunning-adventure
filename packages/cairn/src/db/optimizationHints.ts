@@ -1,5 +1,7 @@
 import type Database from 'better-sqlite3';
 import { getDb } from './index.js';
+import { logEvent } from './events.js';
+import { ensureSystemSession } from './sessions.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -221,7 +223,21 @@ export function insertHintIfNew(
     }
   });
 
-  return txn.immediate();
+  const result = txn.immediate();
+  
+  // Emit hint_inserted event AFTER transaction commits
+  if (result.inserted) {
+    const sessionId = ensureSystemSession();
+    logEvent(sessionId, 'hint_state_transition', {
+      skill_id: hint.skillId,
+      hint_id: hint.id,
+      from_state: null,
+      to_state: hint.status ?? 'pending',
+      timestamp: new Date().toISOString(),
+    });
+  }
+  
+  return result;
 }
 
 /** Get a single hint by id. */
@@ -318,6 +334,18 @@ export function updateOptimizationHintStatus(
        SET status = ?, applied_at = ?
        WHERE id = ?`
   ).run(nextStatus, appliedAt, id);
+
+  if (res.changes > 0) {
+    // Emit hint state transition event
+    const sessionId = ensureSystemSession();
+    logEvent(sessionId, 'hint_state_transition', {
+      skill_id: current.skillId,
+      hint_id: id,
+      from_state: current.status,
+      to_state: nextStatus,
+      timestamp: new Date().toISOString(),
+    });
+  }
 
   return res.changes > 0;
 }

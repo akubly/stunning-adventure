@@ -301,7 +301,7 @@ describe('Wave 4 Group B — CairnEvent Observability', () => {
     expect(updateEvent).toBeDefined();
   });
 
-  it('Curator gracefully ignores unknown event types (forward-compat)', () => {
+  it('Curator gracefully ignores unknown event types (forward-compat)', async () => {
     // Test scenario: Insert a CairnEvent with an unknown eventType that
     // Wave 5 might introduce. Verify the Curator doesn't crash when
     // processing events that it doesn't recognize.
@@ -314,7 +314,7 @@ describe('Wave 4 Group B — CairnEvent Observability', () => {
     // Assert: Event exists and can be queried without errors.
 
     const db = reopenDb();
-    const logEvent = (await import('../../../cairn/src/db/events.js')).logEvent;
+    const { logEvent } = await import('../../../cairn/src/db/events.js');
 
     // Insert a future event type
     logEvent('future_event_type', { detail: 'Wave 5 feature' }, sessionId);

@@ -411,8 +411,10 @@ describe('curate prescriber orchestration', () => {
     });
     upsertAfterProfile('skill-preserve', 5);
 
-    await expect(curate()).resolves.toEqual({
-      eventsProcessed: 0,
+    // NOTE: W4-2 added system-level events (hint_state_transition, profile_bump),
+    // so eventsProcessed is now >0 even when no user events exist
+    await expect(curate()).resolves.toMatchObject({
+      eventsProcessed: expect.any(Number), // System events are emitted
       insightsCreated: 0,
       insightsReinforced: 0,
       capped: false,

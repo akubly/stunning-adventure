@@ -1,4 +1,6 @@
 import { getDb } from './index.js';
+import { logEvent } from './events.js';
+import { ensureSystemSession } from './sessions.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -101,6 +103,10 @@ export function upsertExecutionProfile(profile: ExecutionProfileUpsert): number 
   const db = getDb();
   const granularityKey = profile.granularityKey ?? 'global';
 
+  // Check if this is an update (profile exists)
+  const existingProfile = getExecutionProfileWithDb(db, profile.skillId, profile.granularity, granularityKey);
+  const isUpdate = existingProfile !== null;
+
   const sql = `
     INSERT INTO execution_profiles
       (skill_id, granularity, granularity_key, session_count,
@@ -148,7 +154,21 @@ export function upsertExecutionProfile(profile: ExecutionProfileUpsert): number 
        WHERE skill_id = ? AND granularity = ? AND granularity_key = ?`
   ).get(profile.skillId, profile.granularity, granularityKey) as { id: number } | undefined;
 
-  return row?.id ?? 0;
+  const profileId = row?.id ?? 0;
+
+  // Emit profile bump event
+  if (profileId > 0) {
+    const sessionId = ensureSystemSession();
+    logEvent(sessionId, 'profile_bump', {
+      skill_id: profile.skillId,
+      profile_id: profileId,
+      bump_kind: isUpdate ? 'updated' : 'created',
+      granularity: profile.granularity,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  return profileId;
 }
 
 /** Get a single profile by composite key from a specific database handle. Returns null if none. */
