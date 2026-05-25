@@ -99,8 +99,54 @@ Local development → Export → Deploy → Production telemetry
 
 ### 2.2 Wave 4 cycle-1 architecture debt
 
-- Known issue: MCP fallback can return `__system__` session. See cycle-1 review I5. Wave 5 should add `session_kind` and user-only MCP fallback lookup.
-- Decide whether Curator should consume system-attributed `profile_bump` events. If Wave 5 filters `__system__` events, it must still advance the raw-event cursor. See cycle-1 review I10.
+#### I5 — Separate user sessions from system sessions for MCP fallback
+
+Known issue: MCP fallback can return the active `__system__` session created by `ensureSystemSession()` instead of the most recent user session. Wave 5 should add a first-class session kind and make all MCP fallback lookups user-only.
+
+**Affected call sites:** all are in `packages/cairn/src/mcp/server.ts` and currently use `getMostRecentActiveSession()` when no repo key is available; each should import/use `getMostRecentUserSession()` for that fallback:
+- `packages/cairn/src/mcp/server.ts:665` — `forge.resolvePrescription` accept/apply session attribution.
+- `packages/cairn/src/mcp/server.ts:1083` — `forge.lintSkill` session lookup before logging `skill_lint`.
+- `packages/cairn/src/mcp/server.ts:1179` — `forge.runSkillTestScenario` session lookup before writing skill test results.
+- `packages/cairn/src/mcp/server.ts:1247` — `forge.validateSkill` session lookup before writing validation results.
+
+**Schema shape:** add migration `014-session-kind.ts` after migration 013:
+```sql
+ALTER TABLE sessions
+  ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'user'
+  CHECK (session_kind IN ('user', 'system'));
+
+UPDATE sessions
+   SET session_kind = 'system'
+ WHERE repo_key = '__system__';
+```
+The migration is forward-only. Existing rows default to `session_kind = 'user'`, which is correct for historical user sessions; the explicit backfill only reclassifies the sentinel system repo.
+
+**API additions:**
+- Add `getMostRecentUserSession(): Session | undefined` in `packages/cairn/src/db/sessions.ts`; it should filter `status = 'active' AND session_kind = 'user'` and preserve the same ordering as `getMostRecentActiveSession()`.
+- Update `createSessionWithDb()` or `ensureSystemSessionInTransaction()` so `ensureSystemSession()` creates rows with `session_kind = 'system'`.
+- Keep `getMostRecentActiveSession()` for callers that truly want system or user sessions; MCP fallbacks should not use it.
+
+**MCP changes:** switch the four affected call sites above from `getMostRecentActiveSession()` to `getMostRecentUserSession()` for the no-repo-key fallback path. Repo-scoped lookups via `getActiveSession(repoKey)` stay unchanged. Implement in order: migration/API first, MCP wiring second, tests third.
+
+**Required test matrix:**
+- Migration 014 unit test: new column exists, default is `user`, valid values are constrained, and `repo_key = '__system__'` rows backfill to `system`.
+- Session API unit test: with a recent active system session and an older active user session, `getMostRecentUserSession()` returns the user session; with only system sessions, it returns `undefined`.
+- MCP integration tests: fixture where `__system__` is the most recent active session; each fallback path that logs or applies without `CAIRN_REPO_KEY` uses the older user session instead.
+- Regression test: `ensureSystemSession()` creates or reuses a system-kind session without changing user session lookup behavior.
+
+**Acceptance criteria:**
+- `npm test -- packages/cairn/src/__tests__/migration014.test.ts packages/cairn/src/__tests__/sessionStart.test.ts packages/cairn/src/__tests__/mcp.test.ts` passes, or the equivalent repo-supported targeted test command passes.
+- Full `npm test` passes with a fixture where `__system__` is the most recent active session.
+- MCP fallback telemetry/results are attributed to the most recent active user session, never to `__system__`, when no repo key is available.
+- System-generated events still have a valid system session for hint transitions and profile bumps.
+
+#### I10 — Decide Curator handling for system profile-bump events
+
+Future work: decide whether Curator should consume system-attributed `profile_bump` events. If Wave 5 filters `__system__` events, it must still advance the raw-event cursor. See cycle-1 review I10.
+
+#### Migration cost notes
+
+Ops note: Migration 013 performs a dedup pass over `optimization_hints` rows whose status is active (`pending`, `accepted`, or `deferred`) before creating the partial UNIQUE index. Cost scales with the count of active hints, not the total table size. For typical deployments this is sub-second; deployments with >10k active hints may see a brief migration-time spike.
 
 ### 2.3 AppInsightsSink
 
