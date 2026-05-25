@@ -2,13 +2,10 @@
  * Wave 4 Integration Tests — Safety + Observability Foundation
  *
  * Integration coverage for:
- * - W4-1: insertHintIfNew atomicity (partial UNIQUE + BEGIN IMMEDIATE)
- * - W4-2: CairnEvent extensions (hint state transitions, profile bumps)
- * - W4-3: forceRegenerate CLI knob (force-overwrite dedup bypass)
- * - W4-E2E: End-to-end pipeline coverage
- *
- * Test scaffolding created before Roger/Rosella implementations land.
- * Assertions will be filled in once W4-1, W4-2, W4-3 are committed.
+ * - W4-1: insertHintIfNew atomicity (partial UNIQUE + BEGIN IMMEDIATE, real rollback via TEMP TRIGGER)
+ * - W4-2: CairnEvent extensions (hint_state_transition, hint_force_expired, profile bumps)
+ * - W4-3: forceRegenerate CLI knob (force-overwrite dedup bypass + telemetry payload)
+ * - W4-E2E: End-to-end pipeline coverage including MCP scope enforcement
  */
 
 import type Database from 'better-sqlite3';
