@@ -304,7 +304,7 @@ export function replaceActiveHintsAtomically(
       source,
       category,
       count: expired,
-      actor: options.actor ?? 'runtime:--force',
+      actor: options.actor ?? 'system:bulk-expire',
     });
 
     const results = newHints.map((hint) => insertHintIfNewWithinTransaction(db, hint));
