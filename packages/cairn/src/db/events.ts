@@ -27,14 +27,22 @@ export function logEvent(
   eventTypeOrPayload: string | object,
   maybePayload?: object,
 ): number {
-  const db = isDatabase(dbOrSessionId) ? dbOrSessionId : getDb();
-  const sessionId = isDatabase(dbOrSessionId) ? sessionIdOrEventType : dbOrSessionId;
-  const eventType = isDatabase(dbOrSessionId) ? (eventTypeOrPayload as string) : sessionIdOrEventType;
-  const payload = isDatabase(dbOrSessionId) ? maybePayload : (eventTypeOrPayload as object);
+  const [db, sessionId, eventType, payload]: [
+    Database.Database,
+    string,
+    string,
+    object | undefined,
+  ] = isDatabase(dbOrSessionId)
+    ? [dbOrSessionId, sessionIdOrEventType, eventTypeOrPayload as string, maybePayload]
+    : [getDb(), dbOrSessionId, sessionIdOrEventType, eventTypeOrPayload as object | undefined];
+
+  if (payload == null) {
+    throw new Error(`logEvent payload is required for event type ${eventType}`);
+  }
 
   const result = db
     .prepare('INSERT INTO event_log (session_id, event_type, payload) VALUES (?, ?, ?)')
-    .run(sessionId, eventType, JSON.stringify(payload ?? {}));
+    .run(sessionId, eventType, JSON.stringify(payload));
   return Number(result.lastInsertRowid);
 }
 
