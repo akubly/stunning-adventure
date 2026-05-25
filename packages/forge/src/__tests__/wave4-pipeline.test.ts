@@ -513,7 +513,7 @@ describe('Wave 4 Group C — forceRegenerate CLI Knob', () => {
     expect(expiredHints.length).toBeGreaterThan(0);
   });
 
-  it('MCP surface does NOT expose the forceRegenerate flag (negative test)', async () => {
+  it('cairn MCP server does not expose a forge_prescribe tool or any force* parameter', async () => {
     type RegisteredTool = { name: string; config: { inputSchema?: Record<string, unknown> } };
     const registeredTools: RegisteredTool[] = [];
 
@@ -537,6 +537,7 @@ describe('Wave 4 Group C — forceRegenerate CLI Knob', () => {
         Object.keys(tool.config.inputSchema ?? {}).map((parameter) => `${tool.name}.${parameter}`),
       );
 
+      // skillsmith-runtime exposes forge_prescribe only via CLI, not MCP; this assertion is necessarily cairn-scoped.
       expect(toolNames).not.toContain('forge_prescribe');
       expect(exposedParameters.filter((parameter) => /\.force(?:Regenerate)?$/i.test(parameter))).toEqual([]);
     } finally {
