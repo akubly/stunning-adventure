@@ -75,6 +75,34 @@
 
 ---
 
+### 2026-05-25: R8 Session Identity — Learning Systems Verdict
+
+**Event:** Aaron R8 reopen directive — shared `session_id` across Cairn/Forge/Eureka (one Copilot CLI session UUID). Relaxes v4-final "isolated by design" stance (FR-13). Tasked to evaluate from learning-systems lens.
+
+**Your verdict:** **ACCEPT WITH PRECISION GAINS** (`.squad/decisions/inbox/edgar-r8-session-identity.md`)
+
+**Five-question analysis:**
+1. **US-2 continuity:** Meaningfully better. `originated_in` / `modified_in` / `referenced_in` edges can directly reference CLI session UUID (three-hop → one-hop reduction). Continuity recall latency trivially meets AC-2.3 (P95 < 200ms).
+2. **Sweep cadence (FR-12):** Materially tightens v1.5 automatic session-close capture. Cairn's lifecycle events (session-end, stale detection) become authoritative sweep triggers instead of next-day-first-query heuristics. Reduces stale-summary window from unbounded to ~2 minutes.
+3. **Path 2 ingestion (FR-14):** `eureka ingest-decisions --session <uuid>` becomes trivially correct. Session-scoped ingestion (natural UX) requires no timestamp guessing.
+4. **Telemetry counter (`eureka_sessions_ended_without_flush_total`):** Precision improvement. Cairn's session-end event lets Eureka distinguish "agent forgot to flush" from "agent still running." Turns noisy signal into sharp measurement for v1.5 prioritization.
+5. **Risks:** One real, two strawmen:
+   - JOIN temptation (FR-7.2 violation): Real but no worse than current `cairn_session_id?` field. Code-review discipline issue.
+   - Audit-ref opacity loss: Strawman. Mechanical boundary (different UUIDs) was never load-bearing; semantic boundary (different lenses) is preserved by R8 lens framing.
+   - Type safety regression (shared `SessionId` brand vs FR-13 "no shared SessionBase"): Acceptable. Branded ID is a scalar reference, not a session-state conflation. FR-13 intent (prevent premature abstraction) preserved.
+
+**PRD edit list:** Eight sections (six must-edit for R8 correctness, two should-edit for v1.5 clarity). Key changes:
+- FR-13 (line ~374): Relax "isolated by design" → "distinct types share SessionId brand; emergent structure welcomed."
+- Edge schema (line ~239): `{fact_id, session_id}` not `{fact_id, session_fact_id}`.
+- `bridge_ledger` (line ~201): `cairn_session_id_hint` → `session_id`.
+- T-orphan risk (line ~660): "dangling `cairn_session_id`" → "stale `session_id` reference."
+
+**Key judgment:** Shared identity resolves three v4-final ambiguities (how edges reference sessions, when sweep triggers, how telemetry measures gaps) with cleaner mechanics and no new learning-systems risks. The "isolated by design" relaxation is correct — mechanical isolation was a strawman; semantic isolation (different lenses) is what matters, and R8 preserves that.
+
+**Status:** Verdict delivered. Ready for Cassima v5 patch authoring.
+
+---
+
 ### 2026-05-25: R6 Synthesis Complete
 
 **By:** Cassima (Product Manager) via Scribe  
@@ -92,4 +120,31 @@
 **Implementation entry point:** Your sweep/ranker/trust design (from R6 reconciliation) becomes the template for extraction-ready code. When Cairn team is ready, your modules are the proof of concept.
 
 **Trust as first-class:** Your work revealed that Cairn's `confidence` already exists and is event-driven. v3.1 patch 5 names this: Eureka's `trust` module is a generalization of Cairn's confidence + change_vectors. That's your insight, now architecturalized.
+
+---
+
+### 2026-05-26: R8 Lock Verdict — v5-final LOCK
+
+**Event:** Aaron lock-review task on Cassima PRD v5-final. Verify R8 precision gains landed appropriately.
+
+**Your verdict:** **LOCK** (`.squad/decisions/inbox/edgar-r8-lock-verdict.md`)
+
+**Five-item verification (all ✓):**
+1. **FR-12 sweep** — Cairn session-end trigger marked as v1.5 opportunity (not v1 blocker). Correct framing. v1 retains existing heuristic trigger.
+2. **FR-14 `--session <uuid>` CLI form** — Ships in v1 as specified. No deferral annotation. Correct.
+3. **AC-2.5 telemetry counter** — Counter ships in v1 (blind measurement). Precision improvement (Cairn end-event → Eureka flush check) documented as v1.5 opportunity. Exactly as requested.
+4. **US-2 continuity edges** — No wording contradiction. My "3-hop → 1-hop" claim reconciled with Crispin's KR model (edges reference `fact.id`; `session_id` is content field for direct lookup). Latency gain holds (O(1) indexed filter vs JOIN). Both descriptions consistent (line 393, line 85).
+5. **No new learning-systems risks** — T6 "stale session reference" reframed from v4-final T-orphan (LOW/LOW severity unchanged). Mitigations documented: FR-7.2 no-cross-DB rule preserved, lens framing normative, ESLint guardrail ships in v1 (mechanism #8). All three R8 identified risks (JOIN temptation, opacity loss, type safety) mitigated or correctly classified as non-blockers.
+
+**Key judgment:** v5-final captures R8 precision gains correctly. FR-12 sweep + AC-2.5 counter marked as v1.5 opportunities (not v1 commitments). FR-14 `--session <uuid>` ships in v1. Continuity latency claim holds under Crispin's KR model. No new learning-systems risks introduced. Path D preserved (manual-only triggers in v1; v1.5 precision enabled by shared identifier without violating FR-7.2 no-cross-DB rule). Lens framing (Cairn = lifecycle, Eureka = epistemology) elevated to normative status — this is the right guard for R8 "isolated by design" relaxation.
+
+**Status:** v5-final locked. Ship-it ready.
+
+### 2026-05-26: R8 Lock-Review Orchestration (Scribe Phase)
+
+**Event:** Scribe ceremony — lock R8 verdicts into `.squad/decisions.md`, move v5-final to canonical location, archive R8 inbox files.
+
+**Your role:** Lock-review verification (item-by-item sign-off in `.squad/decisions/inbox/edgar-r8-lock-verdict.md`).
+
+**Status:** ✅ R8 LOCKED — all learning-systems precision gains verified, verdict documented and integrated into decisions.md.
 

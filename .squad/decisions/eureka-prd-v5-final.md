@@ -1,14 +1,10 @@
-> **SUPERSEDED by [eureka-prd-v5-final.md](eureka-prd-v5-final.md) — R8 session identity (locked 2026-05-26)**
->
-> R8 relaxed FR-13's "isolated by design" stance: Cairn `Session` and Eureka `kind=session` facts now share one identifier (the Copilot CLI session UUID) via a shared `SessionId` brand in `@akubly/types`, with normative lens framing as the guard. See v5-final for canonical text.
+# Eureka PRD v5-final (Canonical Specification)
 
-# Eureka PRD v4-final (Canonical Specification)
-
-**Status:** SUPERSEDED. ~~Canonical~~ Historical reference. See v5-final for the current canonical specification. **This was the v4-final revision-2 pass (post-Aaron-R7-finalization + post-Squad-panel + post-persona-review Design Panel).**
+**Status:** Canonical, shippable. Supersedes v4-final. **This is the v5-final pass — R8 session-identity unification integrated; FR-13 "isolated by design" relaxed to "shared `SessionId` brand; lens framing is the normative guard."**
 **Author:** Cassima (Product Manager)
-**Date:** 2026-05-25 (revised pass 2026-05-24 post-R7 finalization; rev-2 same-day after dual-panel review)
-**Lineage:** v3 (R5 lock) → v3.1 patches (R6 synthesis) → R7 reviews (Graham, Genesta, Crispin, Edgar) → Aaron R6 signals + R7 bidirectional directive → v4-final → Aaron R7 finalization pass (FR-12 split, confidence/trust orthogonality, OQ #5 closure, DecisionPayload dual-axis) → **rev-2** (4 BLOCKERS + 9 IMPORTANT findings from Squad domain panel + persona-review Design Panel; see §15).
-**Reading note:** `[v4: <reason>]` annotations mark substantive deltas from v3 so readers can trace lineage. Unannotated text is preserved from v3 or is a routine consolidation of converged reviewer language. v4-final is intended to be read top-to-bottom as a single self-contained spec; no other document is required to implement v1.
+**Date:** 2026-05-26 (R8 reopen authored same-day as v4-final lock + Aaron R8 signal)
+**Lineage:** v3 (R5 lock) → v3.1 patches (R6 synthesis) → R7 reviews (Graham, Genesta, Crispin, Edgar) → Aaron R6 signals + R7 bidirectional directive → v4-final → Aaron R7 finalization pass (FR-12 split, confidence/trust orthogonality, OQ #5 closure, DecisionPayload dual-axis) → **v4-final rev-2** (4 BLOCKERS + 9 IMPORTANT findings from Squad domain panel + persona-review Design Panel; see §15) → **v5-final** (Aaron R8 session-identity directive: shared `SessionId` brand across Cairn + Eureka; FR-13 "isolated by design" relaxation; `cairn_session_id?` → `session_id: SessionId` (required); §7.4 substrate-overlap update; §14a T-orphan reframe; Glossary; FR-12/FR-14 opportunistic precision gains; Graham ESLint guardrail).
+**Reading note:** `[v4: <reason>]`, `[v4-rev2: <reason>]`, and `[v5: <reason>]` annotations mark substantive deltas from prior revisions so readers can trace lineage. Unannotated text is preserved verbatim. v5-final is intended to be read top-to-bottom as a single self-contained spec; no other document is required to implement v1.
 
 ---
 
@@ -86,9 +82,11 @@ As a coding agent resuming work on a task that spans multiple sessions, I can pr
 **Acceptance criteria:**
 - AC-2.1: Each session emits a `kind=session` fact with caller-supplied summary.
 - AC-2.2: `originated_in` / `modified_in` / `referenced_in` edges link facts to their sessions.
-- AC-2.3: Continuity recall (session-fact + Tier 1 session edges) P95 latency < 200ms.
+- AC-2.3: Continuity recall (session-fact + Tier 1 session edges) P95 latency < 200ms. [v5: shared `session_id` makes the common case trivially achievable — "all facts for session X" is a single indexed filter `WHERE session_id = ?`, not a multi-hop traversal. Edge traversal (`originated_in` etc.) still goes through `fact.id`, but the session-fact lookup is exact-match on the shared identifier. See FR-13 and Edgar R8 §1.]
 - AC-2.4: Checkpoints (committed facts) re-surface in next-session recall.
-- AC-2.5 [v4-rev2: Skeptic F1 — continuity requires caller cooperation; library cannot guarantee it unilaterally]: **v1 caller-cooperation contract.** Cross-session continuity in v1 depends on the caller invoking `remember()` (explicit) and/or `eureka.session.flushHints()` (helper that extracts suggested facts from recent activity and prompts the caller to commit). v1 does **not** guarantee continuity without caller cooperation; the contract is documented and a telemetry counter `eureka_sessions_ended_without_flush_total` is emitted so v1.5 design can quantify how often the gap matters. Automatic session-close capture is a v1.5 roadmap item.
+- AC-2.5 [v4-rev2: Skeptic F1 — continuity requires caller cooperation; library cannot guarantee it unilaterally] [v5: telemetry precision improved by shared session identity — see note below]: **v1 caller-cooperation contract.** Cross-session continuity in v1 depends on the caller invoking `remember()` (explicit) and/or `eureka.session.flushHints()` (helper that extracts suggested facts from recent activity and prompts the caller to commit). v1 does **not** guarantee continuity without caller cooperation; the contract is documented and a telemetry counter `eureka_sessions_ended_without_flush_total` is emitted so v1.5 design can quantify how often the gap matters. Automatic session-close capture is a v1.5 roadmap item.
+
+  **v1.5 precision opportunity [v5: Edgar R8 §4 — opportunistic, not a v1 commitment]:** With shared `session_id`, Cairn's session-end events become an **authoritative** signal for the counter — Eureka can ask "did I see a `flushHints()` for `session_id = X` before Cairn marked it `completed` / `crashed`?" This turns a blind counter (currently cannot distinguish "agent forgot to flush" from "agent still running") into a sharp measurement. v1 retains the existing counter; v1.5 may consume Cairn session-end events for precision. The shared identifier enables this without new cross-DB JOINs — Cairn emits an event payload that already includes `session_id`.
 
 ### US-3: Trust-Weighted Retrieval
 
@@ -121,7 +119,7 @@ As an agent that makes decisions inline during normal LLM exchange (without expl
 
 ### FR-1: Knowledge Storage (Core CRUD)
 
-A unified `facts` table with `kind` discriminator. Every fact carries: `id`, `kind`, `content`, `sources[]`, `trust` (0..1), `importance` (0..1), `attention_tier` ∈ {hot, warm, cold}, `committed` (bool), `created_at`, `updated_at`, `cairn_session_id?` (opaque audit ref). Schema includes a reserved `embedding_vector BLOB` column (nullable, unpopulated in v1) so v1→v1.5 migration adds the index without schema change. [v4: forward-compat column from Genesta]
+A unified `facts` table with `kind` discriminator. Every fact carries: `id`, `kind`, `content`, `sources[]`, `trust` (0..1), `importance` (0..1), `attention_tier` ∈ {hot, warm, cold}, `committed` (bool), `created_at`, `updated_at`, and (for `kind='session'` facts and any fact a caller chooses to scope to a session) `session_id: SessionId` (shared Copilot CLI session UUID; branded primitive from `@akubly/types`; required on session-facts, optional/nullable on other kinds). Schema includes a reserved `embedding_vector BLOB` column (nullable, unpopulated in v1) so v1→v1.5 migration adds the index without schema change. [v4: forward-compat column from Genesta] [v5: `cairn_session_id?` (opaque audit ref) renamed to `session_id` and typed as the shared `SessionId` brand per Aaron R8 directive; required on session-facts, see FR-13]
 
 ### FR-2: Semantic Retrieval (`recall`)
 
@@ -181,7 +179,7 @@ SQLite via `better-sqlite3` (matches Cairn precedent). BM25 via FTS5 virtual tab
 
 No shared FK constraints with Cairn. **No cross-database `ATTACH` queries at runtime.** Cairn's `~/.cairn/knowledge.db` remains observability-scoped and is not read by Eureka in any runtime code path. *Carveout:* an **offline reconciliation CLI** (see FR-7.4) opens both DBs read-only out-of-process for diff-style operations; this is explicitly NOT a runtime query path and is invoked only by operators.
 
-**Operational guidance:** Both `~/.cairn/` AND `~/.copilot/eureka/` are stateful — backup both for full state recovery. Disk usage scales independently. Correlation across systems is via `cairn_session_id` opaque metadata only.
+**Operational guidance:** Both `~/.cairn/` AND `~/.copilot/eureka/` are stateful — backup both for full state recovery. Disk usage scales independently. Correlation across systems is via the shared `session_id: SessionId` brand (defined in `@akubly/types`; see FR-13). The shared identifier is a **type-level construct**, not a runtime foreign key — the no-cross-DB-ATTACH rule above is unchanged. [v5: was "via `cairn_session_id` opaque metadata only"; the identifier is no longer opaque, but the no-ATTACH rule survives unchanged — that is the load-bearing isolation, not the opacity of the link]
 
 **v1 tier scope [v4-rev2: I5 — three tiers = YAGNI for v1 ship; schema/API preserved, surfaces deferred]:** All three tiers (agent / user / project) remain in the **schema and API surface** — `Fact.scope`, recall fan-out signature, edge resolution all assume three tiers. However, only **`agent.db` is fully wired in v1**. User and project storage adapters ship as stubs that throw `NotImplementedError('user-tier deferred to v1.5; see roadmap')` on write attempts. Recall fan-out gracefully treats unwired tiers as empty result sets. Killer demos (US-1, US-2) operate against agent-tier only; nothing in the design changes when v1.5 wires the other two. Test/implementation burden in v1 drops to one tier. Cassima accepts this deferral on the judgment that the fan-out is layered such that adding tiers is additive, not architectural. [v4-rev2]
 
@@ -202,26 +200,30 @@ When Eureka emits to Cairn/Forge (e.g., `toDecisionRecord()` → audit stream) *
 3. Surface permanent failures (return error to caller; emit to error log).
 4. **Write to the Eureka-owned bridge ledger** — see below — so reconciliation does not require cross-DB queries.
 
-**Eureka-owned bridge ledger [v4-rev2: B3 resolution — preserves FR-7.2 no-runtime-cross-DB rule]:** An append-only table `bridge_ledger` inside each Eureka tier DB records every bridge operation:
+**Eureka-owned bridge ledger [v4-rev2: B3 resolution — preserves FR-7.2 no-runtime-cross-DB rule] [v5: `cairn_session_id_hint?` is REPLACED by `session_id: SessionId` (required, not a hint) — the session UUID is known and stable at bridge time; `cairn_event_id_hint` stays a hint per Crispin R8 because the Cairn event.id is an internal autoincrement that may not be known at emit time]:** An append-only table `bridge_ledger` inside each Eureka tier DB records every bridge operation:
 
 ```sql
 CREATE TABLE bridge_ledger (
   id INTEGER PRIMARY KEY,
   direction TEXT NOT NULL,          -- 'emit' | 'ingest'
   eureka_fact_id TEXT,              -- nullable for failed emits
-  cairn_event_id_hint TEXT,         -- best-effort identifier (record.id, event.id)
+  session_id TEXT NOT NULL,         -- shared SessionId brand (@akubly/types); authoritative, not a hint
+  cairn_event_id_hint TEXT,         -- best-effort identifier for event-level correlation (Cairn event.id may not be known at emit time)
   attempted_at TEXT NOT NULL,
   outcome TEXT NOT NULL,            -- 'success' | 'retry' | 'permanent_failure' | 'skipped_duplicate'
   error_msg TEXT
 );
+-- session_id is the shared Copilot CLI session UUID; correlates 1:1 with Cairn's sessions.id and
+-- Eureka session-facts. DO NOT JOIN across databases at runtime (FR-7.2). Reconciliation is
+-- offline-only via the eureka reconcile CLI.
 ```
 
 The ledger is Eureka-local (no cross-DB writes), append-only, and queryable at runtime via standard Eureka APIs.
 
-**Offline reconciliation CLI [v4-rev2: B3 — separates reconciliation from runtime]:** `eureka reconcile --against <cairn-db-path>` is a CLI tool that:
+**Offline reconciliation CLI [v4-rev2: B3 — separates reconciliation from runtime] [v5: now JOINs on `session_id` (exact-match, stable on both sides) instead of correlating only on the looser `cairn_event_id_hint`]:** `eureka reconcile --against <cairn-db-path>` is a CLI tool that:
 - Opens Cairn's `knowledge.db` **read-only, out-of-process** (NOT via `ATTACH` from Eureka runtime code).
 - Reads Eureka's `bridge_ledger` for `direction='emit'` entries.
-- Cross-references against Cairn's event_log for matching `cairn_event_id_hint`.
+- Cross-references against Cairn's event_log primarily on shared `session_id` (exact match), with `cairn_event_id_hint` as a secondary event-level correlation field.
 - Emits a diff report: `{ledger_says_emitted_but_cairn_missing, cairn_present_but_no_ledger_entry, both_present_consistent}`.
 - Operator-invoked only; not on any runtime code path.
 
@@ -303,6 +305,8 @@ Aspirations are encoded as `kind=aspiration` facts within `integrate`, with ligh
 
 **Triggers:** end-of-session, first-query-of-day.
 
+**v1.5 precision opportunity [v5: Edgar R8 §2 — opportunistic, not a v1 commitment]:** Currently the sweep infers "end-of-session" heuristically (caller-driven `end()` or next-query catch-up). With shared `session_id`, Cairn's session-end events (already emitted by `packages/cairn/src/hooks/sessionStart.ts` for stale-session detection) become an **authoritative** trigger — Eureka sweep can fire immediately on Cairn's `session_end` payload (which now carries the shared `session_id`) rather than guessing from activity gaps. This is a **v1.5 refinement, not a v1 blocker** — v1 sweep retains the existing trigger model. The shared identifier enables the v1.5 refinement without introducing runtime cross-DB JOINs (the trigger is event-driven, not query-driven). If a missed event occurs, the sweep falls back to the v1 cadence-based trigger per FR-7.4 reliability contract.
+
 **Sweep operations (5 atomic phases):**
 1. Importance decay (hot tier: every access; warm/cold: sweep-scheduled).
 2. Tier demotions per session-count hysteresis (N/M tunable).
@@ -358,35 +362,90 @@ The extraction-readiness contract has **seven enforcement mechanisms** (single i
 
 7. **TypeScript branded types for `Confidence` and `Trust` [v4: Crispin + Genesta — confidence/trust orthogonality; v4-rev2: deferred to v1.5 — Skeptic + Pragmatist YAGNI].** Eureka exposes `Trust` as a branded numeric type (`type Trust = number & { readonly __brand: 'Trust' }`); Cairn (or any learning-kernel adopter) exposes `Confidence` as a separately branded type. The compiler rejects accidental cross-assignment (`f.trust` cannot be passed where `Confidence` is expected, and vice versa). No implicit conversion is provided; any cross-axis composition must be explicit and documented. **Ship in v1.5** when the learning-kernel extraction is on the table and a real cross-package consumer exists. In v1, the §7.4 prose + glossary "NOT equivalent" guards + module-internal discipline carry the orthogonality contract without compiler enforcement.
 
-**v1 vs v1.5 enforcement scope [v4-rev2: I1 — seven mechanisms = YAGNI for v1 ship]:** Five of the seven mechanisms ship in v1 (#1 subpath export, #2 folder layout, #3 interface ban, #5 lint+CI, #6 DESIGN.md). Two ship in v1.5 (#4 plain-data tests/canary, #7 branded types) — both depend on a concrete second consumer to drive their design. The architectural vision (seven mechanisms total) is preserved; the v1 scope is the subset that pays for itself without extraction pressure.
+**v1 vs v1.5 enforcement scope [v4-rev2: I1 — seven mechanisms = YAGNI for v1 ship] [v5: SessionId boundary added as mechanism #8, ships in v1 — see below]:** Five of the seven extraction-readiness mechanisms ship in v1 (#1 subpath export, #2 folder layout, #3 interface ban, #5 lint+CI, #6 DESIGN.md). Two ship in v1.5 (#4 plain-data tests/canary, #7 branded types) — both depend on a concrete second consumer to drive their design. The architectural vision (seven mechanisms total) is preserved; the v1 scope is the subset that pays for itself without extraction pressure. **Mechanism #8 (cross-system session-type import ban) ships in v1** because the shared `SessionId` brand creates a new import boundary that needs guarding from day one — see below.
+
+8. **Cross-system session-type ESLint guardrail [v5: NEW — Graham R8 enforcement gate; ships in v1].** An ESLint `no-restricted-imports` rule bans Cairn code from importing Eureka session types (`SessionFact`, the `kind='session'` fact shape) and bans Eureka code from importing Cairn session types (`Session`, `SessionStatus`, etc.) — **with one exception: the shared `SessionId` brand from `@akubly/types`, which both packages MAY (and MUST) import.** This rule operationalizes Genesta R8 guardrails G2 (no runtime traversal helpers) and G3 (`SessionId` lives in `@akubly/types`, not in either domain package). Violations fail the build. Adding any new shared session structure beyond `SessionId` requires a new R-cycle design review (Graham R8 enforcement gate).
 
 ### FR-13: Session Model
 
 Sessions are **`kind=session` facts** in Eureka's fact store. They are NOT a sibling table and NOT a field on every entry.
 
-**Schema:** `{id, kind:'session', content (caller-supplied summary; REQUIRED in v1), sources, trust, importance, attention, cairn_session_id?, created_at}`.
+**Schema [v5: `cairn_session_id?` (optional, opaque) → `session_id: SessionId` (required, branded; the shared Copilot CLI session UUID); `fact.id` remains the primary key, `session_id` is a content/grouping field — one CLI session may produce many `kind=session` facts (start, mid-session checkpoints, close, multi-process observers)]:**
+
+```typescript
+{
+  id: FactId,                   // internal Eureka fact ID (UUID v4); distinct from session_id; the graph-traversal handle
+  kind: 'session',
+  session_id: SessionId,        // REQUIRED — the shared Copilot CLI session UUID; SessionId brand from @akubly/types
+  content: string,              // caller-supplied summary; REQUIRED in v1
+  sources: string[],
+  trust: Trust,
+  importance: number,
+  attention: AttentionTier,
+  created_at: string            // ISO timestamp
+}
+```
 
 **Session edges** (added in v3 OQ-9, retained in v4):
 - Tier 1 (eager): `originated_in, modified_in, referenced_in`
 - Tier 2 (sweep, per-session dedup): `recalled_in`
 
-**Namespace discipline [v4: Aaron signal (a) + Genesta amendment]:** "Session" is THE Copilot nomenclature — both Cairn and Eureka use the name on purpose. But they own **different things**:
+Edge schema: `(from_id, to_id)` reference `fact.id` (KR convention; see Crispin R8). `session_id` lives as a **content field** on session-facts, so queries like "all facts for session X" are a single filter on `session_id` (no multi-hop traversal). Edges still join facts to session-facts by `fact.id`; the shared `session_id` field is what makes the session-fact identifiable by an external (Cairn) identifier. [v5: Edgar framed continuity recall as "3-hop → 1-hop"; Crispin's KR model expresses the same gain as a single-column filter on `session_id` — both descriptions are consistent. See US-2 AC-2.3 and §14 for latency framing.]
+
+**Shared `SessionId` brand [v5: NEW — Aaron R8 directive; relaxes v4-final "isolated by design" stance]:** Cairn's `Session` and Eureka's `kind=session` fact are **the same session entity viewed through two lenses** — Cairn the operational lifecycle lens, Eureka the epistemological artifact lens. They share **one identifier**: the Copilot CLI session UUID (e.g., `~/.copilot/session-state/{uuid}/`). To make this honest at the type level, both packages import a shared branded primitive from `@akubly/types`:
+
+```typescript
+// packages/types/src/session.ts (NEW)
+/**
+ * Session identifier shared across Cairn (operational lifecycle) and
+ * Eureka (epistemological artifact). Represents the Copilot CLI session UUID.
+ * Brand prevents accidental confusion with FactId / DecisionId / arbitrary string.
+ */
+export type SessionId = string & { readonly __brand: 'SessionId' };
+
+/** Type guard — validates UUID v4 format (permissive on case). */
+export function isSessionId(value: unknown): value is SessionId {
+  return typeof value === 'string'
+    && /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(value);
+}
+
+/** Constructor — validates and brands; throws on invalid input. */
+export function SessionId(value: string): SessionId {
+  if (!isSessionId(value)) throw new TypeError(`Invalid SessionId: expected UUID v4, got "${value}"`);
+  return value as SessionId;
+}
+```
+
+**Why a branded primitive, not an opaque class** [v5: Crispin R8 rationale]:
+- Branded primitives provide compile-time safety with zero runtime overhead; values are still strings under the hood, so they serialize naturally to SQLite TEXT, JSON, file paths, CLI args. An opaque nominal class would require `new SessionId(value)` everywhere and add serialization/deserialization boilerplate with no representational benefit.
+- The same pattern is precedent for `Trust` and `Confidence` in this codebase (FR-12 enforcement mechanism #7, deferred to v1.5).
+- `SessionId` ships in v1 (not v1.5) because (a) it is a **shared identifier** load-bearing across two packages from day one — unlike `Trust`/`Confidence` which were single-package internals at v1 — and (b) Aaron's R8 directive explicitly requires it.
+
+**Why this is a shared TYPE, not a shared INTERFACE or BASE CLASS** [v5: Genesta R8 fold, guardrail G2/G3]:
+- `SessionId` is a scalar identifier wrapper — a *reference*, not a session-state object. It documents that the two systems point at the same underlying entity.
+- There is **no shared `SessionBase` interface**. Cairn's `Session` (`{id: SessionId, repoKey, branch, startedAt, endedAt, status, ...}`) and Eureka's session-fact (`{id: FactId, kind:'session', session_id: SessionId, content, trust, importance, ...}`) remain structurally independent.
+- No runtime traversal API in v1 or v1.5: neither package exposes `Session.getEurekaFacts()` or `SessionFact.getCairnSession()`. Cross-system traversal is offline-only via `eureka reconcile` (FR-7.4).
+
+**Namespace discipline [v4: Aaron signal (a) + Genesta amendment] [v5: revised — type isolation relaxed, lens framing remains the normative guard]:** "Session" is THE Copilot nomenclature — both Cairn and Eureka use the name on purpose. They own **different things**:
 
 - **Cairn** owns operational sessions (`packages/cairn/src/db/sessions.ts` → `Session`, `SessionStatus`): lifecycle, repo_key, branch, started_at, ended_at, status. Answers: "What happened?"
 - **Eureka** owns epistemological sessions (`packages/eureka/src/facts/types.ts` → `SessionFact`, `kind='session'`): what was learned, continuity, trust, attention. Answers: "What did I learn during session X?"
 
-The two type namespaces are kept **isolated by design** — there is NO shared `SessionBase` interface, no compile-time type hierarchy linking them. Correlation is **runtime only**, via the opaque `cairn_session_id` field. [v4: Genesta]
+The two types share **identity only** (the `SessionId` brand); all other attributes remain system-specific. **The lens framing — Cairn = lifecycle, Eureka = epistemology — is the normative guard against coupling drift, not type isolation.** [v5: explicitly DELETES the v4-final sentence "The two type namespaces are kept **isolated by design** — there is NO shared `SessionBase` interface, no compile-time type hierarchy linking them. Correlation is runtime only, via the opaque `cairn_session_id` field." That defensive framing was Genesta's R6 amendment; Genesta R8 folded it with grace ("defensive pessimism vs honest design") — see `.squad/decisions/inbox/genesta-r8-session-identity.md`.] [v5: Aaron R8 directive verbatim signal: emergent shared structure between the two lenses is **welcomed long-term**, not foreclosed — `SessionId` is the first such structure; future shared structures (if/when a concrete need materializes) require a new R-cycle design review per Graham R8 enforcement gate.]
 
 **Query guidance** (documented in both codebases):
 - "What sessions ran on repo X?" → query Cairn's `sessions` table.
-- "What did I learn during session Y?" → query Eureka's `kind=session` facts filtered by `cairn_session_id`.
-- Eureka does NOT cross-database JOIN to Cairn. Schema comments in both stores explicitly forbid this.
+- "What did I learn during session Y?" → query Eureka's `kind=session` facts filtered by `session_id` (single-column exact match).
+- "Show me all facts (decisions, aspirations, etc.) authored during session Y" → traverse `originated_in` / `modified_in` edges from the session-fact(s) for that `session_id`.
+- Eureka does NOT cross-database JOIN to Cairn at runtime. Schema comments in both stores explicitly forbid this. [v5: rule unchanged from v4-final; the shared brand is a type-level construct, not a runtime FK]
 
-**Schema comments [v4: Crispin Risk #5 mitigation]:**
-- Cairn `sessions` table: `-- Observability sessions — runtime execution scope. For knowledge sessions, see Eureka kind=session facts.`
-- Eureka session facts: `-- Knowledge sessions — learned memory scope. cairn_session_id is opaque metadata, not a FK. DO NOT JOIN across databases.`
+**Schema comments [v4: Crispin Risk #5 mitigation] [v5: updated wording — same enforcement, honest naming]:**
+- Cairn `sessions` table: `-- Operational sessions — runtime execution scope. id is a SessionId (shared with Eureka kind=session facts, see @akubly/types). For knowledge sessions, see Eureka kind=session facts. DO NOT JOIN across databases (FR-7.2).`
+- Eureka session facts: `-- Knowledge sessions — learned memory scope. session_id is the shared SessionId (same Copilot CLI session UUID as Cairn's sessions.id). DO NOT JOIN across databases at runtime; correlation is type-level only (FR-7.2). For lifecycle, query Cairn directly.`
 
-**Cairn → Eureka session-fact trigger policy (v1) [v4: Aaron approved manual-only; closes OQ #5]:** Manual only — via explicit `remember()` call by an agent or human. No automatic promotion from Cairn sessions to Eureka session-facts. The optional `cairn_session_id?` audit ref on Eureka facts preserves traceability. Auto-trigger heuristics (e.g., session-shape-based promotion) are deferred to v1.5+ pending observed usage patterns. Rationale: honors Path D (no new cross-package coupling in v1), respects "audit trust" framing (intentional act, not automatic), and keeps schema discipline tight.
+**Cairn → Eureka session-fact trigger policy (v1) [v4: Aaron approved manual-only; closes OQ #5] [v5: unchanged by R8 — see Graham R8 §5 OQ note]:** Manual only — via explicit `remember()` call by an agent or human. No automatic promotion from Cairn sessions to Eureka session-facts. The shared `session_id: SessionId` field on Eureka facts preserves traceability and makes cross-system queries exact-match. Auto-trigger heuristics (e.g., session-shape-based promotion, Cairn session-end event subscription) are deferred to v1.5+ pending observed usage patterns. Rationale: honors Path D (no new cross-package runtime coupling in v1), respects "audit trust" framing (intentional act, not automatic), and keeps schema discipline tight.
+
+**Multi-process / multi-perspective sessions [v5: Crispin R8 §3]:** A single Copilot CLI session can produce **many** `kind=session` facts (distinct `fact.id`, same `session_id`): a session-start fact, mid-session checkpoint facts, a session-end fact, and facts authored by separate processes (CLI agent, Forge runtime, future MCP wrapper) observing the same session. This is **a feature, not a bug** — the `session_id` is a grouping key, not a uniqueness constraint. Recall queries can surface the latest fact, concatenate all, or traverse session edges depending on caller intent.
 
 ### FR-14: Forge → Eureka In-Flow Decision Ingestion (Path 2) [v4: split from FR-12 per Aaron directive]
 
@@ -397,7 +456,11 @@ The two type namespaces are kept **isolated by design** — there is NO shared `
 2. A caller (test harness, demo wiring, MCP wrapper) invokes `eureka.ingestDecisions(records)` **on-demand**, passing in a batch of `DecisionRecord`s it has read from Forge. Eureka runs each through `fromDecisionRecord(record): DecisionPayload`.
 3. Ingested decision is stored as `kind=decision` fact (lossy projection — see contract).
 
-**Invocation cadence (v1) [v4-rev2: Skeptic + Pragmatist BLOCKING — coupling/UX implications resolved]:** Path 2 is **on-demand only** in v1. The library exposes **no background process, no scheduler, no event listener, no sweep-coupled trigger.** Callers drive ingestion explicitly (e.g., "ingest recent Forge decisions for session X" at session-close, or a manual `eureka ingest-decisions --since <ts>` CLI). Rationale: (1) keeps coupling unidirectional — Eureka still does not observe Forge at runtime; (2) no scheduler decisions to defend; (3) trivially testable; (4) honors Path D — no new background-process surface in v1. Sweep-driven or event-listener cadences are explicitly deferred to v1.5 pending observed usage patterns.
+**Invocation cadence (v1) [v4-rev2: Skeptic + Pragmatist BLOCKING — coupling/UX implications resolved] [v5: `--session <uuid>` CLI form added as v1 surface; shared `SessionId` makes session-scoped ingestion trivially correct — see Edgar R8 §3]:** Path 2 is **on-demand only** in v1. The library exposes **no background process, no scheduler, no event listener, no sweep-coupled trigger.** Callers drive ingestion explicitly. v1 CLI surface:
+- `eureka ingest-decisions --since <ts>` — ingest all Forge decisions since a timestamp
+- `eureka ingest-decisions --session <uuid>` [v5: NEW] — ingest all Forge decisions for a specific session, scoped by the shared `SessionId` (since Forge's audit log carries the same `session_id` as Eureka, this is a single-column filter on Forge's side; no opaque hinting or timestamp approximation)
+
+Rationale: (1) keeps coupling unidirectional — Eureka still does not observe Forge at runtime; (2) no scheduler decisions to defend; (3) trivially testable; (4) honors Path D — no new background-process surface in v1. Sweep-driven or event-listener cadences are explicitly deferred to v1.5 pending observed usage patterns.
 
 **Default wiring [v4-rev2: Pragmatist F7 — Path 2 wiring premature]:** The adapter code ships in v1, but **default caller wiring is opt-in**, not automatic. `skillsmith-runtime` and similar production harnesses do NOT invoke `ingestDecisions` by default; demo wiring and the MCP wrapper (v1.5) may opt in. See §7.3 for the production-vs-demo wiring policy.
 
@@ -441,7 +504,7 @@ Eureka and Cairn/Forge coexist as **peer systems with complementary purposes**. 
 
 | Concept | Cairn/Forge role | Eureka role | Authoritative source | Bridge direction |
 |---|---|---|---|---|
-| **Sessions** | Operational observability (lifecycle, timing, status) | Epistemological artifact (what was learned, continuity) | Cairn for lifecycle; Eureka for knowledge | Cairn → Eureka (session-start MAY trigger fact creation) |
+| **Sessions** | Operational observability (lifecycle, timing, status) | Epistemological artifact (what was learned, continuity) | Cairn for lifecycle; Eureka for knowledge | Cairn → Eureka (session-start MAY trigger fact creation); shared identity via `SessionId` brand (see FR-13) [v5] |
 | **Decisions (contemplative, Path 1)** | Audit sink for Eureka-originated decisions | Source of structured deliberation | Eureka | Eureka → Forge via `toDecisionRecord()` |
 | **Decisions (in-flow, Path 2)** | Source of in-flow audit records | Learning ingestor of observed history | Forge for audit; Eureka for learning patterns | Forge → Eureka via `fromDecisionRecord()` |
 | **Sweep / Ranker / Trust** | Prescription-scoped (Curator/prescriber) | Knowledge-scoped (FR-2, FR-3, FR-12) | Independent implementations | No runtime bridge in v1; same *pattern* applied to different domains |
@@ -449,7 +512,7 @@ Eureka and Cairn/Forge coexist as **peer systems with complementary purposes**. 
 **Coexistence rules:**
 1. Eureka OBSERVES Cairn/Forge events; it does NOT mutate their state.
 2. Cairn/Forge do NOT read Eureka's fact store.
-3. Optional `cairn_session_id` linking is for audit correlation only, never an enforced FK.
+3. Cross-system session correlation is via the shared `session_id: SessionId` brand (see FR-13). The shared identifier is a **type-level construct**, never a runtime FK; no cross-DB JOINs or ATTACH queries at runtime (FR-7.2). [v5: was "Optional `cairn_session_id` linking is for audit correlation only, never an enforced FK." — semantic change: identity is now first-class and required on session-facts; rule prohibiting runtime cross-DB joins is unchanged]
 4. On disagreement (Cairn says session ended, Eureka still sweeping), **Cairn wins for lifecycle**; Eureka continues async processing.
 5. Decision pathways are **complementary, not redundant** — see §7.2.
 
@@ -493,7 +556,9 @@ Two convergence points across the stack are intentional, not accidental:
 
 **Confidence vs Trust [v4: NOT substrate kin — orthogonal axes]:** Cairn's `confidence` (on prescriptions) and Eureka's `trust` (on facts) are both 0..1 event-driven scalars, but they measure **orthogonal properties**: `confidence` = epistemic strength of a derived conclusion from analysis; `trust` = provenance reliability of stored knowledge. They are NOT interchangeable. No function may accept a generic "certainty score" — signatures must explicitly specify `Confidence` or `Trust` (TypeScript branded types; see FR-12 enforcement mechanism #7). Composition (e.g., ranking that considers both) must be explicit.
 
-These convergent designs (sweep and curator-pattern kinship) are why Path D is credible: the substrate is already kernel-shaped in pattern. Path D bets that explicit interface design now makes the eventual shared kernel a refactor, not a rewrite. Confidence/trust, by contrast, must remain distinct in any kernel extraction.
+**Session identity IS shared substrate [v5: Aaron R8 directive]:** In contrast to confidence/trust (which look similar but are orthogonal), Cairn's `Session.id` and Eureka session-facts' `session_id` field hold **the same value** — the Copilot CLI session UUID — typed through the shared `SessionId` brand from `@akubly/types`. This is honest substrate kinship: one entity, two lenses. The shared brand documents the kinship at the type layer; the no-runtime-cross-DB rule (FR-7.2) keeps the *implementations* independent. Emergent shared structure between the two lenses is welcomed long-term, not foreclosed — see FR-13.
+
+These convergent designs (sweep + curator-pattern kinship, plus shared session identity) are why Path D is credible: the substrate is already kernel-shaped in pattern AND honestly named at the identifier layer. Path D bets that explicit interface design now makes the eventual shared kernel a refactor, not a rewrite. Confidence/trust, by contrast, must remain distinct in any kernel extraction.
 
 ### 7.5 Cairn Adoption Playbook (if/when) [v4: Graham amendment 4]
 
@@ -564,7 +629,7 @@ Each Eureka DB has its own `facts` + `relations` + `facts_fts` (FTS5 virtual) ta
 
 **Backup/Restore:**
 - Eureka's `.db` files are independent of Cairn's — partial restore is safe (no FK constraints).
-- Dangling `cairn_session_id` references are tolerated — treated as audit metadata, not required.
+- Dangling `session_id` references are tolerated — they point to a (possibly deleted) Cairn session via the shared `SessionId` brand, but Eureka enforces no FK constraint. The session-fact's content/trust/edges retain value independently. [v5: rewording from "cairn_session_id" → "session_id"; semantics unchanged — Eureka facts remain decoupled from Cairn lifecycle per Path D]
 - Full export: `eureka export --format=json` produces a self-contained fact graph (no external refs).
 
 **Disaster Recovery:**
@@ -582,7 +647,7 @@ Each Eureka DB has its own `facts` + `relations` + `facts_fts` (FTS5 virtual) ta
 
 | Term | Definition |
 |---|---|
-| **Session** | A unit of agent activity. Cairn owns the operational lifecycle (`sessions` table); Eureka owns the epistemological artifact (`kind=session` facts). Same word by design; different mechanics; linked only via opaque `cairn_session_id`. |
+| **Session** | A unit of agent activity. Cairn owns the operational lifecycle (`sessions` table); Eureka owns the epistemological artifact (`kind=session` facts). Same word by design; different mechanics; **same identifier** — both reference the Copilot CLI session UUID via the shared `SessionId` brand in `@akubly/types`. The two types remain structurally independent (no shared `SessionBase`, no runtime traversal API). Linked through shared identity, kept apart through the no-cross-DB-ATTACH rule (FR-7.2) and lens framing (Cairn = lifecycle, Eureka = epistemology). [v5: was "linked only via opaque `cairn_session_id`" — Aaron R8 directive] |
 | **DecisionRecord** | Forge's flat, audit-shaped record of a decision. Source of truth for retrospective audit. Owned by Forge. |
 | **DecisionPayload** | Eureka's structured, learning-shaped record of a decision. Source of truth for contemplative deliberation. Owned by Eureka. |
 | **Path 1 (Contemplative)** | Decision pathway where the agent uses Eureka facts/edges to reason its way to a choice. Direction: Eureka → Forge via `toDecisionRecord()`. Verb: `decide`. |
@@ -661,10 +726,10 @@ These survive v4-final and are tracked, not closed. [v4: consolidated from Crisp
 | Risk | Probability | Severity | Mitigation |
 |---|---|---|---|
 | **Silent divergence** (bridge believes emit succeeded; sink never received) | Medium | High | FR-7.4 bridge reliability contract: log every emit, retry transient, surface permanent, support reconciliation queries. |
-| **Orphaned references** (`cairn_session_id` points to deleted Cairn row) | Low | Low | Treat as opaque metadata; never JOIN across DBs; documented in schema comments + glossary. |
+| **Orphaned references** (`session_id` points to a Cairn session row that has been deleted or never existed locally) [v5: reframed from "`cairn_session_id` points to deleted Cairn row" — same risk profile, honest naming] | Low | Low | Treat as a tolerated lifecycle artifact; never JOIN across DBs at runtime (FR-7.2); documented in schema comments + glossary. The shared `SessionId` brand does NOT change the no-cross-DB-ATTACH rule; it is a type-level construct, not an FK. |
 | **Adapter drift** (Forge changes `DecisionRecord` without coordination) | Medium | High | Shared `@akubly/types`; CI integration test validates adapter output against Forge's published shape; schema-tolerant ingestion per §7.6. |
 | **Round-trip expectation** (developer assumes `toDecisionRecord` ↔ `fromDecisionRecord` is lossless) | Medium | Medium | Explicit non-goal #14; adapter contract docs in FR-10 + FR-14; Eureka fact store is source of truth for Path 1, Forge for Path 2. |
-| **Session name ambiguity** (developer conflates Cairn `sessions` table with Eureka `kind=session` facts) | High | Medium | Namespace discipline (FR-13); schema comments in both stores; query-guidance docs; isolated type namespaces (no shared `SessionBase`). |
+| **Session name ambiguity** (developer conflates Cairn `sessions` table with Eureka `kind=session` facts) | High | Medium | Namespace discipline (FR-13); schema comments in both stores; query-guidance docs; **shared `SessionId` brand enforces compile-time type safety on the identifier itself, but the two `Session` types remain structurally independent (no shared `SessionBase` interface, no runtime traversal API)**; ESLint guardrail (FR-12 enforcement mechanism #8) bans cross-system session-type imports except for `SessionId`. [v5: mitigation updated — type isolation relaxed to shared-brand only; lens framing remains the normative guard; ESLint guardrail added per Graham R8 enforcement gate] |
 | **Extraction promise rots** (`learning/` accretes Eureka coupling over months) | Medium | High | Seven-mechanism enforcement (FR-12), **five ship in v1** (subpath export + folder layout + interface ban + lint/CI gate + DESIGN.md); two ship in v1.5 (plain-data tests, branded types) when a concrete extraction consumer exists. Build fails on violation of any shipped mechanism. |
 | **Partial backup restore** (user restores Cairn but not Eureka or vice versa) | Low | Medium | NFR-6: documented; dangling refs tolerated; cross-system consistency explicitly not guaranteed. |
 
@@ -694,7 +759,7 @@ These are out of scope for v4-final lock; they remain open for v1.5+ planning. [
 | T2 | **Cross-tier leakage** | Project-tier fact contains user-tier PII or secrets (e.g., agent captures a fact about "user's API key handling" and writes it to `<repo>/.eureka/project.db` where teammates can read it). | (a) `Fact.scope` is required at write; mismatch between `scope` and target DB rejected at the storage layer. (b) Project-tier writes pass through a documented allowlist of `kind` values (`session`, `decision`, `aspiration` — not raw caller content) in v1. (c) Schema comments warn against writing PII content into project-tier. | Automatic PII scanning at write time → v1.5. Per-field encryption at rest → v2. |
 | T3 | **Trust manipulation** | Adversary (or buggy agent) repeatedly confirms its own facts to boost `trust` to the ceiling, effectively pinning false content. | (a) Trust mutations are event-driven (FR-3); each event records `principal_id`. (b) v1 cap: same-principal confirmations stop incrementing trust after N=3 events per fact (configurable). (c) Contradiction signal (Tier 1 `contradicts` edge) decrements trust regardless of source. | Confirmation-diversity rule ("requires K distinct principals") → v1.5. Reputation-weighted trust mutations → v2. |
 | T4 | **Adapter replay** | A `DecisionRecord` from Forge is replayed (e.g., from a stale log) → Eureka would naively create a duplicate `kind=decision` fact, inflating apparent decision history. | Idempotency keyed by `DecisionRecord.id` (FR-14 invariant #1) + pre-write dedup (FR-14 invariant #2). Replay is a no-op counted under `skipped_duplicate`. | — (v1 mitigation considered sufficient). |
-| T5 | **Bridge spoofing** | Code outside Eureka writes directly to `bridge_ledger` to fabricate emit success or hide failures. | Bridge ledger is append-only in schema (no UPDATE/DELETE triggers); the table lives inside Eureka's DB which is process-private when accessed via the library; reconciliation CLI flags mismatches against Cairn's event_log as the external ground truth. | OS-level file permissions documented in NFR-5 already cover the local-first threat model; remote-bridge spoofing → v2 with the sync layer. |
+| T6 [v5: REFRAMED from v4-rev2 implicit T-orphan-via-NFR-6; T-orphan was tracked in §13 + NFR-6, not §14a — included here for adversarial completeness] | **Stale session reference** | A `kind=session` fact's `session_id` references a Cairn session that was deleted, never existed locally, or belongs to a different machine (e.g., partial backup restore, multi-machine sync gap pre-v2). | Tolerated per NFR-6 + Path D decoupling: Eureka facts retain value independently of Cairn lifecycle. Required field at write time (a session-fact cannot be authored without a `session_id`), so no NULL-induced ambiguity. The shared `SessionId` brand is a type-level construct; no runtime FK to enforce. Reconciliation CLI surfaces the divergence. [v5: severity unchanged from v4-final T-orphan tracking (LOW/LOW); wording revised — "dangling `cairn_session_id` audit ref" → "stale `session_id` reference" — same risk, honest naming per Aaron R8] | Cross-machine sync conflict resolution → v2 (CRDT layer). |
 
 **v1 scope caveats:** Eureka is local-first (NFR-5). Multi-user / remote-write / cross-organization threats are out of v1 scope. This threat model will be revisited when the sync layer (v2) lands. Cassima notes that the v1 controls above are **policy and convention** — not all are enforced by code in v1; the gaps are tracked in the Deferred column. Compliance reviewer flagged the *absence* of this model as the BLOCKER; the model itself can ratchet up as the surface widens.
 
@@ -717,7 +782,9 @@ These are out of scope for v4-final lock; they remain open for v1.5+ planning. [
   3. **OQ #5 closure.** Cairn → Eureka session-fact trigger policy locked to **manual-only via `remember()`** in v1; closed statement added to FR-13. Subsequent open questions renumbered (#6→#5, #7→#6, #8→#7).
   4. **DecisionPayload dual-axis** (Genesta + Aaron). `confidence?` replaced with **`input_trust_min?`** (provenance side; renamed from `input_trust_avg` in rev-2 per Skeptic F5 to remove false precision) and **`reasoning_confidence?`** (analytic side). Both adapters (`toDecisionRecord`, `fromDecisionRecord`) updated; `input_trust_min` documented as discarded in the lossy contract outbound and undefined on inbound (Forge has no provenance axis).
 
-- **FR ledger status:** FR-1…FR-13 unchanged in number. **FR-14 (Path 2 in-flow decision ingestion) is v1**, not v1.5 — per Aaron R7 directive (see §10 Roadmap: "`fromDecisionRecord` ingestion (Path 2 — FR-14)" row remains marked ✅ v1).
+- **Aaron R8 directive (session identity unification) [v5: NEW]:** Cairn `Session` and Eureka `kind=session` fact are the SAME session entity viewed through two lenses (Cairn = operational lifecycle, Eureka = epistemological artifact). They share **one identifier** — the Copilot CLI session UUID — typed through a new shared `SessionId` brand in `@akubly/types` (branded primitive with UUID v4 validator + constructor; ships in v1). Schema deltas: Eureka `kind=session` fact `cairn_session_id?` (optional, opaque) → `session_id: SessionId` (required, branded; content/grouping field — one CLI session may produce many `kind=session` facts); bridge_ledger `cairn_session_id_hint?` → `session_id: SessionId` (required, not a hint); `cairn_event_id_hint` stays a hint (event.id not known at emit time). FR-13 "isolated by design" sentence DELETED; replaced with shared-brand framing + Genesta R8 guardrails G1–G5 (lens framing normative, no runtime traversal helpers, brand lives in `@akubly/types`, `session_id` required, honest naming). §7.4 substrate overlap gains a "session identity IS shared substrate" bullet. §13 T-orphan row + Glossary "Session" entry rewritten — honest naming, severity unchanged. §14a gains T6 "stale session reference" row (LOW/LOW; reframed from prior implicit NFR-6 tracking). Graham R8 enforcement gate added as FR-12 mechanism #8 (ESLint cross-system session-type import ban, exception for `SessionId`). v1.5 precision opportunities documented (FR-12 sweep can consume Cairn session-end events; AC-2.5 counter precision improves; FR-14 gains `--session <uuid>` CLI form as v1 surface). Lens framing — Cairn = "what happened?", Eureka = "what did I learn?" — preserved verbatim and elevated to *normative* status. Emergent shared structure between the two lenses welcomed long-term per Aaron R8 signal, not foreclosed; any future shared structure beyond `SessionId` requires a new R-cycle design review per Graham R8 enforcement gate. Reviewers: Graham (ACCEPT w/ enforcement gates), Genesta (FOLD w/ 5 guardrails — author of v4-final amendment this R8 relaxes, folded with grace), Crispin (KR/schema mechanics — most concrete spec; lean source for brand + bridge ledger), Edgar (learning-systems precision gains).
+
+- **FR ledger status [v5]:** FR-1…FR-14 unchanged in number. `SessionId` brand (NEW in `@akubly/types`) is shared infrastructure, not a new FR. FR-12 enforcement mechanisms grow from 7 → 8 (mechanism #8 added in v1).
 
 - **Aaron R7 revision-2 pass (post-Squad-panel + persona-review Design Panel):** four blockers + nine important findings resolved in this pass. See per-section `[v4-rev2: <reason>]` annotations. Highlights:
   1. **B1 — `DecisionSource` type-system bug.** FR-10 + §7.3 + FR-14 corrected to the actual union `'human' | 'automated_rule' | 'ai_recommendation'` per `packages/types/src/index.ts:47`. Exhaustive switch enforced as a TypeScript-level invariant in both directions.
@@ -737,6 +804,8 @@ These are out of scope for v4-final lock; they remain open for v1.5+ planning. [
 
 | Claim / reference | Source |
 |---|---|
+| `SessionId = string & { __brand: 'SessionId' }` (NEW shared brand) | `packages/types/src/session.ts` (post-R8); reference shape verified against `packages/types/src/index.ts` (existing `SessionIdentity` interface uses `sessionId: string` — R8 strengthens this to a branded primitive) [v5] |
+| Cairn session UUID source (Copilot CLI session state directory) | `~/.copilot/session-state/{uuid}/` (filesystem convention); Cairn's `packages/cairn/src/db/sessions.ts` reads/writes `id TEXT PRIMARY KEY` from this UUID [v5] |
 | `DecisionSource = 'human' \| 'automated_rule' \| 'ai_recommendation'` | `packages/types/src/index.ts:47` |
 | `DecisionRecord` shape (id, timestamp, question, chosenOption, alternatives, evidence, confidence enum, source, provenanceTier) | `packages/types/src/index.ts` (`DecisionRecord` interface) |
 | Cairn `sessions` table fields (id, repo_key, branch, started_at, ended_at, status) | `packages/cairn/src/db/sessions.ts` |
@@ -767,9 +836,13 @@ Authors of subsequent revisions should extend this table when adding new cross-s
 | `bridge_ledger` + offline reconcile CLI | Persona-review Pragmatist BLOCKER + Skeptic important finding (rev-2 BLOCKER B3) |
 | Seven-mechanism deferral (5 in v1, 2 in v1.5) | Persona-review Skeptic + Pragmatist (rev-2 I1) |
 | Three-tier deferral (agent fully wired in v1) | Persona-review Pragmatist (rev-2 I5; Cassima judgment call) |
+| Session identity shared brand (`SessionId` in `@akubly/types`); FR-13 "isolated by design" relaxation [v5] | Aaron R8 directive: `.squad/decisions/inbox/copilot-directive-r8-session-identity.md`; Graham R8 verdict: `.squad/decisions/inbox/graham-r8-session-identity.md`; Genesta R8 fold (5 guardrails): `.squad/decisions/inbox/genesta-r8-session-identity.md`; Crispin R8 KR/schema spec: `.squad/decisions/inbox/crispin-r8-session-identity.md`; Edgar R8 learning-systems precision: `.squad/decisions/inbox/edgar-r8-session-identity.md` |
+| Cross-system session-type ESLint guardrail (FR-12 mechanism #8) [v5] | Graham R8 enforcement gate; operationalizes Genesta R8 guardrails G2/G3 |
+| FR-14 `--session <uuid>` CLI form [v5] | Edgar R8 §3 precision gain; enabled by shared `SessionId` |
+| FR-12 v1.5 sweep precision (consume Cairn session-end events) [v5] | Edgar R8 §2 opportunity — opportunistic, not a v1 commitment |
 
-**Lock recommendation:** v4-final is ready for Scribe merge into `.squad/decisions.md` as canonical, superseding v3 + v3.1.
+**Lock recommendation:** v5-final is ready for the R8 lighter-weight lock ceremony (Graham + the trio: Genesta/Crispin/Edgar — no full 8-reviewer panel per Aaron R8 disposition). On unanimous re-accept, supersedes v4-final and merges into `.squad/decisions.md` as canonical.
 
 ---
 
-*End of Eureka PRD v4-final.*
+*End of Eureka PRD v5-final.*
