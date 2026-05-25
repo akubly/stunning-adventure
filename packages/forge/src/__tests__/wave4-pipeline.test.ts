@@ -336,7 +336,7 @@ describe('Wave 4 Group B — CairnEvent Observability', () => {
     // Setup: Insert a CairnEvent with eventType='future_event_type'.
     // Assert: Event exists and can be queried without errors.
 
-    const db = reopenDb();
+    reopenDb();
 
     // Insert a future event type (note: logEvent signature is sessionId, eventType, payload)
     logEvent(sessionId, 'future_event_type', { detail: 'Wave 5 feature' });
@@ -468,6 +468,9 @@ describe('Wave 4 Group C — forceRegenerate CLI Knob', () => {
     // New hints should exist
     const activeHints = queryOptimizationHints({ skillId, status: ['pending', 'accepted'] });
     expect(activeHints.length).toBeGreaterThan(0);
+
+    // Verify we generated and inserted new hints beyond the prior count
+    expect(activeHints.length).toBeGreaterThan(beforeHintCount);
   });
 
   it('CLI flag wires through to the runtime correctly', async () => {

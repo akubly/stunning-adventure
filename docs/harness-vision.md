@@ -113,7 +113,7 @@ Aaron's "block-chain of decisions" is the core trust primitive. Every decision�
 - **Who can decide:** Both humans and agents. Humans have ultimate authority (can override any agent decision). Agents operate within delegated authority scopes (e.g., Curator can accept optimization hints below a confidence threshold; above that threshold, human approval required). Every decision records the decider's identity (human user ID or agent ID).
 - **Why this matters for trust:** The ledger is the receipts. When the harness says "I recommend X based on evidence Y," the engineer can verify Y by inspecting the ledger. The system can't fabricate evidence or hide failed experiments—the chain is immutable. Trust is earned through transparency: the ledger shows both successes *and* failures, with full provenance.
 
-**Implementation note:** The decision ledger lives in Cairn (already an event store with append-only semantics). Refactor needed to add hash-chain linking and first-class decision/artifact/observation types (today Cairn stores telemetry and change vectors; decision types are net-new). See `packages/cairn/src/db/schema.ts` for current schema—migration 013+ will introduce decision ledger tables.
+**Implementation note:** The decision ledger lives in Cairn (already an event store with append-only semantics). Refactor needed to add hash-chain linking and first-class decision/artifact/observation types (today Cairn stores telemetry and change vectors; decision types are net-new). See `packages/cairn/src/db/schema.ts` for current schema—a future migration will introduce decision ledger tables.
 
 ---
 
