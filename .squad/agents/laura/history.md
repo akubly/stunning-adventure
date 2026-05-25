@@ -151,3 +151,23 @@ PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end
 **Commit:** 472e77d - "W4-4: fix integration test infrastructure → 14/14 green"
 
 **Forge tests:** 644/647 passing (+5 from previous run). Roger's W4-1/W4-2 + Rosella's W4-3 implementations validated end-to-end.
+
+## 2026-05-24: PR #22 Copilot Review Cycle — 5 Threads Addressed
+
+**Status:** All 5 threads resolved across 4 commits.
+
+**Thread 1 (forgePrescribe.test.ts line 204 — SUBSTANTIVE):** The forceRegenerate test only exercised `forceRegenerate: false`. Added a second `runForgePrescribe` call with `forceRegenerate: true`, capturing the previously-active hint ID and asserting it is `expired` post-run, and that `skipped === 0` and `inserted > 0`. Now proves `replaceActiveHintAtomically` fires and expiry semantics are correct. Commit: f85bc87.
+
+**Thread 2 (forgePrescribe.test.ts line 16 — TRIVIAL):** Removed unused `createSession` import from `@akubly/cairn` and unused `let sessionId: string` module-level declaration. Commit: 5d4cb2d.
+
+**Thread 3 (optimizationHints.test.ts line 289 — SUBSTANTIVE):** The "concurrent inserts" test ran transactions sequentially and relied on `insertHintIfNew`'s dedupe logic, never exercising the partial UNIQUE index. Added a new test `'partial UNIQUE index rejects a raw duplicate active-status insert'` that inserts directly via raw SQL and asserts a `UNIQUE constraint failed` error. Also verifies that terminal-status rows (`applied`) with the same tuple bypass the partial index. Commit: b1427a8.
+
+**Threads 4+5 (history.md lines 129/141 — TRIVIAL):** Stray 0x08 (backspace) and 0x0D (bare CR) control characters corrupted "beforeEach" and "runForgePrescribe" in two lines. Used PowerShell regex to strip all non-printable characters (excluding CR, LF, TAB) and then restored the missing letters. Verified no bad chars remain. Commit: 32b558a.
+
+**Key learning — control char corruption:** Stray control chars can replace actual letters in text, not just appear as extra chars. Stripping them without restoring the replaced letters leaves words truncated. Always verify word integrity after stripping, not just absence of bad chars.
+
+**Key learning — raw-SQL tests for constraint coverage:** Functional tests that go through business-logic wrappers can mask whether a DB constraint actually enforces invariants. When a constraint is the point of the test, bypass the wrapper and use raw SQL to prove the constraint fires independently.
+
+**Key learning — git add -p for split commits:** When multiple logical changes touch the same file (different hunks), `git add -p` allows staging only specific hunks. Hunks 3+4+5 for Thread 1, skip 1+2; then stage 1+2 for Thread 2. Interactive staging requires knowing which hunk numbers correspond to which changes before entering the session.
+
+**Runtime-cli tests:** 8/8 passing. Cairn tests: 585/585 passing. Build: green.
