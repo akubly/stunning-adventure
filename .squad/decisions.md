@@ -166,6 +166,82 @@ CREATE UNIQUE INDEX idx_optimization_hints_active_dedup
 - wave3-pipeline.test.ts (reference implementation)
 - runtime-cli forgePrescribe.test.ts (unit test reference)
 
+### Raw-SQL Constraint Test Pattern for DB Invariants (Laura, 2026-05-24)
+
+**Status:** ✅ Implemented in PR #22 cloud review cycle
+
+**Context:** PR #22 Copilot review (Thread 3) flagged that the "concurrent inserts" test in `optimizationHints.test.ts` ran both transactions sequentially and relied on `insertHintIfNew`'s internal dedupe logic, never proving the partial UNIQUE index fired independently.
+
+**Decision:** For any DB constraint that is the subject of a test (not just a side effect), the test should bypass the business-logic wrapper and assert the constraint directly via raw SQL. This applies to:
+- Partial UNIQUE indexes
+- CHECK constraints
+- Foreign key constraints
+
+**Rationale:** Functional wrappers can mask constraint failures. If `insertHintIfNew` is refactored to check existence differently, the old "concurrent inserts" test would still pass even if the UNIQUE index was accidentally dropped.
+
+**Implementation:** 
+- Added `'partial UNIQUE index rejects a raw duplicate active-status insert'` test in `packages/cairn/src/__tests__/optimizationHints.test.ts`
+- Uses raw `db.prepare().run()` to insert a second active-status row for the same `(skill_id, source, category)` tuple and asserts `UNIQUE constraint failed`
+- Also verifies terminal-status rows bypass the partial index
+
+**Commit:** 81fd6a8 (cycle 3)
+
+### forceRegenerate Test Must Exercise Both Branches (Laura, 2026-05-24)
+
+**Status:** ✅ Implemented in PR #22 cloud review cycle
+
+**Context:** PR #22 Copilot review (Thread 1) flagged that the forceRegenerate test only exercised the `false` path. The `true` path (which calls `replaceActiveHintAtomically`) was unexercised.
+
+**Decision:** Any feature with a boolean fork (`forceRegenerate: true/false`) should have assertions on both branches in the same test or closely related tests. For the `true` path specifically, assert behavioral consequences (state change) not just return values.
+
+**Implementation:** 
+- Extended the existing test to add a second call with `forceRegenerate: true`, capturing the previously-active hint ID
+- Asserts `status === 'expired'` post-run, plus `skipped === 0` and `inserted > 0`
+
+**Commit:** 81fd6a8 (cycle 3)
+
+### Narrow UNIQUE Constraint Catches in Cairn DB Layer (Roger Wilco, 2026-01-31; merged 2026-05-25)
+
+**Status:** ✅ Ratified and implemented in PR #22
+
+**Decision:** For all UNIQUE constraint error handling in the cairn db layer, use a two-part check:
+
+1. `(err as any).code === 'SQLITE_CONSTRAINT_UNIQUE'` — confirms the error is a UNIQUE constraint violation (not a foreign key, CHECK, or NOT NULL constraint)
+2. Column-tuple check on the specific index columns — confirms it's the intended index, not the PK or another UNIQUE index
+
+**Do NOT use** a bare `err.message.includes('UNIQUE constraint failed')` check. That string prefix matches ALL UNIQUE violations on the table, including PK collisions on `.id`, which are real bugs that should propagate.
+
+**Context:** PR #22 review (Thread 1) identified that the original `insertHintIfNewWithinTransaction` catch block used:
+```typescript
+if (err instanceof Error && err.message.includes('UNIQUE constraint failed')) {
+```
+This swallows PK collisions on `optimization_hints.id`, masking potential bugs.
+
+**Correct Pattern (active-dedup index in optimizationHints.ts):**
+```typescript
+if (
+  err instanceof Error &&
+  (err as any).code === 'SQLITE_CONSTRAINT_UNIQUE' &&
+  err.message.includes('optimization_hints.skill_id') &&
+  err.message.includes('optimization_hints.source') &&
+  err.message.includes('optimization_hints.category')
+) {
+  // Treat as concurrent duplicate — fetch existing hint id
+} else {
+  throw err;  // PK collision or unexpected constraint — propagate
+}
+```
+
+The active-dedup partial index is `idx_optimization_hints_active_dedup` on `(skill_id, source, category) WHERE status IN ('pending', 'accepted', 'deferred')`. SQLite error message format: `UNIQUE constraint failed: optimization_hints.skill_id, optimization_hints.source, optimization_hints.category`.
+
+**Rationale:**
+- Avoids silently discarding PK collisions or violations from future UNIQUE indexes on other column tuples
+- `SQLITE_CONSTRAINT_UNIQUE` code confirms constraint class before inspecting the message
+- Column-tuple check is the precise discriminator between the active-dedup index and the PK
+- Pattern is consistent and testable: PK collision test confirms the error propagates
+
+**Commit:** dcdcd26 (cycle 4)
+
 
 ### Decision: Harness Vision Document Drafted (Graham, 2026-05-23)
 
