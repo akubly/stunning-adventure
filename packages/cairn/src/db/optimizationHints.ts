@@ -227,7 +227,13 @@ function insertHintIfNewWithinTransaction(
     // UNIQUE constraint violation on the partial index means another transaction
     // concurrently inserted this (skill_id, source, category) into an active status.
     // Treat as duplicate.
-    if (err instanceof Error && err.message.includes('UNIQUE constraint failed')) {
+    if (
+      err instanceof Error &&
+      (err as any).code === 'SQLITE_CONSTRAINT_UNIQUE' &&
+      err.message.includes('optimization_hints.skill_id') &&
+      err.message.includes('optimization_hints.source') &&
+      err.message.includes('optimization_hints.category')
+    ) {
       const duplicateHintId = findActiveHintId(db, hint.skillId, hint.source, hint.category);
       return {
         inserted: false,

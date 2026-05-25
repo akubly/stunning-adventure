@@ -303,8 +303,7 @@ describe('W4-1: insertHintIfNew atomicity', () => {
     expect(all).toHaveLength(1);
   });
 
-  it('partial UNIQUE index rejects a raw duplicate active-status insert', () => {
-    const db = getDb();
+  it('partial UNIQUE index rejects a raw duplicate active-status insert', () => {    const db = getDb();
     const category = 'verbosity-raw-unique';
     const insertSql = `
       INSERT INTO optimization_hints
@@ -333,5 +332,27 @@ describe('W4-1: insertHintIfNew atomicity', () => {
         'desc', 'rec', 0.5, 0.8, '{}', '{}', 'applied', '2026-01-01T00:00:00.000Z',
       );
     }).not.toThrow();
+  });
+});
+
+describe('insertHintIfNew — UNIQUE constraint narrowing', () => {
+  it('PK collision (duplicate id, different category) propagates through insertHintIfNew and is not treated as a dedup skip', () => {
+    const db = getDb();
+    // First insert with a known id succeeds
+    insertOptimizationHint(hint({ id: 'pk-collision-test', category: 'verbosity-pk-a' }));
+
+    // Second insert with the same id but a different category:
+    // - The partial UNIQUE index on (skill_id, source, category) does NOT trigger (different category)
+    // - The PK constraint on optimization_hints.id DOES trigger
+    // The narrowed catch must NOT swallow this — it must rethrow.
+    const secondHint = hint({ id: 'pk-collision-test', category: 'verbosity-pk-b' });
+    expect(() => insertHintIfNew(db, secondHint)).toThrow();
+  });
+
+  it('PK collision propagates through insertOptimizationHint wrapper (not silently skipped)', () => {
+    insertOptimizationHint(hint({ id: 'pk-collision-test', category: 'verbosity-pk-a' }));
+
+    const secondHint = hint({ id: 'pk-collision-test', category: 'verbosity-pk-b' });
+    expect(() => insertOptimizationHint(secondHint)).toThrow();
   });
 });
