@@ -14,15 +14,22 @@ export type { PrescriberOrchestrationConfig, PrescriberRunResult } from '@akubly
 export interface CreatePrescriberOrchestrationConfigOpts {
   db?: Database.Database;
   dbPath?: string;
+  fallbackContext?: TierFallbackContext;
 }
 
 export type CreatePrescriberOrchestrationConfigOptions = CreatePrescriberOrchestrationConfigOpts;
-export type LoadedProfileSource = 'per-skill' | 'global fallback';
+export type LoadedProfileSource = 'per-skill' | 'per-model' | 'per-user' | 'global';
+
+export interface TierFallbackContext {
+  modelId?: string;
+  userId?: string;
+}
 
 export interface RunForgePrescribeOptions {
   skillId: string;
   dbPath?: string;
   forceRegenerate?: boolean;
+  fallbackContext?: TierFallbackContext;
 }
 
 export interface ForgePrescribeSuccessResult {
@@ -58,7 +65,7 @@ export type ForgePrescribeResult = ForgePrescribeSuccessResult | ForgePrescribeF
 
 type RuntimeDb = Database.Database;
 
-interface LoadedExecutionProfile {
+export interface LoadedExecutionProfile {
   profile: ExecutionProfile;
   source: LoadedProfileSource;
 }
@@ -104,23 +111,30 @@ function toExecutionProfile(
   };
 }
 
-function loadExecutionProfile(
+export function loadExecutionProfile(
   db: RuntimeDb,
   skillId: string,
-  options: { allowGlobalFallback: boolean },
+  fallbackContext: TierFallbackContext = {},
 ): LoadedExecutionProfile | null {
-  const perSkillProfile = cairn.getExecutionProfileWithDb(db, skillId, 'per-skill', 'global');
-  if (perSkillProfile) {
-    return { profile: toExecutionProfile(perSkillProfile), source: 'per-skill' };
+  const chain: Array<{ source: LoadedProfileSource; granularityKey: string }> = [
+    { source: 'per-skill', granularityKey: 'global' },
+  ];
+
+  if (fallbackContext.modelId) {
+    chain.push({ source: 'per-model', granularityKey: fallbackContext.modelId });
   }
 
-  if (!options.allowGlobalFallback) {
-    return null;
+  if (fallbackContext.userId) {
+    chain.push({ source: 'per-user', granularityKey: fallbackContext.userId });
   }
 
-  const globalProfile = cairn.getExecutionProfileWithDb(db, skillId, 'global', 'global');
-  if (globalProfile) {
-    return { profile: toExecutionProfile(globalProfile), source: 'global fallback' };
+  chain.push({ source: 'global', granularityKey: 'global' });
+
+  for (const tier of chain) {
+    const profile = cairn.getExecutionProfileWithDb(db, skillId, tier.source, tier.granularityKey);
+    if (profile) {
+      return { profile: toExecutionProfile(profile), source: tier.source };
+    }
   }
 
   return null;
@@ -220,15 +234,15 @@ export function createPrescriberOrchestrationConfig(
   opts: CreatePrescriberOrchestrationConfigOpts = {},
 ): PrescriberOrchestrationConfig {
   const db = resolveRuntimeDb(opts);
-  const profileCache = new Map<string, ExecutionProfile | null>();
+  const profileCache = new Map<string, LoadedExecutionProfile | null>();
   const loadProfile = (skillId: string): ExecutionProfile | null => {
     if (profileCache.has(skillId)) {
-      return profileCache.get(skillId) ?? null;
+      return profileCache.get(skillId)?.profile ?? null;
     }
 
-    const profile = loadExecutionProfile(db, skillId, { allowGlobalFallback: false })?.profile ?? null;
-    profileCache.set(skillId, profile);
-    return profile;
+    const loadedProfile = loadExecutionProfile(db, skillId, opts.fallbackContext);
+    profileCache.set(skillId, loadedProfile);
+    return loadedProfile?.profile ?? null;
   };
 
   return {
@@ -261,7 +275,7 @@ export async function runForgePrescribe(
 
   try {
     const db = cairn.getDb(dbPath);
-    const loadedProfile = loadExecutionProfile(db, options.skillId, { allowGlobalFallback: true });
+    const loadedProfile = loadExecutionProfile(db, options.skillId, options.fallbackContext);
 
     if (!loadedProfile) {
       return {

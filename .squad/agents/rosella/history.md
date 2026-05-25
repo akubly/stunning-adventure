@@ -59,6 +59,13 @@ Scribe orchestration complete: Graham's v3 scope finalized. Key scope decisions:
 
 ## Learnings
 
+### W5-3 Tier Fallback (2026-05-25)
+
+- Final API surface: `@akubly/skillsmith-runtime` exports `TierFallbackContext { modelId?: string; userId?: string }`, `LoadedProfileSource = 'per-skill' | 'per-model' | 'per-user' | 'global'`, `LoadedExecutionProfile`, and `loadExecutionProfile(db, skillId, fallbackContext?)`.
+- Profile selection is first-match-wins: `per-skill('global')`, optional `per-model(modelId)`, optional `per-user(userId)`, then `global('global')`; missing identity keys skip their tiers instead of querying with `'global'`.
+- W5-4 staleness plugs in after `loadExecutionProfile()` returns: inspect the selected `LoadedExecutionProfile.profile.updatedAt`, attenuate confidence if stale, and keep `source` unchanged; the Curator path now caches `LoadedExecutionProfile` internally so source remains available before returning the plain profile contract.
+- Existing callers verified untouched at the consumer boundary: Forge prescribers still receive a plain full `ExecutionProfile`; `runForgePrescribe()` and `createPrescriberOrchestrationConfig()` accept no context and preserve per-skill/global behavior.
+
 ### Wave 3 Shipped (2026-05-23 ~21:08Z)
 
 PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end-to-end: composition root R2 (`@akubly/skillsmith-runtime`), Curator hook wiring, per-skill orchestration, E2E tests, Phase 5-ready acyclic boundaries. 14 Copilot findings addressed across 4 review cycles. 1 deferral approved: insertHintIfNew atomicity (partial UNIQUE + BEGIN IMMEDIATE) → Wave 4.

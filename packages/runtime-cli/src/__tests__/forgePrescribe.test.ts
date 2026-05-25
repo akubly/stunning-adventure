@@ -108,12 +108,25 @@ describe('runForgePrescribe', () => {
 
     expect(result.ok).toBe(true);
     expect(result.exitCode).toBe(0);
-    expect(result.profileSource).toBe('global fallback');
+    expect(result.profileSource).toBe('global');
     expect(result.totalHints).toBe(7);
     expect(result.inserted).toBe(7);
     expect(result.skipped).toBe(0);
     expect(result.errored).toBe(0);
     expect(result.hints.some((hint) => hint.predictedImpact !== undefined)).toBe(true);
+  });
+
+  it('forwards fallbackContext to use an intermediate per-model profile', async () => {
+    upsertExecutionProfile(makeProfile('skill-model', { granularity: 'per-model', granularityKey: 'gpt-5' }));
+
+    const result = await runForgePrescribe({
+      skillId: 'skill-model',
+      dbPath: ':memory:',
+      fallbackContext: { modelId: 'gpt-5' },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.profileSource).toBe('per-model');
   });
 
   it('returns a no-profile error when neither per-skill nor global fallback profiles exist', async () => {
