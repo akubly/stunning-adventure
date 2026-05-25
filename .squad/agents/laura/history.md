@@ -126,7 +126,7 @@ PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end
 
 **Status:** ✓ All 14 wave4-pipeline tests passing (644 repo-wide).
 
-**Root cause identified:** File-backed SQLite DBs + source path imports created separate module instances. Test eforeEach seeded one DB, but unForgePrescribe opened a new one (different :memory: instance).
+**Root cause identified:** File-backed SQLite DBs + source path imports created separate module instances. Test beforeEach seeded one DB, but runForgePrescribe opened a new one (different :memory: instance).
 
 **Solution applied:**
 1. Switched to :memory: DB pattern matching wave2-pipeline/forgePrescribe tests
@@ -138,7 +138,7 @@ PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end
 **Key lesson:** In a TypeScript monorepo, importing from source paths vs package barrels can break singletons. The DB singleton works ONLY if all code paths import from the same module instance.
 
 **Test infrastructure pattern for future integration tests:**
-- Use :memory: DBs via getDb(':memory:') in eforeEach
+- Use :memory: DBs via getDb(':memory:') in beforeEach
 - Import from package barrels (@akubly/cairn) not source paths
 - Pass dbPath: ':memory:' to functions that accept it (reuses singleton)
 - Use seedVector() helper to set up change vectors for prescriber tests
