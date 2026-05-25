@@ -8,19 +8,53 @@
 
 **Your scope:** Knowledge representation — the graph schema, the kind taxonomies, the cross-references, the persistence formats. You own how knowledge is shaped inside Eureka.
 
-**Genesta** leads Eureka. **Edgar** owns the learning systems (algorithms that operate on what you design). Your interface to Edgar is the graph schema and the property surface (recency, trustworthiness, plasticity) that algorithms read and mutate.
+**Sister specialists:** Genesta (leads Eureka), Edgar (learning systems). Your interface to Edgar is the graph schema and property surface (recency, trustworthiness, plasticity).
 
-**Existing infrastructure to be aware of (but not own):**
-- Cairn (Roger) has `change_vectors` and `execution_profiles` — similar pattern-detection primitives, smaller scope. Reference, don't import.
-- Forge (Alexander) emits decisions/telemetry that Eureka may consume — clean data-oriented interfaces, no shared code.
+**Current status:** Eureka v4-final LOCKED. R7 design cycle CLOSED.
 
-**Six knowledge kinds (load-bearing, from Aaron's framing):** Practical, Semantic, Syntactic, Linguistic, Symbolic, Philosophical. These are not all the same shape — your job is to find representations that respect their differences.
+---
 
-**Design principles for Eureka (set by Genesta's charter):** Activities are runtime not storage. User tier is infrastructure not feature. Data-oriented coupling at boundaries. Trust is first-class. Plasticity over immutability.
+## Design & Review Summary (R1–R7)
 
-## Learnings
+**R1–R4:** First-principles design. Contributed v0/v1 graph schema docs. Schema: two-table graph (nodes + edges), multi-kind tagging, hybrid persistence. Identified 6 tensions (kind-query perf, corroboration growth, plasticity scheduling, philosophical overrides, etc.) — deferrable to v1.
 
-### 2026-05-22: Representation v0 & v1 Design (Eureka v0–v1 Ceremony)
+**R5:** Advocated Path A (clean-slate Eureka over Cairn extension). Argument: sessions-as-facts and sessions-as-table are structurally different; "substrate kin" framing underestimates the schema incompatibility risk.
+
+**R6:** After source-reading Cairn/Forge, revised stance. Recognized Aaron's insight: "closer in spirit" doesn't mean "same shape." Structures CAN differ while concepts converge. Supported Path D (standalone but kernel-shaped).
+
+**R7:** Lock-in panel. Your verdict: **APPROVE-FOR-LOCK**
+- All five R7 schema risks have integrated mitigations
+- Branded types enforcement mechanism specified at correct rigor level — compiler rejection of cross-assignment is load-bearing property
+- Will ACTUALLY prevent confidence/trust collapse
+- Seven enforcement mechanisms (subpath exports, folder layout, interface ban, plain-data tests, lint, DESIGN.md, branded types) form coherent defense-in-depth
+- FR-14 (Path 2 ingestion) introduces NO new schema risks
+
+---
+
+## Recent Work
+
+### 2026-05-25: R7 Lock-In Verdict — v4-final CANONICAL
+
+**Event:** R7 lock-in panel. v4-final reviewed and locked as canonical specification.
+
+**Your verdict:** **APPROVE-FOR-LOCK**
+- All five R7 schema risks have integrated mitigations
+- Branded types enforcement mechanism (your #1 ask) specified at correct rigor level — compiler rejection of cross-assignment is load-bearing property
+- Will ACTUALLY prevent confidence/trust collapse
+- Seven enforcement mechanisms (subpath exports, folder layout, interface ban, plain-data tests, lint, DESIGN.md, branded types) form coherent defense-in-depth
+- FR-14 (Path 2 ingestion) introduces NO new schema risks beyond already cataloged and mitigated
+- 1 documentation nit (non-blocking)
+
+**Key judgment calls:**
+- Branded types are the critical mechanism preventing silent collapse
+- Confidence vs Trust are NOT substrate kin (both 0-1 scalars, yes, but orthogonal axes)
+- Explicit composition required when both axes needed (forces developer to think, not cast)
+
+**Status:** v4-final locked. Schema risks mitigated. Implementation ready.
+
+---
+
+## Learnings Applied
 
 **Contribution:** `.squad/decisions/inbox/crispin-representation-v0.md` (v0) and `.squad/decisions/inbox/crispin-representation-v1.md` (v1)
 

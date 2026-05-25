@@ -4,9 +4,70 @@
 
 **Project:** Eureka — a knowledge retention and recall system for agentic systems, designed from first principles on top of the existing Cairn (storage) and Forge (runtime) packages in this monorepo. User is Aaron Kubly.
 
-**Aaron's R5 brain-dump (verbatim, 2026-05-22):**
+**Your role:** Product Manager. You ideate, draft, refine the PRD. Responsibility: synthesizing review feedback, arbitration directives, and architectural paths into coherent specifications.
 
-> Eureka is a knowledge retention and recall system for agentic systems.
+**Key design decisions locked:**
+- **R5 arbitration:** Importance vs Trust (separate), Storage (stored column), Scope vs Temperature (two columns), Community detection (defer to v2), `pray` semantics (split to rerank/contemplate/decide)
+- **R6 path:** Path D chosen — Eureka standalone but kernel-shaped; Cairn adopts learning modules later, no timeline pressure
+- **R7 lock:** v4-final canonical (555 lines); bidirectional adapter framework (Path 1 contemplative + Path 2 in-flow); confidence/trust orthogonality; 7-mechanism extraction-readiness enforcement
+
+**Current status:** v4-final LOCKED. R7 design cycle CLOSED. Ready for implementation. No further PRD edits.
+
+---
+
+## Session Archive (Previous Rounds)
+
+**R5 v1 (2026-06-15):** Drafted 650-line PRD. Created 5 user stories, 8 FRs, 5 NFRs, 10 non-goals, 23 open questions.
+
+**R5 v2 (2026-05-23 post-Aaron-arbitration):** Updated PRD to reflect Aaron's 8 directives resolving Q3, Q4, Q5, Q6, Q7, Q8, Q8b. Surfaced R6 hand-off: tier-transition rules, contemplate-vs-meditate boundary, edge types brainstorm.
+
+**R5 v3 (2026-05-24):** Incorporated Aaron's 9 OQ resolutions. Locked v1 schema shape (attention_tier transitions, storage primitive, pray follow-through, decide schema, edge types). Identified Cairn/Forge integration concerns.
+
+**R6 synthesis (2026-05-24):** After trio reading source code, evaluated 4 architectural paths:
+- Path A (Crispin): Clean-slate — fastest but ignores Cairn
+- Path B (Edgar): Extract learning-kernel — architecturally cleanest but timeline burden
+- Path C (Genesta): Extend Cairn — risks forced convergence
+- **Path D (Aaron probe): Eureka standalone but kernel-shaped; Cairn adopts later** ← CHOSEN
+
+**R6 → R7 transition (2026-05-24):** Cassima v3 PRD authored. Integrated R7 amendments + Aaron's 4 R6 signals (session nomenclature, decision overlap, substrate convergence, Path D decoupling). R6 synthesis recommended Path D.
+
+---
+
+## Recent Work
+
+### 2026-05-25: R7 Lock-In — v4-final Revision #2 CANONICAL
+
+**Event:** Cassima revision #2. Resolved 4 blockers + 9 important findings from 8-reviewer panel (4 Squad domain + 4 persona-review Design Panel personas). v4-final locked as canonical.
+
+**Your work:** `.squad/decisions/eureka-prd-v4-final.md` (555 lines, was 455 post-R7)
+
+**Blockers resolved:**
+1. **B1** — DecisionSource adapter mapping (Architect persona find; verified packages/types/src/index.ts:47)
+2. **B2** — FR-14 Path 2 cadence/idempotency/dedup/initial trust (Skeptic persona find)
+3. **B3** — FR-7.4 ↔ FR-7.2 contradiction on bridge scope (Pragmatist persona find)
+4. **B4** — Security Threat Model missing (Compliance persona find; §14a added)
+
+**Important findings synthesized:**
+- I1–I9 scope rightsize (5 v1 + 2 v1.5 mechanisms)
+- Sequential fan-out spec
+- US-2 flush helper
+- Agent-tier-only wiring
+- Production opt-in
+- Citation + decision-log registers
+- Confidence/trust orthogonality
+- Extraction-readiness (7 mechanisms, not 5)
+
+**Key judgment calls:**
+- Dual-panel (Squad + persona) surfaced issues Squad-only missed (architectural depth + cross-cutting risk/feasibility/compliance coverage)
+- Bidirectional adapter framework resolved Graham vs. Cassima/Genesta disagreement (both pathways are load-bearing)
+- Confidence/trust orthogonality enforced via branded types (prevents silent collapse)
+- All [v4: <reason>] annotations mark lineage deltas for traceability
+
+**Status:** v4-final LOCKED — CANONICAL. No further edits. Implementation ready. R7 design cycle CLOSED.
+
+---
+
+## Learnings Applied
 > With Eureka, agents (GitHub Copilot coding agents and subagents primarily, but by no means exclusively) can:
 > - store information
 > - extract information from source material
