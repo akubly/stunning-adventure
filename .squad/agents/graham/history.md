@@ -6,6 +6,27 @@
 
 # Graham — History (Summarized)
 
+## Round 6 (2026-05-25T01:30Z): Opens #1 & #3 Resolved
+
+**Inbox file:** `.squad/decisions/inbox/graham-opens-1-and-3-2026-05-25T0130Z.md`
+
+**Open #1 — L0 Provider/Bridge boundary (hermetic):**
+- Locked pure-data L0↔L1 contract: `BootstrapPayload`, `CrucibleEvent`, `OutboundPrompt`, control enum. No SDK types, callbacks, or promises cross.
+- SDK-import inventory across `packages/forge/src/`: 5 production files, 8 test files. Categorized each: bridge/runtime stays at L0 (relocate to `l0-provider/`); `ModelInfo` and `SessionConfig`/`ToolResultObject` get hermetic mirrors (extends pattern already in `types.ts:3-14`).
+- Enforcement: **dependency-cruiser** (rejected ESLint no-restricted-imports, TS project refs, hand-rolled fitness fn). Rule `no-sdk-outside-l0` + `no-sdk-in-cairn-skillsmith-crucible`. Wired into CI between lint and test.
+- Module reorg: `packages/forge/src/l0-provider/{sdk-provider,sdk-session,bridge,types,index}.ts`. `ForgeClient` → `SdkProvider` (deprecated alias for one release).
+- Cost: ~9 hours, zero behavioral test churn expected (public Forge API unchanged).
+- Anti-anchoring: explicit case for leaky boundary considered + rejected (Aaron's 2a makes hermetic strictly cheaper than before).
+
+**Open #3 — Narrator vs Mirror reconciliation:**
+- **One chamber, named Mirror.** Round-4 vocabulary table (`decisions.md:597`) already retired "Narrator"; this resolution makes the deprecation explicit and specifies the schema. `harness-vision.md` still uses old name in 8 places (lines 35, 59–60, 157–159, 179–180, 229–232, 258–259, 267, 285, 295, 313) — flagged for next vision pass.
+- **Two render modes, not two chambers:** Mirror Notifications (push, social-media-indicator badge) + Mirror Dashboard (pull, on-demand). Single `MirrorEvent` stream, single `mirror_events` projection table in L2 SQLite tier. Honors Aaron's Round-1 framing line-by-line.
+- **Producers:** L1 (hook bus), L2 (change-vector watcher), L3 (Forge prescriptions), L4 (Router decisions), L5 (Investigation findings). Mirror itself is L5-adjacent **view**, not a producer (consistent with Valanice `decisions.md:718` and Erasmus `decisions.md:648`).
+- **`MirrorEvent` schema specified:** ULID id, ts, sessionId, producerLayer, category {proposal|decision|observation|investigation|system}, level {info|notice|attention|urgent}, title, bodyMarkdown, refs, state, payload, schemaVersion. Notification-level policy owned by Mirror (view), not producers.
+
+**Cross-cutting implications for upcoming v1 architecture spec:** L0 boundary section, Mirror chamber section (replacing Narrator language), vocabulary correction appendix, CI/depcruise gate. Both resolutions queued as load-bearing inputs for the spec I'll draft after the PRD lands.
+
+
 ## 2026-05-22: Wave 2 Wave-0 Complete
 
 Roger (W2-1) + Rosella (W2-4): canonical `ChangeVectorSummary`, `ChangeVectorProvider`, `OptimizationCategory` in `@akubly/types`; `getAllCategories(db, skillId)` helper in Cairn. 1153+560 tests passing. Ready for W2-2/W2-7/W2-8 fanout.

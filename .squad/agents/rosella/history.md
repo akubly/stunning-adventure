@@ -114,4 +114,60 @@ T5 resolved — Crucible built on Copilot SDK, replaces Copilot CLI as Aaron's d
 
 **Inbox:** `.squad/decisions/inbox/rosella-reconciliation-2026-05-24T2330Z.md`
 
+---
+
+## Round 6 — Open #7 resolution: US-A-NEW-5 vs `event_log` (2026-05-25T01:30Z)
+
+**Inbox:** `.squad/decisions/inbox/rosella-open-7-2026-05-25T0130Z.md`
+
+Resolved the contradiction my Round 4 surfaced. Re-quoted Alexander's
+US-A-NEW-5 verbatim from `agents/alexander/history.md:332-334` (ledger-append
+transactional contract: WAL mode, group-commit at turn-end OR N≥32 OR T≥50ms,
+≤1ms p99, "lost ≤ last decision boundary" durability). Re-cited the existing
+`event_log` shape: 5 columns (id INTEGER PK AUTOINC, event_type TEXT,
+payload TEXT JSON-string, session_id TEXT FK, created_at TEXT default now);
+`migrations/001-initial.ts:47-53`; index in `004-event-log-index.ts:7-10`;
+append at `db/events.ts:43-46`; CairnEvent type at
+`cairn/src/types/index.ts:80-86`; 30 consumer files; ProvenanceTier
+classification at `forge/src/bridge/index.ts:26-47, 65-93`; stale-session
+shim at `cairn/src/hooks/sessionStart.ts:41-54`.
+
+**Contradiction:** legacy `event_log` is too thin to be the L1 primitive
+ledger (missing causal_read_set_hash, hook_verdict, hook_verdict_witness,
+group-commit boundary, commitment offset, typed payload) AND too rich/
+established to delete (ProvenanceTier-tiered, typed CairnBridgeEvent
+vocabulary, 30 call sites). The two surfaces do genuinely different jobs.
+
+**Resolution: option (b)-refined.** Keep both. L1 WAL (A.3 hybrid, Phase A
+8-field row schema) is the primitive ledger that satisfies US-A-NEW-5
+exclusively. `event_log` is demoted to a derived L2 audit + telemetry
+projection fed by an `L1Subscriber.onCommit(offset, rows[])` from the
+substrate boundary. Honors Aaron decision #10 ("L2-L5 may not import
+storage primitives directly"). Bridge layer (`forge/src/bridge/index.ts`)
+rewrites to emit L1 primitives; an `EventLogProjector` in Cairn
+materializes typed CairnBridgeEvents with `source_event_offset` +
+`provenance_tier` columns added by migrations 014/015. Stale-session
+shim (2-minute heartbeat) dies — subsumed by L1 crash recovery per
+Alexander's recommendation 5. `logEvent(db, ...)` overload stays as the
+manual/test entry point; deprecated single-arg overload scheduled for
+v1.1 removal.
+
+**Migration ordinal:** slot 2 of Phase B, after A.3 hybrid L1 ships,
+before Crucible GA. ~18h total, ~8h consumer churn (most consumers
+unchanged because they read `event_log` as audit projection, which is
+exactly what it becomes). First L2 projector built on the new L1
+substrate — reference pattern for Mirror, Laura's conformance kit,
+Sonny's debugger.
+
+**Flagged:** assumption that `parent_session_id`/`fork_point_event_id`
+on sessions (Aaron 2a) is sufficient for fork lineage without per-row
+markers. Sonny's debugger may push back.
+
+**Cross-team binds:** Roger owns the `L1Subscriber` interface in the
+L1-interface package (subscription seam at the boundary, projector in
+Cairn). Laura's conformance kit gets `source_event_offset` as
+divergence-detection key. Alexander's US-A-NEW-5 contract is unchanged
+and satisfied. Gabriel/Router unchanged. Mirror is another L2 projector
+of the same pattern.
+
 Read-only sweep across `cairn/`, `forge/`, `skillsmith-runtime/`, `runtime-cli/`, `types/`. Headline: **the plugin host already exists in Cairn, not Forge.** `cairn/src/agents/discovery.ts` is a 482-line, 4-phase topology scanner (user / project / plugin / marketplace) emitting SHA-256-checksummed `DiscoveredArtifact` records with per-type `ResolutionRule` (`additive`/`first_found`/`last_wins`), `ownerPlugin` tagging from `plugin.json`, and cross-scope conflict detection. `ArtifactType` covers instruction/agent/skill/hook/mcp_server/plugin_manifest/command. Counts: ALREADY-EXISTS 1, PARTIALLY-EXISTS 5, NET-NEW 4, CONTRADICTS 0 (1 latent-risk on US-Ro-3 SDK coupling, deferred to Aaron/Graham). Key reuses identified: `ProvenanceTier` (cert/internal, bridge/index.ts:26-47) for trust tiers, DBOM frontmatter (export/compiler.ts:82-100) for hermetic exports, `compiler` agent stub (cairn/agents/compiler.ts) as the natural implementation slot for US-Ro-NEW-2/3, and `HookComposer` (forge/hooks/index.ts) shallow-merge + error-isolation pattern worth lifting to a shared utility. **Plugin pinning at fork (v1 #7) is implementable on existing primitives** — content-addressing is already in place, only need `plugin.json` schema extension + topology-snapshot persist at fork + compiler-agent pin verifier. Rewriting US-Ro-1 and US-Ro-4 as "wire what exists, fill contract gaps" rather than greenfield. Merge with Roger US-R-3 confirmed. Latent SDK-coupling conflict in US-Ro-3 surfaced cleanly, not unilaterally resolved.

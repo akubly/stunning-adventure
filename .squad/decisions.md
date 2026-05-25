@@ -496,6 +496,179 @@ Reconciliation of all 9 core agents against `D:\git\stunning-adventure` monorepo
 
 **Headline:** No Router layer today. `HookComposer` merges observers with last-writer-wins on `permissionDecision` (tool-call boundary, not per-primitive-row). Hermetic replay boundary: capture spine exists (bridge records 22 event types, emits `CairnBridgeEvent`), but LLM-call content capture weak (beyond PAYLOAD_EXTRACTORS fields dropped) and tool-result capture absent (only `{toolCallId, success, error}` recorded, replay can't re-derive output). DBOM hash-chain (SHA-256 over canonical JSON + parent-hash) exists in spike/dbom-generator.ts but not live WAL. Five-layer Crucible entirely greenfield.
 
+---
+
+## Round 5 & 6 — Substrate spike + Phase B contradiction closeout (2026-05-25)
+
+### Round 5 — Three L1 Substrate Forks Investigated
+
+**Context:** Phase A locked the L1 substrate contract (8 WAL fields, pre-commit hook bus, group-commit + seal-and-split, ≤80µs row-stage predicate budget, replay protocol). Cairn today uses `better-sqlite3` + SQLite's native WAL. Round 5 investigation tested three forks: full custom storage (Rust redb), SQLite-native hooks (preupdate_hook + commit_hook), and a hybrid (custom append-log for L1 WAL + SQLite for derived tiers).
+
+#### Fork (a) — Full custom storage via redb (Rust B+tree)
+
+**Spike:** Roger audited Cairn's surface area: 188 prepared-statement call sites, 2,358 LOC in db/, 31 DB files, 16 tables, 221 SQL keywords exercised (JOINs, GROUP BY, ORDER BY, relational queries, UNIQUE indexes including partial UNIQUE for atomic backpressure). **Verdict:** REJECT. Redb + NAPI-RS bindings would be ~12–16 weeks engineering (6–8 weeks prototype, +6–8 weeks Phase A integration). Loses 100% of SQL ergonomics; gains genuine 80µs predicate budgets in Rust. Too much greenfield, too little near-term payoff for a working harness. (Source: `.squad/decisions/inbox/archive/2026-05-25-round5-6/roger-spike-fork-a-port-2026-05-25T0030Z.md`)
+
+#### Fork (b) — SQLite-native hooks
+
+**Spike:** Alexander analyzed `sqlite3_preupdate_hook` + `sqlite3_commit_hook` as the only viable hooks. **Verdict:** REJECT **as a drop-in for Phase A.** Preupdate_hook has no veto (void return); commit_hook is all-or-nothing per transaction (not per-row), and better-sqlite3's prebuilt binary is not compiled with `SQLITE_ENABLE_PREUPDATE_HOOK`. Even with a custom build, the design would be "abort-and-re-drive-one-by-one-up-to-pause," not "seal-and-split." This forces a Phase A renegotiation (drop seal-and-split, accept at-least-once-pause); Alexander's own synthesis does not survive unchanged. Fork (b) is a **re-scoping decision dressed as a storage decision**—escalation to Aaron. (Source: `.squad/decisions/inbox/archive/2026-05-25-round5-6/alexander-spike-fork-b-sqlite-hooks-2026-05-25T0030Z.md`)
+
+#### Fork (c) — Hybrid (custom append-log + SQLite for derived)
+
+**Spike:** Gabriel sketched Crucible as a **read-only observer of Cairn's event_log**, tailing via change-feed. No Crucible code between "primitive write" and "durable in Cairn." Verdict taxonomy shifts from pre-commit (pause/continue/observe) to post-commit (observe/alert/quarantine-downstream/rollback-proposal/escalate-policy-change). **Verdict:** ENDORSE-WITH-CAVEATS as a v1 → v2 stepping stone. Shippable in weeks; preserves ~7 of Sonny's 9 investigation stories cleanly or degraded; **loses primitive-level pre-commit prevention** (Aaron's real-time safety floor reverts to Cairn's tool-call-level `permissionDecision:'ask'`). **Risk:** incentive collapse—once forensic-only Crucible works, marginal payoff for (a)/(b) cutover drops. (Source: `.squad/decisions/inbox/archive/2026-05-25-round5-6/gabriel-spike-fork-c-parallel-ingest-2026-05-25T0030Z.md`)
+
+---
+
+### Aaron Locks: A.3 Hybrid (Fork (a) A.3 from Roger's spike)
+
+**Date:** 2026-05-25T01:00Z
+
+**Decision:** Adopt **Roger's A.3 hybrid** as the L1 substrate for Crucible/Skillsmith Harness:
+- **Custom pure-TS append-only WAL** for L1 (8-field row schema: event log, read-set hash, hook bus, WAL verdict fields, all ULID-sortable)
+- **Keep `better-sqlite3`** for the other 15 tables (proposals/prescriptions, approvals, drift telemetry, change vectors, DBOM artifacts, execution profiles, derived views)
+
+**Rejected (this round):**
+- Fork (a) A.1 — full Rust redb port via NAPI-RS
+- Fork (a) A.2 — LMDB via Kris Zyp's node binding
+- Fork (b) — SQLite-native hooks (Alexander killed his own design honestly: preupdate_hook can't veto, commit_hook is per-txn all-or-nothing, seal-and-split impossible)
+- Fork (c) — Parallel-ingest / forensic observer (Gabriel's incentive-collapse risk; throwaway L4 work; degraded L5)
+
+**Aaron's reasoning:** "I don't see us needing A.1 in the near term. If this harness proves to be something groundbreaking, we would eventually need it, but we would double down on this project with a LOT more resources at that point." A.1's anti-anchoring triggers (regulatory determinism / WASM-only / 10⁹+ rows) are not plausible within Crucible's 2-year horizon. If any one becomes plausible, re-open the spike with the "double down" resource envelope.
+
+**v1 commitment #10: L1 Substrate Boundary**
+
+The L1 contract (hook bus interface, append protocol, WAL row schema, replay protocol, conformance suite) is a **pure abstraction**:
+- A.3 hybrid (custom append-log + SQLite for derived) is the v1 implementation behind the boundary.
+- A.1 full port (pure-Rust redb via NAPI-RS) remains a future alternate implementation behind the same boundary.
+- Upper layers (L2/L3/L4/L5) consume the L1 interface only. **No L2-L5 code may import storage primitives directly.**
+- Migration A.3 → A.1 (if ever undertaken) becomes a substrate swap for L1, not an architecture rewrite for the rest.
+
+This discipline is **cheap if applied from day 1, expensive to retrofit**. Cairn's 188 prepared-statement call sites are exhibit A. (Source: `.squad/decisions/inbox/archive/2026-05-25-round5-6/copilot-l1-substrate-decision-2026-05-25T0100Z.md`)
+
+**v1 commitments list (updated after this decision):**
+1. Pareto fitness contract (Laura)
+2. Determinism conformance suite (Laura)
+3. Router observability + fuzz regime (Gabriel)
+4. Hermetic replay boundary (Alexander)
+5. Snapshot + compaction (Roger)
+6. Branch/ref metadata + cairn fsck + GC (Roger)
+7. Plugin pinning at fork (Rosella)
+8. Ledger-append transactional contract (Alexander)
+9. 8-field extended generator/prescription schema (Laura) — causalReadSet orthogonal to evidence
+10. **L1 substrate boundary (new this round)** — A.3 hybrid v1, A.1 reserved for "double down" future
+
+---
+
+### Phase B Contradictions — All 7 Resolved
+
+**Date:** 2026-05-25T01:15Z–01:30Z
+
+#### #2 — SDK `session.snapshot_rewind` reconciliation
+
+**Decision: 2a — wrap SDK at L1; L1 owns event-log branching natively.**
+
+Crucible never calls `snapshot_rewind` directly. The SDK becomes a session-bootstrap source (session ID + initial context). Once a session is established, Crucible drives event ingestion via L1's own append log. Branching is implemented at L1:
+- New migration adding `sessions.parent_session_id` and `sessions.fork_point_event_id` (unblocks US-S-5, US-S-6, US-S-8 + US-E-2)
+- `cairn fork --at <event_id>` creates a child session whose ledger logically extends from the parent's prefix without rewriting the parent
+
+**Aaron's reasoning:** "2b's replay would be imperfect due to non-determinism. 2c is an unwanted block against a dependency." Implication: L0/L1 boundary becomes trivially load-bearing. The SDK is bootstrap-only at L0 (Bridge/Provider); nothing above L1 sees `@github/copilot-sdk` types. (Source: `.squad/decisions/inbox/archive/2026-05-25-round5-6/copilot-aaron-resolutions-2026-05-25T0115Z.md`)
+
+#### #6 — `OptimizationHint.source` shape
+
+**Decision: 6b — closed enum {builtin | plugin | user | external}, harness-stamped at generator load time.**
+
+Field is **attribution**, not self-declaration. Plugin authors do not get to claim `'builtin'` or `'user'`. The harness stamps `source` based on loader:
+- First-party bundle → `'builtin'`
+- `~/.crucible/plugins/*` (signed, pinned) → `'plugin'`
+- User inline (REPL, scratchpad) → `'user'`
+- Anything else (network, unsigned, novel loader) → `'external'`
+
+`'external'` is a **graceful-degradation slot**, NOT a generic extension point. Router treats `'external'` as the most restrictive default — safe by construction. This preserves Router's declarative policy power ("auto-approve builtin and user, escalate plugin, sandbox external") for the 95% case while allowing novel loaders without breaking the system. (Source: `.squad/decisions/inbox/archive/2026-05-25-round5-6/copilot-aaron-resolutions-2026-05-25T0115Z.md`)
+
+#### #1 — ForgeClient hermetic L0 Provider / Bridge boundary
+
+**Decision: Introduce `l0-provider/` directory. Hermetic types. Dependency-cruiser enforcement.**
+
+Lock the L0/L1 boundary to a pure-data interface. SDK types live behind `l0-provider/` (only there); L1+ consumes a canonical `CrucibleEvent` stream and `BootstrapPayload` value. **What crosses L0 → L1 (up):** BootstrapPayload, CrucibleEvent (canonical JSON-serializable). **What crosses L1 → L0 (down):** OutboundPrompt, control signals (pause/resume/disconnect). **What does NOT cross:** SessionEvent, SessionConfig, ToolResultObject, any CopilotClient/CopilotSession reference, any SDK promise/iterator type. Enforcement: `.dependency-cruiser.cjs` rule set committed to CI. Migration: ~9 hours (5 production files move; 8 test files allowlisted). **Test impact:** zero functional changes; all 512 Forge tests remain passing. Public Forge API unchanged (re-exports preserved). (Source: `.squad/decisions/inbox/archive/2026-05-25-round5-6/graham-opens-1-and-3-2026-05-25T0130Z.md`)
+
+#### #3 — Narrator vs Mirror
+
+**Decision: ONE chamber, named Mirror. Two surfaces (Notifications push, Dashboard pull), one MirrorEvent stream.**
+
+Round-4 vocabulary table (`decisions.md:597`) already retired "Narrator"—Open #3 exists because `harness-vision.md` uses the old name. Narrator and Mirror are the same concept (pure presenter, self-reflective trust-building, shows harness's reasoning + user's work reflected back). Strike "Narrator" from canonical vocabulary.
+
+**Mirror has two render modes:**
+- **Notifications (push):** Badge/count, social-media-style activity indicator, visible in CLI prompt, flush on view
+- **Dashboard (pull):** Full surface (`crucible mirror`), filterable, time-sliceable
+
+Both surfaces share one `MirrorEvent` stream. Producers fan in from multiple layers (L1/L2/L3/L4/L5); Mirror queries the projection. No new L4.5 layer; Mirror is a derived view. Data path: all writes go through L1 append → L2 projection populates `mirror_events` → Mirror queries.
+
+**MirrorEvent schema:** id (ULID), ts (unix ms), sessionId, producerLayer (L1–L5), category (proposal/decision/observation/investigation/system), level (info/notice/attention/urgent), title (≤80 chars), bodyMarkdown, refs (eventId, proposalId, decisionId, investigationId), state (unread/read/dismissed/actioned), payload, schemaVersion.
+
+Notification policy (render rule, not stored): urgent → surface inline; attention → bump unread badge with category icon; notice → bump unread badge; info → dashboard only.
+
+Honors Aaron's framing exactly: accumulates notifications when interesting, user views on-demand, social-media indicators, dashboard available. (Source: `.squad/decisions/inbox/archive/2026-05-25-round5-6/graham-opens-1-and-3-2026-05-25T0130Z.md`)
+
+#### #4 — In-place UPDATE vs. backward causal slice
+
+**Decision: 6 of 7 tables are derived; 1 is external mirror. All 6 derived stay UPDATE with `withShadowEvent()` wrapper. Drop `prescriber_state.pending_count` cache; replace with SQL view.**
+
+The 7 tables enumerated:
+1. **sessions** (lifecycle) — derived from event_log; keep UPDATE
+2. **insights** (rollup) — derived; keep UPDATE (but wrap leaky sites in `withShadowEvent()`)
+3. **prescriptions** (state machine) — derived; keep UPDATE with event-pair invariant
+4. **prescriber_state** (pure cache) — **drop `pending_count` column; replace with `SELECT COUNT(*) FROM prescriptions WHERE status='generated'` view**
+5. **curator_state** (cursor) — cursor is the canonical projection bookmark; **cursor exemption** — UPDATE stays (monotonicity guarded in SQL)
+6. **optimization_hints** (state machine) — derived; **already correctly enforced** (replaceActiveHintsAtomically + emitHintTransitionEvent)
+7. **managed_artifacts** (external mirror) — mirrors filesystem; **external mirror exemption** — UPDATE stays; drift-detection is correctness mechanism
+
+**Enforcement:** `withShadowEvent(db, table, shadowEventType, payload, mutation)` helper (1h). ESLint rule banning raw `db.prepare('UPDATE')` outside db/ (2h, with cursor/mirror exemptions). CI invariant test: snapshot → replay → snapshot, assert deep-equal (6h, validates L1→L2 projection chain). Defense in depth catches all cases short of disabling lint + bypassing wrapper + editing snapshot.
+
+**Implementation cost:** ~14 hours (2 days). Slot in first Crucible sprint before US-V-* lands. (Source: `.squad/decisions/inbox/archive/2026-05-25-round5-6/roger-opens-4-and-5-2026-05-25T0130Z.md`)
+
+#### #5 — Canonical serialization algorithm
+
+**Decision: CBOR + BLAKE3 for new L1 read-set hash. Leave DBOM's SHA-256 alone.**
+
+Two hash algorithms in different parts of the system is correct, not a smell—they hash different things for different consumers with different lifecycle constraints. DBOM's hash is a committed artifact (long-lived, human-auditable, fits SHA-256 ubiquity expectation). L1's read-set hash is in the hot path (replay determinism, 80µs predicate budget).
+
+**Algorithm choice:** CBOR-dcbor (RFC 8949 §4.2.1 deterministic encoding) + BLAKE3. CBOR is binary; debuggability addressed by `cairn debug read-set <event_id>` CLI (round-trip to JSON). BLAKE3 ~3.5 GB/s single-threaded; CBOR encode ~500 MB/s; for representative read-set (~200 bytes), total ~5–7µs (7% of 80µs envelope, leaves slack for Gabriel's ack budget).
+
+**Libraries:** `cbor2` v1.x (200k weekly, MIT, ESM, dcbor mode) + `@noble/hashes/blake3` (2M weekly, audited, MIT, pure JS, ~150 MB/s).
+
+**Canonicalization rules (CBOR deterministic encoding):** shortest integer form (no bignums); no NaN/±Infinity; map keys bytewise lexicographic; UTF-8 NFC strings (encoder asserts, throws on violation); no tags; definite-length only; no duplicate keys; standard simple values; order-preserving arrays.
+
+**DBOM handling:** stays on SHA-256. Per-column algorithm rule in L1 contract: algorithm fixed at creation, never migrated. New columns BLAKE3; legacy columns named and frozen.
+
+**Implementation cost:** L4 canonicalizer (CBOR + BLAKE3 + validator) 4h; A3 conformance assertion 2h; round-trip test 1h; debug CLI 2h. **Total ~9 hours / 1.5 days.** (Source: `.squad/decisions/inbox/archive/2026-05-25-round5-6/roger-opens-4-and-5-2026-05-25T0130Z.md`)
+
+#### #7 — US-A-NEW-5 vs existing `event_log` shape
+
+**Decision: Keep both surfaces. Legacy `event_log` is demoted to a derived L2 audit projection fed by an L1 subscriber.**
+
+US-A-NEW-5 demands a primitive ledger with properties current `event_log` lacks (group-commit boundary, per-append latency ≤1ms p99, documented durability, commitment offset exposed, pre-commit hook bus integration, causal read-set capture, native fork lineage, typed primitive payload). `event_log` is too thin to be the L1 primitive, AND too rich/established to delete (30+ call sites, ProvenanceTier audit classification, typed CairnBridgeEvent vocabulary that Curator/MCP consume).
+
+**Resolution:** Role split—L1 WAL is the primitive ledger (Source of order, durability, commitment, hook verdicts, causal read sets, fork lineage); `event_log` (SQLite, L2) is derived **audit + telemetry projection** (typed CairnBridgeEvent stream, Curator-facing, MCP-facing, archivist-facing, Provenance-tiered). Not two ledgers—one ledger (L1), with one derived projection in `event_log`-shaped storage.
+
+**Migration plan (post-L1 shipping):**
+1. **Migration 014:** Add `event_log.source_event_offset INTEGER NULL` (backlinks to L1 WAL offset)
+2. **Migration 015:** Add `event_log.provenance_tier TEXT` (promotes ProvenanceTier from runtime classification to persisted column)
+3. **Migration 016:** Mark legacy `logEvent()` @deprecated; new entry point `projectFromL1(commit, projector)`
+4. **L1Subscriber interface** (new): `onCommit(offset, rows[])` fires once per group-commit boundary
+5. **EventLogProjector** (new, in Cairn): Implements L1Subscriber; materializes typed CairnBridgeEvent into `event_log` with source_event_offset + provenance_tier
+6. **Bridge rewrite:** Stops calling `logEvent()` directly; emits L1 primitive; EventLogProjector materializes the row
+
+**Consumer migration cost:** ~8h (Bridge rewrite 4h, stale-session shim removal 2h, tests 2h). Zero behavioral churn expected; 0h rows are existing consumers that read `event_log` (archivist, agents). US-A-NEW-5 satisfied by new L1 WAL, exclusively.
+
+**Assumption flagged for Aaron:** `parent_session_id` / `fork_point_event_id` (Aaron decision 2a) are sufficient for fork lineage without per-row markers on L1 WAL or `event_log`. If Sonny's debugger needs per-row lineage, that's a v1.1 column on the WAL row, not on `event_log`. (Source: `.squad/decisions/inbox/archive/2026-05-25-round5-6/rosella-open-7-2026-05-25T0130Z.md`)
+
+---
+
+### Vocabulary Update
+
+**Rename: Narrator → Mirror** (effective immediately per Round-4 lock; harness-vision.md to be updated next revision).
+**New term: Mirror render modes** — Notifications (push, badge/count) and Dashboard (pull, full surface).
+**New term: `withShadowEvent()` pattern** — canonical wrapper for derived-table UPDATEs; ensures event-source invariant.
+
 **NET-NEW axis:** Hermetic observation capture, bisect CLI, branch metadata in schema, determinism CI conformance runner, bus fuzz regime, verdict-stream recording, policy version on verdicts. (Full reconciliation: `.squad/decisions/inbox/gabriel-reconciliation-2026-05-24T2330Z.md`)
 
 ### Graham — Phase B Reconciliation
