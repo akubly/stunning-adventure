@@ -48,6 +48,27 @@
 
 **Systems surveyed:** Neo4j (property graphs), Helix (versioned graphs), RDF (semantic web), OWL (ontology language), PROV-O (provenance tracking), vector stores (semantic similarity), knowledge base systems
 
+---
+
+### 2026-05-25: R7 Lock-In Verdict — v4-final CANONICAL
+
+**Event:** R7 lock-in panel. v4-final reviewed and locked as canonical specification.
+
+**Your verdict:** **APPROVE-FOR-LOCK**
+- All five R7 schema risks have integrated mitigations
+- Branded types enforcement mechanism (your #1 ask) specified at correct rigor level — compiler rejection of cross-assignment is load-bearing property
+- Will ACTUALLY prevent confidence/trust collapse
+- Seven enforcement mechanisms (subpath exports, folder layout, interface ban, plain-data tests, lint, DESIGN.md, branded types) form coherent defense-in-depth
+- FR-14 (Path 2 ingestion) introduces NO new schema risks beyond already cataloged and mitigated
+- 1 documentation nit (non-blocking)
+
+**Key judgment calls:**
+- Branded types are the critical mechanism preventing silent collapse
+- Confidence vs Trust are NOT substrate kin (both 0-1 scalars, yes, but orthogonal axes)
+- Explicit composition required when both axes needed (forces developer to think, not cast)
+
+**Status:** v4-final locked. Schema risks mitigated. Implementation ready.
+
 **Key findings:**
 
 1. **Property graphs vs RDF:** Eureka chose property graphs (nodes + edges + properties). RDF uses triples (subject-predicate-object). Property graphs are superior for mutable agentic state (properties change over time). RDF better for semantic web interop but harder to model agentic evolution.

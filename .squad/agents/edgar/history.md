@@ -49,6 +49,28 @@
 
 **For detailed analyses:** See session logs and archived reports at `.squad/log/` and `.squad/decisions/`.
 
+---
+
+### 2026-05-25: R7 Lock-In Verdict — v4-final CANONICAL
+
+**Event:** R7 lock-in panel. v4-final reviewed and locked as canonical specification.
+
+**Your verdict:** **APPROVE-WITH-MINOR-NITS**
+- All five R7 extraction-readiness mechanisms integrated
+- Two additions: Branded types (mechanism #7) + DESIGN.md enforcement
+- Path D preserved via manual-only Cairn→Eureka triggers (no auto-promotion in v1)
+- Five→seven mechanism set is coherent, non-overlapping
+- Branded types complementary to extraction boundary (mechanisms 1–6 enforce boundary, #7 enforces semantic distinction)
+- 1 nit: FR-14 interop/ boundary lacks enforcement parallel to learning/ (address during implementation, non-blocking)
+
+**Key judgment calls:**
+- Mechanisms 1–6 = extraction boundary (learning/ self-contained, no parent imports)
+- Mechanism #7 (branded types) = semantic boundary (confidence ≠ trust, no implicit conversion)
+- Both are load-bearing; no circular dependency in combined system
+- Manual-only triggers preserve Path D's "ships standalone" goal in v1
+
+**Status:** v4-final locked. Extraction-ready design rock-solid. Implementation ready.
+
 **R6 reconciliation summary:** ~70% of learning infrastructure exists in Cairn/Forge (sweep, ranker formula, trust model, decide API). ~30% is greenfield (recall, generic integrate, commit/retire). Recommendation: extract sweep/ranker/trust to shared kernel when ready.
 
 ---

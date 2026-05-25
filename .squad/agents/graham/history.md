@@ -27,6 +27,26 @@
 
 **Next:** Cassima on deck for v3.1 or v4 intake pending Aaron's architectural direction.
 
+---
+
+### 2026-05-25: R7 Lock-In Verdict — v4-final CANONICAL
+
+**Event:** R7 lock-in panel. v4-final reviewed and locked as canonical specification.
+
+**Your verdict:** **APPROVE-FOR-LOCK**
+- Bidirectional adapter framework (Path 1 contemplative + Path 2 in-flow) structurally sound
+- All five R7 amendments faithfully integrated, no watering-down
+- Aaron's four follow-up edits introduce no architectural risks
+- 3 documentation nits (non-blocking): FR-7.4 reconciliation clarity, FR-14 ingestion cadence, §7.5 adoption versioning
+- §3 fully resolved by bidirectional framework — both pathways justified and complementary
+
+**Key judgment calls:**
+- Graham blessing (bidirectional adapter resolution) recognized both workflows are load-bearing (proactive reasoning + retrospective learning)
+- Two-pathway framing captures what single-direction approach would miss
+- Confidence/trust orthogonality (branded types) prevents silent collapse
+
+**Status:** v4-final is CANONICAL. R7 design cycle CLOSED. Implementation ready.
+
 
 ## Learnings
 

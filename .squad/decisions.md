@@ -2,6 +2,111 @@
 
 ## Closed Decisions
 
+### 2026-05-25: Eureka PRD v4-final LOCKED — R7 8-Reviewer Lock-In Panel
+
+**Status:** ✅ LOCKED (CANONICAL)  
+**Date:** 2026-05-25  
+**Locked By:** 8-reviewer panel (4 Squad domain + 4 persona-review Design Panel personas)  
+**Lock Status:** DO NOT EDIT — implementation phase begins
+
+**Decision:** Eureka PRD v4-final is ratified as canonical, shippable specification after R7 lock-in. All 4 blockers resolved. All 9 important findings synthesized. Ready for implementation phase. R7 design cycle CLOSED.
+
+**What Was Locked:**
+- **Artifact:** `.squad/decisions/eureka-prd-v4-final.md` (555 lines, 69.5 KB) — canonical stable location
+- **Lineage:** v3 (R5) → v3.1 patches (R6) → v4-final (R7 amendments + Aaron finalization) → v4-final rev-2 (4 blockers + 9 importants resolved)
+- **Panel:** Graham Knight (Architect), Genesta (Storage), Crispin (Schema), Edgar (Enforcement), + 4 persona-review personas (Architect, Skeptic, Pragmatist, Compliance)
+
+**Blockers Resolved:**
+1. **B1** — DecisionSource adapter mapping (verified against packages/types/src/index.ts:47) ✅ RESOLVED
+2. **B2** — FR-14 Path 2 cadence, idempotency, dedup, initial trust ✅ RESOLVED
+3. **B3** — FR-7.4 ↔ FR-7.2 contradiction (bridge_ledger + offline CLI coexistence) ✅ RESOLVED
+4. **B4** — Security Threat Model (§14a added with attack vectors + mitigations) ✅ RESOLVED
+
+**Important Findings (I1–I9):**
+- Scope rightsize across 5 v1 + 2 v1.5 mechanisms
+- Sequential fan-out specification
+- US-2 flush helper scoping
+- Agent-tier-only wiring constraints
+- Production opt-in policy
+- Citation + decision-log registers
+- input_trust_avg → input_trust_min analysis
+- Confidence/trust orthogonality enforcement (branded types)
+- Extraction-readiness mechanism verification (7 mechanisms, not 5)
+
+**Reviewer Verdicts:**
+- **Graham Knight (Architect):** APPROVE-FOR-LOCK — bidirectional adapter framework structurally sound, all R7 amendments integrated, 3 documentation nits (non-blocking)
+- **Genesta (Storage/Substrate):** APPROVE-FOR-LOCK — dual-axis schema (input_trust_avg + reasoning_confidence) correct, adapter lossy contracts justified
+- **Crispin (Schema):** APPROVE-FOR-LOCK — all 5 R7 schema risks mitigated, branded-type enforcement adequate to prevent confidence/trust collapse
+- **Edgar (Enforcement):** APPROVE-WITH-MINOR-NITS — all 5 R7 mechanisms integrated + 2 additions (branded types, DESIGN.md), Path D preserved via manual-only triggers
+- **Persona Architect:** Found B1 (DecisionSource mapping)
+- **Persona Skeptic:** Found B2 (FR-14 gaps) + multiple I-findings
+- **Persona Pragmatist:** Found B3 (FR-7 contradiction) + feasibility I-findings
+- **Persona Compliance:** Found B4 (missing security model) + compliance I-findings
+
+**Key Architectural Decisions Locked:**
+
+1. **Bidirectional Adapter Framework** (resolves Aaron's R7 directive):
+   - **Path 1 (Eureka → Forge):** Contemplative decisions. Agent uses Eureka facts/edges to reason, decision stored as `kind=decision` fact AND emitted to Forge via `toDecisionRecord()` for audit trail.
+   - **Path 2 (Forge → Eureka):** In-flow decisions. Agent decides during normal LLM exchange, Forge captures `DecisionRecord`, Eureka ingests via `fromDecisionRecord()` to learn decision patterns.
+   - **Both are load-bearing:** Eureka-assisted reasoning needs Path 1. Retrospective learning from observed decisions needs Path 2. No circular dependency (contexts non-overlapping).
+
+2. **Confidence/Trust Orthogonality:**
+   - `Confidence` (Cairn): epistemic strength of derived conclusions
+   - `Trust` (Eureka): provenance reliability of stored facts
+   - NOT interchangeable — TypeScript branded types enforce separation at compile time
+   - Composition explicit and documented when needed
+
+3. **Extraction-Readiness Enforcement (7 mechanisms, FR-12):**
+   1. TypeScript subpath export (`./learning` firewall)
+   2. Folder layout enforcement (no parent imports)
+   3. Interface ban on domain types (signatures only primitives/shared vocab)
+   4. Plain-data test pattern
+   5. Lint + CI enforcement (`no-restricted-imports` + canary test)
+   6. DESIGN.md living architectural contract
+   7. Branded types for `Confidence` and `Trust`
+
+4. **Boundary Discipline (no FK, no JOIN):**
+   - Eureka and Cairn are peer systems with complementary purposes
+   - Session namespace isolation: Eureka has `kind=session` facts, Cairn owns `sessions` table
+   - Correlation via opaque `cairn_session_id` only (one-way reference, not FK)
+   - Each system authoritative for own domain (sweep/ranker/trust → Eureka; observability → Cairn)
+
+5. **Path D Preservation (Kernel Extraction Ready):**
+   - Eureka ships standalone in v1 with no new dependencies on Cairn
+   - Manual-only Cairn→Eureka session triggers (via explicit `remember()` call)
+   - Auto-promotion heuristics deferred to v1.5+ pending usage patterns
+   - Three-phase adoption playbook for Cairn if/when it adopts learning modules
+
+**User Directives Locked (from Aaron Kubly):**
+- **2026-05-24T23:43Z:** v4-final revision #2 scope — resolve ALL 4 persona blockers AND consensus-strength important findings
+- **2026-05-25T05:48:00Z:** Eureka↔Forge decision flow is bidirectional by design (contemplative path + in-flow path, both load-bearing)
+
+**Why This Approach:**
+- Panel-first design prevented implementation surprises (dual-panel caught issues Squad-only missed)
+- Persona review augmented domain expertise with cross-cutting risk/feasibility/compliance analysis
+- Bidirectional adapter framework resolved architectural disagreement while honoring both workflows
+- Branded types + seven-mechanism extraction-readiness provide concrete enforcement, not aspirational promises
+- Boundary discipline between Eureka/Cairn preserves each system's autonomy while enabling collaboration
+
+**Artifacts:**
+- **Canonical PRD:** `.squad/decisions/eureka-prd-v4-final.md` (stable location, do not edit)
+- **Lock-in Orchestration:** `.squad/orchestration-log/2026-05-25T06-54-22Z-*` (9 entries: Cassima revision + 4 Squad reviewers + 4 personas)
+- **Session Log:** `.squad/log/2026-05-25T06-54-22Z-r7-eureka-v4-final-lock.md`
+- **Reviewer Verdicts:** Graham blessing + all four lock-in verdicts at `.squad/orchestration-log/2026-05-25T06-54-22Z-*-lock-verdict.md`
+
+**Implementation Readiness:**
+- PRD is self-contained (no external doc required for implementation)
+- All [v4: <reason>] annotations mark deltas from v3 for lineage traceability
+- Three lock-in nits (FR-7.4 reconciliation query, FR-14 ingestion cadence, §7.5 kernel versioning) are documentation polish, addressable during v1 implementation or v1.1 pass
+- No architectural risks identified
+
+**Next Phases:**
+- v1 Implementation: 5 v1 mechanisms as specified
+- v1.5 Planning: 2 deferred mechanisms (auto-promotion heuristics, recommendation surface)
+- Path D Extraction: Kernel extraction readiness enforced from Day 1, extraction happens post-v1 pending org-scale federation needs
+
+---
+
 ### 2026-05-22: Eureka Project Kickoff — Name + Repo Placement Decided
 
 **Status:** ✅ CLOSED (Aaron decided)  

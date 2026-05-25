@@ -49,6 +49,26 @@
 
 2. **Kind inference.** Should Eureka auto-classify? My gut says no (require explicit kind) — but this creates friction. Need usage data to decide.
 
+---
+
+### 2026-05-25: R7 Lock-In Verdict — v4-final CANONICAL
+
+**Event:** R7 lock-in panel. v4-final reviewed and locked as canonical specification.
+
+**Your verdict:** **APPROVE-FOR-LOCK**
+- Both adapter paths (Path 1 Eureka→Forge + Path 2 Forge→Eureka) correctly model confidence/trust orthogonality
+- Dual-axis DecisionPayload schema correct: input_trust_avg (provenance) + reasoning_confidence (analytic)
+- Path 1 preserves both axes; Path 2 loses input_trust_avg (acceptable — learning-pattern use case, not authoritative reasoning)
+- Lossy contracts explicit and justified
+- 2 minor nits (non-blocking)
+
+**Key judgment calls:**
+- Substrate kinship (both are 0-1 scalars) does NOT imply semantic equivalence
+- Branded types enforcement prevents accidental cross-assignment at compile time
+- Path 2 asymmetry (Forge→Eureka, lossy) is correct design for retrospective learning
+
+**Status:** v4-final locked. Substrate design solid. Implementation ready.
+
 3. **Activity scheduling.** Time-based vs threshold-based for meditate/dream. Need to see Eureka in use before committing.
 
 **What I owe revisit:**

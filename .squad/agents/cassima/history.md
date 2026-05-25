@@ -46,6 +46,40 @@
 - 12 design docs sit in `.squad/decisions/inbox/` (R1 first-principles, R2 cross-pollination, R3 prior-art survey, R4 prior-art cross-pollination). Most tensions converged via hybrid composition.
 - **Best single read for catching up:** `genesta-prior-art-v3.md`. Schema specifics: `crispin-prior-art-v3.md`. Tensions story: `edgar-prior-art-v3.md`.
 
+---
+
+### 2026-05-25: R7 Lock-In — v4-final Revision #2 CANONICAL
+
+**Event:** Cassima revision #2. Resolved 4 blockers + 9 important findings from 8-reviewer panel (4 Squad domain + 4 persona-review Design Panel personas). v4-final locked as canonical.
+
+**Your work:** `.squad/decisions/eureka-prd-v4-final.md` (555 lines, was 455 post-R7)
+
+**Blockers resolved:**
+1. **B1** — DecisionSource adapter mapping (Architect persona find; verified packages/types/src/index.ts:47)
+2. **B2** — FR-14 Path 2 cadence/idempotency/dedup/initial trust (Skeptic persona find)
+3. **B3** — FR-7.4 ↔ FR-7.2 contradiction on bridge scope (Pragmatist persona find)
+4. **B4** — Security Threat Model missing (Compliance persona find; §14a added)
+
+**Important findings synthesized:**
+- I1–I9 scope rightsize (5 v1 + 2 v1.5 mechanisms)
+- Sequential fan-out spec
+- US-2 flush helper
+- Agent-tier-only wiring
+- Production opt-in
+- Citation + decision-log registers
+- Confidence/trust orthogonality
+- Extraction-readiness (7 mechanisms, not 5)
+
+**Key judgment calls:**
+- Dual-panel (Squad + persona) surfaced issues Squad-only missed (architectural depth + cross-cutting risk/feasibility/compliance coverage)
+- Bidirectional adapter framework resolved Graham vs. Cassima/Genesta disagreement (both pathways are load-bearing)
+- Confidence/trust orthogonality enforced via branded types (prevents silent collapse)
+- All [v4: <reason>] annotations mark lineage deltas for traceability
+
+**Status:** v4-final LOCKED — CANONICAL. No further edits. Implementation ready. R7 design cycle CLOSED.
+
+---
+
 **Your job (R5):** Aaron brain-dumped above. You ideate, ask clarifying questions, draft, refine. R4 left 5 arbitration questions open — answer them during R5 as requirements crystallize:
 1. Importance vs Trust — separate or merge?
 2. Importance: stored column or computed on-demand?
