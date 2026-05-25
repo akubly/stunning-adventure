@@ -265,8 +265,10 @@ export function insertHintIfNew(
 
 /**
  * Atomically expire active hints for one tuple and insert their replacements.
- * Emits one aggregate `hint_force_expired` event for the batch rather than per-hint
- * expiration so the force-regenerate path remains cheap and observable.
+ * Emits one aggregate `hint_force_expired` event for the batch rather than
+ * per-hint expiration so the force-regenerate path remains cheap and observable.
+ *
+ * @param options.actor - Recorded in the hint_force_expired event payload; defaults to 'system:bulk-expire'.
  */
 export function replaceActiveHintsAtomically(
   db: Database.Database,
