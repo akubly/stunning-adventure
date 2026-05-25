@@ -66,6 +66,13 @@ Scribe orchestration complete: Graham's v3 scope finalized. Key scope decisions:
 - W5-4 staleness plugs in after `loadExecutionProfile()` returns: inspect the selected `LoadedExecutionProfile.profile.updatedAt`, attenuate confidence if stale, and keep `source` unchanged; the Curator path now caches `LoadedExecutionProfile` internally so source remains available before returning the plain profile contract.
 - Existing callers verified untouched at the consumer boundary: Forge prescribers still receive a plain full `ExecutionProfile`; `runForgePrescribe()` and `createPrescriberOrchestrationConfig()` accept no context and preserve per-skill/global behavior.
 
+### W5-4 Profile Staleness Attenuation (2026-05-25)
+
+- Final staleness field shape on runtime-returned profiles: `staleness: { stale: boolean; reason: 'count' | 'age' | 'count+age' | null }` plus annotated `confidence`.
+- Default thresholds: count trips when `sessions_since_install - profile.sessionCount > 50`; age trips when `now - profile.updatedAt > 7 days`. If either trips, confidence is multiplied by `0.5` once.
+- Composition with W5-3: tier selection remains first-match-wins and sets `LoadedExecutionProfile.source`; staleness runs only after that selected profile is found, preserves `source`, and annotates/scales the selected `profile`.
+- Validation: `npm run build` clean; `npm test --workspace=@akubly/skillsmith-runtime` 24 passing; `npm test --workspace=@akubly/forge` 644 passing, 3 todo. No Cairn, migration, runtime-cli, or Forge prescriber changes.
+
 ### Wave 3 Shipped (2026-05-23 ~21:08Z)
 
 PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end-to-end: composition root R2 (`@akubly/skillsmith-runtime`), Curator hook wiring, per-skill orchestration, E2E tests, Phase 5-ready acyclic boundaries. 14 Copilot findings addressed across 4 review cycles. 1 deferral approved: insertHintIfNew atomicity (partial UNIQUE + BEGIN IMMEDIATE) → Wave 4.

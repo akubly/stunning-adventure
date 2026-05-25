@@ -43,6 +43,16 @@ function setUpdatedAt(source: LoadedProfileSource, granularityKey: string, updat
     .run(updatedAt, 'skill-alpha', source, granularityKey);
 }
 
+function setSessionsSinceInstall(count: number): void {
+  cairn.getDb()
+    .prepare('UPDATE prescriber_state SET sessions_since_install = ? WHERE id = 1')
+    .run(count);
+}
+
+function loadAt(context?: TierFallbackContext): ReturnType<typeof loadExecutionProfile> {
+  return loadExecutionProfile(cairn.getDb(), 'skill-alpha', context, { now: '2026-05-25T00:00:00.000Z' });
+}
+
 beforeEach(() => {
   cairn.closeDb();
   cairn.getDb(':memory:');
@@ -153,9 +163,74 @@ describe('loadExecutionProfile tier fallback', () => {
     setUpdatedAt('per-user', 'aaron', '2026-05-25T00:00:00.000Z');
     setUpdatedAt('global', 'global', '2026-05-25T00:00:00.000Z');
 
-    const loaded = load({ modelId: 'gpt-5', userId: 'aaron' });
+    const loaded = loadAt({ modelId: 'gpt-5', userId: 'aaron' });
 
     expect(loaded?.source).toBe('per-model');
     expect(loaded?.profile.updatedAt).toBe('2020-01-01T00:00:00.000Z');
+  });
+
+  it('annotates a fresh selected profile without confidence attenuation', () => {
+    seedProfile('per-skill', 40);
+    setUpdatedAt('per-skill', 'global', '2026-05-24T00:00:00.000Z');
+    setSessionsSinceInstall(60);
+
+    const loaded = loadAt();
+
+    expect(loaded?.profile.confidence).toBe(1);
+    expect(loaded?.profile.staleness).toEqual({ stale: false, reason: null });
+  });
+
+  it('attenuates confidence for a count-only stale selected profile', () => {
+    seedProfile('per-skill', 40);
+    setUpdatedAt('per-skill', 'global', '2026-05-24T00:00:00.000Z');
+    setSessionsSinceInstall(91);
+
+    const loaded = loadAt();
+
+    expect(loaded?.profile.confidence).toBe(0.5);
+    expect(loaded?.profile.staleness).toEqual({ stale: true, reason: 'count' });
+  });
+
+  it('attenuates confidence for an age-only stale selected profile', () => {
+    seedProfile('per-skill', 40);
+    setUpdatedAt('per-skill', 'global', '2026-05-17T23:59:59.000Z');
+    setSessionsSinceInstall(60);
+
+    const loaded = loadAt();
+
+    expect(loaded?.profile.confidence).toBe(0.5);
+    expect(loaded?.profile.staleness).toEqual({ stale: true, reason: 'age' });
+  });
+
+  it('attenuates confidence once when count and age thresholds both trip', () => {
+    seedProfile('per-skill', 40);
+    setUpdatedAt('per-skill', 'global', '2026-05-17T23:59:59.000Z');
+    setSessionsSinceInstall(91);
+
+    const loaded = loadAt();
+
+    expect(loaded?.profile.confidence).toBe(0.5);
+    expect(loaded?.profile.staleness).toEqual({ stale: true, reason: 'count+age' });
+  });
+
+  it('honors custom staleness thresholds and clamps attenuation to avoid confidence inflation', () => {
+    seedProfile('per-skill', 40);
+    setUpdatedAt('per-skill', 'global', '2026-05-25T00:00:00.000Z');
+    setSessionsSinceInstall(46);
+
+    const loaded = loadExecutionProfile(cairn.getDb(), 'skill-alpha', {}, {
+      now: '2026-05-25T00:00:00.000Z',
+      sessionCountThreshold: 5,
+      attenuationFactor: 2,
+    });
+
+    expect(loaded?.profile.confidence).toBe(1);
+    expect(loaded?.profile.staleness).toEqual({ stale: true, reason: 'count' });
+  });
+
+  it('returns null without staleness errors when no profile exists', () => {
+    setSessionsSinceInstall(91);
+
+    expect(loadAt()).toBeNull();
   });
 });
