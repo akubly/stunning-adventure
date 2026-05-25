@@ -539,7 +539,7 @@ describe('Wave 4 Group C — forceRegenerate CLI Knob', () => {
 
       // skillsmith-runtime exposes forge_prescribe only via CLI, not MCP; this assertion is necessarily cairn-scoped.
       expect(toolNames).not.toContain('forge_prescribe');
-      expect(exposedParameters.filter((parameter) => /\.force(?:Regenerate)?$/i.test(parameter))).toEqual([]);
+      expect(exposedParameters.filter((parameter) => /\.force[^.]*$/i.test(parameter))).toEqual([]);
     } finally {
       vi.doUnmock('@modelcontextprotocol/sdk/server/mcp.js');
     }
@@ -595,19 +595,31 @@ describe('Wave 4 Group D — End-to-End Pipeline', () => {
     const activeHints = queryOptimizationHints({ skillId, status: ['pending', 'accepted'] });
     expect(activeHints.length).toBeGreaterThan(0);
 
-    // CairnEvents should be emitted for both expire and insert transitions
-    const events = getUnprocessedEvents(0).filter((e) => e.eventType === 'hint_state_transition');
+    const allEvents = getUnprocessedEvents(0);
+    const events = allEvents.filter((e) => e.eventType === 'hint_state_transition');
     expect(events.length).toBeGreaterThan(beforeEventCount);
 
-    // Find the expire event for the existing hint
-    const expireEvent = events.find((e) => {
-      const payload = JSON.parse(e.payload);
-      return payload.hint_id === 'h-e2e-force' && payload.to_state === 'expired';
+    type HintForceExpiredPayload = {
+      skill_id: string;
+      source: string;
+      category: string;
+      count: number;
+      actor: string;
+    };
+
+    const forceExpiredEventsForSkill = allEvents
+      .filter((e) => e.eventType === 'hint_force_expired')
+      .map((e) => JSON.parse(e.payload) as Partial<HintForceExpiredPayload>)
+      .filter((payload) => payload.skill_id === skillId && payload.count !== undefined && payload.count > 0);
+
+    expect(forceExpiredEventsForSkill).toHaveLength(1);
+    expect(forceExpiredEventsForSkill[0]).toMatchObject({
+      skill_id: skillId,
+      source: 'prompt-optimizer',
+      category: 'convergence',
+      count: 1,
+      actor: 'runtime:--force',
     });
-    // NOTE: forceRegenerate bulk-expires hints via raw SQL for performance, 
-    // so individual transition events may not be emitted. This is tracked
-    // separately - Laura 2026-05-24
-    // expect(expireEvent).toBeDefined();
 
     // Find insert events for new hints
     const insertEvents = events.filter((e) => {
