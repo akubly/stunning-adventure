@@ -445,6 +445,243 @@ Every delta below cites the OQ directive that drove it.
 - **Ranker weights/formula (OQ-8):** Locked: raw = 0.5·rel + 0.2·imp + 0.2·trust + 0.1·rec; final = raw × attention_multiplier (hot=1.20, warm=1.00, cold=0.80); trust floor 0.15 (gate, configurable). T3 RESOLVED.
 - **Session model (OQ-9):** Replaced. Sessions are kind=session facts (NOT a sibling table, NOT a field on every entry). New FR-13 specifies schema; FR-9 edge enum gains originated_in, modified_in, referenced_in (Tier 1) and recalled_in (Tier 2, per-session dedup).
 
+---
+
+## 2026-05-24: Aaron's R6 Signals (Post-Trio Reconciliation)
+
+**By:** Aaron Kubly (via Copilot)  
+**Date:** 2026-05-24  
+**What:** After reading Genesta/Crispin/Edgar's R6 reconciliation reports, Aaron contributed four signals to fold into Cassima's synthesis
+
+### Four R6 Signals
+
+1. **"Session" is the Copilot nomenclature — converge on it.** PRD v3 has `kind=session` facts. Cairn has a `sessions` table. Aaron's position: these *are* both describing the same thing. Don't rename PRD's `kind=session` to `kind=conversation` (Genesta's proposed patch). Instead, treat the collision as a signal that we need ONE session concept across the stack. Cassima/Crispin to figure out the mechanics — table vs fact vs both — but the *name* stays `session`.
+
+2. **Decisions in Cairn/Forge already include human decisions.** Worth keeping in mind: the existing `DecisionRecord` is about auditing the reasoning chain and building trust, not just an agent log. PRD v3's `decide` schema and the existing one are closer in spirit than Crispin's "flat vs structured, irreconcilable" framing suggests.
+
+3. **Aaron likes the substrate overlap.** Curator≈sweep, confidence≈trust, decision records — these convergent designs are a *feature*, not a problem. Lean into the overlap rather than around it.
+
+4. **Path D probe — design with Cairn in mind, don't force Cairn to adopt yet.** Is there a fourth strategy beyond Genesta's extend-Cairn (Path C), Crispin's clean-slate (Path A), and Edgar's shared-kernel-extract (Path B)? Specifically: design Eureka's graph model and storage **as if** the shared kernel existed and Cairn used it, but **don't** force Cairn to migrate now. Eureka ships standalone but kernel-shaped. Cairn migrates later when there's a reason. Decouples timeline pressure from architectural correctness.
+
+### Rationale for Four Signals
+
+These signals come from Aaron's product judgment about:
+- (a) Copilot ecosystem alignment
+- (b) what Cairn/Forge decisions actually mean
+- (c) where the substrate convergence is doing real work
+- (d) how to avoid Edgar's "refactor everything first" timeline trap without falling into Crispin's "throw it all away" disconnection
+
+### Direction to Cassima
+
+Aaron's four signals serve as constraints + a new Path D to evaluate, combined with the three trio reports. Cassima inherits these as input for recommending v3.1 (if reconciliation is clean) or v4 (if a path change is warranted). She holds the pen.
+
+---
+
+## 2026-05-25: Cassima R6 Synthesis — Path D Vindicated, v3.1 Patch Recommended
+
+**Author:** Cassima (Product Manager)  
+**Date:** 2026-05-25  
+**Status:** R6 synthesis — trio reconciliation + Aaron's 4 signals → recommendation  
+**Inputs:**
+- PRD v3 (embedded above)
+- Genesta R6 (B+ verdict, v3.1 patch path)
+- Crispin R6 (Path A clean-slate recommended)
+- Edgar R6 (learning-kernel extraction)
+- Aaron's 4 signals (above)
+
+### Part 1: Honest Scoreboard of the Trio
+
+**Why did three agents read the same codebase and reach different conclusions?**
+
+They read the **same evidence** but applied **different priors**:
+
+| Agent | Evidence focus | Prior/lens | Conclusion |
+|-------|---------------|------------|------------|
+| **Genesta** | System architecture (does v3's shape fit the substrate?) | Integration-first ("how do we unify?") | B+ — v3 is sound; patch name collisions, add sqlite-vec reality check |
+| **Crispin** | Schema compatibility (does v3's schema fit Cairn's tables?) | Representation purity ("schemas should be clean") | Path A — v3 is orthogonal to Cairn; clean-slate is honest |
+| **Edgar** | Algorithm reusability (can we extract shared primitives?) | Reuse maximalism ("don't duplicate what exists") | learning-kernel extract — 70% exists, extract it |
+
+**The split is priors, not evidence.** All three agree on the substrate truths:
+- Cairn has no vector search (confirmed)
+- Sessions are a table, not facts (confirmed)
+- `DecisionRecord` is flat, not structured (confirmed)
+- Sweep/ranker/trust machinery exists but is prescription-locked (confirmed)
+
+**Crispin's "irreconcilable" framing is schema-purist.** He's technically correct that sessions-as-facts and sessions-as-table are different data models. But Aaron's signal (b) says the existing `DecisionRecord` is "closer in spirit than Crispin's framing suggests." Same pattern applies to sessions: the *concept* is shared; the *mechanics* differ.
+
+**Edgar's "extract learning-kernel" is correct but orthogonal.** Extracting sweep/ranker/trust is a refactor that Cairn *could* adopt — but Aaron's signal (d) decouples Eureka's timeline from Cairn's. Extraction is a future-ready design decision, not a v1 blocker.
+
+**Genesta's "v3.1 patch" understates the session mechanics.** Renaming `kind=session` to `kind=conversation` (Genesta's patch #1) is explicitly rejected by Aaron's signal (a): "Session is THE Copilot nomenclature — converge on it."
+
+**Net:** The trio agrees on facts, disagrees on what to do about them. The disagreement is philosophical (purity vs integration vs reuse), not evidentiary.
+
+### Part 2: Evaluate Path D (Aaron's Probe)
+
+Aaron's signal (d) probed a fourth option:
+
+> **Path D: Design with Cairn in mind, don't force Cairn to adopt yet.** Eureka ships standalone but kernel-shaped. Cairn migrates later when there's a reason.
+
+**What does Path D concretely look like?**
+
+| Dimension | Path D concrete design |
+|-----------|------------------------|
+| **Storage layout** | `~/.copilot/eureka/{agent,project,user}.db` — Eureka's own tier-per-file layout. Cairn keeps `~/.cairn/knowledge.db`. No forced path harmonization. |
+| **Schema** | Eureka builds its own `facts` table (unified storage per v3), `relations` table (edge graph per v3), `sessions` as `kind=session` facts. Does NOT touch Cairn's `sessions` table. |
+| **Edge model** | Eureka's Tier 1/2/3 edge enum (16+ types) lives in Eureka only. Cairn's FK-based joins stay as-is. No migration 013/014 pushed onto Cairn. |
+| **Sweep** | Eureka's sweep is Edgar's generalized `learning-kernel/sweep` module. Cairn's Curator COULD adopt it later, but v1 ships them separately. |
+| **Ranker** | Eureka's composite ranker (0.5·rel + 0.2·imp + 0.2·trust + 0.1·rec) is a standalone module. Cairn's `computePriority()` stays prescription-locked. Extraction happens when Cairn maintainer chooses. |
+| **Decide schema** | Eureka's `DecisionPayload` (structured, `options[]`, `confidence: number`) coexists with Forge's `DecisionRecord` (flat, `alternatives[]`, `confidence: 'high'|'medium'|'low'`). Bridge adapter maps between them. **Aaron signal (b):** "closer in spirit than Crispin says" — adapter is tractable. |
+
+**Path D vs Alternatives**
+
+| Path | Summary | Cairn impact | Eureka timeline | Architectural purity |
+|------|---------|--------------|-----------------|---------------------|
+| **A (Crispin)** | Clean-slate Eureka; Cairn unchanged | None | Fast (greenfield) | High (no compromise) |
+| **B (Edgar)** | Extract `learning-kernel/`; both Cairn and Eureka compose | Refactor required | Slow (refactor first) | High (shared kernel) |
+| **C (Genesta)** | Extend Cairn with v3.1 patches; Eureka as Cairn plugin | Schema changes | Medium | Medium (forces convergence) |
+| **D (Aaron probe)** | Eureka standalone but kernel-shaped; Cairn adopts later | None now; optional later | Fast (ships standalone) | High (future-compatible) |
+
+**Is Path D a real fourth option, or is it just "Path B but defer Cairn refactor"?**
+
+Path D is a **third axis**: it's Path A's greenfield + Path B's kernel-shaped design, without Path B's refactor-first timeline. It decouples architectural correctness from timeline pressure.
+
+- Path A says "ignore Cairn entirely"
+- Path B says "refactor Cairn first, then build"
+- Path D says "design as if the refactor happened, ship without forcing it"
+
+**Concrete difference:** Path B extracts `packages/learning-kernel/` as a prereq. Path D writes Eureka's sweep/ranker/trust as standalone modules that COULD be extracted later, but ships them inside `packages/eureka/src/learning/` for v1.
+
+### Part 3: Recommendation — **Path D**
+
+**Reasoning:**
+
+1. **Aaron's signal (c): "I like the substrate overlap."** Curator≈sweep, confidence≈trust, decision records — these are convergent designs. Path D leans into overlap without forcing Cairn changes.
+
+2. **Aaron's signal (d): "Decouple timeline pressure from architectural correctness."** Path D does exactly this. Eureka ships v1 without blocking on Cairn refactor.
+
+3. **No v4 rewrite needed.** PRD v3's spec is sound. The gaps are implementation details (vector search, session mechanics, decide schema adapter), not structural rewrites.
+
+4. **Trio consensus on substrate truths.** All three agree that sweep/ranker/trust exist and are reusable. Path D preserves that reuse potential without forcing extraction now.
+
+---
+
+### Part 4: v3.1 Patch (Not v4 Redraft)
+
+Based on Path D, PRD v3 stands with targeted patches. **No structural rework needed.**
+
+#### Patch 1: Sessions — Mechanics, Not Rename
+
+**Source:** Aaron signal (a): "Session is THE Copilot nomenclature — converge on it."
+
+**Problem:** PRD v3's `kind=session` facts vs Cairn's `sessions` table.
+
+**v3.1 resolution:**
+- **Name stays `session`.** No rename to `conversation`.
+- **Mechanics:** Eureka `kind=session` facts are standalone. They do NOT replace Cairn's `sessions` table.
+- **Linking:** Add optional `cairn_session_id: string?` field on session facts for cross-reference when Cairn bridge emits.
+- **v1 scope:** Eureka session facts are self-contained. Cairn's session table remains authoritative for observability use cases.
+
+**FR-13 edit:**
+> Sessions are `kind=session` facts in Eureka's fact store. When a session originates from Cairn observability, the fact MAY include a `cairn_session_id` field pointing to Cairn's `sessions.id`. Eureka does not read Cairn's `sessions` table directly; the link is for audit correlation only.
+
+#### Patch 2: Vector Search — Explicit Scope Gate
+
+**Source:** Genesta R6 finding: "Vector support does not exist. Migration 012 is prescription deltas, not embeddings."
+
+**Problem:** PRD v3 assumes sqlite-vec; substrate has no vector infrastructure.
+
+**v3.1 resolution:**
+- **v1 scope:** Vector search is **OUT** of v1.
+- FR-2 recall uses BM25 (already specified as v1 strawman).
+- `sqlite-vec` integration moves to v1.5 roadmap.
+- FR-7.3 adds explicit note: "sqlite-vec is a design requirement for v1.5+; v1 ships with BM25 only."
+
+**FR-7.3 edit:**
+> v1 storage: SQLite with `better-sqlite3` (per Cairn precedent). BM25 full-text search for recall. `sqlite-vec` deferred to v1.5 for semantic similarity. Schema includes reserved `embedding_vector` column (nullable, unpopulated in v1).
+
+#### Patch 3: Decide Schema — Coexistence Adapter
+
+**Source:** Aaron signal (b): "DecisionRecord is about auditing reasoning chain and building trust... closer in spirit than Crispin's framing."
+
+**Problem:** PRD v3's `DecisionPayload` (structured) vs Forge's `DecisionRecord` (flat).
+
+**v3.1 resolution:**
+- **Both schemas coexist.** Eureka uses `DecisionPayload` internally. Forge uses `DecisionRecord`.
+- **Bridge adapter:** When Eureka emits a decision to observability, it maps `DecisionPayload` → `DecisionRecord`:
+  - `options[].id` → `chosenOption` (chosen option's id)
+  - `options[].label` → `alternatives[]` (non-chosen labels)
+  - `confidence: number` → `confidence: 'high'|'medium'|'low'` (threshold mapping: >0.8=high, 0.5-0.8=medium, <0.5=low)
+  - `principal_id` → `source` (human if principal is human, ai_recommendation if agent)
+- **No Forge changes.** Adapter lives in Eureka's export layer.
+
+**FR-10 (`decide`) edit:**
+> Eureka's `DecisionPayload` is the authoritative internal schema. For interop with Forge's `DecisionRecord` (observability use case), Eureka provides `toDecisionRecord(payload): DecisionRecord` adapter. Adapter is one-way; Eureka does not consume Forge's `DecisionRecord` as input.
+
+#### Patch 4: Storage Paths — Eureka-Specific
+
+**Source:** Crispin R6: "Per-tier storage ≠ single database. Architectural mismatch."
+
+**Problem:** PRD v3 proposed `~/.copilot/eureka/` paths. Cairn uses `~/.cairn/knowledge.db`.
+
+**v3.1 resolution:**
+- **Eureka owns its paths.** No path harmonization with Cairn.
+- v3's proposed layout stands: `~/.copilot/eureka/agent.db`, `<repo>/.eureka/project.db`, `~/.copilot/eureka/user.db`.
+- **Rationale:** Path D — Eureka ships standalone; Cairn's paths unchanged.
+
+**FR-7.2 edit (no change needed, just clarification):**
+> Eureka storage paths are independent of Cairn. Cairn's `~/.cairn/knowledge.db` remains observability-scoped. Eureka's paths are knowledge-scoped. No shared database; no FK constraints across systems.
+
+#### Patch 5: Learning Kernel — Design Now, Extract Later
+
+**Source:** Edgar R6: "~70% of infrastructure exists. Extract sweep/ranker/trust."
+
+**v3.1 resolution:**
+- **v1:** Sweep, ranker, trust modules live in `packages/eureka/src/learning/`.
+- **v1.5+:** IF Cairn team chooses to adopt, extract to `packages/learning-kernel/` and both packages depend on it.
+- **Design constraint:** Eureka's modules are written with clean interfaces (no Eureka-specific types in signatures). This makes future extraction tractable.
+
+**New design note (add to FR-12):**
+> Eureka's sweep, ranker, and trust modules are designed for potential extraction to a shared `learning-kernel` package. v1 ships them as `packages/eureka/src/learning/`. Extraction is a Cairn-team decision; Eureka does not block on it.
+
+---
+
+### v3.1 Summary Table
+
+| Patch | PRD v3 section | Change type | Source signal |
+|-------|---------------|-------------|---------------|
+| Sessions | FR-13 | Mechanics clarification (add `cairn_session_id`) | Aaron (a) |
+| Vector | FR-7.3, FR-2 | Scope gate (BM25 only in v1) | Genesta finding |
+| Decide | FR-10 | Adapter spec (coexistence, not replacement) | Aaron (b) |
+| Paths | FR-7.2 | Clarification (no change, confirm independence) | Crispin finding |
+| Kernel | FR-12 | Design note (extraction-ready, defer extraction) | Edgar finding + Aaron (d) |
+
+---
+
+### Decision Gates for Aaron
+
+1. **Vector v1 scope:** Confirm BM25-only for v1, sqlite-vec for v1.5. (Recommended: YES)
+
+2. **Path D adoption:** Confirm Eureka ships standalone-but-kernel-shaped; Cairn adopts later if maintainer chooses. (Recommended: YES)
+
+3. **Decide adapter direction:** One-way Eureka→Forge adapter. Forge does not change. (Recommended: YES)
+
+---
+
+### Why Not v4?
+
+v4 redraft is warranted when:
+- Structural assumptions are wrong (they're not — fact graph, trust, attention tiers are validated)
+- Schema shape needs redesign (it doesn't — v3's schema is sound, just needs mechanics patches)
+- Path changes fundamentally (Path D is v3's Path A with future-compatibility, not a new direction)
+
+v3.1 patches address trio findings + Aaron signals without reframing. PRD v3 is the correct shape; implementation details needed tuning.
+
+---
+
+*End of Cassima R6 synthesis.*
+
+---
+
 ### Round-4 Patches (post-Aaron review of v3)
 
 - **Conceptual frame:** NEW "Conceptual Model" section after Problem Statement names integration in the Jungian sense and maps each verb's contribution.

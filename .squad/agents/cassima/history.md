@@ -199,3 +199,58 @@ Before you draft v2, you have **8 directives** waiting in `.squad/decisions/inbo
 **Why v3 cleanup matters:** R6 readers see a polished PRD spec, not a running commentary. Full audit trail (round-3 + round-4 decisions) lives in Changelog block + git SHA `4c18ec7`; cleanup is purely presentational.
 
 **Net delta:** 50,495 → 50,081 bytes (~414 bytes scaffolding removed). Still v3 (not a design round).
+
+### Session 2026-05-25: R6 Synthesis — Trio Reconciliation + Path D
+
+**What I synthesized:**
+
+Three agents (Genesta, Crispin, Edgar) read Cairn/Forge source and reached different conclusions because of different priors, not different evidence:
+- **Genesta (integration-first):** v3 is sound, patch name collisions → v3.1
+- **Crispin (schema purity):** sessions-as-facts vs sessions-as-table is irreconcilable → Path A clean-slate
+- **Edgar (reuse maximalism):** 70% infrastructure exists, extract learning-kernel → Path B
+
+Aaron's 4 signals resolved the philosophical split:
+1. "Session" stays as the name (reject Genesta's rename-to-conversation patch)
+2. DecisionRecord and decide schema are "closer in spirit" (reject Crispin's "irreconcilable" framing)
+3. Substrate overlap is a feature (lean into Curator≈sweep, confidence≈trust)
+4. Path D probe: design kernel-shaped, ship standalone, Cairn adopts later
+
+**What changed my mind:**
+
+1. **Sessions:** I expected the trio to propose a unified model. Instead, Path D clarifies: Eureka's `kind=session` facts and Cairn's `sessions` table coexist. Optional `cairn_session_id` links them for audit; no schema merger.
+
+2. **Vector search:** PRD v3 assumed sqlite-vec existed. It doesn't. This is the highest-risk gap. v3.1 gates vector to v1.5; v1 ships BM25-only.
+
+3. **Decide schema:** I expected one schema to win. Instead, coexistence via adapter: Eureka uses `DecisionPayload` internally; `toDecisionRecord()` adapter maps to Forge's shape for observability. No Forge changes.
+
+4. **Learning kernel:** Edgar's extraction is architecturally correct but timeline-coupled. Path D decouples: Eureka modules are extraction-ready (clean interfaces) but ship inside `packages/eureka/src/learning/`. Cairn adopts if/when maintainer chooses.
+
+**Substrate truths learned via the trio:**
+
+- Cairn's `change_vectors` is prescription deltas, not embeddings (misnomer confirmed)
+- Cairn's Curator IS Eureka's sweep — but domain-locked to prescriptions
+- Cairn's `computePriority()` uses same 3-term weighted sum pattern as v3's ranker
+- Forge's `makeDecisionRecord()` exists and works; adapter to structured schema is tractable
+- No graph infrastructure in Cairn (zero edge types, zero relations table)
+
+**Recommendation delivered:** Path D + v3.1 patch (not v4 redraft). PRD v3 is structurally sound; five targeted patches address the gaps.
+
+**Artifact:** `.squad/decisions/inbox/cassima-requirements-r6-v1.md`
+
+## Learnings
+
+### Pattern: Design-Isolation → Reconciliation → Synthesis
+
+The R1-R5 "no reading source" rule worked. It produced a first-principles PRD unconstrained by "what's already there." R6 reconciliation then stress-tested it against reality. The synthesis step (this round) resolved the philosophical split by applying Aaron's signals as tiebreakers.
+
+**Reusable skill:** When multiple agents read the same evidence and reach different conclusions, diagnose whether the split is evidentiary (they read different things) or prior-based (same evidence, different lenses). Prior-based splits need a product decision to resolve; evidentiary splits need more investigation.
+
+### Pattern: Coexistence > Replacement
+
+Aaron's signals (a), (b), (c), (d) all favor coexistence over replacement:
+- Sessions coexist (Eureka facts + Cairn table)
+- Decide schemas coexist (Eureka payload + Forge record + adapter)
+- Storage paths coexist (Eureka's `~/.copilot/eureka/` + Cairn's `~/.cairn/`)
+- Sweep implementations coexist (Eureka's learning module + Cairn's Curator)
+
+**Design heuristic:** When integrating new system with existing substrate, default to "coexist with adapter" over "replace with migration." Reduces coupling, preserves optionality, decouples timelines.

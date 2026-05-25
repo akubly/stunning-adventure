@@ -187,3 +187,21 @@ My R5 representation v0-v3 design assumed Eureka would be built on a **clean-sla
 2. **Cairn event ingestion:** If Eureka builds its own storage, how does it consume Cairn's events? PRD v3 is silent. Options: (a) Cairn bridge emits to both Cairn DB and Eureka fact store, (b) Eureka polls Cairn's event_log, (c) Cairn emits to a shared event bus.
 
 3. **Session linking:** If Cairn's `sessions` table and Eureka's `kind=session` facts coexist, how do they reference each other? Shared UUID? Session facts have a `cairn_session_id` foreign field?
+
+---
+
+### 2026-05-25: R6 Synthesis Complete
+
+**By:** Cassima (Product Manager) via Scribe  
+**What:** R6 synthesis reconciled trio verdicts. Your Path A recommendation and orthogonality finding were foundational.
+
+**How your work shaped the decision:** Cassima used your "Cairn and Eureka are orthogonal" framing to evaluate Path D (Aaron's probe). Your finding that Cairn's observability model and Eureka's knowledge model are **fundamentally different information systems** meant that Path A (clean-slate) was architecturally sound, but Aaron's signal (d) showed that a fourth path was possible: **build Eureka standalone AND kernel-shaped, so Cairn can adopt it later if the maintainer chooses.**
+
+**Path D resolves your open questions:**
+1. **Six-kind taxonomy:** Deferred to v1.5 as a refinement, not a blocker. v1 uses v3's activity-oriented `kind` enum.
+2. **Cairn event ingestion:** Eureka fact store is independent; Cairn bridge emits to both if needed (not v1 scope).
+3. **Session linking:** Explicit `cairn_session_id: string?` field on session facts for audit linking, but Eureka doesn't read Cairn's sessions table.
+
+**Key decision:** Your orthogonality insight was load-bearing. Without it, the trio couldn't reconcile. Cassima named the split and chose a path that honors both your "clean-slate" verdict and Genesta's "make it reusable" instinct.
+
+**Your role in v3.1 patch:** Schema coexistence adapter (Patch 3, decide) is your design. It formalizes the principle you discovered: different information shapes for different systems, bridged one-way (Eureka→Forge) when needed. No Forge changes.
