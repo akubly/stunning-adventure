@@ -1,13 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach, afterAll } from 'vitest';
 import { getDb, closeDb } from '../db/index.js';
 import { applyMigrations } from '../db/schema.js';
-import { createSession, endSession, getActiveSession } from '../db/sessions.js';
+import {
+  createSession,
+  endSession,
+  ensureSystemSession,
+  getActiveSession,
+  getActiveUserSession,
+  getMostRecentActiveSession,
+  getMostRecentUserSession,
+  SYSTEM_SESSION_REPO_KEY,
+} from '../db/sessions.js';
 import { logEvent, getUnprocessedEvents } from '../db/events.js';
 import { getPreference, setPreference } from '../db/preferences.js';
 import { recordSkip, getSkips } from '../db/skipBreadcrumbs.js';
 import { slugifyRepoKey } from '../config/repo.js';
 import fs from 'node:fs';
 import path from 'node:path';
+import Database from 'better-sqlite3';
 
 const TEST_DB_DIR = path.join(process.cwd(), '.test-temp');
 const TEST_DB_PATH = path.join(TEST_DB_DIR, 'test.db');
@@ -65,7 +75,7 @@ describe('database initialization', () => {
     const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
       version: number;
     };
-    expect(row.version).toBe(13);
+    expect(row.version).toBe(14);
   });
 });
 
@@ -99,6 +109,7 @@ describe('sessions', () => {
     expect(session!.repoKey).toBe('org_repo');
     expect(session!.branch).toBe('main');
     expect(session!.status).toBe('active');
+    expect(session!.kind).toBe('user');
     expect(session!.startedAt).toBeDefined();
     expect(session!.endedAt).toBeUndefined();
   });
@@ -125,6 +136,47 @@ describe('sessions', () => {
 
   it('should return undefined when no active session exists', () => {
     expect(getActiveSession('nonexistent_repo')).toBeUndefined();
+  });
+
+  it('should create system sessions with system kind', () => {
+    const db = getDb();
+    const systemId = ensureSystemSession(db);
+
+    const row = db.prepare('SELECT repo_key, session_kind FROM sessions WHERE id = ?').get(systemId) as {
+      repo_key: string;
+      session_kind: string;
+    };
+
+    expect(row.repo_key).toBe(SYSTEM_SESSION_REPO_KEY);
+    expect(row.session_kind).toBe('system');
+  });
+
+  it('should exclude system sessions from most recent user session lookup', () => {
+    const db = getDb();
+    const userId = createSession('org_user_repo', 'main');
+    const systemId = ensureSystemSession(db);
+
+    db.prepare("UPDATE sessions SET started_at = '2026-05-25 10:00:00' WHERE id = ?").run(userId);
+    db.prepare("UPDATE sessions SET started_at = '2026-05-25 11:00:00' WHERE id = ?").run(systemId);
+
+    expect(getMostRecentActiveSession()!.id).toBe(systemId);
+    const userSession = getMostRecentUserSession();
+    expect(userSession!.id).toBe(userId);
+    expect(userSession!.kind).toBe('user');
+  });
+
+  it('should exclude system sessions from repo-scoped user session lookup', () => {
+    const db = getDb();
+    const userId = createSession('org_scoped_repo', 'main');
+    const systemId = ensureSystemSession(db, 'org_scoped_repo');
+
+    db.prepare("UPDATE sessions SET started_at = '2026-05-25 10:00:00' WHERE id = ?").run(userId);
+    db.prepare("UPDATE sessions SET started_at = '2026-05-25 11:00:00' WHERE id = ?").run(systemId);
+
+    expect(getActiveSession('org_scoped_repo')!.id).toBe(systemId);
+    const userSession = getActiveUserSession('org_scoped_repo');
+    expect(userSession!.id).toBe(userId);
+    expect(userSession!.kind).toBe('user');
   });
 });
 
@@ -368,14 +420,51 @@ describe('schema migration', () => {
     const before = db.prepare('SELECT COUNT(*) as count FROM schema_version').get() as {
       count: number;
     };
-    expect(before.count).toBe(13);
+    expect(before.count).toBe(14);
     // Re-run should be a no-op
     applyMigrations(db);
 
     const after = db.prepare('SELECT COUNT(*) as count FROM schema_version').get() as {
       count: number;
     };
-    expect(after.count).toBe(13);
+    expect(after.count).toBe(14);
+  });
+
+  it('migration 014 should backfill __system__ sessions as system kind', () => {
+    const db = new Database(':memory:');
+    try {
+      db.exec(`
+        CREATE TABLE schema_version (
+          version INTEGER PRIMARY KEY,
+          applied_at TEXT NOT NULL DEFAULT (datetime('now')),
+          description TEXT
+        );
+        INSERT INTO schema_version (version, description) VALUES (13, 'pre-014 test schema');
+        CREATE TABLE sessions (
+          id TEXT PRIMARY KEY,
+          repo_key TEXT NOT NULL,
+          branch TEXT,
+          started_at TEXT NOT NULL DEFAULT (datetime('now')),
+          ended_at TEXT,
+          status TEXT NOT NULL DEFAULT 'active'
+        );
+        INSERT INTO sessions (id, repo_key, branch) VALUES ('user-session', 'org/repo', 'main');
+        INSERT INTO sessions (id, repo_key, branch) VALUES ('system-session', '__system__', 'main');
+      `);
+
+      applyMigrations(db);
+
+      const rows = db.prepare('SELECT id, session_kind FROM sessions ORDER BY id').all() as Array<{
+        id: string;
+        session_kind: string;
+      }>;
+      expect(rows).toEqual([
+        { id: 'system-session', session_kind: 'system' },
+        { id: 'user-session', session_kind: 'user' },
+      ]);
+    } finally {
+      db.close();
+    }
   });
 
   it('should record migration description', () => {

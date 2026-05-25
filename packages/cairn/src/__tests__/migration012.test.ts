@@ -29,12 +29,12 @@ describe('migration 012 — apply', () => {
     expect(() => getDb(':memory:')).not.toThrow();
   });
 
-  it('schema_version table records version 12 after migration', () => {
+  it('schema_version table records the latest version after migration', () => {
     const db = getDb(':memory:');
     const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
       version: number;
     };
-    expect(row.version).toBe(13);
+    expect(row.version).toBe(14);
   });
 });
 
@@ -239,12 +239,12 @@ describe('migration 012 — idempotence', () => {
     expect(() => applyMigrations(db)).not.toThrow();
   });
 
-  it('schema_version is still 12 after a second applyMigrations() call', () => {
+  it('schema_version is still latest after a second applyMigrations() call', () => {
     const db = getDb(':memory:');
     applyMigrations(db); // second call
     const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
       version: number;
     };
-    expect(row.version).toBe(13);
+    expect(row.version).toBe(14);
   });
 });

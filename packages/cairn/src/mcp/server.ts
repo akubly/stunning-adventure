@@ -16,7 +16,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 
 import { getDb } from '../db/index.js';
-import { getActiveSession, getMostRecentActiveSession } from '../db/sessions.js';
+import { getActiveSession, getActiveUserSession, getMostRecentUserSession } from '../db/sessions.js';
 import { getInsights, getInsight, getInsightsByIds, countInsightsByStatus } from '../db/insights.js';
 import { logEvent } from '../db/events.js';
 import { curate, getCuratorStatus } from '../agents/curator.js';
@@ -86,6 +86,14 @@ export function confidenceToWords(confidence: number): string {
   return 'emerging';
 }
 
+/**
+ * Session lookup for MCP fallback paths. Explicit repo keys stay repo-scoped,
+ * while missing repo context falls back only to user sessions so internal
+ * __system__ observability sessions never receive user-facing tool events.
+ */
+export function getUserSessionForMcpFallback(repoKey?: string) {
+  return repoKey ? getActiveUserSession(repoKey) : getMostRecentUserSession();
+}
 
 // ---------------------------------------------------------------------------
 // Tool: get_status
@@ -658,11 +666,8 @@ server.registerTool(
         if (prescription.status !== 'accepted') {
           updatePrescriptionStatus(prescription_id, 'accepted');
         }
-        // Prefer repo-scoped session; fall back to global most-recent
-        // when no repo context is available (may misattribute events).
-        const activeSession = repo_key
-          ? getActiveSession(repo_key)
-          : getMostRecentActiveSession();
+        // Prefer repo-scoped session; fall back to the most recent user session.
+        const activeSession = getUserSessionForMcpFallback(repo_key);
         let applyResult: { success: boolean; error?: string; path?: string };
         try {
           applyResult = applyPrescription(prescription_id, {
@@ -1078,9 +1083,7 @@ server.registerTool(
       try {
         ensureDb();
         const repoKey = process.env.CAIRN_REPO_KEY;
-        const session = repoKey
-          ? getActiveSession(repoKey)
-          : getMostRecentActiveSession();
+        const session = getUserSessionForMcpFallback(repoKey);
         if (session) {
           logEvent(session.id, 'skill_lint', {
             path: filePath,
@@ -1174,9 +1177,7 @@ server.registerTool(
         try {
           ensureDb();
           const repoKey = process.env.CAIRN_REPO_KEY;
-          const session = repoKey
-            ? getActiveSession(repoKey)
-            : getMostRecentActiveSession();
+          const session = getUserSessionForMcpFallback(repoKey);
           if (session) {
             const inserts: SkillTestResultInsert[] = report.results.map((r: ValidationResult) => ({
               skillPath: report.skillPath,
@@ -1242,9 +1243,7 @@ server.registerTool(
       try {
         ensureDb();
         const repoKey = process.env.CAIRN_REPO_KEY;
-        const session = repoKey
-          ? getActiveSession(repoKey)
-          : getMostRecentActiveSession();
+        const session = getUserSessionForMcpFallback(repoKey);
         if (session) {
           const inserts: SkillTestResultInsert[] = results.map((r) => ({
             skillPath: filePath,

@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 import { getDb, closeDb } from '../db/index.js';
-import { createSession, getActiveSession } from '../db/sessions.js';
+import { createSession, ensureSystemSession, getActiveSession } from '../db/sessions.js';
 import { logEvent } from '../db/events.js';
 import { getInsights, createInsight, getInsight } from '../db/insights.js';
 import { curate, getCuratorStatus } from '../agents/curator.js';
@@ -19,6 +21,7 @@ import { validateSkill, formatValidationSummary } from '../agents/skillValidator
 import { insertTestResults, getTestResults } from '../db/skillTestResults.js';
 import {
   confidenceToWords,
+  getUserSessionForMcpFallback,
   resetProactiveHintCounter,
 } from '../mcp/server.js';
 import {
@@ -34,6 +37,58 @@ beforeEach(() => {
 
 afterEach(() => {
   closeDb();
+});
+
+function seedUserThenNewerSystemSession(): string {
+  const userId = createSession('org/user-repo', 'main');
+  const systemId = ensureSystemSession(getDb());
+  const db = getDb();
+  db.prepare("UPDATE sessions SET started_at = '2026-05-25 10:00:00' WHERE id = ?").run(userId);
+  db.prepare("UPDATE sessions SET started_at = '2026-05-25 11:00:00' WHERE id = ?").run(systemId);
+  return userId;
+}
+
+// ---------------------------------------------------------------------------
+// MCP user-session fallback — backing logic for four call sites
+// ---------------------------------------------------------------------------
+
+describe('MCP user-session fallback logic', () => {
+  it('resolve_prescription fallback excludes newer __system__ sessions', () => {
+    const userId = seedUserThenNewerSystemSession();
+    expect(getUserSessionForMcpFallback()!.id).toBe(userId);
+  });
+
+  it('lint_skill telemetry fallback excludes newer __system__ sessions', () => {
+    const userId = seedUserThenNewerSystemSession();
+    expect(getUserSessionForMcpFallback()!.id).toBe(userId);
+  });
+
+  it('test_skill scenario telemetry fallback excludes newer __system__ sessions', () => {
+    const userId = seedUserThenNewerSystemSession();
+    expect(getUserSessionForMcpFallback()!.id).toBe(userId);
+  });
+
+  it('test_skill validation telemetry fallback excludes newer __system__ sessions', () => {
+    const userId = seedUserThenNewerSystemSession();
+    expect(getUserSessionForMcpFallback()!.id).toBe(userId);
+  });
+
+  it('keeps repo-scoped lookup user-only when repo_key is provided', () => {
+    const db = getDb();
+    seedUserThenNewerSystemSession();
+    const repoScopedId = createSession('org/scoped-repo', 'feature');
+    const scopedSystemId = ensureSystemSession(db, 'org/scoped-repo');
+    db.prepare("UPDATE sessions SET started_at = '2026-05-25 10:00:00' WHERE id = ?").run(repoScopedId);
+    db.prepare("UPDATE sessions SET started_at = '2026-05-25 11:00:00' WHERE id = ?").run(scopedSystemId);
+    expect(getUserSessionForMcpFallback('org/scoped-repo')!.id).toBe(repoScopedId);
+  });
+
+  it('wires all four MCP fallback call sites through the user-session helper', () => {
+    const serverSource = fs.readFileSync(path.resolve('src/mcp/server.ts'), 'utf8');
+    const helperUses = serverSource.match(/getUserSessionForMcpFallback\(/g) ?? [];
+    expect(helperUses).toHaveLength(5); // function definition plus four call sites
+    expect(serverSource).not.toContain('getMostRecentActiveSession');
+  });
 });
 
 // ---------------------------------------------------------------------------
