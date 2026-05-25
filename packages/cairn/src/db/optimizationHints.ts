@@ -265,7 +265,7 @@ export function insertHintIfNew(
 
 /**
  * Atomically expire active hints for one tuple and insert their replacements.
- * Emits one aggregate `hints_force_expired` event for the batch rather than per-hint
+ * Emits one aggregate `hint_force_expired` event for the batch rather than per-hint
  * expiration so the force-regenerate path remains cheap and observable.
  */
 export function replaceActiveHintsAtomically(
@@ -297,7 +297,7 @@ export function replaceActiveHintsAtomically(
 
     const expired = expireResult.changes;
     const sessionId = ensureSystemSession(db);
-    logEvent(db, sessionId, 'hints_force_expired', {
+    logEvent(db, sessionId, 'hint_force_expired', {
       skill_id: skillId,
       source,
       category,
