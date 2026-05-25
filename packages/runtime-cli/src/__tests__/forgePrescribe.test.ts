@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   closeDb,
-  createSession,
   getDb,
   insertChangeVector,
   insertOptimizationHint,
@@ -12,7 +11,6 @@ import type { OptimizationHintInsert } from '@akubly/cairn';
 import { runForgePrescribe } from '../index.js';
 
 let hintCounter = 0;
-let sessionId: string;
 
 type ProfileSeed = Parameters<typeof upsertExecutionProfile>[0];
 
