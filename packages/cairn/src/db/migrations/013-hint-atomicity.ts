@@ -16,6 +16,7 @@ export const migration013: Migration = {
             ORDER BY created_at DESC, id DESC
           ) AS active_rank
         FROM optimization_hints
+        -- KEEP IN SYNC: ACTIVE_HINT_STATUSES in packages/cairn/src/db/optimizationHints.ts. Future status additions MUST update both.
         WHERE status IN ('pending', 'accepted', 'deferred')
       )
       UPDATE optimization_hints
@@ -29,6 +30,7 @@ export const migration013: Migration = {
       -- the same (skill_id, source, category) at once.
       CREATE UNIQUE INDEX idx_optimization_hints_active_dedup
         ON optimization_hints(skill_id, source, category)
+        -- KEEP IN SYNC: ACTIVE_HINT_STATUSES in packages/cairn/src/db/optimizationHints.ts. Future status additions MUST update both.
         WHERE status IN ('pending', 'accepted', 'deferred');
     `);
   },
