@@ -302,4 +302,36 @@ describe('W4-1: insertHintIfNew atomicity', () => {
       .filter((r) => r.category === category);
     expect(all).toHaveLength(1);
   });
+
+  it('partial UNIQUE index rejects a raw duplicate active-status insert', () => {
+    const db = getDb();
+    const category = 'verbosity-raw-unique';
+    const insertSql = `
+      INSERT INTO optimization_hints
+        (id, source, skill_id, category, description, recommendation,
+         impact_score, confidence, evidence, metric_snapshot, status, generated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    const params = (id: string) => [
+      id, 'prompt-optimizer', 'skill-a', category,
+      'desc', 'rec', 0.5, 0.8, '{}', '{}', 'pending', '2026-01-01T00:00:00.000Z',
+    ] as const;
+
+    // First insert must succeed
+    db.prepare(insertSql).run(...params('raw-unique-1'));
+    expect(getOptimizationHint('raw-unique-1')).not.toBeNull();
+
+    // Second insert with the same (skill_id, source, category) and an active status
+    // must be rejected by the partial UNIQUE index — independent of insertHintIfNew logic
+    expect(() => {
+      db.prepare(insertSql).run(...params('raw-unique-2'));
+    }).toThrow(/UNIQUE constraint failed/);
+
+    // Terminal-status row with the same tuple is NOT blocked by the partial index
+    expect(() => {
+      db.prepare(insertSql).run(
+        'raw-unique-terminal', 'prompt-optimizer', 'skill-a', category,
+        'desc', 'rec', 0.5, 0.8, '{}', '{}', 'applied', '2026-01-01T00:00:00.000Z',
+      );
+    }).not.toThrow();
+  });
 });
