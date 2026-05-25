@@ -22,6 +22,7 @@ export type LoadedProfileSource = 'per-skill' | 'global fallback';
 export interface RunForgePrescribeOptions {
   skillId: string;
   dbPath?: string;
+  forceRegenerate?: boolean;
 }
 
 export interface ForgePrescribeSuccessResult {
@@ -67,6 +68,7 @@ interface ExecutePrescriberRunOptions {
   skillId: string;
   profile: ExecutionProfile | null;
   minSessions?: number;
+  forceRegenerate?: boolean;
 }
 
 interface ExecutedPrescriberRun extends PrescriberRunResult {
@@ -172,6 +174,7 @@ async function executePrescriberRun({
   skillId,
   profile,
   minSessions = 0,
+  forceRegenerate = false,
 }: ExecutePrescriberRunOptions): Promise<ExecutedPrescriberRun> {
   if (!profile || profile.sessionCount < minSessions) {
     return emptyPrescriberRun(skillId);
@@ -190,7 +193,11 @@ async function executePrescriberRun({
 
   for (const hint of hints) {
     try {
-      const insertResult = cairn.insertHintIfNew(db, toOptimizationHintInsert(hint));
+      const hintInsert = toOptimizationHintInsert(hint);
+      const insertResult = forceRegenerate
+        ? cairn.replaceActiveHintAtomically(db, hintInsert, { actor: 'runtime:--force' })
+        : cairn.insertHintIfNew(db, hintInsert);
+
       if (isSkippedInsert(insertResult)) {
         result.hintsDuplicated += 1;
         continue;
@@ -270,6 +277,7 @@ export async function runForgePrescribe(
       db,
       skillId: options.skillId,
       profile: loadedProfile.profile,
+      forceRegenerate: options.forceRegenerate,
     });
 
     if (runResult.hintsError > 0) {

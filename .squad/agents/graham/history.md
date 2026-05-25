@@ -79,6 +79,24 @@ Roger (W2-1) + Rosella (W2-4): canonical `ChangeVectorSummary`, `ChangeVectorPro
 
 ## Learnings
 
+### Wave 4 Scope Approved (2026-05-23)
+
+Aaron approved Wave 4 scope with both design decisions resolved. Decision inbox entry filed at `.squad/decisions/inbox/graham-wave4-ratified.md`. Scope is tight and foundational: three work items (insertHintIfNew atomicity, CairnEvent extensions, forceRegenerate knob) plus integration tests. Team ownership assigned (Roger: W4-1/W4-2; Rosella: W4-3; Laura: W4-4). Branch `phase-4.6/wave-4` created and ready for team execution.
+
+**D1 Resolved — CairnEvent Observability = Option 1**
+
+Option 1 (additive CairnEvents) wins on principle: smallest delta, fully backward-compatible, establishes foundation for Wave 5 triggers without committing to richer alternatives. Trade-off accepted: Options 2 (dedicated channel) and 3 (unified refactor) deferred. Why now? Observability gap is blocking. Without hint state transitions and profile changes observable, Wave 5 re-prescribe triggers (on rejection, on profile bump, on staleness) cannot be built. Wave 4 solves the blocker; Wave 5 solves the polish.
+
+**D2 Resolved — forceRegenerate = CLI Only**
+
+CLI surface for operator escape hatch (force override prescriber dedup). Trade-off accepted: MCP generalization deferred to Wave 5. Why now? Operator need is urgent (recovery/retry when hint rejection cascades). CLI closes the gap immediately. MCP can generalize later with full Phase 5 scope clarity. Keeps Wave 4 tight; unblocks Wave 5 architecture design.
+
+**Leadership insight: Deferred items form coherent Wave 5 scope.** Global tier fallback (cross-granularity design), staleness check (UX design), dashboard (product clarity), DB convention standardization (repo-wide question). None are blockers for Wave 4. Each requires cross-cutting design input that doesn't fit Wave 4's tight window. Wave 5 can address them together once Phase 5 clarity settles.
+
+### Wave 3 Shipped (2026-05-23 ~21:08Z)
+
+PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end-to-end: composition root R2 (`@akubly/skillsmith-runtime`), Curator hook wiring, per-skill orchestration, E2E tests, Phase 5-ready acyclic boundaries. 14 Copilot findings addressed across 4 review cycles. 1 deferral approved: insertHintIfNew atomicity (partial UNIQUE + BEGIN IMMEDIATE) → Wave 4. Wave 4 scope being drafted by Graham.
+
 ### Wave 3 Scope Design + ADR Reasoning (2026-05-23)
 
 **Terminology reconciliation is first-class work.** Roger and Alexander used overlapping option labels (Roger's A–E, Alexander's A–D) that mapped to different options. Without a canonical mapping table (R1–R5), Aaron would face label confusion that obscures the actual decision. Lesson: when multiple contributors analyze the same design space independently, reconcile labels before presenting to decision-maker.
@@ -88,3 +106,23 @@ Roger (W2-1) + Rosella (W2-4): canonical `ChangeVectorSummary`, `ChangeVectorPro
 **Composition root is a durability decision, not a naming decision.** R2 (`@akubly/runtime`) vs R4 (`@akubly/curator`) is really about commitment level: R2 makes a weak, durable claim ("composition library"); R4 makes a strong, potentially brittle claim ("Curator is a package"). Prefer weaker claims when Phase 5 may reshape the architecture. Cost of R2→R4 migration is low; cost of wrong R4 commitment is high.
 
 **Wave structure works for incremental delivery.** Wave 0 (types) → Wave 1 (primitives) → Wave 2 (plumbing + safety) → Wave 3 (wiring) is a clean decomposition where each wave is self-contained and testable. The "hard parts ship early, wiring ships later" pattern reduces risk: Wave 3 is mechanically straightforward because Wave 2 solved the data and safety problems.
+
+### Wave 3 Ship + Wave 4 Triage (2026-05-23)
+
+**Wave 3 shipped clean.** PR #21 (squash f27a537) merged after four cloud-review cycles processing 14 Copilot findings. One finding explicitly deferred: `insertHintIfNew()` atomicity race under concurrent writers. The deferred thread cites a partial UNIQUE index on `optimization_hints (skill_id, source, category) WHERE status IN ('pending','accepted','deferred')` plus `BEGIN IMMEDIATE` transaction wrap as the planned fix.
+
+**Wave 4 proposal prioritizes foundation over features.** Seven documented follow-ups on the table. Recommended tight Wave 4 (3 work items): (1) insertHintIfNew atomicity (publicly committed), (2) Curator observability gap via CairnEvent extensions (architectural foundation for future re-prescribe triggers), (3) force-overwrite knob (operator need, simple API). Deferred: global tier fallback (cross-granularity design needed), staleness check (UX design required), dashboard (product clarity needed), DB convention standardization (repo-wide question).
+
+**Observability gap is the hidden dependency.** Investigation of Laura's Wave 3 trigger ambiguity surfaced a deeper architectural gap: Curator has no read surface into hint state transitions, profile schema versioning, or profile change history. Without observability instrumentation, Wave 5+ re-prescribe triggers (on hint rejection, on profile bump, on staleness) are unimplementable. Solving the atomicity race plus the observability gap in Wave 4 unblocks richer operator workflows in Wave 5.
+
+### Wave 3 Capability Check-In (2026-05-23)
+
+Wave 3 capability check-in produced for Aaron before transition to Wave 4. Documented: (1) concrete user-observable capabilities across session telemetry, change tracking, prescriber-driven optimization, DBOM export; (2) plumbing-only flows not yet user-reachable (e.g., new event types defined but no consumer); (3) capability gaps blocking user/operator scenarios (Wave 4 deferrals: atomicity, observability, force-overwrite; Phase 5: cloud PGO, full graph, MCP exposure). Delivered as scannable prose inventory (~500-700 words) to frame Wave 4 session context.
+
+### Forge Use-Cases & User Stories (2026-05-23)
+
+Produced Forge use-cases & user stories for Aaron pre-Wave 4. Grounded analysis in actual user roles vs. theoretical personas. Five personas identified from code/docs: Skill Author (iterative refinement), Skill Operator (reliability/observability), Autonomous Curator (background optimization), Platform Developer (system evolution), Agent Builder (composition). Strongest maturity gradient is Skill Operator → Autonomous Curator (Session Start Hook delivers end-to-end auto path). Highest-leverage gaps: (1) force-regenerate (operator recovery), (2) Curator observability (debugging prescriber outcomes), (3) stale-profile detection (confidence in automation). Format: proper user-story structure with ✅/🚧/❌ maturity markers. ~650 words, scannable for Wave 4 prioritization input.
+
+### Skillsmith Harness Vision (2026-05-23)
+
+Drafted comprehensive project vision document (`docs/harness-vision.md`) for Aaron — foundational artifact pre-PRD. Aaron's user story specified CLI harness that records session primitives (requests, artifacts, observations, decisions, questions), maintains auditable decision ledger ("block-chain"), enables genetic engineering of prompts/skills/agents, and builds trust through self-awareness. Vision frames six chambers: Harness (new CLI shell), Cairn (refactor for primitive ledger), Forge (exists), Geneticist (Phase 5 selection loops), Curator (expand from narrow trigger to recommendation engine), Narrator (trust-building communication layer). Document follows Aaron's exact 14-section outline: one-liner, trust gap analysis, North Star (12-18 month maturity), chamber architecture, 5 typed primitives, hash-linked ledger model, genetic loop (selection via change vectors), self-improving chamber composition, 5 trust-building behaviors, 8 non-goals, 6-wave phasing sketch, 7 success criteria (quantitative + qualitative), 10 open questions for PRD, 11-term glossary. 3,200+ words. Surfaced hardest open questions: agent decision authority model, genetic loop fitness weighting, deficiency awareness UX. Flagged scope ambiguity: "learning runtime" vs. "CLI shell" boundary needs sharpening in PRD (is Harness chamber just message loop + primitives, or does it include slash commands, agent loading, model routing?). Working name "Skillsmith Harness" pending Aaron's approval.

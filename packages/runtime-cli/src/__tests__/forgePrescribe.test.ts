@@ -173,4 +173,146 @@ describe('runForgePrescribe', () => {
     expect(result.skipped).toBe(2);
     expect(result.errored).toBe(0);
   });
+
+  it('forceRegenerate allows re-inserting hints (tested via reduced skipped count)', async () => {
+    const db = getDb();
+    upsertExecutionProfile(makeProfile('skill-zeta'));
+    seedVector('skill-zeta', 'convergence', 'prompt-optimizer');
+
+    // Insert an existing active hint that would be skipped under normal dedup
+    const activeHintId = insertOptimizationHint(
+      makeHint({
+        skillId: 'skill-zeta',
+        source: 'prompt-optimizer',
+        category: 'convergence',
+        status: 'pending',
+      }),
+    );
+
+    // Without force, the active hint is a duplicate and gets skipped
+    const normalResult = await runForgePrescribe({
+      skillId: 'skill-zeta',
+      dbPath: ':memory:',
+      forceRegenerate: false,
+    });
+
+    expect(normalResult.ok).toBe(true);
+    expect(normalResult.skipped).toBeGreaterThanOrEqual(1);
+
+    // With force, active hints are expired first — no skips, and the
+    // previously-active hint should now carry status 'expired'
+    const forceResult = await runForgePrescribe({
+      skillId: 'skill-zeta',
+      dbPath: ':memory:',
+      forceRegenerate: true,
+    });
+
+    expect(forceResult.ok).toBe(true);
+    expect(forceResult.skipped).toBe(0);
+    expect(forceResult.inserted).toBeGreaterThan(0);
+    // The old pending hint must have been expired by the force path
+    const expiredHint = db
+      .prepare('SELECT status FROM optimization_hints WHERE id = ?')
+      .get(activeHintId) as { status: string } | undefined;
+    expect(expiredHint?.status).toBe('expired');
+  });
+
+  it('forceRegenerate only expires hints matching skill, source, and category', async () => {
+    const db = getDb();
+    upsertExecutionProfile(makeProfile('skill-delta'));
+    seedVector('skill-delta', 'convergence', 'prompt-optimizer');
+
+    // Seed hints with different combinations
+    const differentSkillHint = insertOptimizationHint(
+      makeHint({
+        id: 'different-skill',
+        skillId: 'skill-other',
+        source: 'prompt-optimizer',
+        category: 'convergence',
+        status: 'pending',
+      }),
+    );
+    const differentSourceHint = insertOptimizationHint(
+      makeHint({
+        id: 'different-source',
+        skillId: 'skill-delta',
+        source: 'token-optimizer',
+        category: 'convergence',
+        status: 'pending',
+      }),
+    );
+    const differentCategoryHint = insertOptimizationHint(
+      makeHint({
+        id: 'different-category',
+        skillId: 'skill-delta',
+        source: 'prompt-optimizer',
+        category: 'cache-optimization',
+        status: 'pending',
+      }),
+    );
+
+    await runForgePrescribe({
+      skillId: 'skill-delta',
+      dbPath: ':memory:',
+      forceRegenerate: true,
+    });
+
+    // Verify only matching hints were expired
+    const hint1 = db
+      .prepare('SELECT status FROM optimization_hints WHERE id = ?')
+      .get(differentSkillHint) as { status: string } | undefined;
+    const hint2 = db
+      .prepare('SELECT status FROM optimization_hints WHERE id = ?')
+      .get(differentSourceHint) as { status: string } | undefined;
+    const hint3 = db
+      .prepare('SELECT status FROM optimization_hints WHERE id = ?')
+      .get(differentCategoryHint) as { status: string } | undefined;
+
+    expect(hint1?.status).toBe('pending');
+    expect(hint2?.status).toBe('pending');
+    expect(hint3?.status).toBe('pending');
+  });
+
+  it('forceRegenerate does not expire terminal status hints', async () => {
+    const db = getDb();
+    upsertExecutionProfile(makeProfile('skill-epsilon'));
+    seedVector('skill-epsilon', 'convergence', 'prompt-optimizer');
+
+    // Seed terminal status hints
+    const appliedHint = insertOptimizationHint(
+      makeHint({
+        id: 'applied-hint',
+        skillId: 'skill-epsilon',
+        source: 'prompt-optimizer',
+        category: 'convergence',
+        status: 'applied',
+      }),
+    );
+    const rejectedHint = insertOptimizationHint(
+      makeHint({
+        id: 'rejected-hint',
+        skillId: 'skill-epsilon',
+        source: 'prompt-optimizer',
+        category: 'convergence',
+        status: 'rejected',
+      }),
+    );
+
+    await runForgePrescribe({
+      skillId: 'skill-epsilon',
+      dbPath: ':memory:',
+      forceRegenerate: true,
+    });
+
+    // Verify terminal status hints were not modified
+    const hint1 = db
+      .prepare('SELECT status FROM optimization_hints WHERE id = ?')
+      .get(appliedHint) as { status: string } | undefined;
+    const hint2 = db
+      .prepare('SELECT status FROM optimization_hints WHERE id = ?')
+      .get(rejectedHint) as { status: string } | undefined;
+
+    expect(hint1?.status).toBe('applied');
+    expect(hint2?.status).toBe('rejected');
+  });
 });

@@ -40,8 +40,15 @@ export type { SessionStartOrchestrationFactory } from './hooks/sessionStart.js';
 
 // Database (low-level — prefer agent APIs above)
 export { getDb, closeDb } from './db/index.js';
-export { createSession, endSession, getActiveSession, getMostRecentActiveSession } from './db/sessions.js';
-export { logEvent, getUnprocessedEvents } from './db/events.js';
+export {
+  createSession,
+  endSession,
+  getActiveSession,
+  getMostRecentActiveSession,
+  ensureSystemSession,
+  SYSTEM_SESSION_REPO_KEY,
+} from './db/sessions.js';
+export { logEvent, logEventWithDefaultDb, getUnprocessedEvents } from './db/events.js';
 export { getPreference, setPreference } from './db/preferences.js';
 export { recordSkip, getSkips } from './db/skipBreadcrumbs.js';
 export { getLastProcessedEventId, advanceCursor } from './db/curatorState.js';
@@ -57,11 +64,14 @@ export {
 export {
   insertOptimizationHint,
   insertHintIfNew,
+  replaceActiveHintAtomically,
+  replaceActiveHintsAtomically,
   getOptimizationHint,
   queryOptimizationHints,
   listOptimizationHints,
   updateOptimizationHintStatus,
   deleteOptimizationHint,
+  ACTIVE_HINT_STATUSES,
 } from './db/optimizationHints.js';
 export { insertChangeVector } from './db/changeVectors.js';
 export {
@@ -101,6 +111,7 @@ export type {
   HintSource,
   HintStatus,
   InsertHintIfNewResult,
+  ReplaceActiveHintsAtomicallyResult,
   OptimizationHintInsert,
   OptimizationHintQuery,
   OptimizationHintRow,

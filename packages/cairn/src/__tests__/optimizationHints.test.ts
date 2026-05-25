@@ -254,3 +254,109 @@ describe('optimization hints persistence', () => {
     ]);
   });
 });
+
+describe('W4-1: insertHintIfNew atomicity', () => {
+  it('single insert succeeds normally', () => {
+    const db = getDb();
+    const result = insertHintIfNew(db, hint({ id: 'atomic-1', category: 'verbosity-atomic' }));
+    expect(result).toEqual({ inserted: true });
+    expect(getOptimizationHint('atomic-1')?.id).toBe('atomic-1');
+  });
+
+  it('duplicate insert returns existing hint id', () => {
+    const db = getDb();
+    insertHintIfNew(db, hint({ id: 'atomic-dup-1', category: 'verbosity-dup', status: 'pending' }));
+    const result = insertHintIfNew(db, hint({ id: 'atomic-dup-2', category: 'verbosity-dup' }));
+
+    expect(result).toEqual({ inserted: false, existingHintId: 'atomic-dup-1' });
+    expect(getOptimizationHint('atomic-dup-2')).toBeNull();
+  });
+
+  it('sequential duplicate inserts via insertHintIfNew dedupe to a single row', () => {
+    const db = getDb();
+    const category = 'verbosity-concurrent';
+
+    // Two transactions wrapping insertHintIfNew for the same (skill_id, source, category)
+    // tuple are run sequentially on a single connection (better-sqlite3 is synchronous).
+    // This validates the higher-level dedup path in insertHintIfNew — the partial UNIQUE
+    // index's own protection is exercised directly in the raw-SQL test below.
+    const txn1 = db.transaction(() => {
+      return insertHintIfNew(db, hint({ id: 'concurrent-1', category, status: 'pending' }));
+    });
+    const txn2 = db.transaction(() => {
+      return insertHintIfNew(db, hint({ id: 'concurrent-2', category, status: 'pending' }));
+    });
+
+    const result1 = txn1.immediate();
+    const result2 = txn2.immediate();
+
+    // Exactly one should succeed
+    const successes = [result1, result2].filter((r) => r.inserted);
+    const failures = [result1, result2].filter((r) => !r.inserted);
+    expect(successes).toHaveLength(1);
+    expect(failures).toHaveLength(1);
+
+    // The failed insert should report the winner's ID
+    const winnerId = result1.inserted ? 'concurrent-1' : 'concurrent-2';
+    expect(failures[0].existingHintId).toBe(winnerId);
+
+    // Only the winner is persisted
+    const all = queryOptimizationHints({ skillId: 'skill-a', status: 'pending' })
+      .filter((r) => r.category === category);
+    expect(all).toHaveLength(1);
+  });
+
+  it('partial UNIQUE index rejects a raw duplicate active-status insert', () => {
+    const db = getDb();
+    const category = 'verbosity-raw-unique';
+    const insertSql = `
+      INSERT INTO optimization_hints
+        (id, source, skill_id, category, description, recommendation,
+         impact_score, confidence, evidence, metric_snapshot, status, generated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    const params = (id: string) => [
+      id, 'prompt-optimizer', 'skill-a', category,
+      'desc', 'rec', 0.5, 0.8, '{}', '{}', 'pending', '2026-01-01T00:00:00.000Z',
+    ] as const;
+
+    // First insert must succeed
+    db.prepare(insertSql).run(...params('raw-unique-1'));
+    expect(getOptimizationHint('raw-unique-1')).not.toBeNull();
+
+    // Second insert with the same (skill_id, source, category) and an active status
+    // must be rejected by the partial UNIQUE index — independent of insertHintIfNew logic
+    expect(() => {
+      db.prepare(insertSql).run(...params('raw-unique-2'));
+    }).toThrow(/UNIQUE constraint failed/);
+
+    // Terminal-status row with the same tuple is NOT blocked by the partial index
+    expect(() => {
+      db.prepare(insertSql).run(
+        'raw-unique-terminal', 'prompt-optimizer', 'skill-a', category,
+        'desc', 'rec', 0.5, 0.8, '{}', '{}', 'applied', '2026-01-01T00:00:00.000Z',
+      );
+    }).not.toThrow();
+  });
+});
+
+describe('insertHintIfNew — UNIQUE constraint narrowing', () => {
+  it('PK collision (duplicate id, different category) propagates through insertHintIfNew and is not treated as a dedup skip', () => {
+    const db = getDb();
+    // First insert with a known id succeeds
+    insertOptimizationHint(hint({ id: 'pk-collision-test', category: 'verbosity-pk-a' }));
+
+    // Second insert with the same id but a different category:
+    // - The partial UNIQUE index on (skill_id, source, category) does NOT trigger (different category)
+    // - The PK constraint on optimization_hints.id DOES trigger
+    // The narrowed catch must NOT swallow this — it must rethrow.
+    const secondHint = hint({ id: 'pk-collision-test', category: 'verbosity-pk-b' });
+    expect(() => insertHintIfNew(db, secondHint)).toThrow();
+  });
+
+  it('PK collision propagates through insertOptimizationHint wrapper (not silently skipped)', () => {
+    insertOptimizationHint(hint({ id: 'pk-collision-test', category: 'verbosity-pk-a' }));
+
+    const secondHint = hint({ id: 'pk-collision-test', category: 'verbosity-pk-b' });
+    expect(() => insertOptimizationHint(secondHint)).toThrow();
+  });
+});

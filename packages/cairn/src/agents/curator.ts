@@ -170,6 +170,7 @@ export async function curate(
   let hasMore = true;
   while (hasMore) {
     const cursor = getLastProcessedEventId();
+    // TODO(cycle-1 I10): Wave 5 should decide whether Curator skips __system__ events; filtering here must still advance the raw-event cursor.
     const events = getUnprocessedEvents(cursor, BATCH_SIZE);
 
     if (events.length === 0) break;
