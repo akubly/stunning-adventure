@@ -177,13 +177,12 @@ describe('runForgePrescribe', () => {
   });
 
   it('forceRegenerate allows re-inserting hints (tested via reduced skipped count)', async () => {
-    // This test verifies the forceRegenerate feature works correctly
-    // by checking that it reduces skipped hints when active duplicates exist
+    const db = getDb();
     upsertExecutionProfile(makeProfile('skill-zeta'));
     seedVector('skill-zeta', 'convergence', 'prompt-optimizer');
 
-    // Insert existing active hints
-    insertOptimizationHint(
+    // Insert an existing active hint that would be skipped under normal dedup
+    const activeHintId = insertOptimizationHint(
       makeHint({
         skillId: 'skill-zeta',
         source: 'prompt-optimizer',
@@ -192,7 +191,7 @@ describe('runForgePrescribe', () => {
       }),
     );
 
-    // Without force, the hint should be skipped
+    // Without force, the active hint is a duplicate and gets skipped
     const normalResult = await runForgePrescribe({
       skillId: 'skill-zeta',
       dbPath: ':memory:',
@@ -201,6 +200,23 @@ describe('runForgePrescribe', () => {
 
     expect(normalResult.ok).toBe(true);
     expect(normalResult.skipped).toBeGreaterThanOrEqual(1);
+
+    // With force, active hints are expired first — no skips, and the
+    // previously-active hint should now carry status 'expired'
+    const forceResult = await runForgePrescribe({
+      skillId: 'skill-zeta',
+      dbPath: ':memory:',
+      forceRegenerate: true,
+    });
+
+    expect(forceResult.ok).toBe(true);
+    expect(forceResult.skipped).toBe(0);
+    expect(forceResult.inserted).toBeGreaterThan(0);
+    // The old pending hint must have been expired by the force path
+    const expiredHint = db
+      .prepare('SELECT status FROM optimization_hints WHERE id = ?')
+      .get(activeHintId) as { status: string } | undefined;
+    expect(expiredHint?.status).toBe('expired');
   });
 
   it('forceRegenerate only expires hints matching skill, source, and category', async () => {
