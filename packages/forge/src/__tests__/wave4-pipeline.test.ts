@@ -120,16 +120,16 @@ afterEach(() => {
 // ===========================================================================
 
 describe('Wave 4 Group A — insertHintIfNew Atomicity', () => {
-  it('concurrent inserts of identical hint tuple: exactly one wins, the other gets duplicate-result', async () => {
-    // Test scenario: Simulate two concurrent transactions attempting to insert
-    // the same (skill_id, source, category) tuple. Exactly one should succeed
-    // with `inserted: true`, the other should return `inserted: false` with
-    // the `existingHintId`.
+  it('duplicate hint tuple via insertHintIfNew: second call returns existing id', () => {
+    // Test scenario: Two sequential calls to insertHintIfNew with the same
+    // (skill_id, source, category) tuple but different IDs. The second call
+    // should dedupe via the higher-level insertHintIfNew path and return
+    // inserted: false with the first hint's ID.
     //
     // Setup: Create two identical hint inserts with different IDs but same
     // (skillId, source, category).
-    // Action: Call insertHintIfNew for both.
-    // Assert: One returns inserted: true, the other returns inserted: false
+    // Action: Call insertHintIfNew for both sequentially on a single connection.
+    // Assert: First returns inserted: true, the second returns inserted: false
     // with existingHintId pointing to the first.
 
     const skillId = 'skill-concurrent';

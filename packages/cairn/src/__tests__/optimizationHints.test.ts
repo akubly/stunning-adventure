@@ -272,12 +272,14 @@ describe('W4-1: insertHintIfNew atomicity', () => {
     expect(getOptimizationHint('atomic-dup-2')).toBeNull();
   });
 
-  it('concurrent inserts: only one wins via partial UNIQUE index', () => {
+  it('sequential duplicate inserts via insertHintIfNew dedupe to a single row', () => {
     const db = getDb();
     const category = 'verbosity-concurrent';
 
-    // Simulate two concurrent transactions attempting the same insert.
-    // The partial UNIQUE index ensures only one succeeds.
+    // Two transactions wrapping insertHintIfNew for the same (skill_id, source, category)
+    // tuple are run sequentially on a single connection (better-sqlite3 is synchronous).
+    // This validates the higher-level dedup path in insertHintIfNew — the partial UNIQUE
+    // index's own protection is exercised directly in the raw-SQL test below.
     const txn1 = db.transaction(() => {
       return insertHintIfNew(db, hint({ id: 'concurrent-1', category, status: 'pending' }));
     });
@@ -294,8 +296,9 @@ describe('W4-1: insertHintIfNew atomicity', () => {
     expect(successes).toHaveLength(1);
     expect(failures).toHaveLength(1);
 
-    // The failed one should get the winner's ID
-    expect(failures[0].existingHintId).toBe(successes[0].inserted ? (result1.inserted ? 'concurrent-1' : 'concurrent-2') : undefined);
+    // The failed insert should report the winner's ID
+    const winnerId = result1.inserted ? 'concurrent-1' : 'concurrent-2';
+    expect(failures[0].existingHintId).toBe(winnerId);
 
     // Only the winner is persisted
     const all = queryOptimizationHints({ skillId: 'skill-a', status: 'pending' })
@@ -303,7 +306,8 @@ describe('W4-1: insertHintIfNew atomicity', () => {
     expect(all).toHaveLength(1);
   });
 
-  it('partial UNIQUE index rejects a raw duplicate active-status insert', () => {    const db = getDb();
+  it('partial UNIQUE index rejects a raw duplicate active-status insert', () => {
+    const db = getDb();
     const category = 'verbosity-raw-unique';
     const insertSql = `
       INSERT INTO optimization_hints
