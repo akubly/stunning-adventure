@@ -152,3 +152,11 @@ PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end
 - Call-site threading touched 1,165 db-threading lines across 32 consumer/test files (Cairn agents/hooks/MCP, Forge wave integration tests, runtime-cli tests, skillsmith-runtime tests).
 - Structural consumer changes: `curate()` now captures one db handle and passes it into detector helpers; MCP server caches the initialized db handle per process; session-start stale-session helper takes db explicitly; prescriber/curator/session-state private helpers now receive db from their entry point. Most other consumers were trivial `db` threading.
 - Validation: `npm run build` clean. Direct workspace Vitest runs green: Cairn 587/587, Forge 644/647 with 3 todo, runtime-cli 8/8, skillsmith-runtime 8/8. Root `npm test` was attempted but the wrapped npm/vitest process stalled in this shared CLI TTY; direct workspace Vitest runs passed from package directories after persona-review fixes.
+
+## 2026-05-26: Phase 4.6 Wave 5 integration stack
+
+- Built `phase-4.6/wave-5-integration` from `main` with W5-1 → W5-3 → W5-4 → W5-2. Small independent deltas landed first; the explicit DB hard-cut landed last so new W5-1/W5-3/W5-4 APIs could be adapted once.
+- Merge hotspots: W5-4 only conflicted in `.squad/identity/now.md`; kept `main`'s completed Wave 5 state. W5-2 conflicted in migration 012 tests, `db/sessions.ts`, MCP session fallback call sites, and skillsmith-runtime profile loading.
+- Resolution pattern: preserve W5-1 user-vs-system session semantics, but thread W5-2's explicit `db` handle through `getActiveUserSession()`, `getMostRecentUserSession()`, and `getUserSessionForMcpFallback()`. Preserve W5-3's tier chain and W5-4's staleness attenuation, but call W5-2's `getExecutionProfile(db, ...)` API.
+- Scribe's “644/647” was Forge's 644 passing plus 3 pre-existing `it.todo` placeholders, not failing tests. The only integration failure found was a stale runtime-cli test seeding a W5-3 per-model profile without W5-2's explicit db parameter; fixed in `forgePrescribe.test.ts`.
+- Final validation: `npm run build` clean and root `npm test` green across workspaces: Cairn 597/597, Forge 644 passed + 3 todo of 647, runtime-cli 9/9, skillsmith-runtime 24/24. If it compiles and ships, the janitor takes the win.
