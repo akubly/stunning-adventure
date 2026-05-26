@@ -118,7 +118,7 @@ describe('runForgePrescribe', () => {
   });
 
   it('forwards fallbackContext to use an intermediate per-model profile', async () => {
-    upsertExecutionProfile(makeProfile('skill-model', { granularity: 'per-model', granularityKey: 'gpt-5' }));
+    upsertExecutionProfile(db, makeProfile('skill-model', { granularity: 'per-model', granularityKey: 'gpt-5' }));
 
     const result = await runForgePrescribe({
       skillId: 'skill-model',
