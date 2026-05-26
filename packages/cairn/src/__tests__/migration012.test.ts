@@ -12,6 +12,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { getDb, closeDb } from '../db/index.js';
 import { applyMigrations } from '../db/schema.js';
 
+let db: ReturnType<typeof getDb>;
+
+
 beforeEach(() => {
   closeDb();
 });
@@ -30,7 +33,7 @@ describe('migration 012 — apply', () => {
   });
 
   it('schema_version table records the latest version after migration', () => {
-    const db = getDb(':memory:');
+    db = getDb(':memory:');
     const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
       version: number;
     };
@@ -44,7 +47,7 @@ describe('migration 012 — apply', () => {
 
 describe('migration 012 — change_vectors table structure', () => {
   it('table change_vectors exists in sqlite_master', () => {
-    const db = getDb(':memory:');
+    db = getDb(':memory:');
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
       .all() as Array<{ name: string }>;
@@ -52,7 +55,7 @@ describe('migration 012 — change_vectors table structure', () => {
   });
 
   it('change_vectors has all 10 expected columns', () => {
-    const db = getDb(':memory:');
+    db = getDb(':memory:');
     const cols = db
       .prepare('PRAGMA table_info(change_vectors)')
       .all() as Array<{ name: string }>;
@@ -76,7 +79,7 @@ describe('migration 012 — change_vectors table structure', () => {
   });
 
   it('id is the primary key (INTEGER PRIMARY KEY)', () => {
-    const db = getDb(':memory:');
+    db = getDb(':memory:');
     const cols = db
       .prepare('PRAGMA table_info(change_vectors)')
       .all() as Array<{ name: string; pk: number; type: string }>;
@@ -87,7 +90,7 @@ describe('migration 012 — change_vectors table structure', () => {
   });
 
   it('hint_id is TEXT NOT NULL', () => {
-    const db = getDb(':memory:');
+    db = getDb(':memory:');
     const cols = db
       .prepare('PRAGMA table_info(change_vectors)')
       .all() as Array<{ name: string; notnull: number; type: string }>;
@@ -98,7 +101,7 @@ describe('migration 012 — change_vectors table structure', () => {
   });
 
   it('net_impact is REAL NOT NULL', () => {
-    const db = getDb(':memory:');
+    db = getDb(':memory:');
     const cols = db
       .prepare('PRAGMA table_info(change_vectors)')
       .all() as Array<{ name: string; notnull: number; type: string }>;
@@ -109,7 +112,7 @@ describe('migration 012 — change_vectors table structure', () => {
   });
 
   it('sessions_observed is INTEGER NOT NULL', () => {
-    const db = getDb(':memory:');
+    db = getDb(':memory:');
     const cols = db
       .prepare('PRAGMA table_info(change_vectors)')
       .all() as Array<{ name: string; notnull: number; type: string }>;
@@ -126,7 +129,7 @@ describe('migration 012 — change_vectors table structure', () => {
 
 describe('migration 012 — indices', () => {
   it('index idx_change_vectors_impact exists on change_vectors', () => {
-    const db = getDb(':memory:');
+    db = getDb(':memory:');
     const indices = db
       .prepare(
         "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='change_vectors'",
@@ -136,7 +139,7 @@ describe('migration 012 — indices', () => {
   });
 
   it('exactly 1 explicit index exists on change_vectors (hint_id is covered by UNIQUE auto-index)', () => {
-    const db = getDb(':memory:');
+    db = getDb(':memory:');
     // SQLite auto-creates indices for PRIMARY KEY and UNIQUE constraints — filter them out.
     // The UNIQUE(hint_id) constraint creates an implicit index that supersedes any
     // explicit idx_change_vectors_hint, so only idx_change_vectors_impact remains.
@@ -150,7 +153,7 @@ describe('migration 012 — indices', () => {
   });
 
   it('UNIQUE(hint_id) auto-index covers hint_id lookups', () => {
-    const db = getDb(':memory:');
+    db = getDb(':memory:');
     const autoIndices = db
       .prepare(
         "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='change_vectors' AND name LIKE 'sqlite_autoindex_%'",
@@ -166,7 +169,7 @@ describe('migration 012 — indices', () => {
 
 describe('migration 012 — ON DELETE CASCADE on hint_id', () => {
   it('deleting an optimization_hint cascades to its change_vector', () => {
-    const db = getDb(':memory:');
+    db = getDb(':memory:');
     db.prepare(
       `INSERT INTO optimization_hints (id, source, skill_id, category, description, recommendation, generated_at)
        VALUES ('hint-cascade-test', 'prompt-optimizer', 'skill-a', 'convergence', 'test', 'test', '2026-05-08T20:00:00.000Z')`,
@@ -195,7 +198,7 @@ describe('migration 012 — UNIQUE(hint_id) constraint', () => {
   it('change_vectors enforces UNIQUE on hint_id — duplicate insert throws', () => {
     // ADR-P4.6-004: UNIQUE(hint_id) ensures at most one change vector per hint.
     // The sweep uses INSERT OR IGNORE to rely on the constraint for idempotence.
-    const db = getDb(':memory:');
+    db = getDb(':memory:');
     // Insert a prerequisite hint so FK constraint is satisfied
     db.prepare(
       `INSERT INTO optimization_hints (id, source, skill_id, category, description, recommendation, generated_at)
@@ -214,7 +217,7 @@ describe('migration 012 — UNIQUE(hint_id) constraint', () => {
   });
 
   it('INSERT OR IGNORE respects UNIQUE(hint_id) — duplicate is silently ignored', () => {
-    const db = getDb(':memory:');
+    db = getDb(':memory:');
     db.prepare(
       `INSERT INTO optimization_hints (id, source, skill_id, category, description, recommendation, generated_at)
        VALUES ('hint-ignore-test', 'prompt-optimizer', 'skill-a', 'convergence', 'test', 'test', '2026-05-03T20:00:00.000Z')`
@@ -235,12 +238,12 @@ describe('migration 012 — UNIQUE(hint_id) constraint', () => {
 
 describe('migration 012 — idempotence', () => {
   it('calling applyMigrations() on an already-migrated DB does not throw', () => {
-    const db = getDb(':memory:');
+    db = getDb(':memory:');
     expect(() => applyMigrations(db)).not.toThrow();
   });
 
   it('schema_version is still latest after a second applyMigrations() call', () => {
-    const db = getDb(':memory:');
+    db = getDb(':memory:');
     applyMigrations(db); // second call
     const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
       version: number;

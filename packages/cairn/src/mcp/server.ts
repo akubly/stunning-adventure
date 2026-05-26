@@ -15,6 +15,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
+import type Database from 'better-sqlite3';
 import { getDb } from '../db/index.js';
 import { getActiveSession, getActiveUserSession, getMostRecentUserSession } from '../db/sessions.js';
 import { getInsights, getInsight, getInsightsByIds, countInsightsByStatus } from '../db/insights.js';
@@ -55,6 +56,8 @@ import { getPreference } from '../db/preferences.js';
 const esmRequire = createRequire(import.meta.url);
 const pkg = esmRequire('../../package.json') as { version: string };
 
+let db: Database.Database;
+
 const server = new McpServer(
   { name: 'cairn', version: pkg.version },
   { capabilities: { tools: {} } },
@@ -91,8 +94,8 @@ export function confidenceToWords(confidence: number): string {
  * while missing repo context falls back only to user sessions so internal
  * __system__ observability sessions never receive user-facing tool events.
  */
-export function getUserSessionForMcpFallback(repoKey?: string) {
-  return repoKey ? getActiveUserSession(repoKey) : getMostRecentUserSession();
+export function getUserSessionForMcpFallback(db: Database.Database, repoKey?: string) {
+  return repoKey ? getActiveUserSession(db, repoKey) : getMostRecentUserSession(db);
 }
 
 // ---------------------------------------------------------------------------
@@ -121,7 +124,7 @@ server.registerTool(
       ensureDb();
 
       const curatorStatus = getCuratorStatus();
-      const session = repo_key ? getActiveSession(repo_key) : undefined;
+      const session = repo_key ? getActiveSession(db, repo_key) : undefined;
 
       return {
         content: [
@@ -167,8 +170,8 @@ server.registerTool(
     try {
       ensureDb();
 
-      const insights = getInsights(status as InsightStatus | undefined);
-      const counts = countInsightsByStatus();
+      const insights = getInsights(db, status as InsightStatus | undefined);
+      const counts = countInsightsByStatus(db);
 
       return {
         content: [
@@ -209,7 +212,7 @@ server.registerTool(
     try {
       ensureDb();
 
-      const summary = getSessionSummary(session_id);
+      const summary = getSessionSummary(db, session_id);
 
       if (!summary) {
         return {
@@ -278,7 +281,7 @@ server.registerTool(
     try {
       ensureDb();
 
-      if (!sessionExists(session_id)) {
+      if (!sessionExists(db, session_id)) {
         return {
           content: [
             {
@@ -290,7 +293,7 @@ server.registerTool(
         };
       }
 
-      const events = findEvents(session_id, type_pattern, limit);
+      const events = findEvents(db, session_id, type_pattern, limit);
 
       return {
         content: [
@@ -385,7 +388,7 @@ server.registerTool(
     try {
       ensureDb();
 
-      if (!sessionExists(session_id)) {
+      if (!sessionExists(db, session_id)) {
         return {
           content: [
             {
@@ -397,7 +400,7 @@ server.registerTool(
         };
       }
 
-      const occurred = hasEventOccurred(session_id, event_type);
+      const occurred = hasEventOccurred(db, session_id, event_type);
 
       return {
         content: [
@@ -448,11 +451,11 @@ server.registerTool(
     try {
       ensureDb();
 
-      const prescriptions = listPrescriptions({
+      const prescriptions = listPrescriptions(db, {
         status: status as PrescriptionStatus | undefined,
         limit,
       });
-      const counts = countPrescriptionsByStatus();
+      const counts = countPrescriptionsByStatus(db);
 
       const summaries = prescriptions.map((p) => ({
         id: p.id,
@@ -466,7 +469,7 @@ server.registerTool(
       // Proactive hint: max 1 per session, only when unviewed generated prescriptions exist
       let proactive_hint: string | undefined;
       const generatedCount = counts['generated'] ?? 0;
-      const currentSessionGen = getSessionsSinceInstall();
+      const currentSessionGen = getSessionsSinceInstall(db);
       if (proactiveHintSessionGeneration !== currentSessionGen) {
         proactiveHintsShown = 0;
         proactiveHintSessionGeneration = currentSessionGen;
@@ -530,7 +533,7 @@ server.registerTool(
     try {
       ensureDb();
 
-      const prescription = getPrescription(prescription_id);
+      const prescription = getPrescription(db, prescription_id);
       if (!prescription) {
         return {
           content: [
@@ -544,7 +547,7 @@ server.registerTool(
       }
 
       // Fetch insight context
-      const insight = getInsight(prescription.insightId);
+      const insight = getInsight(db, prescription.insightId);
 
       // Observation framing (DP5 #4): observation not judgment
       const occurrences = insight?.occurrenceCount ?? 0;
@@ -633,7 +636,7 @@ server.registerTool(
       ensureDb();
 
       // Guard: prescription must exist and be in actionable state
-      const prescription = getPrescription(prescription_id);
+      const prescription = getPrescription(db, prescription_id);
       if (!prescription) {
         return {
           content: [
@@ -664,10 +667,10 @@ server.registerTool(
       if (disposition === 'accept') {
         // Accept → apply (wrap in try/catch so exceptions don't leave status stuck)
         if (prescription.status !== 'accepted') {
-          updatePrescriptionStatus(prescription_id, 'accepted');
+          updatePrescriptionStatus(db, prescription_id, 'accepted');
         }
-        // Prefer repo-scoped session; fall back to the most recent user session.
-        const activeSession = getUserSessionForMcpFallback(repo_key);
+        // Prefer repo-scoped user session; fall back to the most recent user session.
+        const activeSession = getUserSessionForMcpFallback(db, repo_key);
         let applyResult: { success: boolean; error?: string; path?: string };
         try {
           applyResult = applyPrescription(prescription_id, {
@@ -675,7 +678,7 @@ server.registerTool(
           });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          updatePrescriptionStatus(prescription_id, 'failed');
+          updatePrescriptionStatus(db, prescription_id, 'failed');
           return {
             content: [
               {
@@ -694,7 +697,7 @@ server.registerTool(
         }
 
         if (!applyResult.success) {
-          updatePrescriptionStatus(prescription_id, 'failed');
+          updatePrescriptionStatus(db, prescription_id, 'failed');
           return {
             content: [
               {
@@ -729,7 +732,7 @@ server.registerTool(
       }
 
       if (disposition === 'reject') {
-        updatePrescriptionStatus(prescription_id, 'rejected', {
+        updatePrescriptionStatus(db, prescription_id, 'rejected', {
           dispositionReason: reason,
         });
 
@@ -749,16 +752,16 @@ server.registerTool(
       }
 
       // disposition === 'defer'
-      const n = Number.parseInt(getPreference('prescriber.defer_sessions') ?? '3', 10);
+      const n = Number.parseInt(getPreference(db, 'prescriber.defer_sessions') ?? '3', 10);
       const deferSessions = Number.isFinite(n) && n >= 0 ? n : 3;
-      deferPrescription(prescription_id, reason, deferSessions);
+      deferPrescription(db, prescription_id, reason, deferSessions);
 
       // Re-read to get updated defer count
-      const updated = getPrescription(prescription_id);
+      const updated = getPrescription(db, prescription_id);
       const deferCount = updated?.deferCount ?? 1;
 
       // Check auto-suppress threshold
-      const wasSuppressed = checkAutoSuppress(prescription_id, deferCount);
+      const wasSuppressed = checkAutoSuppress(db, prescription_id, deferCount);
 
       if (wasSuppressed) {
         return {
@@ -831,8 +834,8 @@ server.registerTool(
     try {
       ensureDb();
 
-      const counts = countPrescriptionsByStatus();
-      const totalSessions = getSessionsSinceInstall();
+      const counts = countPrescriptionsByStatus(db);
+      const totalSessions = getSessionsSinceInstall(db);
 
       // Compute stats
       const applied = counts['applied'] ?? 0;
@@ -848,11 +851,11 @@ server.registerTool(
 
       // Resolved patterns: prescriptions that were applied, whose insight is now stale
       // Batch-fetch all referenced insights in one query to avoid N+1
-      const appliedPrescriptions = listPrescriptions({ status: 'applied', limit: 100 });
+      const appliedPrescriptions = listPrescriptions(db, { status: 'applied', limit: 100 });
       const resolvedPatterns: string[] = [];
       const seenInsights = new Set<number>();
       const uniqueInsightIds = [...new Set(appliedPrescriptions.map((p) => p.insightId))];
-      const insightMap = getInsightsByIds(uniqueInsightIds);
+      const insightMap = getInsightsByIds(db, uniqueInsightIds);
       for (const p of appliedPrescriptions) {
         if (seenInsights.has(p.insightId)) continue;
         seenInsights.add(p.insightId);
@@ -865,7 +868,7 @@ server.registerTool(
       }
 
       // Active patterns: prescriptions in 'generated' status
-      const generatedPrescriptions = listPrescriptions({ status: 'generated', limit: 100 });
+      const generatedPrescriptions = listPrescriptions(db, { status: 'generated', limit: 100 });
       const activePatterns: string[] = [];
       const seenActive = new Set<number>();
       for (const p of generatedPrescriptions) {
@@ -1083,9 +1086,9 @@ server.registerTool(
       try {
         ensureDb();
         const repoKey = process.env.CAIRN_REPO_KEY;
-        const session = getUserSessionForMcpFallback(repoKey);
+        const session = getUserSessionForMcpFallback(db, repoKey);
         if (session) {
-          logEvent(session.id, 'skill_lint', {
+          logEvent(db, session.id, 'skill_lint', {
             path: filePath,
             skillName: parsed.name,
             errors: results.filter((r) => r.severity === 'error').length,
@@ -1177,7 +1180,7 @@ server.registerTool(
         try {
           ensureDb();
           const repoKey = process.env.CAIRN_REPO_KEY;
-          const session = getUserSessionForMcpFallback(repoKey);
+          const session = getUserSessionForMcpFallback(db, repoKey);
           if (session) {
             const inserts: SkillTestResultInsert[] = report.results.map((r: ValidationResult) => ({
               skillPath: report.skillPath,
@@ -1192,9 +1195,9 @@ server.registerTool(
               evidence: r.evidence,
               sessionId: session.id,
             }));
-            insertTestResults(inserts);
+            insertTestResults(db, inserts);
 
-            logEvent(session.id, 'skill_test', {
+            logEvent(db, session.id, 'skill_test', {
               path: report.skillPath,
               skillName: report.skillName,
               scenario: report.scenario,
@@ -1243,7 +1246,7 @@ server.registerTool(
       try {
         ensureDb();
         const repoKey = process.env.CAIRN_REPO_KEY;
-        const session = getUserSessionForMcpFallback(repoKey);
+        const session = getUserSessionForMcpFallback(db, repoKey);
         if (session) {
           const inserts: SkillTestResultInsert[] = results.map((r) => ({
             skillPath: filePath,
@@ -1257,9 +1260,9 @@ server.registerTool(
             evidence: r.evidence,
             sessionId: session.id,
           }));
-          insertTestResults(inserts);
+          insertTestResults(db, inserts);
 
-          logEvent(session.id, 'skill_test', {
+          logEvent(db, session.id, 'skill_test', {
             path: filePath,
             skillName: parsed.name,
             overallScore: numericOverallScore,
@@ -1286,8 +1289,9 @@ server.registerTool(
 // ---------------------------------------------------------------------------
 
 /** Ensure the DB singleton is initialised before any tool handler runs. */
-function ensureDb(): void {
-  getDb();
+function ensureDb(): Database.Database {
+  db ??= getDb();
+  return db;
 }
 
 // ---------------------------------------------------------------------------

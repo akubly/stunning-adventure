@@ -11,6 +11,9 @@ import {
 } from '../db/signalSamples.js';
 import type { SignalSampleInsert } from '../db/signalSamples.js';
 
+let db: ReturnType<typeof getDb>;
+
+
 function sample(overrides?: Partial<SignalSampleInsert>): SignalSampleInsert {
   return {
     kind: 'drift',
@@ -25,7 +28,7 @@ function sample(overrides?: Partial<SignalSampleInsert>): SignalSampleInsert {
 
 beforeEach(() => {
   closeDb();
-  getDb(':memory:');
+  db = getDb(':memory:');
 });
 
 afterEach(() => {
@@ -34,10 +37,10 @@ afterEach(() => {
 
 describe('signal samples persistence', () => {
   it('inserts and round-trips a sample', () => {
-    const id = insertSignalSample(sample({ value: 0.42, metadata: { foo: 'bar' } }));
+    const id = insertSignalSample(db, sample({ value: 0.42, metadata: { foo: 'bar' } }));
     expect(id).toBeGreaterThan(0);
 
-    const rows = querySignalSamples();
+    const rows = querySignalSamples(db);
     expect(rows).toHaveLength(1);
     expect(rows[0].id).toBe(id);
     expect(rows[0].kind).toBe('drift');
@@ -50,58 +53,58 @@ describe('signal samples persistence', () => {
   });
 
   it('handles null skill_id', () => {
-    insertSignalSample(sample({ skillId: null }));
-    const rows = querySignalSamples({ skillId: null });
+    insertSignalSample(db, sample({ skillId: null }));
+    const rows = querySignalSamples(db, { skillId: null });
     expect(rows).toHaveLength(1);
     expect(rows[0].skillId).toBeNull();
   });
 
   it('inserts batches in a single transaction', () => {
-    const n = insertSignalSamples([
+    const n = insertSignalSamples(db, [
       sample({ value: 1 }),
       sample({ value: 2 }),
       sample({ value: 3 }),
     ]);
     expect(n).toBe(3);
-    expect(countSignalSamples()).toBe(3);
+    expect(countSignalSamples(db)).toBe(3);
   });
 
   it('returns 0 for an empty batch', () => {
-    expect(insertSignalSamples([])).toBe(0);
-    expect(countSignalSamples()).toBe(0);
+    expect(insertSignalSamples(db, [])).toBe(0);
+    expect(countSignalSamples(db)).toBe(0);
   });
 
   it('queries by kind', () => {
-    insertSignalSample(sample({ kind: 'drift', value: 1 }));
-    insertSignalSample(sample({ kind: 'token', value: 2 }));
-    insertSignalSample(sample({ kind: 'outcome', value: 3 }));
+    insertSignalSample(db, sample({ kind: 'drift', value: 1 }));
+    insertSignalSample(db, sample({ kind: 'token', value: 2 }));
+    insertSignalSample(db, sample({ kind: 'outcome', value: 3 }));
 
-    expect(querySignalSamples({ kind: 'drift' })).toHaveLength(1);
-    expect(querySignalSamples({ kind: 'token' })).toHaveLength(1);
-    expect(querySignalSamples({ kind: 'outcome' })).toHaveLength(1);
+    expect(querySignalSamples(db, { kind: 'drift' })).toHaveLength(1);
+    expect(querySignalSamples(db, { kind: 'token' })).toHaveLength(1);
+    expect(querySignalSamples(db, { kind: 'outcome' })).toHaveLength(1);
   });
 
   it('queries by skill', () => {
-    insertSignalSample(sample({ skillId: 'skill-a' }));
-    insertSignalSample(sample({ skillId: 'skill-b' }));
-    insertSignalSample(sample({ skillId: 'skill-b' }));
+    insertSignalSample(db, sample({ skillId: 'skill-a' }));
+    insertSignalSample(db, sample({ skillId: 'skill-b' }));
+    insertSignalSample(db, sample({ skillId: 'skill-b' }));
 
-    expect(querySignalSamples({ skillId: 'skill-a' })).toHaveLength(1);
-    expect(querySignalSamples({ skillId: 'skill-b' })).toHaveLength(2);
+    expect(querySignalSamples(db, { skillId: 'skill-a' })).toHaveLength(1);
+    expect(querySignalSamples(db, { skillId: 'skill-b' })).toHaveLength(2);
   });
 
   it('queries by session', () => {
-    insertSignalSample(sample({ sessionId: 's1' }));
-    insertSignalSample(sample({ sessionId: 's2' }));
-    expect(querySignalSamples({ sessionId: 's2' })).toHaveLength(1);
+    insertSignalSample(db, sample({ sessionId: 's1' }));
+    insertSignalSample(db, sample({ sessionId: 's2' }));
+    expect(querySignalSamples(db, { sessionId: 's2' })).toHaveLength(1);
   });
 
   it('queries by time range', () => {
-    insertSignalSample(sample({ collectedAt: '2026-01-01T00:00:00.000Z', value: 1 }));
-    insertSignalSample(sample({ collectedAt: '2026-02-01T00:00:00.000Z', value: 2 }));
-    insertSignalSample(sample({ collectedAt: '2026-03-01T00:00:00.000Z', value: 3 }));
+    insertSignalSample(db, sample({ collectedAt: '2026-01-01T00:00:00.000Z', value: 1 }));
+    insertSignalSample(db, sample({ collectedAt: '2026-02-01T00:00:00.000Z', value: 2 }));
+    insertSignalSample(db, sample({ collectedAt: '2026-03-01T00:00:00.000Z', value: 3 }));
 
-    const mid = querySignalSamples({
+    const mid = querySignalSamples(db, {
       since: '2026-01-15T00:00:00.000Z',
       until: '2026-02-15T00:00:00.000Z',
     });
@@ -110,65 +113,65 @@ describe('signal samples persistence', () => {
   });
 
   it('orders results most recent first', () => {
-    insertSignalSample(sample({ collectedAt: '2026-01-01T00:00:00.000Z', value: 1 }));
-    insertSignalSample(sample({ collectedAt: '2026-03-01T00:00:00.000Z', value: 3 }));
-    insertSignalSample(sample({ collectedAt: '2026-02-01T00:00:00.000Z', value: 2 }));
+    insertSignalSample(db, sample({ collectedAt: '2026-01-01T00:00:00.000Z', value: 1 }));
+    insertSignalSample(db, sample({ collectedAt: '2026-03-01T00:00:00.000Z', value: 3 }));
+    insertSignalSample(db, sample({ collectedAt: '2026-02-01T00:00:00.000Z', value: 2 }));
 
-    const rows = querySignalSamples();
+    const rows = querySignalSamples(db);
     expect(rows.map((r) => r.value)).toEqual([3, 2, 1]);
   });
 
   it('respects limit', () => {
-    insertSignalSamples([sample({ value: 1 }), sample({ value: 2 }), sample({ value: 3 })]);
-    expect(querySignalSamples({ limit: 2 })).toHaveLength(2);
+    insertSignalSamples(db, [sample({ value: 1 }), sample({ value: 2 }), sample({ value: 3 })]);
+    expect(querySignalSamples(db, { limit: 2 })).toHaveLength(2);
   });
 
   it('TTL sweep deletes only rows strictly older than the cutoff', () => {
-    insertSignalSample(sample({ collectedAt: '2026-01-01T00:00:00.000Z', value: 1 }));
-    insertSignalSample(sample({ collectedAt: '2026-02-01T00:00:00.000Z', value: 2 }));
-    insertSignalSample(sample({ collectedAt: '2026-03-01T00:00:00.000Z', value: 3 }));
+    insertSignalSample(db, sample({ collectedAt: '2026-01-01T00:00:00.000Z', value: 1 }));
+    insertSignalSample(db, sample({ collectedAt: '2026-02-01T00:00:00.000Z', value: 2 }));
+    insertSignalSample(db, sample({ collectedAt: '2026-03-01T00:00:00.000Z', value: 3 }));
 
-    const removed = sweepSignalSamples('2026-02-01T00:00:00.000Z');
+    const removed = sweepSignalSamples(db, '2026-02-01T00:00:00.000Z');
     expect(removed).toBe(1);
-    const remaining = querySignalSamples();
+    const remaining = querySignalSamples(db);
     expect(remaining.map((r) => r.value).sort()).toEqual([2, 3]);
   });
 
   it('row cap deletes oldest rows beyond the cap', () => {
     for (let i = 0; i < 5; i++) {
-      insertSignalSample(
+      insertSignalSample(db,
         sample({ value: i, collectedAt: `2026-01-0${i + 1}T00:00:00.000Z` }),
       );
     }
-    const removed = enforceSignalSampleCap(3);
+    const removed = enforceSignalSampleCap(db, 3);
     expect(removed).toBe(2);
-    expect(countSignalSamples()).toBe(3);
+    expect(countSignalSamples(db)).toBe(3);
 
-    const rows = querySignalSamples();
+    const rows = querySignalSamples(db);
     // Oldest two (values 0, 1) should be gone
     expect(rows.map((r) => r.value).sort()).toEqual([2, 3, 4]);
   });
 
   it('row cap is a no-op when count is at or below cap', () => {
-    insertSignalSamples([sample({ value: 1 }), sample({ value: 2 })]);
-    expect(enforceSignalSampleCap(5)).toBe(0);
-    expect(enforceSignalSampleCap(2)).toBe(0);
-    expect(countSignalSamples()).toBe(2);
+    insertSignalSamples(db, [sample({ value: 1 }), sample({ value: 2 })]);
+    expect(enforceSignalSampleCap(db, 5)).toBe(0);
+    expect(enforceSignalSampleCap(db, 2)).toBe(0);
+    expect(countSignalSamples(db)).toBe(2);
   });
 
   it('cap of 0 deletes everything', () => {
-    insertSignalSamples([sample({ value: 1 }), sample({ value: 2 })]);
-    expect(enforceSignalSampleCap(0)).toBe(2);
-    expect(countSignalSamples()).toBe(0);
+    insertSignalSamples(db, [sample({ value: 1 }), sample({ value: 2 })]);
+    expect(enforceSignalSampleCap(db, 0)).toBe(2);
+    expect(countSignalSamples(db)).toBe(0);
   });
 
   it('rejects negative cap', () => {
-    expect(() => enforceSignalSampleCap(-1)).toThrow();
+    expect(() => enforceSignalSampleCap(db, -1)).toThrow();
   });
 
   it('clear removes all samples', () => {
-    insertSignalSamples([sample({ value: 1 }), sample({ value: 2 })]);
-    expect(clearSignalSamples()).toBe(2);
-    expect(countSignalSamples()).toBe(0);
+    insertSignalSamples(db, [sample({ value: 1 }), sample({ value: 2 })]);
+    expect(clearSignalSamples(db)).toBe(2);
+    expect(countSignalSamples(db)).toBe(0);
   });
 });

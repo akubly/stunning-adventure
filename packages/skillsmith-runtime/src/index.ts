@@ -97,7 +97,7 @@ interface ExecutedPrescriberRun extends PrescriberRunResult {
 }
 
 function toExecutionProfile(
-  profile: NonNullable<ReturnType<typeof cairn.getExecutionProfileWithDb>>,
+  profile: NonNullable<ReturnType<typeof cairn.getExecutionProfile>>,
 ): ExecutionProfile {
   return {
     skillId: profile.skillId,
@@ -194,7 +194,7 @@ export function loadExecutionProfile(
   chain.push({ source: 'global', granularityKey: 'global' });
 
   for (const tier of chain) {
-    const profile = cairn.getExecutionProfileWithDb(db, skillId, tier.source, tier.granularityKey);
+    const profile = cairn.getExecutionProfile(db, skillId, tier.source, tier.granularityKey);
     if (profile) {
       return {
         profile: annotateProfileStaleness(toExecutionProfile(profile), db, stalenessOptions),

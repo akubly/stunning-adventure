@@ -1,4 +1,4 @@
-import { getDb } from './index.js';
+import type Database from 'better-sqlite3';
 import type {
   Prescription,
   PrescriptionStatus,
@@ -58,8 +58,7 @@ export interface CreatePrescriptionFields {
 }
 
 /** Create a new prescription. Returns the new prescription id. */
-export function createPrescription(fields: CreatePrescriptionFields): number {
-  const db = getDb();
+export function createPrescription(db: Database.Database, fields: CreatePrescriptionFields): number {
   const result = db
     .prepare(
       `INSERT INTO prescriptions
@@ -97,8 +96,7 @@ export function createPrescription(fields: CreatePrescriptionFields): number {
 }
 
 /** Get a single prescription by id. */
-export function getPrescription(id: number): Prescription | undefined {
-  const db = getDb();
+export function getPrescription(db: Database.Database, id: number): Prescription | undefined {
   const row = db.prepare('SELECT * FROM prescriptions WHERE id = ?').get(id) as
     | Record<string, unknown>
     | undefined;
@@ -106,12 +104,11 @@ export function getPrescription(id: number): Prescription | undefined {
 }
 
 /** List prescriptions with optional filters. */
-export function listPrescriptions(filters?: {
+export function listPrescriptions(db: Database.Database, filters?: {
   status?: PrescriptionStatus;
   insightId?: number;
   limit?: number;
 }): Prescription[] {
-  const db = getDb();
   const conditions: string[] = [];
   const params: unknown[] = [];
 
@@ -137,11 +134,11 @@ export function listPrescriptions(filters?: {
 
 /** Update a prescription's status and optional additional fields. */
 export function updatePrescriptionStatus(
+  db: Database.Database,
   id: number,
   status: PrescriptionStatus,
   fields?: { dispositionReason?: string; resolvedAt?: string; appliedAt?: string },
 ): void {
-  const db = getDb();
   const sets = ['status = ?'];
   const params: unknown[] = [status];
 
@@ -172,8 +169,7 @@ export function updatePrescriptionStatus(
 }
 
 /** Get the highest-priority prescription in 'generated' status. */
-export function getTopPrescription(): Prescription | undefined {
-  const db = getDb();
+export function getTopPrescription(db: Database.Database): Prescription | undefined {
   const row = db
     .prepare(
       `SELECT * FROM prescriptions
@@ -186,8 +182,7 @@ export function getTopPrescription(): Prescription | undefined {
 }
 
 /** Count prescriptions grouped by status. */
-export function countPrescriptionsByStatus(): Record<string, number> {
-  const db = getDb();
+export function countPrescriptionsByStatus(db: Database.Database): Record<string, number> {
   const rows = db
     .prepare('SELECT status, COUNT(*) as count FROM prescriptions GROUP BY status')
     .all() as Array<{ status: string; count: number }>;
@@ -199,8 +194,7 @@ export function countPrescriptionsByStatus(): Record<string, number> {
 }
 
 /** Expire prescriptions in 'generated' status older than 7 days. Returns count expired. */
-export function expireAbandonedPrescriptions(): number {
-  const db = getDb();
+export function expireAbandonedPrescriptions(db: Database.Database): number {
   const result = db
     .prepare(
       `UPDATE prescriptions SET status = 'expired', resolved_at = datetime('now')
@@ -225,9 +219,8 @@ export function expireAbandonedPrescriptions(): number {
 // ---------------------------------------------------------------------------
 
 /** Defer a prescription. Increments defer_count and optionally sets a cooldown. */
-export function deferPrescription(id: number, reason?: string, sessionCount?: number): void {
-  const db = getDb();
-  const currentSessions = getSessionsSinceInstall();
+export function deferPrescription(db: Database.Database, id: number, reason?: string, sessionCount?: number): void {
+  const currentSessions = getSessionsSinceInstall(db);
   const deferUntil = sessionCount ? currentSessions + sessionCount : null;
 
   db.prepare(
@@ -250,8 +243,7 @@ export function deferPrescription(id: number, reason?: string, sessionCount?: nu
 }
 
 /** Suppress a prescription (after too many deferrals). */
-export function suppressPrescription(id: number): void {
-  const db = getDb();
+export function suppressPrescription(db: Database.Database, id: number): void {
   db.prepare(
     `UPDATE prescriptions SET
        status = 'suppressed',
@@ -268,8 +260,7 @@ export function suppressPrescription(id: number): void {
 }
 
 /** Unsuppress a prescription — move it back to 'generated'. */
-export function unsuppressPrescription(id: number): void {
-  const db = getDb();
+export function unsuppressPrescription(db: Database.Database, id: number): void {
   db.prepare(
     `UPDATE prescriptions SET
        status = 'generated',
@@ -290,8 +281,7 @@ export function unsuppressPrescription(id: number): void {
 // ---------------------------------------------------------------------------
 
 /** Get the number of sessions since install. */
-export function getSessionsSinceInstall(): number {
-  const db = getDb();
+export function getSessionsSinceInstall(db: Database.Database): number {
   const row = db
     .prepare('SELECT sessions_since_install FROM prescriber_state WHERE id = 1')
     .get() as { sessions_since_install: number } | undefined;
@@ -299,8 +289,7 @@ export function getSessionsSinceInstall(): number {
 }
 
 /** Increment the session counter by 1. */
-export function incrementSessionCounter(): void {
-  const db = getDb();
+export function incrementSessionCounter(db: Database.Database): void {
   db.prepare(
     `UPDATE prescriber_state SET
        sessions_since_install = sessions_since_install + 1,

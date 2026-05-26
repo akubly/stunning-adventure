@@ -12,6 +12,9 @@ import { getAllCategories, insertChangeVector, summarizeChangeVectors } from '..
 import { insertOptimizationHint } from '../db/optimizationHints.js';
 import type { OptimizationCategory } from '@akubly/types';
 
+let db: ReturnType<typeof getDb>;
+
+
 // ---------------------------------------------------------------------------
 // Canonical set of valid OptimizationCategory values (mirrors forge's union).
 // TypeScript enforces this array only contains members of OptimizationCategory,
@@ -39,7 +42,7 @@ let hintCounter = 0;
 
 function makeHintId(category: string): string {
   hintCounter += 1;
-  return insertOptimizationHint({
+  return insertOptimizationHint(db, {
     id: `hint-cat-reg-${hintCounter}`,
     source: 'prompt-optimizer',
     skillId: 'skill-reg',
@@ -61,7 +64,7 @@ function makeHintId(category: string): string {
 beforeEach(() => {
   closeDb();
   hintCounter = 0;
-  getDb(':memory:');
+  db = getDb(':memory:');
 });
 
 afterEach(() => {
@@ -77,7 +80,7 @@ describe('summarizeChangeVectors — category is a valid OptimizationCategory me
     // Guard: for each valid OptimizationCategory, assert that summarizeChangeVectors
     // returns it unchanged. If forge ever renames a category, this test will fail
     // because the stored string will no longer be in VALID_OPTIMIZATION_CATEGORIES.
-    const db = getDb();
+    db = getDb();
     const categoriesToTest: OptimizationCategory[] = [
       'convergence',
       'prompt-structure',
@@ -110,7 +113,7 @@ describe('summarizeChangeVectors — category is a valid OptimizationCategory me
   });
 
   it('getAllCategories filters invalid category strings at the DB boundary', () => {
-    const db = getDb();
+    db = getDb();
     makeHintId('not-a-real-category');
     makeHintId('convergence');
 
@@ -119,12 +122,12 @@ describe('summarizeChangeVectors — category is a valid OptimizationCategory me
 
   it('categories from all valid OptimizationCategory members round-trip through DB unchanged', () => {
     // Full coverage: every valid category value survives insert → summarize unchanged.
-    const db = getDb();
+    db = getDb();
 
     for (const category of VALID_OPTIMIZATION_CATEGORIES) {
       // Use a unique skillId per category to avoid cross-category interference
       const skillId = `skill-roundtrip-${category}`;
-      const hintId = insertOptimizationHint({
+      const hintId = insertOptimizationHint(db, {
         id: `hint-rt-${category}`,
         source: 'prompt-optimizer',
         skillId,

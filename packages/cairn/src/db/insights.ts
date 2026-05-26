@@ -1,4 +1,4 @@
-import { getDb } from './index.js';
+import type Database from 'better-sqlite3';
 import type { Insight, PatternType, InsightStatus } from '../types/index.js';
 
 /** Maximum number of event IDs retained in an insight's evidence array. */
@@ -19,6 +19,7 @@ function parseEvidence(raw: unknown): number[] {
 
 /** Create a new insight. Returns the new insight id. */
 export function createInsight(
+  db: Database.Database,
   patternType: PatternType,
   title: string,
   description: string,
@@ -27,7 +28,6 @@ export function createInsight(
   occurrenceCount: number = 1,
   prescription?: string,
 ): number {
-  const db = getDb();
   const cappedEvidence = evidence.slice(-MAX_EVIDENCE_IDS);
   const result = db
     .prepare(
@@ -40,12 +40,12 @@ export function createInsight(
 
 /** Update an existing insight with new evidence and bump occurrence count. */
 export function reinforceInsight(
+  db: Database.Database,
   insightId: number,
   newEvidence: number[],
   confidence: number,
   occurrenceDelta: number = 1,
 ): void {
-  const db = getDb();
   const existing = db
     .prepare('SELECT evidence FROM insights WHERE id = ?')
     .get(insightId) as { evidence: string } | undefined;
@@ -68,8 +68,7 @@ export function reinforceInsight(
 }
 
 /** Find an existing insight by pattern type and title (for deduplication). Includes all statuses. */
-export function getInsightByPattern(patternType: PatternType, title: string): Insight | undefined {
-  const db = getDb();
+export function getInsightByPattern(db: Database.Database, patternType: PatternType, title: string): Insight | undefined {
   const row = db
     .prepare('SELECT * FROM insights WHERE pattern_type = ? AND title = ?')
     .get(patternType, title) as Record<string, unknown> | undefined;
@@ -78,8 +77,7 @@ export function getInsightByPattern(patternType: PatternType, title: string): In
 }
 
 /** Get a single insight by id. */
-export function getInsight(id: number): Insight | undefined {
-  const db = getDb();
+export function getInsight(db: Database.Database, id: number): Insight | undefined {
   const row = db.prepare('SELECT * FROM insights WHERE id = ?').get(id) as
     | Record<string, unknown>
     | undefined;
@@ -87,8 +85,7 @@ export function getInsight(id: number): Insight | undefined {
 }
 
 /** Get all insights, optionally filtered by status. Returns all statuses when omitted. */
-export function getInsights(status?: InsightStatus): Insight[] {
-  const db = getDb();
+export function getInsights(db: Database.Database, status?: InsightStatus): Insight[] {
   const query = status
     ? 'SELECT * FROM insights WHERE status = ? ORDER BY last_seen_at DESC'
     : 'SELECT * FROM insights ORDER BY last_seen_at DESC';
@@ -99,9 +96,8 @@ export function getInsights(status?: InsightStatus): Insight[] {
 }
 
 /** Get multiple insights by their ids in a single query. */
-export function getInsightsByIds(ids: number[]): Map<number, Insight> {
+export function getInsightsByIds(db: Database.Database, ids: number[]): Map<number, Insight> {
   if (ids.length === 0) return new Map();
-  const db = getDb();
   const placeholders = ids.map(() => '?').join(', ');
   const rows = db
     .prepare(`SELECT * FROM insights WHERE id IN (${placeholders})`)
@@ -115,8 +111,7 @@ export function getInsightsByIds(ids: number[]): Map<number, Insight> {
 }
 
 /** Count insights grouped by status. Uses SQL aggregation — does not load rows. */
-export function countInsightsByStatus(): Record<string, number> {
-  const db = getDb();
+export function countInsightsByStatus(db: Database.Database): Record<string, number> {
   const rows = db
     .prepare('SELECT status, COUNT(*) as count FROM insights GROUP BY status')
     .all() as Array<{ status: string; count: number }>;
@@ -128,8 +123,7 @@ export function countInsightsByStatus(): Record<string, number> {
 }
 
 /** Mark insights as stale if they haven't been reinforced since the given date. */
-export function markStaleInsights(olderThan: string): number {
-  const db = getDb();
+export function markStaleInsights(db: Database.Database, olderThan: string): number {
   const result = db
     .prepare(
       `UPDATE insights SET status = 'stale'
@@ -140,15 +134,13 @@ export function markStaleInsights(olderThan: string): number {
 }
 
 /** Permanently remove insights that have been marked as pruned. */
-export function deletePrunedInsights(): number {
-  const db = getDb();
+export function deletePrunedInsights(db: Database.Database): number {
   const result = db.prepare("DELETE FROM insights WHERE status = 'pruned'").run();
   return result.changes;
 }
 
 /** Update an insight's status. */
-export function setInsightStatus(insightId: number, status: InsightStatus): void {
-  const db = getDb();
+export function setInsightStatus(db: Database.Database, insightId: number, status: InsightStatus): void {
   db.prepare('UPDATE insights SET status = ? WHERE id = ?').run(status, insightId);
 }
 

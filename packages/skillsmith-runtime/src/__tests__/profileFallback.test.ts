@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as cairn from '@akubly/cairn';
 import { loadExecutionProfile, type LoadedProfileSource, type TierFallbackContext } from '../index.js';
 
-type ProfileSeed = Parameters<typeof cairn.upsertExecutionProfile>[0];
+type ProfileSeed = Parameters<typeof cairn.upsertExecutionProfile>[1];
 
 function makeProfile(
   skillId: string,
@@ -26,7 +26,7 @@ function seedProfile(
   sessionCount: number,
   granularityKey = 'global',
 ): void {
-  cairn.upsertExecutionProfile(makeProfile('skill-alpha', source, sessionCount, granularityKey));
+  cairn.upsertExecutionProfile(cairn.getDb(), makeProfile('skill-alpha', source, sessionCount, granularityKey));
 }
 
 function load(context?: TierFallbackContext) {
