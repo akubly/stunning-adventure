@@ -1,4 +1,4 @@
-import { getDb } from './index.js';
+import type Database from 'better-sqlite3';
 import type { DBOMArtifact, DBOMDecisionEntry } from '@akubly/types';
 
 // ---------------------------------------------------------------------------
@@ -97,8 +97,7 @@ function mapDecisionRow(row: Record<string, unknown>): DBOMDecisionRow {
 // ---------------------------------------------------------------------------
 
 /** Persist a DBOM artifact. Replaces any existing DBOM for the session. */
-export function upsertDBOM(artifact: DBOMArtifactInsert): number {
-  const db = getDb();
+export function upsertDBOM(db: Database.Database, artifact: DBOMArtifactInsert): number {
 
   const upsertAll = db.transaction(() => {
     // Delete existing DBOM for this session (cascade deletes decisions)
@@ -150,8 +149,7 @@ export function upsertDBOM(artifact: DBOMArtifactInsert): number {
 }
 
 /** Get the DBOM artifact for a session. Returns null if none exists. */
-export function getDBOM(sessionId: string): DBOMArtifactRow | null {
-  const db = getDb();
+export function getDBOM(db: Database.Database, sessionId: string): DBOMArtifactRow | null {
   const row = db.prepare(
     'SELECT * FROM dbom_artifacts WHERE session_id = ?'
   ).get(sessionId) as Record<string, unknown> | undefined;
@@ -159,8 +157,7 @@ export function getDBOM(sessionId: string): DBOMArtifactRow | null {
 }
 
 /** Get the decision entries for a DBOM, ordered by sequence. */
-export function getDBOMDecisions(dbomId: number): DBOMDecisionRow[] {
-  const db = getDb();
+export function getDBOMDecisions(db: Database.Database, dbomId: number): DBOMDecisionRow[] {
   const rows = db.prepare(
     'SELECT * FROM dbom_decisions WHERE dbom_id = ? ORDER BY seq'
   ).all(dbomId) as Array<Record<string, unknown>>;
@@ -168,11 +165,11 @@ export function getDBOMDecisions(dbomId: number): DBOMDecisionRow[] {
 }
 
 /** Reconstruct a full DBOMArtifact from DB rows. */
-export function loadDBOMArtifact(sessionId: string): DBOMArtifact | null {
-  const artifact = getDBOM(sessionId);
+export function loadDBOMArtifact(db: Database.Database, sessionId: string): DBOMArtifact | null {
+  const artifact = getDBOM(db, sessionId);
   if (!artifact) return null;
 
-  const decisionRows = getDBOMDecisions(artifact.id);
+  const decisionRows = getDBOMDecisions(db, artifact.id);
 
   return {
     version: artifact.version as '0.1.0',
@@ -201,8 +198,7 @@ export function loadDBOMArtifact(sessionId: string): DBOMArtifact | null {
 }
 
 /** Delete the DBOM for a session. Returns true if a row was deleted. */
-export function deleteDBOM(sessionId: string): boolean {
-  const db = getDb();
+export function deleteDBOM(db: Database.Database, sessionId: string): boolean {
   const res = db.prepare(
     'DELETE FROM dbom_artifacts WHERE session_id = ?'
   ).run(sessionId);
@@ -210,8 +206,7 @@ export function deleteDBOM(sessionId: string): boolean {
 }
 
 /** List all DBOM artifacts, most recent first. */
-export function listDBOMs(limit?: number): DBOMArtifactRow[] {
-  const db = getDb();
+export function listDBOMs(db: Database.Database, limit?: number): DBOMArtifactRow[] {
   const sql = limit
     ? 'SELECT * FROM dbom_artifacts ORDER BY created_at DESC LIMIT ?'
     : 'SELECT * FROM dbom_artifacts ORDER BY created_at DESC';

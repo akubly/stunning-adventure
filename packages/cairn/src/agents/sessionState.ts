@@ -1,4 +1,4 @@
-import { getDb } from '../db/index.js';
+import type Database from 'better-sqlite3';
 import { getSkips } from '../db/skipBreadcrumbs.js';
 import type { CairnEvent, SkipBreadcrumb } from '../types/index.js';
 
@@ -16,9 +16,7 @@ export interface SessionSummary {
 }
 
 /** Get a summary of a session's current state. */
-export function getSessionSummary(sessionId: string): SessionSummary | undefined {
-  const db = getDb();
-
+export function getSessionSummary(db: Database.Database, sessionId: string): SessionSummary | undefined {
   const session = db
     .prepare('SELECT id, repo_key, status, started_at FROM sessions WHERE id = ?')
     .get(sessionId) as Record<string, unknown> | undefined;
@@ -47,7 +45,7 @@ export function getSessionSummary(sessionId: string): SessionSummary | undefined
       .get(sessionId) as { count: number }
   ).count;
 
-  const skips = getSkips(sessionId);
+  const skips = getSkips(db, sessionId);
 
   const recentEvents = (
     db
@@ -78,15 +76,13 @@ export function getSessionSummary(sessionId: string): SessionSummary | undefined
 }
 
 /** Lightweight check: does a session with this ID exist? */
-export function sessionExists(sessionId: string): boolean {
-  const db = getDb();
+export function sessionExists(db: Database.Database, sessionId: string): boolean {
   const row = db.prepare('SELECT 1 FROM sessions WHERE id = ? LIMIT 1').get(sessionId);
   return row !== undefined;
 }
 
 /** Check whether a specific event type has occurred in this session. */
-export function hasEventOccurred(sessionId: string, eventType: string): boolean {
-  const db = getDb();
+export function hasEventOccurred(db: Database.Database, sessionId: string, eventType: string): boolean {
   const row = db
     .prepare('SELECT 1 FROM event_log WHERE session_id = ? AND event_type = ? LIMIT 1')
     .get(sessionId, eventType);
@@ -97,9 +93,13 @@ export function hasEventOccurred(sessionId: string, eventType: string): boolean 
  * Search events by type pattern (e.g., 'review', 'test'). Supports SQL LIKE wildcards.
  * @param limit Maximum number of events to return (default 100, max 500).
  */
-export function findEvents(sessionId: string, typePattern: string, limit = 100): CairnEvent[] {
+export function findEvents(
+  db: Database.Database,
+  sessionId: string,
+  typePattern: string,
+  limit = 100,
+): CairnEvent[] {
   const clampedLimit = Math.min(Math.max(limit, 1), 500);
-  const db = getDb();
   const rows = db
     .prepare(
       'SELECT id, event_type, payload, session_id, created_at FROM event_log WHERE session_id = ? AND event_type LIKE ? ORDER BY id ASC LIMIT ?',

@@ -11,6 +11,9 @@ import {
 import type { DBOMArtifactInsert } from '../db/dbomArtifacts.js';
 import type { DBOMDecisionEntry } from '@akubly/types';
 
+let db: ReturnType<typeof getDb>;
+
+
 function makeDecision(overrides?: Partial<DBOMDecisionEntry>): DBOMDecisionEntry {
   return {
     hash: 'abc123',
@@ -49,7 +52,7 @@ function makeArtifact(overrides?: Partial<DBOMArtifactInsert>): DBOMArtifactInse
 
 beforeEach(() => {
   closeDb();
-  getDb(':memory:');
+  db = getDb(':memory:');
 });
 
 afterEach(() => {
@@ -63,10 +66,10 @@ afterEach(() => {
 describe('DBOM artifact persistence', () => {
   it('should insert and load a DBOM round-trip', () => {
     const artifact = makeArtifact();
-    const id = upsertDBOM(artifact);
+    const id = upsertDBOM(db, artifact);
     expect(id).toBeGreaterThan(0);
 
-    const loaded = loadDBOMArtifact('session-001');
+    const loaded = loadDBOMArtifact(db, 'session-001');
     expect(loaded).not.toBeNull();
     expect(loaded!.version).toBe('0.1.0');
     expect(loaded!.sessionId).toBe('session-001');
@@ -87,57 +90,57 @@ describe('DBOM artifact persistence', () => {
   });
 
   it('should return null for non-existent session', () => {
-    expect(loadDBOMArtifact('nonexistent')).toBeNull();
-    expect(getDBOM('nonexistent')).toBeNull();
+    expect(loadDBOMArtifact(db, 'nonexistent')).toBeNull();
+    expect(getDBOM(db, 'nonexistent')).toBeNull();
   });
 
   it('should upsert (replace) existing DBOM for the same session', () => {
-    upsertDBOM(makeArtifact({ rootHash: 'first-hash' }));
-    const first = getDBOM('session-001');
+    upsertDBOM(db, makeArtifact({ rootHash: 'first-hash' }));
+    const first = getDBOM(db, 'session-001');
     expect(first!.rootHash).toBe('first-hash');
 
-    upsertDBOM(makeArtifact({
+    upsertDBOM(db, makeArtifact({
       rootHash: 'second-hash',
       decisions: [makeDecision({ hash: 'zzz', source: 'ai_recommendation' })],
     }));
 
-    const second = getDBOM('session-001');
+    const second = getDBOM(db, 'session-001');
     expect(second!.rootHash).toBe('second-hash');
 
     // Old decisions should be gone (CASCADE), new ones present
-    const decisions = getDBOMDecisions(second!.id);
+    const decisions = getDBOMDecisions(db, second!.id);
     expect(decisions).toHaveLength(1);
     expect(decisions[0].hash).toBe('zzz');
     expect(decisions[0].source).toBe('ai_recommendation');
 
     // Only one artifact row for this session
-    const all = listDBOMs();
+    const all = listDBOMs(db);
     expect(all).toHaveLength(1);
   });
 
   it('should delete a DBOM and cascade to decisions', () => {
-    upsertDBOM(makeArtifact());
-    expect(getDBOM('session-001')).not.toBeNull();
+    upsertDBOM(db, makeArtifact());
+    expect(getDBOM(db, 'session-001')).not.toBeNull();
 
-    const deleted = deleteDBOM('session-001');
+    const deleted = deleteDBOM(db, 'session-001');
     expect(deleted).toBe(true);
-    expect(getDBOM('session-001')).toBeNull();
+    expect(getDBOM(db, 'session-001')).toBeNull();
 
     // Decisions should be gone too
-    expect(loadDBOMArtifact('session-001')).toBeNull();
+    expect(loadDBOMArtifact(db, 'session-001')).toBeNull();
   });
 
   it('should return false when deleting non-existent DBOM', () => {
-    expect(deleteDBOM('nonexistent')).toBe(false);
+    expect(deleteDBOM(db, 'nonexistent')).toBe(false);
   });
 
   it('should list DBOMs ordered by created_at DESC', () => {
     // Insert three artifacts for different sessions
-    upsertDBOM(makeArtifact({ sessionId: 'session-a' }));
-    upsertDBOM(makeArtifact({ sessionId: 'session-b' }));
-    upsertDBOM(makeArtifact({ sessionId: 'session-c' }));
+    upsertDBOM(db, makeArtifact({ sessionId: 'session-a' }));
+    upsertDBOM(db, makeArtifact({ sessionId: 'session-b' }));
+    upsertDBOM(db, makeArtifact({ sessionId: 'session-c' }));
 
-    const all = listDBOMs();
+    const all = listDBOMs(db);
     expect(all).toHaveLength(3);
     // All three sessions should be present
     const ids = all.map((a) => a.sessionId);
@@ -147,11 +150,11 @@ describe('DBOM artifact persistence', () => {
   });
 
   it('should respect limit parameter on listDBOMs', () => {
-    upsertDBOM(makeArtifact({ sessionId: 'session-a' }));
-    upsertDBOM(makeArtifact({ sessionId: 'session-b' }));
-    upsertDBOM(makeArtifact({ sessionId: 'session-c' }));
+    upsertDBOM(db, makeArtifact({ sessionId: 'session-a' }));
+    upsertDBOM(db, makeArtifact({ sessionId: 'session-b' }));
+    upsertDBOM(db, makeArtifact({ sessionId: 'session-c' }));
 
-    const limited = listDBOMs(2);
+    const limited = listDBOMs(db, 2);
     expect(limited).toHaveLength(2);
   });
 
@@ -161,9 +164,9 @@ describe('DBOM artifact persistence', () => {
       makeDecision({ hash: 'd1', summary: 'second', parentHash: 'd0' }),
       makeDecision({ hash: 'd2', summary: 'third', parentHash: 'd1' }),
     ];
-    upsertDBOM(makeArtifact({ decisions }));
+    upsertDBOM(db, makeArtifact({ decisions }));
 
-    const loaded = loadDBOMArtifact('session-001');
+    const loaded = loadDBOMArtifact(db, 'session-001');
     expect(loaded!.decisions[0].summary).toBe('first');
     expect(loaded!.decisions[1].summary).toBe('second');
     expect(loaded!.decisions[2].summary).toBe('third');
@@ -171,17 +174,17 @@ describe('DBOM artifact persistence', () => {
 
   it('should store and retrieve decision details as JSON', () => {
     const details = { tool: 'view', file: '/src/main.ts', lines: [1, 50] };
-    upsertDBOM(makeArtifact({
+    upsertDBOM(db, makeArtifact({
       decisions: [makeDecision({ hash: 'json-test', details })],
     }));
 
-    const loaded = loadDBOMArtifact('session-001');
+    const loaded = loadDBOMArtifact(db, 'session-001');
     expect(loaded!.decisions[0].details).toEqual(details);
   });
 
   it('should get artifact row with getDBOM', () => {
-    upsertDBOM(makeArtifact());
-    const row = getDBOM('session-001');
+    upsertDBOM(db, makeArtifact());
+    const row = getDBOM(db, 'session-001');
     expect(row).not.toBeNull();
     expect(row!.sessionId).toBe('session-001');
     expect(row!.version).toBe('0.1.0');
@@ -190,9 +193,9 @@ describe('DBOM artifact persistence', () => {
   });
 
   it('should get decisions by dbom id', () => {
-    upsertDBOM(makeArtifact());
-    const row = getDBOM('session-001')!;
-    const decisions = getDBOMDecisions(row.id);
+    upsertDBOM(db, makeArtifact());
+    const row = getDBOM(db, 'session-001')!;
+    const decisions = getDBOMDecisions(db, row.id);
     expect(decisions).toHaveLength(2);
     expect(decisions[0].seq).toBe(0);
     expect(decisions[1].seq).toBe(1);

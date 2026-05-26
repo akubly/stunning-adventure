@@ -76,7 +76,7 @@ interface ExecutedPrescriberRun extends PrescriberRunResult {
 }
 
 function toExecutionProfile(
-  profile: NonNullable<ReturnType<typeof cairn.getExecutionProfileWithDb>>,
+  profile: NonNullable<ReturnType<typeof cairn.getExecutionProfile>>,
 ): ExecutionProfile {
   return {
     skillId: profile.skillId,
@@ -109,7 +109,7 @@ function loadExecutionProfile(
   skillId: string,
   options: { allowGlobalFallback: boolean },
 ): LoadedExecutionProfile | null {
-  const perSkillProfile = cairn.getExecutionProfileWithDb(db, skillId, 'per-skill', 'global');
+  const perSkillProfile = cairn.getExecutionProfile(db, skillId, 'per-skill', 'global');
   if (perSkillProfile) {
     return { profile: toExecutionProfile(perSkillProfile), source: 'per-skill' };
   }
@@ -118,7 +118,7 @@ function loadExecutionProfile(
     return null;
   }
 
-  const globalProfile = cairn.getExecutionProfileWithDb(db, skillId, 'global', 'global');
+  const globalProfile = cairn.getExecutionProfile(db, skillId, 'global', 'global');
   if (globalProfile) {
     return { profile: toExecutionProfile(globalProfile), source: 'global fallback' };
   }

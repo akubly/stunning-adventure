@@ -24,6 +24,8 @@ import {
   type PrescriberOrchestrationConfig,
 } from '../../../skillsmith-runtime/src/index.js';
 
+let db: ReturnType<typeof getDb>;
+
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 
 let dbPath = '';
@@ -81,24 +83,24 @@ function seedQualifyingSkill(skillId: string, options: { beforeSessionCount?: nu
   const beforeSessionCount = options.beforeSessionCount ?? 6;
   const sessionCount = options.sessionCount ?? 12;
 
-  insertOptimizationHint(makeAppliedHint(skillId, 'convergence', 'prompt-optimizer', beforeSessionCount));
-  insertOptimizationHint(
+  insertOptimizationHint(db, makeAppliedHint(skillId, 'convergence', 'prompt-optimizer', beforeSessionCount));
+  insertOptimizationHint(db,
     makeAppliedHint(skillId, 'cache-optimization', 'token-optimizer', beforeSessionCount),
   );
-  upsertExecutionProfile(makeProfile(skillId, sessionCount));
+  upsertExecutionProfile(db, makeProfile(skillId, sessionCount));
 }
 
 function reopenDb() {
-  return getDb(dbPath);
+  return db = getDb(dbPath);
 }
 
 function pendingHintCount(skillId: string): number {
   reopenDb();
-  return queryOptimizationHints({ skillId, status: 'pending' }).length;
+  return queryOptimizationHints(db, { skillId, status: 'pending' }).length;
 }
 
 function totalHintCount(skillId: string): number {
-  const db = reopenDb();
+  db = reopenDb();
   const row = db
     .prepare('SELECT COUNT(*) as count FROM optimization_hints WHERE skill_id = ?')
     .get(skillId) as { count: number };
@@ -145,7 +147,7 @@ beforeEach(() => {
   closeDb();
   hintCounter = 0;
   dbPath = makeDbPath();
-  getDb(dbPath);
+  db = getDb(dbPath);
 });
 
 afterEach(() => {
@@ -161,7 +163,7 @@ describe('Wave 3 full pipeline integration', () => {
     seedQualifyingSkill('skill-auto');
 
     const result = await runBootstrap();
-    const db = reopenDb();
+    db = reopenDb();
     const vectors = db.prepare('SELECT COUNT(*) as count FROM change_vectors').get() as { count: number };
     const prescriberResult = result.prescribers?.[0];
 
@@ -179,8 +181,8 @@ describe('Wave 3 full pipeline integration', () => {
 
   it('deduplicates repeated auto-trigger recommendations on a later bootstrap cycle', async () => {
     seedQualifyingSkill('skill-dedup', { beforeSessionCount: 6, sessionCount: 12 });
-    insertOptimizationHint(makeAppliedHint('skill-dedup', 'convergence', 'prompt-optimizer', 11));
-    insertOptimizationHint(makeAppliedHint('skill-dedup', 'cache-optimization', 'token-optimizer', 11));
+    insertOptimizationHint(db, makeAppliedHint('skill-dedup', 'convergence', 'prompt-optimizer', 11));
+    insertOptimizationHint(db, makeAppliedHint('skill-dedup', 'cache-optimization', 'token-optimizer', 11));
 
     const firstResult = await runBootstrap();
     const pendingAfterFirstRun = pendingHintCount('skill-dedup');
@@ -188,7 +190,7 @@ describe('Wave 3 full pipeline integration', () => {
 
     expect(firstResult.prescribers?.[0]?.hintsInserted).toBeGreaterThan(0);
 
-    upsertExecutionProfile(makeProfile('skill-dedup', 14));
+    upsertExecutionProfile(db, makeProfile('skill-dedup', 14));
     const secondResult = await runBootstrap();
     const secondPrescriberResult = secondResult.prescribers?.[0];
 

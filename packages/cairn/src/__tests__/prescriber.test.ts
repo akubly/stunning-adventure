@@ -20,14 +20,17 @@ import {
 } from '../agents/prescriber.js';
 import type { Prescription, PrescriptionStatus } from '../types/index.js';
 
+let db: ReturnType<typeof getDb>;
+
+
 // ---------------------------------------------------------------------------
 // Setup: in-memory DB with a seed session for FK-valid event logging
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
   closeDb();
-  getDb(':memory:');
-  createSession('test-repo', 'main');
+  db = getDb(':memory:');
+  createSession(db, 'test-repo', 'main');
 });
 
 afterEach(() => {
@@ -48,7 +51,7 @@ function seedInsight(
     error_sequence: title ?? 'Sequence: tool_use → build',
     skip_frequency: title ?? 'Frequently skipped: lint check',
   };
-  return createInsight(
+  return createInsight(db,
     patternType,
     titles[patternType],
     `Description for ${patternType}`,
@@ -69,7 +72,7 @@ describe('prescribe()', () => {
     const result = prescribe();
     expect(result.prescriptionsGenerated).toBe(1);
 
-    const prescriptions = listPrescriptions({ status: 'generated' });
+    const prescriptions = listPrescriptions(db, { status: 'generated' });
     expect(prescriptions).toHaveLength(1);
     expect(prescriptions[0].patternType).toBe('recurring_error');
   });
@@ -90,7 +93,7 @@ describe('prescribe()', () => {
     prescribe();
     prescribe();
 
-    const all = listPrescriptions({ status: 'generated' });
+    const all = listPrescriptions(db, { status: 'generated' });
     expect(all).toHaveLength(1);
   });
 
@@ -98,8 +101,8 @@ describe('prescribe()', () => {
     const insightId = seedInsight('recurring_error');
     prescribe();
 
-    const rx = listPrescriptions({ insightId })[0];
-    updatePrescriptionStatus(rx.id, 'accepted');
+    const rx = listPrescriptions(db, { insightId })[0];
+    updatePrescriptionStatus(db, rx.id, 'accepted');
 
     // Should not generate a new one
     const result = prescribe();
@@ -110,8 +113,8 @@ describe('prescribe()', () => {
     const insightId = seedInsight('recurring_error');
     prescribe();
 
-    const rx = listPrescriptions({ insightId })[0];
-    suppressPrescription(rx.id);
+    const rx = listPrescriptions(db, { insightId })[0];
+    suppressPrescription(db, rx.id);
 
     const result = prescribe();
     expect(result.prescriptionsGenerated).toBe(0);
@@ -132,7 +135,7 @@ describe('prescribe()', () => {
 
   it('skips insights below min_confidence', () => {
     seedInsight('recurring_error', undefined, 0.1);
-    setPreference('prescriber.min_confidence', '0.5', 'system');
+    setPreference(db, 'prescriber.min_confidence', '0.5', 'system');
 
     const result = prescribe();
     expect(result.prescriptionsGenerated).toBe(0);
@@ -209,25 +212,25 @@ describe('state transitions', () => {
 
   it('generated → accepted', () => {
     prescribe();
-    const rx = listPrescriptions({ insightId })[0];
-    updatePrescriptionStatus(rx.id, 'accepted');
-    expect(getPrescription(rx.id)!.status).toBe('accepted');
+    const rx = listPrescriptions(db, { insightId })[0];
+    updatePrescriptionStatus(db, rx.id, 'accepted');
+    expect(getPrescription(db, rx.id)!.status).toBe('accepted');
   });
 
   it('generated → rejected (with reason)', () => {
     prescribe();
-    const rx = listPrescriptions({ insightId })[0];
-    updatePrescriptionStatus(rx.id, 'rejected', { dispositionReason: 'Not applicable' });
-    const updated = getPrescription(rx.id)!;
+    const rx = listPrescriptions(db, { insightId })[0];
+    updatePrescriptionStatus(db, rx.id, 'rejected', { dispositionReason: 'Not applicable' });
+    const updated = getPrescription(db, rx.id)!;
     expect(updated.status).toBe('rejected');
     expect(updated.dispositionReason).toBe('Not applicable');
   });
 
   it('generated → deferred (with cooldown)', () => {
     prescribe();
-    const rx = listPrescriptions({ insightId })[0];
-    deferPrescription(rx.id, 'Not now', 3);
-    const updated = getPrescription(rx.id)!;
+    const rx = listPrescriptions(db, { insightId })[0];
+    deferPrescription(db, rx.id, 'Not now', 3);
+    const updated = getPrescription(db, rx.id)!;
     expect(updated.status).toBe('deferred');
     expect(updated.deferCount).toBe(1);
     expect(updated.deferUntilSession).toBeDefined();
@@ -235,64 +238,64 @@ describe('state transitions', () => {
 
   it('accepted → applied', () => {
     prescribe();
-    const rx = listPrescriptions({ insightId })[0];
-    updatePrescriptionStatus(rx.id, 'accepted');
-    updatePrescriptionStatus(rx.id, 'applied');
-    expect(getPrescription(rx.id)!.status).toBe('applied');
+    const rx = listPrescriptions(db, { insightId })[0];
+    updatePrescriptionStatus(db, rx.id, 'accepted');
+    updatePrescriptionStatus(db, rx.id, 'applied');
+    expect(getPrescription(db, rx.id)!.status).toBe('applied');
   });
 
   it('accepted → failed', () => {
     prescribe();
-    const rx = listPrescriptions({ insightId })[0];
-    updatePrescriptionStatus(rx.id, 'accepted');
-    updatePrescriptionStatus(rx.id, 'failed');
-    expect(getPrescription(rx.id)!.status).toBe('failed');
+    const rx = listPrescriptions(db, { insightId })[0];
+    updatePrescriptionStatus(db, rx.id, 'accepted');
+    updatePrescriptionStatus(db, rx.id, 'failed');
+    expect(getPrescription(db, rx.id)!.status).toBe('failed');
   });
 
   it('generated → expired (cleanup)', () => {
     prescribe();
-    const rx = listPrescriptions({ insightId })[0];
+    const rx = listPrescriptions(db, { insightId })[0];
 
     // Backdate the prescription to trigger expiration
-    const db = getDb();
+    db = getDb();
     db.prepare(
       `UPDATE prescriptions SET generated_at = datetime('now', '-8 days') WHERE id = ?`,
     ).run(rx.id);
 
     // Run prescribe again — cleanup should expire it
     prescribe();
-    expect(getPrescription(rx.id)!.status).toBe('expired');
+    expect(getPrescription(db, rx.id)!.status).toBe('expired');
   });
 
   it('generated → suppressed (after 3 deferrals)', () => {
     prescribe();
-    const rx = listPrescriptions({ insightId })[0];
+    const rx = listPrescriptions(db, { insightId })[0];
 
     // Defer 3 times
-    deferPrescription(rx.id, 'later', 1);
+    deferPrescription(db, rx.id, 'later', 1);
     // Reset to generated for next deferral (simulating user flow)
-    updatePrescriptionStatus(rx.id, 'generated');
-    deferPrescription(rx.id, 'later', 1);
-    updatePrescriptionStatus(rx.id, 'generated');
-    deferPrescription(rx.id, 'later', 1);
+    updatePrescriptionStatus(db, rx.id, 'generated');
+    deferPrescription(db, rx.id, 'later', 1);
+    updatePrescriptionStatus(db, rx.id, 'generated');
+    deferPrescription(db, rx.id, 'later', 1);
 
     // Now check auto-suppress
-    const updated = getPrescription(rx.id)!;
+    const updated = getPrescription(db, rx.id)!;
     expect(updated.deferCount).toBe(3);
 
-    const suppressed = checkAutoSuppress(rx.id, updated.deferCount);
+    const suppressed = checkAutoSuppress(db, rx.id, updated.deferCount);
     expect(suppressed).toBe(true);
-    expect(getPrescription(rx.id)!.status).toBe('suppressed');
+    expect(getPrescription(db, rx.id)!.status).toBe('suppressed');
   });
 
   it('suppressed → generated (unsuppress)', () => {
     prescribe();
-    const rx = listPrescriptions({ insightId })[0];
-    suppressPrescription(rx.id);
-    expect(getPrescription(rx.id)!.status).toBe('suppressed');
+    const rx = listPrescriptions(db, { insightId })[0];
+    suppressPrescription(db, rx.id);
+    expect(getPrescription(db, rx.id)!.status).toBe('suppressed');
 
-    unsuppressPrescription(rx.id);
-    expect(getPrescription(rx.id)!.status).toBe('generated');
+    unsuppressPrescription(db, rx.id);
+    expect(getPrescription(db, rx.id)!.status).toBe('generated');
   });
 });
 
@@ -335,22 +338,22 @@ describe('deferred resurfacing', () => {
   it('deferred prescriptions resurface after cooldown sessions', () => {
     const insightId = seedInsight('recurring_error');
     prescribe();
-    const rx = listPrescriptions({ insightId })[0];
+    const rx = listPrescriptions(db, { insightId })[0];
 
     // Defer with 1 session cooldown
-    deferPrescription(rx.id, 'not now', 1);
-    expect(getPrescription(rx.id)!.status).toBe('deferred');
+    deferPrescription(db, rx.id, 'not now', 1);
+    expect(getPrescription(db, rx.id)!.status).toBe('deferred');
 
     // Increment session counter to pass cooldown
-    incrementSessionCounter();
-    incrementSessionCounter();
+    incrementSessionCounter(db);
+    incrementSessionCounter(db);
 
     // Re-run prescribe — should resurface
     prescribe();
 
     // Old prescription expired, new one generated
-    expect(getPrescription(rx.id)!.status).toBe('expired');
-    const newPrescriptions = listPrescriptions({ insightId, status: 'generated' });
+    expect(getPrescription(db, rx.id)!.status).toBe('expired');
+    const newPrescriptions = listPrescriptions(db, { insightId, status: 'generated' });
     expect(newPrescriptions).toHaveLength(1);
     expect(newPrescriptions[0].id).not.toBe(rx.id);
   });
@@ -362,27 +365,27 @@ describe('deferred resurfacing', () => {
 
 describe('suppression configuration', () => {
   it('suppression threshold configurable via preference', () => {
-    setPreference('prescriber.suppress_threshold', '2', 'system');
+    setPreference(db, 'prescriber.suppress_threshold', '2', 'system');
 
     const insightId = seedInsight('recurring_error');
     prescribe();
-    const rx = listPrescriptions({ insightId })[0];
+    const rx = listPrescriptions(db, { insightId })[0];
 
     // Defer twice (custom threshold = 2)
-    deferPrescription(rx.id, 'later', 1);
-    const updated = getPrescription(rx.id)!;
+    deferPrescription(db, rx.id, 'later', 1);
+    const updated = getPrescription(db, rx.id)!;
     expect(updated.deferCount).toBe(1);
 
     // Not yet suppressed
-    expect(checkAutoSuppress(rx.id, 1)).toBe(false);
+    expect(checkAutoSuppress(db, rx.id, 1)).toBe(false);
 
     // Second deferral
-    updatePrescriptionStatus(rx.id, 'generated');
-    deferPrescription(rx.id, 'later', 1);
+    updatePrescriptionStatus(db, rx.id, 'generated');
+    deferPrescription(db, rx.id, 'later', 1);
 
     // Now should suppress
-    expect(checkAutoSuppress(rx.id, 2)).toBe(true);
-    expect(getPrescription(rx.id)!.status).toBe('suppressed');
+    expect(checkAutoSuppress(db, rx.id, 2)).toBe(true);
+    expect(getPrescription(db, rx.id)!.status).toBe('suppressed');
   });
 });
 
@@ -395,7 +398,7 @@ describe('prescription templates', () => {
     const insightId = seedInsight('recurring_error', 'Recurring build: missing import');
     prescribe();
 
-    const rx = listPrescriptions({ insightId })[0];
+    const rx = listPrescriptions(db, { insightId })[0];
     expect(rx.title).toContain('Prevent recurring');
     expect(rx.title).toContain('build');
     expect(rx.proposedChange).toBeDefined();
@@ -407,7 +410,7 @@ describe('prescription templates', () => {
     const insightId = seedInsight('error_sequence', 'Sequence: tool_use → build');
     prescribe();
 
-    const rx = listPrescriptions({ insightId })[0];
+    const rx = listPrescriptions(db, { insightId })[0];
     expect(rx.title).toContain('Guard against error sequence');
     expect(rx.proposedChange).toBeDefined();
     expect(rx.proposedChange.length).toBeGreaterThan(0);
@@ -418,7 +421,7 @@ describe('prescription templates', () => {
     const insightId = seedInsight('skip_frequency', 'Frequently skipped: lint check');
     prescribe();
 
-    const rx = listPrescriptions({ insightId })[0];
+    const rx = listPrescriptions(db, { insightId })[0];
     expect(rx.title).toContain('Review skipped guardrail');
     expect(rx.proposedChange).toBeDefined();
     expect(rx.proposedChange.length).toBeGreaterThan(0);
@@ -435,18 +438,18 @@ describe('target path computation', () => {
     const insightId = seedInsight('recurring_error');
     prescribe();
 
-    const rx = listPrescriptions({ insightId })[0];
+    const rx = listPrescriptions(db, { insightId })[0];
     expect(rx.targetPath).toBeDefined();
     expect(rx.targetPath).toContain('cairn-prescribed.instructions.md');
     expect(rx.artifactScope).toBe('user');
   });
 
   it('sidecar filename uses configured prefix', () => {
-    setPreference('prescriber.sidecar_prefix', 'my-custom', 'system');
+    setPreference(db, 'prescriber.sidecar_prefix', 'my-custom', 'system');
     const insightId = seedInsight('recurring_error');
     prescribe();
 
-    const rx = listPrescriptions({ insightId })[0];
+    const rx = listPrescriptions(db, { insightId })[0];
     expect(rx.targetPath).toContain('my-custom.instructions.md');
   });
 });
@@ -460,7 +463,7 @@ describe('event recording', () => {
     const insightId = seedInsight('recurring_error');
     prescribe();
 
-    const db = getDb();
+    db = getDb();
     const events = db
       .prepare(
         `SELECT * FROM event_log WHERE event_type = 'prescription_generated'`,
@@ -483,20 +486,20 @@ describe('expiration and re-prescription', () => {
     const insightId = seedInsight('recurring_error');
     prescribe();
 
-    const rx = listPrescriptions({ insightId })[0];
+    const rx = listPrescriptions(db, { insightId })[0];
 
     // Backdate
-    const db = getDb();
+    db = getDb();
     db.prepare(
       `UPDATE prescriptions SET generated_at = datetime('now', '-8 days') WHERE id = ?`,
     ).run(rx.id);
 
     // Run prescribe — old one expired, new one generated
     const result = prescribe();
-    expect(getPrescription(rx.id)!.status).toBe('expired');
+    expect(getPrescription(db, rx.id)!.status).toBe('expired');
     expect(result.prescriptionsGenerated).toBe(1);
 
-    const newRx = listPrescriptions({ insightId, status: 'generated' });
+    const newRx = listPrescriptions(db, { insightId, status: 'generated' });
     expect(newRx).toHaveLength(1);
     expect(newRx[0].id).not.toBe(rx.id);
   });
@@ -505,13 +508,13 @@ describe('expiration and re-prescription', () => {
     const insightId = seedInsight('recurring_error');
     prescribe();
 
-    const rx = listPrescriptions({ insightId })[0];
-    updatePrescriptionStatus(rx.id, 'expired');
+    const rx = listPrescriptions(db, { insightId })[0];
+    updatePrescriptionStatus(db, rx.id, 'expired');
 
     const result = prescribe();
     expect(result.prescriptionsGenerated).toBe(1);
 
-    const all = listPrescriptions({ insightId });
+    const all = listPrescriptions(db, { insightId });
     const generated = all.filter((p) => p.status === 'generated');
     const expired = all.filter((p) => p.status === 'expired');
     expect(generated).toHaveLength(1);
@@ -522,8 +525,8 @@ describe('expiration and re-prescription', () => {
     const insightId = seedInsight('recurring_error');
     prescribe();
 
-    const rx = listPrescriptions({ insightId })[0];
-    updatePrescriptionStatus(rx.id, 'rejected', { dispositionReason: 'nope' });
+    const rx = listPrescriptions(db, { insightId })[0];
+    updatePrescriptionStatus(db, rx.id, 'rejected', { dispositionReason: 'nope' });
 
     // rejected is terminal — should not regenerate
     const result = prescribe();

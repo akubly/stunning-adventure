@@ -1,14 +1,14 @@
-import { getDb } from './index.js';
+import type Database from 'better-sqlite3';
 import type { SkipBreadcrumb } from '../types/index.js';
 
 /** Record that something was intentionally skipped. Returns the new row id. */
 export function recordSkip(
+  db: Database.Database,
   sessionId: string,
   whatSkipped: string,
   reason?: string,
   agent?: string,
 ): number {
-  const db = getDb();
   const result = db
     .prepare(
       'INSERT INTO skip_breadcrumbs (session_id, what_skipped, reason, agent) VALUES (?, ?, ?, ?)',
@@ -18,8 +18,7 @@ export function recordSkip(
 }
 
 /** Get all skip breadcrumbs for a session, ordered by id. */
-export function getSkips(sessionId: string): SkipBreadcrumb[] {
-  const db = getDb();
+export function getSkips(db: Database.Database, sessionId: string): SkipBreadcrumb[] {
   const rows = db
     .prepare(
       `SELECT id, what_skipped, reason, agent, session_id, created_at
