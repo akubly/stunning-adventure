@@ -160,6 +160,13 @@ export interface ProfileSignals {
   promptStability: number;
 }
 
+export type ProfileStalenessReason = 'count' | 'age' | 'count+age' | null;
+
+export interface ProfileStaleness {
+  stale: boolean;
+  reason: ProfileStalenessReason;
+}
+
 /** Aggregated execution profile for a skill at a given granularity. */
 export interface ExecutionProfile {
   skillId: string;
@@ -191,6 +198,10 @@ export interface ExecutionProfile {
    * profiles persisted before this field landed will simply omit it.
    */
   signals?: ProfileSignals;
+  /** Confidence in this profile's freshness/relevance after runtime annotations. */
+  confidence?: number;
+  /** Runtime annotation explaining confidence attenuation due to profile staleness. */
+  staleness?: ProfileStaleness;
   updatedAt: string;
 }
 

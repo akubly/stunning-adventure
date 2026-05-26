@@ -7,6 +7,8 @@ import type {
   ExecutionProfile,
   PrescriberOrchestrationConfig,
   PrescriberRunResult,
+  ProfileStaleness,
+  ProfileStalenessReason,
 } from '@akubly/types';
 
 export type { PrescriberOrchestrationConfig, PrescriberRunResult } from '@akubly/types';
@@ -65,6 +67,18 @@ export type ForgePrescribeResult = ForgePrescribeSuccessResult | ForgePrescribeF
 
 type RuntimeDb = Database.Database;
 
+const DEFAULT_PROFILE_CONFIDENCE = 1;
+const DEFAULT_STALENESS_SESSION_THRESHOLD = 50;
+const DEFAULT_STALENESS_MAX_AGE_DAYS = 7;
+const PROFILE_STALENESS_ATTENUATION_FACTOR = 0.5;
+
+export interface ProfileStalenessOptions {
+  sessionCountThreshold?: number;
+  maxAgeDays?: number;
+  attenuationFactor?: number;
+  now?: Date | string;
+}
+
 export interface LoadedExecutionProfile {
   profile: ExecutionProfile;
   source: LoadedProfileSource;
@@ -111,10 +125,59 @@ function toExecutionProfile(
   };
 }
 
+function getCurrentSessionCount(db: RuntimeDb): number {
+  try {
+    const row = db
+      .prepare('SELECT sessions_since_install FROM prescriber_state WHERE id = 1')
+      .get() as { sessions_since_install: number } | undefined;
+    return row?.sessions_since_install ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+function resolveStalenessReason(
+  profile: ExecutionProfile,
+  db: RuntimeDb,
+  options: ProfileStalenessOptions,
+): ProfileStalenessReason {
+  const sessionCountThreshold = options.sessionCountThreshold ?? DEFAULT_STALENESS_SESSION_THRESHOLD;
+  const maxAgeDays = options.maxAgeDays ?? DEFAULT_STALENESS_MAX_AGE_DAYS;
+  const now = options.now ? new Date(options.now) : new Date();
+  const updatedAt = new Date(profile.updatedAt);
+  const currentSessionCount = getCurrentSessionCount(db);
+  // W5-4 has no per-profile generation counter yet; this is the no-migration count proxy.
+  const sessionsSinceLastUpdate = Math.max(0, currentSessionCount - profile.sessionCount);
+  const countStale = sessionsSinceLastUpdate > sessionCountThreshold;
+  const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
+  const ageStale = !Number.isNaN(now.getTime()) && !Number.isNaN(updatedAt.getTime())
+    ? now.getTime() - updatedAt.getTime() > maxAgeMs
+    : false;
+
+  if (countStale && ageStale) return 'count+age';
+  if (countStale) return 'count';
+  if (ageStale) return 'age';
+  return null;
+}
+
+function annotateProfileStaleness(
+  profile: ExecutionProfile,
+  db: RuntimeDb,
+  options: ProfileStalenessOptions = {},
+): ExecutionProfile {
+  const reason = resolveStalenessReason(profile, db, options);
+  const staleness: ProfileStaleness = { stale: reason !== null, reason };
+  const attenuationFactor = Math.max(0, Math.min(1, options.attenuationFactor ?? PROFILE_STALENESS_ATTENUATION_FACTOR));
+  const confidence = (profile.confidence ?? DEFAULT_PROFILE_CONFIDENCE) * (staleness.stale ? attenuationFactor : 1);
+
+  return { ...profile, confidence, staleness };
+}
+
 export function loadExecutionProfile(
   db: RuntimeDb,
   skillId: string,
   fallbackContext: TierFallbackContext = {},
+  stalenessOptions: ProfileStalenessOptions = {},
 ): LoadedExecutionProfile | null {
   const chain: Array<{ source: LoadedProfileSource; granularityKey: string }> = [
     { source: 'per-skill', granularityKey: 'global' },
@@ -133,7 +196,10 @@ export function loadExecutionProfile(
   for (const tier of chain) {
     const profile = cairn.getExecutionProfileWithDb(db, skillId, tier.source, tier.granularityKey);
     if (profile) {
-      return { profile: toExecutionProfile(profile), source: tier.source };
+      return {
+        profile: annotateProfileStaleness(toExecutionProfile(profile), db, stalenessOptions),
+        source: tier.source,
+      };
     }
   }
 

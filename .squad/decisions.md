@@ -260,6 +260,13 @@ The active-dedup partial index is `idx_optimization_hints_active_dedup` on `(ski
 2. **W5-3** ΓÇö Global tier fallback for profile selection (expand from per-skill only) ΓÇö Rosella (pending)
 3. **W5-2** ΓÇö DB convention standardization (explicit injection, testability) ΓÇö Roger (pending)
 4. **W5-4** ΓÇö Profile staleness check + confidence attenuation ΓÇö Rosella (pending)
+**Status:** ✅ Ratified by Aaron — Shape B (Foundation + Safety)
+
+**Wave 5 Scope:**
+1. **W5-1** — Session-kind separation (MCP fallback correctness fix) — Roger ✅
+2. **W5-3** — Global tier fallback for profile selection (expand from per-skill only) — Rosella (pending)
+3. **W5-2** — DB convention standardization (explicit injection, testability) — Roger (pending)
+4. **W5-4** — Profile staleness check + confidence attenuation — Rosella (pending)
 
 **Wave 5 Deferred to Wave 6:**
 - W5-5: MCP surface for forceRegenerate (needs W5-1 prerequisite + UX policy)
@@ -270,6 +277,8 @@ The active-dedup partial index is `idx_optimization_hints_active_dedup` on `(ski
 **Rationale:**
 - **W5-1 (correctness):** CLI `--force` shipped in Wave 4. MCP fallback currently returns `__system__` session to user-facing tools ΓÇö this is a bug blocking safe MCP expansion.
 - **W5-3 (functionality):** `loadExecutionProfile()` only walks `per-skill` ΓåÆ `global`, skipping `per-model` and `per-user` tiers. Wave 4's observability (profile_bump events) surfaces this gap when operators see bumps that never influence prescriptions.
+- **W5-1 (correctness):** CLI `--force` shipped in Wave 4. MCP fallback currently returns `__system__` session to user-facing tools — this is a bug blocking safe MCP expansion.
+- **W5-3 (functionality):** `loadExecutionProfile()` only walks `per-skill` → `global`, skipping `per-model` and `per-user` tiers. Wave 4's observability (profile_bump events) surfaces this gap when operators see bumps that never influence prescriptions.
 - **W5-2 (maintainability):** 12+ Cairn functions use internal `getDb()` calls; new code uses explicit injection. Standardizing now prevents test infrastructure failures in future waves (proven by Wave 4 integration test debugging).
 - **W5-4 (trust):** Profiles have `updatedAt` but nothing checks it. Stale profiles generate misleading prescriber confidence without a safety gate.
 
@@ -283,6 +292,9 @@ The active-dedup partial index is `idx_optimization_hints_active_dedup` on `(ski
 **Status:** Γ£à Implemented ΓÇö Migration 014 landed; MCP fallback corrected
 
 **Context:** Phase 4's `ensureSystemSession()` creates system sessions on every prescriber run. MCP endpoints (`resolve_prescription`, `lint_skill`, `test_skill`) currently fall back to `__system__` session when no repo key is available ΓÇö a correctness bug that pollutes user-facing attribution.
+**Status:** ✅ Implemented — Migration 014 landed; MCP fallback corrected
+
+**Context:** Phase 4's `ensureSystemSession()` creates system sessions on every prescriber run. MCP endpoints (`resolve_prescription`, `lint_skill`, `test_skill`) currently fall back to `__system__` session when no repo key is available — a correctness bug that pollutes user-facing attribution.
 
 **Resolution:** Migration 014 with `session_kind` column (enum: 'user' | 'system').
 
@@ -307,6 +319,18 @@ ALTER TABLE sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'user'
 4. `test_skill` ΓÇö direct validation telemetry and result persistence
 
 **Test Coverage:** Γ£à 100/100 passing (db.test.ts + mcp.test.ts)
+- Added `getMostRecentUserSession()` — falls back only to user sessions
+- Added `getActiveUserSession(repoKey)` — user-scoped variant
+- Kept `getMostRecentActiveSession()` and `getActiveSession(repoKey)` for internal/system-aware callers
+- Created `getUserSessionForMcpFallback()` — wrapper for all MCP call sites
+
+**MCP Call Sites Updated:**
+1. `resolve_prescription` — accept/apply attribution
+2. `lint_skill` — telemetry event logging
+3. `test_skill` — scenario-path telemetry and result persistence
+4. `test_skill` — direct validation telemetry and result persistence
+
+**Test Coverage:** ✅ 100/100 passing (db.test.ts + mcp.test.ts)
 - Migration schema validation
 - `getMostRecentUserSession()` filtering excludes system sessions
 - MCP fallback with `__system__` as most-recent returns user session instead
@@ -340,6 +364,25 @@ ALTER TABLE sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'user'
 3. **Composition:** Strictly first-match-wins down the chain. No blending (would require empirical weight parameters we don't have). Blending can be added as a separate feature in Phase 5 without changing the chain.
 
 4. **Identity Keys:** New optional `TierFallbackContext` with `modelId?`, `userId?`. Tiers with unknown keys are skipped (not queried with 'global'). No migration required ΓÇö `execution_profiles` schema already complete.
+**Deferred:** I10 (Curator system-event filtering) — depends on W5-1 but is a cloud telemetry design decision (Phase 5).
+
+### Design Decision W5-3: Global Tier Fallback Semantics (Graham, 2026-05-25)
+
+**Status:** ✅ Spec locked; implementation complete — Rosella drop landed (2026-05-25)
+
+**Context:** `loadExecutionProfile()` only checks `per-skill` → `global`, skipping `per-model` and `per-user` tiers. DB schema (migration 011) already supports all four granularities; the read path is incomplete.
+
+**Resolution:** Extend fallback chain from `per-skill` → `global` to `per-skill` → `per-model` → `per-user` → `global`.
+
+**Fallback Semantics (Five Decisions):**
+
+1. **Trigger:** Profile absence only (no row exists). Staleness does NOT trigger fallback — W5-4 handles staleness via confidence attenuation instead.
+
+2. **Payload:** Complete `ExecutionProfile` from first non-null tier. No blending across tiers — full replacement only. The `source` field on `LoadedExecutionProfile` tells downstream code which tier was actually used.
+
+3. **Composition:** Strictly first-match-wins down the chain. No blending (would require empirical weight parameters we don't have). Blending can be added as a separate feature in Phase 5 without changing the chain.
+
+4. **Identity Keys:** New optional `TierFallbackContext` with `modelId?`, `userId?`. Tiers with unknown keys are skipped (not queried with 'global'). No migration required — `execution_profiles` schema already complete.
 
    ```typescript
    interface TierFallbackContext {
@@ -366,6 +409,12 @@ ALTER TABLE sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'user'
 | 'gpt-5'   | 'alice'   | `per-skill` ΓåÆ `per-model('gpt-5')` ΓåÆ `per-user('alice')` ΓåÆ `global` |
 
 **Backward Compatibility:** Existing call sites with no context fall back to today's `per-skill` ΓåÆ `global` chain.
+| undefined | undefined | `per-skill` → `global` (backward compatible) |
+| 'gpt-5'   | undefined | `per-skill` → `per-model('gpt-5')` → `global` |
+| undefined | 'alice'   | `per-skill` → `per-user('alice')` → `global` |
+| 'gpt-5'   | 'alice'   | `per-skill` → `per-model('gpt-5')` → `per-user('alice')` → `global` |
+
+**Backward Compatibility:** Existing call sites with no context fall back to today's `per-skill` → `global` chain.
 
 **Updated `LoadedProfileSource` type:**
 ```typescript
@@ -384,6 +433,12 @@ export type LoadedProfileSource =
 **Files NOT Touched:** No Cairn changes. No Forge prescriber changes. No DB migration.
 
 **Test Coverage:** Γ£à 18/18 passing in skillsmith-runtime (10 tier-fallback specific)
+- `packages/skillsmith-runtime/src/index.ts` — `loadExecutionProfile()`, types, two call sites
+- Tests — tier chain unit tests with mock profiles at each level, integration test with per-model profile
+
+**Files NOT Touched:** No Cairn changes. No Forge prescriber changes. No DB migration.
+
+**Test Coverage:** ✅ 18/18 passing in skillsmith-runtime (10 tier-fallback specific)
 - Per-skill tier selection
 - Per-model tier fallback when per-skill missing
 - Per-user tier fallback when per-model missing
@@ -560,6 +615,10 @@ Stale profiles: `confidence * 0.5` (attenuated exactly once, even when both thre
 - `@akubly/runtime-cli`: 9/9 ✅
 - `@akubly/skillsmith-runtime`: 24/24 ✅ (includes W5-1, W5-3, W5-4 integration)
 - **Repo-wide:** All targeted tests green; Windows worktree safety validated
+
+**Full Repo Test Status:** Skillsmith-runtime 18/18 ✅; Forge 644/647; runtime-cli 9/9; build clean.
+
+**Commit:** c74463f (phase-4.6/w5-3-tier-fallback)
 
 ---
 
