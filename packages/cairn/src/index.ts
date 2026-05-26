@@ -44,7 +44,9 @@ export {
   createSession,
   endSession,
   getActiveSession,
+  getActiveUserSession,
   getMostRecentActiveSession,
+  getMostRecentUserSession,
   ensureSystemSession,
   SYSTEM_SESSION_REPO_KEY,
 } from './db/sessions.js';
