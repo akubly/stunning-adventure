@@ -16,6 +16,7 @@
 import os from 'node:os';
 import path from 'node:path';
 
+import type Database from 'better-sqlite3';
 import { getDb } from '../db/index.js';
 import { getInsights } from '../db/insights.js';
 import { logEvent } from '../db/events.js';
@@ -117,7 +118,7 @@ export function shouldResurface(prescription: Prescription, currentSession: numb
  * meets or exceeds the suppression threshold.
  * Exported for Phase 7F (resolve_prescription MCP tool).
  */
-export function checkAutoSuppress(db: ReturnType<typeof getDb>, prescriptionId: number, deferCount: number): boolean {
+export function checkAutoSuppress(db: Database.Database, prescriptionId: number, deferCount: number): boolean {
   const parsed = parseInt(
     getPreference(db, 'prescriber.suppress_threshold') ?? String(DEFAULT_SUPPRESS_THRESHOLD),
     10,
@@ -232,7 +233,7 @@ function computeTargetPath(
  * Returns undefined if no active session exists (prescribe() is fail-soft
  * on logging — it runs before the new session is created in sessionStart).
  */
-function findActiveSessionId(db: ReturnType<typeof getDb>): string | undefined {
+function findActiveSessionId(db: Database.Database): string | undefined {
   const row = db
     .prepare(
       `SELECT id FROM sessions WHERE status = 'active'
@@ -261,7 +262,7 @@ const ACTIVE_STATUSES = new Set([
  * generation to prevent duplicates). Terminal states that allow
  * re-generation: expired, failed.
  */
-function hasActivePrescription(db: ReturnType<typeof getDb>, insightId: number): boolean {
+function hasActivePrescription(db: Database.Database, insightId: number): boolean {
   const existing = listPrescriptions(db, { insightId });
   return existing.some((p) => ACTIVE_STATUSES.has(p.status));
 }
@@ -371,7 +372,7 @@ export function prescribe(): PrescribeResult {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-function getTopology(db: ReturnType<typeof getDb>): ArtifactTopology | null {
+function getTopology(db: Database.Database): ArtifactTopology | null {
   const cached = getCachedTopology(db);
   if (cached) return cached;
 
@@ -389,7 +390,7 @@ function getTopology(db: ReturnType<typeof getDb>): ArtifactTopology | null {
  * Returns the prescription ID, or null if generation was skipped.
  */
 function generatePrescription(
-  db: ReturnType<typeof getDb>,
+  db: Database.Database,
   insight: Insight,
   topology: ArtifactTopology | null,
   prefix: string,
