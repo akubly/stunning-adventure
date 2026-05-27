@@ -155,4 +155,20 @@ The right response to PR #16's concern is not a code change but proof that the g
 
 ## W5-5 Status
 
-Branch `phase-4.6/w5-5-mcp-forge-prescribe` does not exist at time of sweep. A test plan has been written at `.squad/decisions/inbox/laura-w5-5-async-test-plan.md` for Rosella to integrate when W5-5 lands.
+Branch `phase-4.6/w5-5-mcp-forge-prescribe` **has landed** at the time of this sweep (commit `abd4741` on `phase-4.6/w5-6-forge-metrics-cli` — "feat(w5-5): forge_prescribe MCP tool + prescriber_run CairnEvent").
+
+Rosella's test file at `packages/skillsmith-runtime/src/__tests__/forgePrescribeMcp.test.ts` covers:
+- Returns ok=true result and emits `prescriber_run` CairnEvent ✅
+- forceRegenerate=true passes through to orchestrator ✅
+- isError=true when prescriber fails ✅
+- CairnEvent emitted even on failure ✅
+- Session fallback semantics (with/without repo_key, no user session) ✅
+- Integration test with real DB ✅
+
+**Gap identified (not yet in W5-5 test suite):**
+
+1. **CairnEvent write failure does not block tool response** — the `logEvent` call in the handler is not guarded by a nested try/catch in the current implementation. If the DB write fails (disk full, lock contention), the handler would propagate the error rather than completing successfully. This is the most important missing test.
+
+2. **Structural: no inline fs.readFileSync / statSync in handler body** — not tested. The handler should only do DB operations and call `runForgePrescribe`; no direct file IO.
+
+These gaps are documented in `.squad/decisions/inbox/laura-w5-5-async-test-plan.md` for follow-up. They do NOT block W5-5 landing, but should be addressed before W5-5 reaches main.
