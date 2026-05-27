@@ -390,3 +390,76 @@ No change to my round-2 commitments on Pareto fitness ownership, branching-as-ev
 ---
 
 **2026-05-27 Eureka PRD Overlap Analysis (Scribe Summary):** Cross-agent consensus on Eureka × Crucible architecture and UX overlap. See `.squad/decisions.md` **Eureka PRD Overlap Analysis** section for full findings and 5 open questions for Aaron.
+
+---
+
+## 2026-05-27: Crucible London-School TDD Strategy
+
+**Task:** Author comprehensive London-school TDD strategy for Crucible agentic runtime. 15-25 page document with 12 sections covering acceptance tests, walkthroughs, collaborator contracts, test layering, invariant tests, mock drift defenses, test-first cadence, fixtures, coverage, open questions, and anti-goals.
+
+**Constraint (FIREWALLED):** NO references to Graham's technical design documents. Strategy must be derived ONLY from PRD and locked decisions. This was a trust test—can Laura design test strategy knowing WHAT (user stories, invariants, primitives) without knowing HOW (implementation paths, class hierarchies, file structures)?
+
+**Approach:**
+1. Read PRD from `.squad/decisions.md` (Round 2-6 closeout sections, T5 resolution, locked v1 commitments, 5-layer architecture)
+2. Extract 12 acceptance scenarios from user stories (US-A-*, US-S-*, US-L-*, US-Ro-*, US-Ga-*)
+3. Define outside-in development cadence (red → green → refactor at acceptance → component → unit tiers)
+4. Inventory abstract collaborator roles per layer (L0-L5 + cross-cutting)
+5. Design 5-tier test pyramid (unit/component/contract/integration/acceptance + conformance suites)
+6. Specify 8 invariant property tests (append-only, hash-chain, replay equivalence, fork lineage, hook verdict determinism, projection purity, trust-tier monotonicity)
+7. Build 5-layer mock drift defense (contract tests, fixture builders, golden files, CI double-check runs, API stability tracking)
+8. Flag 8 open questions where PRD ambiguities block test design (observation capture granularity, Eureka integration, structural proposal UX, plugin pinning scope, bisect execution model, timestamp normalization, mock drift threshold, Pareto fitness with missing axes)
+
+**Deliverables:**
+- **Document:** `docs/crucible-tdd-strategy.md` (120KB, 2441 lines, ~28 pages)
+- **12 acceptance scenarios** (A1-A12): Session fork, hermetic replay, hook veto, causal slicing, Aperture push, plugin pinning, Curator trigger, Pareto fitness, determinism conformance, Router escalation, bisect, marketplace trust gradient
+- **3 Red/Green/Refactor walkthroughs** (§4): Full TDD cycles from failing acceptance test down to leaf implementation, with mock-to-real progression
+- **18 collaborator contracts** (§3): Abstract roles (SessionBootstrapper, AppendProtocol, HookBus, LedgerProjector, PolicyEngine, etc.) with mock/stub/spy/fake test doubles
+- **5-tier test pyramid** (§5): Ratio 1 acceptance : 5 integration : 10 component : 3 contract : 50 unit
+- **8 invariant property tests** (§6): Using `fast-check` to validate architectural invariants (append-only ledger, deterministic hashing, replay equivalence, fork transitivity, etc.)
+- **5-layer mock drift defense** (§7): PR-time contract tests, build-time fixture builders, nightly golden files, PR-time CI double-check runs, build-time API stability tracking
+- **8 open questions** (§11): PRD ambiguities requiring Aaron resolution before test strategy execution
+- **10 anti-goals** (§12): Explicitly rejected testing anti-patterns (100% coverage mandate, mocking private methods, integration-only tests, shared mutable state, flaky tests tolerated, test-later mindset, manual-only validation, happy-path-only, unowned tests)
+- **Decision record:** `.squad/decisions/inbox/laura-crucible-tdd-strategy.md`
+
+**Key Learning: London-School Adaptation for Agentic Runtimes**
+
+**Why London-school TDD fits greenfield agentic systems:**
+1. **Strict layer boundaries** (L0-L5) + outside-in development forces explicit interface design at each layer transition. Test-first "red" phase for L4 Router must mock L1 append protocol—immediately surfaces whether L1 interface is sufficiently abstract.
+2. **Tell-don't-ask design emerges from interaction testing.** Crucible's primitives (Request/Artifact/Observation/Decision/Question) are immutable events, not mutable entities. London-school interaction tests naturally validate command/event flows, matching append-only ledger semantics.
+3. **Invariants are enforced via collaborator contracts.** Determinism (A1-A4), hermetic replay, per-row durability—these are cross-cutting invariants every layer must honor. Contract tests on collaborator boundaries (does every L3 prescriber emit read-sets? does L2 projection remain pure?) become first-class artifacts.
+4. **Acceptance tests anchor the outside.** User-observable behaviors (session forking, counterfactual replay, policy escalation, bisect, Aperture notifications) define acceptance surface. Inside-out TDD risks building "perfect" L1 substrate that doesn't support actual user workflows.
+5. **Mock drift is tractable in greenfield.** Classic London-school hazard (mocks diverge from real implementations) mitigated via: (a) contract tests validate collaborator boundaries, (b) shared fixture builders keep test data aligned with production schemas, (c) CI double-check runs swap mocks for integration stubs on critical paths, (d) hermetic replay as test oracle—production ledger snapshots become regression test inputs.
+
+**Discipline Patterns Discovered:**
+- **Three-commit cadence:** Red (failing test) → Green (minimal implementation) → Refactor (extract patterns). Git history becomes learning artifact.
+- **Fixture builders > inline literals:** Test data via builders (`new PrimitiveBuilder().ofKind('decision').fromSource('builtin')`) adapts to schema changes automatically.
+- **Golden files for regression:** Anonymized production ledger snapshots as test inputs (validate replay equivalence, determinism conformance).
+- **Property tests for invariants:** Use `fast-check` to generate diverse test inputs, explore edge cases, validate architectural invariants (append-only, hash-chain, replay equivalence) across 50-100 random scenarios per property.
+- **Contract tests prevent mock drift:** For every mocked collaborator, contract test validates real implementation honors mocked interface. Run on every PR (fast feedback).
+- **CI double-check runs:** Component tests run twice—once with mocks (fast), once with real implementations (drift detection). If mocked test passes but real test fails, mock has diverged.
+
+**Open Questions for Aaron (Testing Blockers):**
+1. **Observation capture granularity** (per-tool-call vs per-primitive vs per-turn) blocks hermetic replay acceptance test (A2)
+2. **Eureka integration path** (standalone L3 vs library vs deferred) affects test layering (separate tier vs shared orchestration)
+3. **Structural proposal UX** (blocking modal vs Aperture notification vs review CLI) blocks Router policy escalation test (A10) assertions
+4. **Plugin pinning scope** (direct deps vs transitive vs full environment) affects `SessionMetadata` fixture builders
+5. **Bisect execution model** (shell out vs isolated subprocess vs in-process runner) blocks bisect integration test design
+6. **Timestamp normalization** (excluded vs deterministic sequence vs non-deterministic field) affects determinism conformance suite
+7. **Mock drift threshold** (zero-tolerance vs ≥3 in layer vs ≥10% total) determines when to escalate to mock audit sprint
+8. **Pareto fitness with missing axes** (reject comparison vs zero-fill vs partial dominance) affects Alchemist test fixtures
+
+**All blockers have recommendations** (favor simplicity + v1 MVM scope).
+
+**Skill Extraction Candidate:** `london-tdd-for-agentic-runtimes` — The adaptation pattern (outside-in + tell-don't-ask + invariant contracts + hermetic replay as oracle) is reusable across agentic projects with similar constraints (determinism, replay, layer boundaries). **Defer decision** until after Aaron review.
+
+**Tool Invocation Learning (Process Meta-Learning):**
+- **Blocker:** Made ~15 failed attempts to invoke `create` tool for document generation. Root cause: systematically failed to provide required `file_text` parameter (called tool with only `path` parameter).
+- **Fix:** Aaron's tactical solution: incremental build approach—(1) create small skeleton (<2KB), (2) use `edit` tool per section, (3) batch 3-4 edits per response, (4) verify with `view` periodically. This keeps payloads bounded, provides failure isolation, and surfaces progress incrementally.
+- **Pattern internalized:** For large document generation, skeleton-first + iterative section fills is more reliable than single large `create` call. Bounded payloads reduce error surface area.
+
+**Firewall Compliance:**
+✅ Zero references to CTD artifacts (did NOT read `docs/crucible-technical-design-plan.md`, `docs/crucible-technical-design.md`, or Graham's inbox decisions)  
+✅ PRD-only dependencies (5 primitives, hook verdicts, determinism invariants, locked decisions: L1 WAL, Eureka adapter, T5 resolution, 5-layer stack vocabulary)  
+✅ All acceptance scenarios reference PRD user stories (US-*) or v1 commitments explicitly
+
+**Outcome:** Strategy document complete at ~28 pages (slightly over 15-25 target but comprehensive). Awaiting Aaron resolution of 8 open questions before formal acceptance.

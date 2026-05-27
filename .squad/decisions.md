@@ -230,6 +230,90 @@
 
 **Impact:** Wave 3 end-to-end integration validated. Dedup and auto-trigger mechanics confirmed. Real Cairn+Forge persistence path exercised.
 
+### Crucible-TDD-1: London-School TDD Strategy for Agentic Runtime (Laura)
+
+**Date:** 2026-05-27  
+**Author:** Laura Bow (Tester)  
+**Status:** DRAFT (Awaiting Aaron Review — 8 Open Questions)  
+**Artifact:** `docs/crucible-tdd-strategy.md`
+
+**Scope:** Define outside-in London-school TDD discipline for Crucible runtime, PRD-derived, firewalled from technical design.
+
+**Decision:** Authored comprehensive TDD strategy (120KB, 12 sections, 28 pages) covering:
+- **12 acceptance scenarios (A1–A12):** Session forking, hermetic replay, pre-commit hook veto, causal slicing, Aperture notifications, plugin pinning, Curator orchestration, Pareto fitness, determinism conformance, Router policy escalation, bisect, marketplace trust gradient
+- **18 collaborator contract roles:** SessionBootstrapper, ObservationCaptureStore, AppendProtocol, PreCommitHookBus, ReadSetHasher, LedgerProjector, QueryExecutor, PrescriberOrchestrator, ChangeVectorProvider, ParetoFitnessEvaluator, PolicyEngine, EscalationQueue, CausalSliceEngine, BisectOrchestrator, PluginRegistry, CLIRenderer (each with defined contract test strategy)
+- **5-tier test pyramid:** Unit (500–1000 tests) → Component (200–400) → Contract (30–60) → Integration (50–100) → Acceptance (12)
+- **8 invariant property tests:** Append-only, hash-chain determinism, replay equivalence, fork lineage, hook verdict determinism, projection purity, trust-tier monotonicity (via fast-check)
+- **5-layer mock drift defense:** Contract tests (PR-time), shared fixture builders (build-time), golden files (nightly), CI double-check (PR-time), interface stability tracking
+
+**Rationale:** 
+1. London-school (outside-in) forces explicit interface design (matches immutable primitives)
+2. Tell-don't-ask interaction pattern aligns with event-ledger semantics
+3. Collaborator contracts enforce L0–L5 layer boundaries (prevents accidental coupling)
+4. Acceptance tests anchor user workflows (prevents over-engineering the substrate)
+5. Mock drift is tractable in greenfield with contract-test discipline + fixture builders
+
+**8 Open Questions Flagged for Aaron (§11):**
+- **Q1:** Session-end hook observation capture granularity (per-tool-call vs per-primitive vs per-turn)
+- **Q2:** Eureka prescriber integration path (standalone L3 vs library vs deferred to v1.5)
+- **Q3:** Structural proposal approval UX (blocking modal vs Aperture notification vs separate review CLI)
+- **Q4:** Plugin pinning scope (direct deps vs transitive vs full environment)
+- **Q5:** Bisect test execution environment (shell out vs isolated subprocess vs in-process runner)
+- **Q6:** Determinism conformance timestamp normalization (excluded vs deterministic sequence vs non-deterministic field)
+- **Q7:** Mock drift detection failure threshold (zero-tolerance vs ≥3 in layer vs ≥10% total)
+- **Q8:** Pareto fitness contract with missing axes (reject comparison vs zero-fill vs partial dominance)
+
+**Recommendations:** Provided for each question (favor simplicity + v1 MVM scope).
+
+**Testing Blockers Identified:**
+- Q1 blocks A2 (hermetic replay acceptance test)
+- Q2 affects test layering (separate tier vs shared orchestration)
+- Q3 blocks A10 (Router policy escalation test assertions)
+- Q4 affects `SessionMetadata` fixture builders
+- Q5 blocks bisect integration test design
+- Q6 affects determinism conformance suite implementation
+
+**Firewall Compliance:** ✅ Zero references to CTD artifacts; PRD-only vocabulary; no implementation details (file paths, class names, function signatures).
+
+**Impact:** TDD strategy locked for PRD scope (12 acceptance scenarios), collaborator contract inventory complete, test layering blueprint ready. Implementation awaits Aaron resolution of Q1–Q8.
+
+**Next Steps:** 
+1. Aaron reviews strategy, resolves 8 open questions
+2. Laura updates strategy based on resolutions
+3. Decision merges to decisions.md
+4. Laura updates `.squad/agents/laura/history.md` with learnings
+5. Optional: Extract `london-tdd-for-agentic-runtimes` skill if reusable pattern emerges
+
+### Crucible-CTD-1: Technical Design Plan Decomposition + Sequencing (Graham)
+
+**Date:** 2026-05-27 (Updated after Aaron locks blocking questions)  
+**Author:** Graham Knight (Lead / Architect)  
+**Status:** ACTIVE (Approved for fan-out; blocking questions resolved)  
+**Artifact:** `docs/crucible-technical-design-plan.md`
+
+**Scope:** Decompose full technical design into 19 sections, 7 team members + 2 consultants, 4 authoring phases + 1 review round (~9 working days).
+
+**Decision:** Produced comprehensive CTD plan with resolved blocking questions:
+
+1. **DB file placement:** ✅ FORK to `~/.crucible/crucible.db` — clean separation from Cairn (decided by Aaron 2026-05-27)
+2. **Cairn/Forge coexistence:** ✅ FULL COEXIST FOREVER — independent live products with own roadmaps. Crucible greenfield alongside. No delegation, no shim packages, no absorption (decided by Aaron 2026-05-27)
+3. **Eureka status:** ✅ EXTERNAL LIBRARY VIA OPTIONAL ADAPTER — not a Crucible chamber (decided by Aaron 2026-05-27)
+
+**Fan-Out Manifest (Appendix C of plan):**
+- **Phase 0 (serial):** 2 sections (Graham) — L0/L1 boundary + primitive taxonomy
+- **Phase 1 (parallel):** 8 sections, 5 lanes — Roger, Rosella, Alexander, Laura, Gabriel, Graham
+- **Phase 2 (parallel):** 6 sections, 6 lanes — Roger, Valanice, Graham, Laura
+- **Phase 3 (parallel):** 3 sections, 2 lanes — Gabriel, Graham
+- **Review round:** All 19 sections cross-reviewed per ownership map
+
+**Section structure:** `docs/crucible-technical-design/` folder, one numbered file per section + README index, each with owner, output file, input artifacts, dependencies, acceptance criteria.
+
+**Rationale:** Three blocking questions cleared path for team-wide fan-out without discovery looping. Architecture locked. Sequencing respects Layer dependencies (L0→L1→L2/L3→L4/L5) and authoring parallelism (some sections can proceed concurrently after their inputs are available).
+
+**Impact:** Technical design ready for parallel authoring sprint. Team assignments clarified. Acceptance criteria explicit per section. Estimated completion: ~9 working days post-fan-out.
+
+**Cross-Link:** Crucible-TDD-1 (Laura, parallel track) is firewalled from CTD to preserve test-design independence; TDD strategy is PRD-only, CTD is implementation-specific. Both feed Crucible delivery but remain architecturally separate.
+
 ---
 
 ## Open Questions

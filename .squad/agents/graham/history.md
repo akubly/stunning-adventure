@@ -147,6 +147,26 @@ Roger (W2-1) + Rosella (W2-4): canonical `ChangeVectorSummary`, `ChangeVectorPro
 
 ## Learnings
 
+### Coexistence Lock Impact on Design Planning (2026-05-27)
+
+**Aaron's "full coexist forever" lock fundamentally simplifies the design plan.** The prior §15 (Migration Plan) assumed Cairn restructure + skillsmith-runtime absorption — 3 pages of migration SQL, package rename checklists, and dual-schema coexistence periods. The coexistence lock converts this into a boundary table + types evolution plan. Crucible starts from an empty `~/.crucible/crucible.db` with zero migration baggage. The accepted tax (two implementations of overlapping concepts) is bounded by audience separation (Copilot CLI lightweight users vs Aaron's daily-driver Crucible). This is a trade-off worth naming in the architecture overview: coexistence is cheaper than migration at project inception, but the tax compounds if the audiences converge later.
+
+**Spawn manifest as coordination artifact.** The coordinator needs more than a dependency graph — they need per-section input artifacts, output file paths, and acceptance criteria to construct agent prompts. The manifest format (table per section with all six fields) eliminates the coordinator's need to reverse-engineer dependencies from prose. Reusable pattern for any multi-agent fan-out of a decomposed design document.
+
+### CTD Decomposition Strategy (2026-05-27)
+
+**Design-effort decomposition for a 19-section technical design across 7 authors:**
+
+1. **Phase 0 anchoring pattern:** The architect authors the foundational interface contracts (L0/L1 boundary, primitive vocabulary) BEFORE fan-out. These are small (~1 day) but unlock all parallel lanes. Without them, parallel authors risk interface divergence that's expensive to reconcile.
+
+2. **Critical-path awareness drives ownership:** Roger owns the deepest section (L1 WAL, 10 pages) AND the longest serial chain (§3→§4→§10→§15). Recognizing this early lets us mitigate (start him first, give him the Phase 0 outputs immediately) rather than discover the bottleneck mid-sprint.
+
+3. **Cross-review as interface enforcement:** Assigning adjacent-layer owners as secondary contributors + reviewers on each section creates natural interface-compatibility checks. The alternative (central review only) catches mismatches too late.
+
+4. **Depth calibration as scope contract:** Assigning page counts per section prevents the "novel problem" where parallel authors over-elaborate. The 10-page allocation for L1 WAL is intentionally generous because it IS the load-bearing section; 1-page sections (Eureka, observability, security, ADR set) are explicitly capped.
+
+5. **Consultant pull-in timing matters:** Erasmus and Sonny review AFTER primary authors draft, not during. This prevents advisory voices from slowing the authoring phase while still capturing their domain expertise before the CTD ships.
+
 ### Round-1 Vision Follow-Up: Curator Autonomy & Tamper-Evidence (2026-05-23)
 
 **Q-A Resolution: Curator Autonomy is Mixed-Model, Categorized by Gate.**
