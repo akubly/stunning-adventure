@@ -17,6 +17,7 @@ export interface CreatePrescriberOrchestrationConfigOpts {
   db?: Database.Database;
   dbPath?: string;
   fallbackContext?: TierFallbackContext;
+  stalenessOptions?: ProfileStalenessOptions;
 }
 
 export type CreatePrescriberOrchestrationConfigOptions = CreatePrescriberOrchestrationConfigOpts;
@@ -25,6 +26,8 @@ export type LoadedProfileSource = 'per-skill' | 'per-model' | 'per-user' | 'glob
 export interface TierFallbackContext {
   modelId?: string;
   userId?: string;
+  /** Include the global tier at the end of the fallback chain. Default: false. */
+  allowGlobalFallback?: boolean;
 }
 
 export interface RunForgePrescribeOptions {
@@ -96,6 +99,11 @@ interface ExecutedPrescriberRun extends PrescriberRunResult {
   hints: OptimizationHint[];
 }
 
+/**
+ * Map a Cairn DB row to the runtime ExecutionProfile shape.
+ * Intentionally omits `confidence` and `staleness` — those are runtime-only
+ * annotations added by {@link annotateProfileStaleness} after tier selection.
+ */
 function toExecutionProfile(
   profile: NonNullable<ReturnType<typeof cairn.getExecutionProfile>>,
 ): ExecutionProfile {
@@ -126,14 +134,7 @@ function toExecutionProfile(
 }
 
 function getCurrentSessionCount(db: RuntimeDb): number {
-  try {
-    const row = db
-      .prepare('SELECT sessions_since_install FROM prescriber_state WHERE id = 1')
-      .get() as { sessions_since_install: number } | undefined;
-    return row?.sessions_since_install ?? 0;
-  } catch {
-    return 0;
-  }
+  return cairn.getSessionsSinceInstall(db);
 }
 
 function resolveStalenessReason(
@@ -191,11 +192,18 @@ export function loadExecutionProfile(
     chain.push({ source: 'per-user', granularityKey: fallbackContext.userId });
   }
 
-  chain.push({ source: 'global', granularityKey: 'global' });
+  if (fallbackContext.allowGlobalFallback) {
+    chain.push({ source: 'global', granularityKey: 'global' });
+  }
 
   for (const tier of chain) {
     const profile = cairn.getExecutionProfile(db, skillId, tier.source, tier.granularityKey);
     if (profile) {
+      if (tier.source !== 'per-skill') {
+        console.info(
+          `[skillsmith-runtime] Profile fallback: skill=${skillId} selected tier=${tier.source} key=${tier.granularityKey}`,
+        );
+      }
       return {
         profile: annotateProfileStaleness(toExecutionProfile(profile), db, stalenessOptions),
         source: tier.source,
@@ -306,7 +314,7 @@ export function createPrescriberOrchestrationConfig(
       return profileCache.get(skillId)?.profile ?? null;
     }
 
-    const loadedProfile = loadExecutionProfile(db, skillId, opts.fallbackContext);
+    const loadedProfile = loadExecutionProfile(db, skillId, opts.fallbackContext, opts.stalenessOptions);
     profileCache.set(skillId, loadedProfile);
     return loadedProfile?.profile ?? null;
   };
@@ -341,7 +349,10 @@ export async function runForgePrescribe(
 
   try {
     const db = cairn.getDb(dbPath);
-    const loadedProfile = loadExecutionProfile(db, options.skillId, options.fallbackContext);
+    const loadedProfile = loadExecutionProfile(db, options.skillId, {
+      ...options.fallbackContext,
+      allowGlobalFallback: options.fallbackContext?.allowGlobalFallback ?? true,
+    });
 
     if (!loadedProfile) {
       return {

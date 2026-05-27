@@ -66,10 +66,18 @@ describe('loadExecutionProfile tier fallback', () => {
   it('walks per-skill to global when no identity keys are known', () => {
     seedProfile('global', 40);
 
-    const loaded = load();
+    const loaded = load({ allowGlobalFallback: true });
 
     expect(loaded?.source).toBe('global');
     expect(loaded?.profile.sessionCount).toBe(40);
+  });
+
+  it('does not fall back to global when allowGlobalFallback is not set', () => {
+    seedProfile('global', 40);
+
+    const loaded = load();
+
+    expect(loaded).toBeNull();
   });
 
   it('prefers per-skill before global when no identity keys are known', () => {
@@ -108,7 +116,7 @@ describe('loadExecutionProfile tier fallback', () => {
   it('falls through from missing per-model to global when only modelId is known', () => {
     seedProfile('global', 40);
 
-    const loaded = load({ modelId: 'gpt-5' });
+    const loaded = load({ modelId: 'gpt-5', allowGlobalFallback: true });
 
     expect(loaded?.source).toBe('global');
     expect(loaded?.profile.sessionCount).toBe(40);
@@ -139,7 +147,7 @@ describe('loadExecutionProfile tier fallback', () => {
   it('falls through from missing per-user to global in the full chain', () => {
     seedProfile('global', 40);
 
-    const loaded = load({ modelId: 'missing-model', userId: 'missing-user' });
+    const loaded = load({ modelId: 'missing-model', userId: 'missing-user', allowGlobalFallback: true });
 
     expect(loaded?.source).toBe('global');
     expect(loaded?.profile.sessionCount).toBe(40);
@@ -149,7 +157,7 @@ describe('loadExecutionProfile tier fallback', () => {
     seedProfile('per-model', 20, 'global');
     seedProfile('global', 40);
 
-    const loaded = load();
+    const loaded = load({ allowGlobalFallback: true });
 
     expect(loaded?.source).toBe('global');
     expect(loaded?.profile.sessionCount).toBe(40);
@@ -167,6 +175,20 @@ describe('loadExecutionProfile tier fallback', () => {
 
     expect(loaded?.source).toBe('per-model');
     expect(loaded?.profile.updatedAt).toBe('2020-01-01T00:00:00.000Z');
+  });
+
+  it('attenuates stale per-model rather than falling back to fresh per-user (W5-3 × W5-4 interaction)', () => {
+    seedProfile('per-model', 20, 'gpt-5');
+    seedProfile('per-user', 30, 'aaron');
+    setUpdatedAt('per-model', 'gpt-5', '2020-01-01T00:00:00.000Z');
+    setUpdatedAt('per-user', 'aaron', '2026-05-25T00:00:00.000Z');
+    setSessionsSinceInstall(200);
+
+    const loaded = loadAt({ modelId: 'gpt-5', userId: 'aaron' });
+
+    expect(loaded?.source).toBe('per-model');
+    expect(loaded?.profile.staleness).toEqual({ stale: true, reason: 'count+age' });
+    expect(loaded?.profile.confidence).toBe(0.5);
   });
 
   it('annotates a fresh selected profile without confidence attenuation', () => {

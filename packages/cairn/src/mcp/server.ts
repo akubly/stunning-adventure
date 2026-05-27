@@ -17,7 +17,8 @@ import { z } from 'zod';
 
 import type Database from 'better-sqlite3';
 import { getDb } from '../db/index.js';
-import { getActiveSession, getActiveUserSession, getMostRecentUserSession } from '../db/sessions.js';
+import { getActiveSession } from '../db/sessions.js';
+import { getUserSessionForMcpFallback } from './sessionFallback.js';
 import { getInsights, getInsight, getInsightsByIds, countInsightsByStatus } from '../db/insights.js';
 import { logEvent } from '../db/events.js';
 import { curate, getCuratorStatus } from '../agents/curator.js';
@@ -56,7 +57,7 @@ import { getPreference } from '../db/preferences.js';
 const esmRequire = createRequire(import.meta.url);
 const pkg = esmRequire('../../package.json') as { version: string };
 
-let db: Database.Database;
+let db!: Database.Database;
 
 const server = new McpServer(
   { name: 'cairn', version: pkg.version },
@@ -89,14 +90,7 @@ export function confidenceToWords(confidence: number): string {
   return 'emerging';
 }
 
-/**
- * Session lookup for MCP fallback paths. Explicit repo keys stay repo-scoped,
- * while missing repo context falls back only to user sessions so internal
- * __system__ observability sessions never receive user-facing tool events.
- */
-export function getUserSessionForMcpFallback(db: Database.Database, repoKey?: string) {
-  return repoKey ? getActiveUserSession(db, repoKey) : getMostRecentUserSession(db);
-}
+// getUserSessionForMcpFallback is imported from ./sessionFallback.js
 
 // ---------------------------------------------------------------------------
 // Tool: get_status
@@ -1288,9 +1282,13 @@ server.registerTool(
 // DB bootstrap helper
 // ---------------------------------------------------------------------------
 
-/** Ensure the DB singleton is initialised before any tool handler runs. */
+/**
+ * Ensure the DB singleton is initialised before any tool handler runs.
+ * Always delegates to Cairn's getDb() singleton — never caches a separate
+ * handle that could go stale after closeDb().
+ */
 function ensureDb(): Database.Database {
-  db ??= getDb();
+  db = getDb();
   return db;
 }
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
-import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { getDb, closeDb } from '../db/index.js';
 import { createSession, ensureSystemSession, getActiveSession } from '../db/sessions.js';
 import { logEvent } from '../db/events.js';
@@ -21,9 +21,9 @@ import { validateSkill, formatValidationSummary } from '../agents/skillValidator
 import { insertTestResults, getTestResults } from '../db/skillTestResults.js';
 import {
   confidenceToWords,
-  getUserSessionForMcpFallback,
   resetProactiveHintCounter,
 } from '../mcp/server.js';
+import { getUserSessionForMcpFallback } from '../mcp/sessionFallback.js';
 import {
 
   getSessionSummary,
@@ -85,10 +85,16 @@ describe('MCP user-session fallback logic', () => {
     expect(getUserSessionForMcpFallback(db, 'org/scoped-repo')!.id).toBe(repoScopedId);
   });
 
+  // The four per-handler tests above are intentionally identical in logic — they
+  // test the same backing helper. The separate test names exist as documentation
+  // that each named MCP handler depends on this fallback behavior. The structural
+  // test below verifies wiring at the source level.
+
   it('wires all four MCP fallback call sites through the user-session helper', () => {
-    const serverSource = fs.readFileSync(path.resolve('src/mcp/server.ts'), 'utf8');
+    const serverPath = fileURLToPath(new URL('../mcp/server.ts', import.meta.url));
+    const serverSource = fs.readFileSync(serverPath, 'utf8');
     const helperUses = serverSource.match(/getUserSessionForMcpFallback\(/g) ?? [];
-    expect(helperUses).toHaveLength(5); // function definition plus four call sites
+    expect(helperUses).toHaveLength(4); // four call sites (definition lives in sessionFallback.ts)
     expect(serverSource).not.toContain('getMostRecentActiveSession');
   });
 });
