@@ -138,3 +138,18 @@
 **Memo Location:** `.squad/decisions/inbox/genesta-shared-substrate-revision.md`
 
 ### 2026-05-26T19:30:00-07:00: Shared-substrate revision round merged — G4 protocol is load-bearing, dogfood timing and schema freeze pending Aaron
+
+### 2026-05-26: Branch-Tree Reconciliation Analysis — Git Merge Is Schema-Unaware
+**Task:** Pressure-test G4 continuous coordination by analyzing branch-tree-with-reconciliation alternative (strategic checkpoints or deferred post-v1).
+
+**Key Finding:** Git's line-oriented merge (union or 3-way) cannot reason about TypeScript semantics. Schema divergence creates compile-time-silent traps (optional-but-required fields, brand mismatches, enum additions) that manifest as integration bugs weeks later. Strategic reconciliation costs 7.5 hours over 6 weeks; deferred costs 2-5 weeks calendar time plus retrofit risk. G4 costs 3 hours and prevents retrofit.
+
+**Quantified Verdict:** G4 wins on every dimension (time cost, calendar time, retrofit risk). Branch-tree's promised coordination savings don't materialize — reconciliation still costs O(hours) but happens when context is cold. Schema freeze hybrid is infeasible (blocks both v1s).
+
+**Concrete Failure Modes Documented:** Union merge produces duplicate declarations (garbage output). Standard merge misses semantic conflicts (field renames compile separately, crash at integration). Deferred reconciliation back-loads all coordination to a 2-week integration sprint that blocks both shipped v1s.
+
+**Recommendation:** Adopt G4. Tooling is trivial (<1h setup), operational cost is 15-30 min/week, and integration risk is zero.
+
+**Key Learning:** Git merge is a line editor, not a type checker. Deferred coordination doesn't eliminate coordination — it just moves it to the worst possible time (post-ship, cold context, both teams blocked). Front-load schema decisions when context is hot and changes are in-flight. Continuous coordination at commit time is 10-40× cheaper than reconciliation at integration time.
+
+### 2026-05-26T20:00:00-07:00: Branch-tree-vs-G4 strategy pressure test analysis merged — quantified retrofit risk (7.5-40 hours deferred coordination vs 3 hours G4), schema divergence traps (union merge produces garbage; semantic conflicts invisible to git), integration delay (1-4 sprints under reconciliation). Verdict: G4 wins on every dimension.

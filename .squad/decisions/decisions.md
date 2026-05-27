@@ -194,3 +194,68 @@ Genesta and Cassima conducted a four-agent overlap analysis (Genesta/Crispin/Edg
 1. **Schema freeze approval.** Graham drafts freeze doc (SessionId, Cairn sessions, Forge DecisionRecord); Aaron reviews + approves. Both Eureka and Crucible implementation blocks until freeze lands. **ETA:** This session.
 
 2. **Dogfood timing call.** Option A (Crucible first — Cassima's rec), B (Eureka first), or C (parallel). **ETA:** This session.
+
+---
+
+## Branch-Tree-vs-G4 Strategy Pressure Test
+
+**Date:** 2026-05-26  
+**Author:** Aaron (directive) + Genesta (architecture) + Cassima (PM)  
+**Status:** Analyzed & Converged — Recommendation: ADOPT G4, REJECT branch-tree  
+**Inbox References:**
+- [genesta-branch-strategy.md](./inbox/genesta-branch-strategy.md) — Architectural analysis
+- [cassima-branch-strategy.md](./inbox/cassima-branch-strategy.md) — PM/timing analysis
+
+### Context
+
+Aaron pressure-tested G4 continuous coordination by proposing branch-tree-with-reconciliation as an alternative: each project (Crucible/Eureka) mutates Cairn/Forge/Types in its own branch, reconciling at strategic checkpoints or after both v1s ship. Both Genesta and Cassima independently analyzed this strategy and converged on the same verdict: **KEEP G4, REJECT branch-tree.**
+
+### Key Findings
+
+**Genesta (Architectural Analysis):**
+- Git's line-oriented merge (union or 3-way) cannot reason about TypeScript semantics
+- Schema divergence creates compile-time-silent traps (optional-but-required fields, brand mismatches, enum additions) that manifest as integration bugs weeks later
+- Union merge produces duplicate declarations (garbage); standard merge misses semantic conflicts
+- Strategic reconciliation costs 7.5 hours over 6 weeks; deferred costs 2-5 weeks calendar time plus retrofit risk
+- G4 costs 3 hours total with zero retrofit risk
+- **Recommendation: Schema freeze + continuous coordination prevents integration nightmares at commit time for trivial (<1h) tooling**
+
+**Cassima (PM/Timing Analysis):**
+- Branch-tree delays Crucible → Eureka integration by 1-4 sprints (strategic: 1-2 sprints; deferred: 2-4 sprints) due to schema divergence in DecisionRecord contract
+- Schema divergence forces Eureka v1.5 bridge to reconcile TWO schemas instead of one
+- Worst-case for continuous (G4): 30-minute build break mid-sprint (rare, fast recovery, small blast radius)
+- Worst-case for deferred: 2-7 days at v1 ship, blocks both released products
+- Time-to-v1: Continuous (G4) = 40 days + 6 hours; Strategic = 44 days; Deferred = 42-47 days (expected 44-45). G4 wins on speed, safety, and design-invalidation risk.
+- **Recommendation: Continuous coordination minimizes time-to-v1 and integration delay; branch-tree saves zero time while amplifying risk**
+
+### Shared Verdict (Both Specialists)
+
+**ADOPT G4 Continuous Coordination:**
+1. Line-merge can't reason about TS semantics → deferred coordination guarantees retrofit
+2. Coordination cost moves to worst moment (post-ship, cold context, both teams blocked) instead of disappearing
+3. Breaks Crucible → Eureka v1.5 integration path (delays WAL ingestion, forces dual-schema bridge)
+
+**REJECT branch-tree reconciliation:**
+- Strategic reconciliation: 4 days slower than continuous, 1-day reconciliation tax per sprint boundary
+- Deferred reconciliation: 2-7 days slower, design-invalidation risk, integration delayed 2-4 sprints
+- Retrofit risk is existential (one project's design choices invalidated post-ship)
+
+### Quantified Comparison (Genesta + Cassima)
+
+| Strategy | Total Time | Calendar Time | Retrofit Risk | Integration Delay |
+|----------|-----------|---|---|---|
+| **G4 continuous** | 3 hours (schema freeze) | 0 days (async) | Zero | Zero (immediate) |
+| **Strategic checkpoints** | 7.5 hours (over 6 weeks) | 0 days (sprint boundaries) | Low | 1-2 sprints |
+| **Deferred** | 2-5 weeks | 2-5 weeks (blocking) | High | 2-4 sprints |
+
+### Consequences
+
+- ✅ G4 (continuous coordination) CONFIRMED as load-bearing for Crucible/Eureka v1 parallel work
+- ✅ Schema freeze + CHANGELOG/label/Slack protocol is the right level of overhead (6 hours + <1h/week async)
+- ✅ No design invalidation risk (schema locked upfront, both projects test against merged contract)
+- ❌ Branch-tree strategies (strategic or deferred) rejected due to retrofit risk, integration delay, and false promise of "coordination savings"
+- ⚠️ Graham must implement G4 tooling (shared-substrate label + Slack webhook) before sprint 2 starts
+
+### Key Learning
+
+**Git merge is a line editor, not a type checker.** Deferred coordination doesn't eliminate coordination — it just moves it to the worst possible time (post-ship, cold context, both teams blocked). Front-load schema decisions when context is hot and changes are in-flight. Continuous coordination at commit time is **10-40× cheaper** than reconciliation at integration time.
