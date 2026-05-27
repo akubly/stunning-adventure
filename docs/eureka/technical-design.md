@@ -24,7 +24,8 @@ The v1 design delivers: **7 core activities** (integrate, recall, rerank, decide
 | 20 | Knowledge Representation | Crispin | Facts schema, edge types (Tier 1/2/3), graph-ready relations | [`20-knowledge-representation.md`](sections/20-knowledge-representation.md) | ✅ Drafted |
 | 30 | Learning Systems | Edgar | BM25 ranker, sweep phases, trust dynamics, extraction kernel | [`30-learning-systems.md`](sections/30-learning-systems.md) | ✅ Drafted |
 | 40 | Integration | Roger | Cairn/Forge bridges, `@akubly/types` contracts, workspace topology | [`40-integration.md`](sections/40-integration.md) | ✅ Drafted |
-| 50 | Testability | Laura | Test strategy, AC validation, precision measurement, CI gates | [`50-testability.md`](sections/50-testability.md) | ✅ Drafted |
+| 50 | Testability | Laura | Test strategy, API boundary validation, precision measurement (complementary to §55) | [`50-testability.md`](sections/50-testability.md) | ✅ Drafted |
+| 55 | London-School TDD Strategy | Laura | London-school outside-in TDD spine, worked recall example, mock contracts, AC mapping | [`55-tdd-strategy.md`](sections/55-tdd-strategy.md) | ✅ Accepted |
 | 60 | UX & Human Factors | Valanice | CLI surface, friction calibration, approval workflows | [`60-ux-human-factors.md`](sections/60-ux-human-factors.md) | ✅ Drafted |
 | 70 | PRD Alignment | Cassima | AC coverage, non-goals check, Crucible amendments, tension log | [`70-prd-alignment.md`](sections/70-prd-alignment.md) | ✅ Drafted |
 
@@ -33,7 +34,7 @@ The v1 design delivers: **7 core activities** (integrate, recall, rerank, decide
 | ADR | Title | Status | Link |
 |-----|-------|--------|------|
 | 0001 | SQLite as Persistence Engine | Proposed | [`0001-sqlite-persistence.md`](adrs/0001-sqlite-persistence.md) |
-| 0002 | Shared Substrate Ownership | **Pending — awaiting Aaron** | [`0002-shared-substrate-ownership.md`](adrs/0002-shared-substrate-ownership.md) |
+| 0002 | Shared Substrate Ownership | **Accepted — 2026-05-27** | [`0002-shared-substrate-ownership.md`](adrs/0002-shared-substrate-ownership.md) |
 | 0003 | SessionId as Shared Branded Primitive | Proposed | [`0003-sessionid-branded-primitive.md`](adrs/0003-sessionid-branded-primitive.md) |
 
 ---
@@ -46,7 +47,7 @@ The following decisions must be resolved before Eureka implementation proceeds. 
 
 | # | Question | Source | Impact | Recommendation |
 |---|----------|--------|--------|----------------|
-| **OQ-1** | **Resolve shared-substrate ownership:** `@akubly/types`, `cairn/`, and `forge/` are duplicated in `mem/` and `harness/`. Choose: (A) monorepo, (B) git submodule, or (C) npm packages. | §70 T7, Cassima memo | **CRITICAL** — Blocks both Eureka and Crucible day 1. SessionId brand (FR-13) requires single source of truth. | Monorepo (A) cleanest; submodule (B) acceptable. Avoid npm (C) for v1 flux. **Decide this week.** |
+| **OQ-1** | ~~**Resolve shared-substrate ownership:** `@akubly/types`, `cairn/`, and `forge/` are duplicated in `mem/` and `harness/`. Choose: (A) monorepo, (B) git submodule, or (C) npm packages.~~ | §70 T7, Cassima memo | ~~**CRITICAL**~~ | **✅ Resolved 2026-05-27 — Option A (Monorepo) accepted.** See [ADR-0002](adrs/0002-shared-substrate-ownership.md). |
 
 ### Activity Scope
 
@@ -85,7 +86,7 @@ Four tensions surfaced during specialist authoring. Resolution status documented
 
 **Sections involved:** §40 (Roger), §70 (Cassima), §00 (Graham)
 
-**Resolution:** ⚠️ **ESCALATED to Aaron as OQ-1.** Three options documented in [ADR-0002](adrs/0002-shared-substrate-ownership.md). Implementation blocked until decision.
+**Resolution:** ✅ **Resolved 2026-05-27 — Option A (Monorepo) accepted.** Aaron chose monorepo. `mem/` and `harness/` will merge into a single `@akubly/` workspace. See [ADR-0002](adrs/0002-shared-substrate-ownership.md) for full decision, trade-offs, and M0 sequencing.
 
 ### 2. Activity Vocabulary Discrepancy (RESOLVED)
 
@@ -117,7 +118,7 @@ Four tensions surfaced during specialist authoring. Resolution status documented
 
 | ID | Risk | Severity | Likelihood | Mitigation | Owner |
 |----|------|----------|------------|------------|-------|
-| R1 | **Substrate ownership unresolved** — blocks implementation | CRITICAL | HIGH (current state) | OQ-1 decision required before M0 | Aaron |
+| R1 | ~~**Substrate ownership unresolved** — blocks implementation~~ | ~~CRITICAL~~ | ~~HIGH~~ | ✅ **Resolved 2026-05-27** — Monorepo accepted (ADR-0002). No longer blocks M0. | Aaron |
 | R2 | **BM25 misses disjoint queries** — recall quality gap | MEDIUM | CERTAIN (by design) | v1.5 sqlite-vec; eval set is honest | Edgar |
 | R3 | **Crucible A1 rejected** — schema drift between repos | HIGH | LOW (amendment expected) | If rejected, Eureka imports Cairn types read-only (lossy) | Graham |
 | R4 | **Eviction policy unsettled** — no auto-eviction in v1 | LOW | CERTAIN (explicit deferral) | v1 `evict` is explicit only; sweep never auto-evicts; revisit v1.5 | Edgar |
@@ -143,16 +144,17 @@ From §00-overview, keyed to PRD acceptance criteria.
 
 ## Section Status
 
-| § | Section | Status |
-|---|---------|--------|
-| 00 | Overview & Cross-Cutting | ✅ Drafted |
-| 10 | Activities & Tiers | ✅ Drafted |
-| 20 | Knowledge Representation | ✅ Drafted |
-| 30 | Learning Systems | ✅ Drafted |
-| 40 | Integration | ✅ Drafted |
-| 50 | Testability | ✅ Drafted |
-| 60 | UX & Human Factors | ✅ Drafted |
-| 70 | PRD Alignment | ✅ Drafted |
+| § | Section | Status | Date | Author |
+|---|---------|--------|------|--------|
+| 00 | Overview & Cross-Cutting | ✅ Drafted | 2026-05-27 | Graham |
+| 10 | Activities & Tiers | ✅ Drafted | 2026-05-27 | Genesta |
+| 20 | Knowledge Representation | ✅ Drafted | 2026-05-27 | Crispin |
+| 30 | Learning Systems | ✅ Drafted | 2026-05-27 | Edgar |
+| 40 | Integration | ✅ Drafted | 2026-05-27 | Roger |
+| 50 | Testability | ✅ Drafted | 2026-05-27 | Laura |
+| 55 | London-School TDD Strategy | ✅ Accepted | 2026-05-27 | Laura |
+| 60 | UX & Human Factors | ✅ Drafted | 2026-05-27 | Valanice |
+| 70 | PRD Alignment | ✅ Drafted | 2026-05-27 | Cassima |
 
 ---
 
@@ -171,3 +173,4 @@ From §00-overview, keyed to PRD acceptance criteria.
 |------|--------|--------|
 | 2026-05-27 | Graham | Initial skeleton; §00 drafted |
 | 2026-05-27 | Graham | v0.1 assembled — all 8 sections drafted; open decisions consolidated; risk register added |
+| 2026-05-27 | Graham | OQ-1 resolved: Monorepo accepted (ADR-0002). Risk R1 retired. ADR status table updated. |

@@ -342,3 +342,74 @@
 
 ### 2026-05-27: London-School TDD Directive — Next Task Assigned
 **Team Update:** Aaron issued London-school (outside-in mockist) red/green TDD as team default for all packages. **Laura assigned:** Author docs/eureka/sections/55-tdd-strategy.md next session (read §10 only, ignore §20/30/40/50 per outside-in discipline). Genesta + Edgar review. Open blocker: OQ-1 substrate ownership resolution (Aaron to decide).
+
+### 2026-05-27: §55 TDD Strategy Document Completed
+
+**Assignment completed:** Authored comprehensive London-school TDD strategy document (`docs/eureka/sections/55-tdd-strategy.md`) following handoff brief `.squad/handoffs/2026-05-27-london-tdd-kickoff.md`.
+
+**Document structure (8 sections):**
+1. **London-School TDD Spine**: Outside-in from 9 activity verbs, red/green/refactor cadence, mock vs sociable rubric
+2. **Worked Example**: Complete `recall` test-first cycle showing collaborator discovery (CuratorStore, Ranker) from failing tests
+3. **Mock Contract Style**: Vitest patterns, interaction vs state testing, contract test discipline (every vi.fn() mock requires contract test)
+4. **Reconciliation with §50**: Table showing what carried forward (contract-first API, type-driven interfaces) vs superseded (general mocking heuristics)
+5. **AC Mapping Table**: 31 acceptance criteria → first failing test descriptions → 23 test files
+6. **OQ-Dependent Seams**: 6 open questions flagged with test impact assessment (OQ-1 resolved/stable, OQ-2/3/5 volatile)
+7. **Implementation Checklist**: Pre/during/after workflow gates
+8. **Appendices**: Glossary, references, change log
+
+**Key patterns established:**
+- **Outside-in entry points**: Start from activity signatures (`integrate`, `recall`, `rerank`, `decide`, `commit`, `retire`, `evict`), not internal design
+- **Collaborator discovery**: Tests force collaborators into existence (CuratorStore discovered when hardcoded stubs fail k-limit test)
+- **Mock discipline**: Mock at I/O seams (storage, network, FS, time), use real pure functions (rankers, scorers, value objects)
+- **Contract test coverage**: Every mocked interface must have contract test validating real implementation honors mock assumptions
+
+**Worked example (§2):**
+- AC-1.3 (keyword-scoped precision) → first failing test → hardcoded 5-result stub → passes
+- AC-1.4 (k-limit) → second test → fails (hardcoded) → forces `CuratorStore` collaborator discovery
+- Refactor: Extract interfaces, introduce real ranker, mock storage seam
+- Pattern: red (express AC) → green (minimal stub) → refactor (extract collaborator) → red (next AC)
+
+**Mock contract style:**
+- Prefer state assertions over interaction testing
+- Use interaction mocks only when state isn't observable or failure modes critical
+- Vitest patterns codified: vi.fn(), vi.mock(), vi.spyOn()
+- Contract discipline: activity tests use mocks; collaborator tests validate real implementations
+
+**AC coverage:**
+- 31 acceptance criteria (from PRD v5-final §70 table) mapped to 23 test files
+- Each AC drives at least one red/green/refactor cycle
+- Test naming: `describe("activity-name", ...)` + `it("AC wording", ...)`
+
+**OQ-dependent seam analysis:**
+- OQ-1 (substrate ownership): ✅ Stable after ADR-0002 (monorepo, shared `@akubly/types`)
+- OQ-2 (embedding strategy): HIGH volatility - abstract behind interface, contract test service client
+- OQ-3 (attention model): MEDIUM volatility - parameterize multipliers
+- OQ-5 (decay function): MEDIUM volatility - extract to `DecayFunction` interface
+- OQ-4/6 (trust init, k-defaults): LOW volatility - extract constants but don't over-abstract
+
+**Supersession:**
+- §55 supersedes §50 as primary implementation guide
+- §50 remains authoritative for API boundary decisions (e.g., "should recall accept filter param?")
+- §55 authoritative for workflow (e.g., "write failing test before implementing filter")
+
+**Reading discipline followed:**
+- ✅ Read: §10 (activities), §70 (AC table), ADR-0002 (substrate seam), PRD v5-final (user stories/FRs)
+- ❌ Avoided: §20 (Crispin's schema), §30 (Edgar's algorithms), §40 (Roger's integration), §50 (testability)
+- Rationale: Outside-in TDD should discover collaborator shape from tests, not confirm predetermined design
+
+**Key learnings:**
+- **London-school spine adoption**: Outside-in mockist TDD now team default for all Eureka v1 work
+- **Anti-anchoring for implementation**: Reading internal design sections before TDD would anchor implementation, violating outside-in discipline
+- **Contract test coverage rule**: Every vi.fn() mock in activity tests MUST have corresponding contract test in collaborator suite
+- **Mock vs sociable rubric**: Mock when failure modes matter more than algorithm; test sociably when algorithm correctness matters more than I/O resilience
+- **AC-driven test naming**: Use exact AC wording as test case names to maintain PRD traceability
+
+**Unresolved decisions deferred to responsible agents:**
+- Mock library choice: Vitest ecosystem (vi.fn/vi.mock) sufficient or introduce dedicated mocking library? (Cassima or tech lead decision)
+- Interaction testing granularity: How prescriptive should mock contracts be? (Resolved by convention: prefer state, use interaction sparingly)
+- Worked example fidelity: TypeScript syntax vs pseudocode? (Resolved: TypeScript with comments, executable patterns)
+
+**Next steps:**
+- Genesta + Edgar to review §55 draft
+- Implementation agents (Crispin, Edgar, Roger) use §55 as TDD workflow spine starting with first `recall` test
+- Laura available for clarifications on mock discipline or contract test patterns

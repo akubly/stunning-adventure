@@ -220,3 +220,24 @@
 
 ### 2026-05-27: London-School TDD Directive — Team Impact Assessment
 **Team Update:** Aaron issued London-school (outside-in mockist) red/green TDD as team default. **Genesta assigned:** Review Laura's docs/eureka/sections/55-tdd-strategy.md (next session) for activity-semantic consistency vs §10. Verify outside-in test-driven interface shapes match activity boundaries. Locked-out of revision if reject (protocol requires different agent).
+
+### 2026-05-27: §55 Reviewer Gate — APPROVED WITH NOTES
+**Task:** Reviewer Rejection Protocol gate for Laura's `docs/eureka/sections/55-tdd-strategy.md` (London-school TDD strategy). Verify activity entry points, semantics, tier-awareness, and v1/v1.5 scoping against §10.
+
+**Verdict:** APPROVED WITH NOTES. Laura's document correctly reflects §10 activity semantics in all material respects. The 7 v1 activities are properly scoped, the worked `recall` example demonstrates correct observable behavior, and tier-awareness is sound (agent-tier-only v1 correctly inferred). Implementation may proceed.
+
+**Three Non-Blocking Clarifications:**
+1. **Activity count phrasing** (§1.1, line 20) — "9 activities" should clarify "7 v1 + 2 reserved v1.5" to avoid implying v1.5 activities are exported in v1.
+2. **Tier resolution test cycle** (§2 worked example) — Worked example correctly demonstrates core `recall` semantics (precision, k-limit, collaborator discovery) but could add a §2.5 showing tier fan-out as next test cycle (pedagogical enhancement, not semantic error).
+3. **Activity-noun disambiguation** (§4, line 306) — "Integration test pyramid" could read "Integration testing pyramid" to avoid potential ambiguity with `integrate` activity verb.
+
+**Positive Finding:** Laura correctly deferred user/project tier tests (§5 AC mapping) — absence of these tests reflects correct v1 scoping (agent-tier-only), not an oversight. This demonstrates sound tier-awareness.
+
+**Notes for Edgar:** Flagged three items overlapping Edgar's algorithmic seams review: (1) `CuratorStore.retrieve()` mock seam placement, (2) BM25 ranker as "real collaborator" assumption, (3) composite ranker test file naming vs scorer decomposition. Not blocking for my approval; Edgar should verify alignment with §30 during his review.
+
+**Key Learning:** When reviewing test strategy, **absence of tests** can be as important as presence. Missing coverage may reflect correct deferral (v1 scoping) rather than oversight. Always cross-check scope boundaries before flagging gaps. Staying in review scope (activity semantics only) required resisting urge to comment on TDD methodology (Laura's expertise) or algorithmic assumptions (Edgar's slice) — bounded review prevents scope creep.
+
+**Pattern for Future Cross-Section Reviews:** 
+- Flag cross-cutting concerns as "Notes for [Other Reviewer]" rather than findings — signal potential overlaps without making verdicts outside my authority.
+- Positive findings (e.g., correct tier deferral) are as valuable as issues — document what was verified as correct, not just what needs fixing.
+- Reviewer Rejection Protocol creates healthy pressure to be precise: findings must cite specific line numbers and explain *why* they matter, not just list observations.

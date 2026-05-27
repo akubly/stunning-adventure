@@ -172,3 +172,36 @@
 
 4. **ADRs should track PENDING decisions.** Created ADR-0002 for substrate ownership before decision is made. This documents the analysis and options for Aaron. **Lesson:** ADRs aren't just post-decision records; they can frame pending decisions with trade-offs.
 
+### 2026-05-27: OQ-1 Resolved — Monorepo Accepted
+
+**Decision:** Aaron accepted Option A (Monorepo) from ADR-0002. `mem/` and `harness/` will merge into a single `@akubly/` workspace with shared `packages/{cairn,forge,types}` and project-specific `packages/{eureka,crucible}`.
+
+**Why monorepo was the right call given London-TDD spine:** Outside-in TDD drives mock seams from tests. If the substrate topology is unresolved, every mock against `@akubly/types` is provisional — one wrong OQ-1 answer and the import paths, package boundaries, and therefore mock contracts all shift. Monorepo eliminates this: `SessionId` lives in one `packages/types/`, every consumer resolves it the same way, and Laura's mock seams are stable from day one. No seam drift risk remains.
+
+**Architectural follow-ups anticipated:**
+1. **Repo merge mechanics** — git history preservation strategy, file-move plan. Likely needs Roger (Platform) + Gabriel. Non-trivial but one-time.
+2. **CI consolidation** — Replace per-repo GitHub Actions with unified workflow. Turborepo `--filter` for incremental builds to keep CI time manageable.
+3. **ESLint guardrail wiring** (FR-12 #8) — Single workspace makes the cross-system session-type import ban trivially enforceable. Wire it during M0 scaffolding.
+4. **CODEOWNERS** — Shared packages require both-team approval; project packages are team-scoped.
+
+---
+
+### 2026-05-27: §55 (London-School TDD Strategy) Approved with Notes — Folded into Technical Design
+
+**Event:** Laura delivered §55 (London-school TDD spine) for Eureka implementation. Specialist reviews from Genesta and Edgar returned APPROVED WITH NOTES. Graham (your role) folded 3 documentation-polish nits and integrated §55 into technical-design.md.
+
+**Deliverables completed:**
+- `docs/eureka/technical-design.md` updated: §55 added to main TOC (between §50 and §60); status table expanded to include author/date columns (now 9 sections); §50's summary updated to note complementarity to §55
+- `docs/eureka/sections/55-tdd-strategy.md` edited with 3 polishing nits:
+  1. **Line ~21 (Activity description):** Clarified that two v1.5 activities "throw NotImplementedError in v1" (more explicit than original phrasing)
+  2. **Line ~306 (Reconciliation table):** "Integration test pyramid" → "Integration testing pyramid" (disambiguates from `integrate` activity verb)
+  3. **New §2.5 "Next test cycle — tier fan-out":** Added after §2.4, demonstrating AC-2.1 cross-session fan-out with worked test example. Shows how outside-in TDD forces tier resolution to be discovered from tests, not pre-designed.
+
+**Key insight from §55 scaffolding:** London-school TDD enforces natural progression. Mocked seams force tier resolution to emerge from observable behavior, not architecture. AC-2.1 (cross-session recall) doesn't look like a "fan-out problem" until the test forces it. This is exactly what outside-in TDD buys.
+
+**§50 ↔ §55 relationship clarified:**
+- §50 remains authoritative for API boundary decisions (e.g., "should `recall` accept a filter?")
+- §55 is authoritative for implementation workflow (e.g., "write failing test before implementing")
+- No semantic change to §50; only TOC reference updated to note complementarity
+
+**Status:** §55 locked and integrated into technical design. Implementation checklist (§55 §7) now governs M1+ development rhythm.

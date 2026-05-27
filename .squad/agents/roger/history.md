@@ -271,6 +271,21 @@ I'm the right person for the foundation. But bring in specialists for the cognit
 
 ---
 
+## 2026-05-27: London-School TDD Strategy Authored + OQ-1 Monorepo Resolution
+
+**Event:** London-school TDD spine delivered and reviewed  
+**Impact:** Substrate ownership clarified; implementation runway clear  
+
+**For Roger's context:**
+- **OQ-1 RESOLVED:** Aaron chose Option A (monorepo). `mem/` and `harness/` merging into `@akubly/` with shared `packages/{cairn,forge,types}`. Substrate topology is now fixed — no coordination overhead from multiple repos. Platform Engineer role (your proposed Eureka Phase 1–3 infrastructure lead) can now design with monorepo as baseline.
+- **TDD Spine Live:** `docs/eureka/sections/55-tdd-strategy.md` authored and approved. London-school outside-in approach ties Eureka learning systems cleanly to §30's algorithmic seams. Edgar's three post-review improvements to §30 (ClockProvider, latency targets, CuratorStore signature) are non-blocking but valuable.
+- **Coordination Model Still Open:** Weekly standup + biweekly boundary review remain the plan. Monorepo resolves the "separate deployment boundary" question — shared substrate is now a feature, not a problem.
+
+**Next:** Brain infrastructure design can build on stable, unified shared types. Phase 1 (tiers, properties, representation) has clear mocking boundaries via §55 TDD strategy.
+
+
+---
+
 ## Eureka Project Kickoff (2026-05-22)
 
 **Date:** 2026-05-22  

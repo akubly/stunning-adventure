@@ -100,9 +100,25 @@
 - Lockout rule is real safety: cross-review catches blind spots single review misses.
 - Migration framework handles idempotency; DDL template is single exec() per migration.
 - Shared type contracts less expressive than storage = contract bug, not feature gap. Additive optional params have near-zero risk.
+
 **Lessons:**
 
 **Test status:** 1034+ passing (cairn 478 + forge 556+, up from baseline 990).
+
+---
+
+## 2026-05-27: London-School TDD Strategy Authored + OQ-1 Monorepo Resolution
+
+**Event:** London-school TDD spine delivered and reviewed  
+**Impact:** Shared substrate topology finalized; data boundaries stable for Brain integration  
+
+**For Alexander's context:**
+- **OQ-1 RESOLVED:** Aaron chose Option A (monorepo). `mem/` and `harness/` merging into `@akubly/` with shared `packages/{cairn,forge,types}`. SessionId brand is now a single source of truth in `@akubly/types`. Integration Engineer role (your proposed Eureka Phase 1 on-call, data-oriented boundaries specialist) can build adapters against a fixed substrate.
+- **TDD Spine Live:** `docs/eureka/sections/55-tdd-strategy.md` authored and approved. London-school outside-in approach defines mock contract style for CuratorStore, ClockProvider, and session-scoped query boundaries. Your data-oriented strength is needed for adapter design (Brain ↔ Eureka ↔ Cairn + Forge).
+- **MCP Tools + Adapters Ready:** Integration Engineer role aligns perfectly with Brain's data-boundary expertise. Monorepo enables cleaner cross-package imports (no longer npm-publish-to-sync); your adapter code can work with shared `@akubly/types` directly.
+
+**Next:** Integration strategy can proceed with stable type contracts. Brain adapters can rely on SessionId brand and Eureka's emerging session-scoped signatures.
+
 
 - Query planning: SQLite handles JOIN + index-based filtering efficiently for change_vectors
 - Transactional CRUD: explicit db parameter better than internal getDb() for Curator contexts

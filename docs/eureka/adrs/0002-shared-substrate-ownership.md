@@ -1,6 +1,6 @@
 # ADR-0002: Shared Substrate Ownership
 
-**Status:** Proposed — awaiting Aaron's decision  
+**Status:** Accepted — 2026-05-27 (Aaron)  
 **Author:** Graham (Lead/Architect)  
 **Date:** 2026-05-27  
 **Deciders:** Aaron (required), Graham, Cassima  
@@ -123,19 +123,26 @@ Publish `@akubly/cairn`, `@akubly/forge`, `@akubly/types` to npm (private regist
 
 ## Decision
 
-**PENDING — awaiting Aaron's choice.**
+**Accepted: Option A — Monorepo.** Merge `mem/` and `harness/` into a single `@akubly/` workspace with shared `packages/{cairn,forge,types}` and project-specific `packages/{eureka,crucible}`.
 
-Graham's recommendation: **Option A (monorepo)** for cleanest dependency graph and type safety guarantee. Option B acceptable if team independence is paramount.
+Monorepo wins for v1 because it provides a compile-time type-safety guarantee for the `SessionId` brand — any consumer that drifts is caught by `tsc`, not discovered in integration. Atomic schema changes across Cairn and Forge land in a single commit, eliminating the synchronisation discipline that Options B and C would require. FR-12 mechanism #8 (the ESLint guardrail banning cross-system session-type imports except `SessionId`) becomes trivially enforceable when all packages share one `node_modules` tree and one lint config.
+
+**Named trade-off accepted:** We pay the upfront migration cost (repo merge, CI consolidation, workspace rewiring) once, rather than accepting the ongoing coordination overhead of keeping two repositories in sync for every shared-type change. For a two-person team in rapid v1 iteration, the one-time cost is categorically cheaper.
 
 ---
 
 ## Consequences
 
-### If Option A (Monorepo)
-- Repo merge required before M0 scaffolding
-- CI/CD reconfigured for monorepo
-- ESLint guardrail (FR-12 #8) enforced trivially
-- SessionId brand is singular by construction
+### If Option A (Monorepo) — ACCEPTED
+
+**M0 prerequisites (sequenced):**
+
+1. **Repo merge plan** (Graham + Roger) — Draft the file-move strategy, git-history preservation approach, and branch protection rules for the unified repo. Target: 1–2 days after this ADR lands.
+2. **Monorepo scaffolding** (Roger + Gabriel) — pnpm workspace config, turborepo pipeline, unified `tsconfig` project references. Must complete before any package code moves.
+3. **CI/CD consolidation** — Single GitHub Actions workflow replacing per-repo CI. Turborepo `--filter` for incremental builds to mitigate whole-repo build time.
+4. **ESLint guardrail wiring** (FR-12 #8) — Single lint config enforces the cross-system session-type import ban. Trivially enforceable once packages share one workspace.
+5. **SessionId brand validation** — Confirm `@akubly/types` `SessionId` brand compiles and validates from both `packages/eureka/` and `packages/crucible/` import paths. Single source of truth by construction.
+6. **CODEOWNERS** — Shared packages (`cairn`, `forge`, `types`) require both teams' approval. Project packages (`eureka`, `crucible`) are team-scoped.
 
 ### If Option B (Submodule)
 - New `@akubly/substrate` repo created before M0
@@ -164,6 +171,8 @@ Graham's recommendation: **Option A (monorepo)** for cleanest dependency graph a
 
 | When | Action |
 |------|--------|
-| **This week** | Aaron chooses A / B / C |
-| **Following day** | Graham documents decision in both PRDs |
-| **M0 start** | Repos restructured (A), submodule wired (B), or npm deps declared (C) |
+| **2026-05-27** | ✅ Aaron chooses Option A (Monorepo) — decision accepted |
+| **This week** | Graham updates technical-design.md, decision inbox, ADR status |
+| **Next** | Repo merge plan drafted (Graham + Roger) |
+| **M0 prerequisite** | Monorepo scaffolding: pnpm workspace, turborepo, unified tsconfig (Roger + Gabriel) |
+| **M0 prerequisite** | CI/CD consolidation + ESLint guardrail wiring |

@@ -114,3 +114,40 @@
 
 ### 2026-05-27: London-School TDD Directive — Algorithmic Seams Coordination
 **Team Update:** Aaron issued London-school (outside-in mockist) red/green TDD as team default. **Edgar assigned:** Review Laura's docs/eureka/sections/55-tdd-strategy.md (next session) for algorithmic-seam consistency vs §30 learning-systems algorithms. Verify mocked collaborators match extraction-ready design boundaries (FR-12 7 mechanisms). Locked-out of revision if reject (protocol requires different agent).
+
+---
+
+## Learnings
+
+### 2026-05-27: §55 TDD Strategy Review — Verdict APPROVED WITH NOTES
+
+**Context:** Laura authored §55 without reading §30 (London-school anti-anchoring). Reviewed for: (1) collaborator correctness, (2) mock boundary placement, (3) property dynamics testability, (4) scheduler testability, (5) seam-shift analysis.
+
+**Verdict:** APPROVED WITH NOTES
+
+**Core findings:**
+
+1. **Collaborator discovery works well** — Laura's test-first `recall` example forces `CuratorStore` and `Ranker` into existence naturally. These align with §30's storage I/O and scoring seams.
+
+2. **Mock boundaries are mostly correct** — Storage I/O (CuratorStore) is mocked. Ranker is real (pure algorithm). BUT: §55 is silent on THREE critical §30 boundaries:
+   - **Time mocking** — §30 recency decay formula `(now() - last_accessed)` requires deterministic clock for tests. §55 doesn't mention time injection.
+   - **RNG** — Any stochastic activity (meditate's clustering, contemplate's pattern synthesis in v1.5) needs mockable randomness source.
+   - **Model boundary** — Future contemplate/meditate will call LLM for pattern synthesis. §55 doesn't address LLM mocking.
+
+3. **Property dynamics ARE testable** — §55's worked example demonstrates testing recency (filter by time), importance (tier thresholds), trust (source assignment). BUT: decay formulas are HARD TO DISCOVER via outside-in if test authors don't know power-law exists. §30's `recency = max(0.1, (1 + t)^(-0.7))` is precise; §55's examples only test "old facts rank lower" without forcing formula shape.
+
+4. **Scheduler tests: partially addressed** — §55's AC mapping includes sweep tests (FR-12 coverage), but it doesn't distinguish synchronous (recall, integrate) from asynchronous (sweep) from background (v1.5 meditate). §30 has explicit latency targets (<100ms for recall, <5s sweep for 10K facts). §55 could benefit from explicit "scheduler interface testability" section.
+
+5. **Seam shifts discovered (§30 should evolve):**
+   - Laura's `CuratorStore.retrieve(sessionId, query)` signature is better than §30's implicit "search then filter" — makes session isolation explicit in interface.
+   - Her `rerank(factIds, context?, feedback?)` forces context/feedback optionality at interface level. §30 had these as separate paths; Laura's unified signature is cleaner.
+
+**Recommendation:** ACCEPT §55 as-is for now. Three follow-ups for §30:
+
+1. Add "Mock boundaries for time-dependent properties" subsection to §30 §2 (Property Dynamics) — document that `now()` must be injectable for tests, show example `ClockProvider` interface.
+2. Add latency targets to §30 §4.1 (Synchronous Scheduling) that map to §55's test assertions (e.g., `expect(results).toBeReturned().within(100)` corresponds to §30's <100ms target).
+3. Adopt Laura's `CuratorStore.retrieve(sessionId, query)` signature in §30 §1.2 (recall) — it's a cleaner seam than "search global then filter".
+
+**Notes for Genesta:** Two overlaps flagged but not blocking:
+- AC mapping table (§55 §5) assigns some tests to `integrate` vs `recall` — Genesta should verify activity boundaries match her §10 semantics.
+- §55 flags OQ-2 (embedding strategy) as HIGH impact on mock boundaries — this is correct, and Genesta's prescriber migration timing (§30 §7.4 gate 1) may interact.

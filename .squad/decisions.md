@@ -902,6 +902,159 @@ Aaron's four signals serve as constraints + a new Path D to evaluate, combined w
 
 ## 2026-05-25: Cassima R6 Synthesis — Path D Vindicated, v3.1 Patch Recommended
 
+[Detailed synthesis pending — see `.squad/decisions/archive/` for full R6 closure]
+
+---
+
+## 2026-05-27: OQ-1 Resolved — Monorepo Accepted (ADR-0002)
+
+**Status:** ✅ DECIDED  
+**Date:** 2026-05-27  
+**Decided By:** Aaron  
+**Documented By:** Graham (Lead/Architect)
+
+**Decision:** Merge `mem/` and `harness/` into a single `@akubly/` monorepo with shared `packages/{cairn,forge,types}` and project-specific `packages/{eureka,crucible}`.
+
+**Trade-off accepted:** One-time migration cost (repo merge, CI consolidation, workspace rewiring) over ongoing coordination overhead of synchronising shared types across two repositories.
+
+**Cross-references:**
+- [ADR-0002](../../docs/eureka/adrs/0002-shared-substrate-ownership.md) — full decision record with options analysis
+- FR-12 mechanism #8 — ESLint cross-system session-type import ban; trivially enforceable in monorepo
+- FR-13 — `SessionId` branded primitive; single source of truth by construction
+- §70 T7 — shared substrate ownership tension (now resolved)
+
+**Implications for London-school TDD:** The mock seams for `@akubly/types` `SessionId` brand are now stable. Laura can rely on a single resolved shared substrate when designing outside-in tests — the `SessionId` import path will not change shape based on substrate topology. Mock contracts authored against `@akubly/types` in the monorepo are final; no seam drift risk from OQ-1 remains.
+
+**Signed:** Graham (Architecture)
+
+---
+
+## 2026-05-27: §55 Review Discovered §30 Updates (Edgar Follow-ups)
+
+**Date:** 2026-05-27  
+**Author:** Edgar (Learning Systems Specialist)  
+**Context:** Review of Laura's §55 TDD Strategy against §30 Learning Systems  
+**Status:** Three non-blocking improvements identified for §30
+
+### Background
+
+Laura authored §55 (London-school TDD strategy) without reading §30 (anti-anchoring discipline). Review verdict: **APPROVED WITH NOTES**. Three seam mismatches discovered where §30 should evolve to match what outside-in tests revealed, not the other way around.
+
+### Decision Items
+
+#### 1. Add Time-Mocking Guidance to §30
+
+**What:** Add subsection "2.4 Time Injection for Testability" to §30 Property Dynamics.
+
+**Why:** §30's recency formula `(now() - last_accessed) / 86400` is time-dependent. Tests need deterministic clock. §55 correctly mocks storage I/O but is silent on time. §30 should document the seam.
+
+**Proposed §30 addition:**
+
+```markdown
+### 2.4 Time Injection for Testability
+
+**Testing Requirement:** Recency calculations depend on `now()`. Tests must inject a deterministic clock.
+
+**Interface (extraction-ready):**
+```typescript
+// packages/eureka/src/learning/properties/clock.ts
+export interface ClockProvider {
+  now(): number;  // Unix epoch ms
+}
+
+export const systemClock: ClockProvider = {
+  now: () => Date.now()
+};
+```
+
+**Test pattern:**
+```typescript
+const mockClock = { now: vi.fn().mockReturnValue(1609459200000) };  // 2021-01-01
+const recency = computeRecency(fact.last_accessed, mockClock);
+expect(recency).toBe(0.5);  // 1-day-old at formula parameters
+```
+
+**Design note:** This is FR-12 mechanism #1 (extraction-ready boundary). ClockProvider has no Eureka-specific types.
+```
+
+**Impact:** Low — doesn't change algorithm, just documents testability boundary.
+
+#### 2. Map Latency Targets to Test Assertions
+
+**What:** Cross-reference §30 §4.1 (Synchronous Scheduling) latency targets with §55 test examples.
+
+**Why:** §30 has latency targets (<100ms recall, <5s sweep). §55 has test examples. They don't currently reference each other. Tests should assert against targets.
+
+**Proposed §30 change in §4.1:**
+
+```diff
+ **Measurable Latency:**
+ - integrate: < 10ms (single fact insert)
+ - recall: < 100ms (BM25 query + scoring for 10 results)
++  Test assertion: `expect(recallDuration).toBeLessThan(100)`
+ - rerank: < 50ms (rescore 10 facts)
+ - decide: < 10ms (single-pass selection)
+ - commit: < 500ms (batch persist for typical session of 50 facts)
+```
+
+**Impact:** Low — documentation hygiene, doesn't change spec.
+
+#### 3. Adopt Laura's `CuratorStore.retrieve(sessionId, query)` Signature
+
+**What:** Update §30 §1.2 (recall algorithm) to use `CuratorStore.retrieve(sessionId, query)` instead of implicit "search global then filter by session."
+
+**Current §30 pseudocode (line 86):**
+```
+candidates = searchBM25(query)
+if tier_filter is provided:
+  candidates = candidates.filter(f => f.tier in tier_filter)
+```
+
+**Laura's discovered seam (§55 §2.3):**
+```typescript
+const store = new CuratorStore();
+const candidates = await store.retrieve(options.sessionId, options.query);
+```
+
+**Why Laura's is better:**
+- Session isolation is **explicit** in the interface (prevents accidental cross-session leaks)
+- Aligns with FR-13 §SessionId brand as load-bearing integration primitive
+- Makes §30 §1.2 algorithm match the test-discovered boundary
+
+**Proposed §30 revision (line 84-89):**
+```diff
+ function recall(query, limit, tier_filter, trust_floor):
+   trust_floor = trust_floor ?? 0.15
+-  candidates = searchBM25(query)  // BM25 lexical search
++  candidates = curatorStore.retrieve(session_id, query)  // BM25 + session-scoped
+   
+   if tier_filter is provided:
+     candidates = candidates.filter(f => f.tier in tier_filter)
+```
+
+**Impact:** Medium — changes internal collaborator signature but not observable behavior. Test-discovered seam is cleaner than original §30 design.
+
+### Recommendation
+
+**For Aaron:** None of these block §55 acceptance or v1 implementation. All three are §30-internal improvements.
+
+**For Edgar (next session):** Apply all three changes to §30 in a single update pass. Then mark this decision as "Applied."
+
+**Timeline:** Before first `recall` implementation PR. Seam #3 (CuratorStore signature) is load-bearing for tests; others are hygiene.
+
+### Related
+
+- §55: TDD Strategy (Laura, approved with notes)
+- §30: Learning Systems (Edgar, will receive updates)
+- FR-12: Extraction-ready design (mechanism #1 = ClockProvider)
+- FR-13: SessionId brand (CuratorStore signature change honors this)
+
+---
+
+## Open Decision Queue (Updated 2026-05-27)
+
+All remaining open questions from R6 reconciliation remain open. London-school TDD spine (§55) authored and approved. Implementation readiness pending Graham's TOC integration (in progress).
+
 **Author:** Cassima (Product Manager)  
 **Date:** 2026-05-25  
 **Status:** R6 synthesis — trio reconciliation + Aaron's 4 signals → recommendation  
