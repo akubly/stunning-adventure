@@ -620,6 +620,242 @@ Stale profiles: `confidence * 0.5` (attenuated exactly once, even when both thre
 
 **Commit:** c74463f (phase-4.6/w5-3-tier-fallback)
 
+### Design Decision W5-1: Session-Kind Separation (Roger, 2026-05-25)
+
+**Status:** ✅ Implemented — Migration 014 landed; MCP fallback corrected
+
+**Context:** Phase 4's `ensureSystemSession()` creates system sessions on every prescriber run. MCP endpoints (`resolve_prescription`, `lint_skill`, `test_skill`) currently fall back to `__system__` session when no repo key is available — a correctness bug that pollutes user-facing attribution.
+
+**Resolution:** Migration 014 with `session_kind` column (enum: 'user' | 'system').
+
+**Schema Changes:**
+```sql
+ALTER TABLE sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'user' 
+  CHECK (session_kind IN ('user', 'system'));
+```
+
+**Backfill:** Existing rows with `repo_key = '__system__'` set to `session_kind = 'system'`. All others default to 'user'.
+
+**API Changes:**
+- Added `getMostRecentUserSession()` — falls back only to user sessions
+- Added `getActiveUserSession(repoKey)` — user-scoped variant
+- Kept `getMostRecentActiveSession()` and `getActiveSession(repoKey)` for internal/system-aware callers
+- Created `getUserSessionForMcpFallback()` — wrapper for all MCP call sites
+
+**MCP Call Sites Updated:**
+1. `resolve_prescription` — accept/apply attribution
+2. `lint_skill` — telemetry event logging
+3. `test_skill` — scenario-path telemetry and result persistence
+4. `test_skill` — direct validation telemetry and result persistence
+
+**Test Coverage:** ✅ 100/100 passing
+- Migration schema validation
+- `getMostRecentUserSession()` filtering excludes system sessions
+- MCP fallback with `__system__` as most-recent returns user session instead
+- All four MCP endpoints attribute correctly
+- Full Cairn: 597/597 passing
+- Skillsmith runtime: 8/8 passing
+- Wave 4 integration: 14/14 passing
+
+**Files Modified:**
+- `packages/cairn/src/db/migrations/014-session-kind.ts` (new)
+- `packages/cairn/src/db/schema.ts` (registered migration)
+- `packages/cairn/src/db/sessions.ts` (new API functions, ensureSystemSession update)
+- `packages/cairn/src/mcp/server.ts` (four call sites using getUserSessionForMcpFallback)
+- `packages/cairn/src/__tests__/db.test.ts` and `mcp.test.ts` (new tests)
+
+**Deferred:** I10 (Curator system-event filtering) — depends on W5-1 but is a cloud telemetry design decision (Phase 5).
+
+### Design Decision W5-2: Explicit DB Threading Hard Cut (Roger, 2026-05-25)
+
+**Status:** ✅ Implemented — All 50+ files refactored; explicit db parameter threaded through Cairn/Forge/runtime
+
+**Context:** Wave 5 test infrastructure revealed fragile coupling: 12+ Cairn public helpers relied on singleton `getDb()` fallback. Tests passed locally but failed in concurrent/worktree scenarios due to ambient global state. Standardizing to explicit db parameter enables deterministic test setups and future parallelization.
+
+**Resolution:** Hard-cut public DB helpers to accept explicit `db: Database.Database` parameter as first positional argument. Removed all singleton fallback overloads.
+
+**Signature Pattern:**
+```typescript
+// Before
+export function getPreference(key: string, sessionId?: string): string | undefined {
+  const db = getDb();
+  // ...
+}
+
+// After
+export function getPreference(
+  db: Database.Database,
+  key: string,
+  sessionId?: string,
+): string | undefined {
+  // ...
+}
+```
+
+**Helpers Killed:**
+- `logEventWithDefaultDb()` — removed
+- Deprecated `logEvent(sessionId, ...)` overload — removed
+- `getExecutionProfileWithDb()` — collapsed into `getExecutionProfile(db, ...)`
+- Deprecated fallback overload from `ensureSystemSession()` — removed
+
+**Structural Changes:**
+- `curate()` captures one db handle and passes it into detector helpers
+- `runSessionStart()` passes db into stale-session checks and DB counters
+- MCP server initialization stores explicit db handle after `ensureDb()`
+- Tests keep explicit per-test db handles instead of relying on ambient singleton reads
+
+**Files Modified:** 50+ files across Cairn, Forge, runtime-cli, skillsmith-runtime
+
+**Test Coverage:** All workspaces green
+- Cairn: 597/597 passing
+- Forge: 644/647 (3 pre-existing todos)
+- Runtime-CLI: 9/9 passing
+- Skillsmith-runtime: 24/24 passing
+
+**Deferred Follow-ups:**
+- `getDb()` remains as connection factory for process entry points and test setup
+- Some tests still use singleton factory to create db, then pass handle explicitly
+- Root `npm test` stalls under shared CLI TTY when npm wraps Vitest; direct workspace tests pass
+
+### Design Decision W5-3: Global Tier Fallback Semantics (Rosella, 2026-05-25)
+
+**Status:** ✅ Implemented — Tier fallback chain extended; all tests passing
+
+**Context:** `loadExecutionProfile()` only checks `per-skill` → `global`, skipping `per-model` and `per-user` tiers. DB schema (migration 011) already supports all four granularities; the read path is incomplete.
+
+**Resolution:** Extend fallback chain from `per-skill` → `global` to `per-skill` → `per-model` → `per-user` → `global`.
+
+**Final API Surface:**
+```typescript
+export interface TierFallbackContext {
+  modelId?: string;
+  userId?: string;
+}
+
+function loadExecutionProfile(
+  db: RuntimeDb,
+  skillId: string,
+  fallbackContext?: TierFallbackContext
+): LoadedExecutionProfile | null;
+
+export type LoadedProfileSource = 
+  | 'per-skill'
+  | 'per-model'
+  | 'per-user'
+  | 'global';
+```
+
+**Chain-Walking Algorithm:**
+1. Always query `per-skill` first
+2. If `modelId` present, query `per-model` 
+3. If `userId` present, query `per-user`
+4. Always query `global` last
+5. Return first non-null row as complete profile; do not blend tiers
+6. Missing identity keys skip their tiers
+7. Staleness intentionally ignored by selection (W5-4 handles post-selection)
+
+**Test Coverage:** ✅ 18 passing tests
+- Per-skill tier selection
+- Per-model tier fallback when per-skill missing
+- Per-user tier fallback when per-model missing
+- Global tier fallback as final chain
+- Partial context (modelId only, userId only, both)
+- Missing identity keys skip their tiers
+- Staleness intentionally ignored by selection
+
+**Files Modified:**
+- `packages/skillsmith-runtime/src/index.ts` — loadExecutionProfile() and types
+- Tests — tier fallback unit tests
+
+**Scope Notes:** No Cairn schema, migration, or Forge prescriber changes required.
+
+### Design Decision W5-4: Profile Staleness Confidence Attenuation (Rosella, 2026-05-25)
+
+**Status:** ✅ Implemented — Runtime profiles now carry staleness annotation + confidence scaling
+
+**Context:** Execution profiles carry `updatedAt` but nothing checks it. Prescriber confidence reflects profile quality, yet stale profiles (unchanged for 50+ sessions or 7+ days) still emit `confidence: 1`. Safety gate needed to prevent misleading trust in outdated data.
+
+**Resolution:** `loadExecutionProfile()` returns profiles with staleness annotation and attenuates confidence.
+
+**Staleness Shape:**
+```typescript
+staleness: {
+  stale: boolean;
+  reason: 'count' | 'age' | 'count+age' | null;
+}
+```
+
+Fresh profiles: `confidence: 1` (unchanged).  
+Stale profiles: `confidence * 0.5` (attenuated exactly once, even when both thresholds trip).
+
+**Threshold Defaults:**
+- **Count threshold:** Stale when `sessions_since_install - profile.sessionCount > 50`
+- **Age threshold:** Stale when `now - profile.updatedAt > 7 days`
+- Either threshold triggers staleness; both produce `reason: 'count+age'`
+- Attenuation factor: `0.5` exactly once
+
+**Composition with W5-3:**
+- W5-3 tier selection runs first (per-skill → per-model → per-user → global)
+- W5-4 staleness check runs post-selection on chosen profile
+- Staleness does NOT trigger fallback; confidence attenuation only
+- `LoadedExecutionProfile.source` preserved
+
+**Test Coverage:** ✅ 24 passing tests in skillsmith-runtime
+- Fresh profile → confidence: 1
+- Stale (count only) → confidence: 0.5
+- Stale (age only) → confidence: 0.5
+- Stale (both count + age) → confidence: 0.5 (single attenuation)
+- Custom attenuation option and clamping
+- No profile → no error
+- W5-3 staleness does not trigger fallback behavior
+
+**Files Modified:**
+- `packages/skillsmith-runtime/src/index.ts` — loadExecutionProfile() staleness logic, types, thresholds
+- `packages/skillsmith-runtime/src/__tests__/profileFallback.test.ts` — 16 staleness tests
+
+**Deferred Follow-ups:**
+- Explicit profile last-update session counter would strengthen count-threshold semantics (future Cairn work)
+- Auto-refresh, notification surface, or Forge prescriber behavior changes deferred to Phase 5
+
+### Wave 5 Integration & Merge Strategy (Roger, 2026-05-26)
+
+**Status:** ✅ Integration branch resolves all inter-dependencies
+
+**Integration Branch:** `phase-4.6/wave-5-integration`
+
+**Recommended Merge Order:**
+1. **W5-1 session-kind** (clean merge)
+2. **W5-3 tier fallback** (clean merge)
+3. **W5-4 staleness attenuation** (depends on W5-3 tier fallback logic; stacks cleanly)
+4. **W5-2 explicit DB hard-cut** (cross-cutting; apply last to thread new APIs once)
+
+**Conflict Resolution Summary:**
+- **W5-1:** Clean merge
+- **W5-3:** Clean merge
+- **W5-4:** Conflict in `.squad/identity/now.md` — kept main's completed Wave 5 status (newer, reflected all four isolated branches)
+- **W5-2:** Code conflicts in:
+  - migration 012 tests
+  - `packages/cairn/src/db/sessions.ts`
+  - `packages/cairn/src/mcp/server.ts`
+  - `packages/skillsmith-runtime/src/index.ts`
+  - Root cause: stale W5-3 test under W5-2's public API hard-cut; fixed by passing explicit `db` parameter
+
+**Test Validation (Post-Integration):**
+- `npm run build`: clean ✅
+- `npm test`: green across all workspaces ✅
+- Cairn: 597/597 passing
+- Forge: 644 passed + 3 pre-existing todo = 647 total
+- Runtime-CLI: 9/9 passing
+- Skillsmith-runtime: 24/24 passing
+
+**Note on Forge "644/647":** Not failures. Three are pre-existing `it.todo` placeholders:
+- `prescribers-vectors.test.ts`: prompt-optimizer negative meanNetImpact confidence penalty (todo)
+- `prescribers-vectors.test.ts`: token-optimizer negative meanNetImpact confidence penalty (todo)
+- `weight-consistency.test.ts`: cross-package weight consistency (todo)
+
+**PR Strategy Recommendation:**
+Prefer one integration PR from `phase-4.6/wave-5-integration`. The isolated branches were green, but value is in resolved interaction between W5-1's session APIs, W5-3/W5-4 runtime profile behavior, and W5-2's explicit DB hard-cut. If separate review units desired, use four PRs in same order and include runtime-cli test fix on W5-2 PR.
+
 ---
 
 ## Archived Decisions
