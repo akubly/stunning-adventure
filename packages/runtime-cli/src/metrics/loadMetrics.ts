@@ -56,12 +56,15 @@ function queryPrescriberRuns(
   skillId: string,
   limit: number,
 ): SkillMetricsPrescriberRun[] | null {
+  let rows: Array<{ payload: string; created_at: string }>;
+
   try {
-    const rows = db
+    rows = db
       .prepare(
         `SELECT payload, created_at
          FROM event_log
          WHERE event_type = 'prescriber_run'
+           AND json_valid(payload)
            AND json_extract(payload, '$.skillId') = ?
          ORDER BY created_at DESC
          LIMIT ?`,
@@ -81,8 +84,16 @@ function queryPrescriberRuns(
 
       return [];
     }
+  } catch {
+    // DB-level failure (schema mismatch, lock, etc.) — degrade to null so callers
+    // treat the event type as absent rather than crashing.
+    return null;
+  }
 
-    return rows.map((row) => {
+  // Per-row JSON.parse — a single corrupt row must not abort the entire result.
+  const validRows: SkillMetricsPrescriberRun[] = [];
+  for (const row of rows) {
+    try {
       const payload = JSON.parse(row.payload) as {
         triggeredBy?: string;
         profileSource?: string | null;
@@ -94,7 +105,7 @@ function queryPrescriberRuns(
         };
       };
 
-      return {
+      validRows.push({
         triggeredBy: payload.triggeredBy ?? 'unknown',
         profileSource: payload.profileSource ?? null,
         inserted: payload.result?.inserted ?? 0,
@@ -102,12 +113,14 @@ function queryPrescriberRuns(
         errored: payload.result?.errored ?? 0,
         totalHints: payload.result?.totalHints ?? 0,
         occurredAt: row.created_at,
-      };
-    });
-  } catch {
-    // Defensive: if anything goes wrong reading events, degrade gracefully.
-    return null;
+      });
+    } catch {
+      process.stderr.write(
+        `[runtime-cli] prescriber_run: skipping malformed payload row (created_at=${row.created_at})\n`,
+      );
+    }
   }
+  return validRows;
 }
 
 /** Compute whole days between two dates (floor). */
