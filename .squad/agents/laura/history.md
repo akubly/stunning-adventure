@@ -77,3 +77,45 @@
 
 **Example commitment:** If a test name says "concurrent," the reader expects async/parallel execution. When execution is sequential, honesty demands the name reflect that. This prevents future developers from misinterpreting test coverage scope.
 
+## 2026-05-26: Issue #17 — Async IO Sweep (Wave 6 Surface Area)
+
+**Status:** ✓ Complete. 12 new tests added, all passing (609 cairn total). W5-5 test plan written.
+
+**Scope swept:** Cairn MCP server, hook entry points (postToolUse/sessionStart), Cairn DB layer, Forge prescribers, skillsmith-runtime composition root, runtime-cli CLI entry point.
+
+**Concurrency model finding:** The Cairn MCP server uses a stdio transport — one request at a time. Sync IO inside tool handlers cannot starve other requests because no other requests are running concurrently. This changes the evaluation of every finding from "must fix" to "is the guard correct?"
+
+**Findings (0 required fixes):**
+- `resolveAndReadSkill` (MCP server) — `statSync` ×2 + `readFileSync` ×1. Guards are correct (name check, size limit, read error). Tested.
+- `gitContext.ts` — `execSync` ×2. Timeout-guarded at 2000ms, stdio-piped. Verified structurally.
+- `db/index.ts` — `mkdirSync` + `chmodSync`. Startup-only. Expected.
+- `applier.ts` — file writes. Low-frequency operator action. Expected.
+- `discovery.ts` — `readFileSync/statSync/readdirSync`. Curator-path, wrapped in safe helpers. Expected.
+- Forge prescribers, skillsmith-runtime, runtime-cli — all clean.
+
+**Hot-path criteria used:** A call is hot-path if it runs per-request in a concurrent server. For serial stdio MCP: nothing qualifies. For hook processes: startup cost is acceptable given the process lifecycle. For curator-path: periodic, not per-request.
+
+**Test approach for MCP async correctness:**
+1. Export `resolveAndReadSkill` to make it directly testable (minimal code change to server.ts).
+2. Mock `fs.statSync` with `vi.spyOn` to test the size guard without creating a 1MB fixture file. Mock first call to throw ENOENT (directory check fails = no directory append), second call returns oversized Stats.
+3. Structural tests read source code to assert: timeout numbers present in gitContext.ts, sync IO confined to `resolveAndReadSkill` (not leaking into other tool handler bodies).
+4. W5-5 handler test plan written as doc for Rosella; covers: Promise return check, CairnEvent fail-open, sequential re-use safety, forceRegenerate semantics, structural no-inline-fs assertion.
+
+**Branch:** `issue-17/async-io-sweep`  
+**Commit:** (see git log)  
+**Artifacts:** docs/issue-17-async-io-sweep-findings.md, .squad/decisions/inbox/laura-w5-5-async-test-plan.md, .squad/skills/async-io-audit/SKILL.md
+
+## Learnings
+
+**Sync IO patterns observed:**
+- MCP server file IO is isolated in one helper (`resolveAndReadSkill`) with three guards: name check, size check, read error. This is the correct pattern — extract + guard + test.
+- Hook processes are short-lived and use `execSync` with timeouts. Acceptable pattern for CLI tools that don't need async.
+- better-sqlite3 is synchronous throughout. This is by design; replacing it with async SQLite would add complexity for no benefit in a serial server.
+
+**Hot-path criterion:** "Can a second request arrive while this call is running?" For stdio MCP: no. For HTTP with concurrent connections: yes. Always establish the concurrency model before classifying sync IO.
+
+**Test approach for MCP async correctness:**
+- Prefer structural source-reading tests over runtime spy-heavy tests where possible.
+- When mocking `fs.statSync` for guard boundary tests, chain `mockImplementationOnce` calls to simulate the sequence: directory stat (throws ENOENT), size stat (returns fake Stats). Order matters.
+- Export internal helpers from the module under test rather than testing through opaque transport. `resolveAndReadSkill` export was the minimal code change that enabled full guard coverage.
+- W5-5 pattern for new MCP handlers: test CairnEvent write failure (fail-open), sequential invocation safety, and structural no-inline-fs assertion as a tripwire.

@@ -968,8 +968,11 @@ interface SkillFileError {
  * Resolve a skill_path to an absolute SKILL.md path, apply name and size
  * guards, and read the file content. Returns the resolved path and content,
  * or an MCP error response if any guard fails.
+ *
+ * Exported for testing of the guard behaviors (name check, size check,
+ * read-error path). Not part of the public MCP contract.
  */
-function resolveAndReadSkill(skillPath: string): SkillFileResult | SkillFileError {
+export function resolveAndReadSkill(skillPath: string): SkillFileResult | SkillFileError {
   let filePath = skillPath;
 
   // Resolve relative paths
@@ -1032,7 +1035,8 @@ function resolveAndReadSkill(skillPath: string): SkillFileResult | SkillFileErro
   return { filePath, content };
 }
 
-function isSkillFileError(result: SkillFileResult | SkillFileError): result is SkillFileError {
+/** @internal Exported for testing. */
+export function isSkillFileError(result: SkillFileResult | SkillFileError): result is SkillFileError {
   return 'isError' in result;
 }
 
