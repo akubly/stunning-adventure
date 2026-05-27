@@ -185,11 +185,26 @@ function annotateProfileStaleness(
   return { ...profile, confidence, staleness };
 }
 
+export interface ProfileFallbackInfo {
+  chain: string[];
+  skipped: string[];
+  selected: string;
+  key: string;
+}
+
+export interface LoadExecutionProfileOptions {
+  fallbackContext?: TierFallbackContext;
+  stalenessOptions?: ProfileStalenessOptions;
+  /** Called when tier fallback selects a non-per-skill profile. Defaults to `console.debug`. */
+  onProfileFallback?: (info: ProfileFallbackInfo) => void;
+}
+
 export function loadExecutionProfile(
   db: RuntimeDb,
   skillId: string,
   fallbackContext: TierFallbackContext = {},
   stalenessOptions: ProfileStalenessOptions = {},
+  onProfileFallback?: (info: ProfileFallbackInfo) => void,
 ): LoadedExecutionProfile | null {
   const policy = fallbackContext.fallbackPolicy ?? 'per-skill-only';
   const chain: Array<{ source: LoadedProfileSource; granularityKey: string }> = [
@@ -213,9 +228,14 @@ export function loadExecutionProfile(
     const profile = cairn.getExecutionProfile(db, skillId, tier.source, tier.granularityKey);
     if (profile) {
       if (tier.source !== 'per-skill') {
-        console.info(
-          `[skillsmith-runtime] Profile fallback: skill=${skillId} chain=[${chain.map(t => t.source).join(',')}] skipped=[${skipped.join(',')}] selected=${tier.source} key=${tier.granularityKey}`,
-        );
+        const info: ProfileFallbackInfo = {
+          chain: chain.map(t => t.source),
+          skipped,
+          selected: tier.source,
+          key: tier.granularityKey,
+        };
+        const notify = onProfileFallback ?? defaultFallbackNotifier;
+        notify(info);
       }
       return {
         profile: annotateProfileStaleness(toExecutionProfile(profile), db, stalenessOptions),
@@ -226,6 +246,12 @@ export function loadExecutionProfile(
   }
 
   return null;
+}
+
+function defaultFallbackNotifier(info: ProfileFallbackInfo): void {
+  console.debug(
+    `[skillsmith-runtime] Profile fallback: chain=[${info.chain.join(',')}] skipped=[${info.skipped.join(',')}] selected=${info.selected} key=${info.key}`,
+  );
 }
 
 function toOptimizationHintInsert(hint: OptimizationHint): OptimizationHintInsert {
@@ -366,6 +392,10 @@ export async function runForgePrescribe(
     const loadedProfile = loadExecutionProfile(db, options.skillId, {
       ...options.fallbackContext,
       fallbackPolicy: options.fallbackContext?.fallbackPolicy ?? 'full-chain',
+    }, undefined, (info) => {
+      console.info(
+        `[skillsmith-runtime] Profile fallback: skill=${options.skillId} chain=[${info.chain.join(',')}] skipped=[${info.skipped.join(',')}] selected=${info.selected} key=${info.key}`,
+      );
     });
 
     if (!loadedProfile) {

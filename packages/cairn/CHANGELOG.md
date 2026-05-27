@@ -6,7 +6,6 @@ All notable changes to `@akubly/cairn` will be documented in this file.
 
 ### Breaking
 
-- **Explicit `db` parameter**: All public functions now require an explicit
 - **Explicit `db` parameter (DB layer):** DB-layer helpers (`./db/*` exports)
   and internal agent helpers now require an explicit `Database.Database` as
   the first positional parameter and no longer fall back to `getDb()`.

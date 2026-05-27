@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as cairn from '@akubly/cairn';
-import { loadExecutionProfile, type FallbackPolicy, type LoadedProfileSource, type TierFallbackContext } from '../index.js';
+import { loadExecutionProfile, type FallbackPolicy, type LoadedProfileSource, type ProfileFallbackInfo, type TierFallbackContext } from '../index.js';
 
 type ProfileSeed = Parameters<typeof cairn.upsertExecutionProfile>[1];
 
@@ -254,5 +254,42 @@ describe('loadExecutionProfile tier fallback', () => {
     setSessionsSinceInstall(91);
 
     expect(loadAt()).toBeNull();
+  });
+
+  it('invokes onProfileFallback callback with structured payload on tier fallback', () => {
+    seedProfile('global', 40);
+    const cb = vi.fn<(info: ProfileFallbackInfo) => void>();
+
+    loadExecutionProfile(cairn.getDb(), 'skill-alpha', { fallbackPolicy: 'full-chain' }, {}, cb);
+
+    expect(cb).toHaveBeenCalledOnce();
+    expect(cb).toHaveBeenCalledWith({
+      chain: ['per-skill', 'global'],
+      skipped: ['per-skill'],
+      selected: 'global',
+      key: 'global',
+    });
+  });
+
+  it('does not invoke callback when per-skill tier is selected directly', () => {
+    seedProfile('per-skill', 10);
+    const cb = vi.fn<(info: ProfileFallbackInfo) => void>();
+
+    loadExecutionProfile(cairn.getDb(), 'skill-alpha', {}, {}, cb);
+
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  it('uses console.debug by default when no callback is provided and fallback occurs', () => {
+    seedProfile('global', 40);
+    const spy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    loadExecutionProfile(cairn.getDb(), 'skill-alpha', { fallbackPolicy: 'full-chain' });
+
+    expect(spy).toHaveBeenCalledOnce();
+    expect(infoSpy).not.toHaveBeenCalled();
+    spy.mockRestore();
+    infoSpy.mockRestore();
   });
 });

@@ -90,8 +90,6 @@ export function confidenceToWords(confidence: number): string {
   return 'emerging';
 }
 
-// getUserSessionForMcpFallback is imported from ./sessionFallback.js
-
 // ---------------------------------------------------------------------------
 // Tool: get_status
 // ---------------------------------------------------------------------------
