@@ -86,6 +86,11 @@ const DEFAULT_STALENESS_SESSION_THRESHOLD = 50;
 const DEFAULT_STALENESS_MAX_AGE_DAYS = 7;
 const PROFILE_STALENESS_ATTENUATION_FACTOR = 0.5;
 
+/** Clamp a value to a non-negative finite number, falling back to `fallback` for NaN/Infinity/negative. */
+function clampNonNegativeFinite(value: number, fallback: number): number {
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
 export interface ProfileStalenessOptions {
   sessionCountThreshold?: number;
   maxAgeDays?: number;
@@ -153,8 +158,14 @@ function resolveStalenessReason(
   db: RuntimeDb,
   options: ProfileStalenessOptions,
 ): ProfileStalenessReason {
-  const sessionCountThreshold = options.sessionCountThreshold ?? DEFAULT_STALENESS_SESSION_THRESHOLD;
-  const maxAgeDays = options.maxAgeDays ?? DEFAULT_STALENESS_MAX_AGE_DAYS;
+  const sessionCountThreshold = clampNonNegativeFinite(
+    options.sessionCountThreshold ?? DEFAULT_STALENESS_SESSION_THRESHOLD,
+    DEFAULT_STALENESS_SESSION_THRESHOLD,
+  );
+  const maxAgeDays = clampNonNegativeFinite(
+    options.maxAgeDays ?? DEFAULT_STALENESS_MAX_AGE_DAYS,
+    DEFAULT_STALENESS_MAX_AGE_DAYS,
+  );
   const now = options.now ? new Date(options.now) : new Date();
   const updatedAt = new Date(profile.updatedAt);
   const currentSessionCount = getCurrentSessionCount(db);
@@ -186,9 +197,9 @@ function annotateProfileStaleness(
 }
 
 export interface ProfileFallbackInfo {
-  chain: string[];
-  skipped: string[];
-  selected: string;
+  chain: LoadedProfileSource[];
+  skipped: LoadedProfileSource[];
+  selected: LoadedProfileSource;
   key: string;
 }
 
@@ -216,7 +227,7 @@ export function loadExecutionProfile(
     chain.push({ source: 'global', granularityKey: 'global' });
   }
 
-  const skipped: string[] = [];
+  const skipped: LoadedProfileSource[] = [];
   for (const tier of chain) {
     const profile = cairn.getExecutionProfile(db, skillId, tier.source, tier.granularityKey);
     if (profile) {

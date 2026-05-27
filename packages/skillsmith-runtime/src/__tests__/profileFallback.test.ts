@@ -256,6 +256,57 @@ describe('loadExecutionProfile tier fallback', () => {
     expect(loadAt()).toBeNull();
   });
 
+  it('clamps negative sessionCountThreshold to default', () => {
+    seedProfile('per-skill', 40);
+    setSessionsSinceInstall(91);
+
+    const loaded = loadExecutionProfile(cairn.getDb(), 'skill-alpha', {}, {
+      now: '2026-05-25T00:00:00.000Z',
+      sessionCountThreshold: -5,
+    });
+
+    expect(loaded?.profile.staleness).toEqual({ stale: true, reason: 'count' });
+  });
+
+  it('clamps NaN maxAgeDays to default', () => {
+    seedProfile('per-skill', 40);
+    setUpdatedAt('per-skill', 'global', '2026-05-17T23:59:59.000Z');
+    setSessionsSinceInstall(40);
+
+    const loaded = loadExecutionProfile(cairn.getDb(), 'skill-alpha', {}, {
+      now: '2026-05-25T00:00:00.000Z',
+      maxAgeDays: NaN,
+    });
+
+    expect(loaded?.profile.staleness).toEqual({ stale: true, reason: 'age' });
+  });
+
+  it('clamps Infinity sessionCountThreshold to default', () => {
+    seedProfile('per-skill', 40);
+    setSessionsSinceInstall(91);
+
+    const loaded = loadExecutionProfile(cairn.getDb(), 'skill-alpha', {}, {
+      now: '2026-05-25T00:00:00.000Z',
+      sessionCountThreshold: Infinity,
+    });
+
+    // With Infinity clamped to default (50), 91-40 = 51 > 50 → stale
+    expect(loaded?.profile.staleness).toEqual({ stale: true, reason: 'count' });
+  });
+
+  it('honors zero as a valid staleness threshold', () => {
+    seedProfile('per-skill', 40);
+    setSessionsSinceInstall(41);
+
+    const loaded = loadExecutionProfile(cairn.getDb(), 'skill-alpha', {}, {
+      now: '2026-05-25T00:00:00.000Z',
+      sessionCountThreshold: 0,
+    });
+
+    // 41-40 = 1 > 0 → stale
+    expect(loaded?.profile.staleness).toEqual({ stale: true, reason: 'count' });
+  });
+
   it('invokes onProfileFallback callback with structured payload on tier fallback', () => {
     seedProfile('global', 40);
     const cb = vi.fn<(info: ProfileFallbackInfo) => void>();
