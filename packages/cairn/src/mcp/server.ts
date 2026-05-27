@@ -1284,8 +1284,9 @@ server.registerTool(
 
 /**
  * Ensure the DB singleton is initialised before any tool handler runs.
- * Always delegates to Cairn's getDb() singleton — never caches a separate
- * handle that could go stale after closeDb().
+ * Refreshes the module-scoped `db` handle from Cairn's `getDb()` on every
+ * call, so callers always see the live connection even if `closeDb()`
+ * resets and reopens it between requests.
  */
 function ensureDb(): Database.Database {
   db = getDb();

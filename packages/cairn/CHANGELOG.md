@@ -7,11 +7,13 @@ All notable changes to `@akubly/cairn` will be documented in this file.
 ### Breaking
 
 - **Explicit `db` parameter**: All public functions now require an explicit
-  `Database.Database` as the first positional parameter. The module-level
-  singleton (`getDb()`) is still available for callers that want it, but
-  functions no longer silently fall back to it. This fixes module-singleton
-  fragmentation when the same package is imported via different resolution
-  paths (source vs barrel).
+- **Explicit `db` parameter (DB layer):** DB-layer helpers (`./db/*` exports)
+  and internal agent helpers now require an explicit `Database.Database` as
+  the first positional parameter and no longer fall back to `getDb()`.
+  Top-level agent entry points (e.g. `curate`, `startArchivistSession`)
+  continue to resolve the DB internally via `getDb()`. This fixes
+  module-singleton fragmentation when the same package is imported via
+  different resolution paths (source vs barrel).
 
 ### Added
 
