@@ -2,6 +2,30 @@
 
 # Alexander — History (Recent)
 
+## Learnings (2026-05-27 — Wave 6 Cycle-1 Post-Review — Copilot Review T1-T6)
+
+### PR #24 Copilot Review Threads Addressed
+All 6 accepted threads fixed in commit 10c2791 (new HEAD):
+
+**T1 (unused code):** Deleted `resolveRepoKey` function in loadMetrics.ts:28-34 — zero callers found. Only `resolveActiveRepoKey` is used.
+
+**T2 (semantic correctness — IMPORTANT LESSON):** Reverted cycle-2's `json_valid(payload)` guard from the sentinel query (loadMetrics.ts:77). **Lesson: presence-check semantics ≠ quality-check semantics.** The sentinel query answers "is the prescriber_run event type deployed in this database?" (feature-presence), NOT "are all rows parseable?" (data-quality). Adding `json_valid` to the sentinel made the function conflate the two: if all rows were malformed, the sentinel would return false (no rows found) and the function would signal "W5-5 not landed" (wrong!) instead of "W5-5 landed, skill has zero valid runs" (correct). Sentinel is now `WHERE event_type = 'prescriber_run'` only. The main query retains `json_valid()` to skip corrupt rows during json_extract. Test expectations unchanged — the I3 test already asserted the correct behavior (non-null on malformed-only dataset); updated test comment to clarify sentinel semantics.
+
+**T3 (doc sync):** Updated docs/issue-17-async-io-sweep-findings.md:170-174 to reflect both W5-5 async-IO test gaps are now CLOSED: (1) fail-open guarding landed (handler.ts:100-127 try/catch around logEvent), (2) structural no-fs test landed (forgePrescribeMcp.test.ts I5).
+
+**T4 (schema doc correction):** Updated .squad/decisions.md:1167-1181 to reflect the SHIPPED payload schema uses camelCase keys (`skillId`, `triggeredBy`, `sessionId`, `profileSource`, `totalHints`), not the originally documented snake_case. Added a correction addendum explaining the cycle-1 fix realigned to codebase convention. See handler.ts:102-118 for canonical payload construction.
+
+**T5, T6 (gitignore bypass cleanup):** Untracked two gitignored files that were force-added: `.squad/orchestration-log/2026-05-26-wave-6-integration.md` (gitignored by .gitignore:50) and `.squad/log/2026-05-26-wave-6-kickoff.md` (gitignored by .gitignore:51). **Lesson: force-adding gitignored files is an anti-pattern, especially for runtime state files.** These files should have stayed local-only; untracking them restores the .gitignore contract without deleting the local copies.
+
+**Verification:** Build + tests passed cleanly:
+- `npm run build` from root: exit 0
+- `npm test --workspace=@akubly/runtime-cli`: 24/24 passing
+- `npm test --workspace=@akubly/skillsmith-runtime`: 48/48 passing
+
+**Key takeaway:** The T2 lesson is foundational: when adding defensive guards (like `json_valid`), distinguish between **presence checks** (sentinel queries for feature deployment) and **quality checks** (row-level filters for parseability). Don't conflate them — the semantics diverge when all data is corrupt.
+
+---
+
 ## Learnings (2026-05-26 — Wave 6 Cycle-1 Fix Wave)
 
 ### Findings Addressed
