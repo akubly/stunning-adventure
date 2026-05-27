@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   closeDb,
   getDb,
@@ -8,6 +8,7 @@ import {
   ensureSystemSession,
 } from '@akubly/cairn';
 import type { ExecutionProfileUpsert } from '@akubly/cairn';
+import { forgePrescribeHandler } from '@akubly/skillsmith-runtime';
 import { formatJson, formatTable } from '../metrics/formatters.js';
 import { loadMetrics } from '../metrics/loadMetrics.js';
 import type { SkillMetrics } from '../metrics/types.js';
@@ -41,6 +42,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   closeDb();
 });
 
@@ -314,5 +316,78 @@ describe('loadMetrics integration', () => {
     expect(run.profileSource).toBe('per-skill');
     expect(run.inserted).toBe(3);
     expect(run.totalHints).toBe(4);
+  });
+
+  // I3: malformed payload rows must be skipped; the function must never return null
+  // when the event type genuinely exists but a single row is corrupt.
+  it('skips malformed payload rows and returns valid rows (non-null) (I3)', () => {
+    const db = getDb();
+    const systemSessionId = ensureSystemSession(db);
+
+    // Insert a valid event row — this must appear in the result.
+    logEvent(db, systemSessionId, 'prescriber_run', {
+      skillId: 'skill-i3',
+      triggeredBy: 'mcp:forge_prescribe',
+      profileSource: 'per-skill',
+      result: { inserted: 5, skipped: 0, errored: 0, totalHints: 5 },
+    });
+
+    // Insert a row with syntactically invalid JSON directly, bypassing logEvent.
+    // In this SQLite version, json_extract() throws on malformed JSON; adding
+    // json_valid() to the WHERE clause prevents json_extract from being called on
+    // such rows, so they are silently skipped without aborting the query.
+    const insertResult = db
+      .prepare(`INSERT INTO event_log (session_id, event_type, payload) VALUES (?, 'prescriber_run', ?)`)
+      .run(systemSessionId, '{"skillId":"skill-i3",CORRUPT');
+    const rowid = insertResult.lastInsertRowid as number;
+
+    const metrics = loadMetrics({ skillId: 'skill-i3', now: NOW });
+
+    // The function must return a non-null array — never signal "W5-5 not landed"
+    // just because one row is corrupt.
+    expect(metrics.recentPrescriberRuns).not.toBeNull();
+    expect(Array.isArray(metrics.recentPrescriberRuns)).toBe(true);
+    // The valid row must be present.
+    expect(metrics.recentPrescriberRuns!.length).toBeGreaterThanOrEqual(1);
+    expect(metrics.recentPrescriberRuns![0]!.inserted).toBe(5);
+
+    // Clean up the deliberately malformed row.
+    db.prepare('DELETE FROM event_log WHERE rowid = ?').run(rowid);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// I4: handler → reader round-trip (schema contract guard)
+// ---------------------------------------------------------------------------
+
+describe('forgePrescribeHandler → loadMetrics round-trip (I4)', () => {
+  it('events written by forgePrescribeHandler are correctly read by loadMetrics', async () => {
+    const db = getDb();
+    createSession(db, 'org/round-trip-repo', 'main');
+    upsertExecutionProfile(db, makeProfile('skill-round-trip', { sessionCount: 20 }));
+
+    // Run the real handler — writes a prescriber_run CairnEvent with camelCase fields.
+    const handlerResult = await forgePrescribeHandler(db, {
+      skill_id: 'skill-round-trip',
+      repo_key: 'org/round-trip-repo',
+    });
+    expect(handlerResult.isError).toBeFalsy();
+
+    // Load metrics via the reader — uses json_extract(payload, '$.skillId') to query.
+    const metrics = loadMetrics({ skillId: 'skill-round-trip', now: NOW });
+
+    // The round-trip must surface at least one prescriber run.
+    expect(metrics.recentPrescriberRuns).not.toBeNull();
+    expect(metrics.recentPrescriberRuns!.length).toBeGreaterThanOrEqual(1);
+
+    const run = metrics.recentPrescriberRuns![0]!;
+    // triggeredBy must be populated (I1 field).
+    expect(run.triggeredBy).toBe('mcp:forge_prescribe');
+    // profileSource must be non-null (profile was seeded above).
+    expect(run.profileSource).not.toBeNull();
+    // Numeric counts must be present.
+    expect(typeof run.inserted).toBe('number');
+    expect(typeof run.skipped).toBe('number');
+    expect(typeof run.totalHints).toBe('number');
   });
 });
