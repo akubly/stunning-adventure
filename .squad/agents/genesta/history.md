@@ -215,3 +215,8 @@
 **Key Learning:** When writing technical specifications from a locked PRD, resist the temptation to "fill gaps" with invented semantics. Explicitly flagging ambiguities as open questions is more valuable than guessing wrong and creating false precision. Implementation leads need decision latitude; design specs should constrain what matters (API surface, side effects, tier authority) and liberate what doesn't (internal merge strategies, error handling tactics). The §10.4 open questions list is the most important section — it's the contract boundary where design authority transfers to implementation authority.
 
 **Status:** Section complete. Ready for Edgar/Crispin review.
+
+---
+
+### 2026-05-27: London-School TDD Directive — Team Impact Assessment
+**Team Update:** Aaron issued London-school (outside-in mockist) red/green TDD as team default. **Genesta assigned:** Review Laura's docs/eureka/sections/55-tdd-strategy.md (next session) for activity-semantic consistency vs §10. Verify outside-in test-driven interface shapes match activity boundaries. Locked-out of revision if reject (protocol requires different agent).

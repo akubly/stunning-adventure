@@ -2,10 +2,47 @@
 
 ## Index
 
+- [London-School TDD Directive](#london-school-tdd-directive)
 - [G4 Scope & Ownership Recommendation + Directives](#g4-scope--ownership-recommendation--directives)
 - [Brain Project Proposal — Name, Roster, Loop-In Model](#brain-project-proposal--name-roster-loop-in-model)
 - [Unified Package Scope → @akubly](#unified-package-scope--akubly)
 - [Phase 4.5 Brainstorm Round 2 — Aaron's Decisions](#phase-45-brainstorm-round-2--aarons-decisions)
+
+---
+
+## London-School TDD Directive
+
+**Date:** 2026-05-27  
+**Author:** Aaron Kubly  
+**Status:** Adopted  
+
+### Directive
+
+> All implementation work uses **London-school (mockist / outside-in) red/green TDD**. Red first (failing test that drives the next collaborator), green next (minimal pass), then refactor. Mock collaborators at the boundary of the unit under test; test interactions, not just state. Applies to all packages — cairn, forge, types, and Eureka going forward.
+
+### Rationale
+
+Aaron established this as team-wide engineering standard. London-school (outside-in, interaction-focused) TDD drives internal collaborator shape from test contracts, preventing tests from confirming existing design rather than challenging it.
+
+### Impact on Eureka v1 Development
+
+- **Supersedes prior assumptions:** Eureka's existing `docs/eureka/sections/50-testability.md` leaned more toward state-based / contract-first / property-based testing (Detroit school). This section now becomes a complementary layer, not the spine.
+- **Reshapes test strategy:** §55-tdd-strategy (authored next session by Laura) must lead with London-school red/green/refactor as the spine, demonstrating outside-in from the 9 activity verbs (7 v1 + 2 v1.5).
+- **Interface stability prerequisite:** London-school mocks depend on stable seams. Open blocker **OQ-1 (shared substrate ownership)** must be resolved before Laura starts so mocks land on firm contract ground.
+
+### Consequences
+
+- ✅ London-school adopted as team default for all packages
+- ⚠️ Laura (author of §55-tdd-strategy) must read only §10 (observable activities) and explicitly IGNORE §20/30/40/50 (internal design) to preserve outside-in discipline
+- ⚠️ §50-testability section marked for revision/reconciliation with new §55-tdd-strategy (which parts carry forward as complementary? which are reframed?)
+- ⚠️ OQ-1 resolution (monorepo or other substrate-ownership model) must precede §55-tdd-strategy authoring
+
+### Next Steps
+
+1. **Scribe merge:** This directive merged into decisions.md (this entry)
+2. **Session handoff:** Coordinator asks Aaron about OQ-1 before spawning Laura
+3. **Laura's task:** Author §55-tdd-strategy with red/green/refactor spine, worked example on `recall` activity, mock contract style guide, PRD AC mapping, OQ-1 dependency flags
+4. **Reviewer roles:** Genesta verifies activity semantics vs §10; Edgar verifies algorithmic seams vs §30; both locked out of revision (protocol requires different agent if rejects)
 
 ---
 

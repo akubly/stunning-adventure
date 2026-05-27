@@ -337,3 +337,8 @@
 
 # Laura — History (Summarized)
 
+
+---
+
+### 2026-05-27: London-School TDD Directive — Next Task Assigned
+**Team Update:** Aaron issued London-school (outside-in mockist) red/green TDD as team default for all packages. **Laura assigned:** Author docs/eureka/sections/55-tdd-strategy.md next session (read §10 only, ignore §20/30/40/50 per outside-in discipline). Genesta + Edgar review. Open blocker: OQ-1 substrate ownership resolution (Aaron to decide).

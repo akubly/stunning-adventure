@@ -109,3 +109,8 @@
 
 **Status:** ✅ Documentation complete. Ready for team review.
 
+
+---
+
+### 2026-05-27: London-School TDD Directive — Algorithmic Seams Coordination
+**Team Update:** Aaron issued London-school (outside-in mockist) red/green TDD as team default. **Edgar assigned:** Review Laura's docs/eureka/sections/55-tdd-strategy.md (next session) for algorithmic-seam consistency vs §30 learning-systems algorithms. Verify mocked collaborators match extraction-ready design boundaries (FR-12 7 mechanisms). Locked-out of revision if reject (protocol requires different agent).
