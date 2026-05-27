@@ -91,3 +91,59 @@ Name the trade-offs of each. Recommend one with reasoning.
 - Before design begins on any two PRDs targeting the same repo
 - When a new PRD is proposed for a repo that already has an active PRD
 - During sprint planning when two feature tracks touch the same packages
+
+---
+
+## Extension: Position-Paper-Before-Meeting Pattern
+
+**Context:** Overlap analysis complete; coordination meeting scheduled; scope disagreement likely.
+
+**Problem:** Meetings without shared pre-read waste time discovering disagreements live, then run out of time to negotiate solutions.
+
+**Solution:** One team writes position paper as meeting pre-read. Paper becomes negotiation artifact, not meeting surprise.
+
+### Position Paper Structure (ADR-Style)
+
+1. **Context** — summarize the overlap/tensions discovered during Step 1-5 analysis
+2. **Decision** — your team's position on shared surface scope
+   - What IS shared (non-negotiable)
+   - What IS NOT shared (explicitly excluded)
+   - What's negotiable (extensions, optional fields)
+3. **Coupling Model** — how consumer project depends on producer
+   - Stable API pattern (recommended)
+   - Direct SQL access (usually rejected; explain why)
+   - Optional adapter pattern (for standalone requirements)
+4. **Versioning Protocol** — what freezes now vs post-exercise
+   - Minimal freeze (exercised contracts only)
+   - Full freeze timeline (after both sides have working code)
+   - Governance post-freeze (CODEOWNERS, CHANGELOG, CI)
+5. **Consequences** — trade-offs if accepted vs rejected
+6. **Alternatives Considered** — name 2-3 rejected approaches with reasoning
+7. **Open Questions** — 3-5 max, for product owner (not architects)
+
+### Companion Memo (Sent to Counterparty)
+
+Short (1-2 pages max) memo that:
+- Acknowledges coordination ask
+- Names 2-3 tensions directly (scope mismatch, coupling contradiction, timeline disagreement)
+- Counter-proposes narrower scope or revised timeline
+- Attaches position paper as pre-read
+- Revises meeting agenda based on position
+
+**Voice:** Collegial but firm. Does not bury disagreements to preserve meeting harmony. Surfaces tensions so meeting negotiates solutions, not discovers problems.
+
+### Principles
+
+- **Scope first, then timeline.** If teams disagree on what's shared, freezing prematurely locks in disagreement.
+- **Position paper converts discovery into negotiation.** 30-min meeting becomes "negotiate solutions" not "discover we disagree."
+- **Optional-adapter pattern preserves standalone.** Consumer-owned adapter, producer-owned API, compile-time coupling (typed API) not runtime (SQL schema).
+- **Minimal-freeze-first is anti-anchoring.** Freeze only exercised contracts; defer speculative ones until code validates.
+
+### When to Use This Extension
+
+- When Step 6 recommendation is "coordinate" but timeline is aggressive (freeze-this-week pressure)
+- When consumer project claims "standalone" but proposes direct dependency on producer's storage schema
+- When one PRD assumes the other's substrate is stable, but Aaron's recent directives forked/restructured it
+- When meeting invite arrives before overlap analysis complete
+
+**Output:** Two artifacts (position paper + memo) in `.squad/decisions/inbox/`. Counterparty reads before meeting. Meeting agenda revised based on position.

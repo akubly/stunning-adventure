@@ -1,3 +1,5 @@
+📌 Team update (2026-05-27T07:07:46Z): **Cassima reply superseded** — Graham's prior draft (`graham-cassima-reply.md`) was panel-rejected on scoping complexity. Erasmus redrafted with narrower freeze (SessionId + DecisionRecord only, defers WAL/event + prescriber), aligned to Aaron's May 26 directives (storage fork + Eureka standalone). Aaron approved as-drafted. New decision posted to decisions.md; Graham's reply remains in ledger for audit. — Scribe
+📌 Team update (2026-05-27): **Eureka cross-PRD coordination position** — Position paper + reply to Cassima on shared schema freeze. Narrowed scope to `@akubly/types` only (SessionId brand + DecisionRecord); excluded Cairn's forked WAL from negotiation; proposed optional-adapter pattern for WAL-as-learning-source; deferred full freeze until post-Sprint-2 (both sides have exercised code). Three tensions surfaced: scope mismatch (cairn forked), coupling contradiction (standalone vs WAL consumption), premature freeze. — Graham Knight [**SUPERSEDED by Erasmus revision (2026-05-27T07:07:46Z)**]
 📌 Team update (2026-05-23): **Wave 3 decisions accepted** — R2 approved as `@akubly/skillsmith-runtime`; MCP dropped from Wave 3; always-on Curator hook; 7 work items, ~18 tests. Docs revised, ready to fan out. — Graham Knight
 📌 Team update (2026-05-23): **Wave 3 scope + ADR drafted** — `docs/forge-phase4.6-wave3-scope.md` (9 work items, 4 open questions) + `docs/adr/0001-composition-root.md` (5 options R1–R5, recommending R2). Awaiting Aaron's approval. — Graham Knight
 📌 Team update (2026-05-22T20:29:36Z): **Wave 1 complete** — canonical type adopted across packages, SqliteChangeVectorProvider live, zero-vector summaries filtered. Alexander (W2-2) + Rosella (W2-3/W2-7) complete. Forge 599 + Cairn 564 tests green. — Scribe
@@ -241,6 +243,40 @@ Aaron skeptical about hash-chain cost ("do we *care* about tamper-evidence?"). E
 **Ambition:** Curator becomes **pluggable policy layer**. Instead of hardcoding "never auto-apply below 60%," I write a hook. Governance is code, not configuration. This enables third parties to build compliance layers on top of the harness.
 **Chambers touched:** Curator (hook registry), Cairn (policy decision tracking).
 **Architectural implication:** Curator must expose a **hook surface** (before-propose, after-proposal, before-apply, after-apply, on-revert) with standardized context-passing so custom handlers can intercept and transform decisions.
+
+---
+
+### Cross-PRD Coordination Pattern: Position-Paper-Before-Meeting (2026-05-27)
+
+**Context:** Cassima (Eureka coordinator) proposed joint schema design across Crucible + Eureka covering `packages/cairn`, `packages/forge`, `packages/types`, with freeze-this-week timeline. Three architectural tensions surfaced:
+
+1. **Scope mismatch.** Cairn's WAL forked per Aaron 2026-05-27T06:05Z directive — it's Crucible-internal, not shared. Including it in "shared schema" negotiation assumes a surface that doesn't exist.
+2. **Coupling contradiction.** "Eureka v1.5 will consume Crucible's WAL as a learning source" contradicts Aaron's same-day standalone directive ("Eureka MUST function standalone… does not assume Crucible is present"). Direct SQL access to cairn tables couples Eureka to Crucible's storage schema. First L1 migration breaks Eureka silently.
+3. **Premature freeze.** Neither Crucible L1 nor Eureka v1 have shipping code. Freezing schema before exercising it is spec-up-front trap (per Erasmus Phase 4.6 critique, line 86 above).
+
+**Pattern applied:**
+
+1. **Write position paper BEFORE meeting** (ADR-style: Context / Decision / Consequences / Alternatives). Covers:
+   - Shared surface scope (what IS vs IS NOT negotiable).
+   - Coupling model proposal (stable API + optional adapter, not raw SQL).
+   - Versioning protocol (minimal freeze now, full freeze post-exercise).
+   - Trade-offs explicitly named (premature freeze vs delayed coordination).
+   - Alternatives considered and rejected with reasoning.
+
+2. **Memo to counterparty** naming tensions directly, proposing narrow scope + deferred timeline, attaching position paper as pre-read. Collegial but firm — does not bury disagreements to preserve meeting harmony.
+
+3. **Counter-propose meeting agenda** narrower than original. Minimal freeze this week (SessionId brand + DecisionRecord v1.0.0 only), defer everything else until both sides have working code (~2 weeks, post-Crucible-Sprint-2).
+
+**Principles extracted:**
+
+- **Scope first, then timeline.** If two teams disagree on what's shared, freezing it prematurely locks in the disagreement.
+- **Position paper as pre-read** converts 30-min meeting from "discover disagreements live" to "negotiate solutions having read each other's constraints."
+- **Optional-adapter pattern preserves standalone.** If Project A consumes Project B's events, adapter is A-owned, API is B-owned, coupling is compile-time (via typed API) not runtime (via SQL schema).
+- **Minimal-freeze-first is anti-anchoring.** Freeze only what both sides have already exercised; defer speculative contracts until working code validates them.
+
+**Reusable for:** Any cross-PRD / cross-team schema negotiation where coupling model is unclear or timeline is aggressive. Pattern prevents "agree in meeting, discover incompatibility during implementation."
+
+**Outcome (pending):** Two artifacts in `.squad/decisions/inbox/`: `graham-types-position-paper.md` (ADR-style 15K chars) + `graham-cassima-reply.md` (memo 10K chars). Waiting on Cassima's response to narrow-scope counter-proposal.
 
 ---
 

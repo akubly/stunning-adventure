@@ -199,3 +199,13 @@ T5 resolved — Crucible built on Copilot SDK, replaces Copilot CLI as Aaron's d
 **If both must ship:** Cleanest pattern is layered dependency (Eureka as leaf, no dependency on Cairn/Forge; adapters live in a bridges package or in skillsmith-runtime, NOT in Eureka). Current design has adapters in `packages/eureka/src/interop/` which makes Eureka depend on Forge's types — invert this.
 
 **Output:** `D:\git\harness\.squad\decisions\inbox\erasmus-two-harnesses-one-repo.md`
+
+### Cross-team directive-shift memo pattern (2026-05-27)
+
+**Task:** Draft a reply from the Crucible team to Cassima after Aaron changed the integration boundary for Crucible/Eureka.
+
+**Reusable pattern:** When a peer team's proposal was reasonable under the old boundary, lead with that respect before narrowing scope. Anchor the change in the new directive, then point to the peer team's own canonical document as confirmable evidence rather than as a gotcha.
+
+**Coordination shape:** Separate "what must freeze now" from "future integration preference." For this memo, the immediate freeze was only `SessionId` + `DecisionRecord` + co-owned `@akubly/types`; the Eureka-aware prescriber stayed explicitly non-blocking and deferred until implementation demand exists.
+
+**Output:** `D:\git\harness\.squad\decisions\inbox\erasmus-cassima-reply.md`

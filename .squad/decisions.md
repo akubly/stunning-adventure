@@ -746,6 +746,40 @@ US-A-NEW-5 demands a primitive ledger with properties current `event_log` lacks 
    - ❌ never auto: low-confidence hint apply, policy guardrail changes
    - The vision-doc framing of "append-then-review vs propose-then-commit" dissolves — it's per-category, and consequential decisions always stage for human gate.
 
+---
+
+## Cross-PRD Coordination — Cassima Reply (Revision after Lockout, 2026-05-27)
+
+**Status:** APPROVED by Aaron (2026-05-27). **Supersedes** Graham's prior locked-out reply (retained in ledger for audit, ~lines 1280-1500).
+
+**Scope:** Cross-team contract freeze between Crucible (Cairn) and Eureka, narrowed by Aaron's May 26 directives (Crucible storage fork + Eureka standalone v1).
+
+**Decision:** Freeze only three shared contracts for v1:
+1. `SessionId`: one branded primitive in `@akubly/types`, representing Copilot CLI session UUID (`~/.copilot/session-state/{uuid}/`).
+2. `DecisionRecord`: flat Forge audit shape used by Eureka decision adapters.
+3. `@akubly/types` governance: co-owned by both teams in CODEOWNERS, no single primary owner.
+
+**Rationale:** Aaron's directives changed which contracts cross the team boundary. Crucible now owns storage (Cairn independent from Eureka), and Eureka remains standalone for v1. The joint freeze protects the contracts that *still* touch both systems, while removing blocking scope on WAL/event consumption and prescriber core API.
+
+**Excluded from v1 freeze (deferred):**
+- WAL/session-end event consumption → deferred to v1.5+ unless new evidence makes it v1 blocker
+- Prescriber API surface and Eureka-aware Forge prescriber design → deferred until implementation owner exists
+
+**Integration recommendation (non-blocking, future):** For Crucible→Eureka use, prefer an optional Eureka-aware Forge prescriber that calls Eureka through public surface + emits normal Forge hints for Curator. Keeps both libraries independent.
+
+**Storage boundary (locked in):** Cairn remains Crucible's operational ledger; Eureka remains standalone knowledge storage. No shared DB schema, no cross-DB foreign keys, no runtime `ATTACH`, no `LearningEvent` package needed for v1.
+
+**Session/FR alignment:** Eureka PRD (FR-13) keeps Cairn→Eureka facts manual-only in v1 (explicit `remember()` by agent/human, no automatic promotion). FR-14 makes on-demand consumption path explicit (`eureka.ingestDecisions(...)` caller-driven, no background sweep).
+
+**Next Steps:**
+- Open CODEOWNERS PR for `@akubly/types` co-ownership
+- Land `SessionId` brand commit this week
+- Freeze `DecisionRecord` v0 as second shared contract
+- Defer prescriber design until implementation owner surfaces
+
+**Decided by:** Aaron Kubly  
+**Communication:** Will be sent to Cassima (Eureka Coordinator) as cross-team clarification on v1 freeze scope.
+
 2. **Turn definition (resolves Q3):** **Thick turn with intra-turn primitives, revealable on demand.** One user message → one assistant response, with sub-agents and tool calls nested inside. Reveal pattern modeled on Copilot CLI's Ctrl+E / Ctrl+T — internals are accessible but not in the user's face by default. Primitives are recorded at intra-turn granularity (each tool call, each sub-agent invocation, each decision) so replay fidelity is preserved without fragmenting the user-visible exchange.
 
 3. **Hash-chain semantics (resolves Q4):** Keep cheap hash-linking in the ledger (self-audit value for Aaron-the-sole-user, ~1% storage cost). Defer SBOM-style witness/notary/signature infrastructure to a later wave — migration is backward-compatible. Threat model in scope: "did I really approve that 6 months ago?" Threat model out of scope: external attestation, multi-party tamper detection.
