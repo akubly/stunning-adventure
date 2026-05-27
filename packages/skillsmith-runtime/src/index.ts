@@ -23,11 +23,22 @@ export interface CreatePrescriberOrchestrationConfigOpts {
 export type CreatePrescriberOrchestrationConfigOptions = CreatePrescriberOrchestrationConfigOpts;
 export type LoadedProfileSource = 'per-skill' | 'per-model' | 'per-user' | 'global';
 
+/**
+ * Controls which tiers are included in the profile fallback chain.
+ *
+ * - `'per-skill-only'` — only the per-skill tier is tried. Default. Use for
+ *   Curator orchestration where aggregate profiles would degrade precision.
+ * - `'full-chain'` — walk per-skill → per-model → per-user → global (identity
+ *   keys permitting). Use for CLI/operator paths where any profile is better
+ *   than none.
+ */
+export type FallbackPolicy = 'per-skill-only' | 'full-chain';
+
 export interface TierFallbackContext {
   modelId?: string;
   userId?: string;
-  /** Include the global tier at the end of the fallback chain. Default: false. */
-  allowGlobalFallback?: boolean;
+  /** Which tiers to include in the fallback chain. Default: 'per-skill-only'. */
+  fallbackPolicy?: FallbackPolicy;
 }
 
 export interface RunForgePrescribeOptions {
@@ -180,28 +191,30 @@ export function loadExecutionProfile(
   fallbackContext: TierFallbackContext = {},
   stalenessOptions: ProfileStalenessOptions = {},
 ): LoadedExecutionProfile | null {
+  const policy = fallbackContext.fallbackPolicy ?? 'per-skill-only';
   const chain: Array<{ source: LoadedProfileSource; granularityKey: string }> = [
     { source: 'per-skill', granularityKey: 'global' },
   ];
 
-  if (fallbackContext.modelId) {
-    chain.push({ source: 'per-model', granularityKey: fallbackContext.modelId });
-  }
+  if (policy === 'full-chain') {
+    if (fallbackContext.modelId) {
+      chain.push({ source: 'per-model', granularityKey: fallbackContext.modelId });
+    }
 
-  if (fallbackContext.userId) {
-    chain.push({ source: 'per-user', granularityKey: fallbackContext.userId });
-  }
+    if (fallbackContext.userId) {
+      chain.push({ source: 'per-user', granularityKey: fallbackContext.userId });
+    }
 
-  if (fallbackContext.allowGlobalFallback) {
     chain.push({ source: 'global', granularityKey: 'global' });
   }
 
+  const skipped: string[] = [];
   for (const tier of chain) {
     const profile = cairn.getExecutionProfile(db, skillId, tier.source, tier.granularityKey);
     if (profile) {
       if (tier.source !== 'per-skill') {
         console.info(
-          `[skillsmith-runtime] Profile fallback: skill=${skillId} selected tier=${tier.source} key=${tier.granularityKey}`,
+          `[skillsmith-runtime] Profile fallback: skill=${skillId} chain=[${chain.map(t => t.source).join(',')}] skipped=[${skipped.join(',')}] selected=${tier.source} key=${tier.granularityKey}`,
         );
       }
       return {
@@ -209,6 +222,7 @@ export function loadExecutionProfile(
         source: tier.source,
       };
     }
+    skipped.push(tier.source);
   }
 
   return null;
@@ -351,7 +365,7 @@ export async function runForgePrescribe(
     const db = cairn.getDb(dbPath);
     const loadedProfile = loadExecutionProfile(db, options.skillId, {
       ...options.fallbackContext,
-      allowGlobalFallback: options.fallbackContext?.allowGlobalFallback ?? true,
+      fallbackPolicy: options.fallbackContext?.fallbackPolicy ?? 'full-chain',
     });
 
     if (!loadedProfile) {

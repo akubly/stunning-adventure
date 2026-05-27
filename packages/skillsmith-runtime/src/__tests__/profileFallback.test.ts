@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as cairn from '@akubly/cairn';
-import { loadExecutionProfile, type LoadedProfileSource, type TierFallbackContext } from '../index.js';
+import { loadExecutionProfile, type FallbackPolicy, type LoadedProfileSource, type TierFallbackContext } from '../index.js';
 
 type ProfileSeed = Parameters<typeof cairn.upsertExecutionProfile>[1];
 
@@ -63,16 +63,16 @@ afterEach(() => {
 });
 
 describe('loadExecutionProfile tier fallback', () => {
-  it('walks per-skill to global when no identity keys are known', () => {
+  it('walks per-skill to global when full-chain policy is set', () => {
     seedProfile('global', 40);
 
-    const loaded = load({ allowGlobalFallback: true });
+    const loaded = load({ fallbackPolicy: 'full-chain' });
 
     expect(loaded?.source).toBe('global');
     expect(loaded?.profile.sessionCount).toBe(40);
   });
 
-  it('does not fall back to global when allowGlobalFallback is not set', () => {
+  it('does not fall back to global with default per-skill-only policy', () => {
     seedProfile('global', 40);
 
     const loaded = load();
@@ -96,7 +96,7 @@ describe('loadExecutionProfile tier fallback', () => {
     seedProfile('per-user', 30, 'aaron');
     seedProfile('global', 40);
 
-    const loaded = load({ modelId: 'gpt-5', userId: 'aaron' });
+    const loaded = load({ modelId: 'gpt-5', userId: 'aaron', fallbackPolicy: 'full-chain' });
 
     expect(loaded?.source).toBe('per-skill');
     expect(loaded?.profile.sessionCount).toBe(10);
@@ -106,7 +106,7 @@ describe('loadExecutionProfile tier fallback', () => {
     seedProfile('per-model', 20, 'gpt-5');
     seedProfile('global', 40);
 
-    const loaded = load({ modelId: 'gpt-5' });
+    const loaded = load({ modelId: 'gpt-5', fallbackPolicy: 'full-chain' });
 
     expect(loaded?.source).toBe('per-model');
     expect(loaded?.profile.granularityKey).toBe('gpt-5');
@@ -116,7 +116,7 @@ describe('loadExecutionProfile tier fallback', () => {
   it('falls through from missing per-model to global when only modelId is known', () => {
     seedProfile('global', 40);
 
-    const loaded = load({ modelId: 'gpt-5', allowGlobalFallback: true });
+    const loaded = load({ modelId: 'gpt-5', fallbackPolicy: 'full-chain' });
 
     expect(loaded?.source).toBe('global');
     expect(loaded?.profile.sessionCount).toBe(40);
@@ -126,7 +126,7 @@ describe('loadExecutionProfile tier fallback', () => {
     seedProfile('per-user', 30, 'aaron');
     seedProfile('global', 40);
 
-    const loaded = load({ modelId: 'gpt-5', userId: 'aaron' });
+    const loaded = load({ modelId: 'gpt-5', userId: 'aaron', fallbackPolicy: 'full-chain' });
 
     expect(loaded?.source).toBe('per-user');
     expect(loaded?.profile.granularityKey).toBe('aaron');
@@ -138,7 +138,7 @@ describe('loadExecutionProfile tier fallback', () => {
     seedProfile('per-user', 30, 'aaron');
     seedProfile('global', 40);
 
-    const loaded = load({ modelId: 'gpt-5', userId: 'aaron' });
+    const loaded = load({ modelId: 'gpt-5', userId: 'aaron', fallbackPolicy: 'full-chain' });
 
     expect(loaded?.source).toBe('per-model');
     expect(loaded?.profile.sessionCount).toBe(20);
@@ -147,7 +147,7 @@ describe('loadExecutionProfile tier fallback', () => {
   it('falls through from missing per-user to global in the full chain', () => {
     seedProfile('global', 40);
 
-    const loaded = load({ modelId: 'missing-model', userId: 'missing-user', allowGlobalFallback: true });
+    const loaded = load({ modelId: 'missing-model', userId: 'missing-user', fallbackPolicy: 'full-chain' });
 
     expect(loaded?.source).toBe('global');
     expect(loaded?.profile.sessionCount).toBe(40);
@@ -157,7 +157,7 @@ describe('loadExecutionProfile tier fallback', () => {
     seedProfile('per-model', 20, 'global');
     seedProfile('global', 40);
 
-    const loaded = load({ allowGlobalFallback: true });
+    const loaded = load({ fallbackPolicy: 'full-chain' });
 
     expect(loaded?.source).toBe('global');
     expect(loaded?.profile.sessionCount).toBe(40);
@@ -171,7 +171,7 @@ describe('loadExecutionProfile tier fallback', () => {
     setUpdatedAt('per-user', 'aaron', '2026-05-25T00:00:00.000Z');
     setUpdatedAt('global', 'global', '2026-05-25T00:00:00.000Z');
 
-    const loaded = loadAt({ modelId: 'gpt-5', userId: 'aaron' });
+    const loaded = loadAt({ modelId: 'gpt-5', userId: 'aaron', fallbackPolicy: 'full-chain' });
 
     expect(loaded?.source).toBe('per-model');
     expect(loaded?.profile.updatedAt).toBe('2020-01-01T00:00:00.000Z');
@@ -184,7 +184,7 @@ describe('loadExecutionProfile tier fallback', () => {
     setUpdatedAt('per-user', 'aaron', '2026-05-25T00:00:00.000Z');
     setSessionsSinceInstall(200);
 
-    const loaded = loadAt({ modelId: 'gpt-5', userId: 'aaron' });
+    const loaded = loadAt({ modelId: 'gpt-5', userId: 'aaron', fallbackPolicy: 'full-chain' });
 
     expect(loaded?.source).toBe('per-model');
     expect(loaded?.profile.staleness).toEqual({ stale: true, reason: 'count+age' });
