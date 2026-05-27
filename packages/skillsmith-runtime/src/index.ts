@@ -12,6 +12,8 @@ import type {
 } from '@akubly/types';
 
 export type { PrescriberOrchestrationConfig, PrescriberRunResult } from '@akubly/types';
+export { forgePrescribeHandler } from './mcp/handler.js';
+export type { ForgePrescribeArgs, McpToolResult, RunForgePrescribeFn } from './mcp/handler.js';
 
 export interface CreatePrescriberOrchestrationConfigOpts {
   db?: Database.Database;

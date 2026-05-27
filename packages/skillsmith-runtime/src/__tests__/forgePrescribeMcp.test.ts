@@ -96,10 +96,11 @@ describe('forge_prescribe handler — unit (stub orchestrator)', () => {
     const prescribeEvents = events.filter(e => e.eventType === 'prescriber_run');
     expect(prescribeEvents).toHaveLength(1);
     const payload = JSON.parse(prescribeEvents[0]!.payload);
-    expect(payload.skill_id).toBe('skill-a');
+    expect(payload.skillId).toBe('skill-a');
+    expect(payload.triggeredBy).toBe('mcp:forge_prescribe');
     expect(payload.force).toBe(false);
-    expect(payload.session_id).toBe(sessionId);
-    expect(payload.profile_used).toBe('per-skill');
+    expect(payload.sessionId).toBe(sessionId);
+    expect(payload.profileSource).toBe('per-skill');
     expect(payload.ts).toBeDefined();
     expect(payload.result.inserted).toBe(2);
     expect(payload.result.skipped).toBe(0);
@@ -149,8 +150,8 @@ describe('forge_prescribe handler — unit (stub orchestrator)', () => {
     const evt = events.find(e => e.eventType === 'prescriber_run');
     expect(evt).toBeDefined();
     const payload = JSON.parse(evt!.payload);
-    expect(payload.skill_id).toBe('skill-err');
-    expect(payload.profile_used).toBeNull();
+    expect(payload.skillId).toBe('skill-err');
+    expect(payload.profileSource).toBeNull();
   });
 });
 
@@ -175,7 +176,7 @@ describe('forge_prescribe handler — session fallback', () => {
     const events = cairn.getUnprocessedEvents(db, 0);
     const evt = events.find(e => e.eventType === 'prescriber_run');
     const payload = JSON.parse(evt!.payload);
-    expect(payload.session_id).toBe(userId);
+    expect(payload.sessionId).toBe(userId);
   });
 
   it('uses getActiveUserSession when repo_key is provided', async () => {
@@ -206,7 +207,7 @@ describe('forge_prescribe handler — session fallback', () => {
     expect(evt).toBeDefined();
     const payload = JSON.parse(evt!.payload);
     // session_id in payload is null (no user session found)
-    expect(payload.session_id).toBeNull();
+    expect(payload.sessionId).toBeNull();
     // but the event was still persisted (logged to system session)
     expect(evt!.sessionId).toBeDefined();
   });
@@ -241,8 +242,8 @@ describe('forge_prescribe handler — integration (real DB)', () => {
     expect(prescribeEvents).toHaveLength(1);
 
     const payload = JSON.parse(prescribeEvents[0]!.payload);
-    expect(payload.skill_id).toBe('skill-integration');
-    expect(payload.session_id).toBe(sessionId);
+    expect(payload.skillId).toBe('skill-integration');
+    expect(payload.sessionId).toBe(sessionId);
     expect(payload.force).toBe(false);
     expect(typeof payload.ts).toBe('string');
     expect(payload.result).toBeDefined();
@@ -278,9 +279,8 @@ describe('forge_prescribe handler — integration (real DB)', () => {
     });
     const body3 = JSON.parse(run3.content[0]!.text);
     expect(body3.ok).toBe(true);
-    if (body1.inserted > 0) {
-      expect(body3.skipped).toBe(0);
-    }
+    // When force=true, active hints are expired — skipped must always be 0.
+    expect(body3.skipped).toBe(0);
   });
 });
 
@@ -319,9 +319,9 @@ describe('forge_prescribe handler — edge cases', () => {
     });
     const body2 = JSON.parse(run2.content[0]!.text);
 
-    if (firstInserted > 0) {
-      expect(body2.skipped).toBeGreaterThan(0);
-    }
+    // Dedup contract: what run1 inserted, run2 should skip (not re-insert).
+    expect(body2.skipped).toBe(firstInserted);
+    expect(body2.inserted).toBe(0);
   });
 });
 
@@ -333,6 +333,8 @@ describe('forge_prescribe handler — CairnEvent fail-open', () => {
   it('tool response succeeds even when logEvent throws (fail-open)', async () => {
     const db = cairn.getDb();
     cairn.createSession(db, 'org/fail-open-repo', 'main');
+
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
     // Inject a logEvent failure
     vi.spyOn(cairn, 'logEvent').mockImplementationOnce(() => {
@@ -355,11 +357,15 @@ describe('forge_prescribe handler — CairnEvent fail-open', () => {
     expect(body.ok).toBe(true);
     // The error must not bleed into the response content
     expect(result.content[0]!.text).not.toContain('DB full');
+    // The error must have been written to stderr
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('DB full'));
   });
 
   it('tool response succeeds even when ensureSystemSession throws (fail-open)', async () => {
     const db = cairn.getDb();
     // No user session — falls back to ensureSystemSession; simulate that failing too
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
     vi.spyOn(cairn, 'ensureSystemSession').mockImplementationOnce(() => {
       throw new Error('write lock');
     });
@@ -373,6 +379,8 @@ describe('forge_prescribe handler — CairnEvent fail-open', () => {
     expect(result.isError).toBeFalsy();
     const body = JSON.parse(result.content[0]!.text);
     expect(body.ok).toBe(true);
+    // The write-lock error must have been reported to stderr
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('write lock'));
   });
 });
 

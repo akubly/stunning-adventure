@@ -22,12 +22,13 @@ export interface ForgePrescribeArgs {
 
 /** Shape of the `prescriber_run` CairnEvent payload (W5-5). */
 interface PrescriberRunEventPayload {
-  skill_id: string;
+  skillId: string;
+  triggeredBy: string;
   force: boolean;
   /** Resolved user session id, or null when no user session was found. */
-  session_id: string | null;
+  sessionId: string | null;
   /** Profile tier used for this run, or null when no profile exists. */
-  profile_used: LoadedProfileSource | null;
+  profileSource: LoadedProfileSource | null;
   /** Attenuated confidence from the loaded profile, or null when no profile. */
   confidence: number | null;
   /** ISO timestamp of when the MCP tool was invoked. */
@@ -36,7 +37,7 @@ interface PrescriberRunEventPayload {
     inserted: number;
     skipped: number;
     errored: number;
-    total_hints: number;
+    totalHints: number;
   };
 }
 
@@ -99,10 +100,11 @@ export async function forgePrescribeHandler(
   try {
     const logSessionId = session?.id ?? cairn.ensureSystemSession(db);
     const payload: PrescriberRunEventPayload = {
-      skill_id,
+      skillId: skill_id,
+      triggeredBy: 'mcp:forge_prescribe',
       force,
-      session_id: session?.id ?? null,
-      profile_used: result.ok
+      sessionId: session?.id ?? null,
+      profileSource: result.ok
         ? result.profileSource
         : (preRunProfile?.source ?? null),
       confidence,
@@ -111,7 +113,7 @@ export async function forgePrescribeHandler(
         inserted: result.inserted ?? 0,
         skipped: result.skipped ?? 0,
         errored: result.errored ?? 0,
-        total_hints: result.totalHints ?? 0,
+        totalHints: result.totalHints ?? 0,
       },
     };
     cairn.logEvent(db, logSessionId, 'prescriber_run', payload);
