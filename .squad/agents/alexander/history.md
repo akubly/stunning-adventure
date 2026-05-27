@@ -2,6 +2,30 @@
 
 # Alexander — History (Recent)
 
+## Learnings (2026-05-26 — Wave 6 Cycle-1 Fix Wave)
+
+### Findings Addressed
+All 8 accepted findings fixed in 4 commits:
+- **B1 (BLOCKING)**: `prescriber_run` payload schema mismatch — handler wrote snake_case (`skill_id`, `profile_used`, `total_hints`); reader queried camelCase (`skillId`, `profileSource`, `totalHints`). SQL filter `json_extract(payload, '$.skillId')` never matched → `forge-metrics` CLI always returned empty prescriber runs in production.
+- **I1**: `triggeredBy` field was never set by handler; reader defaults to 'unknown'. Added `triggeredBy: 'mcp:forge_prescribe'` to interface + payload.
+- **I2**: Fail-open tests verified tool result was ok but never asserted stderr write happened. Added `vi.spyOn(process.stderr, 'write')` + assertions.
+- **I3**: Monolithic try/catch in `queryPrescriberRuns` returned null on ANY error (including SQLite throwing on malformed JSON in json_extract WHERE clause). Added `json_valid(payload)` guard to SQL + per-row JS try/catch for defense-in-depth.
+- **I4**: No handler→reader integration test — root cause of why B1 shipped. Added round-trip test calling real `forgePrescribeHandler` then `loadMetrics`.
+- **M1**: Duplicate `closeDb()` removed from `.catch()` in forge-metrics.ts.
+- **M2**: Vacuous force-flag assertions guarded by `if (inserted > 0)` restructured to unconditional relational contracts.
+- **M3**: "serial proof" language in mcp-async-io.test.ts and issue-17 findings doc replaced with "sync IO bounded and guarded"; added clarifying sentence about concurrent-handler serialization.
+
+### Root Cause
+Schema contract drift between W5-5 writer (handler.ts, Rosella) and W5-6 reader (loadMetrics.ts, Roger). Each package's test suite was internally consistent but neither tested the cross-package round-trip. The handler tests only verified that a payload was written; the reader tests only verified that a correctly-shaped payload was read. Nobody checked that the shapes matched.
+
+### The Lesson
+**Cross-deliverable contracts need at least one round-trip test.** When a writer and reader live in different packages and are developed in separate waves, the integration surface is invisible to unit tests on either side. The I4 round-trip test (forgePrescribeHandler writes → loadMetrics reads) is the test that *would have caught B1 before it shipped*. Going forward: any new event/payload pair that crosses a package boundary must have a round-trip test in the consuming package that imports the writer directly.
+
+### Collateral Discovery
+SQLite 3.47.x (bundled by better-sqlite3) throws `malformed JSON` from `json_extract()` when the payload column contains invalid JSON — even in the WHERE clause evaluation. The documented behavior (return NULL for invalid JSON) does not match actual behavior at this version. Added `json_valid(payload)` guard upstream of `json_extract()` to prevent the throw and skip invalid rows gracefully.
+
+
+
 ## 2026-05-26: Wave 6 Kickoff Summary
 
 Scribe orchestration complete: Graham's v3 scope finalized and merged to `.squad/decisions.md`. Key scope decisions:
