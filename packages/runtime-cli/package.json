@@ -5,7 +5,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "forge-prescribe": "dist/cli.js"
+    "forge-prescribe": "dist/cli.js",
+    "forge-metrics": "dist/forge-metrics.js"
   },
   "files": [
     "dist/"
