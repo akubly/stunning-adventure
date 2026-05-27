@@ -1,4 +1,5 @@
 📌 Team update (2026-05-26T22:27:00Z): **Wave 5 integration merge strategy finalized** — W5-1/W5-3/W5-4/W5-2 ordered; all conflicts resolved; root npm run build + npm test green (Cairn 597/597, Forge 644/647). W5 phase-4.6/wave-5-integration ready for PR — Scribe
+📌 **Wave 6 integrated onto phase-4.6/wave-6 (2026-05-26)** — W5-6 forge-metrics CLI standalone subcommand preserved as commit 871a492. Integration complete with W5-5 (Rosella) + #17 (Laura). Tests 648/651 green. Awaiting Aaron's /review-cycle. — Scribe
 📌 Team update (2026-05-23T21:20:00Z): **Wave 4 W4-1 & W4-2 complete** — insertHintIfNew atomicity (migration 013, partial UNIQUE index, BEGIN IMMEDIATE) + CairnEvent extensions (hint_state_transition, profile_bump events, system session). All unit tests passing; integration Groups A & B both 5/5+3/3. 584 Cairn tests green. — Scribe
 
 # Roger — History
