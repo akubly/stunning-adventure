@@ -17,7 +17,8 @@
   },
   "dependencies": {
     "@akubly/cairn": "*",
-    "@akubly/skillsmith-runtime": "*"
+    "@akubly/skillsmith-runtime": "*",
+    "@akubly/types": "*"
   },
   "devDependencies": {
     "vitest": "^3"

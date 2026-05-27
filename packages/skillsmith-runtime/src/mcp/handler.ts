@@ -7,8 +7,12 @@
 
 import type Database from 'better-sqlite3';
 import * as cairn from '@akubly/cairn';
-import { runForgePrescribe as defaultRunForgePrescribe, loadExecutionProfile } from '../index.js';
-import type { LoadedProfileSource, ForgePrescribeResult } from '../index.js';
+import {
+  runForgePrescribe as defaultRunForgePrescribe,
+  loadExecutionProfile,
+  type LoadedProfileSource,
+  type ForgePrescribeResult,
+} from '../runtime.js';
 
 // ---------------------------------------------------------------------------
 // Types

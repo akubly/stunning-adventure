@@ -6,15 +6,13 @@ import {
   getSessionsSinceInstall,
 } from '@akubly/cairn';
 import { loadExecutionProfile } from '@akubly/skillsmith-runtime';
+import { ATTENUATION_FLOOR } from '@akubly/types';
 import type {
   SkillMetrics,
   SkillMetricsPrescriberRun,
   SkillMetricsStaleness,
   SkillMetricsConfidence,
 } from './types.js';
-
-/** Mirrors ATTENUATION_FLOOR from @akubly/types — minimum confidence for auto-apply eligibility. */
-const ATTENUATION_FLOOR = 0.1;
 
 export interface LoadMetricsOptions {
   skillId: string;
@@ -147,7 +145,7 @@ export function loadMetrics(options: LoadMetricsOptions): SkillMetrics {
   const { profile, source } = loaded;
 
   const updatedAt = profile.updatedAt;
-  const daysSinceUpdate = daysBetween(new Date(updatedAt), now);
+  const daysSinceUpdate = Math.max(0, daysBetween(new Date(updatedAt), now));
 
   const currentSessionCount = getSessionsSinceInstall(db);
   const sessionsSinceUpdate = Math.max(0, currentSessionCount - profile.sessionCount);
