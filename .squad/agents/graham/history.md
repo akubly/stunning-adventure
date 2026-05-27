@@ -109,3 +109,66 @@
 
 **Status:** ✅ R8 LOCKED — verdict documented and integrated into decisions.md.
 
+---
+
+### 2026-05-27: Eureka Technical Design — Skeleton Authored
+
+**Event:** Authored §0 (Overview & Cross-Cutting Concerns) and assembly index for Eureka technical design.
+
+**Deliverables:**
+- `docs/eureka/sections/00-overview.md` — Problem statement, architecture diagram, bounded contexts, cross-cutting concerns (observability, security, plasticity/trust, tier resolution), technology stack rationale, milestone plan (M0→M5), ADR index
+- `docs/eureka/technical-design.md` — Assembly index linking all section files, authorship matrix, status tracking
+- `docs/eureka/adrs/0001-sqlite-persistence.md` — SQLite decision with trade-offs
+- `docs/eureka/adrs/0003-sessionid-branded-primitive.md` — SessionId branded type decision
+
+**Key architectural choices documented:**
+1. **SQLite via better-sqlite3** — Matches Cairn precedent, local-first, FTS5 built-in. Trade-off: CRDT sync (v2) will require custom implementation.
+2. **SessionId as branded primitive** — Honest shared identity at type level, zero runtime overhead. Trade-off: Requires boundary validators.
+3. **Three tiers in schema, one wired in v1** — Schema/API surface preserves future extensibility while v1 ships agent-tier only.
+4. **Learning kernel extraction boundary** — `packages/eureka/src/learning/` designed for extraction; 5 of 7 enforcement mechanisms ship in v1.
+
+**Coordination note:** Sections §10–§70 being authored in parallel by Genesta, Crispin, Edgar, Roger, Laura, Valanice, Cassima. Assembly index tracks status.
+
+**Next:** Team review of §0, then implementation begins at M1.
+
+---
+
+### 2026-05-27: Eureka Technical Design v0.1 — Assembly Pass Complete
+
+**Event:** All 8 specialist sections delivered; performed assembly pass to create canonical entry-point document.
+
+**Deliverables:**
+- `docs/eureka/technical-design.md` — Rewritten as canonical entry-point with executive summary, full TOC, Open Decisions for Aaron (OQ-1 through OQ-6), cross-section tensions, risk register (6 risks), milestone summary (M0→M5), section status table
+- `docs/eureka/adrs/0002-shared-substrate-ownership.md` — New ADR documenting T7 substrate-ownership decision as PENDING with three options (monorepo/submodule/npm)
+- `.squad/decisions/inbox/graham-design-v0.1-assembled.md` — Decision file documenting assembly completion and blockers
+
+**Cross-Section Tensions Reconciled:**
+1. **T7 Substrate ownership** — ESCALATED as OQ-1. `@akubly/types`/`cairn`/`forge` duplicated across `mem/` and `harness/`. Three options documented; awaiting Aaron.
+2. **Activity vocabulary (9 vs 7+2)** — RESOLVED. PRD v5-final wins. All sections now use 7 v1 activities (integrate, recall, rerank, decide, commit, retire, evict) + 2 reserved v1.5 (meditate, contemplate). Checked §00; already aligned.
+3. **BM25 keyword-disjoint gap** — RESOLVED. Documented as known limitation with v1.5 sqlite-vec mitigation path. Honest eval set (keyword-overlap only).
+4. **Crucible A1/A3 dependencies** — ESCALATED. A1 → OQ-1; A3 → OQ-4 (dogfood sequencing).
+
+**Open Blockers for Aaron:**
+| # | Severity | Question |
+|---|----------|----------|
+| OQ-1 | CRITICAL | Substrate ownership (monorepo / submodule / npm) |
+| OQ-2 | MEDIUM | Confirm R8 SessionId brand stance |
+| OQ-4 | MEDIUM | Dogfood sequencing (Crucible-first recommended) |
+| OQ-3 | LOW | Accept BM25 disjoint-query gap |
+
+**Recommended path:** Resolve OQ-1 first (blocks day 1), then OQ-2/OQ-4, then proceed to M0 scaffolding.
+
+**Status:** v0.1 ASSEMBLED. Implementation BLOCKED on OQ-1.
+
+## Learnings
+
+### Assembly Pass Lessons (2026-05-27)
+
+1. **Vocabulary alignment requires early sync.** The 9-activity vs 7+2 discrepancy (original task brief vs PRD-locked vocabulary) could have caused downstream confusion. Genesta caught it and aligned to PRD. **Lesson:** When briefing specialists, always reference the canonical PRD section, not paraphrased summaries.
+
+2. **Substrate ownership is load-bearing.** Shared types (`SessionId` brand) are worthless if the source package is duplicated. T7 emerged late but is correctly classified as CRITICAL. **Lesson:** Before introducing cross-package brands, verify single source of truth exists.
+
+3. **Tension surfacing is healthy.** Four tensions surfaced across 8 specialists — none were design flaws, all were either resolvable (vocabulary, BM25) or escalatable (substrate, Crucible). **Lesson:** Encourage specialists to flag tensions explicitly; the assembly pass is where reconciliation happens.
+
+4. **ADRs should track PENDING decisions.** Created ADR-0002 for substrate ownership before decision is made. This documents the analysis and options for Aaron. **Lesson:** ADRs aren't just post-decision records; they can frame pending decisions with trade-offs.
+

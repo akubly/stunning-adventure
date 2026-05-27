@@ -1,8 +1,93 @@
 # Squad Decisions
 
-## Open Decisions
+## Open Decisions (Current Session)
 
-### 2026-05-26: Crucible ↔ Eureka Cross-Project Overlap — Architectural Coordination Required
+### 2026-05-27: Eureka v0.1 Technical Design — Assembled & Blocked on 4 Critical Decisions
+
+**Status:** ✅ DESIGN ASSEMBLED — Implementation blocked  
+**Date:** 2026-05-27  
+**Initiated By:** Graham (Design Lead, Round 2 assembly) + Eureka team (Round 1 authorship)  
+**Urgency:** 4 blockers identified; OQ-1 (substrate ownership) is CRITICAL
+
+**Summary:** Eight sections of Eureka v0.1 technical design are now drafted and assembled. All cross-section tensions have been surfaced, categorized, and either resolved or escalated as open questions. **Three critical blockers identified:**
+
+1. **OQ-1 (CRITICAL — Cassima):** Shared substrate ownership — `@akubly/types`, `cairn/`, `forge/` duplicated in `mem/` and `harness/`. Three options: A=monorepo, B=submodule, C=npm packages. **ACTION REQUIRED: Aaron must choose A/B/C before sprint start.**
+
+2. **OQ-2 (MEDIUM):** Event schema topology — Crucible's L1 WAL vs Cairn's event_log create dual-write trap. **ACTION REQUIRED: Pre-sprint-2 sync (Graham/Genesta/Roger) to lock event-substrate path (Option A=merge or B=federate).**
+
+3. **OQ-3 (MEDIUM):** Decision/SessionId schema dual ownership — Crucible's Decision primitive vs Forge DecisionRecord vs Eureka DecisionPayload. **ACTION RECOMMENDED: Crucible rename Decision → ChoiceEvent for namespace clarity.**
+
+**Key Findings:**
+- ✅ PRD alignment: 100% acceptance criteria traced; 37/41 testable v1 (90% coverage)
+- ✅ Milestone phasing: M0–M5 clear; M2/M3 can parallelize (sweep uses cadence, not session-end hooks)
+- ✅ Crucible-Eureka overlap: Structural independence confirmed; safe to parallelize with storage fork directive
+- ⚠️ Substrate ownership unresolved (affects Forge adapter; affects both Eureka + Crucible v1 implementation)
+- ⚠️ Event schema collision identified (Crucible L1 WAL vs Cairn event_log; dual-write risk)
+
+**Timeline:** OQ-1 decision needed THIS WEEK. OQ-2 resolved pre-sprint-2 (~3 weeks). OQ-3 resolved with Crucible team.
+
+**Design artifacts:** 
+- `docs/eureka/technical-design.md` — canonical entry-point, v0.1 assembled
+- 8 sections (§00–§70, ~198KB total content)
+- 3 ADRs (0001, 0003, and proposed ADR 0002)
+- 8 orchestration logs (`.squad/orchestration-log/2026-05-27T08-13-25Z-{agent}.md`)
+
+**Signed:** Graham (Architecture), Cassima (PM), Genesta (Activities Lead)
+
+---
+
+### 2026-05-27: Friction-Level UX Decisions — Gated by v1 Dogfood Evidence
+
+**Status:** ⏳ AWAITING EVIDENCE  
+**Date:** 2026-05-27  
+**Initiated By:** Valanice (UX Specialist)  
+**Urgency:** Four decisions gate v1.5 design; cannot lock until Aaron completes ≥10 dogfood sessions
+
+**Four friction-level decisions deferred to v1.5 pending observed human behavior:**
+
+1. **Commit Approval Frequency** — Current: ~1 approval/session. Evidence gate: `eureka_commit_invocations_total` counter. Threshold: If >10 commits/session OR rejection_rate <10%, flip to auto-approve with opt-in.
+
+2. **Tier-Switching Observability** — Current: Silent (show "Searched: [tiers]" only if multi-tier results). Evidence gate: `eureka_recall_multi_tier_results_total` counter. Threshold: If >5% of queries ask "which tier?", show on every recall.
+
+3. **Empty-State Actionability** — Current: Show suggestions ("Try a broader query"). Evidence gate: Log-based analysis (follow-up query rate, remediation success). Threshold: If remediation_success_rate >70%, keep suggestions; otherwise drop to factual-only.
+
+4. **Contemplate Verbosity** — Current: Silent (v1 doesn't ship contemplate; v1.5 pending). Evidence gate: Post-contemplate confusion + summary action-upon rate. Threshold: If >10% ask "did Eureka run?", default to summary; otherwise silent.
+
+**Evidence Collection Plan:** 10+ dogfood sessions (Aaron), telemetry counters, log-based metrics, post-session interviews (sessions 5 + 10). **Lock gate:** Cannot commit v1.5 friction decisions until dogfood evidence is analyzed.
+
+**Instrumentation required:** Telemetry counters already in v1 scope. Interview protocol TBD.
+
+**Signed:** Valanice (UX)
+
+---
+
+### 2026-05-27: Narrower Substrate Freeze Proposal — Accepted with Amendments
+
+**Status:** ✅ EVALUATED — Recommendation: ACCEPT  
+**Date:** 2026-05-27  
+**Initiated By:** Erasmus (Crucible team, via Cassima)  
+**Evaluated By:** Genesta (Activities Lead)
+
+**Proposal Summary:** Freeze only two cross-project contracts instead of full Cairn/Forge ownership:
+1. `SessionId` brand + validator/constructor in `@akubly/types`
+2. `DecisionRecord` shape and source union in Forge
+
+**Genesta's Evaluation:** ✅ **ACCEPT with three amendments:**
+- **A1 (Prescriber Opt-In):** Eureka-aware prescriber must be opt-in (explicitly registered), not default-wired into Forge.
+- **A2 (SessionId Validation Freeze):** Include validation rules (UUID v4 format, parse/isValid constructors).
+- **A3 (DecisionRecord Tolerance Contract):** Freeze adapter tolerance rules (forward/backward-compatible; breaking changes require 15-min sync).
+
+**G4-Lite Governance:** CODEOWNERS for `@akubly/types` (both teams required), CHANGELOG for DecisionRecord changes, Slack handoff for breaking changes. No label automation needed (only 2 contracts vs full packages).
+
+**Confidence:** HIGH. Narrower freeze covers all v1 contracts, reduces coordination overhead by 80-90% vs original scope.
+
+**Next steps:** Graham configures CODEOWNERS (<10 min); SessionId brand lands this week (with validation rules per A2); DecisionRecord v0 frozen with tolerance contract (per A3).
+
+**Signed:** Genesta (Eureka Lead), Cassima (PM)
+
+---
+
+### 2026-05-27: Crucible ↔ Eureka Cross-Project Overlap — Architectural Coordination Required
 
 **Status:** ⏳ AWAITING AARON DECISION  
 **Date:** 2026-05-26  

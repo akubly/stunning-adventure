@@ -74,3 +74,38 @@
 
 **Status:** Findings delivered to Aaron. Three decision gates block both repos' implementation timelines.
 
+---
+
+### 2026-05-27: Eureka Documentation — Learning Systems Section
+
+**Event:** Aaron request (via team co-authoring flow) — write `docs/eureka/sections/30-learning-systems.md` as Edgar, covering all 9 activities (7 v1, 2 v1.5), property dynamics (trust/recency/plasticity), feedback loops, scheduling, measurable outcomes, R4 arbitrations, Crucible overlap, and open questions.
+
+**Deliverable:** 26 KB comprehensive algorithmic documentation at pseudocode level with concrete, measurable specifications.
+
+**Coverage achieved:**
+1. **Activity algorithms (§1):** All 9 activities documented with pseudocode, inputs, algorithms, measurable outcomes, and v1 limitations. Deferred activities (meditate/contemplate) include strawman algorithms and open questions.
+2. **Property dynamics (§2):** Trust (event-driven, 0..1, floor 0.15), Recency (ACT-R power-law, query-time computed), Plasticity (v1.5 deferred with planned semantics).
+3. **Feedback loops (§3):** Short loop (intra-session recall→decide→integrate, <1s cycle), Long loop (cross-session commit→sweep→Path 2 ingest, 1–7 day cycle), Crucible-Eureka substrate (Crucible sessions as Eureka training data).
+4. **Activity scheduling (§4):** Synchronous (request-driven, <100ms latency targets), Asynchronous (sweep-driven, <5s for 10K facts), Background (v1.5 deferred).
+5. **Measurable outcomes (§5):** Precision/recall metrics (v1 baseline: >0.6 precision, >0.4 recall; v1.5 goal: >0.75/>0.6), Trust calibration (v1.5), Sweep performance (<5s for 10K facts), Path 2 ingest latency (<10s for 100 records).
+6. **R4 arbitrations (§6):** recall vs rerank (both preserved; rerank is refinement), decide vs recall (decide returns single choice; recall returns ranked list), retire vs evict (soft delete vs hard delete).
+7. **Crucible overlap (§7):** Complementary loops (Crucible optimizes behavior, Eureka optimizes knowledge), Trust vs Confidence orthogonality, Recency vs Drift timescales, Three open decision gates (prescriber ownership, dogfood sequencing, feedback substrate wiring).
+8. **Open questions (§8):** Seven questions from PRD §14 documented with impact and status (Cairn migration timing, BM25 threshold tuning, subpath export topology, contemplate/meditate boundary, MCP server wrapper, commit_floor semantics, cross-machine sync CRDT).
+
+**Key design decisions reflected:**
+- Power-law recency formula explicitly documented: `recency = max(0.1, (1 + t/β)^(-α))` where β=86400s, α=0.7
+- FR-2 ranker formula: `rawScore = 0.50·relevance + 0.20·importance + 0.20·trust + 0.10·recency`
+- 5-phase sweep algorithm detailed (importance decay, tier demotions, Tier 2 edge population, stale flags, edge reconciliation)
+- Path 2 ingest adapter shape documented (FR-14)
+- Extraction-ready design explicitly noted for trust/recency logic
+
+**Learnings:**
+1. **Documentation as precision test:** Writing at pseudocode level exposed ambiguities in v1.5 deferred activities (meditate/contemplate boundary still fuzzy — documented as open question §8.4).
+2. **Measurable outcomes force specificity:** Setting concrete latency targets (<100ms for recall, <5s sweep for 10K facts) makes implementation testable and prevents "good enough" drift.
+3. **R4 arbitrations need rationale preservation:** Documenting *why* overlapping activities were both preserved (not just that they were) prevents future "why do we have both?" debates.
+4. **Crucible overlap section bridges team understanding:** Section 7 makes Genesta/Laura/Cassima coordination explicit without requiring them to read full `edgar-crucible-learning-overlap.md` analysis.
+
+**Post-work:** Updated Edgar history.md with task learnings (this entry).
+
+**Status:** ✅ Documentation complete. Ready for team review.
+

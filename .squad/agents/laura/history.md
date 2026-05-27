@@ -165,6 +165,63 @@
 
 **Test organization:** Inline contract implementations before real modules exist. Switch from inline to real imports with zero test changes (only implementation changes).
 
+## Eureka Testability Strategy (2026-05-26)
+
+**Assignment:** Authored comprehensive test strategy document (`docs/eureka/sections/50-testability.md`, 27KB) for Eureka v1 knowledge retention system.
+
+**Strategy pillars:**
+1. **Contract-first**: Acceptance criteria (AC-1 through AC-6 from PRD v5-final) as test contract
+2. **Property-based**: Trust/recency/importance dynamics tested across continuous ranges with metamorphic properties
+3. **Tier boundaries**: v1 agent.db fully wired, user.db/project.db stubs (throw on write, empty on read)
+4. **Integration**: Cairn↔Eureka (SessionId brand), Forge↔Eureka (bridge ledger append-only), types contract validation
+
+**Critical edge cases prioritized:**
+- Empty graph (zero facts) — FTS5 on empty index
+- Conflicting trust scores — deterministic tie-breaker required
+- Recency at boundary (t=0, t=now-1ms, t=now+1ms) — off-by-one risk
+- Plasticity escalation — committed=true write protection enforcement
+- Tier cycles — cross-tier resolution with unwired stubs (no panic, graceful empty results)
+- Activity scheduling under load — concurrent recall+integrate, SQLite WAL mode validation
+
+**Test infrastructure:**
+- **Framework**: Vitest (following cairn pattern), in-memory SQLite for isolation
+- **Time travel**: `vi.useFakeTimers()` for recency decay testing
+- **Deterministic seeds**: For v1.5 stochastic activities (meditate, dream, ideate)
+- **Fixtures**: fact-empty-graph.json, fact-1000-load.json, decision-forge-ingestion.json
+
+**Acceptance criteria mapping (M0 readiness):**
+- ✅ Testable in M0: AC-1.1, AC-1.2, AC-1.4, AC-2.1, AC-2.2, AC-2.3, AC-2.5, AC-6.1, AC-6.2, AC-6.3
+- 🔲 Blocked in M0: AC-1.3 (no precision dataset), AC-2.4 (checkpoint schema undefined)
+
+**Open questions flagged for responsible agents:**
+- Precision dataset (AC-1.3): Where do relevance labels come from? → Cassima + Laura to curate from Cairn/Forge decision logs
+- Checkpoint schema (AC-2.4): What is Checkpoint interface? → Cassima or Emma
+- Eviction policy scope: v1 or v1.5? → Cassima
+- BM25 failure mode acceptance: Empty results on lexical mismatch acceptable? → Cassima (document as known v1 limitation, deferred to v1.5 with sqlite-vec)
+
+**Key learnings:**
+- **Recall scoring formula**: `rawScore = 0.50·relevance + 0.20·importance + 0.20·trust + 0.10·recency`, then multiply by attention tier (hot=1.0, warm=0.5, cold=0.1). Trust floor: facts with trust < 0.15 excluded.
+- **Bridge ledger hard rule**: No runtime ATTACH queries (FR-7.2). Offline reconciliation via `eureka reconcile` CLI.
+- **Plasticity irreversibility**: committed=false → committed=true allowed, reverse blocked. Write protection on committed facts critical.
+- **v1 tier scope**: Only agent.db wired. user.db/project.db stubs must gracefully degrade (throw on write, empty on read) — no panics.
+
+**Document structure:**
+1. Test layers (unit, integration, e2e, property-based, human-in-loop)
+2. Per-activity verification (recall, integrate, rerank, decide, commit, retire, evict)
+3. Property dynamics (trust, recency, plasticity, attention tier)
+4. Tier boundary tests (cross-tier resolution, write authority, federation conflicts deferred to v1.5)
+5. Integration tests (Cairn↔Eureka, Forge↔Eureka, types contract)
+6. Test infrastructure (fixtures, time travel, deterministic seeds, in-memory SQLite)
+7. Acceptance criteria mapping table (AC → test category → M0/M1/M2 status)
+8. Edge cases to write first (6 critical cases)
+9. Test commands (`npm test -- eureka`, load tests, property tests)
+10. Open questions (4 blockers for M0, proposals for responsible agents)
+
+**Next steps identified:**
+- Cassima to resolve open questions (precision dataset, checkpoint schema, eviction policy, BM25 failure mode acceptance)
+- Laura to implement unit tests for recall scoring formula and trust floor filtering (highest risk)
+- Emma to wire test fixtures and load test harness (AC-1.2 P95 < 500ms, AC-2.3 P95 < 200ms)
+
 ## Core Patterns Established
 
 - **Lesson:** UNIQUE constraint adds `sqlite_autoindex_*` — excluded by `NOT LIKE 'sqlite_%'` filter, so explicit index count tests are unaffected. Always check filter criteria when migration schema changes.

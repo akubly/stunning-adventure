@@ -132,8 +132,48 @@
 
 ## Learnings
 
+### 2026-05-27: PRD–Design Alignment Review Completed; Shared Substrate Ownership is v1 Implementation Blocker
+
+**Session:** Tech design phase alignment validation (70-prd-alignment.md).
+
+**Key findings:**
+1. **17/17 acceptance criteria covered.** All US-1…US-6 ACs addressed in design sections; US-7 appropriately deferred to v1.5+.
+2. **Twelve non-goals defended.** No design section contradicts the v1 non-goals list (§12). Scope is tight and honest.
+3. **Five R5 arbitrations confirmed.** Importance vs Trust, importance storage, scope vs temperature, community detection timing, `pray` semantics — all remain locked post-R8. No new contradictions.
+4. **Seven design tensions surfaced and resolved.** T1–T5 are architectural trade-offs with mitigations in place. T6 (BM25 quality bar) is honest — keyword-overlap eval set is rigged to BM25's strengths; disjoint queries are v1.5 gap. T7 is a BLOCKER: shared-substrate ownership.
+
+**The critical blocker — OQ-1:**
+- Eureka v5 R8 introduces `SessionId` brand in `@akubly/types` (shared).
+- Crucible analysis flagged that cairn/, forge/, types/ are duplicated across mem/ and harness/ repos.
+- **Implementation cannot start until Aaron resolves: monorepo, git submodule, or npm packages?**
+- Graham's R8 enforcement gate (FR-12 #8, ESLint guardrail on session-type imports) requires clarity on shared substrate.
+
+**Three immediate decisions Aaron must make (open questions OQ-1 through OQ-5):**
+1. Substrate ownership (monorepo/submodule/npm) — **blocks both Eureka + Crucible**.
+2. Eureka v5 R8 commitment (shared SessionId framing) — **locks FR-13 design**.
+3. Dogfood sequencing (Crucible-first vs. Eureka-first) — **affects US-1/US-2 validation pathway**.
+4. Eureka v1 scope freeze — **confidence check** (scope is defended; flag creep).
+5. Crucible integration expectation — **clarifies v1 vs. v1.5 boundary**.
+
+**Cassima's judgments applied:**
+- BM25 quality bar is honest; eval set partitions overlap vs. disjoint; v1 gates on overlap only.
+- Three-tier deferral (agent fully wired, user/project stubbed) is additive not architectural.
+- Path 2 default wiring: opt-in for production, opt-in by default for demos.
+- Crucible integration is v1.5 *improvement*, not v1 blocker (Eureka ships standalone).
+- Session identity is "one entity, two lenses" — shared `SessionId` brand is honest coupling at type layer, preserved by no-cross-DB runtime rule.
+
+**Deliverable:** `docs/eureka/sections/70-prd-alignment.md` (7 sections: acceptance criteria coverage, non-goals check, Crucible amendments, R4/R5 arbitrations, tension log, open questions, summary). 95% confidence on PRD–design alignment; 5% gap is OQ-1 blocker.
+
+**Status:** Report ready for Aaron review. Implementation blocked until OQ-1 resolved.
+
+---
+
 ### 2026-05-26: Branch-tree reconciliation defers pain without eliminating it; continuous coordination minimizes time-to-v1 when shared substrate is load-bearing
 
 ### 2026-05-26T20:00:00-07:00: Branch-tree-vs-G4 strategy pressure test analysis merged — quantified deferred-coordination worst case (2-7 days at v1 ship, blocks both released products), schema divergence cost (4 days strategic; 2-4 sprint integration delay for Crucible→Eureka WAL bridge), time-to-v1 delta (G4: 40 days + 6 hours; strategic: 44 days; deferred: 42-47 days). Recommendation: G4 continuous coordination.
 
 ### 2026-05-26: G4 scope analysis — Rotating sprint ownership (Genesta ↔ Crucible platform lead) distributes coordination load; minimum viable G4 is CHANGELOG + PR label + conditional 15-min sync gate; temporal asymmetry (bidirectional during parallel dev, Eureka-initiated post-Crucible-ship) shapes overhead profile; Graham authority without bandwidth means design-only role, not operational owner; Crucible team roster unknown blocks owner assignment.
+
+### 2026-05-26T20:30:00-07:00: Drafted Crucible schema lead outreach message — joint design doc kickoff for shared substrate (cairn/forge/types) with G4 protocol intro, <300 words, Aaron's voice (direct, no fluff), framed as velocity protection not bureaucracy.
+
+### 2026-05-26: Erasmus counter-proposal evaluation — Collaborative partner proposing pragmatic scope reduction (3 packages → 1 package), but references "storage fork directive" Eureka squad has no record of; BLOCKER flagged for Aaron caucus before proceeding with 5-step plan (SessionId brand, CODEOWNERS, DecisionRecord freeze, defer prescriber/WAL).

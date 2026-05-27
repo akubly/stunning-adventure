@@ -83,3 +83,37 @@
 **KR Principle Reinforced:** When two systems share a conceptual entity (Session, Decision), the choice is: (1) force schema convergence (fragile, couples implementations), or (2) share *identity only* and keep schemas independent (resilient, but requires discipline). v5-final chose (2) via `SessionId` brand + lens framing. Crucible validates this choice — the operational session and epistemological session-fact ARE the same entity, but their representations diverge by design. The brand is the contract; the lens is the interpretation.
 
 **Memo Delivered:** `.squad/decisions/inbox/crispin-crucible-kr-overlap.md` (7 sections, 28 citations, 4 schema tables, 5 risk rows, 3 Aaron decision points).
+
+### 2025-06-15: Knowledge Representation Section — Formal Schema Documentation
+
+**Context:** Aaron requested formal technical design documentation for Eureka's knowledge representation model as section 20 of the architecture docs. Co-authored with Graham, Genesta, Edgar, Roger, Laura, Valanice.
+
+**Deliverable:** `docs/eureka/sections/20-knowledge-representation.md` (21KB, 11 sections)
+
+**Content:**
+1. **Graph schema** (§2): Two-table model (`facts` + `relations`), TypeScript type sketches, storage constraints
+2. **Property shapes** (§3): Trust (event-driven, [0.15, 1.0], no auto-decay), Importance (sweep-maintained PageRank), Recency (derived ACT-R decay), Attention tier (hot/warm/cold materialized field), Plasticity (open question, schema shape proposed)
+3. **Kind taxonomy** (§4): Caller-defined kinds with three well-known types (session, decision, aspiration). Six-kind taxonomy (practical/semantic/syntactic/linguistic/symbolic/philosophical) documented as open question — not in v5-final PRD, possibly legacy from R1-R4
+4. **Cross-reference model** (§5): Three mechanisms (explicit relations, sources array, SessionId foreign key)
+5. **Persistence formats** (§6): Three-tier storage (agent/user/project SQLite), FTS5 for BM25, lossless JSONL/GraphML export
+6. **Query interfaces** (§7): BM25+recency hybrid recall, graph traversal, structured filter
+7. **Crucible overlap** (§8): Naming collisions (Decision, Artifact), SessionId as integration primitive, ESLint guardrails
+8. **Open questions** (§9): Plasticity algorithm (Edgar's domain), six-kind taxonomy (Genesta consult), embedding strategy (v1.5), cross-tier query performance (Roger's domain)
+
+**What I Learned About Technical Design Documentation:**
+
+- **Type sketches belong in architecture docs.** The schema section (§2) includes TypeScript interfaces even though this is "just" a design doc. These sketches are normative — they constrain implementation choices and serve as shared vocabulary for the squad. They're not aspirational code; they're architectural contracts.
+
+- **Property algorithms need data-shape specs first.** Trust, importance, recency, plasticity — Edgar owns the *algorithms*, but I own the *data shapes*. This is the KR Specialist mandate: define what a property IS (domain, constraints, semantics) before defining how it's computed. Plasticity is underspecified in v5-final, so I proposed the schema shape (§3.5) and flagged it as an open question for Edgar.
+
+- **Open questions are first-class design artifacts.** Section 9 isn't a cop-out; it's load-bearing documentation. The six-kind taxonomy mystery (practical/semantic/etc.) appears in Aaron's task prompt but not in v5-final — documenting this gap explicitly prevents future confusion about "missing" design work. Open questions have owners, resolution paths, and recommendations.
+
+- **Crucible overlap gets its own section.** The Decision/Artifact naming collisions (analyzed in R8 Crucible overlap memo) are architectural risks, not implementation details. Elevating them to §8 makes the cross-system integration challenges visible to all squad members, not just Aaron and me.
+
+- **"Deferred to vX.Y" is precise language.** Embedding strategy (§9.3) is explicitly v1.5; sqlite-vec is named, not vague "future work." This gives implementers a clear v1 scope boundary: BM25 only, embeddings later.
+
+- **Co-authorship means anticipating squad needs.** I wrote this solo, but Graham (integrator) needs persistence details (§6), Edgar needs property specs (§3), Roger needs performance context (§9.4), Genesta needs kind semantics (§4). Each section addresses a different squad member's concerns.
+
+**KR Principle Reinforced:** Formal schema documentation is a **shared epistemic artifact**. It doesn't just describe the current design; it creates a normative reference that prevents drift, anchors future decisions, and makes implicit constraints explicit. The section serves dual purposes: (1) operational (implementation teams know what to build), (2) epistemological (squad has shared understanding of what knowledge representation MEANS for Eureka).
+
+**Deliverable:** `docs/eureka/sections/20-knowledge-representation.md` — ready for squad review.

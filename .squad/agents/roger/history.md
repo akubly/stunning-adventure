@@ -310,4 +310,100 @@ Aaron decided: Build Eureka in `packages/eureka/` (monorepo), not separate repo.
 **What specialists own:** Cognitive layers, ontology design, reasoning loops  
 **Interface:** Clean TIERS abstraction — Eureka calls `project_tier.get()` which delegates to Cairn; Eureka manages user/organizational tiers separately
 
+---
+
+## 2026-05-26: Eureka Integration Section (§40)
+
+**Context:** Aaron requested integration section for Eureka technical design. Co-authoring with Graham (overview), Genesta (activity model), Crispin (representation), Edgar (runtime), Laura (test strategy).
+
+**Scope:** Package topology, Cairn/Forge integration, persistence layer, tier-aware storage, API surface, Crucible boundary.
+
+**Deliverable:** `docs/eureka/sections/40-integration.md` (580 lines, 26 KB)
+
+### Key Decisions Documented
+
+**Package topology:**
+- Dependency arrows: `eureka → types`, no runtime coupling to Cairn/Forge
+- Workspace dependencies use `"*"` (not `workspace:*` — npm rejects it)
+- No circular deps — Eureka is consumer, never producer
+
+**Cairn integration:**
+- Session identity unification (R8): Shared `SessionId` brand from `@akubly/types`
+- Lens framing: Cairn owns lifecycle, Eureka owns epistemology
+- Manual ingestion in v1 (`eureka ingest-session`), automatic in v1.5
+- Separate migrations — Eureka does NOT touch Cairn's `knowledge.db`
+- DB-injection pattern reused (explicit `db: Database.Database` first param)
+
+**Forge integration:**
+- Decision ingestion (Path 2, FR-14) — lossy projection from `DecisionRecord` to `DecisionPayload`
+- No prescriber ownership in v1 — Eureka is data source only
+- Manual CLI in v1 (`eureka ingest-decisions --session <uuid>`)
+
+**Persistence:**
+- SQLite + FTS5 for v1 (BM25 lexical search)
+- Reserved `embedding_vector BLOB` column (nullable, unpopulated) for v1.5 forward compat
+- Why not graph DB? Projection-on-read, not storage. SQLite gives joins + FTS5.
+- Why not LMDB? Lacks relational joins and FTS5.
+
+**Tier storage:**
+- Agent tier fully wired in v1 (`~/.cairn/eureka-agent.db`)
+- User/project tiers stub (throws on writes, empty reads)
+- Graceful degradation — fan-out code stays tier-agnostic
+
+**API surface:**
+- Library: `recall`, `integrate`, `decide`, `commit`, `retire`, `evict`
+- CLI: `eureka ingest-session`, `eureka ingest-decisions`, `eureka recall`
+- Fail-open principle — recall failures return empty result set, never block agent
+
+**Crucible boundary:**
+- High-risk overlap: Crucible's L1 WAL vs Cairn's `event_log`
+- Name collision: Crucible `Decision` vs Forge `DecisionRecord` vs Eureka `DecisionPayload`
+- Dependency blocker: Crucible assumes Forge in `harness`, actually in `mem`
+- v1 stance: Separate at v1, integrate at v1.5 (Cassima recommendation)
+
+### Open Questions Surfaced
+
+1. **Cairn/Forge repo ownership** — `mem`, `harness`, or third repo? Blocks Crucible and Eureka v1.
+2. **Crucible `Decision` rename** — Adopt `ChoiceEvent` to avoid collision?
+3. **Event-log federation** — Merge into Cairn or stay separate?
+4. **User/project tier activation** — When? Blocked on Squad migration timeline.
+5. **Prescriber extraction** — Should Forge prescribers move to Crucible at v1.5?
+6. **Automatic ingestion** — v1 or v1.5? Edgar recommends v1 before dogfood.
+7. **Cross-tier normalization** — Parallel fan-out + global score norm, or sequential early-exit?
+
+### Risk Register
+
+7 risks documented with likelihood/impact/mitigation:
+- R1: Crucible dependency blocker (HIGH/HIGH)
+- R2: BM25 recall failure on keyword-disjoint queries (CERTAIN/MEDIUM — known v1 gap)
+- R3: User/project tier activation delay (MEDIUM/LOW)
+- R4: Session-identity coupling drift (LOW/MEDIUM — ESLint guardrail mitigates)
+- R5: Ingestion lag (HIGH if manual / MEDIUM impact)
+- R6: Migration schema drift (LOW/HIGH — separate `schema_version` tables mitigate)
+
+### Learnings
+
+**What I got right:**
+- **DB-injection pattern reuse** — Cairn's explicit-db-param pattern is testable and composable. Adopted for Eureka storage layer.
+- **Forward-compat schema design** — `embedding_vector BLOB` column (nullable, unpopulated) lets v1.5 add embeddings without breaking v1 readers. Same pattern as Cairn's reserved columns.
+- **Fail-open principle** — Telemetry must never block session execution (Cairn Phase 4.5 lesson). Applied to Eureka recall — failures return empty result set.
+- **Tier-agnostic fan-out** — Unwired tiers return empty reads (not errors). Lets fan-out code stay uniform; no v1/v1.5 conditional logic.
+
+**Where I added value:**
+- **Risk register** — Named the hard parts plainly (Crucible dependency blocker, BM25 keyword-disjoint gap, ingestion lag). No sugarcoating.
+- **Trade-offs surfaced** — SQLite vs graph DB, BM25 vs embeddings, manual vs automatic ingestion. Rationale for each choice.
+- **Open questions escalated** — 7 questions Aaron must answer (repo ownership, event-log federation, tier activation). No false certainty.
+
+**What surprised me:**
+- **Crucible overlap depth** — The Cassima impact analysis revealed backward dependency (Forge in `mem`, Crucible assumes `harness`). Both PRDs ship v1 in parallel but neither acknowledges cross-repo coupling. This is a BLOCKER, not a nice-to-have.
+- **Session-identity R8 unification** — Aaron's directive to share `SessionId` brand relaxed the "isolated by design" framing from v4. Genesta's 5 guardrails (lens framing, ESLint boundary, no runtime traversal) prevent coupling drift. Pragmatic compromise.
+- **BM25 honesty in PRD** — Genesta + Cassima explicitly partitioned eval suite into "overlap" (ship gate) and "disjoint" (transparency only) buckets. This is the right bar for v1 — high precision on lexically-overlapping queries, documented gap on disjoint. No pretending BM25 is semantic.
+
+**Platform engineering heuristic reinforced:**
+> "Storage technology choice is about what you DON'T need, not what you might want later."
+
+SQLite + FTS5 is enough for v1. Graph DB / LMDB / vector store deferred until v1.5 demand signal proves we need them. Start simple, harden from data.
+
+**File written:** `docs/eureka/sections/40-integration.md` (580 lines, 12 sections, 7 open questions, 6 risks)
+
 

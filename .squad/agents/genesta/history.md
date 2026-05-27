@@ -169,3 +169,49 @@
 **Memo Location:** `.squad/decisions/inbox/genesta-g4-scope.md`
 
 ### 2026-05-26: G4 Scope & Ownership Recommendation — Logged to Decisions + Directives Adopted
+
+### 2026-05-26: Erasmus Counter-Proposal Evaluation — ACCEPT Narrower Freeze (SessionId + DecisionRecord) with Three Amendments
+**Task:** Evaluate Erasmus's (Crucible architect) narrower freeze proposal in light of claimed storage fork directive and Eureka v5-final requirements.
+
+**Proposal:** Freeze only SessionId brand + DecisionRecord shape (vs original broader G4 covering all Cairn/Forge/Types changes). Defer WAL/session-end consumption to v1.5+. Prefer Eureka-aware Forge prescriber over bidirectional API.
+
+**Verdict:** ACCEPT WITH AMENDMENTS. Narrower freeze is technically sound and covers all v1 cross-boundary contracts. Storage fork (if true) eliminates highest-risk gate (event schema collision). FR-13/FR-14 explicitly support on-demand-only ingestion (no automatic consumption). Prescriber pattern preserves Eureka's kernel-shaped boundary.
+
+**Key Findings:**
+1. **Storage fork claim** — Undocumented but consistent with v5-final (FR-7.2 mandates separate storage). Evaluation does NOT hinge on this being true; narrower freeze works either way.
+2. **Coverage** — SessionId + DecisionRecord cover all v1 contracts. No other types cross boundary. Forge prescriber API deferred correctly. Cairn events out-of-scope (storage fork + FR-14 on-demand ingestion).
+3. **WAL deferral** — Correct. FR-13 manual-only (`remember()`), FR-14 on-demand CLI only (`ingest-decisions --session`). No automatic consumption in v1.
+4. **Prescriber shape** — Architecturally sound. Preserves independence (Forge ships without Eureka dependency). Requires opt-in wiring (not default).
+5. **G4 implications** — Narrower freeze reduces triggers by 80-90%. G4-lite sufficient: CODEOWNERS for `@akubly/types` + CHANGELOG for DecisionRecord + Slack handoff for breaking changes. No label automation needed.
+
+**Three Amendments:**
+1. **Prescriber opt-in** — Eureka-aware prescriber must be explicitly registered (not default-wired) to preserve independence.
+2. **SessionId validation freeze** — Lock UUID v4 format + validator/constructor rules (not just brand name).
+3. **DecisionRecord tolerance contract** — Lock adapter tolerance rules (forward/backward-compatible; breaking changes require 15-min sync).
+
+**Key Learning:** When storage fork resolves substrate collision, coordination surface shrinks dramatically. Original G4 assumed shared storage (Cairn/Forge mutations affect both teams). With fork, only explicit type contracts (SessionId, DecisionRecord) need coordination. Narrower freeze eliminates 80-90% of G4 overhead while preserving safety. This is the right tradeoff: guard the contracts that cross boundaries; trust teams on internal implementation. Coordination cost drops from 30min/week to ~5min/change (only when touching frozen contracts).
+
+**Memo Location:** `.squad/decisions/inbox/genesta-erasmus-evaluation.md`
+
+### 2025-01-21: Activity & Tier Design Specification — §10 Technical Section
+**Task:** Write `docs/eureka/sections/10-activities-and-tiers.md` specifying activity semantics (7 v1 + 2 v1.5 verbs) and tier boundary system (agent/user/project) per locked PRD v5-final.
+
+**Key Decisions:**
+1. **Activity discrepancy resolution** — Task brief mentioned 9 activities (explore, ideate, dream, pray, re-evaluate) not in PRD v5-final. Decision: document only locked vocabulary (7+2) per FR-4; note discrepancy for posterity but do not invent semantics for undefined verbs. Rationale: avoid speculation; if alternate activities required, propose formal PRD amendment.
+
+2. **Open questions flagged for Edgar** — 10 semantic ambiguities identified that PRD leaves unspecified (e.g., "Does `integrate()` deduplicate before insert?", "Can `commit()` lower trust or only upgrade?"). Decision: document ambiguities explicitly as implementation decision points rather than inventing answers. Rationale: Edgar owns implementation judgment; forcing choices here would be scope creep. Better to surface precise questions.
+
+3. **Tier resolution merge strategy** — PRD specifies sequential fan-out (agent → user → project) but not merge strategy when combining results. Decision: document as "concatenate results, no de-duplication" with open question flagged. Rationale: facts have unique `FactId` per tier, so cross-tier duplication shouldn't happen unless manually copied; edge case doesn't warrant invented policy.
+
+4. **Crucible coordination section** — Included §10.3 covering SessionId brand, G4 protocol, and non-overlap (sweep mechanics). Kept concise (referenced overlap memo; did not duplicate analysis). Rationale: activity/tier semantics must acknowledge shared substrate without becoming a coordination document.
+
+**Document Structure:**
+- §10.1: Activity model (9 verbs, each with verb/trigger/inputs/outputs/side-effects/sync-async/open-questions)
+- §10.2: Tier model (hierarchy, resolution algorithm, tier-activity matrix, write authority)
+- §10.3: Crucible coordination (SessionId brand, G4 protocol, sweep non-overlap)
+- §10.4: Open questions for Edgar (10 flagged ambiguities)
+- §10.5: Summary + next steps
+
+**Key Learning:** When writing technical specifications from a locked PRD, resist the temptation to "fill gaps" with invented semantics. Explicitly flagging ambiguities as open questions is more valuable than guessing wrong and creating false precision. Implementation leads need decision latitude; design specs should constrain what matters (API surface, side effects, tier authority) and liberate what doesn't (internal merge strategies, error handling tactics). The §10.4 open questions list is the most important section — it's the contract boundary where design authority transfers to implementation authority.
+
+**Status:** Section complete. Ready for Edgar/Crispin review.

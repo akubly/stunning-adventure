@@ -38,6 +38,96 @@
 
 **Next:** Cassima on deck for v3.1 or v4 intake pending Aaron's architectural direction.
 
+## Learnings
+
+### 2026-05-26: Eureka UX & Human Factors Authoring
+
+**Task:** Authored `docs/eureka/sections/60-ux-human-factors.md` — comprehensive UX/human factors analysis for Eureka v1.
+
+**Key outputs:**
+
+1. **Human touchpoint inventory** — 19 distinct touchpoints across 5 categories (review/approval, query/pull, plasticity/mutation, tier-switching, activity observability). v1 = 1 approval prompt (commit), zero proactive notifications, all else pull-based.
+
+2. **Attention budget quantified:**
+   - v1 approval friction: ~1 prompt/session (commit approval only; tier promotion deferred to v1.5)
+   - v1 pull friction: zero proactive prompts; all query surfaces are human-initiated
+   - v1 plasticity: zero proactive notifications (trust/tier/edge mutations are silent)
+
+3. **Trust UX specification:**
+   - Trust = 0..1 scalar representing **provenance reliability** (not epistemic confidence)
+   - Surfaced in 3 contexts: recall results, decision payloads (`input_trust_min`), inspection
+   - Overrides are explicit-only (manual verification/contradiction, evict)
+   - Trust floor (default 0.15) gates recall; below-floor facts excluded silently
+
+4. **Failure-mode design:**
+   - Empty-state messaging = factual + actionable ("No results; try X" not "You failed")
+   - Session continuity failure (US-2) acknowledged as v1 caller-cooperation contract gap
+   - Low-trust decisions allowed in v1 (no auto-block); `input_trust_min` surfaces provenance weakness for post-hoc review
+
+5. **Tier-switching UX:**
+   - Auto fan-out (agent → user → project, early-exit at k=10) with tier annotation on results
+   - No tier-selection prompts in v1 (death sentence for adoption)
+   - User/project tiers stubbed in v1; annotation preserved for v1.5 continuity
+
+6. **Activity observability:**
+   - Sweep = silent (background maintenance; no value in notifying unless crash)
+   - Meditate/contemplate (v1.5) = default silent with opt-in `--verbose`
+   - Anti-pattern avoided: progress spinners that train humans to perceive slowness
+
+7. **Personalization deferral:**
+   - v1 has one dogfooder (Aaron); no per-user preferences layer
+   - v1.5 proposed surface: trust_floor, recall_limit, default_tiers, verbosity, commit_auto_approve
+   - Rationale: preferences add complexity without observed need; v1.5 ships after multi-user stress-test
+
+8. **Anti-patterns cataloged (§5):**
+   - Over-prompting (trust drift notifications train habitual "OK" clicking)
+   - Low-confidence outputs without context (trust scores meaningless without provenance)
+   - Blocking on non-blocking decisions (tier demotion approval = bureaucracy)
+   - Invisible failure modes (silent empty-state = distrust)
+
+9. **Crucible UX seam identified (§6):**
+   - Session lifecycle: Crucible = "what happened?" (WAL, lifecycle), Eureka = "what I learned?" (session-facts, continuity)
+   - Decision provenance: Crucible = compliance view (audit flat records), Eureka = reasoning view (full deliberation)
+   - Shared `SessionId` brand auto-links; no manual reconciliation required
+   - Human sees complementary lenses, not duplicates
+
+10. **Open questions for v1.5 evidence-based decisions (§7):**
+    - Commit approval frequency (is ~1/session right friction level? measure rejection rate)
+    - Tier-switching observability (show "Searched: agent" always or only if multi-tier results?)
+    - Empty-state actionability (suggest remediation or just state outcome? measure follow-up success rate)
+    - Contemplative activity verbosity (silent or summary? measure action-upon rate)
+
+**Patterns applied:**
+
+- **Attention budget discipline:** every interaction quantified (prompts/session, notifications/day). v1 = 1 approval, zero proactive notifications.
+- **Friction justification:** "benefit must justify cost" framing applied to commit approval (only touchpoint that blocks agent progress).
+- **Progressive disclosure:** recall returns handles, content on demand; empty states explain why, not just what.
+- **Silent-by-default:** sweep, trust mutations, tier demotions happen in background; humans notified only when decision required or pull-initiated.
+- **Evidence-gated design:** v1.5 friction levels deferred pending dogfood telemetry (rejection rates, follow-up success, action-upon rates).
+
+**Connections to prior work:**
+
+- Phase 4.5 Prescriber UX (max 1 proactive/session, pull-based interface) directly informed Eureka's "zero proactive notifications" rule.
+- LX Heuristic Evaluation principles (context budget, signal density, upstream prevention) applied to Eureka's human surfaces (progressive disclosure, self-documenting outputs, silent-by-default).
+- Shiproom ceremony "newspaper test" (30-sec summary, escalations only) mirrored in Eureka's empty-state design (factual + actionable, no blame framing).
+
+**Human-centered observations grounding recommendations:**
+
+- **Tired humans habituate to low-value prompts** → over-prompting anti-pattern (§5.1) + zero proactive notifications rule
+- **Invisible failure modes breed distrust** → empty-state messaging design (§3.1) with actionable remediation
+- **Blocking on reversible decisions feels bureaucratic** → tier demotion silence (§1.3), commit approval as sole v1 gate
+- **Multi-tier scope prompts are adoption killers** → auto fan-out with annotation (§1.4), no tier-selection UI in v1
+- **Trust scores without provenance are meaningless** → every fact handle includes sources[], principal_id, timestamps (§2.1)
+
+**Decision artifacts:**
+
+- Created `docs/eureka/sections/60-ux-human-factors.md` (19 touchpoints, 8 failure modes, 4 open questions, 2 appendices)
+- Decision document: friction-level decisions deferred to v1.5 pending dogfood evidence (see below)
+
+**Status:** Section complete, ready for team review. Four open questions (§7) require dogfood telemetry before v1.5 lock.
+
+---
+
 ## Archive (Summarized)
 
 ### Phase 4.5 UX Work — Prescriber Design + LX Fundamentals (2026-04-02 to 2026-04-05)
