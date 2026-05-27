@@ -79,6 +79,22 @@ Roger (W2-1) + Rosella (W2-4): canonical `ChangeVectorSummary`, `ChangeVectorPro
 
 ## Learnings
 
+### Wave 5 Review Cycle 1 Triage (2026-05-25)
+
+Triaged 14 persona review findings on `phase-4.6/wave-5-integration` (ea02cce). Accepted 10, rejected 3, deferred 2. All fixes committed as b695fff.
+
+**Key triage decisions:**
+
+- **I1 (global fallback regression) — ACCEPTED.** Most important finding. `createPrescriberOrchestrationConfig` silently gained global fallback behavior when `loadExecutionProfile`'s default `fallbackContext = {}` always included `global` in the chain. Fix: `allowGlobalFallback` flag on `TierFallbackContext`, default `false`. `runForgePrescribe` explicitly opts in. This is the kind of bug that would silently degrade Curator precision — prescribers seeing aggregate global profiles instead of returning null when no per-skill data exists.
+
+- **I2 (stale per-model vs fresh per-user) — REJECTED design change, ACCEPTED test.** The tier fallback spec explicitly decided staleness does NOT trigger fallback. A stale per-model profile is still more model-specific than a fresh per-user profile. Added interaction test proving attenuation works correctly in this scenario.
+
+- **I7, I8 — REJECTED (pre-existing).** Both findings flag conventions that predate Wave 5. The concrete `Database.Database` type leak in runtime opts (I7) and mixed injection patterns (I8) are real but were not introduced by Wave 5. Scope creep to fix them here risks destabilizing the integration branch.
+
+- **I9 (extract sessionFallback) — ACCEPTED.** Policy/transport separation is a clean improvement. Moved `getUserSessionForMcpFallback` to its own module. Small change, big testability win.
+
+**Architectural pattern confirmed:** The `allowGlobalFallback` flag pattern establishes a precedent for opt-in behavior expansion in the fallback chain. Future tiers or strategies can be gated behind similar flags without changing the default behavior of existing callers. This is the "progressive enhancement" principle from the tier fallback spec made concrete.
+
 ### Wave 4 Scope Approved (2026-05-23)
 
 Aaron approved Wave 4 scope with both design decisions resolved. Decision inbox entry filed at `.squad/decisions/inbox/graham-wave4-ratified.md`. Scope is tight and foundational: three work items (insertHintIfNew atomicity, CairnEvent extensions, forceRegenerate knob) plus integration tests. Team ownership assigned (Roger: W4-1/W4-2; Rosella: W4-3; Laura: W4-4). Branch `phase-4.6/wave-4` created and ready for team execution.
