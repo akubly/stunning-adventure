@@ -6,6 +6,34 @@
 
 # Graham — History (Summarized)
 
+## Round 7 (2026-05-25T02:00Z): v1 Story Triage Against Falsifiable Bar
+
+**Inbox file:** `.squad/decisions/inbox/graham-triage-2026-05-25T0200Z.md`
+
+**Task:** Triage all 11 Graham-authored stories (US-G-1..8 + US-G-NEW-1..3) against Aaron's locked v1 framework — bar: "Aaron can run a one-week productivity loop where every improvement to Crucible is made by Crucible." Tiers T1 (MVP) / T2 (investigation depth) / T3 (branching robustness) / T4 (plugin ecosystem) / T5 (scale & ops) / T6 (CLI parity) / parking.
+
+**T1 recommendation (5 stories, aggressive cut):**
+1. **US-G-4** Router as named L4 chokepoint with asymmetric-transparency invariant
+2. **US-G-5 (contract half)** 8-field ProposalGenerator interface — L3 contract already locked Phase A
+3. **US-G-NEW-2** Hermetic Observation capture + replay-re-feed doctrine (v1 commitment #4)
+4. **US-G-NEW-3** Crucible-parent / SDK-as-Provider — execution only, Round-6 resolved
+5. Three **free-win halves** riding on locked schema: US-G-7 `cairn fork` (free from decision #2a), US-G-NEW-1 snapshot ref (v1 commitment #5 contract-only), US-G-2 `cairn show <hash>` (free from Phase A 8-field schema)
+
+**T2:** US-G-1 (cross-session retrieval), US-G-2 replay engine, US-G-6 research-partner, US-G-1 episode primitive.
+**T3:** US-G-7 full branching (multi-path compare/merge/UX).
+**T4:** US-G-5 plugin ecosystem, US-G-3 fitness-policy ADR.
+**T5:** US-G-NEW-1 log-tail compaction + GC + fsck at scale.
+**Drop:** US-G-3 (Rosella/Laura own), US-G-8 (dissolved into Router).
+
+**Load-bearing architectural flags (★ non-retrofittable):** US-G-4 (L4 contract), US-G-5 contract (L3 contract), US-G-NEW-2 (L0/L1 hermetic boundary), US-G-NEW-3 (L0/L1 layering), US-G-7 fork + US-G-NEW-1 ref (L1 ledger DAG shape).
+
+**Headline insight:** The bar is met by **three architectural primitives** — Router + ProposalGenerator contract + Hermetic Replay. Five additional "free wins" cost only the discipline to scaffold them at the right moment; retrofitting is dramatically more expensive. Three stories drop entirely.
+
+**Six open questions surfaced to Cassima for the PRD:** (1) auto-apply vs ack-required as the bar's threshold; (2) single-repo vs cross-repo loop scope; (3) success metric for "Crucible-built improvements"; (4) snapshot impl depth in T1; (5) L0 reorg sequencing; (6) Cairn migration-013 dual-schema vs port for US-G-5 contradiction resolution. These all need Aaron input before the v1 architecture spec I'll draft post-PRD.
+
+**Reasoning discipline:** Anti-anchoring applied at each split decision (T1 vs T2). Resisted "the v1 commitments are 10 items therefore T1 has 10 work streams" temptation — commitments are *scope frames*, MVP is more aggressive. Where a v1 commitment exists (e.g., #5 snapshot+compaction), recommended T1 = *contract only*, T5 = *scaled impl*, preserving the commitment without bloating MVP.
+
+
 ## Round 6 (2026-05-25T01:30Z): Opens #1 & #3 Resolved
 
 **Inbox file:** `.squad/decisions/inbox/graham-opens-1-and-3-2026-05-25T0130Z.md`
@@ -278,3 +306,23 @@ Inbox file: `.squad/decisions/inbox/graham-reconciliation-2026-05-24T2330Z.md`.
 
 **Executive summary:** Read the full Cairn+Forge+skillsmith-runtime+runtime-cli stack against my 10 story scopes (US-G-1..8 + US-G-NEW-1..3, with US-G-3 and US-G-8 withdrawn in deliberation). Honest tally: 0 ALREADY-EXISTS, 4 PARTIALLY-EXISTS (US-G-1 Curator/Insights as a proto-pattern surface; US-G-4 autoApplyEligible+Applier as a proto-Router; US-G-5 ChangeVectorProvider port pattern + skill lifecycle but CONTRADICTS-EXISTING on closed `OptimizationHint.source` enum; US-G-NEW-3 ForgeClient/SDK layering already matches the parent/child position), 5 NET-NEW (US-G-2 replay, US-G-6 research-partner, US-G-7 branching, US-G-NEW-1 snapshotting, US-G-NEW-2 observation capture), 1 CONTRADICTS-EXISTING (US-G-5). Crucible's 5-layer chassis is architecturally greenfield — the existing repo gives us production-tested *patterns* (canonical-JSON+SHA-256 hashing in DBOM, fail-open hook doctrine, HookComposer observer model, injection-port pattern via `@akubly/types`, async Curator with cursor polling, SQLite WAL + migration discipline, Forge-wraps-SDK layering) and a v0 L3/L4 we can borrow shape from, but the per-row content-addressed ledger, group-commit WAL with pre-commit hook bus, Salsa-style L2, open ProposalGenerator contract, named Router chokepoint, branching/snapshotting, hermetic-replay observation capture, and the entire L5 investigation surface are net-new. Key drift to NOT inherit: post-hoc-only hash chains (DBOM-style), closed source enums, policy scattered across three layers, mutation-and-decision fused in Applier, and the flat `event_log` row shape with JSON-buried parent links. Single decision flagged for Aaron: do we *port* Cairn/Forge into the Crucible chassis or *coexist* (long-term maintenance tax — I lean port).
 
+
+### Cluster I — Architect-Routed v1 PRD Micros (2026-05-25)
+
+**Inbox:** `.squad/decisions/inbox/graham-cluster-i-2026-05-25.md`
+
+Resolved 10 design-tilted micros Cassima routed to me (not Aaron) after 8 Aaron-facing clusters locked. 8 of 10 went T1 structural, 2 went T2 (archivist crash-detect; change_vectors generalization). Net T1 calendar delta: ~2 eng-days, all absorbable inside existing sprint scope. 2 items flagged for Aaron confirmation (I.3 PRD §3 non-goal language; I.7 sanity check with Sonny).
+
+**Learnings:**
+
+- **The "cheap seam now, expensive refactor later" pattern reappears constantly.** I.10 (WASM ABI seam), I.4 (Provider seam), I.5 (manifest in canonical types), G.2 (tenant_id), B (spawn seam reserved), Aaron 2a (parent_session_id columns) — same shape every time: ~1 eng-day to lock an interface boundary today saves multi-sprint reshape when the second implementation arrives. The discipline isn't recognizing the case-by-case need; it's *defaulting to the seam* unless cost asymmetry inverts (I.7 declined the seam because per-row WAL columns cost throughput on every hot path, not just a one-time interface).
+
+- **Boundary discipline at the type layer is cheaper than at the process layer.** I.1 (Router inline, not co-process) showed this: enforcing "Router doesn't share mutable state with WAL writer" via dep-cruiser + typed entrypoint gives 90% of the isolation benefit at 5% of the latency cost. Process boundaries are appropriate when the *failure modes* are asymmetric (one side crashing must not take the other down); type boundaries are appropriate when the goal is *correctness coupling* (the two pieces logically must agree on data shape but otherwise are independent). Both Crucible and Aaron's instincts favor type-layer first; process-layer when forced by survivability evidence from real incidents.
+
+- **Locked decisions cluster-resolve faster than I expected.** Several Cluster I questions had answers already implicit in earlier locks (I.4 = l0-provider/ from Open #1; I.6 = source_event_offset from Round 6 #7; I.5 = @akubly/types precedent from Wave 3). The cluster work is mostly *naming what's already true and writing it down* — the architecture has converged, the documentation is catching up. When this happens, the right output is "confirm + cite + cost-flag," not "redesign."
+
+- **"Structural — no tier" is a useful tier label.** Several I-items are not capability deliverables (they don't ship a user-visible feature); they're interface shapes that other tiers' deliverables ride on. Calling them "T1 structural" rather than smuggling them into the T1 capability list keeps the calendar honest and lets sizing happen at the right granularity.
+
+- **The anti-anchoring rule paid off on I.3.** First-thought was "archivist crash-detect is a safety issue, T1." Alternative considered: under D′.1.a's locked pause-before-fsync, the failure mode is "Aaron re-issues the operation," not silent corruption. That reclassification moved the answer from T1 to T2 cleanly. If I hadn't paused to enumerate the actual blast radius, ~3-5 eng-days would have stolen budget from Gabriel's NEW-15 fuzz regime, which catches the *class* of safety bugs the crash-detect heuristic only catches one symptom of.
+
+- **Cassima's batching paid for itself.** Routing 10 micros to me as a single cluster (rather than 10 separate Aaron pings) saved an enormous serialization cost — half the decisions cross-reference each other (I.4 + I.5 share the canonical-types principle; I.1 + I.2 share Roger's commit-driver work; I.7 references I.6 indirectly through join-key semantics). Resolving them in one pass let me check coherence inside the batch instead of over a week of sequential exchanges.

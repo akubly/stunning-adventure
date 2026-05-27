@@ -640,3 +640,51 @@ T5 resolved — Crucible built on Copilot SDK, replaces Copilot CLI as Aaron's d
 ### 1-paragraph summary (for coordinator)
 
 The existing repo has not built anything resembling Mirror — runtime-cli is a one-shot orge-prescribe --skill invocation, the Cairn CLI is a banner, and all user-facing UX lives in ten MCP tools returning JSON. The single bright spot is list_prescriptions + esolve_prescription, which already ships our ccept/reject/defer triad and a max-one-per-session proactive_hint — the existing precedent for Phase A's anti-fan-out rule, which I recommend we adopt verbatim. The biggest unresolved tension is not in code but in docs/harness-vision.md: it defines a fixed six-chamber taxonomy including a **Narrator** chamber whose mission (end-of-session reflection digest) overlaps Mirror's, and our Round-2 stance ("Mirror is a view, not a chamber") was reached without reconciling with that document. Graham owns it; I'm deferring. Secondary collisions: readcrumb is already a DB concept (I'm renaming my surface to 	rail), prescription is the shipped term for what we've been calling proposal (recommend adopting), and the gdb-speak vocabulary fence is still defensible because no L5 user-facing text exists yet — but it won't stay that way long, so I owe Sonny a translation table this round.
+
+---
+
+## 2026-05-25 Round 7: v1 Triage (Aaron-locked falsifiable bar)
+
+**Trigger:** Aaron locked v1 framework 2026-05-25 — *"Aaron can run a one-week productivity loop where every improvement to Crucible is made by Crucible."* Tiers T1/T2/T3/T4/T5/T6/Park; my domain is T2 (investigation depth) but the triage discipline says **some L5 must be T1 or the bootstrap loop is unmeetable.**
+
+**Full triage:** .squad/decisions/inbox/valanice-triage-2026-05-25T0200Z.md.
+
+### Headline calls
+
+- **Two of my stories die.** US-V-4 (dissolved Round 2 → NEW-4) and US-V-7 (merged Round 2 → NEW-1) — strike from canonical list.
+- **Two defer past v1.** US-V-5 (multi-agent orchestration → T5 scale) and US-V-8 (preferences personalization loop → Park; substrate ships free).
+- **Six split.** US-V-1, US-V-2, US-V-3, NEW-2, NEW-4, NEW-5, NEW-6 — each has a T1-shippable shallow cut and a T2 deep cut. The discipline of the split is what bought T1 admission for L5 surfaces I'd otherwise have lost to T2 entirely.
+
+### The minimum L5/Mirror T1 set (7 deliverables)
+
+1. @lobby + @inbox + @today hardcoded views + view-registry table (NEW-2a)
+2. Multi-source @inbox absorbing Curator insights + L5 pauses (NEW-4a)
+3. Render prior decision reasoning + confidence label in Mirror rows (1a + 3a)
+4. @why:<pid> **backward causal slice, one hop only** (1a deepened)
+5. isect MCP tool — trivial git-style with conversational prompts (NEW-6a)
+6. ↻ replayability badge reading DBOM root_hash presence (NEW-5a)
+7. gdb-speak ↔ Aaron-speak vocabulary fence (NEW-3) — pre-output blocker
+
+### The T1↔T2 line I held
+
+**T1 = read-only, single-hop, stateless. T2 = transitive, stateful, or new substrate.**
+
+The most consequential boundary call: **one-hop backward slice belongs at T1.** Given Sonny's US-S-3 read-set-on-commit invariant, the slice is a four-line SELECT — the expensive engines (transitive closure, watch registries, retroactive projection, minimization, forward slicing, counterfactual replay) are what make L5 a *layer*, but the single one-hop query is what makes Crucible usable to debug Crucible in week one. The risk is letting the agentic-debugger vision metastasize gdb vocabulary into the surface before NEW-3's fence lands — hence #7 is non-optional and time-sensitive.
+
+### Open questions punted to Cassima (L4 Router)
+
+1. L5 pause routing — typed category: investigation with render-time verb override (step | continue | abort)?
+2. MirrorEvent emission contract — direct L5 emission vs L1 round-trip for derived investigation views?
+3. @why:<pid> channel — one-shot MCP response vs persistent MirrorEvent in @inbox?
+4. Vocabulary-fence enforcement venue — Router admission-time check (lean: yes) vs Vocab/CI?
+5. @inbox ordering authority — Router priority_hint field vs Mirror view policy?
+
+### What I gave up willingly
+
+- Forward causal slice (bootstrap is retrospective, not prospective)
+- Stateful registries (watches, breakpoints) — T2
+- Counterfactual replay — pulls in T3 branching
+- User-authored views — T4 plugin tier
+- Multi-agent orchestration — T5 scale
+
+The trade is honest: my tier (T2) keeps the deep investigation work, but the minimum-viable interrogation kit (backward-slice + bisect + the three Mirror views to surface them) sits at T1 because the bar requires it. Investigation discipline says don't anchor on first-thought — the alternative I considered was "all L5 stays T2, Aaron uses grep for week one" — and that fails the falsifiable bar by construction. Rejected.

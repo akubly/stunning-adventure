@@ -352,3 +352,37 @@ No change to my round-2 commitments on Pareto fitness ownership, branching-as-ev
 **No code touched in `D:\git\stunning-adventure`** — read-only reconciliation per Aaron''s directive.
 
 **One-paragraph summary.** Existing monorepo has strong unit/property/metamorphic test infrastructure and a working canonical-hash chain for committed DBOM artifacts, but no replay harness, no Pareto frontier, no fitness contract registry, no `causalReadSet`, no Salsa. Of my eight locked proposal fields, three (`category`, `confidence`, `rationale`) exist with normalization tax, one (`preview`) is partial via `Prescription.proposedChange`, five (`fitnessContract`, `evidence`, `costEstimate`, `reversibility`, `determinismClass`, `causalReadSet`) are NET-NEW with `evidence` actively contradicting two existing shapes. A3 cannot be retrofitted onto the existing ~1200 tests because none of them persist inputs and reload across processes; a fresh harness is required, but four existing patterns transfer directly as foundation: DBOM canonicalization, mirror-pin regression, property+metamorphic framework, and skill fixture directories. The only direct algorithmic contradiction is canonical-JSON+SHA-256 (DBOM) vs my Round-3 CBOR+BLAKE3 lock — deferred to Roger.
+
+
+## 2026-05-25 Round 7: v1 framework triage
+
+**Scope:** Tier every story I authored (US-L-1..8, US-L-NEW-9..13, Round-3 lock deliverables) against Aaron's v1 framework: `v1 = MVP that validates the thesis"Aaron can run a one-week productivity loop where every improvement to Crucible is made by Crucible.'` Tiers T1-T6 + Parking. Full output: `.squad/decisions/inbox/laura-triage-2026-05-25T0200Z.md`.
+
+**Triage shape:** 6 T1 / 7 T2 / 3 T3 / 1 T4 / 1 DONE. Two stories split (US-L-NEW-9 and US-L-NEW-13 — lite version T1, full version T2). One merge (US-L-3 folded into US-L-NEW-9, lifting `ValidationResult.tier` enum verbatim). Zero drops.
+
+**Recommended T1 set (six items):**
+1. 8-field proposal schema wired as L4 runtime validator (with `tier: 1|2|3` enum lifted from `ValidationResult` for free 80% start)
+2. US-L-NEW-12 carrier — determinism conformance suite skeleton
+3. US-L-NEW-9-LITE — fitness contract registry + scalar binding + mirror-pin enforcement (no Pareto frontier in T1)
+4. US-L-NEW-13-MIN — per-generator scorecard {acceptance rate, A3 pass rate, source attribution} partitioned by US-G-5 closed enum from day 1
+5. Hand-declared `causalReadSet` for v1 generators (ReadSetBuilder slips to T2 with Salsa)
+6. Free-multiplier lift: `ValidationResult.tier` enum copied into harness fitness contract today (cheap if applied day 1, ugly retrofit otherwise — same lesson as Aaron's L1 substrate boundary discipline)
+
+**Conformance kit (T1 non-negotiable): A1 + A3 + A4.** A2 explicitly out of T1 (needs compaction to exist before it has anything to fail against — slot in T2 alongside Roger's snapshot/compaction). Rationale: A3 is load-bearing for `by Crucible'' (Crucible must investigate its own past with rigor); A4 is the gate that makes A3 non-vacuous (without A4, skipping `causalReadSet` trivially passes replay); A1 is the cheap integrity floor (DBOM `canonicalStringify` pattern, ~3h port to CBOR+BLAKE3).
+
+**Generator constraint (US-G-5 / Aaron 6b `source` closed enum) applied:**
+- US-L-NEW-13-MIN: scorecard partitions by `source` from day 1 (no retrofit)
+- US-L-NEW-9-LITE: fitness contract registry exposes per-`source` default weights; `external` inherits safety-asymmetric weights by construction (bakes `decisions.md:585` `external = most restrictive default'' intent into fitness, not just routing)
+- Generator manifest schema: no `source` slot; validator rejects author-supplied `source`; loader stamps at registration
+
+**Slipped to T2:** A2, Pareto frontier proper, scorecard calibration math, ReadSetBuilder, US-L-NEW-10 branching-as-eval, US-L-2 calibrated cold-start posteriors, US-L-1 curriculum classifier, US-L-7 provisional fitness, US-L-8 ledger-rewind lift.
+
+**Slipped to T3:** US-L-5 pattern mining (Curator hand-written rules cover thesis), US-L-NEW-11 debugger acceptance harness (depends on Sonny's debugger), US-L-4 hint outcome validation (blocked on PR/CI outcome channel that does not exist).
+
+**Slipped to T4:** US-L-6 sim->live drift (requires Tier 3 simulation to exist as a measurement source).
+
+**DONE:** Canonical serialization spec — resolved Round 6 (CBOR+BLAKE3 for L1, DBOM stays SHA-256, per-column algorithm rule locked). Strike from open work.
+
+**Five open questions to Cassima.** Q1 is the highest-leverage: does `by Crucible'' read strong (Crucible proposes + replay-investigates prior decisions + applies) or weak (Crucible proposes, Aaron applies manually)? I triaged for strong, which makes A3 a T1 must-have. Weak reading shrinks the T1 conformance kit to A1+A4 and slips A3 to T2. Q2-Q5: what counts as `an improvement to Crucible''; `one week'' wall-clock vs business days and how many discrete improvements expected; is the scorecard user-facing in v1 (needs Valanice/Erasmus partner story if yes); `ValidationResult.tier 3 = simulation'' typed-but-empty stub — keep or remove (I lean keep, same discipline as L1 substrate boundary).
+
+**No new deliverables this round.** All Round-3 locks (8-field schema, A1-A4, ReadSetBuilder, scorecard, canonical serialization) hold unchanged; this round only assigns them tier numbers and splits two of them across T1/T2 boundaries.

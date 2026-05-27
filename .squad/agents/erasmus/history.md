@@ -154,3 +154,27 @@ T5 resolved — Crucible built on Copilot SDK, replaces Copilot CLI as Aaron's d
 **Output:** Inbox file `D:\git\harness\.squad\decisions\inbox\erasmus-reconciliation-2026-05-24T2330Z.md` — full per-story reconciliation with file:line cites; surprises section names eight in-tree patterns worth promoting; gaps and recommended follow-ups close the loop.
 
 **Summary paragraph:** The existing monorepo contains more outsider DNA than I expected — DBOM's Merkle chain, the HookComposer's error-isolated dynamic registration, DriftSketch's streaming quantiles, and `DecisionRecord.alternatives` are all latent versions of primitives I called for from outside the walls, shipped but unnamed and not yet promoted to architectural status. What is genuinely absent is the *capabilities* layer: there is no session genealogy, no fork primitive, no DAG scheduler, no replay engine, no observation capture, no interactive surface beyond MCP — and the SDK's own `parentId`-chained event log and `subagent.selected/deselected` telemetry are being discarded at the Cairn ingest boundary, leaving free upstream substrate on the table. My most useful round-4 contribution is to (a) withdraw US-E-NEW-12 (overtaken by Aaron's round-3 "Crucible replaces Copilot CLI" decision), (b) flag that the SDK's `snapshot_rewind` is destructive and contradicts US-E-2's non-destructive-fork semantics — needing an explicit decision — and (c) point at the cheap "preserve parentId at ingest" story that unblocks US-E-1, US-E-2, US-E-4, US-S-3, and US-S-6 at near-zero cost.
+
+
+## Round 7 — v1 Tier Triage (2026-05-25T02:00Z)
+
+**Task:** Triage all 12 stories I authored against Aaron's locked v1 framework (T1/T2/T3 branching robustness mine/T4/T5/T6/Parking) and the falsifiable bar — *"Aaron can run a one-week productivity loop where every improvement to Crucible is made by Crucible."* Be opinionated about the T1 branching minimum given Aaron's 2a ruling (L1 owns branching natively via `parent_session_id` + `fork_point_event_id`).
+
+**Headline call:** **fork-at-HEAD is T1; everything else branching is T3+.** Split US-E-2 into three:
+- **US-E-2a** `crucible fork` (HEAD only, no flags) + `crucible checkout` + sessions-list — **T1**. The minimum verb-surface that closes the productivity loop. Without it, every Crucible-on-Crucible iteration is destructive to the parent thread.
+- **US-E-2b** fork-at-arbitrary-event + COW + ancestor walks — **T3** (the real branching-robustness story).
+- **US-E-2c** counterfactual auto-replay — **T4** (depends on US-E-NEW-11 hermetic + US-E-2b).
+
+**Tier assignments (summary):** T1: US-E-2a + `DecisionRecord.alternatives`→Mirror wire-up. T2: US-E-9 (merged into Mirror), US-E-NEW-11 (handed to Alexander per v1 commitment #4). T3: US-E-1 (bisect), US-E-2b, US-E-10 (export). T4: US-E-2c, US-E-3 (shrunk), US-E-4 (drop phylogeny framing), US-E-7. T5/Parking: US-E-8 (split ingest-T4 vs scheduler-Parking). Withdrawn/merged: US-E-5, US-E-6, US-E-NEW-12.
+
+**Two T1 promotions insiders may underweight:**
+1. `crucible fork` as a **user-facing verb**, not a capability. The schema is the easy half (Roger has it queued); the hard half is the user model. Ship the smallest verb that exercises the schema; let the rich API land in T3.
+2. `DecisionRecord.alternatives` is already serialized on every recorded decision (`packages/forge/src/decisions/index.ts:40-60`) and has **no consumer**. Wiring it into MirrorEvent payloads is ~2 hours and doubles trust in the bootstrap loop. Single highest-leverage T1 item I see.
+
+**What I declined to re-litigate:** 2a SDK boundary lock. US-E-NEW-12 withdrawal (Aaron round-3). US-E-5/6 prior dispositions. US-E-NEW-11 ownership transfer to Alexander.
+
+**Open questions kicked to Cassima:** (1) fork-at-last-decision as a T1 degenerate of fork-at-HEAD? (2) does `crucible checkout` belong to me or Sonny? (3) clean split on T1.E.2 ownership with Valanice. (4) DBOM Merkle naming-only promotion to L1 primitive. (5) US-E-2c T4 vs Parking. (6) US-E-8 ingest-half T4 vs T3. (7) fork-merge semantics confirmed Parking, or need `crucible adopt`?
+
+**Closing position:** *"`crucible fork` at HEAD + `crucible checkout` + Mirror surfacing `DecisionRecord.alternatives`. That is the entirety of my T1 ask. Everything else in my chamber waits for T3 or later. The bar is met."* — Erasmus
+
+**Output:** `D:\git\harness\.squad\decisions\inbox\erasmus-triage-2026-05-25T0200Z.md`

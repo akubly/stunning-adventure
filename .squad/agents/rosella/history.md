@@ -171,3 +171,48 @@ and satisfied. Gabriel/Router unchanged. Mirror is another L2 projector
 of the same pattern.
 
 Read-only sweep across `cairn/`, `forge/`, `skillsmith-runtime/`, `runtime-cli/`, `types/`. Headline: **the plugin host already exists in Cairn, not Forge.** `cairn/src/agents/discovery.ts` is a 482-line, 4-phase topology scanner (user / project / plugin / marketplace) emitting SHA-256-checksummed `DiscoveredArtifact` records with per-type `ResolutionRule` (`additive`/`first_found`/`last_wins`), `ownerPlugin` tagging from `plugin.json`, and cross-scope conflict detection. `ArtifactType` covers instruction/agent/skill/hook/mcp_server/plugin_manifest/command. Counts: ALREADY-EXISTS 1, PARTIALLY-EXISTS 5, NET-NEW 4, CONTRADICTS 0 (1 latent-risk on US-Ro-3 SDK coupling, deferred to Aaron/Graham). Key reuses identified: `ProvenanceTier` (cert/internal, bridge/index.ts:26-47) for trust tiers, DBOM frontmatter (export/compiler.ts:82-100) for hermetic exports, `compiler` agent stub (cairn/agents/compiler.ts) as the natural implementation slot for US-Ro-NEW-2/3, and `HookComposer` (forge/hooks/index.ts) shallow-merge + error-isolation pattern worth lifting to a shared utility. **Plugin pinning at fork (v1 #7) is implementable on existing primitives** — content-addressing is already in place, only need `plugin.json` schema extension + topology-snapshot persist at fork + compiler-agent pin verifier. Rewriting US-Ro-1 and US-Ro-4 as "wire what exists, fill contract gaps" rather than greenfield. Merge with Roger US-R-3 confirmed. Latent SDK-coupling conflict in US-Ro-3 surfaced cleanly, not unilaterally resolved.
+
+---
+
+## Round 7 — v1 Triage (2026-05-25T02:00Z)
+
+**Inbox:** `.squad/decisions/inbox/rosella-triage-2026-05-25T0200Z.md`
+
+Triaged 10 authored stories + Round-6 #7 work + 2 new stories
+(Mirror Projector, DBOM-frontmatter-for-exports) against Aaron-locked v1
+framework (MVP that validates the harness thesis; bar = "Aaron runs a
+one-week productivity loop where every improvement to Crucible is made by
+Crucible"). T1 recommended set: 8 items (US-A-NEW-5 contract honored,
+EventLogProjector, Mirror Projector, US-Ro-3 hermetic seam, US-Ro-4 boot
+wire-up, US-Ro-NEW-2 plugin pinning [v1 commitment #7], US-Ro-NEW-3 T1
+slice, US-Ro-1 T1 slice). T2: US-Ro-2 (split), US-Ro-NEW-1, US-Ro-NEW-4,
+DBOM frontmatter. T3: US-Ro-5 (Alchemist), MCP-as-generator-source. T4:
+US-Ro-NEW-3 full (signing/quarantine), HookComposer lift, US-Ro-1 full
+lifecycle. Parking: US-Ro-6 (already withdrawn).
+
+**Free-multiplier wins identified.** Phase A WAL's `causal_read_set_hash`
++ `hook_verdict` promote Mirror divergence detection and pin-at-fork
+replay-drift detection from T2 work into T1 essentially for free.
+ProvenanceTier (existing) maps onto Graham's Mirror level enum without
+new vocabulary. `source_event_offset` (Migration 014) doubles as Laura's
+conformance divergence key. ~50–60h of T1 owned-work plus the merged
+US-Ro-NEW-2 with Roger.
+
+**Mirror as L2 projector pattern claimed.** Mirror Projector is a parallel
+L1Subscriber implementation alongside EventLogProjector (Round 6 #7),
+sharing the projector pattern. Both are reference implementations for
+later projectors (Laura conformance, Sonny investigation). No producer
+writes directly to `mirror_events`; every event originates from an L1
+commit. Honors decision #10.
+
+**Cross-team binds:** Roger (US-R-3 merge with US-Ro-NEW-2 confirmed;
+shared `L1Subscriber` contract); Graham (Mirror notification render
+ownership open question); Sonny (per-row lineage assumption still
+flagged); Laura (`source_event_offset` is her conformance key);
+Alexander (US-A-NEW-5 contract unchanged); Gabriel (hook_verdict
+free-rides into Mirror policy events).
+
+**7 open questions for Cassima** raised — notification render ownership,
+mirror_events GC, cross-session Mirror scope, US-Ro-3 Provider home,
+plugin manifest package location, MirrorEvent ↔ event_log join key
+confirmation, Sonny per-row lineage decision.

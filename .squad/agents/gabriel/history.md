@@ -517,3 +517,30 @@ carry bus traffic," I withdraw and we go to Round 4.
 **Recommended trajectory if (c) wins:** ship v1 → measure 4-8 weeks of Aaron's daily use → use the actual incident corpus (what did Crucible flag post-hoc that *should* have been prevented?) to evidence-base which subset of predicates need promotion to pre-commit in v2. Sharply scopes (a)/(b)'s work and lets Aaron's real workflow drive the safety/performance tradeoff rather than our pre-build guesses.
 
 **Output:** `.squad/decisions/inbox/gabriel-spike-fork-c-parallel-ingest-2026-05-25T0030Z.md` (full survey + survival matrix + safety matrix + operational topology + hybrid trajectory + verdict + tags).
+
+## 2026-05-25 Round 7: Triage of Gabriel stories against v1 framework
+
+**Inbox:** `.squad/decisions/inbox/gabriel-triage-2026-05-25T0200Z.md`
+
+**v1 bar:** Aaron runs one-week productivity loop where every Crucible improvement is made by Crucible. Substrate is A.3 hybrid (custom pure-TS append-only WAL + better-sqlite3 for derived). Fork (c) rejected — pre-commit pause and unified Router restored.
+
+**Triage headline counts:** 8 T1 (4 safety-critical sub-list + 4 productivity-loop), 4 T2, 3 T3, 1 T5, 1 v1.1-ops park, 2 DROPs (fork-(c) verdict taxonomy + observer-topology).
+
+**T1 safety-critical sub-list (Router-grade, non-negotiable for v1):** R4 (policy_version on every recorded verdict) → R2 (verdict-stream recording in WAL's hook_verdict_witness BLAKE3 CAS) → R1∪NEW-15 (bus+Router property/fuzz regime P1–P5, with fast-check toehold on HookComposer sprint 1) → R3a (per-verdict-type subscription default + bounded observe queues + observable drop counter, modeled on LocalDBOMSink).
+
+**T1 productivity-loop:** §6.1–§6.3+§6.5 Router-side contract (pause-only receipt, ≤50ms ack instrumented, lineage recording, replayability-from-stream — finally measurable on A.3 because Router can exist as a real component in the L1 writer process) → NEW-11a (replay driver over A.3 WAL + existing bridge stream; don't gold-plate) → NEW-13a (branch metadata columns merged with Roger's A.3 migrations) → NEW-16a (single CI smoke test: record → replay → byte-equal assertion).
+
+**Key splits:** NEW-11 split 3-way (a=T1 replay driver, b=T2 deep content capture, c=T3/park external IO hermeticism). NEW-12 split (a=T2 linear bisect, b=T3 branched bisect). NEW-13 split (a=T1 schema, b=T3 fork CLI). NEW-16 split (a=T1 smoke, b=T2 full conformance matrix). R3 split (a=T1 bounded queues + pause-only default, b=T2 budget refusal + bus-side sampled(N) registration). §6 split (§6.1–.3+.5=T1, §6.4 RouterDecision outbound pending Cassima Q#2).
+
+**Merges:** NEW-15 merges into R1 (one fuzz harness for bus+Router). Round-4 reco `policy_version` on DecisionRecord merges into R4. fast-check toehold is sub-task of NEW-15/R1.
+
+**Drops:** Fork-(c) verdict taxonomy {observe, alert, quarantine-downstream, rollback-proposal, escalate-policy-change} DEAD (pre-commit pause restored). Fork-(c) "Crucible-as-observer-of-Cairn" topology DEAD (A.3 writes L1 WAL in-process). Fork-(c) incident-corpus predicate-promotion heuristic recast as v1.1 ops note (architecture motivating it died, empirical-prioritization habit survives).
+
+**Re-cast against A.3:** NEW-11a (sources from L1 WAL via L1Subscriber per open#7, not event_log tail). NEW-12a (WAL ULID-sortable offset is the bisect coordinate). Two-routers framing dies (Router is unified). My Round-4 "≤50ms unrealizable" worry dissolved — on A.3 the Router runs in the same TS process as L1 group-commit, so ack-budget is measurable for the first time.
+
+**Defer to T5:** NEW-14 (snapshot/compaction) — v1 volume insufficient; re-trigger when incident corpus shows pain.
+
+**Five open Qs for Cassima:** (1) Router process placement — inline in L1 writer (recommend) vs co-process with IPC ack. (2) Mirror input contract — Mirror as projector over R2's recorded stream (strongly preferred; makes §6.4 a T1 sub-task of R2) vs Mirror as push subscriber on a separate outbound channel (then §6.4 is T2). (3) Policy hot-swap fence — recommend fence-at-group-commit-boundary (cheap one-time cost; silent mid-flight swap kills replay determinism). (4) Determinism conformance v1 scope — recommend NEW-16a smoke enforced + A1–A4 spec written but only A1+A3 enforced (A2/A4 covered by schema validation). (5) Archivist crash-detect replacement urgency — T1 or T2 depending on Cassima's p99 crash-during-Aaron's-one-week-window judgment; my instinct is T2.
+
+**Strongest opinion:** if we ship items 1–4 of the safety-critical sub-list first, we have a credible Router-as-safety-chokepoint claim even if items 5–8 slip a sprint. Worst-case slip is "productivity loop is slower", not "safety property collapses". Sprint 1 must land: R4 + the fast-check toehold + the L1 WAL hook_verdict_witness population path. Without those three, every other T1 story is unfalsifiable.
+
