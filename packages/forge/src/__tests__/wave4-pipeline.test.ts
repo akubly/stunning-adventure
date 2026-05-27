@@ -8,7 +8,6 @@
  * - W4-E2E: End-to-end pipeline coverage including MCP scope enforcement
  */
 
-import type Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   closeDb,
@@ -26,6 +25,8 @@ import {
 } from '@akubly/cairn';
 import { insertChangeVector } from '@akubly/cairn';
 import { runForgePrescribe } from '../../../skillsmith-runtime/src/index.js';
+
+let db: ReturnType<typeof getDb>;
 
 let hintCounter = 0;
 let sessionId = '';
@@ -74,8 +75,8 @@ function seedVector(
   source: HintSource,
   netImpactTuning: { deltaConvergence?: number; deltaDrift?: number; deltaCacheHit?: number } = {},
 ): void {
-  const db = getDb();
-  const hintId = insertOptimizationHint(
+  db = getDb();
+  const hintId = insertOptimizationHint(db,
     makeHint(skillId, category, source, {
       status: 'applied',
       metricSnapshot: {
@@ -107,8 +108,8 @@ function seedVector(
 beforeEach(() => {
   closeDb();
   hintCounter = 0;
-  getDb(':memory:');
-  sessionId = createSession('test-repo', 'main');
+  db = getDb(':memory:');
+  sessionId = createSession(db, 'test-repo', 'main');
 });
 
 afterEach(() => {
@@ -136,7 +137,7 @@ describe('Wave 4 Group A — insertHintIfNew Atomicity', () => {
     const hint1 = makeHint(skillId, 'convergence', 'prompt-optimizer', { id: 'hint-concurrent-1' });
     const hint2 = makeHint(skillId, 'convergence', 'prompt-optimizer', { id: 'hint-concurrent-2' });
 
-    const db = reopenDb();
+    db = reopenDb();
     const result1 = insertHintIfNew(db, hint1);
     const result2 = insertHintIfNew(db, hint2);
 
@@ -144,7 +145,7 @@ describe('Wave 4 Group A — insertHintIfNew Atomicity', () => {
     expect(result2.inserted).toBe(false);
     expect(result2.existingHintId).toBe(hint1.id);
 
-    const allHints = queryOptimizationHints({ skillId, status: 'pending' });
+    const allHints = queryOptimizationHints(db, { skillId, status: 'pending' });
     expect(allHints.length).toBe(1);
     expect(allHints[0].id).toBe(hint1.id);
   });
@@ -169,13 +170,13 @@ describe('Wave 4 Group A — insertHintIfNew Atomicity', () => {
       status: 'pending',
     });
 
-    const db = reopenDb();
-    insertOptimizationHint(hint1); // Direct insert for applied status
+    db = reopenDb();
+    insertOptimizationHint(db, hint1); // Direct insert for applied status
     const result2 = insertHintIfNew(db, hint2);
 
     expect(result2.inserted).toBe(true);
 
-    const allHints = queryOptimizationHints({ skillId });
+    const allHints = queryOptimizationHints(db, { skillId });
     expect(allHints.length).toBe(2);
     expect(allHints.map((h) => h.id).sort()).toEqual(['hint-applied', 'hint-pending']);
   });
@@ -198,13 +199,13 @@ describe('Wave 4 Group A — insertHintIfNew Atomicity', () => {
       id: 'hint-txn-1',
     });
 
-    const db = reopenDb();
+    db = reopenDb();
     const result = insertHintIfNew(db, hint);
 
     expect(result.inserted).toBe(true);
 
     // Query immediately — should see the complete hint
-    const loadedHint = queryOptimizationHints({ skillId, status: 'pending' })[0];
+    const loadedHint = queryOptimizationHints(db, { skillId, status: 'pending' })[0];
     expect(loadedHint).toBeDefined();
     expect(loadedHint.id).toBe(hint.id);
     expect(loadedHint.category).toBe(hint.category);
@@ -227,15 +228,15 @@ describe('Wave 4 Group B — CairnEvent Observability', () => {
     // verify payload contains the hint ID and transition details.
 
     const skillId = 'skill-event-insert';
-    upsertExecutionProfile(makeProfile(skillId, 10));
+    upsertExecutionProfile(db, makeProfile(skillId, 10));
     const hint = makeHint(skillId, 'convergence', 'prompt-optimizer', { id: 'h-event-1' });
 
-    const db = reopenDb();
-    const beforeEventCount = getUnprocessedEvents(0).filter((e) => e.eventType === 'hint_state_transition').length;
+    db = reopenDb();
+    const beforeEventCount = getUnprocessedEvents(db, 0).filter((e) => e.eventType === 'hint_state_transition').length;
 
     insertHintIfNew(db, hint);
 
-    const events = getUnprocessedEvents(0);
+    const events = getUnprocessedEvents(db, 0);
     const hintEvents = events.filter((e) => e.eventType === 'hint_state_transition');
     expect(hintEvents.length).toBeGreaterThan(beforeEventCount);
 
@@ -266,14 +267,14 @@ describe('Wave 4 Group B — CairnEvent Observability', () => {
       id: 'h-transition-1',
       status: 'pending',
     });
-    const db = reopenDb();
+    db = reopenDb();
     insertHintIfNew(db, hint);
 
-    const beforeEventCount = getUnprocessedEvents(0).filter((e) => e.eventType === 'hint_state_transition').length;
+    const beforeEventCount = getUnprocessedEvents(db, 0).filter((e) => e.eventType === 'hint_state_transition').length;
 
-    updateOptimizationHintStatus('h-transition-1', 'accepted');
+    updateOptimizationHintStatus(db, 'h-transition-1', 'accepted');
 
-    const events = getUnprocessedEvents(0);
+    const events = getUnprocessedEvents(db, 0);
     const hintEvents = events.filter((e) => e.eventType === 'hint_state_transition');
     expect(hintEvents.length).toBeGreaterThan(beforeEventCount);
 
@@ -297,11 +298,11 @@ describe('Wave 4 Group B — CairnEvent Observability', () => {
     // Assert: CairnEvent with eventType='profile_bump' exists for both creation and update.
 
     const skillId = 'skill-profile-bump';
-    const beforeEventCount = getUnprocessedEvents(0).filter((e) => e.eventType === 'profile_bump').length;
+    const beforeEventCount = getUnprocessedEvents(db, 0).filter((e) => e.eventType === 'profile_bump').length;
 
-    upsertExecutionProfile(makeProfile(skillId, 10));
+    upsertExecutionProfile(db, makeProfile(skillId, 10));
 
-    const events1 = getUnprocessedEvents(0).filter((e) => e.eventType === 'profile_bump');
+    const events1 = getUnprocessedEvents(db, 0).filter((e) => e.eventType === 'profile_bump');
     expect(events1.length).toBeGreaterThan(beforeEventCount);
 
     const createEvent = events1.find((e) => {
@@ -311,10 +312,10 @@ describe('Wave 4 Group B — CairnEvent Observability', () => {
     expect(createEvent).toBeDefined();
 
     // Update the profile
-    const beforeUpdateCount = getUnprocessedEvents(0).filter((e) => e.eventType === 'profile_bump').length;
-    upsertExecutionProfile(makeProfile(skillId, 15));
+    const beforeUpdateCount = getUnprocessedEvents(db, 0).filter((e) => e.eventType === 'profile_bump').length;
+    upsertExecutionProfile(db, makeProfile(skillId, 15));
 
-    const events2 = getUnprocessedEvents(0).filter((e) => e.eventType === 'profile_bump');
+    const events2 = getUnprocessedEvents(db, 0).filter((e) => e.eventType === 'profile_bump');
     expect(events2.length).toBeGreaterThan(beforeUpdateCount);
 
     const updateEvent = events2.find((e) => {
@@ -339,14 +340,14 @@ describe('Wave 4 Group B — CairnEvent Observability', () => {
     reopenDb();
 
     // Insert a future event type (note: logEvent signature is sessionId, eventType, payload)
-    logEvent(sessionId, 'future_event_type', { detail: 'Wave 5 feature' });
+    logEvent(db, sessionId, 'future_event_type', { detail: 'Wave 5 feature' });
 
-    const events = getUnprocessedEvents(0);
+    const events = getUnprocessedEvents(db, 0);
     const futureEvent = events.find((e) => e.eventType === 'future_event_type');
     expect(futureEvent).toBeDefined();
 
     // Verify it doesn't cause errors in basic event queries
-    expect(() => getUnprocessedEvents(0)).not.toThrow();
+    expect(() => getUnprocessedEvents(db, 0)).not.toThrow();
   });
 
   it('rolls back hint insert when hint event emission fails', () => {
@@ -355,7 +356,7 @@ describe('Wave 4 Group B — CairnEvent Observability', () => {
       id: 'h-rollback-1',
     });
 
-    const db = reopenDb();
+    db = reopenDb();
     db.exec(`
       CREATE TEMP TRIGGER fail_hint_state_transition_event
       BEFORE INSERT ON event_log
@@ -367,8 +368,8 @@ describe('Wave 4 Group B — CairnEvent Observability', () => {
 
     expect(() => insertHintIfNew(db, hint)).toThrow('forced hint_state_transition failure');
 
-    expect(queryOptimizationHints({ skillId })).toHaveLength(0);
-    const orphanEvent = getUnprocessedEvents(0).find((event) => {
+    expect(queryOptimizationHints(db, { skillId })).toHaveLength(0);
+    const orphanEvent = getUnprocessedEvents(db, 0).find((event) => {
       try {
         const payload = JSON.parse(event.payload) as { hint_id?: string };
         return payload.hint_id === hint.id;
@@ -395,15 +396,15 @@ describe('Wave 4 Group C — forceRegenerate CLI Knob', () => {
     // Assert: skipped count > 0 (hints were deduplicated).
 
     const skillId = 'skill-dedup-default';
-    upsertExecutionProfile(makeProfile(skillId, 10));
+    upsertExecutionProfile(db, makeProfile(skillId, 10));
     seedVector(skillId, 'convergence', 'prompt-optimizer');
     seedVector(skillId, 'cache-optimization', 'token-optimizer', { deltaCacheHit: 0.2 });
-    
+
     const existingHint = makeHint(skillId, 'convergence', 'prompt-optimizer', {
       id: 'h-dedup-default',
       status: 'pending',
     });
-    const db = reopenDb();
+    db = reopenDb();
     insertHintIfNew(db, existingHint);
 
     const result = await runForgePrescribe({ skillId, dbPath: ':memory:' });
@@ -411,7 +412,7 @@ describe('Wave 4 Group C — forceRegenerate CLI Knob', () => {
     if (!result.ok) {
       console.log('runForgePrescribe failed:', result.message);
     }
-    
+
     expect(result.ok).toBe(true);
     if (!result.ok) {
       console.error('runForgePrescribe failed:', result.message);
@@ -434,18 +435,18 @@ describe('Wave 4 Group C — forceRegenerate CLI Knob', () => {
     // Assert: Prior hint is expired; new hints are inserted.
 
     const skillId = 'skill-force-regen';
-    upsertExecutionProfile(makeProfile(skillId, 10));
+    upsertExecutionProfile(db, makeProfile(skillId, 10));
     seedVector(skillId, 'convergence', 'prompt-optimizer');
     seedVector(skillId, 'cache-optimization', 'token-optimizer', { deltaCacheHit: 0.2 });
-    
+
     const existingHint = makeHint(skillId, 'convergence', 'prompt-optimizer', {
       id: 'h-force-regen',
       status: 'pending',
     });
-    const db = reopenDb();
+    db = reopenDb();
     insertHintIfNew(db, existingHint);
 
-    const beforeHintCount = queryOptimizationHints({ skillId }).length;
+    const beforeHintCount = queryOptimizationHints(db, { skillId }).length;
 
     const result = await runForgePrescribe({ skillId, dbPath: ':memory:', forceRegenerate: true });
 
@@ -460,13 +461,13 @@ describe('Wave 4 Group C — forceRegenerate CLI Knob', () => {
     expect(result.inserted).toBeGreaterThan(0);
 
     // Prior hint should be expired
-    const expiredHint = queryOptimizationHints({ skillId, status: 'expired' }).find(
+    const expiredHint = queryOptimizationHints(db, { skillId, status: 'expired' }).find(
       (h) => h.id === 'h-force-regen'
     );
     expect(expiredHint).toBeDefined();
 
     // New hints should exist
-    const activeHints = queryOptimizationHints({ skillId, status: ['pending', 'accepted'] });
+    const activeHints = queryOptimizationHints(db, { skillId, status: ['pending', 'accepted'] });
     expect(activeHints.length).toBeGreaterThan(0);
 
     // Verify we generated and inserted new hints beyond the prior count
@@ -487,15 +488,15 @@ describe('Wave 4 Group C — forceRegenerate CLI Knob', () => {
     // Assert: New hints inserted despite existing active hints.
 
     const skillId = 'skill-cli-force';
-    upsertExecutionProfile(makeProfile(skillId, 10));
+    upsertExecutionProfile(db, makeProfile(skillId, 10));
     seedVector(skillId, 'convergence', 'prompt-optimizer');
     seedVector(skillId, 'cache-optimization', 'token-optimizer', { deltaCacheHit: 0.2 });
-    
+
     const existingHint = makeHint(skillId, 'convergence', 'prompt-optimizer', {
       id: 'h-cli-force',
       status: 'pending',
     });
-    const db = reopenDb();
+    db = reopenDb();
     insertHintIfNew(db, existingHint);
 
     const result = await runForgePrescribe({ skillId, dbPath: ':memory:', forceRegenerate: true });
@@ -507,9 +508,9 @@ describe('Wave 4 Group C — forceRegenerate CLI Knob', () => {
     }
 
     expect(result.inserted).toBeGreaterThan(0);
-    
+
     // Verify the CLI wiring by checking that the expired hint exists
-    const expiredHints = queryOptimizationHints({ skillId, status: 'expired' });
+    const expiredHints = queryOptimizationHints(db, { skillId, status: 'expired' });
     expect(expiredHints.length).toBeGreaterThan(0);
   });
 
@@ -562,18 +563,18 @@ describe('Wave 4 Group D — End-to-End Pipeline', () => {
     // for both transitions are in the events table.
 
     const skillId = 'skill-e2e-force';
-    upsertExecutionProfile(makeProfile(skillId, 10));
+    upsertExecutionProfile(db, makeProfile(skillId, 10));
     seedVector(skillId, 'convergence', 'prompt-optimizer');
     seedVector(skillId, 'cache-optimization', 'token-optimizer', { deltaCacheHit: 0.2 });
-    
+
     const existingHint = makeHint(skillId, 'convergence', 'prompt-optimizer', {
       id: 'h-e2e-force',
       status: 'pending',
     });
-    const db = reopenDb();
+    db = reopenDb();
     insertHintIfNew(db, existingHint);
 
-    const beforeEventCount = getUnprocessedEvents(0).filter(
+    const beforeEventCount = getUnprocessedEvents(db, 0).filter(
       (e) => e.eventType === 'hint_state_transition'
     ).length;
 
@@ -586,16 +587,16 @@ describe('Wave 4 Group D — End-to-End Pipeline', () => {
     }
 
     // Prior hint should be expired
-    const expiredHint = queryOptimizationHints({ skillId, status: 'expired' }).find(
+    const expiredHint = queryOptimizationHints(db, { skillId, status: 'expired' }).find(
       (h) => h.id === 'h-e2e-force'
     );
     expect(expiredHint).toBeDefined();
 
     // New hints should exist
-    const activeHints = queryOptimizationHints({ skillId, status: ['pending', 'accepted'] });
+    const activeHints = queryOptimizationHints(db, { skillId, status: ['pending', 'accepted'] });
     expect(activeHints.length).toBeGreaterThan(0);
 
-    const allEvents = getUnprocessedEvents(0);
+    const allEvents = getUnprocessedEvents(db, 0);
     const events = allEvents.filter((e) => e.eventType === 'hint_state_transition');
     expect(events.length).toBeGreaterThan(beforeEventCount);
 
@@ -640,7 +641,7 @@ describe('Wave 4 Group D — End-to-End Pipeline', () => {
     // Assert: skipped count > 0 (hints were deduplicated).
 
     const skillId = 'skill-dedup-after-force';
-    upsertExecutionProfile(makeProfile(skillId, 10));
+    upsertExecutionProfile(db, makeProfile(skillId, 10));
     seedVector(skillId, 'convergence', 'prompt-optimizer');
     seedVector(skillId, 'cache-optimization', 'token-optimizer', { deltaCacheHit: 0.2 });
 
@@ -654,7 +655,7 @@ describe('Wave 4 Group D — End-to-End Pipeline', () => {
 
     expect(result1.inserted).toBeGreaterThan(0);
 
-    const afterForceHintCount = queryOptimizationHints({ skillId, status: ['pending', 'accepted'] }).length;
+    const afterForceHintCount = queryOptimizationHints(db, { skillId, status: ['pending', 'accepted'] }).length;
 
     // Second call without forceRegenerate — should dedup
     const result2 = await runForgePrescribe({ skillId, dbPath: ':memory:', forceRegenerate: false });
@@ -669,7 +670,7 @@ describe('Wave 4 Group D — End-to-End Pipeline', () => {
     expect(result2.inserted).toBe(0);
 
     // Hint count should remain the same (no new inserts)
-    const afterDedupHintCount = queryOptimizationHints({ skillId, status: ['pending', 'accepted'] }).length;
+    const afterDedupHintCount = queryOptimizationHints(db, { skillId, status: ['pending', 'accepted'] }).length;
     expect(afterDedupHintCount).toBe(afterForceHintCount);
   });
 });

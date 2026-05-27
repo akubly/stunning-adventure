@@ -5,6 +5,7 @@
  * against the knowledge base.
  */
 
+import { getDb } from '../db/index.js';
 import { createSession, endSession, getActiveSession } from '../db/sessions.js';
 import { logEvent } from '../db/events.js';
 import { recordSkip } from '../db/skipBreadcrumbs.js';
@@ -16,21 +17,22 @@ export const AGENT_DESCRIPTION = 'Session recording, narrative logging, NL queri
 
 /** Start or resume an Archivist session for the given repo. */
 export function startSession(repoRemoteOrKey: string, branch?: string): string {
+  const db = getDb();
   const repoKey = repoRemoteOrKey.includes('/')
     ? slugifyRepoKey(repoRemoteOrKey)
     : repoRemoteOrKey;
 
   // Check for an existing active session
-  const existing = getActiveSession(repoKey);
+  const existing = getActiveSession(db, repoKey);
   if (existing) {
     // Log a session_resume event
-    logEvent(existing.id, 'session_resume', { resumedAt: new Date().toISOString() });
+    logEvent(db, existing.id, 'session_resume', { resumedAt: new Date().toISOString() });
     return existing.id;
   }
 
   // Create a new session
-  const sessionId = createSession(repoKey, branch);
-  logEvent(sessionId, 'session_start', {
+  const sessionId = createSession(db, repoKey, branch);
+  logEvent(db, sessionId, 'session_start', {
     repoKey,
     branch: branch ?? null,
     startedAt: new Date().toISOString(),
@@ -40,11 +42,12 @@ export function startSession(repoRemoteOrKey: string, branch?: string): string {
 
 /** End an active session. */
 export function stopSession(sessionId: string, status: string = 'completed'): void {
-  logEvent(sessionId, 'session_end', {
+  const db = getDb();
+  logEvent(db, sessionId, 'session_end', {
     status,
     endedAt: new Date().toISOString(),
   });
-  endSession(sessionId, status);
+  endSession(db, sessionId, status);
 }
 
 /** Record a tool use event. Scrubs secrets from payload before logging. */
@@ -54,13 +57,14 @@ export function recordToolUse(
   args?: Record<string, unknown>,
   result?: Record<string, unknown>,
 ): number {
+  const db = getDb();
   const payload = scrubSecrets({
     tool: toolName,
     args: args ?? {},
     result: result ?? {},
     timestamp: new Date().toISOString(),
   });
-  return logEvent(sessionId, 'tool_use', payload);
+  return logEvent(db, sessionId, 'tool_use', payload);
 }
 
 /** Record an error event. */
@@ -70,8 +74,9 @@ export function recordError(
   message: string,
   context?: Record<string, unknown>,
 ): number {
+  const db = getDb();
   const scrubbedContext = context ? scrubSecrets(context) : {};
-  return logEvent(sessionId, 'error', {
+  return logEvent(db, sessionId, 'error', {
     category,
     message: scrubSecrets(message),
     context: scrubbedContext,
@@ -86,8 +91,9 @@ export function recordSkipEvent(
   reason?: string,
   agent?: string,
 ): number {
-  recordSkip(sessionId, whatSkipped, reason, agent);
-  return logEvent(sessionId, 'skip', {
+  const db = getDb();
+  recordSkip(db, sessionId, whatSkipped, reason, agent);
+  return logEvent(db, sessionId, 'skip', {
     whatSkipped,
     reason: reason ?? null,
     agent: agent ?? null,
@@ -97,14 +103,15 @@ export function recordSkipEvent(
 
 /** Session-start catch-up: check if the previous session ended cleanly. */
 export function catchUpPreviousSession(repoKey: string): { recovered: boolean; sessionId?: string } {
-  const existing = getActiveSession(repoKey);
+  const db = getDb();
+  const existing = getActiveSession(db, repoKey);
   if (existing) {
     // Previous session is still "active" — it didn't end cleanly
-    logEvent(existing.id, 'session_crash_detected', {
+    logEvent(db, existing.id, 'session_crash_detected', {
       originalStart: existing.startedAt,
       detectedAt: new Date().toISOString(),
     });
-    endSession(existing.id, 'crashed');
+    endSession(db, existing.id, 'crashed');
     return { recovered: true, sessionId: existing.id };
   }
   return { recovered: false };

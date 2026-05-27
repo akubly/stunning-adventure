@@ -1,6 +1,6 @@
 ---
-updated_at: 2026-05-24T07:27:41Z
-focus_area: Phase 4.6 Wave 4 ✅ COMPLETE — All work items implemented and validated. Integration test infrastructure fixed. 644/647 tests passing on phase-4.6/wave-4 branch. Aaron to open PR manually.
+updated_at: 2026-05-25T23:42:47-07:00
+focus_area: Phase 4.6 Wave 5 COMPLETE — Wave A (W5-1, W5-3) + Wave B (W5-2, W5-4) both landed locally on isolated branches. Aaron to review and merge all four Wave 5 PRs. Wave 6 backlog on hold pending PR merges.
 active_issues:
   - "Phase 1: Monorepo restructuring ✅ COMPLETE"
   - "Phase 2: Live runtime verification ✅ COMPLETE (5/5 modules)"
@@ -10,7 +10,8 @@ active_issues:
   - "Phase 4.6: Change Vector Learning ✅ COMPLETE (1153 tests, migration 012, CRUD, Curator, prescriber ranking, 3 ADRs, 39 commits, primitives-only model, compliance approved)"
   - "Phase 4.6 Wave 2: Wire Curator change vectors to prescriber historicalVectors at runtime ✅ COMPLETE (1199 tests, ChangeVectorProvider, ForgePrescriberOrchestrator, autoApplyEligible gate, hint dedup, forge-prescribe CLI)"
   - "Phase 4.6 Wave 3: Curator-driven prescriber orchestration ✅ COMPLETE (PR #21 merged f27a537; composition root R2 @akubly/skillsmith-runtime; always-on hook wiring; 14 Copilot findings addressed; 1219 tests passing)"
-  - "Phase 4.6 Wave 4: COMPLETE ✅ (2026-05-24). W4-1 insertHintIfNew atomicity + W4-2 CairnEvent observability + W4-3 forceRegenerate CLI knob + W4-4 integration test infrastructure — all SHIPPED and VALIDATED. Result: 14/14 integration tests passing, 644/647 repo tests green. Branch phase-4.6/wave-4 ready for PR. Aaron to open PR manually (open_pr=false). Deferred to Wave 5: global tier fallback, staleness check, metrics dashboard, DB convention standardization."
+  - "Phase 4.6 Wave 4: COMPLETE ✅ (2026-05-24). W4-1 insertHintIfNew atomicity + W4-2 CairnEvent observability + W4-3 forceRegenerate CLI knob + W4-4 integration test infrastructure — all SHIPPED and VALIDATED. Result: 14/14 integration tests passing, 644/647 repo tests green. Branch phase-4.6/wave-4 ready for PR. Aaron to open PR manually (open_pr=false)."
+  - "Phase 4.6 Wave 5 COMPLETE ✅ (2026-05-25). Wave A: W5-1 session-kind separation (commit 8b0a69a, 100/100 tests) + W5-3 tier fallback (commit c74463f, 18/18 tests). Wave B: W5-2 explicit DB hard cut (commit 963a0aa, 50 files refactored) + W5-4 staleness attenuation (commit 96f7d6e, 16/16 tests). All four commits on isolated branches. Decisions consolidated (commit cea40ac on main)."
   - "Phase 5: Cloud PGO + Full Graph — ROADMAP (docs/forge-phase5-roadmap.md, Azure budget prerequisite)"
   - "#11 — Worktree-aware sessions (deferred)"
   - "awesome-copilot submission (deferred)"
@@ -18,29 +19,33 @@ active_issues:
 
 # What We're Focused On
 
-Wave 4 is COMPLETE and ready for PR. Branch phase-4.6/wave-4 has all four work items implemented and validated end-to-end. Aaron will open the PR manually.
+Phase 4.6 Wave 5 is COMPLETE. Aaron to review and merge PRs.
 
-**Wave 4 Completion Summary (2026-05-24):**
-- ✅ **W4-1:** insertHintIfNew atomicity (migration 013, partial UNIQUE index, BEGIN IMMEDIATE)
-- ✅ **W4-2:** CairnEvent observability (hint_state_transition, profile_bump events, system session)
-- ✅ **W4-3:** forceRegenerate CLI knob (--force flag for forge-prescribe, expire-then-insert semantics)
-- ✅ **W4-4:** Integration test infrastructure (module singleton pattern fixed, 14/14 tests passing)
+**Wave A (Complete as of 2026-05-25):**
+- ✅ **W5-1 Session-Kind Separation:** Migration 014 (session_kind column), getMostRecentUserSession() API, four MCP call sites corrected. Commit 8b0a69a on phase-4.6/w5-1-session-kind. Fixes MCP fallback correctness bug (was returning `__system__` session to user-facing tools). 100/100 tests passing.
+- ✅ **W5-3 Tier Fallback Chain:** Extends loadExecutionProfile() from per-skill→global to per-skill→per-model→per-user→global. Optional TierFallbackContext. First-match-wins; no staleness-triggered fallback (W5-4 handles). Commit c74463f on phase-4.6/w5-3-tier-fallback. 18/18 tests passing.
 
-**Test Status:** 644/647 passing on phase-4.6/wave-4
-- Wave 4 integration tests: 14/14 ✅
-- Repo-wide: 644/647 (3 TODOs in other modules)
+**Wave B (Complete as of 2026-05-25):**
+- ✅ **W5-2 Explicit DB Hard Cut:** 50 files refactored; all Cairn DB helpers now accept explicit db parameter as first positional arg. Removed singleton fallback overloads. Enables test parallelization and worktree safety. Commit 963a0aa on phase-4.6/w5-2-db-hard-cut. All workspaces green.
+- ✅ **W5-4 Profile Staleness Attenuation:** Configurable threshold (50 sessions OR 7 days). Stale profile confidence attenuated 0.5×. No fallback trigger (W5-3 handles fallback separately). Makes prescriber confidence trustworthy. Commit 96f7d6e on phase-4.6/w5-4-staleness-attenuation. 16/16 tests passing.
 
-**Decision Outcomes:**
-- ✅ **D1 (CairnEvent Observability):** Additive events pattern ratified
-- ✅ **D2 (forceRegenerate Surface):** CLI-only for Wave 4; MCP deferred to Wave 5
-- ✅ **W4-1 (insertHintIfNew Atomicity):** Implemented with partial UNIQUE index + BEGIN IMMEDIATE
-- ✅ **Integration Test Pattern:** Module singleton fragmentation root cause identified and fixed
+**PR Merge Sequence (Aaron to manage):**
+1. PR: W5-1 base=main (commit 8b0a69a)
+2. PR: W5-3 base=main (commit c74463f)
+3. PR: W5-4 base=W5-3 (commit 96f7d6e) — depends on tier fallback selection logic
+4. PR: W5-2 base=main (commit 963a0aa) — independent, no functional dependencies
 
-**Wave 5 Deferred:**
-- Global tier fallback for profile selection (expand from per-skill only)
-- Staleness check on loaded profiles
-- Metrics dashboard for prescriber diagnostics
-- DB convention standardization (explicit injection vs internal getDb() calls)
-- MCP surface for forceRegenerate (with confirmation prompts, safety guards)
+**Wave 6 Backlog (on hold until Wave 5 PRs land):**
+- W5-5: MCP surface for forceRegenerate (needs W5-1 prerequisite + Aaron's UX policy input on confirmation prompts/safety guards)
+- W5-6: Metrics dashboard (product shape undefined; needs Aaron's decision: CLI report vs. MCP resource vs. new package)
+
+**Phase 4.6 Completion Criterion Met:**
+- Wave 5 Shape approved (2026-05-25)
+- Wave A landed on isolated branches (W5-1, W5-3)
+- Wave B landed on isolated branches (W5-2, W5-4)
+- All four commits ready for Aaron review and merge
+- Decisions consolidated in .squad/decisions.md (commit cea40ac)
+
+**Test Health:** 644/647 repo-wide tests green; all Wave 5 work validates cleanly across all workspaces.
 
 

@@ -7,8 +7,10 @@ import { getUnprocessedEvents } from '../db/events.js';
 import type { OptimizationHintInsert } from '../db/optimizationHints.js';
 import type { ExecutionProfileUpsert } from '../db/executionProfiles.js';
 
+let db: ReturnType<typeof getDb>;
+
+
 let counter = 0;
-let sessionId: string;
 
 function hint(overrides?: Partial<OptimizationHintInsert>): OptimizationHintInsert {
   counter += 1;
@@ -44,8 +46,8 @@ function profile(overrides?: Partial<ExecutionProfileUpsert>): ExecutionProfileU
 beforeEach(() => {
   closeDb();
   counter = 0;
-  getDb(':memory:');
-  sessionId = createSession('test-repo', 'main');
+  db = getDb(':memory:');
+  createSession(db, 'test-repo', 'main');
 });
 
 afterEach(() => {
@@ -54,15 +56,15 @@ afterEach(() => {
 
 describe('W4-2: CairnEvent extensions for hint state transitions', () => {
   it('emits hint_state_transition event on insertHintIfNew', () => {
-    const db = getDb();
-    
+    db = getDb();
+
     insertHintIfNew(db, hint({ id: 'h-event-1', category: 'verbosity-event' }));
-    
-    const allEvents = getUnprocessedEvents(0);
+
+    const allEvents = getUnprocessedEvents(db, 0);
     const hintEvents = allEvents.filter((e) => e.eventType === 'hint_state_transition');
-    
+
     expect(hintEvents.length).toBeGreaterThan(0);
-    
+
     const lastEvent = hintEvents[hintEvents.length - 1];
     const payload = JSON.parse(lastEvent.payload);
     expect(payload.hint_id).toBe('h-event-1');
@@ -73,16 +75,16 @@ describe('W4-2: CairnEvent extensions for hint state transitions', () => {
   });
 
   it('emits hint_state_transition event on updateOptimizationHintStatus', () => {
-    const db = getDb();
+    db = getDb();
     insertHintIfNew(db, hint({ id: 'h-status-1', status: 'pending' }));
-    
-    const beforeEventCount = getUnprocessedEvents(0).filter((e) => e.eventType === 'hint_state_transition').length;
-    
-    updateOptimizationHintStatus('h-status-1', 'accepted');
-    
-    const events = getUnprocessedEvents(0).filter((e) => e.eventType === 'hint_state_transition');
+
+    const beforeEventCount = getUnprocessedEvents(db, 0).filter((e) => e.eventType === 'hint_state_transition').length;
+
+    updateOptimizationHintStatus(db, 'h-status-1', 'accepted');
+
+    const events = getUnprocessedEvents(db, 0).filter((e) => e.eventType === 'hint_state_transition');
     expect(events.length).toBeGreaterThan(beforeEventCount);
-    
+
     const lastEvent = events[events.length - 1];
     const payload = JSON.parse(lastEvent.payload);
     expect(payload.hint_id).toBe('h-status-1');
@@ -91,28 +93,28 @@ describe('W4-2: CairnEvent extensions for hint state transitions', () => {
   });
 
   it('does not emit event when status update is a no-op (same status)', () => {
-    const db = getDb();
+    db = getDb();
     insertHintIfNew(db, hint({ id: 'h-noop', status: 'pending' }));
-    
-    const beforeEventCount = getUnprocessedEvents(0).filter((e) => e.eventType === 'hint_state_transition').length;
-    
-    updateOptimizationHintStatus('h-noop', 'pending');
-    
-    const events = getUnprocessedEvents(0).filter((e) => e.eventType === 'hint_state_transition');
+
+    const beforeEventCount = getUnprocessedEvents(db, 0).filter((e) => e.eventType === 'hint_state_transition').length;
+
+    updateOptimizationHintStatus(db, 'h-noop', 'pending');
+
+    const events = getUnprocessedEvents(db, 0).filter((e) => e.eventType === 'hint_state_transition');
     expect(events.length).toBe(beforeEventCount); // No new event
   });
 });
 
 describe('W4-2: CairnEvent extensions for profile bumps', () => {
   it('emits profile_bump event on profile creation', () => {
-    const beforeEventCount = getUnprocessedEvents(0).length;
-    
-    upsertExecutionProfile(profile({ skillId: 'skill-new' }));
-    
-    const events = getUnprocessedEvents(0);
+    const beforeEventCount = getUnprocessedEvents(db, 0).length;
+
+    upsertExecutionProfile(db, profile({ skillId: 'skill-new' }));
+
+    const events = getUnprocessedEvents(db, 0);
     const profileEvents = events.filter((e) => e.eventType === 'profile_bump');
     expect(profileEvents.length).toBeGreaterThan(beforeEventCount);
-    
+
     const lastEvent = profileEvents[profileEvents.length - 1];
     const payload = JSON.parse(lastEvent.payload);
     expect(payload.skill_id).toBe('skill-new');
@@ -123,15 +125,15 @@ describe('W4-2: CairnEvent extensions for profile bumps', () => {
   });
 
   it('emits profile_bump event on profile update', () => {
-    upsertExecutionProfile(profile({ skillId: 'skill-update', sessionCount: 5 }));
-    
-    const beforeEventCount = getUnprocessedEvents(0).filter((e) => e.eventType === 'profile_bump').length;
-    
-    upsertExecutionProfile(profile({ skillId: 'skill-update', sessionCount: 10 }));
-    
-    const events = getUnprocessedEvents(0).filter((e) => e.eventType === 'profile_bump');
+    upsertExecutionProfile(db, profile({ skillId: 'skill-update', sessionCount: 5 }));
+
+    const beforeEventCount = getUnprocessedEvents(db, 0).filter((e) => e.eventType === 'profile_bump').length;
+
+    upsertExecutionProfile(db, profile({ skillId: 'skill-update', sessionCount: 10 }));
+
+    const events = getUnprocessedEvents(db, 0).filter((e) => e.eventType === 'profile_bump');
     expect(events.length).toBeGreaterThan(beforeEventCount);
-    
+
     const lastEvent = events[events.length - 1];
     const payload = JSON.parse(lastEvent.payload);
     expect(payload.skill_id).toBe('skill-update');

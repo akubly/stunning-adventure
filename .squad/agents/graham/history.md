@@ -1,3 +1,4 @@
+📌 Team update (2026-05-25): **Cycle 2 fixes shipped** (f096c20) — N1: package-lock resync + CHANGELOG; N2: `allowGlobalFallback` boolean → `FallbackPolicy` string-literal union (`'per-skill-only'` | `'full-chain'`); N3: telemetry now shows chain/skipped/selected. All 26 runtime tests green, 4 suites passing. Decision rationale in `graham-n2-fallback-policy.md`. — Graham Knight
 📌 Team update (2026-05-23): **Wave 3 decisions accepted** — R2 approved as `@akubly/skillsmith-runtime`; MCP dropped from Wave 3; always-on Curator hook; 7 work items, ~18 tests. Docs revised, ready to fan out. — Graham Knight
 📌 Team update (2026-05-23): **Wave 3 scope + ADR drafted** — `docs/forge-phase4.6-wave3-scope.md` (9 work items, 4 open questions) + `docs/adr/0001-composition-root.md` (5 options R1–R5, recommending R2). Awaiting Aaron's approval. — Graham Knight
 📌 Team update (2026-05-22T20:29:36Z): **Wave 1 complete** — canonical type adopted across packages, SqliteChangeVectorProvider live, zero-vector summaries filtered. Alexander (W2-2) + Rosella (W2-3/W2-7) complete. Forge 599 + Cairn 564 tests green. — Scribe
@@ -78,6 +79,22 @@ Roger (W2-1) + Rosella (W2-4): canonical `ChangeVectorSummary`, `ChangeVectorPro
 **Tech:** TypeScript/Node.js, npm monorepo, MCP SDK, Copilot CLI/Extensions/Engine SDKs
 
 ## Learnings
+
+### Wave 5 Review Cycle 1 Triage (2026-05-25)
+
+Triaged 14 persona review findings on `phase-4.6/wave-5-integration` (ea02cce). Accepted 10, rejected 3, deferred 2. All fixes committed as b695fff.
+
+**Key triage decisions:**
+
+- **I1 (global fallback regression) — ACCEPTED.** Most important finding. `createPrescriberOrchestrationConfig` silently gained global fallback behavior when `loadExecutionProfile`'s default `fallbackContext = {}` always included `global` in the chain. Fix: `allowGlobalFallback` flag on `TierFallbackContext`, default `false`. `runForgePrescribe` explicitly opts in. This is the kind of bug that would silently degrade Curator precision — prescribers seeing aggregate global profiles instead of returning null when no per-skill data exists.
+
+- **I2 (stale per-model vs fresh per-user) — REJECTED design change, ACCEPTED test.** The tier fallback spec explicitly decided staleness does NOT trigger fallback. A stale per-model profile is still more model-specific than a fresh per-user profile. Added interaction test proving attenuation works correctly in this scenario.
+
+- **I7, I8 — REJECTED (pre-existing).** Both findings flag conventions that predate Wave 5. The concrete `Database.Database` type leak in runtime opts (I7) and mixed injection patterns (I8) are real but were not introduced by Wave 5. Scope creep to fix them here risks destabilizing the integration branch.
+
+- **I9 (extract sessionFallback) — ACCEPTED.** Policy/transport separation is a clean improvement. Moved `getUserSessionForMcpFallback` to its own module. Small change, big testability win.
+
+**Architectural pattern confirmed:** The `allowGlobalFallback` flag pattern establishes a precedent for opt-in behavior expansion in the fallback chain. Future tiers or strategies can be gated behind similar flags without changing the default behavior of existing callers. This is the "progressive enhancement" principle from the tier fallback spec made concrete.
 
 ### Wave 4 Scope Approved (2026-05-23)
 

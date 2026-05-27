@@ -1,4 +1,4 @@
-import { getDb } from './index.js';
+import type Database from 'better-sqlite3';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -57,8 +57,7 @@ function mapRow(row: Record<string, unknown>): SignalSampleRow {
 // ---------------------------------------------------------------------------
 
 /** Insert a single signal sample. Returns the new row id. */
-export function insertSignalSample(sample: SignalSampleInsert): number {
-  const db = getDb();
+export function insertSignalSample(db: Database.Database, sample: SignalSampleInsert): number {
   const res = db.prepare(
     `INSERT INTO signal_samples
        (kind, session_id, skill_id, value, metadata, collected_at)
@@ -75,9 +74,8 @@ export function insertSignalSample(sample: SignalSampleInsert): number {
 }
 
 /** Insert many samples in a single transaction. */
-export function insertSignalSamples(samples: SignalSampleInsert[]): number {
+export function insertSignalSamples(db: Database.Database, samples: SignalSampleInsert[]): number {
   if (samples.length === 0) return 0;
-  const db = getDb();
   const stmt = db.prepare(
     `INSERT INTO signal_samples
        (kind, session_id, skill_id, value, metadata, collected_at)
@@ -100,8 +98,7 @@ export function insertSignalSamples(samples: SignalSampleInsert[]): number {
 }
 
 /** Query signal samples by kind, skill, session, and/or time range. */
-export function querySignalSamples(query: SignalSampleQuery = {}): SignalSampleRow[] {
-  const db = getDb();
+export function querySignalSamples(db: Database.Database, query: SignalSampleQuery = {}): SignalSampleRow[] {
   const where: string[] = [];
   const params: unknown[] = [];
 
@@ -143,8 +140,7 @@ export function querySignalSamples(query: SignalSampleQuery = {}): SignalSampleR
 }
 
 /** Total sample count. */
-export function countSignalSamples(): number {
-  const db = getDb();
+export function countSignalSamples(db: Database.Database): number {
   const row = db.prepare('SELECT COUNT(*) AS c FROM signal_samples').get() as { c: number };
   return row.c;
 }
@@ -153,8 +149,7 @@ export function countSignalSamples(): number {
  * TTL sweep: delete samples whose `collected_at` is strictly older than the cutoff.
  * Returns the number of rows deleted.
  */
-export function sweepSignalSamples(cutoffIso: string): number {
-  const db = getDb();
+export function sweepSignalSamples(db: Database.Database, cutoffIso: string): number {
   const res = db.prepare('DELETE FROM signal_samples WHERE collected_at < ?').run(cutoffIso);
   return res.changes;
 }
@@ -164,10 +159,9 @@ export function sweepSignalSamples(cutoffIso: string): number {
  * (by `collected_at`, ties broken by `id`) until count drops to `cap`.
  * Returns the number of rows deleted.
  */
-export function enforceSignalSampleCap(cap: number): number {
+export function enforceSignalSampleCap(db: Database.Database, cap: number): number {
   if (cap < 0) throw new Error('cap must be non-negative');
-  const db = getDb();
-  const total = countSignalSamples();
+  const total = countSignalSamples(db);
   if (total <= cap) return 0;
   const excess = total - cap;
   const res = db.prepare(
@@ -182,7 +176,6 @@ export function enforceSignalSampleCap(cap: number): number {
 }
 
 /** Delete all samples (test/utility helper). */
-export function clearSignalSamples(): number {
-  const db = getDb();
+export function clearSignalSamples(db: Database.Database): number {
   return db.prepare('DELETE FROM signal_samples').run().changes;
 }

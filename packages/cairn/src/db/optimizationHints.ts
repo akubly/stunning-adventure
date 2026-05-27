@@ -1,5 +1,4 @@
 import type Database from 'better-sqlite3';
-import { getDb } from './index.js';
 import { logEvent } from './events.js';
 import { ensureSystemSession } from './sessions.js';
 
@@ -245,8 +244,8 @@ function insertHintIfNewWithinTransaction(
 }
 
 /** Insert a new optimization hint, suppressing active duplicates. Returns the inserted or existing hint id. */
-export function insertOptimizationHint(hint: OptimizationHintInsert): string {
-  const result = insertHintIfNew(getDb(), hint);
+export function insertOptimizationHint(db: Database.Database, hint: OptimizationHintInsert): string {
+  const result = insertHintIfNew(db, hint);
   return result.inserted ? hint.id : (result.existingHintId ?? hint.id);
 }
 
@@ -342,15 +341,15 @@ export function replaceActiveHintAtomically(
 }
 
 /** Get a single hint by id. */
-export function getOptimizationHint(id: string): OptimizationHintRow | null {
-  return getOptimizationHintWithDb(getDb(), id);
+export function getOptimizationHint(db: Database.Database, id: string): OptimizationHintRow | null {
+  return getOptimizationHintWithDb(db, id);
 }
 
 /** Query hints by skill, status, source, and/or parent prescription. */
 export function queryOptimizationHints(
+  db: Database.Database,
   query: OptimizationHintQuery = {},
 ): OptimizationHintRow[] {
-  const db = getDb();
   const where: string[] = [];
   const params: unknown[] = [];
 
@@ -391,8 +390,8 @@ export function queryOptimizationHints(
 }
 
 /** List all hints (most impactful, then most recent). */
-export function listOptimizationHints(limit?: number): OptimizationHintRow[] {
-  return queryOptimizationHints(limit !== undefined ? { limit } : {});
+export function listOptimizationHints(db: Database.Database, limit?: number): OptimizationHintRow[] {
+  return queryOptimizationHints(db, limit !== undefined ? { limit } : {});
 }
 
 /**
@@ -403,12 +402,11 @@ export function listOptimizationHints(limit?: number): OptimizationHintRow[] {
  * unless caller supplies an explicit value.
  */
 export function updateOptimizationHintStatus(
+  db: Database.Database,
   id: string,
   nextStatus: HintStatus,
   options: { appliedAt?: string; force?: boolean } = {},
 ): boolean {
-  const db = getDb();
-
   return db.transaction(() => {
     const current = getOptimizationHintWithDb(db, id);
     if (!current) return false;
@@ -443,8 +441,7 @@ export function updateOptimizationHintStatus(
 }
 
 /** Delete a hint by id. */
-export function deleteOptimizationHint(id: string): boolean {
-  const db = getDb();
+export function deleteOptimizationHint(db: Database.Database, id: string): boolean {
   const res = db.prepare('DELETE FROM optimization_hints WHERE id = ?').run(id);
   return res.changes > 0;
 }

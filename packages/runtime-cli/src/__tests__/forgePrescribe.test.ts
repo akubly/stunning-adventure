@@ -10,9 +10,10 @@ import { runForgePrescribe as skillsmithRunForgePrescribe } from '@akubly/skills
 import type { OptimizationHintInsert } from '@akubly/cairn';
 import { runForgePrescribe } from '../index.js';
 
+let db: ReturnType<typeof getDb>;
 let hintCounter = 0;
 
-type ProfileSeed = Parameters<typeof upsertExecutionProfile>[0];
+type ProfileSeed = Parameters<typeof upsertExecutionProfile>[1];
 
 function makeProfile(skillId: string, overrides: Partial<ProfileSeed> = {}): ProfileSeed {
   return {
@@ -51,8 +52,8 @@ function seedVector(
   source: OptimizationHintInsert['source'],
   netImpactTuning: { deltaConvergence?: number; deltaDrift?: number; deltaCacheHit?: number } = {},
 ): void {
-  const db = getDb();
-  const hintId = insertOptimizationHint(
+  db = getDb();
+  const hintId = insertOptimizationHint(db,
     makeHint({
       skillId,
       category,
@@ -87,7 +88,7 @@ function seedVector(
 beforeEach(() => {
   closeDb();
   hintCounter = 0;
-  getDb(':memory:');
+  db = getDb(':memory:');
 });
 
 afterEach(() => {
@@ -100,7 +101,7 @@ describe('runForgePrescribe', () => {
   });
 
   it('uses the global fallback profile, runs prescribers, and persists generated hints', async () => {
-    upsertExecutionProfile(makeProfile('skill-alpha', { granularity: 'global' }));
+    upsertExecutionProfile(db, makeProfile('skill-alpha', { granularity: 'global' }));
     seedVector('skill-alpha', 'convergence', 'prompt-optimizer');
     seedVector('skill-alpha', 'cache-optimization', 'token-optimizer', { deltaCacheHit: 0.2 });
 
@@ -108,12 +109,25 @@ describe('runForgePrescribe', () => {
 
     expect(result.ok).toBe(true);
     expect(result.exitCode).toBe(0);
-    expect(result.profileSource).toBe('global fallback');
+    expect(result.profileSource).toBe('global');
     expect(result.totalHints).toBe(7);
     expect(result.inserted).toBe(7);
     expect(result.skipped).toBe(0);
     expect(result.errored).toBe(0);
     expect(result.hints.some((hint) => hint.predictedImpact !== undefined)).toBe(true);
+  });
+
+  it('forwards fallbackContext to use an intermediate per-model profile', async () => {
+    upsertExecutionProfile(db, makeProfile('skill-model', { granularity: 'per-model', granularityKey: 'gpt-5' }));
+
+    const result = await runForgePrescribe({
+      skillId: 'skill-model',
+      dbPath: ':memory:',
+      fallbackContext: { modelId: 'gpt-5' },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.profileSource).toBe('per-model');
   });
 
   it('returns a no-profile error when neither per-skill nor global fallback profiles exist', async () => {
@@ -125,7 +139,7 @@ describe('runForgePrescribe', () => {
   });
 
   it('returns zero counts when no hints are generated and the provider has no vectors', async () => {
-    upsertExecutionProfile(
+    upsertExecutionProfile(db,
       makeProfile('skill-calm', {
         sessionCount: 8,
         drift: { mean: 0.05, p50: 0.04, p95: 0.1, trend: 'stable' },
@@ -146,8 +160,8 @@ describe('runForgePrescribe', () => {
   });
 
   it('counts inserted and skipped hints when active duplicates already exist', async () => {
-    upsertExecutionProfile(makeProfile('skill-beta'));
-    insertOptimizationHint(
+    upsertExecutionProfile(db, makeProfile('skill-beta'));
+    insertOptimizationHint(db,
       makeHint({
         skillId: 'skill-beta',
         source: 'prompt-optimizer',
@@ -155,7 +169,7 @@ describe('runForgePrescribe', () => {
         status: 'pending',
       }),
     );
-    insertOptimizationHint(
+    insertOptimizationHint(db,
       makeHint({
         skillId: 'skill-beta',
         source: 'token-optimizer',
@@ -175,12 +189,12 @@ describe('runForgePrescribe', () => {
   });
 
   it('forceRegenerate allows re-inserting hints (tested via reduced skipped count)', async () => {
-    const db = getDb();
-    upsertExecutionProfile(makeProfile('skill-zeta'));
+    db = getDb();
+    upsertExecutionProfile(db, makeProfile('skill-zeta'));
     seedVector('skill-zeta', 'convergence', 'prompt-optimizer');
 
     // Insert an existing active hint that would be skipped under normal dedup
-    const activeHintId = insertOptimizationHint(
+    const activeHintId = insertOptimizationHint(db,
       makeHint({
         skillId: 'skill-zeta',
         source: 'prompt-optimizer',
@@ -218,12 +232,12 @@ describe('runForgePrescribe', () => {
   });
 
   it('forceRegenerate only expires hints matching skill, source, and category', async () => {
-    const db = getDb();
-    upsertExecutionProfile(makeProfile('skill-delta'));
+    db = getDb();
+    upsertExecutionProfile(db, makeProfile('skill-delta'));
     seedVector('skill-delta', 'convergence', 'prompt-optimizer');
 
     // Seed hints with different combinations
-    const differentSkillHint = insertOptimizationHint(
+    const differentSkillHint = insertOptimizationHint(db,
       makeHint({
         id: 'different-skill',
         skillId: 'skill-other',
@@ -232,7 +246,7 @@ describe('runForgePrescribe', () => {
         status: 'pending',
       }),
     );
-    const differentSourceHint = insertOptimizationHint(
+    const differentSourceHint = insertOptimizationHint(db,
       makeHint({
         id: 'different-source',
         skillId: 'skill-delta',
@@ -241,7 +255,7 @@ describe('runForgePrescribe', () => {
         status: 'pending',
       }),
     );
-    const differentCategoryHint = insertOptimizationHint(
+    const differentCategoryHint = insertOptimizationHint(db,
       makeHint({
         id: 'different-category',
         skillId: 'skill-delta',
@@ -274,12 +288,12 @@ describe('runForgePrescribe', () => {
   });
 
   it('forceRegenerate does not expire terminal status hints', async () => {
-    const db = getDb();
-    upsertExecutionProfile(makeProfile('skill-epsilon'));
+    db = getDb();
+    upsertExecutionProfile(db, makeProfile('skill-epsilon'));
     seedVector('skill-epsilon', 'convergence', 'prompt-optimizer');
 
     // Seed terminal status hints
-    const appliedHint = insertOptimizationHint(
+    const appliedHint = insertOptimizationHint(db,
       makeHint({
         id: 'applied-hint',
         skillId: 'skill-epsilon',
@@ -288,7 +302,7 @@ describe('runForgePrescribe', () => {
         status: 'applied',
       }),
     );
-    const rejectedHint = insertOptimizationHint(
+    const rejectedHint = insertOptimizationHint(db,
       makeHint({
         id: 'rejected-hint',
         skillId: 'skill-epsilon',

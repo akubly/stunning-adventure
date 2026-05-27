@@ -1,4 +1,4 @@
-import { getDb } from './index.js';
+import type Database from 'better-sqlite3';
 import { logEvent } from './events.js';
 import { ensureSystemSession } from './sessions.js';
 
@@ -99,12 +99,11 @@ function mapRow(row: Record<string, unknown>): ExecutionProfileRow {
  * Upsert a profile keyed by (skill_id, granularity, granularity_key).
  * Returns the row id of the inserted/updated row.
  */
-export function upsertExecutionProfile(profile: ExecutionProfileUpsert): number {
-  const db = getDb();
+export function upsertExecutionProfile(db: Database.Database, profile: ExecutionProfileUpsert): number {
   const granularityKey = profile.granularityKey ?? 'global';
 
   return db.transaction(() => {
-    const existingProfile = getExecutionProfileWithDb(db, profile.skillId, profile.granularity, granularityKey);
+    const existingProfile = getExecutionProfile(db, profile.skillId, profile.granularity, granularityKey);
     const isUpdate = existingProfile !== null;
 
     const sql = `
@@ -168,8 +167,8 @@ export function upsertExecutionProfile(profile: ExecutionProfileUpsert): number 
 }
 
 /** Get a single profile by composite key from a specific database handle. Returns null if none. */
-export function getExecutionProfileWithDb(
-  db: ReturnType<typeof getDb>,
+export function getExecutionProfile(
+  db: Database.Database,
   skillId: string,
   granularity: ProfileGranularity,
   granularityKey: string = 'global',
@@ -181,18 +180,9 @@ export function getExecutionProfileWithDb(
   return row ? mapRow(row) : null;
 }
 
-/** Get a single profile by composite key. Returns null if none. */
-export function getExecutionProfile(
-  skillId: string,
-  granularity: ProfileGranularity,
-  granularityKey: string = 'global',
-): ExecutionProfileRow | null {
-  return getExecutionProfileWithDb(getDb(), skillId, granularity, granularityKey);
-}
 
 /** List all profiles for a skill (across granularities). */
-export function listExecutionProfilesForSkill(skillId: string): ExecutionProfileRow[] {
-  const db = getDb();
+export function listExecutionProfilesForSkill(db: Database.Database, skillId: string): ExecutionProfileRow[] {
   const rows = db.prepare(
     `SELECT * FROM execution_profiles
        WHERE skill_id = ?
@@ -202,8 +192,7 @@ export function listExecutionProfilesForSkill(skillId: string): ExecutionProfile
 }
 
 /** List all execution profiles (most recently updated first). */
-export function listExecutionProfiles(limit?: number): ExecutionProfileRow[] {
-  const db = getDb();
+export function listExecutionProfiles(db: Database.Database, limit?: number): ExecutionProfileRow[] {
   const sql = limit
     ? 'SELECT * FROM execution_profiles ORDER BY updated_at DESC LIMIT ?'
     : 'SELECT * FROM execution_profiles ORDER BY updated_at DESC';
@@ -216,11 +205,11 @@ export function listExecutionProfiles(limit?: number): ExecutionProfileRow[] {
 
 /** Delete a profile by composite key. Returns true if a row was deleted. */
 export function deleteExecutionProfile(
+  db: Database.Database,
   skillId: string,
   granularity: ProfileGranularity,
   granularityKey: string = 'global',
 ): boolean {
-  const db = getDb();
   const res = db.prepare(
     `DELETE FROM execution_profiles
        WHERE skill_id = ? AND granularity = ? AND granularity_key = ?`

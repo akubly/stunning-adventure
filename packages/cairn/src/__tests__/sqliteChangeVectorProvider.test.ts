@@ -6,6 +6,9 @@ import { SqliteChangeVectorProvider } from '../db/sqliteChangeVectorProvider.js'
 import type { OptimizationHintInsert } from '../db/optimizationHints.js';
 import type { OptimizationCategory } from '@akubly/types';
 
+let db: ReturnType<typeof getDb>;
+
+
 let hintCounter = 0;
 
 function makeHint(overrides: Partial<OptimizationHintInsert> = {}): OptimizationHintInsert {
@@ -31,8 +34,8 @@ function makeHint(overrides: Partial<OptimizationHintInsert> = {}): Optimization
 }
 
 function insertVectorFor(category: OptimizationCategory, skillId: string, netTweaks: { deltaConvergence?: number; deltaDrift?: number } = {}): number {
-  const db = getDb();
-  const hintId = insertOptimizationHint(makeHint({ category, skillId }));
+  db = getDb();
+  const hintId = insertOptimizationHint(db, makeHint({ category, skillId }));
   const deltas = {
     deltaDrift: netTweaks.deltaDrift ?? -0.1,
     deltaCost: -20_000,
@@ -52,7 +55,7 @@ function insertVectorFor(category: OptimizationCategory, skillId: string, netTwe
 beforeEach(() => {
   closeDb();
   hintCounter = 0;
-  getDb(':memory:');
+  db = getDb(':memory:');
 });
 
 afterEach(() => {
@@ -67,9 +70,9 @@ describe('SqliteChangeVectorProvider', () => {
   });
 
   it('returns one summary for a single category with vectors and filters categories with zero vectors', async () => {
-    const db = getDb();
+    db = getDb();
     const expectedImpact = insertVectorFor('convergence', 'skill-single');
-    insertOptimizationHint(makeHint({ skillId: 'skill-single', category: 'tool-guidance' }));
+    insertOptimizationHint(db, makeHint({ skillId: 'skill-single', category: 'tool-guidance' }));
     const provider = new SqliteChangeVectorProvider(db);
 
     await expect(provider.getSummaries('skill-single')).resolves.toEqual([
@@ -85,11 +88,11 @@ describe('SqliteChangeVectorProvider', () => {
   });
 
   it('returns one summary per category that has vectors', async () => {
-    const db = getDb();
+    db = getDb();
     insertVectorFor('cache-optimization', 'skill-multi');
     insertVectorFor('convergence', 'skill-multi', { deltaConvergence: -4 });
     insertVectorFor('tool-guidance', 'skill-multi', { deltaDrift: -0.2 });
-    insertOptimizationHint(makeHint({ skillId: 'skill-multi', category: 'prompt-structure' }));
+    insertOptimizationHint(db, makeHint({ skillId: 'skill-multi', category: 'prompt-structure' }));
     const provider = new SqliteChangeVectorProvider(db);
 
     const summaries = await provider.getSummaries('skill-multi');

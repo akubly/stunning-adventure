@@ -1,11 +1,10 @@
-import { getDb } from './index.js';
+import type Database from 'better-sqlite3';
 
 /**
  * Get a preference value using the cascade: session → user → system.
  * Returns the first match, or undefined if not set at any level.
  */
-export function getPreference(key: string, sessionId?: string): string | undefined {
-  const db = getDb();
+export function getPreference(db: Database.Database, key: string, sessionId?: string): string | undefined {
 
   if (sessionId) {
     const row = db
@@ -29,12 +28,12 @@ export function getPreference(key: string, sessionId?: string): string | undefin
 
 /** Set (or upsert) a preference at the given scope. */
 export function setPreference(
+  db: Database.Database,
   key: string,
   value: string,
   scope: string,
   sessionId?: string,
 ): void {
-  const db = getDb();
   const sid = scope === 'session' ? (sessionId ?? '') : '';
   db.prepare(
     `INSERT INTO preferences (key, value, scope, session_id, updated_at)
