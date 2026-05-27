@@ -24,15 +24,6 @@ export interface LoadMetricsOptions {
   now?: Date;
 }
 
-/** Resolve the repo key: use the provided value, fall back to most-recent user session. */
-function resolveRepoKey(db: Database.Database, repoKey?: string): string | null {
-  if (repoKey) {
-    return repoKey;
-  }
-  const session = getMostRecentUserSession(db);
-  return session?.repoKey ?? null;
-}
-
 /**
  * Resolve repo key from an active user session for a given repo, or fall back
  * to the most-recent user session across all repos.
@@ -74,7 +65,7 @@ function queryPrescriberRuns(
     if (rows.length === 0) {
       // Determine whether the event type exists at all vs. skill just has no runs.
       const anyRow = db
-        .prepare(`SELECT 1 FROM event_log WHERE event_type = 'prescriber_run' AND json_valid(payload) LIMIT 1`)
+        .prepare(`SELECT 1 FROM event_log WHERE event_type = 'prescriber_run' LIMIT 1`)
         .get() as Record<string, unknown> | undefined;
 
       // If no prescriber_run events exist anywhere, treat as W5-5 not landed.

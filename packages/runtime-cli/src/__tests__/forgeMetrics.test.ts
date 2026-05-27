@@ -333,9 +333,10 @@ describe('loadMetrics integration', () => {
     });
 
     // Insert a row with syntactically invalid JSON directly, bypassing logEvent.
-    // In this SQLite version, json_extract() throws on malformed JSON; adding
-    // json_valid() to the WHERE clause prevents json_extract from being called on
-    // such rows, so they are silently skipped without aborting the query.
+    // The sentinel query checks only for presence (event_type = 'prescriber_run'),
+    // not parseability, so malformed rows do NOT cause the function to return null.
+    // The main query uses json_valid() to skip such rows, preventing json_extract
+    // from throwing. This ensures the function returns a non-null array.
     const insertResult = db
       .prepare(`INSERT INTO event_log (session_id, event_type, payload) VALUES (?, 'prescriber_run', ?)`)
       .run(systemSessionId, '{"skillId":"skill-i3",CORRUPT');

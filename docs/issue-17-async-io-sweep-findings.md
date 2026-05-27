@@ -167,8 +167,8 @@ Rosella's test file at `packages/skillsmith-runtime/src/__tests__/forgePrescribe
 
 **Gap identified (not yet in W5-5 test suite):**
 
-1. **CairnEvent write failure does not block tool response** — the `logEvent` call in the handler is not guarded by a nested try/catch in the current implementation. If the DB write fails (disk full, lock contention), the handler would propagate the error rather than completing successfully. This is the most important missing test.
+**As of W5-5 landing (wave-6):**
 
-2. **Structural: no inline fs.readFileSync / statSync in handler body** — not tested. The handler should only do DB operations and call `runForgePrescribe`; no direct file IO.
+1. **CairnEvent write failure does not block tool response** — CLOSED. The `logEvent` call in the handler is guarded by a nested try/catch (handler.ts:100-127). If the DB write fails (disk full, lock contention), the error is logged to stderr and the handler completes successfully with the prescriber result.
 
-These gaps are documented in `.squad/decisions/inbox/laura-w5-5-async-test-plan.md` for follow-up. They do NOT block W5-5 landing, but should be addressed before W5-5 reaches main.
+2. **Structural: no inline fs.readFileSync / statSync in handler body** — CLOSED. Test added in forgePrescribeMcp.test.ts (I5: "handler has no direct fs operations") that asserts the handler body contains no calls to fs.readFileSync, fs.statSync, or other synchronous fs operations. Only DB operations and the runForgePrescribe delegate are present.

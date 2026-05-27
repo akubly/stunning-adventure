@@ -1188,6 +1188,30 @@ interface PrescriberRunEventPayload {
 
 ---
 
+**CORRECTION (cycle-1 fix):** The shipped payload uses **camelCase** keys, not snake_case. The actual schema is:
+
+```typescript
+interface PrescriberRunEventPayload {
+  skillId:       string;
+  triggeredBy:   string;               // 'mcp:forge_prescribe'
+  force:         boolean;
+  sessionId:     string | null;        // resolved user session id; null = no user session found
+  profileSource: LoadedProfileSource | null;  // 'per-skill' | 'per-model' | 'per-user' | 'global'
+  confidence:    number | null;        // attenuated confidence from loaded profile pre-run
+  ts:            string;               // ISO timestamp of MCP invocation
+  result: {
+    inserted:   number;
+    skipped:    number;
+    errored:    number;
+    totalHints: number;                // camelCase, not total_hints
+  };
+}
+```
+
+The cycle-1 fix realigned the payload keys to match codebase convention (camelCase for JSON payloads). See handler.ts:102-118 for the canonical payload construction.
+
+---
+
 ## Session Fallback Semantics
 
 1. `repo_key` provided → `cairn.getActiveUserSession(db, repo_key)` — most-recent active user session for that repo.
