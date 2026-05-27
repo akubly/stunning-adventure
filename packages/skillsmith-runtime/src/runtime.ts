@@ -238,7 +238,7 @@ export function loadExecutionProfile(
 }
 
 function defaultFallbackNotifier(info: ProfileFallbackInfo): void {
-  console.debug(
+  console.error(
     `[skillsmith-runtime] Profile fallback: chain=[${info.chain.join(',')}] skipped=[${info.skipped.join(',')}] selected=${info.selected} key=${info.key}`,
   );
 }
@@ -336,7 +336,7 @@ export async function runForgePrescribe(
       ...options.fallbackContext,
       fallbackPolicy: options.fallbackContext?.fallbackPolicy ?? 'full-chain',
     }, undefined, (info) => {
-      console.info(
+      console.error(
         `[skillsmith-runtime] Profile fallback: skill=${options.skillId} chain=[${info.chain.join(',')}] skipped=[${info.skipped.join(',')}] selected=${info.selected} key=${info.key}`,
       );
     });

@@ -331,16 +331,13 @@ describe('loadExecutionProfile tier fallback', () => {
     expect(cb).not.toHaveBeenCalled();
   });
 
-  it('uses console.debug by default when no callback is provided and fallback occurs', () => {
+  it('uses console.error by default when no callback is provided and fallback occurs', () => {
     seedProfile('global', 40);
-    const spy = vi.spyOn(console, 'debug').mockImplementation(() => {});
-    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     loadExecutionProfile(cairn.getDb(), 'skill-alpha', { fallbackPolicy: 'full-chain' });
 
     expect(spy).toHaveBeenCalledOnce();
-    expect(infoSpy).not.toHaveBeenCalled();
     spy.mockRestore();
-    infoSpy.mockRestore();
   });
 });
