@@ -82,3 +82,59 @@
 **Memo Location:** `.squad/decisions/inbox/genesta-crucible-eureka-overlap.md`
 
 **Key Learning:** When two PRDs land simultaneously, substrate-level coordination MUST happen before sprint 2 (when storage layers lock). Waiting until "both ship, then integrate" guarantees one system's retrofit. The coordination cost is O(hours); the retrofit cost is O(weeks). Front-load the hard decisions.
+
+### 2026-05-26: Shared Substrate Revision — G4 Coordination Protocol
+**Task:** Revise three critical gates (G1/G2/G3 from overlap memo) in light of Aaron's shared-substrate directives.
+
+**Context:**
+- Original overlap memo assumed mem/ and harness/ were separate repos → substrate extraction needed
+- Aaron clarified: same repo (`akubly/stunning-adventure`), two clones
+- New directives: (1) same repo, (2) plan to share Cairn/Forge/Types from start, (3) separate v1s, (4) dogfood timing open
+
+**Revised Gates:**
+
+1. **G4: Cross-Project Coordination Protocol (NEW — TOP CONCERN)**
+   - Problem: When Crucible changes cairn/forge/types, Eureka must know. When Eureka changes, Crucible must know.
+   - Mechanism: (a) Shared CHANGELOG per package, (b) GitHub label `shared-substrate` triggers dual-Lead review, (c) Pre-merge Slack handoff in #squad-coordination, (d) Breaking changes require 15-min sync
+   - Status: Unblocked (design ready). Graham configures tooling (<1h).
+   - Owner: Graham (tooling) + Cassima + Genesta (enforce protocol).
+   - **This is now the single most important gate** — operational risk starting sprint 2.
+
+2. **G1: Event Schema Co-Design (REVISED — MEDIUM RISK)**
+   - Original: Dual append-only logs (Crucible WAL vs Cairn event_log) in separate repos → collision
+   - Revised: Single table, discriminator column. `EventType` enum with namespace convention (`crucible:request`, `eureka:recall`, etc.).
+   - Concrete shape: Single `events` table with `event_type` discriminator. Crucible's 5 primitives → 5 enum values. Eureka future events added without migration.
+   - Alternative (rejected): Two tables → loses total ordering, complicates Eureka Path 2 ingestion.
+   - Gate: Before sprint 2, 15-min sync (Roger + Graham + Genesta) to lock EventType namespace.
+   - Status: Unblocked (design ready).
+
+3. **G2: SessionId Brand (REVISED — TRIVIALLY SOLVED)**
+   - Original: Both PRDs mandate `SessionId` in `@akubly/types` → collision if separate repos.
+   - Revised: **CLOSED.** Same repo = same file. Eureka v5 already defined it (FR-13, R8). Crucible imports as-is.
+   - Nuance: Eureka's lens-framing guardrails (schema comments, ESLint) are Eureka-internal. Crucible ignores them; brand is neutral.
+   - Status: Closed. No coordination needed.
+   - Owner: Cassima (update Crucible PRD to reference existing type, not define new).
+
+4. **G3: Decision Schema Triple Ownership (REVISED — STILL REAL)**
+   - Original: Three schemas (Forge DecisionRecord, Eureka DecisionPayload, Crucible Decision primitive) → bridge needed.
+   - Revised: Still correct, now simpler. Crucible must emit Forge `DecisionRecord` at write time (bridge pattern) so Eureka Path 2 can learn from Crucible sessions.
+   - Concrete shape: `recordDecision` function writes both (a) Crucible event to cairn, (b) Forge DecisionRecord with `{source: 'crucible'}` metadata.
+   - Key invariant: Forge DecisionRecord is shared decision vocabulary. Crucible writes, Eureka reads. Crucible event is internal.
+   - Gate: Before sprint 3, 15-min sync (Cassima + Graham + Genesta) to review Forge API.
+   - Status: Unblocked (design ready).
+
+**Revised Verdict:**
+- G2 closed (same-repo directive solved it).
+- G1/G3 unblocked (designs ready, need coordination meetings).
+- G4 new top concern: operational risk without coordination protocol. Must land before sprint 2.
+
+**Recommendation:**
+1. This week: Graham configures `shared-substrate` label + webhook (1h).
+2. Before sprint 2: Lock EventType namespace (15-min sync).
+3. Before sprint 3: Review Forge DecisionRecord API (15-min sync).
+
+**Key Learning:** Shared-from-start is architecturally simpler than extract-later (no migration), but operationally requires active coordination. G4 protocol is the price of parallel dev on shared substrate. Without it, one team breaks the other. With it, cost is <30min/week. Coordination is cheap; retrofit is expensive.
+
+**Memo Location:** `.squad/decisions/inbox/genesta-shared-substrate-revision.md`
+
+### 2026-05-26T19:30:00-07:00: Shared-substrate revision round merged — G4 protocol is load-bearing, dogfood timing and schema freeze pending Aaron

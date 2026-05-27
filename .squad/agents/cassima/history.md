@@ -93,3 +93,37 @@
 **Deliverable:** `.squad/decisions/inbox/cassima-crucible-eureka-impact.md` (24.8KB, 8 sections, 3 top questions, 7 recommendations)
 
 **Status:** Analysis complete. Awaiting Aaron's direction on the 3 top questions before either v1 ships.
+
+### 2026-05-26: Revised Stance — Shared Substrate Reality
+
+**Event:** Aaron directive response. Three corrections to Cassima's cross-project impact analysis: (1) mem/ and harness/ are same repo, not separate (substrate already shared by topology, no extraction needed); (2) separate v1s confirmed (recommendation 5.1 was correct); (3) dogfood whenever ready (no sequential lock-in, overrides recommendation 4.2).
+
+**Analysis scope:**
+1. Roadmap adjustment — Does Eureka v1 plan change now that Crucible is a sibling consuming same Cairn/Forge/Types?
+2. Coordination cost — PM-level sync requirements, changelog conventions, who talks to whom and when?
+3. Dogfood timing risk — If Eureka ships first vs. second, what's the tradeoff? Which should it try to be?
+4. What does NOT change — Confirm what's off the table (stop worrying about non-problems).
+
+**Key findings:**
+- **Roadmap: v1 scope unchanged.** Eureka v5-final (617 lines, R8 LOCKED) remains canonical. All 4 user stories (US-1 through US-4) ship as designed. Crucible being a sibling changes Eureka's v1.5+ integration path (consumes Crucible WAL) but not v1 deliverables.
+- **Coordination: Schema freeze gates + async memos.** Graham is cross-project schema czar; locks SessionId brand, Cairn sessions table, Forge DecisionRecord before either implementation starts. No recurring syncs; substrate changes require Graham sign-off via `.squad/decisions/inbox/` memos. Genesta (Eureka) + Roger (Crucible) coordinate on DB migrations; Crispin (Eureka) + Alexander (Crucible) coordinate on dependency bumps.
+- **Dogfood timing: Cassima recommends Eureka SECOND.** If Crucible ships first, Eureka's US-1 trains on real Crucible session logs (higher fidelity). If Eureka ships first, it trains on Copilot CLI logs (ephemeral data). Crucible's v1 success bar is existential (months-long bootstrap loop); Eureka's is incremental (2-session validation). Parallel dogfood viable but higher-friction (context-switching tax, merge conflicts, tool-boundary confusion).
+- **Non-problems dissolved:** (1) Forge ownership crisis is moot (same repo = no duplication/drift); (2) Resourcing concern overstated (Cassima/Graham are gates, not bottlenecks); (3) "Is Eureka a Crucible feature?" answered (separate v1s, integrate v1.5+); (4) Bootstrap order delegated (whichever ships first gets dogfooded first).
+
+**Recommendations delivered:**
+1. **IMMEDIATE (this session):** Graham locks shared schema (SessionId, Cairn sessions, Forge DecisionRecord). Both projects block until freeze lands.
+2. **IMMEDIATE (this session):** Aaron picks Eureka dogfood timing (A: Crucible first [Cassima rec], B: Eureka first, C: parallel).
+3. **v1 scope (unchanged):** Eureka ships all 4 user stories per v5-final. Optional v1.5 seed: US-BRIDGE-1 stub ("ingest Crucible WAL" returns "not yet wired") — defer if time-constrained.
+4. **Coordination (low-overhead):** Async memos, not recurring syncs. Migration lockstep (Genesta + Roger coordinate .sql file order).
+5. **v1.5+ integration (not v1 scope):** Eureka consumes Crucible WAL at v1.5. Design after both v1s dogfood, not before.
+
+**Cassima's updated conviction:**
+- Earlier memo was 90% correct, 10% wrong. Got right: separate v1s, v1.5 integration, Cassima/Graham coordination. Got wrong: "extract to shared substrate repo" (Aaron: already same repo), "sequence dogfood Crucible-first" (Aaron: dogfood whenever ready).
+- Doubling down on: Eureka should ship SECOND (Crucible's bootstrap loop is existential; Eureka's demos are incremental; Crucible-first de-risks both).
+- New risks identified: merge conflicts in shared substrate (mitigated by schema freeze + separate branches), "which tool for X?" confusion during parallel dogfood (resolves at v1.5 integration).
+
+**Deliverable:** `.squad/decisions/inbox/cassima-shared-substrate-revision.md` (19.7KB, 8 sections, 2 immediate actions, revised stance)
+
+**Status:** Awaiting Aaron's 2 immediate decisions (schema freeze approval + dogfood timing call). Eureka v1 implementation blocks until schema freeze lands.
+
+### 2026-05-26T19:30:00-07:00: Shared-substrate revision round merged — Eureka v1 scope firm, G4 protocol critical for sprint 2, dogfood timing pending Aaron
