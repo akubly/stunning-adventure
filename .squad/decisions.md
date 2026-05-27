@@ -1014,3 +1014,140 @@ Locked before Conductor implementation:
 3. **L2 Query Purity.** L2 queries are pure functions of (ledger-prefix, plugin-versions), enabling retroactive projections (US-S-4) and determinism conformance.
 
 4. **L4 Verdict Extensibility.** L4 Router verdict enum extendable to carry debugger verdicts (continue, step, step-into, step-out, abort, edit-and-continue) for single-pause-mechanism alignment.
+
+---
+
+## Crucible PRD — Round 2 Closeout (2026-05-26)
+
+*Locks produced across Rounds 2.0–2.4. Source documents: `cassima-prd-round2-changelog.md`, `cassima-marketplace-governance.md`, `graham-task-architecture-r2.md`, `alexander-calendar-revise-r2.md`, `gabriel-marketplace-mechanics.md`, and the `*-mirror-name-r2.md` files (graham/gabriel/erasmus).*
+
+---
+
+### Round 2.1 — Cluster C: Mirror → Aperture (Rename Locked)
+
+**Date:** 2026-05-26  
+**Source:** `cassima-prd-round2-changelog.md` §Round 2.1; `graham-mirror-name-r2.md`; `gabriel-mirror-name-r2.md`; `erasmus-mirror-name-r2.md`
+
+**Decision:** Cluster C reflective-trust-building surface is renamed **Mirror → Aperture**. Aaron presented a curated slate (glass / lens / scope / oculus / aperture / spectra). Graham (architect), Erasmus (storyteller), Gabriel (engineer), and Cassima (PM) **unanimously selected Aperture**. Unanimous veto: **scope** (namespace collision — debugger scope, telescope scope, project scope, lexical scope all overload the word).
+
+**Rename lineage:** Aperture ← Mirror ← Narrator.
+
+**Convergent rationale across four lenses:**
+- Aperture is a concrete adjustable mechanism — does something you can tune, matching a surface you query at different verbosity levels.
+- Natively encodes the push/pull duality in one image: open wider to receive more (notifications/push), dial to a specific view (dashboard/pull).
+- CLI verbs flow from the noun: `crucible aperture watch` (tail live), `crucible aperture show` (open dashboard). Convergent @Team suggestion; final verb table is Erasmus/Valanice/Alexander discretion.
+- Zero namespace collision vs all alternatives.
+
+**Code-identifier rename:** `mirror_events` table → `aperture_events`, `MirrorEvent` → `ApertureEvent`, `MirrorProjector` → `ApertureProjector`. Sequenced with Sprint 3 Aperture Projector landing. **Owner: Rosella.** Active plan tracked in `rosella-aperture-rename-plan.md` (left in inbox — work artifact, not a decision).
+
+**PRD update:** §6.4 added, recording team selection, unanimous Scope veto, convergent rationale, and code-migration sequencing policy.
+
+---
+
+### Round 2.3 — Trust-Tier Label Vocabulary Lock: `adopted`
+
+**Date:** 2026-05-26  
+**Source:** `cassima-marketplace-governance.md` §8 and §8a
+
+**Decision:** The tier-2 trust label is **`adopted`**. Final v1 enum: `{builtin | adopted | community | external}`.
+
+**Label history:** `verified` (initial default — rejected for security-audit baggage) → `accepted` (Aaron-coined in Round 2.2; Cassima endorsed, flagged verb/state namespace risk with the prescription triad `accept`/`reject`/`defer`) → **`adopted`** (Round 2.3, 5-voice @Team tiebreaker, unanimous).
+
+**5/5 convergence:** Gabriel + Cassima as top pick; Graham / Erasmus / Valanice as least-objectionable. All five voices arrived at `adopted`; no dissent.
+
+**Why `adopted` wins:**
+- Vocabulary-fence audit cleared it: `crucible adopt <id>` is semantically distinct from prescription verbs (`accept`/`reject`/`defer` operate on one prescription item; `adopt` is a state-changing act of trust placement on an extension). Round 2.2 watch-out is **retired**.
+- Clean register: all four tiers are state-fact nouns (`builtin`, `adopted`, `community`, `external`) — consistent grammatical shape, no mixed adjective/noun breaks.
+- Gabriel: "`adopted` is a state-fact you can log honestly — 'we adopted this tool, what it does is on us.'" Erasmus: "Doesn't lie about what happened." Correct voice for a single-user system.
+- Honest middle term between birthright (`builtin`) and meritocracy (`community`): names Aaron's deliberate choice without overclaiming certification.
+
+**Runners-up rejected:** `recommended` (communication act, not state structure — wrong type-category), `curated` (mixed register — past-participle adjective doesn't pair cleanly with `community`/`external`), `endorsed` (implies constituency endorsing on someone's behalf — wrong for single-user), `inducted` (ceremonial — raises questions rather than answering them per Valanice's usability flag).
+
+**Residual trade-off acknowledged (Valanice):** `adopted` describes inclusion without signaling *why*. Addressed at the UI layer: badge `[adopted]` paired with tooltip *"Aaron added this to your trusted set"* — the *why* lives in the gloss, not the label. Gloss is owner-discretion under the vocabulary fence (Cluster H).
+
+**CLI verb:** `crucible adopt <id>`.
+
+**Appendix A.I.5 consistency (Round 2.4):** Cluster I.5 trust-tier enum updated from `{builtin|plugin|user|external}` to `{builtin|adopted|community|external}` for consistency with §2.7.d.
+
+---
+
+### Round 2.2 — Marketplace Governance Locks (Aaron, 7 items)
+
+**Date:** 2026-05-26  
+**Source:** `cassima-marketplace-governance.md` §8; `cassima-prd-round2-changelog.md` §Round 2.2
+
+All seven open governance questions resolved by Aaron:
+
+1. **CoI discipline: FULL.** Gradient + `[self-authored]` UI badge + written-rationale Decision primitive on every self-promotion. Self-authored extensions cannot bypass the trust gradient to reach `adopted` directly — Aaron's own work starts at `external`, auto-promotes to `community` after 30 days/10 invocations/zero policy violations, only then becomes eligible for `adopted`. Every self-promotion captured as a Decision with `alternatives[]`. (Cassima's recommendation; Aaron accepted.)
+
+2. **v1.5 trigger: second persona installs an extension.** The moment a non-Aaron persona invokes `crucible market install`, v1 governance is insufficient and the v1.5 panel-review model activates. (Cassima's recommendation; Aaron accepted.)
+
+3. **Tier label → `adopted`.** See §Round 2.3 above.
+
+4. **Revocation surface: immediate Aperture push, attention-tier.** Revocations are too consequential to batch into `@inbox`; must surface in real time. Forensic preservation: revoked extensions stay in install record (not deleted) so Sonny's investigation surface can walk what happened during their tenure. (Cassima's recommendation; Aaron accepted.)
+
+5. **Auto-promotion thresholds: one threshold for v1, split per-category at v2.** v1 default: 30 days + 10 invocations + zero Router policy violations for `external` → `community`. Tunable as a single config knob. (Cassima's recommendation; Aaron accepted.)
+
+6. **Catalog hosting: auto-by-recency in v1; curated catalog deferred to v1.5.** v1 catalog = everything Gabriel's mechanism has indexed, sorted by recency. Manually-maintained "extensions Aaron uses" catalog lands at v1.5 once there is a second user to publish it for. (Cassima's recommendation; Aaron accepted.)
+
+7. **Sprint-2-exit observation-capture API spike: APPROVED.** Alexander + Roger joint 1-day spike at end of Sprint 2. Output: go/no-go on observation-capture wiring estimate for Sprint 4.5. Unlocks §2.8 Coordinator-equivalent with full replay integrity. (Alexander's request; Aaron approved.)
+
+**Marketplace MVM included in Sprint 6:** Cassima made the editorial call (per Aaron's instruction) to fold Gabriel's Sprint-6 marketplace MVM into Appendix C with an explicit ratification flag. Final ratification: Round 2.4 (see below).
+
+---
+
+### Round 2.2 — §2.8 Architecture: Serial Execution + Minimal Substrate (Graham)
+
+**Date:** 2026-05-26  
+**Source:** `graham-task-architecture-r2.md`; `alexander-calendar-revise-r2.md`
+
+**Decision: Sub-tasks execute serially in v1 (not in parallel).** "Fan out N at once" means: issue N, execute one at a time, collect N results, present as a batch. Wall-clock cost is additive; the ergonomic win is in the batched issue/collect shape, not in concurrency. True parallel agents are T2.
+
+**Three decisions Alexander named as CLOSED (from Graham's review):**
+1. **Context inheritance:** snapshot of parent's committed ledger head at spawn time. Sub-context reads from snapshot, cannot see subsequent parent writes mid-execution. Clean isolation, no aliasing risk.
+2. **Error propagation:** `TaskEnd{status:'crashed'|'timed_out'|'aborted'}`. Fail-open with forensic preservation — sealed sub-stream is investigable. Matches existing Cairn fail-open pattern.
+3. **Concurrency:** serial for v1, batched ergonomics (locked above).
+
+**Net-new substrate (minimal — four additions):**
+
+| Addition | Scope |
+|---|---|
+| `task_id TEXT NULL` on L1 WAL row | Additive extension to 8-field schema (v1 commitment #10); 1 field, same migration pattern as `parent_session_id` |
+| `TaskStart` / `TaskEnd` kind values | New `primitive_kind` enum values on existing Request / Observation primitives — not new primitive types |
+| `task-complete` sub-kind in Aperture `observation` category | Minor enum extension; no new category |
+| Open-`task_id` recovery path in replay protocol | Handles crash-mid-task on session resume; synthetic `TaskEnd{status:'crashed'}` written before parent stream surfaces |
+
+**No new hook types.** Pre-commit hook bus fires per-row; sub-task rows carry `task_id` and traverse the same bus via existing kind-indexed dispatch.
+
+**Hard dependency: observation-capture completeness at Sprint 2 exit.** Sub-task LLM/tool calls must flow through the CAS observation-capture store or sub-tasks run without replay integrity. Sprint-2-exit Alexander+Roger 1-day spike (lock #7 above) is the named mitigation. If CAS API is inadequate at Sprint 2 exit, the gap is named explicitly and §2.8 replay integrity is either extended or formally downgraded to T2 — not silently omitted.
+
+**Sprint 4.5 gating risk:** §2.8 cannot ship before the Aperture Projector is live (`TaskEnd` notifications require the `task-complete` sub-kind). Aperture Projector slip in Sprint 3 cascades to Sprint 4.5.
+
+---
+
+### Round 2.4 — Sprint-6 Marketplace MVM Ratification (Alexander + Gabriel)
+
+**Date:** 2026-05-26  
+**Source:** `gabriel-marketplace-mechanics.md` §9; `alexander-calendar-revise-r2.md` §6
+
+**Ratified total: ~14 eng-days** (up from Cassima's rough-cut of ~10.5d).
+
+| Owner | Estimate |
+|---|---:|
+| Gabriel (manifests, subprocess, Router policy, `crucible market` verbs) | ~8d |
+| Rosella (elevated-capability prompt, deny-list, quarantine, Aperture push) | ~5.5d |
+| Roger (per-call telemetry substrate fields) | ~0.5d |
+| **Total** | **~14d** |
+
+**Sprint structure:** Sprint 6 and Sprint 6.5 are split into discrete blocks. Marketplace MVM moves to **Sprint 6.5** (clean 2-week block). Sprint 6 retains drift prescriber + plugin pinning + dogfood prep. Sprint 7 (dogfood week) no longer blocks on marketplace MVM.
+
+**Calendar bound unchanged:** ~2.5–3 weeks per sprint; ~13.5–16 weeks total elapsed. Sprint 6.5 adds ~0.5–1 week over the prior Round 2.2 13–15 week estimate.
+
+**Three early-sprint dependency injections (new scope from Gabriel–Alexander sync):**
+1. **Sprint 1 — Gabriel:** Amend manifest schema in `@akubly/types` to add `tier`, `capabilities[]`, `sha256`, `transitive_deps[]` (~0.5d, absorbed into Gabriel's Sprint 1 work). `sigstore_bundle` stays v2-deferred. Without this, Sprint 6.5 types PR causes mid-sprint conflicts.
+2. **Sprint 2 — Roger:** Add policy-hook interface seam `(tier, capability) → allow/deny` (~0.5d stub only; implementation is Sprint 6.5). Required so the Router's admission path knows the hook exists before Gabriel retrofits it mid-sprint.
+3. **Sprint 5 — Rosella:** Aperture push *delivery* path (attention-tier) must be explicit in Sprint 5 scope — not just the projector schema. Rosella's Sprint 6.5 quarantine + `capability_denied` notifications depend on it. Cannot slip to Sprint 7.
+
+**`crucible market install/update/rollback` verb family owned by Gabriel** (~1.5d). Was unbudgeted miss in Cassima's rough-cut, surfaced in Gabriel–Alexander sync. Gabriel claims it — he designed the mechanics.
+
+**Sigstore keyless signing deferred to v2.** v1 Aaron-only can accept manual sha256 verification in the catalog; Sigstore matters when third parties submit extensions. v1 MVM scope: signed manifests + sha256 pinning, subprocess + capability-token isolation, Router policy table + enforcement, elevated-capability confirmation prompt, deny-list fetch + daily refresh, quarantine on deny-list hit, basic Aperture push for `capability_denied` + quarantine events, transitive dep graph resolved + displayed at install.
