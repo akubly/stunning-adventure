@@ -126,6 +126,8 @@
 
 **Status:** Awaiting Aaron's 2 immediate decisions (schema freeze approval + dogfood timing call). Eureka v1 implementation blocks until schema freeze lands.
 
+### 2026-05-26: G4 Scope Analysis — Logged to Decisions + PM Recommendations Adopted
+
 ### 2026-05-26T19:30:00-07:00: Shared-substrate revision round merged — Eureka v1 scope firm, G4 protocol critical for sprint 2, dogfood timing pending Aaron
 
 ## Learnings
@@ -133,3 +135,5 @@
 ### 2026-05-26: Branch-tree reconciliation defers pain without eliminating it; continuous coordination minimizes time-to-v1 when shared substrate is load-bearing
 
 ### 2026-05-26T20:00:00-07:00: Branch-tree-vs-G4 strategy pressure test analysis merged — quantified deferred-coordination worst case (2-7 days at v1 ship, blocks both released products), schema divergence cost (4 days strategic; 2-4 sprint integration delay for Crucible→Eureka WAL bridge), time-to-v1 delta (G4: 40 days + 6 hours; strategic: 44 days; deferred: 42-47 days). Recommendation: G4 continuous coordination.
+
+### 2026-05-26: G4 scope analysis — Rotating sprint ownership (Genesta ↔ Crucible platform lead) distributes coordination load; minimum viable G4 is CHANGELOG + PR label + conditional 15-min sync gate; temporal asymmetry (bidirectional during parallel dev, Eureka-initiated post-Crucible-ship) shapes overhead profile; Graham authority without bandwidth means design-only role, not operational owner; Crucible team roster unknown blocks owner assignment.

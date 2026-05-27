@@ -153,3 +153,19 @@
 **Key Learning:** Git merge is a line editor, not a type checker. Deferred coordination doesn't eliminate coordination — it just moves it to the worst possible time (post-ship, cold context, both teams blocked). Front-load schema decisions when context is hot and changes are in-flight. Continuous coordination at commit time is 10-40× cheaper than reconciliation at integration time.
 
 ### 2026-05-26T20:00:00-07:00: Branch-tree-vs-G4 strategy pressure test analysis merged — quantified retrofit risk (7.5-40 hours deferred coordination vs 3 hours G4), schema divergence traps (union merge produces garbage; semantic conflicts invisible to git), integration delay (1-4 sprints under reconciliation). Verdict: G4 wins on every dimension.
+
+### 2026-05-26: G4 Scope & Ownership Recommendation — Graham-Owned Coordination Protocol with Schema Freeze Sign-Off Gate
+**Task:** Define G4 MVP scope, owner, trigger conditions, and sequencing in light of Aaron's clarifications: (a) schema freeze gated on Crucible team sign-off, (b) Crucible-first dogfood confirmed.
+
+**Recommendations:**
+- **Owner:** Graham (neutral schema czar, coordinates sign-off, enforces protocol without unilateral authority)
+- **MVP G4:** Schema design doc (pre-freeze sign-off by both teams) + CHANGELOG/label/Slack handoff (post-freeze mutations). Cut required cross-project review (start with trust, add friction only if needed).
+- **Trigger:** Breaking changes to `packages/cairn/`, `packages/forge/`, `packages/types/` — schema changes, API surface mutations, enum/brand additions, migration requirements. Non-breaking changes skip G4.
+- **Sequencing:** BOTH — lightweight pre-freeze (schema doc review, 15-30 min meeting before sprint 2) + full post-freeze (G4 governs ongoing mutations).
+- **Crucible-first impact:** G4 matters MORE because Crucible owns schema decisions during v1, Eureka adapts. Without G4, Crucible can unilaterally mutate DecisionRecord, breaking Eureka's adapter assumptions. G4 ensures schema changes are visible/stable so Eureka adapts correctly without retrofit.
+
+**Key Learning:** Schema freeze with sign-off elevates both project teams to co-equal authorities — neither can unilaterally break the other. G4 is the enforcement mechanism for that agreement. Crucible-first doesn't reduce G4's importance; it increases it by making Eureka dependent on stable Crucible schema during parallel v1 work. Coordination at commit time (15-min fix) prevents retrofit at integration time (2-week blocking work).
+
+**Memo Location:** `.squad/decisions/inbox/genesta-g4-scope.md`
+
+### 2026-05-26: G4 Scope & Ownership Recommendation — Logged to Decisions + Directives Adopted
