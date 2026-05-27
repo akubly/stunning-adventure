@@ -1,4 +1,4 @@
-import { getDb } from './index.js';
+import type Database from 'better-sqlite3';
 import type { ManagedArtifact, ArtifactType, ArtifactScope } from '../types/index.js';
 
 // ---------------------------------------------------------------------------
@@ -37,8 +37,7 @@ export interface TrackManagedArtifactFields {
 }
 
 /** Track a new managed artifact. Returns the new artifact id. */
-export function trackManagedArtifact(fields: TrackManagedArtifactFields): number {
-  const db = getDb();
+export function trackManagedArtifact(db: Database.Database, fields: TrackManagedArtifactFields): number {
   const result = db
     .prepare(
       `INSERT INTO managed_artifacts
@@ -60,8 +59,7 @@ export function trackManagedArtifact(fields: TrackManagedArtifactFields): number
 }
 
 /** Insert or update a managed artifact atomically by path. */
-export function upsertManagedArtifact(fields: TrackManagedArtifactFields): void {
-  const db = getDb();
+export function upsertManagedArtifact(db: Database.Database, fields: TrackManagedArtifactFields): void {
   db.prepare(
     `INSERT INTO managed_artifacts
         (path, artifact_type, logical_id, scope, prescription_id,
@@ -89,8 +87,7 @@ export function upsertManagedArtifact(fields: TrackManagedArtifactFields): void 
 }
 
 /** Get a managed artifact by its file path. */
-export function getManagedArtifact(path: string): ManagedArtifact | undefined {
-  const db = getDb();
+export function getManagedArtifact(db: Database.Database, path: string): ManagedArtifact | undefined {
   const row = db.prepare('SELECT * FROM managed_artifacts WHERE path = ?').get(path) as
     | Record<string, unknown>
     | undefined;
@@ -98,8 +95,7 @@ export function getManagedArtifact(path: string): ManagedArtifact | undefined {
 }
 
 /** List managed artifacts, optionally filtered by prescription id. */
-export function listManagedArtifacts(prescriptionId?: number): ManagedArtifact[] {
-  const db = getDb();
+export function listManagedArtifacts(db: Database.Database, prescriptionId?: number): ManagedArtifact[] {
   if (prescriptionId !== undefined) {
     const rows = db
       .prepare('SELECT * FROM managed_artifacts WHERE prescription_id = ? ORDER BY created_at')
@@ -113,8 +109,7 @@ export function listManagedArtifacts(prescriptionId?: number): ManagedArtifact[]
 }
 
 /** Update the current checksum for a managed artifact. */
-export function updateArtifactChecksum(path: string, checksum: string): void {
-  const db = getDb();
+export function updateArtifactChecksum(db: Database.Database, path: string, checksum: string): void {
   db.prepare(
     `UPDATE managed_artifacts SET
        current_checksum = ?,
@@ -124,16 +119,15 @@ export function updateArtifactChecksum(path: string, checksum: string): void {
 }
 
 /** Remove a managed artifact by path. */
-export function removeManagedArtifact(path: string): void {
-  const db = getDb();
+export function removeManagedArtifact(db: Database.Database, path: string): void {
   db.prepare('DELETE FROM managed_artifacts WHERE path = ?').run(path);
 }
 
 /** Detect drift between original and current checksum. */
 export function detectDrift(
+  db: Database.Database,
   path: string,
 ): { drifted: boolean; expected: string; actual: string } | undefined {
-  const db = getDb();
   const row = db
     .prepare('SELECT original_checksum, current_checksum FROM managed_artifacts WHERE path = ?')
     .get(path) as { original_checksum: string | null; current_checksum: string | null } | undefined;

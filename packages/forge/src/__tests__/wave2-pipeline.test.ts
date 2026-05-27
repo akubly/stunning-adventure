@@ -20,6 +20,8 @@ import { runForgePrescribers, type ChangeVectorSummary as ForgeChangeVectorSumma
 import { DEFAULT_MIN_SESSIONS } from '../prescribers/utils.js';
 import type { OptimizationHint } from '../prescribers/types.js';
 
+let db: ReturnType<typeof getDb>;
+
 const CONVERGENCE_WEIGHT = 0.30;
 const BASELINE_AUTO_APPLY_THRESHOLD = 0.7;
 
@@ -137,10 +139,10 @@ function seedHistory(profile: ExecutionProfile, vectorCount: number, meanNetImpa
   const deltaConvergence = -meanNetImpact / CONVERGENCE_WEIGHT;
   const beforeConvergence = profile.outcomes.meanConvergenceTurns - deltaConvergence;
 
-  upsertExecutionProfile(profileToUpsert(profile));
+  upsertExecutionProfile(db, profileToUpsert(profile));
 
   for (let index = 0; index < vectorCount; index += 1) {
-    insertOptimizationHint(
+    insertOptimizationHint(db,
       makeAppliedHint(profile.skillId, 'convergence', {
         driftScore: profile.drift.mean,
         tokenCostNanoAiu: afterCostPerSession * beforeSessionCount,
@@ -173,7 +175,7 @@ async function runScenario(vectorCount: number, meanNetImpact?: number) {
 beforeEach(() => {
   closeDb();
   hintCounter = 0;
-  getDb(':memory:');
+  db = getDb(':memory:');
 });
 
 afterEach(() => {
@@ -333,7 +335,7 @@ describe('Wave 2 full pipeline integration', () => {
 
     expect(insertedRun1).toBe(run1.length);
     expect(insertedRun2).toBe(0);
-    expect(queryOptimizationHints({ skillId: profile.skillId, status: 'pending' })).toHaveLength(
+    expect(queryOptimizationHints(db, { skillId: profile.skillId, status: 'pending' })).toHaveLength(
       run1.length,
     );
   });

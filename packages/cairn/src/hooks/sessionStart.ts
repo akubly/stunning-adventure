@@ -40,8 +40,8 @@ interface HookInput {
  */
 const STALE_SESSION_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
 
-function isStaleSession(session: { id: string; startedAt: string }): boolean {
-  const lastEvent = getLastEventTime(session.id);
+function isStaleSession(db: Database.Database, session: { id: string; startedAt: string }): boolean {
+  const lastEvent = getLastEventTime(db, session.id);
   const referenceTime = lastEvent ?? session.startedAt;
   const referenceMs = parseSqliteDateToMs(referenceTime);
   // Fail-safe toward recovery: if we can't parse the timestamp, treat the
@@ -64,8 +64,9 @@ export async function runSessionStart(
   prescriberOrchestrationConfig?: PrescriberOrchestrationConfig,
   afterCurate?: (curateResult: CurateResult) => void,
 ): Promise<{ fastPath: boolean }> {
-  const existing = getActiveSession(repoKey);
-  if (existing && !isStaleSession(existing)) {
+  const db = getDb();
+  const existing = getActiveSession(db, repoKey);
+  if (existing && !isStaleSession(db, existing)) {
     return { fastPath: true };
   }
 
@@ -82,7 +83,7 @@ export async function runSessionStart(
 
   // Increment session counter BEFORE prescribe() so shouldResurface()
   // sees the correct session number without needing an off-by-one hack.
-  incrementSessionCounter();
+  incrementSessionCounter(db);
 
   // Chain prescribe() when insights changed (DP1 hybrid trigger)
   if (curateResult.insightsChanged) {
@@ -124,7 +125,7 @@ export async function runSessionStartHook(
     dbOpened = true;
     // getRepoKey() shells out to `git remote get-url origin` (~10ms on
     // Windows). This runs before the fast-path DB check because
-    // getActiveSession() requires a repo-scoped key. The cost is acceptable:
+    // getActiveSession(db) requires a repo-scoped key. The cost is acceptable:
     // node startup + DB open (~400ms) dominate the hook budget, making the
     // 10ms git call negligible. Restructuring to avoid it (CWD-based keys,
     // repo-agnostic pre-checks) would add complexity for marginal gain.

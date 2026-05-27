@@ -10,6 +10,9 @@ import { getManagedArtifact } from '../db/managedArtifacts.js';
 import { setPreference } from '../db/preferences.js';
 import { applyPrescription, rollbackPrescription, checkDrift } from '../agents/applier.js';
 
+let db: ReturnType<typeof getDb>;
+
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -32,7 +35,7 @@ function seedPrescription(overrides: {
   proposedChange?: string;
   targetPath?: string;
 }): number {
-  const id = createPrescription({
+  const id = createPrescription(db, {
     insightId,
     patternType: 'recurring_error',
     title: overrides.title ?? 'Test prescription',
@@ -44,7 +47,7 @@ function seedPrescription(overrides: {
   });
   // Move to accepted unless overridden
   if (overrides.status !== 'generated') {
-    const db = getDb();
+    db = getDb();
     db.prepare('UPDATE prescriptions SET status = ? WHERE id = ?').run(
       overrides.status ?? 'accepted',
       id,
@@ -54,7 +57,7 @@ function seedPrescription(overrides: {
 }
 
 function seedSession(): string {
-  const db = getDb();
+  db = getDb();
   const sessionId = 'test-session-001';
   db.prepare(
     "INSERT OR IGNORE INTO sessions (id, repo_key, branch, status) VALUES (?, ?, ?, ?)",
@@ -69,8 +72,8 @@ function seedSession(): string {
 beforeEach(() => {
   tmpDir = makeTmpDir();
   closeDb();
-  getDb(':memory:');
-  insightId = createInsight('recurring_error', 'Test pattern', 'A test pattern', [1, 2], 0.8);
+  db = getDb(':memory:');
+  insightId = createInsight(db, 'recurring_error', 'Test pattern', 'A test pattern', [1, 2], 0.8);
 });
 
 afterEach(() => {
@@ -108,7 +111,7 @@ describe('applyPrescription', () => {
     applyPrescription(id, { homedir: tmpDir });
 
     const sidecarPath = path.join(tmpDir, '.copilot', 'cairn-prescribed.instructions.md');
-    const artifact = getManagedArtifact(sidecarPath);
+    const artifact = getManagedArtifact(db, sidecarPath);
     expect(artifact).toBeDefined();
     // No prior content — rollbackContent should be undefined (null in DB)
     expect(artifact!.rollbackContent).toBeUndefined();
@@ -123,7 +126,7 @@ describe('applyPrescription', () => {
     const content = fs.readFileSync(sidecarPath, 'utf8');
     expect(result.checksum).toBe(sha256(content));
 
-    const artifact = getManagedArtifact(sidecarPath);
+    const artifact = getManagedArtifact(db, sidecarPath);
     expect(artifact!.currentChecksum).toBe(result.checksum);
   });
 
@@ -132,7 +135,7 @@ describe('applyPrescription', () => {
     applyPrescription(id, { homedir: tmpDir });
 
     const sidecarPath = path.join(tmpDir, '.copilot', 'cairn-prescribed.instructions.md');
-    const artifact = getManagedArtifact(sidecarPath);
+    const artifact = getManagedArtifact(db, sidecarPath);
     expect(artifact).toBeDefined();
     expect(artifact!.prescriptionId).toBe(id);
     expect(artifact!.artifactType).toBe('instruction');
@@ -143,7 +146,7 @@ describe('applyPrescription', () => {
     const id = seedPrescription({ artifactScope: 'user' });
     applyPrescription(id, { homedir: tmpDir });
 
-    const rx = getPrescription(id);
+    const rx = getPrescription(db, id);
     expect(rx!.status).toBe('applied');
   });
 
@@ -167,7 +170,7 @@ describe('applyPrescription', () => {
     const id = seedPrescription({ artifactScope: 'user' });
     applyPrescription(id, { homedir: tmpDir, sessionId });
 
-    const db = getDb();
+    db = getDb();
     const row = db
       .prepare("SELECT * FROM event_log WHERE event_type = 'prescription_applied'")
       .get() as Record<string, unknown> | undefined;
@@ -193,7 +196,7 @@ describe('applyPrescription', () => {
   });
 
   it('should use configurable sidecar prefix via preference', () => {
-    setPreference('prescriber.sidecar_prefix', 'my-custom-prefix', 'user');
+    setPreference(db, 'prescriber.sidecar_prefix', 'my-custom-prefix', 'user');
     const id = seedPrescription({ artifactScope: 'user' });
     const result = applyPrescription(id, { homedir: tmpDir });
 
@@ -237,7 +240,7 @@ describe('applyPrescription', () => {
       targetPath: expectedPath,
     });
     // Change the prefix — should NOT affect apply because targetPath is persisted
-    setPreference('prescriber.sidecar_prefix', 'different-prefix', 'user');
+    setPreference(db, 'prescriber.sidecar_prefix', 'different-prefix', 'user');
     const result = applyPrescription(id, { homedir: tmpDir });
 
     expect(result.success).toBe(true);
@@ -320,7 +323,7 @@ describe('multi-prescription append', () => {
 
     // Managed artifact for id2 should have id1's content as rollback
     const sidecarPath = path.join(tmpDir, '.copilot', 'cairn-prescribed.instructions.md');
-    const artifact = getManagedArtifact(sidecarPath);
+    const artifact = getManagedArtifact(db, sidecarPath);
     expect(artifact).toBeDefined();
     expect(artifact!.rollbackContent).toBe(firstContent);
     expect(artifact!.prescriptionId).toBe(id2);
@@ -368,9 +371,9 @@ describe('rollbackPrescription', () => {
     applyPrescription(id, { homedir: tmpDir });
     const sidecarPath = path.join(tmpDir, '.copilot', 'cairn-prescribed.instructions.md');
 
-    expect(getManagedArtifact(sidecarPath)).toBeDefined();
+    expect(getManagedArtifact(db, sidecarPath)).toBeDefined();
     rollbackPrescription(id);
-    expect(getManagedArtifact(sidecarPath)).toBeUndefined();
+    expect(getManagedArtifact(db, sidecarPath)).toBeUndefined();
   });
 
   it('should keep managed_artifact tracked after restore rollback', () => {
@@ -385,7 +388,7 @@ describe('rollbackPrescription', () => {
     // Rollback second — should restore first content AND keep tracking
     rollbackPrescription(id2);
 
-    const artifact = getManagedArtifact(r1.path!);
+    const artifact = getManagedArtifact(db, r1.path!);
     expect(artifact).toBeDefined();
     const expectedChecksum = createHash('sha256').update(firstContent, 'utf8').digest('hex');
     expect(artifact!.currentChecksum).toBe(expectedChecksum);
@@ -399,7 +402,7 @@ describe('rollbackPrescription', () => {
     applyPrescription(id, { homedir: tmpDir });
     rollbackPrescription(id);
 
-    const rx = getPrescription(id);
+    const rx = getPrescription(db, id);
     expect(rx!.status).toBe('failed');
   });
 
@@ -409,7 +412,7 @@ describe('rollbackPrescription', () => {
     applyPrescription(id, { homedir: tmpDir, sessionId });
     rollbackPrescription(id, { sessionId });
 
-    const db = getDb();
+    db = getDb();
     const row = db
       .prepare("SELECT * FROM event_log WHERE event_type = 'prescription_rolled_back'")
       .get() as Record<string, unknown> | undefined;

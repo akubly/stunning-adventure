@@ -44,19 +44,21 @@ export {
   createSession,
   endSession,
   getActiveSession,
+  getActiveUserSession,
   getMostRecentActiveSession,
+  getMostRecentUserSession,
   ensureSystemSession,
   SYSTEM_SESSION_REPO_KEY,
 } from './db/sessions.js';
-export { logEvent, logEventWithDefaultDb, getUnprocessedEvents } from './db/events.js';
+export { logEvent, getUnprocessedEvents } from './db/events.js';
 export { getPreference, setPreference } from './db/preferences.js';
 export { recordSkip, getSkips } from './db/skipBreadcrumbs.js';
 export { getLastProcessedEventId, advanceCursor } from './db/curatorState.js';
 export { SqliteChangeVectorProvider } from './db/sqliteChangeVectorProvider.js';
+export { getSessionsSinceInstall } from './db/prescriptions.js';
 export {
   upsertExecutionProfile,
   getExecutionProfile,
-  getExecutionProfileWithDb,
   listExecutionProfilesForSkill,
   listExecutionProfiles,
   deleteExecutionProfile,
