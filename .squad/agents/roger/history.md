@@ -160,3 +160,25 @@ PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end
 - Resolution pattern: preserve W5-1 user-vs-system session semantics, but thread W5-2's explicit `db` handle through `getActiveUserSession()`, `getMostRecentUserSession()`, and `getUserSessionForMcpFallback()`. Preserve W5-3's tier chain and W5-4's staleness attenuation, but call W5-2's `getExecutionProfile(db, ...)` API.
 - Scribe's “644/647” was Forge's 644 passing plus 3 pre-existing `it.todo` placeholders, not failing tests. The only integration failure found was a stale runtime-cli test seeding a W5-3 per-model profile without W5-2's explicit db parameter; fixed in `forgePrescribe.test.ts`.
 - Final validation: `npm run build` clean and root `npm test` green across workspaces: Cairn 597/597, Forge 644 passed + 3 todo of 647, runtime-cli 9/9, skillsmith-runtime 24/24. If it compiles and ships, the janitor takes the win.
+
+## Learnings (2026-05-26 — W5-6 forge-metrics CLI)
+
+### CLI sub-command pattern (runtime-cli)
+- Each CLI sub-command gets its own entry point file (e.g. `src/forge-metrics.ts`) with a `main(argv)` function and a `bin` entry in `package.json`. Tests cover `main()` via `loadMetrics()` + formatter functions; the entry point itself stays thin.
+- `parseArgs` from `node:util` handles arg parsing. `strict: true` + `allowPositionals: false` is the standard config — crashes on unknown flags, which is correct for operator tools.
+- The `--format` flag pattern (JSON default, `--format table` opt-in) is clean for dual-mode operator tools. Formatters are pure functions on a typed input snapshot — easy to unit test.
+
+### JSON schema design (SkillMetrics)
+- Top-level nullable fields (`staleness`, `confidence`, `autoApplyEligible`) collapse to `null` when no profile is found. This gives a stable schema: callers always see the same top-level keys.
+- The "found: boolean" discriminated union on `profile` is clean for both JSON and TypeScript narrowing.
+- `recentPrescriberRuns: null` means "event type not present (W5-5 not landed)"; `[]` means "event type exists but no runs for this skill". Two distinct null states encoded intentionally.
+
+### Integration with W5-3 (tier fallback) and W5-4 (staleness attenuation)
+- Call `loadExecutionProfile(db, skillId, { fallbackPolicy: 'full-chain' })` — that's the operator path, same as `runForgePrescribe`. The returned `source` field reports which tier matched.
+- The returned `profile.confidence` is already attenuated if stale. `profile.staleness.stale` tells you whether attenuation was applied. Raw confidence is always `1.0` for DB profiles (no raw stored).
+- `getSessionsSinceInstall()` reads from `prescriber_state.sessions_since_install`, NOT from `SELECT COUNT(*) FROM sessions`. Tests must use `UPDATE prescriber_state SET sessions_since_install = N WHERE id = 1` to seed staleness conditions, not `createSession()`.
+
+### Defensive W5-5 coding pattern
+- Query `prescriber_run` events with `json_extract(payload, '$.skillId') = ?`. If no events of that type exist anywhere, return `null` (event type not landed). If they exist but none for this skill, return `[]`.
+- Wrap the entire query in try/catch and degrade to `null` on any error — metrics reads should never crash the command.
+
