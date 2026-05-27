@@ -41,7 +41,7 @@ const server = new McpServer(
 // ---------------------------------------------------------------------------
 
 /**
- * Lazily initialise (and refresh) the Cairn singleton before each tool call.
+ * Returns the Cairn singleton DB handle.
  * Mirrors the `ensureDb()` pattern in @akubly/cairn MCP server.
  */
 function ensureDb(): ReturnType<typeof cairn.getDb> {

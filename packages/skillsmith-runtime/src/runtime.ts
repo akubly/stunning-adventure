@@ -389,7 +389,7 @@ export async function runForgePrescribe(
       totalPersisted: runResult.hintsInserted,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unexpected failure';
+    const message = error instanceof Error ? error.message : String(error);
     return {
       ok: false,
       exitCode: 2,

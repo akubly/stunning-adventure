@@ -7,8 +7,6 @@ import type {
   ExecutionProfile,
   PrescriberOrchestrationConfig,
   PrescriberRunResult,
-  ProfileStaleness,
-  ProfileStalenessReason,
 } from '@akubly/types';
 
 export type { PrescriberOrchestrationConfig, PrescriberRunResult } from '@akubly/types';
