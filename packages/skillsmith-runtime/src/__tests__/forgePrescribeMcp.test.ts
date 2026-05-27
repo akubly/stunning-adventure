@@ -324,3 +324,76 @@ describe('forge_prescribe handler — edge cases', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// CairnEvent fail-open guard (Laura W5-5 review)
+// ---------------------------------------------------------------------------
+
+describe('forge_prescribe handler — CairnEvent fail-open', () => {
+  it('tool response succeeds even when logEvent throws (fail-open)', async () => {
+    const db = cairn.getDb();
+    cairn.createSession(db, 'org/fail-open-repo', 'main');
+
+    // Inject a logEvent failure
+    vi.spyOn(cairn, 'logEvent').mockImplementationOnce(() => {
+      throw new Error('DB full');
+    });
+
+    const stub: RunForgePrescribeFn = vi.fn().mockResolvedValue(
+      makeSuccessResult({ skillId: 'skill-fail-open' }),
+    );
+
+    // Must not throw; tool result must still arrive
+    const result = await forgePrescribeHandler(
+      db,
+      { skill_id: 'skill-fail-open', repo_key: 'org/fail-open-repo' },
+      stub,
+    );
+
+    expect(result.isError).toBeFalsy();
+    const body = JSON.parse(result.content[0]!.text);
+    expect(body.ok).toBe(true);
+    // The error must not bleed into the response content
+    expect(result.content[0]!.text).not.toContain('DB full');
+  });
+
+  it('tool response succeeds even when ensureSystemSession throws (fail-open)', async () => {
+    const db = cairn.getDb();
+    // No user session — falls back to ensureSystemSession; simulate that failing too
+    vi.spyOn(cairn, 'ensureSystemSession').mockImplementationOnce(() => {
+      throw new Error('write lock');
+    });
+
+    const stub: RunForgePrescribeFn = vi.fn().mockResolvedValue(
+      makeSuccessResult({ skillId: 'skill-lock' }),
+    );
+
+    const result = await forgePrescribeHandler(db, { skill_id: 'skill-lock' }, stub);
+
+    expect(result.isError).toBeFalsy();
+    const body = JSON.parse(result.content[0]!.text);
+    expect(body.ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Structural check (Laura W5-5 review)
+// ---------------------------------------------------------------------------
+
+describe('forge_prescribe handler — structural', () => {
+  it('handler module contains no inline fs.readFileSync or statSync (hot-path guard)', async () => {
+    const { fileURLToPath } = await import('node:url');
+    const fs = await import('node:fs');
+    const handlerPath = fileURLToPath(new URL('../mcp/handler.ts', import.meta.url));
+    const source = fs.readFileSync(handlerPath, 'utf8');
+
+    expect(source).not.toMatch(/fs\.(readFileSync|statSync|existsSync)\b/);
+  });
+
+  it('forge_prescribe MCP handler returns a Promise (async-correctness)', () => {
+    const db = cairn.getDb();
+    const stub: RunForgePrescribeFn = vi.fn().mockResolvedValue(makeErrorResult());
+    const returnValue = forgePrescribeHandler(db, { skill_id: 'async-check' }, stub);
+    expect(returnValue).toBeInstanceOf(Promise);
+  });
+});

@@ -94,24 +94,35 @@ export async function forgePrescribeHandler(
 
   // 4. Emit a `prescriber_run` CairnEvent.  Falls back to the system session
   //    when no user session is available so the event is never silently lost.
-  const logSessionId = session?.id ?? cairn.ensureSystemSession(db);
-  const payload: PrescriberRunEventPayload = {
-    skill_id,
-    force,
-    session_id: session?.id ?? null,
-    profile_used: result.ok
-      ? result.profileSource
-      : (preRunProfile?.source ?? null),
-    confidence,
-    ts: new Date().toISOString(),
-    result: {
-      inserted: result.inserted ?? 0,
-      skipped: result.skipped ?? 0,
-      errored: result.errored ?? 0,
-      total_hints: result.totalHints ?? 0,
-    },
-  };
-  cairn.logEvent(db, logSessionId, 'prescriber_run', payload);
+  //    Wrapped in try/catch so a DB write failure (full disk, lock contention)
+  //    never surfaces as an MCP tool error — observability is fail-open.
+  try {
+    const logSessionId = session?.id ?? cairn.ensureSystemSession(db);
+    const payload: PrescriberRunEventPayload = {
+      skill_id,
+      force,
+      session_id: session?.id ?? null,
+      profile_used: result.ok
+        ? result.profileSource
+        : (preRunProfile?.source ?? null),
+      confidence,
+      ts: new Date().toISOString(),
+      result: {
+        inserted: result.inserted ?? 0,
+        skipped: result.skipped ?? 0,
+        errored: result.errored ?? 0,
+        total_hints: result.totalHints ?? 0,
+      },
+    };
+    cairn.logEvent(db, logSessionId, 'prescriber_run', payload);
+  } catch (eventErr) {
+    // Fail-open: log to stderr but do not propagate — prescriber result
+    // is still valid and should reach the caller.
+    const msg = eventErr instanceof Error ? eventErr.message : String(eventErr);
+    process.stderr.write(
+      `[skillsmith-runtime] prescriber_run event write failed (skill=${skill_id}): ${msg}\n`,
+    );
+  }
 
   // 5. Return the full prescriber result as JSON content.
   return {
