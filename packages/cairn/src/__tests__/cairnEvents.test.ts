@@ -11,7 +11,6 @@ let db: ReturnType<typeof getDb>;
 
 
 let counter = 0;
-let sessionId: string;
 
 function hint(overrides?: Partial<OptimizationHintInsert>): OptimizationHintInsert {
   counter += 1;
@@ -48,7 +47,7 @@ beforeEach(() => {
   closeDb();
   counter = 0;
   db = getDb(':memory:');
-  sessionId = createSession(db, 'test-repo', 'main');
+  createSession(db, 'test-repo', 'main');
 });
 
 afterEach(() => {

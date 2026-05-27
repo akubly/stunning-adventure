@@ -192,13 +192,6 @@ export interface ProfileFallbackInfo {
   key: string;
 }
 
-export interface LoadExecutionProfileOptions {
-  fallbackContext?: TierFallbackContext;
-  stalenessOptions?: ProfileStalenessOptions;
-  /** Called when tier fallback selects a non-per-skill profile. Defaults to `console.debug`. */
-  onProfileFallback?: (info: ProfileFallbackInfo) => void;
-}
-
 export function loadExecutionProfile(
   db: RuntimeDb,
   skillId: string,

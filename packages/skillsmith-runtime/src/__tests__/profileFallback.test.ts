@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as cairn from '@akubly/cairn';
-import { loadExecutionProfile, type FallbackPolicy, type LoadedProfileSource, type ProfileFallbackInfo, type TierFallbackContext } from '../index.js';
+import { loadExecutionProfile, type LoadedProfileSource, type ProfileFallbackInfo, type TierFallbackContext } from '../index.js';
 
 type ProfileSeed = Parameters<typeof cairn.upsertExecutionProfile>[1];
 

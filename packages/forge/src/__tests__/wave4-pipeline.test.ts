@@ -8,7 +8,6 @@
  * - W4-E2E: End-to-end pipeline coverage including MCP scope enforcement
  */
 
-import type Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   closeDb,
