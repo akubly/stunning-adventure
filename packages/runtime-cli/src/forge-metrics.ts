@@ -82,5 +82,4 @@ main()
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Failed to run forge-metrics: ${message}`);
     process.exitCode = 2;
-    closeDb();
   });

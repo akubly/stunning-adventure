@@ -43,7 +43,7 @@ This changes the calculus on all findings below.
 
 **Recommendation:** **Leave as-is.** Converting to `fs.promises.*` would make these handlers `async` while the remaining 10 tool handlers and all DB calls stay sync. Inconsistency with no practical benefit — exactly as the issue body describes. The 1 MB size guard is the important correctness property.
 
-**Tests added:** `packages/cairn/src/__tests__/mcp-async-io.test.ts` — 8 guard behavior tests covering all three branches (name check, size check, read failure) plus success path.
+**Tests added:** `packages/cairn/src/__tests__/mcp-async-io.test.ts` — 8 guard behavior tests covering all three branches (name check, size check, read failure) plus success path. These tests confirm that sync IO is bounded and guarded; they do NOT exercise concurrent handler execution. Concurrent-handler serialization remains unproven by automated test but is guaranteed by the MCP SDK's stdio transport implementation (one request processed at a time).
 
 ---
 
@@ -149,7 +149,7 @@ The sweep confirms this. The sync IO is:
 - Timeout-guarded (`execSync` calls)
 - Not concurrent (serial stdio transport)
 
-The right response to PR #16's concern is not a code change but proof that the guards work — which the new tests provide.
+The right response to PR #16's concern is not a code change but proof that the guards work — which the new tests provide. Note that the tests verify sync IO is bounded and guarded, not that concurrent handler execution is serialized. That serialization guarantee comes from the MCP SDK's stdio transport, not from the tests.
 
 ---
 

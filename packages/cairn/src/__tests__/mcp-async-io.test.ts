@@ -6,6 +6,11 @@
  *
  * Goal: confirm that sync IO in this codebase is intentional, bounded, and
  * correctly error-handled — not that it should be converted to async.
+ *
+ * Note: these tests verify that sync IO is bounded and guarded. They do NOT
+ * exercise concurrent handler execution; concurrent-handler serialization
+ * remains unproven by automated test but is guaranteed by the MCP SDK's stdio
+ * transport implementation (one request processed at a time).
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
