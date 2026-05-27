@@ -1151,3 +1151,103 @@ All seven open governance questions resolved by Aaron:
 **`crucible market install/update/rollback` verb family owned by Gabriel** (~1.5d). Was unbudgeted miss in Cassima's rough-cut, surfaced in Gabriel–Alexander sync. Gabriel claims it — he designed the mechanics.
 
 **Sigstore keyless signing deferred to v2.** v1 Aaron-only can accept manual sha256 verification in the catalog; Sigstore matters when third parties submit extensions. v1 MVM scope: signed manifests + sha256 pinning, subprocess + capability-token isolation, Router policy table + enforcement, elevated-capability confirmation prompt, deny-list fetch + daily refresh, quarantine on deny-list hit, basic Aperture push for `capability_denied` + quarantine events, transitive dep graph resolved + displayed at install.
+
+---
+
+## Eureka PRD Overlap Analysis — Cross-Agent Consensus (2026-05-27)
+
+### Graham: Eureka × Crucible Architectural Overlap Matrix
+
+**Author:** Graham Knight (Lead/Architect)  
+**Date:** 2026-05-26
+
+**Verdict:** Sequence Crucible L1 substrate first, then build Eureka against the stable L1 contract.
+
+**Key Findings:**
+- **3 HIGH-risk hard conflicts:** (1) Cairn `sessions` table restructured by Crucible; Eureka bridges target current schema; (2) `DecisionRecord` serves two masters; Eureka's adapters vs Crucible's richer Decision primitive; (3) "Forge changes nothing" is false under Crucible.
+- **Shared-substrate candidates (5):** `SessionId` brand, `DecisionRecord` type evolution, SQLite patterns, bridge telemetry, CLI infrastructure.
+- **Concrete sequence:** Sprint 0 (types lock), Sprints 1–3 (Crucible L1), Sprint 2+ (Eureka non-Cairn parts), Sprint 4 (bridges), Sprint 5+ (integration).
+
+**Status:** Accepted (Graham consensus).
+
+---
+
+### Roger: Eureka ↔ Crucible Data Layer
+
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-05-26
+
+**Verdict:** FORK on all 8 substrate concerns. Only `SessionId` brand is shared.
+
+**Open Question:** Does Crucible's v14 `wal_records` live in same `~/.cairn/knowledge.db` or fork to new file? Migration-ordering dependent.
+
+**Status:** Accepted (Roger consensus).
+
+---
+
+### Alexander: Eureka ↔ Crucible Runtime Integration
+
+**Author:** Alexander (SDK/Runtime Dev)  
+**Date:** 2026-05-26
+
+**Verdict:** Recommend Shape #1 (Eureka-as-library-to-Crucible). Preserves hermetic replay.
+
+**3 Critical Blockers:**
+1. **flushHints sweep trigger:** Coordination needed.
+2. **Replay-snapshot scope:** Needs explicit contract.
+3. **Session-end hook:** Lifecycle contract unspecified.
+
+**Status:** Accepted (Alexander consensus). Action: lock session-end hook in Sprint 0.
+
+---
+
+### Valanice: Eureka ↔ Crucible UX Overlap
+
+**Author:** Valanice (UX / Human Factors)  
+**Date:** 2026-05-27
+
+**Verdict:** LOW aggregate UX risk; 3 collision zones require coordination.
+
+**3 Collision Zones:**
+1. Session identity shared (positive; requires vocabulary discipline).
+2. Decision pathways diverge (needs ONE mental model).
+3. Notification surfaces both exist (HIGH-RISK at session boundary; recommend Crucible Narrator subsumes Eureka flushHints).
+
+**Status:** Accepted (Valanice consensus).
+
+---
+
+### Erasmus: Two Harnesses, One Developer — Dissenting View
+
+**Author:** Erasmus (Specialist Consultant)  
+**Date:** 2026-05-26
+
+**Verdict:** SEQUENCE (do not merge). Question: does Eureka v1 delta over `store_memory` justify second harness?
+
+**6 Failure Modes if Parallel Build:**
+1. Interface oscillation (Cairn changes ripple).
+2. Spec-driven development trap (Eureka PRD over-specified).
+3. Premature abstraction (learning kernel extraction).
+4. Bridges become bottleneck (seams where bugs live).
+5. Circular self-reference (Eureka references Crucible implementation).
+6. Attention-tier starvation (developer focus shifts).
+
+**Status:** Dissent recorded. Recommendation: evaluate delta before sprint start. Others recommend proceeding after types lock.
+
+---
+
+## Five Open Questions for Aaron (Cross-Agent Consensus)
+
+1. **Eureka v1 delta:** Is delta over `store_memory` significant enough to warrant parallel build?
+
+2. **Database placement:** Does Crucible v14 `wal_records` live in shared DB or fork to new file?
+
+3. **Session model under branching:** How do Eureka's flat session facts correlate when Crucible forks?
+
+4. **Session-end hook:** Who owns flushHints sweep + Narrator attention? (Alexander blocker; Valanice recommends Narrator subsumes.)
+
+5. **Eureka chamber status:** First-class Crucible chamber or external library?
+
+---
+
+*End of Eureka overlap analysis.*

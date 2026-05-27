@@ -178,3 +178,24 @@ T5 resolved — Crucible built on Copilot SDK, replaces Copilot CLI as Aaron's d
 **Closing position:** *"`crucible fork` at HEAD + `crucible checkout` + Mirror surfacing `DecisionRecord.alternatives`. That is the entirety of my T1 ask. Everything else in my chamber waits for T3 or later. The bar is met."* — Erasmus
 
 **Output:** `D:\git\harness\.squad\decisions\inbox\erasmus-triage-2026-05-25T0200Z.md`
+
+## Two-Harness Comparison — Eureka vs Crucible (2026-05-26)
+
+**Task:** Aaron asked for an honest outside assessment of building Eureka (knowledge/memory layer) and Crucible (self-improving runtime) simultaneously in one repo as a solo developer.
+
+**Eureka's functional shape:** A durable knowledge store for LLM-based coding agents. SQLite + BM25 keyword retrieval + composite ranking (relevance × importance × trust × recency × attention-tier) + graph-ready edge schema + ACT-R power-law decay + bidirectional decision adapters to Forge's audit layer. Sessions modeled as facts sharing a branded `SessionId` with Cairn. v1 is keyword-scoped retrieval with a single wired tier (agent). Prior-art analogs: Mem0, Zep, LangMem, and notably Copilot CLI's own `store_memory` tool (which Aaron already uses daily).
+
+**Crucible's functional shape:** Self-improving agentic runtime built on Copilot SDK. 5-layer stack: Cairn (event ledger), Curator (pattern detection), Prescriber (improvement suggestions with 8-state lifecycle), Forge (audit/optimization with DBOM Merkle chain), Mirror (UX surface), plus skillsmith-runtime and runtime-cli. Prior-art analogs: SWE-agent, Devin, Aider, LangGraph.
+
+**Verdict: Sequence them.** Crucible first (it has shipping code, is the daily driver, is the runtime Eureka needs as a consumer). Use `store_memory` as Eureka v0. Build Eureka when Crucible reveals what memory actually needs to do from measured needs, not hypothesized ones.
+
+**Key observations:**
+1. The two systems are genuinely different in concern (runtime vs knowledge) but NOT orthogonal — shared sessions, decision types, sweep patterns, planned learning-kernel extraction. The PRD devotes ~200 lines to managing their coupling.
+2. Eureka's PRD (849 lines, v5-final, 8 review rounds, 14 FRs, 8 enforcement mechanisms) is over-specified for a v1 that's essentially "SQLite + BM25 + trust score" — roughly 1,500 LOC of implementation.
+3. No shipping agentic tool has separated "knowledge layer" from "runtime" into peer packages. They all keep memory as a module within the runtime.
+4. The spec-to-code ratio is inverted: more specification than implementation. Risk of spec-driven development where the code becomes a test suite for the spec.
+5. Eureka v1's delta over `store_memory` (composite ranking, attention tiers, ACT-R decay, BM25, graph edges) may not justify a second harness.
+
+**If both must ship:** Cleanest pattern is layered dependency (Eureka as leaf, no dependency on Cairn/Forge; adapters live in a bridges package or in skillsmith-runtime, NOT in Eureka). Current design has adapters in `packages/eureka/src/interop/` which makes Eureka depend on Forge's types — invert this.
+
+**Output:** `D:\git\harness\.squad\decisions\inbox\erasmus-two-harnesses-one-repo.md`

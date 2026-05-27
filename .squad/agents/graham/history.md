@@ -6,6 +6,23 @@
 
 # Graham — History (Summarized)
 
+## Eureka × Crucible Overlap Analysis (2026-05-26)
+
+**Inbox file:** `.squad/decisions/inbox/graham-eureka-crucible-overlap.md`
+
+**What Eureka is:** A durable fact store with trust-weighted BM25 retrieval for agentic sessions. Library, not runtime. Two decision pathways (Path 1: contemplative Eureka→Forge, Path 2: in-flow Forge→Eureka). Sessions are `kind=session` facts sharing `SessionId` brand with Cairn via `@akubly/types`. Learning kernel extraction-ready for eventual Cairn adoption. v1 scope is narrow: agent-tier only, BM25, manual session facts, on-demand ingestion.
+
+**Key overlaps found:**
+1. **Cairn schema is load-bearing for both** — Eureka bridges target today's Cairn schema; Crucible restructures it (WAL, branching sessions, Decision primitive). Simultaneous development = Eureka building bridges to a moving target.
+2. **`DecisionRecord` in `@akubly/types` serves two masters** — Eureka's adapters depend on its current shape; Crucible's richer Decision primitive may evolve it.
+3. **"Forge changes nothing" (Eureka §7.2) is false under Crucible** — Forge becomes an L3 ProposalGenerator.
+4. **`@akubly/types` merge conflicts guaranteed** — both PRDs extend it without acknowledging the other.
+5. **`SessionId` semantics diverge** — Eureka assumes flat; Crucible adds forking.
+
+**Recommendation:** Sequence Crucible L1 substrate first (Sprints 1-3), then build Eureka bridges against the stable contract (Sprint 4+). Eureka's non-bridge work (~60% of v1) can overlap starting Sprint 2. Shared Sprint 0 (~2 days): land `SessionId` brand + `DecisionRecord` schema-version field in `@akubly/types`.
+
+**Five open questions for Aaron:** (1) Does Eureka target legacy or Crucible-Cairn? (2) Who owns `@akubly/types` extension protocol? (3) Is `SessionId` valid after a fork? (4) Does Eureka become a Crucible chamber? (5) What happens to "Forge changes nothing"?
+
 ## Round 7 (2026-05-25T02:00Z): v1 Story Triage Against Falsifiable Bar
 
 **Inbox file:** `.squad/decisions/inbox/graham-triage-2026-05-25T0200Z.md`

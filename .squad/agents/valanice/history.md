@@ -688,3 +688,53 @@ The most consequential boundary call: **one-hop backward slice belongs at T1.** 
 - Multi-agent orchestration — T5 scale
 
 The trade is honest: my tier (T2) keeps the deep investigation work, but the minimum-viable interrogation kit (backward-slice + bisect + the three Mirror views to surface them) sits at T1 because the bar requires it. Investigation discipline says don't anchor on first-thought — the alternative I considered was "all L5 stays T2, Aaron uses grep for week one" — and that fails the falsifiable bar by construction. Rejected.
+
+---
+
+### 2026-05-27: Eureka–Crucible UX Overlap Analysis
+
+**Task:** Analyze UX overlap between two simultaneously-built tools: Eureka (knowledge retention system, `mem` repo) and Crucible (agentic harness, this repo). Both will touch Aaron's daily workflow in the same delivery cycle.
+
+**Key Findings:**
+
+1. **LOW aggregate UX risk.** Eureka is primarily library-consumed by agents (programmatic API + MCP tools). Crucible is Aaron's ambient runtime (CLI hooks, slash commands, ledger, Mirror views). Different attention altitudes: Eureka surfaces indirectly (agents recall knowledge), Crucible surfaces directly (turn boundaries, Ctrl+E, `@inbox`).
+
+2. **ONE HIGH-RISK collision: session-end approval surface.** Both tools want Aaron's approval attention at the same lifecycle boundary:
+   - Crucible: Narrator digest + `@inbox` (prescriptions, sub-agent proposals, drift alerts)
+   - Eureka: `flushHints()` prompts "commit these facts from this session?"
+   
+   **Mitigation:** Crucible's Narrator owns session-end summary. Eureka continuity is a one-line footnote ("`:facts` to review 3 uncommitted facts, or skip"). Single attention interrupt, multiple backends. Optionally: Eureka suggested-facts feed into Crucible's `@inbox` as a distinct category (not a separate modal).
+
+3. **Shared vocabulary is INTENTIONAL, not a collision:**
+   - **"Session"** — Aaron R8 directive: both tools reference the same Copilot CLI session UUID via shared `SessionId` brand (`@akubly/types`). Cairn (Crucible sibling) owns "what happened" (lifecycle, timing). Eureka owns "what I learned" (knowledge retention). Same identifier, two lenses = Jungian integration. ESLint guardrail bans cross-system session-type imports except for `SessionId`.
+   - **"Decision"** — Crucible records `Decision` primitives (ledger). Eureka ingests them (Path 2, Forge → Eureka) OR assists deliberation (Path 1, Eureka `decide()` → Forge). Unified view: Crucible's `@decisions` Mirror query shows all decisions (both pathways). No collision if Crucible is source of truth for "what decisions were made" and Eureka is "how should I decide using past knowledge."
+
+4. **No dangerous vocabulary collisions beyond the two above.** Crucible chambers (Ledger, Forge, Narrator, Conductor, Mirror) do NOT overlap Eureka vocabulary (integrate, recall, decide, commit, retire, trust, attention tiers). "Trust" (Eureka) vs. "confidence" (Cairn) are orthogonal by design (FR-12 enforcement mechanism #7: TypeScript branded types).
+
+5. **Friction-budget overlap at session-end.** Worst case: Aaron sees THREE surfaces before closing his laptop (Narrator summary + `@inbox` + Eureka `flushHints()`). Recommended: Crucible's Narrator subsumes Eureka continuity into one digest. Eureka's `flushHints()` is opt-in OR feeds `@inbox` (not a separate prompt).
+
+6. **Mental-model framing: "Eureka is the substrate; Crucible is the surface."** Agents consume Eureka programmatically (recall, integrate, decide). Aaron interacts with Crucible conversationally (Mirror views, Ctrl+E, `@inbox`). The handoff is at session boundary (shared `SessionId`) and decision boundary (Forge `DecisionRecord` bridges both).
+
+7. **Personalization storage: two separate configs acceptable in v1, but unified `~/.copilot/preferences.json` recommended if both ship in same cycle.** Namespace pollution is low (< 20 keys total). Aaron should type `copilot config` and see ALL preferences (`crucible.*`, `eureka.*`).
+
+8. **No onboarding conflict.** Both tools are silent-by-default, "pay-as-you-go" (no upfront setup ceremony). First session: Aaron sees Crucible's Mirror (empty ledger, views present), agents invisibly use Eureka (empty fact store, `recall` returns nothing).
+
+**Integrated-UX Recommendation:**
+
+> **"Eureka makes agents smarter invisibly. Crucible makes Aaron's thinking auditable."**
+
+- Aaron never thinks "am I using Crucible or Eureka?" He uses Copilot CLI as always.
+- Session boundaries are the handoff point (Narrator summarizes, optionally mentions Eureka facts).
+- Decisions are unified in Crucible's `@decisions` view (shows both Crucible primitives + Eureka Path 1 deliberations).
+- Approval happens in one place (`@inbox` consolidates prescriptions + Eureka suggested-facts).
+- "Session" is one concept with two lenses (`:sessions` view shows Crucible/Cairn data + Eureka data side-by-side).
+
+**Open Questions for Aaron:**
+1. Should Eureka `flushHints()` feed into Crucible `@inbox` (consolidate) or remain separate conversational prompt?
+2. Should `@decisions` view indicate "Crucible primitive" vs. "Eureka deliberation" (Path 1), or is distinction irrelevant?
+3. Unified `copilot config` for both tools, or separate config surfaces acceptable?
+
+**Artifacts:**
+- Full analysis: `.squad/decisions/inbox/valanice-eureka-crucible-ux-overlap.md`
+
+**Status:** Analysis complete. Awaiting Aaron disposition on three open questions. Attention-conflict matrix and vocabulary collision list documented.

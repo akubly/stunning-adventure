@@ -384,5 +384,9 @@ No change to my round-2 commitments on Pareto fitness ownership, branching-as-ev
 **DONE:** Canonical serialization spec — resolved Round 6 (CBOR+BLAKE3 for L1, DBOM stays SHA-256, per-column algorithm rule locked). Strike from open work.
 
 **Five open questions to Cassima.** Q1 is the highest-leverage: does `by Crucible'' read strong (Crucible proposes + replay-investigates prior decisions + applies) or weak (Crucible proposes, Aaron applies manually)? I triaged for strong, which makes A3 a T1 must-have. Weak reading shrinks the T1 conformance kit to A1+A4 and slips A3 to T2. Q2-Q5: what counts as `an improvement to Crucible''; `one week'' wall-clock vs business days and how many discrete improvements expected; is the scorecard user-facing in v1 (needs Valanice/Erasmus partner story if yes); `ValidationResult.tier 3 = simulation'' typed-but-empty stub — keep or remove (I lean keep, same discipline as L1 substrate boundary).
-
+  
 **No new deliverables this round.** All Round-3 locks (8-field schema, A1-A4, ReadSetBuilder, scorecard, canonical serialization) hold unchanged; this round only assigns them tier numbers and splits two of them across T1/T2 boundaries.
+
+---
+
+**2026-05-27 Eureka PRD Overlap Analysis (Scribe Summary):** Cross-agent consensus on Eureka × Crucible architecture and UX overlap. See `.squad/decisions.md` **Eureka PRD Overlap Analysis** section for full findings and 5 open questions for Aaron.

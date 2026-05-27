@@ -3,6 +3,22 @@
 📌 Team update (2026-05-22T20:03:56Z): Wave 2 v3.1 scope final — autoApplyEligible propagates through OptimizationHint; constants NEGATIVE_IMPACT_AUTO_APPLY_GATE=-0.2 and ATTENUATION_FLOOR=0.1; CLI surface only — no MCP in Wave 2. — Graham Knight
 # Alexander — History
 
+## Learnings (2026-05-26: Eureka-Crucible Runtime Overlap Analysis)
+
+### Eureka SDK Relationship & Integration Shape
+Eureka does NOT consume the Copilot SDK directly. Eureka is SDK-agnostic; it receives `SessionId` as a correlation token only. The SDK relationship is mediated through Crucible: Crucible's L0 boundary wraps SDK, Crucible's message loop calls Eureka as a library, Crucible's L1 ledger records Eureka invocations as primitives. **Recommended integration shape: Eureka-as-library-to-Crucible** (lowest cost, preserves hermetic replay, no session lifecycle conflicts). Out-of-process shapes (MCP server, daemon) break hermetic boundary because Eureka state lives outside L1 WAL.
+
+### Session Model Dual Lenses & Correlation
+Both Crucible and Eureka own "session" but through different lenses: Cairn = operational lifecycle (when, where, status), Eureka = epistemological (what was learned, continuity). Both reference the same `SessionId` brand (shared identifier from `@akubly/types`), but storage/schema remain independent. No runtime cross-DB queries (Eureka FR-7.2 hard rule). Reconciliation is offline-only via `eureka reconcile` CLI. **Critical integration gap:** Crucible must explicitly call `eureka.session.flushHints()` before session-end or Eureka US-2 (cross-session continuity) fails for 100% of sessions (Eureka AC-2.5 caller-cooperation contract).
+
+### Hermetic Replay Extension to Eureka
+Crucible's hermetic replay boundary (v1 commitment #4) extends to Eureka IF integrated as library. Eureka calls recorded as L1 primitives with full inputs/outputs; replay re-invokes Eureka library deterministically (BM25 scoring is deterministic, no LLM calls in Eureka v1). **Snapshot contract extension required:** Eureka storage state (`~/.copilot/eureka/agent.db`) must be snapshotted alongside Cairn's `knowledge.db` for full replay fidelity. Document in Crucible snapshot contract: "Replay requires both DBs from snapshot point."
+
+### Sweep Lifecycle Coupling & Trigger Authority
+Eureka's sweep (importance decay, tier demotion, edge population) is caller-driven in v1 (heuristic: end-of-session inferred from `end()` call or first-query-of-next-session catch-up). Crucible owns authoritative session lifecycle (Cairn `sessions.ended_at`). **Mismatch risk:** Crucible ends session, Eureka never sweeps because no one called `eureka.session.end()`. **Mitigation:** Wire Crucible's session-end hook (`sessionStart.ts`) to call `eureka.session.end(session_id)` + `sweep()` synchronously. v1.5 may subscribe to Cairn session-end events (Eureka PRD Edgar R8 §2), but that adds runtime coupling and violates Eureka Path D (ship standalone, defer Cairn coupling). Synchronous hook call is simpler and guarantees sweep fires.
+
+---
+
 ## 2026-05-23: Skillsmith Harness — User Stories (v1 ideation)
 
 **Mission:** Big-think programmatic/SDK-first stories for Crucible + runtime-as-platform. Target: Aaron only (v1). Lens: What does agentic harness enable when driveable, embeddable, and composable?

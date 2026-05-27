@@ -216,3 +216,7 @@ free-rides into Mirror policy events).
 mirror_events GC, cross-session Mirror scope, US-Ro-3 Provider home,
 plugin manifest package location, MirrorEvent ↔ event_log join key
 confirmation, Sonny per-row lineage decision.
+
+---
+
+**2026-05-27 Eureka PRD Overlap Analysis (Scribe Summary):** Cross-agent consensus on Eureka × Crucible storage, runtime, and architecture overlap. See `.squad/decisions.md` **Eureka PRD Overlap Analysis** section for full findings and 5 open questions for Aaron.
