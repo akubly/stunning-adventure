@@ -1,4 +1,4 @@
-﻿# Squad Decisions
+# Squad Decisions
 
 ## Active Decisions
 
@@ -861,3 +861,362 @@ Prefer one integration PR from `phase-4.6/wave-5-integration`. The isolated bran
 ## Archived Decisions
 
 See decisions-archive.md for Wave 1, Wave 2, Wave 3, and earlier Cycle 1 decisions.
+
+
+---
+
+# Issue #17 — Async IO Sweep Summary
+
+**Date:** 2026-05-26  
+**Author:** Laura (Tester)  
+**Branch:** `issue-17/async-io-sweep`
+
+---
+
+## Scope Swept
+
+5 focus areas per spec, in priority order:
+
+1. Cairn DB layer (db/index.ts)
+2. skillsmith-runtime composition root (src/index.ts + hooks/sessionStart.ts)
+3. runtime-cli commands (cli.ts)
+4. Forge prescribers (prescribers/)
+5. MCP server handlers (mcp/server.ts) + hook entry points
+
+---
+
+## Findings Count by Priority
+
+| Priority | Count | Description |
+|----------|-------|-------------|
+| **HIGH** (blocking, must fix) | 0 | — |
+| **MEDIUM** (addressable, improves correctness) | 0 | — |
+| **LOW** (informational, guard verified) | 2 | resolveAndReadSkill sync IO; gitContext execSync |
+| **ACCEPTABLE** (expected, leave as-is) | 3 | DB init; applier file writes; discovery scan |
+| **CLEAN** (no IO) | 3 | Forge prescribers; skillsmith-runtime; runtime-cli |
+
+**Total: 0 required fixes. 8 areas swept. 12 tests added.**
+
+---
+
+## Key Recommendations
+
+1. **No async conversion needed.** The MCP stdio transport is serial — sync IO cannot starve other requests. Converting would add `async` complexity with no practical benefit.
+
+2. **Guards are the invariants, not sync-vs-async.** The important properties are: size limit (1 MB), timeout (2000ms on execSync), and error-handling (all guards produce correct error responses). All three verified.
+
+3. **`resolveAndReadSkill` is the correct pattern** for MCP file IO: extract to a helper, apply name/size/read guards, test the helper directly. Other handlers should follow this pattern if they ever need file IO.
+
+4. **W5-5 (`forge_prescribe` MCP handler)** is not yet landed. Test plan written at `.squad/decisions/inbox/laura-w5-5-async-test-plan.md`. Rosella should integrate these 5 tests when W5-5 ships.
+
+---
+
+## Tests Added
+
+File: `packages/cairn/src/__tests__/mcp-async-io.test.ts` (12 tests, all passing)
+
+- 8 tests: `resolveAndReadSkill` guard behaviors (name check, size limit, read error, success path, relative path, directory append)
+- 2 tests: `gitContext.ts` structural — timeout guards and stdio pipe flags present
+- 2 tests: MCP server structural — sync IO isolated to `resolveAndReadSkill` only, helper call sites counted
+
+Code change: exported `resolveAndReadSkill` and `isSkillFileError` from `mcp/server.ts` to enable direct testing. No behavior change.
+
+---
+
+## W5-5 Coverage
+
+Branch `phase-4.6/w5-5-mcp-forge-prescribe` does **not** exist at sweep time.
+
+Test plan written: `.squad/decisions/inbox/laura-w5-5-async-test-plan.md`  
+Covers: Promise return check, CairnEvent fail-open, sequential re-use safety, forceRegenerate semantics, structural no-inline-fs assertion.
+
+
+---
+
+# W5-5 Async-Correctness Test Plan
+
+**Date:** 2026-05-26  
+**Author:** Laura (Tester)  
+**Target branch:** `phase-4.6/w5-5-mcp-forge-prescribe` (not yet landed)  
+**Status:** PLAN — for Rosella to integrate when W5-5 ships
+
+---
+
+## Context
+
+W5-5 adds a `forge_prescribe` MCP tool handler to the Cairn MCP server. Based on the W5-5 intent (surfacing forge-prescribe via MCP) and the async-IO sweep findings on the existing server, these tests should be written before the handler goes to review.
+
+---
+
+## Test File
+
+When W5-5 lands, add these tests to a new or existing file:  
+`packages/cairn/src/__tests__/mcp-forge-prescribe.test.ts`
+
+Or append to `mcp-async-io.test.ts` if scope is limited.
+
+---
+
+## Required Tests
+
+### A. Handler does not block on sync IO
+
+```typescript
+describe('forge_prescribe MCP tool — async correctness', () => {
+  it('handler returns a Promise (not a sync value)', () => {
+    // Call the handler directly (import the backing function, not through
+    // McpServer transport). Assert the return value is a Promise.
+    // This catches the case where someone accidentally calls runForgePrescribe
+    // without await or returns a sync result.
+    const result = forgePrescriberHandler({ skill_id: 'test-skill', ...defaultArgs });
+    expect(result).toBeInstanceOf(Promise);
+  });
+```
+
+### B. CairnEvent write does not block tool response
+
+The W5-5 handler is expected to write a `CairnEvent` (hint_state_transition or similar) after prescribing. This event log write should:
+
+```typescript
+  it('CairnEvent write failure does not block the tool response', async () => {
+    // Stub logEvent to throw
+    vi.spyOn(cairnDb, 'logEvent').mockImplementationOnce(() => {
+      throw new Error('DB full');
+    });
+
+    // Handler should still return a successful response (fail-open)
+    const result = await forgePrescriberHandler({ skill_id: 'test-skill', ...defaultArgs });
+    expect(result.isError).toBeUndefined(); // or isError: false
+    expect(result.content[0].text).not.toContain('DB full');
+  });
+```
+
+### C. Multiple sequential invocations do not serialize on shared state
+
+better-sqlite3 is synchronous — "concurrent" here means sequential calls on the same DB handle. Two invocations back-to-back must each complete cleanly:
+
+```typescript
+  it('two sequential invocations complete without shared-state corruption', async () => {
+    // Note: better-sqlite3 is synchronous — no actual parallelism.
+    // This test validates DB singleton re-use is safe across calls.
+    const result1 = await forgePrescriberHandler({ skill_id: 'skill-a', ...defaultArgs });
+    const result2 = await forgePrescriberHandler({ skill_id: 'skill-b', ...defaultArgs });
+
+    // Each result should be independent
+    const parsed1 = JSON.parse(result1.content[0].text);
+    const parsed2 = JSON.parse(result2.content[0].text);
+    expect(parsed1.skill_id).toBe('skill-a');
+    expect(parsed2.skill_id).toBe('skill-b');
+  });
+```
+
+### D. Handler respects forceRegenerate flag
+
+```typescript
+  it('forceRegenerate: true expires active hints before inserting new ones', async () => {
+    // Seed an active hint for skill-a
+    const db = getDb(':memory:');
+    insertOptimizationHint(db, { ...seedHint, skillId: 'skill-a', status: 'active' });
+
+    await forgePrescriberHandler({ skill_id: 'skill-a', force: true, ...defaultArgs });
+
+    const active = db.prepare(
+      "SELECT * FROM optimization_hints WHERE skill_id = ? AND status = 'active'"
+    ).all('skill-a');
+    // After force, old hint should be expired
+    expect(active).toHaveLength(0); // or 1 if new hint was inserted
+  });
+```
+
+### E. Handler does not perform sync readFileSync / statSync inside tool body
+
+```typescript
+  it('forge_prescribe handler body contains no inline fs.readFileSync or statSync calls (structural)', () => {
+    const serverPath = fileURLToPath(new URL('../mcp/server.ts', import.meta.url));
+    const source = fs.readFileSync(serverPath, 'utf8');
+
+    // Find the forge_prescribe registration block
+    const handlerStart = source.indexOf("'forge_prescribe'");
+    const handlerEnd = source.indexOf('\n);\n', handlerStart);
+    const handlerBody = source.slice(handlerStart, handlerEnd);
+
+    // Handler should call runForgePrescribe (async), not inline fs calls
+    expect(handlerBody).not.toMatch(/fs\.(readFileSync|statSync|existsSync)\b/);
+    expect(handlerBody).toContain('runForgePrescribe');
+    expect(handlerBody).toContain('await');
+  });
+```
+
+---
+
+## Integration with Existing Pattern
+
+The W5-5 handler should follow the same pattern as `run_curate`:
+- Wrap in try/catch with error response
+- Use `ensureDb()` first  
+- CairnEvent logging in a nested try/catch (fail-open)
+- Return structured JSON content
+
+All existing MCP tool handlers follow this pattern. `forge_prescribe` should too.
+
+---
+
+## Notes for Rosella
+
+1. better-sqlite3 is synchronous — there is no actual concurrency risk. "Concurrent invocation" tests verify sequential re-use safety, not parallel execution.
+2. The CairnEvent write test is the most important of these five. An unguarded DB write in the success path would leave the handler stuck if the DB is full or locked.
+3. Use `:memory:` DBs in all tests (see history.md for the singleton import pattern).
+4. Run `npm test --workspace=@akubly/cairn` before declaring done.
+
+
+---
+
+# W5-5 Post-Review Fixes
+
+**Date:** 2026-05-26
+**Author:** Rosella
+**Branch:** `phase-4.6/w5-5-rosella-mcp-forge-prescribe`
+**Commit:** 5065082
+
+---
+
+## Build Break Root Cause
+
+**Error:** TypeScript `TS2345` — `McpToolResult` was not assignable to the MCP SDK's `CallToolResult` type because it lacked the required index signature.
+
+**Root cause:** The `@modelcontextprotocol/sdk` `registerTool` callback expects a return type of `{ [x: string]: unknown; content: ...; isError?: ... }`. A custom interface without `[key: string]: unknown` fails the assignability check under strict project-references build (`tsc --build`).
+
+**Fix already present:** The index signature was added in the original commit (`9499cb0`) before the push. Root `npm run build` confirmed clean on the branch. Roger's report was based on a pre-fix snapshot.
+
+**Pattern to remember:** Any custom type returned from an MCP SDK `registerTool` callback must carry `[key: string]: unknown` — it's part of `CallToolResult`'s contract. Inline return objects satisfy this automatically; named interfaces need the explicit index signature.
+
+---
+
+## CairnEvent Fail-Open Fix
+
+**Problem (identified by Laura):** The original `cairn.logEvent()` call in the handler was unguarded. A DB write failure (full disk, lock contention, broken connection) would propagate as an unhandled exception and turn a successful prescriber run into an MCP tool error response.
+
+**Fix:** Wrapped the entire event-log block (`ensureSystemSession` + `logEvent`) in a `try/catch`. Failures are written to `process.stderr` with context (`skill=X`) but do not surface to the caller.
+
+```typescript
+// Before (line 114 original):
+cairn.logEvent(db, logSessionId, 'prescriber_run', payload);
+
+// After:
+try {
+  const logSessionId = session?.id ?? cairn.ensureSystemSession(db);
+  // ... build payload ...
+  cairn.logEvent(db, logSessionId, 'prescriber_run', payload);
+} catch (eventErr) {
+  process.stderr.write(`[skillsmith-runtime] prescriber_run event write failed ...`);
+}
+```
+
+**Why fail-open:** The prescriber result (inserted/skipped/errored counts) is the primary value the MCP caller needs. Observability is secondary. If the event DB is unavailable, operators still get their hints — the missing event is a logging gap, not a functional failure.
+
+---
+
+## New Tests Added (+4, total 48)
+
+| Test | Suite | What it covers |
+|------|-------|---------------|
+| `logEvent throws → tool returns ok:true` | `fail-open` | Core fail-open guard |
+| `ensureSystemSession throws → tool still succeeds` | `fail-open` | Full event-log block is guarded |
+| `handler.ts contains no inline fs.readFileSync/statSync` | `structural` | Hot-path filesystem access guard |
+| `forgePrescribeHandler returns a Promise` | `structural` | Async-correctness baseline |
+
+Tests C (sequential invocations) and D (forceRegenerate flag) from Laura's plan are already covered by the existing integration and edge-case suites.
+
+
+---
+
+# Decision: W5-5 forge_prescribe MCP Tool
+
+**Date:** 2026-05-26
+**Author:** Rosella (Plugin Dev)
+**Status:** Implemented — branch `phase-4.6/w5-5-rosella-mcp-forge-prescribe`, commit 9499cb0
+
+---
+
+## Tool Signature
+
+```typescript
+server.registerTool(
+  'forge_prescribe',
+  {
+    inputSchema: {
+      skill_id:  z.string(),              // required — skill to prescribe for
+      force:     z.boolean().optional(),  // default: false — expire active hints before run
+      repo_key:  z.string().optional(),   // optional — repo scope for session lookup
+    },
+  },
+  async ({ skill_id, force, repo_key }) => { ... }
+)
+```
+
+**Returns:** Full `ForgePrescribeResult` JSON (ok, skillId, profileSource, inserted/skipped/errored/totalHints).
+
+**Error handling:** Structured `{ ok: false, message: '...' }` on no-profile or run failure; never throws unhandled. `isError: true` set on the content result so MCP hosts render it appropriately.
+
+---
+
+## CairnEvent Shape
+
+Event type: `prescriber_run`
+
+```typescript
+interface PrescriberRunEventPayload {
+  skill_id:     string;
+  force:        boolean;
+  session_id:   string | null;        // resolved user session id; null = no user session found
+  profile_used: LoadedProfileSource | null;  // 'per-skill' | 'per-model' | 'per-user' | 'global'
+  confidence:   number | null;        // attenuated confidence from loaded profile pre-run
+  ts:           string;               // ISO timestamp of MCP invocation
+  result: {
+    inserted:   number;
+    skipped:    number;
+    errored:    number;
+    total_hints: number;
+  };
+}
+```
+
+**Omissions vs Aaron's spec:**
+- `autoApplyEligible` omitted — it's a per-hint field, not meaningfully aggregated at run level. Including a boolean aggregate would be semantically ambiguous (any vs all eligible). Deferred for future consideration if a use case emerges.
+
+**No migration needed.** `event_log.event_type` is a free-text string; payload is a schemaless JSON blob. The TypeScript interface above is documentation only.
+
+---
+
+## Session Fallback Semantics
+
+1. `repo_key` provided → `cairn.getActiveUserSession(db, repo_key)` — most-recent active user session for that repo.
+2. `repo_key` absent → `cairn.getMostRecentUserSession(db)` — most-recent active user session across all repos (W5-1 session-kind separation ensures `__system__` sessions are excluded).
+3. No user session found → `cairn.ensureSystemSession(db)` used as event log target. `session_id: null` recorded in payload so consumers know attribution was unavailable.
+
+**Rationale:** Mirrors the `getUserSessionForMcpFallback(db, repoKey?)` pattern from `@akubly/cairn/src/mcp/sessionFallback.ts` without pulling in cairn's internal mcp module. Avoids circular dep; the session APIs (`getActiveUserSession`, `getMostRecentUserSession`) are exported from cairn's barrel.
+
+---
+
+## Architecture Note: Two-Server Design
+
+The `forge_prescribe` tool lives in `@akubly/skillsmith-runtime`, not `@akubly/cairn`. This is required by the dependency graph:
+
+```
+cairn ← skillsmith-runtime
+```
+
+Placing the tool in cairn would create a circular dependency. The forge MCP server (`dist/mcp/server.js`) is registered separately in `.mcp.json` alongside cairn's server. This is intentional; Graham's W5-5 skeleton documents the forced aggregator question for Wave 7.
+
+**Server entry point:** `bin: { "forge-mcp": "dist/mcp/server.js" }` in `packages/skillsmith-runtime/package.json`.
+
+---
+
+## Deviations from Task Spec
+
+| Spec | Implemented | Reason |
+|------|-------------|--------|
+| `autoApplyEligible` in event | Omitted | Per-hint field; run-level aggregate undefined |
+| Branch `phase-4.6/w5-5-mcp-forge-prescribe` | `phase-4.6/w5-5-rosella-mcp-forge-prescribe` | Concurrent agent activity caused branch name collision |
+| `db_path` arg (Graham's skeleton) | Not included | Aaron's approved spec uses `repo_key`; `db_path` is a server-startup concern |
+

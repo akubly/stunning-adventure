@@ -1,9 +1,8 @@
-📌 Team update (2026-05-22T20:35:00Z): **Wave 2 W2-5 complete** — ForgePrescriberOrchestrator shipped. Attenuation + autoApplyEligible propagation live. ATTENUATION_FLOOR=0.1 exported from @akubly/types. Fail-open on provider errors. Forge tests 609 passing (+10), root build green. — Scribe
-📌 Team update (2026-05-22T20:16:40Z): **Wave 0 complete** — canonical types in @akubly/types, getAllCategories helper in Cairn. category field reconciled to OptimizationCategory union. — Scribe
-📌 Team update (2026-05-22T20:03:56Z): Wave 2 v3.1 scope final — autoApplyEligible propagates through OptimizationHint; constants NEGATIVE_IMPACT_AUTO_APPLY_GATE=-0.2 and ATTENUATION_FLOOR=0.1; CLI surface only — no MCP in Wave 2. — Graham Knight
-# Alexander — History
+📌 Team update (2026-05-26T22:27:00Z): **Wave 5-5 post-review complete** — W5-5 MCP forge_prescribe build break fixed (root: McpToolResult missing [key:string]:unknown index sig). +4 fail-open/structural tests from Laura's plan (5065082 + 4a4df6f). Tests 44→48 passing, root npm run build green ✅ — Scribe
 
-## 2026-05-21: Wave 2 v3 Scope Ready — Curator Wiring Deferred to Wave 3
+# Alexander — History (Recent)
+
+## 2026-05-26: Wave 6 Kickoff Summary
 
 Scribe orchestration complete: Graham's v3 scope finalized and merged to `.squad/decisions.md`. Key scope decisions:
 - **ChangeVectorProvider** port with async return type for Phase 5 cloud readiness
