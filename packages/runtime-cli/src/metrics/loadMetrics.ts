@@ -74,7 +74,7 @@ function queryPrescriberRuns(
     if (rows.length === 0) {
       // Determine whether the event type exists at all vs. skill just has no runs.
       const anyRow = db
-        .prepare(`SELECT 1 FROM event_log WHERE event_type = 'prescriber_run' LIMIT 1`)
+        .prepare(`SELECT 1 FROM event_log WHERE event_type = 'prescriber_run' AND json_valid(payload) LIMIT 1`)
         .get() as Record<string, unknown> | undefined;
 
       // If no prescriber_run events exist anywhere, treat as W5-5 not landed.

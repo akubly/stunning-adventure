@@ -366,11 +366,19 @@ describe('forgePrescribeHandler → loadMetrics round-trip (I4)', () => {
     createSession(db, 'org/round-trip-repo', 'main');
     upsertExecutionProfile(db, makeProfile('skill-round-trip', { sessionCount: 20 }));
 
-    // Run the real handler — writes a prescriber_run CairnEvent with camelCase fields.
-    const handlerResult = await forgePrescribeHandler(db, {
-      skill_id: 'skill-round-trip',
-      repo_key: 'org/round-trip-repo',
-    });
+    // Run the handler with injected prescriber — isolates schema-contract concern.
+    const handlerResult = await forgePrescribeHandler(
+      db,
+      { skill_id: 'skill-round-trip', repo_key: 'org/round-trip-repo' },
+      async () => ({
+        ok: true as const,
+        profileSource: 'per-skill' as const,
+        inserted: 3,
+        skipped: 0,
+        errored: 0,
+        totalHints: 3,
+      }),
+    );
     expect(handlerResult.isError).toBeFalsy();
 
     // Load metrics via the reader — uses json_extract(payload, '$.skillId') to query.
