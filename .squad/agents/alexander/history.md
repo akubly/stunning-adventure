@@ -204,3 +204,19 @@ PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end
 ---
 
 **Older learnings archived to history-archive.md**
+### 2026-05-27 — PR #24 Cloud Review Round 2 (8662579)
+
+**R2-T1: Constant deduplication** — ATTENUATION_FLOOR had a local duplicate in runtime-cli/src/metrics/loadMetrics.ts. Canonical source is @akubly/types/src/index.ts:246. Import from there; added @akubly/types to runtime-cli deps.
+
+**R2-T2: Clock skew resilience** — daysBetween() can return negative when updatedAt is greater than now. Clamp to >= 0 at caller (line 150 in loadMetrics.ts): Math.max(0, daysBetween(...)). Mirrors sessionsSinceUpdate pattern. No test added (review accepted existing pattern).
+
+**R2-T3: Circular import resolution** — mcp/handler.ts imported runForgePrescribe and loadExecutionProfile from ../index.js, while index.ts re-exported forgePrescribeHandler from handler. **Solution:** extracted core runtime logic to new runtime.ts module. Both handler.ts and index.ts now import from runtime.ts. index.ts maintains public API via re-exports. Pattern: when barrel (index.ts) and module create cycle, extract shared logic to third module.
+
+**R2-T4: MCP tool annotations** — forge_prescribe mutates state (inserts hints). Added annotations: { readOnlyHint: false } per Cairn MCP convention (see cairn/src/mcp/server.ts:323 for write tools, vs :112 for read tools). This is part of the MCP tool contract — signals mutation to clients/runtime.
+
+**Learnings:**
+- Shared constants belong in @akubly/types, not duplicated per package
+- Clamp time-delta computations to handle clock skew (NTP drift, VM suspend/resume)
+- Circular imports between barrel and impl → extract to third module
+- MCP readOnlyHint is a semantic contract, not optional metadata
+

@@ -61,6 +61,9 @@ server.registerTool(
       'Returns inserted/skipped/errored counts and the profile tier used. ' +
       'Pass force=true to expire all active hints before generating — use ' +
       'this as an operator escape hatch when hints are stuck in a bad state.',
+    annotations: {
+      readOnlyHint: false,
+    },
     inputSchema: {
       skill_id: z.string().describe('Skill ID to run prescribers for.'),
       force: z
