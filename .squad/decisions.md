@@ -1,5 +1,171 @@
 # Squad Decisions
 
+## Open Decisions
+
+### 2026-05-26: Crucible ↔ Eureka Cross-Project Overlap — Architectural Coordination Required
+
+**Status:** ⏳ AWAITING AARON DECISION  
+**Date:** 2026-05-26  
+**Initiated By:** Cross-project overlap analysis (Genesta, Crispin, Edgar, Cassima)  
+**Urgency:** BLOCKER — both projects ship v1 in parallel  
+
+**Decision Needed:** Aaron must lock repository ownership, schema collision resolution, and prescriber/substrate wiring before Crucible sprint 2 and Eureka v1 implementation phase begin.
+
+---
+
+## Executive Summary
+
+**Convergent Finding:** Crucible (v1-DRAFT) and Eureka (v5-final) both depend on shared substrate (Cairn, Forge, types) and both define overlapping session/decision/improvement semantics. The dependency direction is backwards: Crucible assumes Forge exists in `harness` repo but Forge actually lives in `mem` repo. The overlap is NOT accidental — Eureka is Crucible's future memory layer — but the shared-code surface is brittle without explicit coordination.
+
+**Three critical blockers identified:**
+
+1. **Undeclared Repository Dependency (BLOCKER — Cassima)** — Crucible cannot ship v1 without either duplicating Forge or depending on the `mem` repo. Neither is currently acknowledged in either PRD. Must resolve before sprint 2.
+
+2. **Event Schema Collision (HIGH RISK — Genesta)** — Crucible's 5 primitives + L1 WAL vs Cairn's existing `event_log` creates dual-write trap. Must merge or federate before L1 substrate lands.
+
+3. **Decision/SessionId Schema Dual Ownership (CRITICAL — Crispin, Genesta)** — Both PRDs mandate `SessionId` branded type + Decision schema overlap (Decision primitive ≠ DecisionRecord audit ≠ DecisionPayload learning). Requires namespace discipline + possible renames in Crucible.
+
+**Two safe convergences identified (Edgar, Genesta):**
+
+4. **Prescriber Pattern Convergence** — Crucible's Router mirrors Forge's existing prescriber family; can share substrate. Both teams should annotate convergence points.
+
+5. **Learning-Loop Feedback Substrate** — Crucible's recorded sessions ARE Eureka's training data. Path 2 ingestion wiring enables productive relationship between self-improvement loops (not competitive).
+
+---
+
+## Three Strategic Questions for Aaron (Cassima)
+
+**Q1: Which repo owns Cairn and Forge?**
+- If `mem`: Crucible has undeclared dependency on this repo; merge or link must happen before Crucible ships.
+- If `harness`: Eureka loses its substrate; Cairn must be forked/mirrored.
+- If duplicated: drift is guaranteed.
+
+**Recommendation:** Lock repository topology NOW. Genesta suggests Option A (merge Crucible into `mem` at v2 stage, maintaining federation boundary for isolated dogfood in `harness` repo).
+
+**Q2: Is Eureka a v1 Crucible feature or separate v2+ integration?**
+- Crucible promises "local-first sovereignty + record everything + self-improve" (§0).
+- Eureka promises "durable, addressable, progressively disclosed knowledge" (§2).
+- 80% mission overlap.
+
+**Recommendation:** Clarify v1 scope. If Eureka is Crucible's built-in memory backend at v1, sequencing/dogfood changes. If separate v2+ integration, acknowledge delayed feedback substrate.
+
+**Q3: Who gets Aaron's time when both projects hit the same blocker?**
+- Both assume Aaron is sole dogfooder.
+- Eureka v1 killer demos (US-1, US-2) require multi-session coding work.
+- Crucible v1 success bar requires building v2 inside v1.
+- Single-threaded resource bottleneck risk.
+
+**Recommendation:** Sequence dogfood phases OR delegate one project's dogfood to external user.
+
+---
+
+## Technical Findings (Cross-Referenced)
+
+### Finding 1: Repository Dependency (Cassima)
+**Full analysis:** `.squad/decisions/inbox/cassima-crucible-eureka-impact.md` §1.2 (undeclared dependency), §4 (resourcing)
+
+- Crucible PRD §1 vocabulary, §2.4, §2.6, Appendix D assume Forge prescribers in `harness`.
+- Actual location: `D:\git\mem\packages\forge`.
+- Neither PRD acknowledges the cross-repo dependency.
+
+**Recommendation:** Stagger projects OR establish explicit dependency + versioning contract.
+
+### Finding 2: Event Schema Collision (Genesta)
+**Full analysis:** `.squad/decisions/inbox/genesta-crucible-eureka-overlap.md` § Finding 1 + 2 + 5
+
+- Crucible §1: 5 typed events (Request, Artifact, Observation, Decision, Question)
+- Cairn today: `event_log` with existing `eventType` vocabulary
+- Eureka v5: Sessions are `kind=session` facts in Eureka's fact store
+- **Dual-write trap:** Which is authoritative for replay?
+
+**Recommendation Option A (Merge):** Crucible's 5 primitives become `eventType` values in Cairn's `event_log`. Crucible's "primitives" are typed façade over Cairn's polymorphic stream.
+
+**Recommendation Option B (Federate):** Crucible ships in `harness` repo (separate). When merged to `stunning-adventure` at v2 stage, federation boundary explicit. Cairn observes Crucible sessions via MCP bridge.
+
+**Gate:** Before Crucible sprint 2 (L1 substrate), convene Graham + Roger + Genesta to lock event-substrate topology.
+
+### Finding 3: SessionId Brand + Decision Schema Collision (Crispin, Genesta)
+**Full analysis:** `.squad/decisions/inbox/crispin-crucible-kr-overlap.md` § 1 + 5, `genesta-...` § Finding 2
+
+**Collision 1 — SessionId Brand (BLOCKER):**
+- Eureka v5 (FR-13): `SessionId` branded type in `@akubly/types` (Aaron R8 directive).
+- Crucible PRD: Implicitly assumes session identity but doesn't specify the type.
+- **Both mandate the same brand; Crucible's requirements differ.**
+
+**Recommendation:** Design `SessionId` for both Crucible + Eureka from day 1. Current design (UUID + validator) is sufficient for both.
+
+**Collision 2 — "Decision" Naming (CRITICAL):**
+- Crucible `Decision` primitive (§1): "any recorded choice by human or agent" — event-like primitive.
+- Forge `DecisionRecord` (audit): Structured audit trail of agent decisions.
+- Eureka `DecisionPayload` (fact): Contemplative structured deliberation with explicit options + rationale.
+- Same word, three structurally different types.
+
+**Recommendation (Crispin):** Crucible rename `Decision` → `ChoiceEvent` or `DecisionEvent`. ESLint ban on cross-system `Decision*` imports.
+
+**Collision 3 — "Artifact" Semantic Drift (HIGH):**
+- Crucible: "any reviewable content — inputs AND outputs" (PRD, patch, screenshot, transcript, upload, diff).
+- Eureka: Informal usage only; "epistemological artifact" = learned memory representation.
+- Risk at storage layer if both use content-addressed store.
+
+**Recommendation (Crispin):** Crucible rename to `ContentBlob` / `CapturedContent`. Eureka avoid "artifact" in public types.
+
+### Finding 4: Learning-Loop Feedback Substrate (Edgar)
+**Full analysis:** `.squad/decisions/inbox/edgar-crucible-learning-overlap.md` § 1–4
+
+- **Crucible's loop:** Prescriber → Review-Gate → Apply/Inbox → Scorecard (minutes to hours per-session).
+- **Eureka's loop:** Sweep → Ranker → Trust/Confidence mutations (hours to days across sessions).
+- **Complementary, not redundant.** Different time horizons, different improvement targets.
+
+**Judgment: CRUCIBLE IS EUREKA'S EVIDENCE GOLDMINE.**
+- Crucible records everything — every decision, every alternative, every tool call, every file read.
+- This is exactly the evidence Eureka needs for learning patterns.
+
+**Current wiring (v5-final):** Path 2 ingestion exists but is on-demand only. Manual `eureka ingest-decisions --session <uuid>` after each session won't survive dogfood.
+
+**Recommendation (Edgar):** Wire automatic ingestion before dogfood starts.
+
+**Option 1 (Simplest):** Add Crucible post-session hook: `on_session_end → eureka ingest-decisions --session $SESSION_ID`. Opt-in via `.cruciblerc` flag.
+
+**Option 2 (Event-driven):** Cairn already emits session-end events. Eureka sweep subscribes; on `session_end` (carries `session_id`), ingests Forge DecisionRecord stream. *v1.5 scope per current PRDs.*
+
+**Option 3 (Prescriber ownership transition):** Forge prescribers move to Crucible; Eureka's extraction-ready design enables Crucible to eventually adopt learning kernel.
+
+---
+
+## Recommendations Summary
+
+**Immediate (Pre-Implementation):**
+1. Aaron locks repository ownership (mem vs harness vs federation).
+2. Graham + Genesta + Roger design event-substrate topology (merge vs federate).
+3. Crispin confirms Decision/Artifact renames in Crucible PRD v1.1-DRAFT.
+4. Cassima sequences dogfood phases or delegates external user.
+
+**v1 Blockers (Before Sprint 2):**
+5. ESLint guardrail (already in Eureka v5-final FR-12 #8) extended to Decision/Artifact cross-system imports.
+6. `SessionId` brand finalized in `@akubly/types` (ships v1, both projects).
+7. Crucible L1 substrate locked to Cairn's `event_log` (Option A) or isolated to `harness` repo (Option B).
+
+**v1 Opportunity (Nice-to-Have Before Dogfood):**
+8. Crucible post-session hook wired for Eureka ingestion (Option 1, simplest).
+
+**v1.5+ (Path D Kernel Extraction):**
+9. Prescriber ownership transition (Forge → Crucible).
+10. Sweep-trigger unification (Cairn session-end → Eureka sweep).
+11. Confidence/trust branded types (orthogonality compiler-enforced).
+
+---
+
+## Source Artifacts (Decision Inbox)
+
+All findings preserved in inbox for detailed review:
+
+- `.squad/decisions/inbox/genesta-crucible-eureka-overlap.md` (20.9 KB, 216 lines) — Architectural findings: 5 overlaps (3 high-risk, 2 safe).
+- `.squad/decisions/inbox/crispin-crucible-kr-overlap.md` (24.5 KB, 136 lines) — KR findings: 2 critical collisions, 1 integration opportunity.
+- `.squad/decisions/inbox/edgar-crucible-learning-overlap.md` (25.6 KB, 202 lines) — Learning-loop findings: parallel loops, feedback substrate, prescriber transition.
+- `.squad/decisions/inbox/cassima-crucible-eureka-impact.md` (25.0 KB, 200 lines) — PM findings: undeclared dependency, 3 strategic questions, resourcing risk.
+
+---
+
 ## Closed Decisions
 
 ### 2026-05-26: Eureka PRD v5-final LOCKED — R8 4-Reviewer Lock-In Panel (Session Identity Unification)

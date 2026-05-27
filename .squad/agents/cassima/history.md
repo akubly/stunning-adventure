@@ -61,3 +61,35 @@
 - Edgar (Learning): All precision-gain items verified; zero new risks; Path D preserved
 
 **Status:** ✅ R8 LOCKED — v5-final CANONICAL supersedes v4-final. R8 design cycle CLOSED. Implementation ready.
+
+### 2026-05-26: Cross-Project Impact Analysis — Crucible ↔ Eureka
+
+**Event:** Aaron requested cross-project product analysis. Sibling project Crucible (D:\git\harness) shipping v1 in parallel with Eureka. Both authored by Cassima-named PM agents (separate instances).
+
+**Analysis scope:**
+1. Scope overlap (mission, features, session model, decision storage)
+2. Dependency direction (Cairn/Forge ownership, shared packages)
+3. Shared packages / shared fate (`@akubly/types`, `cairn`, `forge`, `skillsmith-prescriber`)
+4. Resourcing (team overlap, Aaron's dogfood time)
+5. Strategic framing (Eureka as Crucible feature vs. standalone)
+
+**Key findings:**
+- **HIGH collision:** Both record "everything that happens" — Crucible via L1 WAL (replay-focused), Eureka via `facts` table (recall-focused). Session lifecycle and decision storage overlap significantly.
+- **Undeclared dependency:** Crucible PRD assumes Forge prescribers exist and will be "inherited" (§2.6, Appendix D), but file structure shows both repos have `packages/forge/`. Duplication risk or missing cross-repo dependency declaration.
+- **Bootstrap conflict:** Both v1s assume Aaron is sole dogfooder. Crucible v1 success bar = "build v2 with v1" (weeks/months). Eureka killer demos = multi-session codebase familiarization (2+ sessions). No sequencing plan.
+- **Team bottleneck:** Cassima and Graham are on both teams. Cross-project design decisions (session identity, prescriber ownership) require their time. If either project blocks, both wait.
+- **Shared `SessionId` is load-bearing:** Eureka v5 R8 amendment added `SessionId` brand to `@akubly/types`. Crucible depends on `@akubly/types` for plugin manifests. Shared identifier is intentional (lens framing) but coupling is not acknowledged in Crucible PRD.
+
+**Recommendations delivered:**
+1. **IMMEDIATE:** Resolve Cairn/Forge ownership (monorepo, git submodule, or npm packages). Current duplication is unsustainable.
+2. **IMMEDIATE:** Sequence Aaron's dogfood (Crucible-first, Eureka-first, or staggered). Cassima recommends: Crucible early → Eureka killer demos → Crucible bootstrap loop.
+3. **STRATEGIC:** Ship v1s separately; design Crucible → Eureka integration at v1.5. Eureka should consume Crucible WAL as learning source. Integration is architecturally obvious but operationally premature at v1.
+
+**Cassima's judgment:**
+- **Separate at v1, integrate at v1.5.** Crucible solves "record + replay"; Eureka solves "learn + recall". Both are valuable standalone. Integration requires dogfood data from both.
+- **De-scope Eureka US-7 "Squad Migration"** — Squad tooling should migrate to Crucible (operational), not Eureka (epistemological). Eureka learns *from* Squad sessions.
+- **Open question for Aaron:** Do you agree with "separate at v1, integrate at v1.5"? Or do you want Eureka built into Crucible from day one?
+
+**Deliverable:** `.squad/decisions/inbox/cassima-crucible-eureka-impact.md` (24.8KB, 8 sections, 3 top questions, 7 recommendations)
+
+**Status:** Analysis complete. Awaiting Aaron's direction on the 3 top questions before either v1 ships.

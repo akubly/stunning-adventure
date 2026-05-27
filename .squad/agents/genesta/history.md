@@ -48,3 +48,37 @@
 - Implementation ready
 
 **Status:** v5-final canonical. R8 design cycle CLOSED.
+
+---
+
+## Learnings
+
+### 2026-05-26: Crucible–Eureka Overlap Analysis
+**Task:** Pre-implementation architectural coordination for two simultaneous PRDs (Crucible v1-DRAFT + Eureka v5-final)
+
+**Key Findings:**
+1. **Event Schema Collision (HIGH RISK)** — Crucible's 5 primitives (Request/Artifact/Observation/Decision/Question) vs Cairn's existing `event_log` creates dual append-only logs in same monorepo. Resolution needed: merge Crucible WAL into Cairn substrate OR federate via separate repo. Unresolved dual-write is a trap.
+
+2. **SessionId Brand Collision (BLOCKER)** — Both PRDs mandate `SessionId` branded type in `@akubly/types`. Eureka ships first (R8 locked). Resolution: Crucible MUST import Eureka's `SessionId` brand (not define its own). Type is shared ID format; usage remains independent (ESLint guardrails prevent coupling).
+
+3. **Decision Schema Triple Ownership** — Three decision schemas: Forge `DecisionRecord` (audit), Eureka `DecisionPayload` (deliberation), Crucible `Decision` primitive (event). Resolution: Crucible `Decision` must emit Forge `DecisionRecord` at write time (bridge for Eureka Path 2 ingestion). Without bridge, Eureka cannot learn from Crucible sessions.
+
+4. **Prescriber Pattern Convergence (SAFE)** — Crucible's "prescribers + Router" is algorithmically identical to Forge's existing prescriber family + Eureka's sweep. Convergent substrate by design; can share `learning-kernel` in v1.5+. No v1 coordination needed.
+
+5. **Sweep Mechanics Kinship (SAFE)** — Crucible Curator, Cairn Curator, Eureka sweep all use opportunistic background maintenance pattern. Different data models (events vs facts), same algorithm family. Can share decay formulas when kernel extraction happens (v1.5+).
+
+**Three Coordination Gates (Pre-Crucible Sprint 2):**
+- G1: Graham convenes event-substrate topology lock (merge vs federate)
+- G2: Cassima updates Crucible PRD §1 to reference shared `SessionId`
+- G3: Graham + Cassima lock Crucible `Decision` schema mappability to `DecisionRecord`
+
+**Architectural Verdict:** Systems are compatible IF coordinated before Crucible's L1 WAL lands (sprint 2). All three gates must close before parallel implementation. Deferred coordination = expensive retrofit.
+
+**Interesting-to-Eureka Findings:**
+- Crucible's Coordinator-equivalent (sub-task fan-out) is reference architecture for Eureka v2 multi-agent learning
+- Aperture push/pull model (notification + dashboard) is prior art for Eureka v1.5 commitment surfacing UX
+- Conformance corpus infrastructure (curated sessions + CI replay + drift measurement) is exactly what Eureka US-1 eval needs — reuse, don't rebuild
+
+**Memo Location:** `.squad/decisions/inbox/genesta-crucible-eureka-overlap.md`
+
+**Key Learning:** When two PRDs land simultaneously, substrate-level coordination MUST happen before sprint 2 (when storage layers lock). Waiting until "both ship, then integrate" guarantees one system's retrofit. The coordination cost is O(hours); the retrofit cost is O(weeks). Front-load the hard decisions.
