@@ -1,4 +1,7 @@
 📌 Team update (2026-05-22T14:07:59Z): **Phase 4.6 Wave 2 complete** — ChangeVectorProvider + ForgePrescriberOrchestrator + autoApplyEligible safety gate + hint dedup + forge-prescribe CLI all shipped. 1199 tests passing, 9 work items landed, 4 decisions merged. Wave 3 (Curator-driven orchestration + composition root) deferred behind ADR. — Scribe
+
+📌 Team update (2026-05-28T10:30:00Z): **Crucible CTD Phase 1 Close-out (2026-05-28)** — §11 (Hermetic Replay) FINAL. Cross-section dependencies flagged for Phase 2: Roger (§3 body shape pinning for `llm_response` / `tool_output` / `cross_session_memory` Observations), Alexander (§12 offset-0 materialization sequence + `memoryManifest` in SessionMetadata). Synthesis review: YELLOW, 1 finding routed to Roger §10/§15 on body-shape normalization. Ready for Phase 2 implementation. — Scribe
+
 📌 Team update (2026-05-28T18:05:30Z): **Crucible CTD Rev. 3 — R2 Locks Baked In** — All 6 R2 decisions locked (Aaron triage complete via Coordinator). Your tasks: (1) Acceptance tests can now lock against R2-1 hybrid (test both declared and fallback paths); (2) A10 fixture for queue-as-projection (R2-3); (3) A11 fixture for bisect per-row stamp (R2-4); (4) A8 fixture for nonDominatedReason field (R2-5); (5) A6 fixture for install/fork/load triad (R2-6). Phase 2 fan-out now unblocked. — Scribe
 📌 Team update (2026-05-22T20:35:00Z): **Wave 2 W2-5 complete** — ForgePrescriberOrchestrator shipped. Attenuation + autoApplyEligible propagation live. ATTENUATION_FLOOR=0.1 exported from @akubly/types. Fail-open on provider errors. Forge tests 609 passing (+10), root build green. — Scribe
 📌 Team update (2026-05-22T20:29:36Z): **Wave 1 complete** — canonical type adopted across packages, SqliteChangeVectorProvider live, zero-vector summaries filtered. Alexander (W2-2) + Rosella (W2-3/W2-7) complete. Forge 599 + Cairn 564 tests green. — Scribe
@@ -52,6 +55,13 @@ Graham's v3 scope finalized. Decisions archived. Ready for Wave 2 implementation
 **Tech:** TypeScript/Node.js 20+, npm monorepo, Vitest, SQLite
 
 ## Learnings
+
+### 2026-05-28: §11 Hermetic Replay authored — CTD-spec ↔ TDD-strategy parallel
+
+- Wrote §11 (`docs/crucible-technical-design/11-hermetic-replay.md`, 204 lines, ≤3pp) as Lane 4 of Phase 1. The unusual setup — I authored the TDD strategy that §11's tests will bind to — clarified a parallel worth naming: **the CTD section is the spec for the implementation contract, the TDD strategy is the spec for what tests assert against that contract**. The two are not redundant; they are reciprocal. §11 names `LedgerWindowReader` / `ReadSetHasher` / `CasStore` as the seams; TDD §3.1/§3.2 specifies their test-double policy; §6.3/§6.8/§6.9 specifies the property tests; A2/A9 specifies the acceptance shape. None of those four facets can be inferred from the others — they have to agree by construction, which is exactly why same-author authorship of both is high-leverage rather than redundant.
+- **Replay-equivalence-oracle design pattern** that crystallized while writing §11.6: an oracle that compares "everything that is structural" against "everything observed" works better than the reverse (mask the few informational fields, compare the rest by deep equality). The structural/informational split has to be an explicit table on every field, not a rule-of-thumb — anything wall-clock-derived has to be tagged at emission so `normalizeTimestamps()` can mask it generically rather than via a per-field allow-list that drifts. Same pattern applies to the monotonicity invariant: keep it as a **separate** property test against each ledger independently, not folded into the oracle, because conflating "structural equivalence under replay" with "monotonicity within a single ledger" produces an oracle that fails for the wrong reasons.
+- **Refuse-to-start enumeration matters more than the happy path.** Five preflight conditions in §11.7, each mapped to a distinct `divergenceKind` enum value, are what make the doctrine ("re-feed, never re-execute; legitimate non-determinism is masked, illegitimate divergence is hard-failed") actually testable. A replay driver that silently degrades on a CAS miss or a missing pinned plugin version would launder corruption; the refusal enum is the contract that says it won't.
+- **Cross-section dependency discovery as a side effect of writing.** The most important thing §11 surfaced wasn't internal to §11 — it was that Roger's §3 row schema needs to canonicalize the `{ requestHash, responseRef }` body shape for re-fed Observations, and Alexander's §12 SDK bootstrap needs to specify the exact write order that produces the offset-0 row set the preflight asserts against. Both went into the Lane 4 decision drop. Writing the implementation contract is the most reliable way to find the seams where neighboring contracts have to agree.
 
 ### 2026-05-22: Wave 2 W2-6 full pipeline integration
 
@@ -589,3 +599,54 @@ No change to my round-2 commitments on Pareto fitness ownership, branching-as-ev
 3. **`.squad/agents/laura/history.md`** appended (this entry) ✓
 
 ---
+---
+
+## Phase 2 — CTD §16 Test Strategy + Invariants (FINAL)
+
+**Date:** Phase 2 fan-out.
+**Output:** `docs/crucible-technical-design/16-test-strategy-invariants.md` (16,182 bytes).
+**Decision drop:** `.squad/decisions/inbox/laura-ctd-phase2-laura.md`.
+
+### Pattern: §16 as a cross-reference document, not a re-author
+
+§16's job in the CTD is to be the **thin CTD-side handle** on the
+authoritative TDD strategy doc. The instinct (mine, early) was to restate
+test counts, fixture patterns, and invariant propositions in §16 so a
+CTD-only reader could understand the test posture without leaving the CTD.
+That instinct is wrong here: duplication creates a second source of truth
+that drifts, and the drift cost is exactly the mock-drift cost Q7 captures
+(compounded across every contributor who reads only one of the two docs).
+
+The pattern that worked: §16 contains **only** what the CTD uniquely
+authorizes — CI-stage runners, the collaborator → CTD-section alignment
+matrix, the productivity-loop smoke test (it composes seams owned by
+multiple CTD sections, so neither the TDD nor any one CTD section can host
+it cleanly), and the tooling/conformance execution specs. Everything else
+is a one-line "see TDD §X." Net effect: §16 stays at 3 pages and gets
+**stronger** when the TDD strategy evolves, because there is nothing in
+§16 to keep in sync.
+
+Reusable for any future "thin reference" CTD section: enumerate what the
+referenced doc owns, refuse to restate it, and confine the host section to
+the bindings that only the host can author.
+
+### Pattern: alignment matrix as teaching artifact
+
+The collaborator → CTD-section alignment matrix (§16.3) is the artifact
+I'd reach for first when onboarding a new engineer. It collapses two
+otherwise-disjoint vocabularies (TDD collaborator roles, CTD section
+numbers) into a single table, and the **tier column** tells the reader
+which mock-drift defense to think about for each seam. The matrix
+surfaced one structural observation: `QueryExecutor` and
+`CausalSliceEngine` bind to CTD content that does not yet exist as a
+standalone file — the L2 row of §1.2 is the only home for the former
+today, and L5 Investigation is unscheduled until Phase 2/3. This was
+**not** apparent from reading either doc alone; it fell out of forcing
+every TDD §3 row to land in a CTD §X cell. Phase 3 synthesis can use the
+matrix as a coverage check for "are all the architectural seams actually
+sectioned?"
+
+The teaching angle: the matrix is also the **rule** for how new
+collaborators get added. Adding a row to TDD §3 without adding a
+corresponding §16.3 row is a documentation bug; the matrix is the
+forcing function that keeps the two docs honest.

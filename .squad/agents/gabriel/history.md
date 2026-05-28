@@ -1,5 +1,7 @@
 # Gabriel — History
 
+📌 Team update (2026-05-28T10:30:00Z): **Crucible CTD Phase 1 Close-out (2026-05-28)** — §5 (Router Design) FINAL. 4 Aperture↔Router event shapes locked for Valanice §9 sync: `router.paused`, `router.decision`, `aperture.structural-ack-prompt`, `aperture.structural-ack`. Synthesis review: YELLOW, 1 finding routed (5: `dependentPaths` type mismatch with Rosella §7, Phase 2 §9/§10). Phase 2 coordination: Valanice (R2-3 queue mechanics sync pair). — Scribe
+
 ## 2026-05-28: Crucible CTD Rev. 3 — R2 Locks for Gabriel
 
 **Locked decisions** impact your execution model and bisect infra. Your tasks:
@@ -553,3 +555,46 @@ carry bus traffic," I withdraw and we go to Round 4.
 
 **Strongest opinion:** if we ship items 1–4 of the safety-critical sub-list first, we have a credible Router-as-safety-chokepoint claim even if items 5–8 slip a sprint. Worst-case slip is "productivity loop is slower", not "safety property collapses". Sprint 1 must land: R4 + the fast-check toehold + the L1 WAL hook_verdict_witness population path. Without those three, every other T1 story is unfalsifiable.
 
+
+### 2026-05-28 — CTD Phase 1 Lane 5: §5 Router Design authored
+
+Authored `docs/crucible-technical-design/05-router-design.md` (≤3pp) under
+the R2 locks. Three patterns worth carrying forward:
+
+**1. Router state machine as a projection, not a process.** The
+`paused-awaiting-structural-ack` sub-state (R2-3 LOCK) is not stored in a
+Router-side queue or status table. It is materialised by the L2 projection
+from a `router.paused` Decision row plus any subsequent
+`aperture.structural-ack` Observation. The Router itself is stateless
+across restart with respect to paused work — on boot it scans L1 for
+unacked `router.paused` rows. This collapses three potential bugs at once:
+queue-vs-ledger divergence on crash, double-pause on re-emission, and
+"hidden control plane state" that would break §6.5 Hook Verdict
+Consistency. The general lesson: if a piece of runtime state has a single
+source of truth in the ledger AND the cost of re-derivation is bounded,
+do not cache it — even if "performance" intuition says you should.
+
+**2. Cross-section event-shape contract as the deliverable.** The
+Gabriel↔Valanice sync pair on R2-3 was unblocked by writing the contract
+*as a table in the decision drop* rather than as prose in §5. Four columns
+(discriminator string, host primitive kind, payload fields, guarantees)
+plus three numbered idempotency guarantees gave Valanice everything she
+needs to build §9's `StructuralApprovalQueue` projection without a single
+follow-up question. The contract table belongs in the decision drop (the
+coordination artifact) more than in the spec section (the design
+artifact); §5 references the shapes, the decision drop *commits* to them.
+Pattern for future sync pairs: tabulate the events at the boundary with
+explicit hosting-primitive + idempotency-cardinality, and ship that table
+to the other author *before* their section is authored.
+
+**3. Tier-as-attribution, never as inference.** Classification of
+structural vs data is determined by the generator's declared interface
+(`StructuralProposalGenerator` vs `DataProposalGenerator`), NOT by
+re-inspecting the payload. Same discipline for `sourceTier`: the harness
+stamps it at load (per the Round 5 #6 lock on `OptimizationHint.source`),
+and the Router reads it as ground truth. Re-deriving either field at L4
+would couple L4 to L3 internals AND break the Trust-Tier Monotonicity
+proof obligation (§6.7) because the proof relies on the tier value being
+carried unmodified through the row's causal lineage. The principle:
+classification fields that participate in invariants must be *carried*,
+never *inferred at consumption*.

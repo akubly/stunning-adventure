@@ -748,3 +748,42 @@ The trade is honest: my tier (T2) keeps the deep investigation work, but the min
 - Full analysis: `.squad/decisions/inbox/valanice-eureka-crucible-ux-overlap.md`
 
 **Status:** Analysis complete. Awaiting Aaron disposition on three open questions. Attention-conflict matrix and vocabulary collision list documented.
+
+
+---
+
+## 2026-05-28 Phase 2 — §9 Aperture + §13 CLI Shell authored; §5 patched (finding 6b)
+
+**Trigger:** CTD Phase 2 fan-out. I own §9 and §13, and I own the resolution of Phase 1 synthesis finding 6b (Aperture-written ack Observation sub-kind disagreement between Gabriel's §5.3 and Alexander's §8.2).
+
+### Finding 6b — sub-kind-vs-discriminator design rationale
+
+The disagreement was whether Aperture writes its ack as `Observation{subKind:'external_input'}` with `body.eventType: 'aperture.structural-ack'` as the discriminator (Gabriel's draft) or as a dedicated `Observation{subKind: 'structural_proposal_acked|rejected|expired'}` (Alexander's references). I picked the dedicated sub-kinds and patched §5.3 surgically. Rationale captured for future similar choices:
+
+1. **Subscriber dispatch should not require body parsing.** Subscribing by `body.eventType` couples readers to body schema; subscribing by `(primitiveKind, subKind)` matches Roger's §3.3.1 sub-kind index and stays inside the §6 vocabulary lane.
+2. **Sub-kinds ARE the §6 idiom.** When a behavior is "this row means X to multiple subscribers," the §6.5 evolution rule explicitly endorses sub-kind additions for exactly this purpose. `external_input` is a catch-all; promoting structural acks out of the catch-all is honest naming.
+3. **The discriminator survives on the payload.** `eventType` is still in `StructuralAckPayload` for human-readable trace inspection — losing nothing in observability.
+4. **Routing-by-sub-kind has a property test attached.** Roger's WAL index is keyed on `(primitiveKind, subKind)`; the dispatch table is testable as a pure function of L1 rows without instantiating Gabriel's projection.
+
+### StructuralApprovalQueue-as-pure-projection pattern
+
+R2-3 locked "queue is a view, not a write-stateful table." I built §9.5 around literally a `CREATE VIEW` over `aperture_events` filtered by `kind = 'structural-proposal-pending' AND resolved = 0`, with resolution itself derived from a sub-kind match (not a stored flag). Why this is reusable beyond Aperture:
+
+1. **Boot recovery is free.** No "queue state file" to drift, repair, or version. `ApertureProjector` replays L1 `structural_proposal_*` Observation rows in offset order and the queue is consistent.
+2. **Crash safety is structural, not procedural.** Mid-session crash leaves no queue state at all; next boot recomputes from L1. The proposal is durable because the *originating Observation* is durable, not because we wrote a separate queue entry.
+3. **Default-not-applied is enforced by absence of write paths.** The queue cannot "auto-apply" anything because rendering a row in the queue is a SELECT, not a state machine.
+4. **The pattern generalizes to any L2 surface where the read shape is "unresolved Xs."** Inbox, watchlist, breakpoint registry — same trick: project the originating row, derive resolution from a subsequent sub-kind, never store a duplicated state column.
+
+Trade-off: the SQL view recomputes on every read. For Aperture's volumes this is fine; on hot paths a materialized view with `onCommit` invalidation would be the upgrade — but it stays a projection, never a write-of-record.
+
+### What I gave to Sonny
+
+Both §9 and §13 flag Sonny advisory consult per Appendix C consultant rows. Specifically asking him to validate (a) §9.8 investigation tool shapes against DAP-style debugger primitives, (b) §13.1 verb vocabulary against gdb-conventional verb naming, and (c) the gdb→Aaron translation table I still owe him (open since Round 7 triage 2026-05-25).
+
+### Outputs
+
+- `docs/crucible-technical-design/09-aperture.md` — FINAL.
+- `docs/crucible-technical-design/13-crucible-cli-shell.md` — FINAL.
+- `docs/crucible-technical-design/05-router-design.md` — surgical §5.3 patch (finding 6b).
+- `.squad/decisions/inbox/valanice-ctd-phase2-valanice.md` — decision drop.
+

@@ -1,4 +1,6 @@
 📌 Team update (2026-05-28T18:05:30Z): **Crucible CTD Rev. 3 FINAL — Phase 2 Fan-Out Unblocked** — All 6 R2 decisions locked, baked into plan rev. 3. Informational: Phase 2 fan-out is unblocked; you are also the Phase 3 assembly owner; rev. 3 plan is your authoritative spawn manifest. Phase 2 lanes: 9 agents, 6 parallel waves, ~9-10 days. Cross-section sync pairs (Gabriel ↔ Valanice on R2-3 queue mechanics; Rosella ↔ Roger on R2-6 lockfile) are explicit coordination touchpoints during Phase 2 authoring. — Scribe
+
+📌 Team update (2026-05-28T10:30:00Z): **Crucible CTD Phase 1 Close-out (2026-05-28)** — Phase 0 (§2+§6), Phase 1 (8 sections: §1,§3-§5,§7-§8,§11-§12), Synthesis review all FINAL. **YELLOW verdict:** 6 CLEAN / 4 MINOR / 2 STRUCTURAL / 1 APPLIED. Applied §6.3 vocabulary amendment (4 `structural_proposal_*` sub-kinds). Findings routed: Roger (2a/2b/12b §10), Valanice (6b §9), you (finding 10 §1/§14, Phase 3). No new open questions for Aaron. Phase 2 fan-out unblocked. — Scribe
 📌 Team update (2026-05-27T07:07:46Z): **Cassima reply superseded** — Graham's prior draft (`graham-cassima-reply.md`) was panel-rejected on scoping complexity. Erasmus redrafted with narrower freeze (SessionId + DecisionRecord only, defers WAL/event + prescriber), aligned to Aaron's May 26 directives (storage fork + Eureka standalone). Aaron approved as-drafted. New decision posted to decisions.md; Graham's reply remains in ledger for audit. — Scribe
 📌 Team update (2026-05-27): **Eureka cross-PRD coordination position** — Position paper + reply to Cassima on shared schema freeze. Narrowed scope to `@akubly/types` only (SessionId brand + DecisionRecord); excluded Cairn's forked WAL from negotiation; proposed optional-adapter pattern for WAL-as-learning-source; deferred full freeze until post-Sprint-2 (both sides have exercised code). Three tensions surfaced: scope mismatch (cairn forked), coupling contradiction (standalone vs WAL consumption), premature freeze. — Graham Knight [**SUPERSEDED by Erasmus revision (2026-05-27T07:07:46Z)**]
 📌 Team update (2026-05-23): **Wave 3 decisions accepted** — R2 approved as `@akubly/skillsmith-runtime`; MCP dropped from Wave 3; always-on Curator hook; 7 work items, ~18 tests. Docs revised, ready to fan out. — Graham Knight
@@ -147,6 +149,66 @@ Roger (W2-1) + Rosella (W2-4): canonical `ChangeVectorSummary`, `ChangeVectorPro
 **Tech:** TypeScript/Node.js, npm monorepo, MCP SDK, Copilot CLI/Extensions/Engine SDKs
 
 ## Learnings
+
+### CTD Phase 0 — §2/§6 Coherence Self-Review Checklist (2026-05-28)
+
+**Reusable pattern for any two-section foundation drop where one section
+defines types and the other defines a boundary that carries them.** Before
+declaring done, walk this five-item checklist:
+
+1. **Union flows, not duplicates.** Does the boundary section *import* the
+   types from the taxonomy section (one source of truth), or has it
+   inadvertently re-defined them? Re-definition = future drift. Force the
+   `import type { … } from './NN-other-section'` shape even in design docs.
+2. **Optional-field round-trip.** For every OPTIONAL field at the boundary,
+   trace where it materializes in the row schema. R2-1 taught us that an
+   OPTIONAL boundary field needs a REQUIRED tag on the materialized row
+   (`commitmentMethod: 'declared' | 'fallback'`) so traceability survives
+   the omission path. Apply this anywhere "declared else fallback" lives.
+3. **Enum cross-walk.** Every sub-kind enumerated in the taxonomy must have
+   a name in the boundary section (or be explicitly "L1-internal-only").
+   M3 `synthetic_output` ↔ `ToolCallBoundary.phase: 'side_effect_only'` is
+   the canonical example.
+4. **Cross-section "§6.x" disambiguation.** Within CTD, "§6" is the
+   Primitive Taxonomy section; within Laura's TDD strategy, "§6.x" are
+   the invariants (§6.1–§6.9). When referencing Laura's numbered invariants
+   from a CTD section, **always prefix with "TDD"** (e.g.,
+   "TDD §6.8 Bootstrap-Capture-Completeness"). Naked "§6.8" inside a CTD
+   file reads as a sub-section of CTD §6 and confuses readers.
+5. **Acceptance signal for Laura is a separate, explicit subsection.** Not
+   left implicit. Name the A-scenarios + invariants writable against the
+   contract verbatim from the plan's acceptance criteria so Laura can
+   start without asking.
+
+### Architectural Patterns Committed in §2/§6 That Other Authors Should Know
+
+- **Two-pointer + one-hash lineage model.** Primitives carry `parentId`
+  (structural production lineage) and `causalParentId` (§2.8 sub-task
+  spawn edge) as distinct pointer fields. Decision rows additionally carry
+  a hash-mediated context-window edge. Other sections that index lineage
+  (Aperture, Investigation, Replay) MUST distinguish these three or queries
+  will silently merge unrelated edges.
+- **Interface naming convention.** Code-side names use the §2 column of the
+  alias table (e.g., `AppendProtocol`, `LedgerWindowReader`, `ReadSetHasher`).
+  Laura's TDD collaborator names exist as re-export aliases so London-school
+  tests mock against the same surface they assert against. New sections
+  should add a "Collaborator Name Aliases" subsection any time they
+  introduce a seam that Laura mocks.
+- **Schema-version pin at offset 0, refuse divergent rows.** v1 sessions
+  pin `schemaVersion` via a bootstrap Observation and reject mixed-version
+  rows. Forward-compat is additive-only within a major version; unknown
+  fields round-trip via CBOR; unknown sub-kinds route to a `kind:unknown`
+  Aperture attention event (never silently dropped). All §3+ schema work
+  should honor this.
+- **The boundary's NOT-cross list is enforced statically.** §2.9's named
+  dependency-cruiser rules ship as part of the contract. New transport
+  adapters add allow-list entries via PR; never loosen the existing rules.
+- **OPTIONAL-at-boundary, REQUIRED-tag-on-row.** Pattern applies beyond
+  R2-1. Use it any time L0 may or may not declare a structural hint:
+  L1 records which path was taken so investigation tools can group sessions
+  by capability tier.
+
+---
 
 ### Multi-Phase Cadence: scope → reconcile-with-strategy → bake-in-locks → fan-out (2026-05-28)
 
@@ -539,3 +601,149 @@ Resolved 10 design-tilted micros Cassima routed to me (not Aaron) after 8 Aaron-
 
 - **Cassima's batching paid for itself.** Routing 10 micros to me as a single cluster (rather than 10 separate Aaron pings) saved an enormous serialization cost — half the decisions cross-reference each other (I.4 + I.5 share the canonical-types principle; I.1 + I.2 share Roger's commit-driver work; I.7 references I.6 indirectly through join-key semantics). Resolving them in one pass let me check coherence inside the batch instead of over a week of sequential exchanges.
 
+
+### CTD Phase 1 Lane 6 — §1 as canonical introduction (2026-05-28 Phase 1)
+
+- **§1-as-canonical-introduction pattern.** When a top-level overview section is authored *before* its dependent sections land (as here — §1 parallel with the rest of Phase 1), the right move is to write it declaratively against *locked decisions* only, never against speculation about what the parallel lanes will produce. The §1 file references §2 and §6 inline ("see §6 for the envelope") rather than restating them, and explicitly defers the cross-section interface-coherence pass to a *separate* Phase 1 synthesis review. This keeps §1 stable: if Phase 2 reshuffles a sub-section, §1 doesn't need re-authoring; only the synthesis review does. Generalizable: any "intro" section in a multi-phase doc should be authored from locks, not from peers.
+- **Chamber ↔ layer notation: █ primary / ▒ participates / italic-product-name for "lives outside the runtime."** The chamber-to-layer table has three distinct truth-claims to make about each chamber: (1) which layer is its *home*, (2) which layers it *touches* via contract, (3) whether it's *inside* Crucible or an *independent product that coexists*. One symbol per claim, with a one-line legend at the table head. Crucially: listing Cairn and Forge in the chamber table at all (with empty layer cells) is a *deliberate non-membership pin* — future readers who arrive expecting "the 6 chambers map to the 5 layers somehow" need to see Cairn/Forge with no layer membership to learn that the answer is "they don't, they're separate products." Omitting them would invite the wrong inference.
+- **Package-decomposition naming conventions for @akubly/crucible-*.** Three rules: (a) one package per layer with token names matching the layer noun (l0-provider, l1-wal, derived-query, generators, outer, pplier, perture); (b) the L0/L1 *boundary contract* gets its own package (crucible-boundary) so both L0 and L1 can import it without creating a layer-to-layer dependency — the boundary is a *third party* to the two layers it joins; (c) the composition root (crucible-runtime) is the *only* package permitted to import from every other Crucible package, enforced by dependency-cruiser. This third rule is what keeps layer ordering enforceable: without a single permitted "everywhere-importer," the temptation is to let any package import any other "just for wiring," and the layer discipline rots.
+- **Cross-product packages stay outside the scope.** @akubly/types (shared), @akubly/cairn, @akubly/forge, @akubly/skillsmith-runtime are not in the Crucible namespace and the CTD's §1 explicitly does not enumerate them — they belong to §15 (Coexistence). Conflating the namespaces in §1 would suggest delegation; keeping them out of the table is itself a design statement.
+
+### CTD Phase 1 Synthesis — The "12 Coherence Checks" Methodology (2026-05-28)
+
+After 10 parallel author lanes landed Phase 0+1 CTD sections (~168 KB), ran the
+gate review as a structured 12-check matrix per the CTD plan rev. 3 Appendix C
+"Phase 1 Synthesis" spec. Verdict: YELLOW — 6 CLEAN, 4 MINOR, 2 STRUCTURAL,
+1 APPLIED. Phase 2 spawns; two structural findings routed to Valanice (§9)
+and Roger (§10) as natural Phase 2 work. Inbox: `.squad/decisions/inbox/
+graham-ctd-p1-synthesis.md`; full review at
+`docs/crucible-technical-design/00-phase1-synthesis-review.md`.
+
+**The 12-check matrix as a reusable synthesis pattern.** For any multi-author
+parallel CTD/architecture phase where N sections land independently against
+shared Phase 0 type contracts, the gate review decomposes coherence into three
+classes of row, every one of which is auditable in a single table:
+
+1. **Adjacent-section pairs along the data-flow spine** — one row per `§n ↔
+   §n±1` seam. Reading top-to-bottom of the stack catches name-mismatch,
+   schema drift, and missing-method-on-contract findings (Findings 5, 6b, 12b
+   here were all this class).
+2. **Cross-cutting concerns** — one row each for the orientation section (§1)
+   reading against the layer-specific sections; one row for vocabulary
+   consistency across the whole corpus (Finding 2a Timestamp ms-vs-ns and
+   Finding 11 dependentPaths semantic split surfaced here).
+3. **Author-flagged coordination notes carried forward from the decision
+   drops** — the authors are the first reviewers; reading their own "newly
+   surfaced ambiguity" and "coherence touchpoint" sections turns them into
+   pre-identified findings. Alexander's two notes (12a/12b) and Laura's note
+   on body-shape pinning (Finding 9) all came in this way.
+
+The right verdict color is **YELLOW** when nothing blocks but coordination
+work is required — calling it GREEN understates the Phase 2 hot items;
+calling it RED triggers unnecessary lane rework. Reserve RED for "a Phase 1
+section must be revised before Phase 2 spawns."
+
+**Ownership routing under reviewer-rejection lockout.** When two authored
+sections disagree on a contract (Finding 6b — Gabriel's §5.3 said
+`subKind:'external_input'`, Alexander's §8.2 said
+`structural_proposal_*`), the lockout rule says the original author cannot
+revise on rejection. But these weren't rejections — both authors *flagged the
+coordination explicitly* in their decision drops. The correct routing in
+that case is to **the natural downstream consumer** (Valanice as the §9
+author who owns the queue projection) rather than to either flagging author
+or to Graham as default. The downstream consumer is the one who has to pick
+one shape anyway when authoring; folding the cross-section amendment into
+that work is cheaper than handing it off. Graham executes only as fallback
+if the downstream author defers.
+
+**Additive vocabulary fixes apply inline; structural fixes route.** The §6.5
+evolution rule explicitly admits additive sub-kind enum values within a major
+version, so adding four `structural_proposal_*` Observation sub-kinds to
+§6.3 was a one-edit inline patch, not a routed finding. The rule of thumb:
+if a fix is purely additive and provably forward-compatible under the doc's
+own evolution rules, apply it during the review and document it under
+"Applied vocabulary fixes." Anything that changes a function signature
+(`appendFenced`), redefines a type's range (`Timestamp` ns-vs-ms), or
+requires two sections to pick one shape (`dependentPaths`) gets routed
+with an explicit owner and an explicit Phase. Don't smuggle structural
+changes into "vocabulary fixes."
+
+**The 12-check matrix is reusable for the Phase 2 synthesis gate.** Same
+template: pairs along the spine (§9 ↔ §5, §10 ↔ §3, §15 ↔ §3, §13 ↔ §12),
+cross-cutting (§1 reread, vocabulary), carry-forward (Phase 2 author drop
+coordination notes). Maintain the table as living state across phases — each
+gate review starts by re-running last gate's MINOR findings to confirm Phase
+2 authors absorbed them, then runs the new matrix on Phase 2 outputs.
+
+
+---
+
+## CTD Phase 2 — §14 + Finding 10 Self-Fix (2026-05-28)
+
+### Pattern: Layer Sub-Tier Disambiguation
+
+When a section author self-labels their component at a layer ("§8 is L4")
+but the §1 layer table lists that layer as owned by a different component
+("L4 = Router"), the cheapest honest fix is **split the §1 row into named
+sub-tiers** rather than (a) inventing a new layer number ("L4.5"), or (b)
+asking the downstream author to relabel. Reasons:
+
+1. The downstream author's self-label is usually correct at the tier
+   level — they're at L4, not at L4.5. The disagreement is about
+   *granularity*, not *level*. Inventing a new layer rewrites the mental
+   model for every reader; sub-tier framing preserves it.
+2. The §1 owner pays the edit cost (one row split + one short prose note)
+   instead of forcing the downstream author into churn that would also
+   require a §1 amendment anyway. Net edit cost is lower and centralized.
+3. Sub-tier framing matches existing package decomposition when the two
+   sub-tiers ship as separate packages that version together (here,
+   `@akubly/crucible-router` + `@akubly/crucible-applier`). The doc
+   structure tracks the code structure.
+4. The §1.1 diagram doesn't need to change — it already shows Router and
+   Applier as adjacent boxes; the sub-tier note just labels what readers
+   were already seeing.
+
+Apply this pattern whenever a layer table conflicts with a section's
+self-label and the section is structurally correct. Reserve "invent a new
+layer" for genuine architectural additions, not for table-row
+disambiguation.
+
+### Pattern: One-Page-Section Discipline
+
+§14 is the shortest CTD section (≤1 page, prose-only). The temptation in a
+≤1pp section is either to (a) restate locked context for completeness, or
+(b) duplicate detail that lives in a referenced section (here §7.A,
+Appendix 7-E, §15). Both inflate the page without adding signal. The
+discipline that worked:
+
+1. **Open with a "locked context" line** that names the locks by their
+   one-line summary and forbids relitigation. This buys back half the
+   page that would otherwise go to restating Aaron's lock, TDD-Q2, and
+   the §7.A reference.
+2. **Use a contract table as the load-bearing artifact.** SHARED vs
+   PRIVATE in two columns is more information-dense than prose and is
+   what downstream authors will actually grep for.
+3. **One paragraph per acceptance criterion, no more.** §14 had three
+   criteria → three paragraphs (table caption, adapter pattern, boundary
+   statement) + a thin acceptance-signal closer. Anything longer
+   indicates the section is doing work that belongs in its hard-dependency
+   section.
+4. **Cross-refs over restatement.** §14 references §7.A by id, Appendix
+   7-E by id, §15 by id — never re-explains. Readers who need detail
+   follow the link; readers who don't get a one-page orientation.
+
+Calibration check: if a ≤1pp section runs longer than ~90 lines of
+markdown (≈one printed page including the contract table), assume it's
+absorbed work from a hard-dependency section and trim.
+
+### Carry-forward to Phase 3
+
+- Finding 10 was the only self-owned synthesis-review finding for §1;
+  closed. No carry-forward to Phase 3 ADR pass on this item.
+- §14 is FINAL; downstream consumers are §15 (Roger — `@akubly/types`
+  evolution names `SessionId` + `DecisionRecord` with `schemaVersion`)
+  and the v1.5 adapter implementation (Rosella + Graham). No Phase 2
+  blocker created.
+- Sub-tier disambiguation pattern is a candidate technique for the Phase
+  2 synthesis gate if any §9 / §10 / §13 / §15 / §16 author self-labels
+  in a way that conflicts with §1.2 again. Re-run the same fix shape.

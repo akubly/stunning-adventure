@@ -1,4 +1,6 @@
 📌 Team update (2026-05-22T14:07:59Z): **Phase 4.6 Wave 2 complete** — ChangeVectorProvider + ForgePrescriberOrchestrator + autoApplyEligible safety gate + hint dedup + forge-prescribe CLI all shipped. 1199 tests passing, 9 work items landed, 4 decisions merged. Wave 3 (Curator-driven orchestration + composition root) deferred behind ADR. — Scribe
+📌 Team update (2026-05-28T10:30:00Z): **Crucible CTD Phase 1 Close-out (2026-05-28)** — §3 (L1 WAL Substrate) + §4 (Hook Bus) FINAL. Phase 1 synthesis review: YELLOW verdict, 13 findings routed. Your Phase 2 errata: finding 2a (Timestamp shape drift: split `Timestamp` vs `TimestampNs`), 2b (add `manifestRoot` flag), 12b (add `appendFenced` wrapper). Cross-section dependencies: Laura (§11.2 body shape pinning), Alexander (§12 offset-0 materialization), Rosella (R2-6 lockfile/snapshot handshake). — Scribe
+
 📌 Team update (2026-05-28T18:05:30Z): **Crucible CTD Rev. 3 — R2 Locks Baked In** — All 6 R2 decisions locked (Aaron triage complete via Coordinator). Your tasks: (1) `BootstrapPayload` shape (literal+manifest, R2-2); (2) `commitmentMethod: 'declared' | 'fallback'` tag on Decision rows (R2-1); (3) transitive-dep snapshot field at fork (R2-6); (4) coordinate with Rosella on lockfile format. Phase 2 fan-out now unblocked. — Scribe
 📌 Team update (2026-05-22T20:35:00Z): **Wave 2 W2-5 complete** — ForgePrescriberOrchestrator shipped. Attenuation + autoApplyEligible propagation live. ATTENUATION_FLOOR=0.1 exported from @akubly/types. Fail-open on provider errors. Forge tests 609 passing (+10), root build green. — Scribe
 📌 Team update (2026-05-22T20:03:56Z): Wave 2 v3.1 scope final — autoApplyEligible propagates through OptimizationHint; constants NEGATIVE_IMPACT_AUTO_APPLY_GATE=-0.2 and ATTENUATION_FLOOR=0.1; CLI surface only — no MCP in Wave 2. — Graham Knight
@@ -607,3 +609,79 @@ Full spike inbox: .squad/decisions/inbox/roger-spike-fork-a-port-2026-05-25T0030
 **Executive summary.** Surveyed the existing Cairn SQLite surface (87 src files, 31 in db/, 13 linear migrations, 16 tables, 188 prepared/transaction call sites, 80 join/groupby query sites, 478-ish tests, one load-bearing partial UNIQUE index for backpressure, zero use of FTS/virtual-tables/triggers/UDFs/triggers — relational but shallow) and three engine candidates: A.1 pure-Rust edb via NAPI-RS (12-16 weeks, ~100% SQL-ergonomics loss, strongest correctness story, adds a Rust toolchain to a Node monorepo), A.2 Kris Zyp's lmdb Node binding with its eforeCommit hook (8-12 weeks, ~100% SQL loss, 80us-budget at risk under JS dispatch), and A.3 hybrid — custom append-only WAL file in pure TS for L1 only, keep etter-sqlite3 for the other 15 tables and all derived views (5-9 weeks, ~5-10% SQL loss, forward-compatible migration). **Verdict: REJECT A.1, ENDORSE-WITH-CAVEATS A.3, A.2 only as fallback if the JS predicate budget fails in integration.** Phase A's hard contracts bind only L1; rewriting the other six tiers to honor a contract that does not bind them is over-correction. Anti-anchoring alternative reading: if Crucible is heading toward regulatory determinism, 10^9+ rows, or WASM-runtime distribution, A.1's "one substrate, contracts enforced by construction" wins despite the cost — I'd flip if any of those three become true. Tagged Alexander (fork (b) is a contract-amendment, not a contract-honor — sqlite3_update_hook fires post-write not pre-fsync) and Gabriel (fork (c) breaks causal_read_set_hash globality the moment you shard across multiple SQLite files — contract (4) needs amendment).
 
 -- Roger
+
+
+## Learnings (2026-05-28 — CTD Phase 1 Lane 1: §3 L1 WAL + §4 Hook Bus authored)
+
+WAL design patterns and invariant-enforcement mechanisms locked in §3 + §4 that
+I'll want when authoring §10 (Session Model) and §15 (Compaction/Snapshots) in
+Phase 2:
+
+- **One fsync per group-commit, CAS-before-WAL ordering.** The rule that lets
+  the WAL row safely reference a `payloadHash`/`readSetHash`/
+  `hookVerdictWitness`/`contextWindowCommitment` is that the CAS body is
+  fsync'd *before* the WAL record is written. §15 compaction must preserve
+  this ordering on snapshot-spill: snapshot blob durable in CAS before the
+  snapshot pointer row lands in the WAL.
+
+- **Self-audit by chain alone.** `prevRoot[i] = selfRoot[i-1]` plus per-row
+  `selfRoot = BLAKE3(CBOR(row \ selfRoot))` plus a per-session
+  `manifest.lastSelfRoot` makes `cairn fsck` a single linear scan with O(1)
+  state. `index.idx` is advisory and rebuildable; never trust it for
+  correctness, only for seek-speed. Carry this same discipline into §15 —
+  snapshots are advisory acceleration, never authoritative.
+
+- **Hybrid resolver as a named seam.** `ContextWindowResolver` honoring R2-1
+  is a tiny pure function but giving it a name (instead of inlining the
+  if-declared-else-prefix branch into `AppendProtocol.append`) makes the
+  Bootstrap-Capture-Completeness violation path testable in isolation and
+  keeps replay's reconstruction code symmetric with commit's hash code.
+  Pattern: every "tagged hybrid" gets its own resolver seam, never inlined.
+
+- **Verdicts as null vs continue.** `hookVerdict: HookVerdict | null` with
+  `null` meaning "no predicate matched" and `continue` meaning "a predicate
+  fired and said continue" is the cheapest way to preserve P5 (continue
+  zero-cost) while keeping the closed-enum invariant (P3) honest. The
+  binary layout encodes both as zero-witness; the bookkeeping distinguishes
+  them only for replay determinism. §10 should not invent a third sentinel
+  — null is the absence sentinel.
+
+- **Exactly-once-pause via WAL-first durability.** Pause verdict durable on
+  the WAL row *before* L1Subscriber broadcasts to the Router means a crash
+  between seal and broadcast replays the broadcast from disk on next boot.
+  The bus has no separate Router channel; the broadcast on the paused row
+  *is* the Router's pause inbound. §10's session-reopen protocol must
+  re-broadcast pending pause rows whose Router-ack Observation is missing.
+
+- **Bootstrap atomicity = single group-commit.** §3.8 bootstrap-batch writes
+  the entire `BootstrapPayload` as one atomic group-commit at offset 0. §10
+  must never spread session bootstrap across multiple `append()` calls —
+  the all-or-nothing property is what lets replay refuse to advance past
+  offset 0 on bootstrap-manifest mismatch (TDD §6.8).
+
+- **Fork = sibling directory + synthetic offset-0 row + cross-session chain
+  edge.** No CAS body copy; CAS dedup is implicit by hash. `cairn fsck
+  --with-parent` is the cross-edge walker. §10's fork API surface should
+  expose these as three orthogonal capabilities (create dir, emit
+  fork_origin Observation, link prevRoot) rather than one opaque
+  `fork(parent, offset)` call — composability over economy.
+
+- **Monotonic timestamps are advisory; offsets are structural.** Replay
+  equality excludes `timestampNs` via `normalizeTimestamps()`; the `+1`
+  floor absorbs wall-clock regressions; violations are recorded as
+  Observation rows, never suppressed. Any future invariant I add in §10/§15
+  should follow the same pattern: distinguish advisory metadata (excluded
+  from replay equality, recorded as observable rows on violation) from
+  structural data (byte-compared in replay).
+
+- **Seam map as deliverable.** §3.14's table mapping internals to test tier
+  + Laura collaborator + test double class is the load-bearing artifact for
+  London-school component testing. I'll replicate this in §10 and §15 —
+  every public collaborator gets a row, every internal pure function gets a
+  row, every file-backed integration gets a row.
+
+- **Per-tool-call primitive scale is intra-batch.** §3.6 enforces "one
+  primitive per (toolCallId, phase)" within a batch only; cross-batch
+  pairing of `invoke` → closing Artifact is Aperture's job, not L1's. §10
+  session-config carries the pairing-window deadline so different session
+  types (debug, prod, replay) can tune it.

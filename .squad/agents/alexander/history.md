@@ -1,4 +1,7 @@
 📌 Team update (2026-05-22T20:35:00Z): **Wave 2 W2-5 complete** — ForgePrescriberOrchestrator shipped. Attenuation + autoApplyEligible propagation live. ATTENUATION_FLOOR=0.1 exported from @akubly/types. Fail-open on provider errors. Forge tests 609 passing (+10), root build green. — Scribe
+
+📌 Team update (2026-05-28T10:30:00Z): **Crucible CTD Phase 1 Close-out (2026-05-28)** — §8 (Applier + DecisionGate) + §12 (Copilot SDK Integration) FINAL. **CRITICAL FINDING:** Copilot SDK does NOT expose attention metadata; v1 ships `commitmentMethod: 'fallback'` exclusively. Forward-compat door locked for future providers. Phase 2 coordination: Roger (appendFenced surface). Synthesis review: YELLOW, 2 findings routed (12b to Roger §10, 6b to Valanice §9). — Scribe
+
 📌 Team update (2026-05-28T18:05:30Z): **Crucible CTD Rev. 3 — R2 Locks Baked In** — All 6 R2 decisions locked (Aaron triage complete via Coordinator). Your tasks: (1) L0/L1 `causalContextWindow` declaration contract (R2-1 hybrid, B-with-A-fallback); (2) `BootstrapPayload.literalContext` extraction at session bootstrap (R2-2). Phase 2 fan-out now unblocked. — Scribe
 📌 Team update (2026-05-22T20:16:40Z): **Wave 0 complete** — canonical types in @akubly/types, getAllCategories helper in Cairn. category field reconciled to OptimizationCategory union. — Scribe
 📌 Team update (2026-05-22T20:03:56Z): Wave 2 v3.1 scope final — autoApplyEligible propagates through OptimizationHint; constants NEGATIVE_IMPACT_AUTO_APPLY_GATE=-0.2 and ATTENUATION_FLOOR=0.1; CLI surface only — no MCP in Wave 2. — Graham Knight
@@ -608,3 +611,32 @@ Phase B reconciliation against `D:\git\stunning-adventure` confirms a brutal tru
 **Self-discipline check:** I authored US-A-1 / US-A-NEW-3 / US-A-NEW-5 / the hook-bus synthesis. The triage above keeps all four in T1 — which looks like an author defending his own scope. The honest defense: each one is upstream of a different downstream consumer (US-A-1 → everything; US-A-NEW-3 → the conformance suite that proves Phase A; US-A-NEW-5 → Rosella's substrate contract; message loop → Valanice's daily-driver UX). Cutting any of them moves the falsifiable bar out of reach in week 1. The opposite anti-anchoring failure (defending less than necessary to look modest) is the larger risk here.
 
 **Open questions for Cassima:** (1) confirm US-A-1 / US-A-NEW-3 fused vs co-equal; (2) pause-verdict tier depends on Rosella L1 WAL capability; (3) CLI binary lives in `crucible-cli` (Valanice) or `crucible-runtime` (me) — I recommend split; (4) rename timing — parallel to T1, not bundled; (5) conformance suite enumeration needed; (6) sub-agent provider in T1 yes/no — I recommend no (single-agent T1, delegation T3).
+
+
+---
+
+## Learnings (CTD Phase 1, Lane 3 — 2026-05-28)
+
+**Authored §12 (Copilot SDK Integration) and §8 (Applier + DecisionGate) as declarative CTD content. Both FINAL on disk, ≤3pp each.**
+
+### SdkProvider boundary patterns
+- The SdkProvider interface is the §2.8 alias for Laura's SessionBootstrapper. Both names live in @akubly/crucible-boundary; the L0 implementation package (@akubly/crucible-l0-copilot) is the **only** package allowed to import @github/copilot-sdk (dependency-cruiser §2.9 enforces).
+- Bootstrap-Capture-Completeness (TDD §6.8) is honest only if the provider is a **forwarder**, not a generator, for literalContext.systemPrompt and literalContext.toolDefinitions[]. The runtime composition root owns those values; the provider hands them to the SDK and echoes them back in BootstrapPayload. If the provider mutates/templates them, replay drift is silent and catastrophic.
+- injectedMemoryFragments[] + memoryManifest[] come from **Eureka** (called by the runtime composition root before ootstrap()), not from the SDK. The SDK never sees memory; Eureka never sees SDK types. This is the cross-system seam Eureka analysis (alexander-eureka-crucible-runtime-overlap.md) predicted, now locked.
+- Provider id is pinned for session lifetime via existing BootstrapPayload.sdkVersion (encoded ${providerId}@). No §2 schema change to support multi-provider; the registry is constructed at runtime construction, not at session start, so crucible session start --provider <id> stays synchronous and replay-deterministic.
+
+### Applier state machine + R2-3 paused sub-state
+- paused-awaiting-structural-ack is NOT a persistent state — it's a **projection** over L1 structural-proposal-state Observation rows. Applier emits the state-transition Observation; Aperture's StructuralApprovalQueue (§9) recomputes the pending set on every boot. Restart safety is automatic; resume is idempotent on proposalId.
+- The §5 Router handshake on ACK is: Aperture writes structural-proposal-state:acked → re-emits RouterDecision{kind:'apply'} → Router calls Applier.resume(proposalId, ack) → Applier transitions paused → applying → applied → Router resumes paused dependentPaths. All Phase 2 sections (§5 Gabriel, §9 Valanice) must conform to R2-3, not invent new interfaces.
+- Ledger-position fence is **single-writer-per-session** in v1 (Round 2 Router lock). The retry-on-fence-violation loop in §8.3 absorbs hook-bus-induced row insertions between window-read and Decision-append, not multi-writer races. Bounded retry (3) before surfacing as ailed.
+
+### Copilot SDK attention-metadata reality (R2-1)
+- **@github/copilot-sdk does NOT surface per-emission attention or context-window metadata.** Neither does any public LLM provider today. There is no "which prior message ids did the model attend to when producing this output" field anywhere in the SDK's session event shape.
+- **Consequence:** Copilot SDK provider sets declaresCausalContextWindow: false. Every Decision in a v1 session carries commitmentMethod: 'fallback'. L1 hashes the full ledger prefix per §2.6 — graceful, conservative, always correct, replay-equivalent.
+- **This is the v1 path, not a degradation.** The 'declared' path exists in the boundary spec for forward-compat with future providers (or future SDK versions) that surface attention. Laura's property tests should exercise both paths via mock providers; production v1 only ever hits fallback. Aperture / CLI should treat fallback as the normal case.
+- **Forward-compat door is open:** SdkProviderCapabilities.declaresCausalContextWindow is a capability bit. A future provider flips it, includes the optional field on Decision-bearing events, and L1 takes the 'declared' path with no above-L0 code changes. The boundary contract absorbs the churn — which was the whole design goal.
+
+### Coordination flags for Phase 2
+- §6.3 Observation subKind enum should add structural_proposal_{emitted,acked,rejected,expired} during Phase 2 (additive per §6.5 — not blocking).
+- §8.3 references AppendProtocol.appendFenced({ expectedHead, row }); Roger's §3 final spelling may differ — sync during Phase 2.
+- Decision drop at .squad/decisions/inbox/alexander-ctd-phase1-lane3.md.

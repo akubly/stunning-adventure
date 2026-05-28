@@ -1,4 +1,7 @@
 📌 Team update (2026-05-22T14:07:59Z): **Phase 4.6 Wave 2 complete** — ChangeVectorProvider + ForgePrescriberOrchestrator + autoApplyEligible safety gate + hint dedup + forge-prescribe CLI all shipped. 1199 tests passing, 9 work items landed, 4 decisions merged. Wave 3 (Curator-driven orchestration + composition root) deferred behind ADR. — Scribe
+
+📌 Team update (2026-05-28T10:30:00Z): **Crucible CTD Phase 1 Close-out (2026-05-28)** — §7 (Generators L3) FINAL. `nonDominatedReason` field shape locked for Valanice §9 consumption: `'optimal' | 'incomparable'` + optional `incomparableWith[]`. Phase 2 coordination: Roger (R2-6 lockfile/snapshot handshake). Synthesis review: YELLOW, 1 finding routed to Gabriel+Rosella on `dependentPaths` type (Phase 2 §9/§10). — Scribe
+
 📌 Team update (2026-05-28T18:05:30Z): **Crucible CTD Rev. 3 — R2 Locks Baked In** — All 6 R2 decisions locked (Aaron triage complete via Coordinator). Your tasks: (1) Install-time transitive dep resolution + lockfile format ownership (R2-6); (2) coordinate with Roger on snapshot-into-WAL boundary; (3) PrescriptionResult.nonDominatedReason field in generator output (R2-5). Phase 2 fan-out now unblocked. — Scribe
 📌 Team update (2026-05-22T20:35:00Z): **Wave 2 W2-5 complete** — ForgePrescriberOrchestrator shipped. Attenuation + autoApplyEligible propagation live. ATTENUATION_FLOOR=0.1 exported from @akubly/types. Fail-open on provider errors. Forge tests 609 passing (+10), root build green. — Scribe
 📌 Team update (2026-05-22T20:03:56Z): Wave 2 v3.1 scope final — autoApplyEligible propagates through OptimizationHint; constants NEGATIVE_IMPACT_AUTO_APPLY_GATE=-0.2 and ATTENUATION_FLOOR=0.1; CLI surface only — no MCP in Wave 2. — Graham Knight
@@ -221,3 +224,37 @@ confirmation, Sonny per-row lineage decision.
 ---
 
 **2026-05-27 Eureka PRD Overlap Analysis (Scribe Summary):** Cross-agent consensus on Eureka × Crucible storage, runtime, and architecture overlap. See `.squad/decisions.md` **Eureka PRD Overlap Analysis** section for full findings and 5 open questions for Aaron.
+
+---
+
+## Learnings — CTD Phase 1 Lane 2: §7 Generators (L3) (2026-05-28)
+
+**Artifact:** `docs/crucible-technical-design/07-generators-l3.md` (21.2 KB, ≤3pp §7 + ≤1pp Appendix 7-E).
+**Decision drop:** `.squad/decisions/inbox/rosella-ctd-phase1-lane2.md`.
+
+### GenericL3AdapterContract design patterns
+
+- The conformance contract is a single property-based suite (`runGenericL3AdapterConformance(adapterFactory, opts) -> ConformanceReport`), not a per-adapter test infra. Eight property classes C-1..C-8: interface compliance, fail-open, hint attribution, lifecycle ordering, registration/discovery, `causalReadSet` completeness, `dependentPaths` non-empty on structural, and no Pareto axis zero-fill.
+- C-6 (`causalReadSet` completeness) is the strongest property — it is enforced by stubbing `LedgerWindowReader` + Salsa cache to record every read, then asserting the emitted read-set is a superset. Mirrors Laura's A4 determinism assertion.
+- C-7 (empty `dependentPaths[]` rejection) MUST fire at the adapter boundary, not at Router. Pushing the check upstream catches structural-emission bugs as unit-test failures rather than integration-test surprises.
+- C-8 (no zero-fill) is the load-bearing Q8 contract: zero-fill silently collapses *incomparable* into *dominated* and discards Pareto-frontier prescriptions. The adapter MUST emit a sparse axis map; missing axis means "not measured", not "measured as zero".
+- The conformance report is itself an L1 Decision primitive — one per adapter per run, replayable, bisectable, visible in the Aperture leaderboard. Conformance failures become Sonny-debuggable artefacts.
+
+### Forge-as-reference-implementation pattern
+
+- The existing `packages/forge/` package satisfies C-1..C-8 today with no behavioural changes — the v1 adapter is purely a projection of `OptimizationHint` -> `DataProposalGenerator` proposal shape. `ForgePrescriberOrchestrator` (Wave 2 W2-5) is the canonical `PrescriberOrchestrator` (Laura §3.4 alias).
+- Mapping table: hint `category` -> `category`; `confidence` -> `confidence`; `source/evidence` -> `evidence{rationale,citations,tier:'internal'}`; `autoApplyEligible:false` -> `reversibility:'manual-rollback'`; `costEstimate` from existing `ChangeVectorProvider` summary.
+- Pattern lift: any new adapter (Eureka v1.5, marketplace plugins) replicates the mapping table. The conformance suite is the contract; Forge is the worked proof the contract is satisfiable on an already-shipped codebase. **No adapter ever gets bespoke test infra.**
+- Existing Wave 2 invariants pull double duty: fail-open on prescriber crash satisfies C-2; `(skillId, source, category)` dedup key satisfies C-3; `ATTENUATION_FLOOR=0.1` preserves session forward progress under C-2 stress.
+
+### PrescriptionResult shape (R2-5 LOCK)
+
+- Field name is exactly `nonDominatedReason: 'optimal' | 'incomparable'` (camelCase, two words). Optional companion `incomparableWith?: string[]`.
+- **Set by `ParetoFitnessEvaluator` at evaluation time, NOT by the generator.** Generators emit only `fitness`. This split is why the field lives on `PrescriptionResult` (the evaluator output), not on the proposal itself.
+- Three downstream consumers all read the same literal field/value, no translation: Applier (§8) propagates onto `DecisionPayload.nonDominatedReason`; replay re-asserts the value; Valanice's §9 Aperture leaderboard renders `[incomparable-axes]` badge when value === `'incomparable'`.
+- `'optimal'` vs `'incomparable'` is the audit distinction: *proved* dominant on shared axes vs *unchallenged* on a different axis set. The badge exists because conflating them silently mis-credits Pareto winners.
+
+### Cross-section binds discovered
+
+- §7.2 lifecycle pins `PluginManifest` SHA-256 per session-fork — pin lives in Roger's §10 snapshot. Need Roger's snapshot field name, transitive-closure vs direct-only storage decision (Q4 says transitive — §7 assumes the snapshot follows), and lockfile canonical form (assume CBOR to match proposal canonicalisation). Codegen for `AdapterContext` blocks on Roger's §3 + §10 outputs; CTD spec does not.
+- `LedgerWindowReader` (Q1 rename from `ObservationCaptureStore`) is the read-only handle `AdapterContext` exposes to adapters at `start`. Roger's §3 owns the read-side WAL surface; §7 needs cursor API, snapshot-isolation-at-start, mid-read session-end behaviour to firm up the TypeScript declaration.

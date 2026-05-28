@@ -1,0 +1,258 @@
+# §16 — Test Strategy + Invariants
+
+**Status:** FINAL (Phase 2). Declarative CTD-side reference; authoritative test
+strategy lives in `docs/crucible-tdd-strategy.md` (the "TDD strategy").
+**Owner:** Laura. **Secondary:** Gabriel (CI harness, conformance runner,
+zero-tolerance gate enforcement).
+**Cross-refs:** §3 (WAL), §4 (Hook Bus), §11 (Replay), §6 (Primitive Taxonomy),
+§7 (Generators), §8 (Applier + DecisionGate), §15 (Coexistence + Plugin
+Registry); TDD strategy §3, §5.1, §6.1–§6.9, §7.2, §9, A1–A12.
+**Depth budget:** ≤3 pages. This section **cross-references the TDD strategy
+and does not duplicate it.** The TDD strategy owns test counts, fixture builder
+patterns, mock-drift defenses, and CI policy text; §16 names the seams the CTD
+exposes and pins which CTD section implements which tested collaborator.
+
+## 16.1 Test Category Matrix
+
+The CTD-specified module decomposition (per §1, §15) maps to the TDD strategy's
+five-tier pyramid (TDD §5.1 — **do not re-author counts here**). Each category
+binds to a runner and a CI stage; the runner is the only place tier mechanics
+are spelled out.
+
+| Category | Scope | Runner | CI stage | Authority |
+|---|---|---|---|---|
+| Unit | Pure leaf logic (CBOR canonicalization, ReadSetHasher hash, fork-lineage predicates) | `vitest run --pool=threads` | `ci:unit` (pre-merge, <30 s) | TDD §5.2 Tier 1 |
+| Contract | Real impl vs. mocked collaborator interface (per §16.3 matrix) | `vitest run -- --project=contracts` | `ci:contracts` (pre-merge, **zero-tolerance gate** per §16.5) | TDD §5.2 Tier 3, §7.1 |
+| Component | Single layer with collaborators mocked | `vitest run -- --project=components` | `ci:components` (pre-merge) | TDD §5.2 Tier 2 |
+| Integration | Two+ layers, real DB (`:memory:`), real projectors, mocked L0 I/O | `vitest run -- --project=integration` | `ci:integration` (pre-merge) | TDD §5.2 Tier 4 |
+| Acceptance (A1–A12) | Full CLI → ledger → projection path, file-backed DB in `.test-sessions/` | `vitest run -- --project=acceptance` | `ci:acceptance` (pre-merge subset, full nightly) | TDD §5.2 Tier 5, §2 |
+| Invariant / property | §6.1–§6.9 propositions over `fast-check` generators | `vitest run -- --project=invariants` | `ci:invariants` (nightly + on-change of §3/§4/§11) | TDD §6 |
+| Conformance — Replay (A2/A9) | Golden corpus replay-equivalence against §11.6 oracle | `crucible conformance replay` | `ci:conformance` (nightly) | §11.8, TDD §5.3 |
+| Conformance — Generic L3 Adapter | New adapter passes §7.A `GenericL3AdapterContract` (§16.6) | `crucible conformance l3-adapter <adapter-id>` | `ci:conformance` (per-adapter opt-in) | TDD §3.4, §16.6 |
+| Smoke — productivity loop | One-week-loop bar test (§16.4) | `crucible smoke productivity-loop` | `ci:smoke` (every PR, ≤2 min) | §16.4 |
+
+Mapping rule: every PR runs `ci:unit + ci:contracts + ci:components +
+ci:integration + ci:acceptance:fast + ci:smoke`. Nightly extends with
+`ci:invariants + ci:conformance + ci:acceptance:full`. Tier ratios, per-layer
+counts, and per-tier latency targets are owned by **TDD §5.1 and §8.4** — see
+those sections for numbers; do not duplicate here.
+
+## 16.2 Invariant Surfaces (Cross-Reference)
+
+The nine invariants are **defined by TDD §6.1–§6.9**. §16 only pins where their
+testable surfaces land in the CTD; the proposition text, fixture sketches, and
+counterexample shapes stay in the TDD strategy.
+
+| Invariant | TDD §  | CTD surface where the invariant binds |
+|---|---|---|
+| Append-Only | §6.1 | §3.3 row schema + §3.4 `AppendProtocol` (immutable after fsync) |
+| Hash-Chain Integrity (context-window commitment) | §6.2 | §3 hash-chain field + §11.5 `verifyCommitment` |
+| Replay Equivalence | §6.3 | §11.6 oracle + §11.8 A2 pseudocode |
+| Fork Lineage Transitivity | §6.4 | §3 `parentSessionId` / `forkPointEventId` + §10 (Phase 2) branching |
+| Hook Verdict Consistency | §6.5 | §4.7 replay recording rules (P1–P5) |
+| Projection Purity (L2) | §6.6 | `LedgerProjector` contract — §9 Aperture (Phase 2), §1.2 L2 row |
+| Trust-Tier Monotonicity | §6.7 | §15 plugin registry trust transitions; §8 DecisionGate enforcement |
+| Bootstrap-Capture-Completeness | §6.8 | §3.8 bootstrap atomic-append + §11.7 preflight refusal #1 |
+| Monotonic-Timestamps-Within-Session | §6.9 | §3.10 monotonic-floor rule + §11.7 preflight refusal #5 |
+
+These bindings are the **only** thing §16 asserts about the invariants. Authors
+extending an invariant edit TDD §6.x; CTD §16 needs no edit unless a new
+surface section appears.
+
+## 16.3 Collaborator-Contract → CTD-Section Alignment Matrix
+
+For every collaborator role in TDD §3, the table below pins the CTD section
+that defines the real implementation and the **primary test tier** at which
+the role binds. Component-tier rows are also covered by a contract-tier
+double-check per the zero-tolerance gate (§16.5).
+
+| Collaborator (TDD §) | Real impl owned by CTD § | Primary tier | Contract-tier double-check |
+|---|---|---|---|
+| `SessionBootstrapper` (§3.1) | §2 L0/L1 boundary; §12 SDK integration | Component | Yes — bootstrap-payload shape |
+| `LedgerWindowReader` (§3.1) | §3.3/§3.4 WAL; consumed by §11.4/§11.5 | Component | Yes — prefix-query shape |
+| `AppendProtocol` (§3.2) | §3.4 (incl. `appendFenced` per §0 Finding 12b) | Contract | n/a (already contract-tier) |
+| `PreCommitHookBus` (§3.2) | §4.2–§4.4 | Component | Yes — verdict-array shape + 80 µs budget |
+| `ReadSetHasher` (§3.2) | §3 (CBOR-dcbor + BLAKE3); fixture in §11.5 | Unit + Contract | Yes — determinism across machines |
+| `LedgerProjector` (§3.3) | §9 Aperture (Phase 2); generalized in §1.2 L2 | Component | Yes — projection-purity contract |
+| `QueryExecutor` (§3.3) | §1.2 L2 row; Salsa-style implementation deferred to L2 detail section | Component | Yes (when L2 section lands) |
+| `PrescriberOrchestrator` (§3.4) | §7.1–§7.2 | Component | Yes — fail-open + attribution |
+| `GenericL3AdapterContract` (§3.4) | §7.A conformance suite | **Contract** (the suite IS the contract tier) | Self-referential — see §16.6 |
+| `ChangeVectorProvider` (§3.4) | §7 (Generators) | Component | Yes — fail-open returns `[]` |
+| `ParetoFitnessEvaluator` (§3.4) | §7 / §8.5 (`nonDominatedReason` propagation per R2-5) | Component | Yes — dominance correctness |
+| `PolicyEngine` (§3.5) | §5 Router (policy lookup) + §8 DecisionGate (enforcement) | Component | Yes — verdict shape per trust tier |
+| `EscalationQueue` (§3.5) | §5 Router; §9 Aperture `StructuralApprovalQueue` (Q3) | Component | Yes — priority + timeout |
+| `CausalSliceEngine` (§3.6) | L5 Investigation section (Phase 2/3); §11 ledger reader is the substrate | Component | Yes — slice = recomputed commitment (§11.8 A4) |
+| `BisectOrchestrator` (§3.6) | §13 CLI tooling + L5 Investigation; env-snapshot per Q5/R2-4 (§16.5 Tooling) | Integration | Yes — env-snapshot-hash on every row |
+| `PluginRegistry` (§3.7) | §15 (`@akubly/crucible-plugin-registry`); R2-6 lockfile | Component | Yes — pinning + deny-list |
+| `CLIRenderer` (§3.7) | §13 CLI | Component | Yes — badge-on-attention |
+
+**Completeness check:** every collaborator in TDD §3.1–§3.7 has a row.
+`QueryExecutor` and `CausalSliceEngine` reference CTD sections that are
+Phase 2/3 deliverables not yet authored as standalone files; their primary
+tier is fixed regardless of which section ultimately owns them, and Phase 3
+synthesis re-verifies the binding when those sections land.
+
+## 16.4 One-Week Productivity-Loop Smoke Test
+
+The smoke test that proves the daily-driver works. Runs on every PR in
+`ci:smoke` with a ≤2 min budget. Authoritative implementation: TDD §2 acceptance
+fixtures + TDD §9 builders.
+
+**Bar:** in one synthetic "week" of Crucible usage compressed into a single
+test run, the loop a working developer relies on does not regress. The test
+exercises the end-to-end seam the user actually touches; failure means the
+daily driver is broken even if every unit test passes.
+
+```ts
+test('productivity loop — daily driver bar', async () => {
+  // Day 1 — bootstrap a session, run a few prescribers.
+  const s = await crucible.session.create({ bootstrap: goldenBootstrap });
+  await crucible.run(s, sampleSkills(3));
+
+  // Day 2 — fork from a decision, diverge.
+  const child = await crucible.fork(s, { atOffset: decisionOffset(s, 'P-day1-3') });
+  await crucible.run(child, sampleSkills(2));
+
+  // Day 3 — replay child hermetically, oracle must pass.
+  const r = await crucible.replay(child.id);
+  expect(r.status).toBe('pass');                                    // §11.8 A2
+
+  // Day 4 — bisect a planted regression in child between offsets 5 and 18.
+  const b = await crucible.bisect(child.id, { good: 5, bad: 18, cmd: 'echo PASS' });
+  expect(b.failingOffset).toBeGreaterThan(5);
+  expect(b.rows.every(row => row.envSnapshotHash)).toBe(true);      // R2-4
+
+  // Day 5 — `crucible why` traces causal slice for the bisect-fingered primitive.
+  const slice = await crucible.why(b.failingOffset);
+  expect(hasher.hashCanonicalRows(slice)).toEqual(
+    decision(b.failingOffset).contextWindowCommitment);             // §11.8 A4
+
+  // Day 6 — Aperture renders one attention event for the bisect finding.
+  const events = await crucible.aperture.list(child.id, { tier: 'attention' });
+  expect(events).toHaveLength(1);
+
+  // Day 7 — close. No CAS-miss, no commitment divergence, no quarantine.
+  const health = await crucible.health(child.id);
+  expect(health).toMatchObject({ casIntegrity: 'ok', quarantine: [] });
+});
+```
+
+A regression in **any** of bootstrap, fork, replay, bisect, `why`, Aperture
+rendering, or CAS integrity fails the smoke test. The seven steps are
+deliberately not factored into separate tests at this tier — the contract
+is that the seven steps **compose**.
+
+## 16.5 Tooling
+
+Three tooling surfaces are testable artifacts of the CTD; their existence is
+a design requirement, not a CI policy choice.
+
+**Bisect (env-snapshot at start, per Q5 / R2-4).** §13 CLI + L5
+Investigation. `BisectOrchestrator` (TDD §3.6) captures `process.env` plus
+relevant config files **once at bisect start**; each iteration shells out to
+the user's shell with the **fixed snapshot env**, not the live env. Every
+row in the bisect report carries `envSnapshotHash` (16-char abbreviation
+acceptable per R2-4 lock). Internal consistency, not external hermeticity;
+re-runs days later may differ legitimately. Test tier: integration (mock the
+shell-out, real env-snapshot capture, real fork+replay).
+
+**Replay CLI (per §11).** `crucible replay <sessionId> [--strict]` exposes
+the §11.4 `ReplayDriver` contract. Output is a `ReplayReport`; non-zero exit
+on `status: 'fail'`. The CLI is the user-facing handle on the §11.6 oracle
+and §11.7 preflight refusals — both surface as `divergenceKind`. Test tier:
+acceptance (A2, A9) against the golden corpus.
+
+**Why command + watchpoint/breakpoint/logpoint registry.** `crucible why <id>`
+walks the §11/§3 `causalReadSet` backward via `CausalSliceEngine` (L5 section,
+Phase 2/3). The registry of watchpoints, breakpoints, and logpoints is the
+**predicate registration log itself** — `Observation{subKind:
+'predicate_registered' | 'predicate_unregistered'}` rows per §4.2 — so the
+substrate already exists. §13 CLI exposes `crucible debug list-predicates`
+as the read view; new entries are authored as predicate registrations, not
+as a separate registry data structure. Test tier: component for registry
+projection; integration for the CLI verbs.
+
+## 16.6 Generic L3 Adapter Conformance Suite
+
+**Spec authority:** TDD §3.4 `GenericL3AdapterContract` + §5.2 Tier 3 ("Generic
+L3 Adapter conformance"). §16 fixes execution mechanics.
+
+**Suite scope:** any L3 Generator adapter (Forge in v1; Eureka in v1.5 per §14;
+marketplace plugins thereafter) must pass: (a) `PrescriberOrchestrator`
+interface compliance — discovery, invocation, aggregation; (b) fail-open under
+controlled crashes; (c) hint-attribution tagging on every emitted primitive;
+(d) lifecycle hooks in declared order; (e) registration/discovery via the
+§15 plugin registry.
+
+**CI stage:** `ci:conformance` (nightly) for the always-on adapter set (Forge
+in v1). New-adapter opt-in: a marketplace or in-tree adapter declares itself
+to the suite by adding a `crucible.conformance.l3-adapter` entry to its
+`package.json` plus a fixture-emitting harness that constructs the adapter
+with the suite's stub `PrescriberOrchestrator` context. The suite runs against
+that harness on every PR that touches the adapter package and nightly across
+all opted-in adapters. **Forge is the v1 reference implementation; the suite
+is the contract.**
+
+**Failure surface:** conformance failure blocks merge for the offending
+adapter only (not the whole tree); a Forge failure additionally blocks all
+PRs because Forge is on the daily-driver path.
+
+## 16.7 Fixture & Pyramid (Cross-Reference)
+
+Fixture strategy is **owned by TDD §7.2 (shared fixture builders) and §9
+(builder pattern, golden files, randomized generators, seeded test
+databases) — do not duplicate here.** The CTD-side commitment is that every
+new collaborator added to the §16.3 matrix arrives with at least one
+fixture builder in the TDD §9 sense; no test in any §16-listed category
+constructs collaborators by hand-rolling shape literals.
+
+Pyramid ratios and per-tier counts are **owned by TDD §5.1**. The §16
+category matrix names runners and CI stages; it does not re-author counts.
+
+## 16.8 Agentic-Cost Framing — Zero-Tolerance Mock-Drift Gate (Q7)
+
+**Design constraint, not just CI policy.** Captured here so future
+contributors cannot downgrade the gate without re-opening the constraint.
+
+The `ci:contracts` stage is **zero-tolerance**: a single contract-test
+failure blocks every PR. The rationale is the inversion of the cost
+function under agentic development:
+
+- **Drift cost compounds.** An agentic system makes many decisions per
+  session against the model embodied by the mocks. When the mock drifts from
+  the real collaborator, every agent action against that seam is wrong in a
+  way that is invisible until integration. The cost grows with action count,
+  not with developer-attention count.
+- **Fix cost is near-zero.** When the gate fires, the fix is "spawn an agent
+  to reconcile the contract." There is no context-switch tax, no resentment,
+  no incentive to disable the test for expediency. The human-team failure
+  modes that make zero-tolerance brittle (Q7 decisions.md, Aaron's lock)
+  do not apply to the team operating against this codebase.
+- **Therefore** the threshold that minimizes total cost is **zero**, not
+  the human-team-typical "≥3 in layer" or "≥10% total."
+
+This constraint binds §16 (contract-tier definition), §17 (observability —
+mock-drift telemetry as a distinct PR-blocking channel), and §1 (agentic-
+development test discipline). Removing or weakening the gate requires
+re-opening Q7 with explicit Aaron triage; it cannot be done as a §16 edit.
+
+## 16.9 Acceptance Signals
+
+This section is sufficient to enable the work it gates without re-authoring
+any TDD strategy content:
+
+- **A1–A12 acceptance scenarios:** runnable against `ci:acceptance` per
+  the category matrix (§16.1); per-scenario fixture lives in TDD §2 and §9.
+- **§6.1–§6.9 invariants:** runnable against `ci:invariants` per §16.2's
+  surface bindings; proposition text stays in TDD §6.
+- **A9 determinism conformance:** runnable against `ci:conformance` via
+  `crucible conformance replay` against the §11.6 oracle on the golden
+  corpus; A2 is the per-session unit, A9 is the corpus parameterization.
+- **§7.A Generic L3 Adapter Conformance:** runnable against
+  `ci:conformance` via `crucible conformance l3-adapter <id>` per §16.6.
+- **Productivity-loop bar:** runnable on every PR per §16.4.
+
+No open question is surfaced by this section. The CTD-side hooks for
+TDD-Q2 (Generic L3 conformance), TDD-Q5 (bisect env-snapshot), and TDD-Q7
+(zero-tolerance + agentic-cost) are all captured above as design constraints,
+not as deferred work.

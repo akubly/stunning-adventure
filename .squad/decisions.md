@@ -1755,3 +1755,199 @@ Surgical bake-in pass over rev. 2 of the CTD plan. The former "New Open Question
 **Phase 2 fan-out is unblocked.**
 
 ---
+
+## Crucible CTD Phase 0 + Phase 1 + Synthesis Close-out (2026-05-28)
+
+### Graham — CTD Phase 0 Foundation: §2 + §6 FINAL
+
+**Date:** 2026-05-28  
+**Author:** Graham Knight (Lead / Architect)  
+**Status:** FINAL — Phase 1 fan-out unblocked
+
+Phase 0 foundation sections delivered. §2 (L0/L1 Boundary Contract, 12KB) defines Layer 0 primitives and Layer 1 API surface. §6 (Primitive Taxonomy, 8.5KB) specifies observation type taxonomy with structural proposal sub-kinds. Both sections meet acceptance criteria and support Phase 1 downstream consumption. Amended §6 post-synthesis for `structural_proposal_*` sub-kinds per synthesis finding 12a.
+
+**Key Design Decisions Locked:**
+- Observation immutability at L0 boundary
+- ChangeVector as structural type
+- Structural proposal sub-kinds enumeration
+
+**Integration Points:** L1 (Roger), L2/L3 (Rosella, Gabriel), L4 (Alexander) — all consume §2 L0 primitives and §6 taxonomy.
+
+---
+
+### Roger — CTD Phase 1 Lane 1: §3 (L1 WAL Substrate) + §4 (Hook Bus)
+
+**Date:** 2026-05-28  
+**Author:** Roger Wilco (Platform Dev, L1/Ledger owner)  
+**Status:** FINAL — Both sections delivered to `docs/crucible-technical-design/`
+
+**§3 — L1 WAL Substrate (FINAL, 33.6 KB):** Per-session segmented append-only WAL under `~/.crucible/wal/sessions/<id>/`, CBOR-canonical row envelopes with BLAKE3 hash-chaining, CAS-spilled bodies, single `fdatasync` per group-commit. Decision rows carry `contextWindowCommitment` + `commitmentMethod: 'declared' | 'fallback'` (R2-1 LOCK). Bootstrap-batch is atomic at offset 0. Performance envelope (≤1 ms p99 append) and storage volume projections (≈1–2 MiB WAL + 4–20 MiB CAS per 200-turn session) specified.
+
+**§4 — Hook Bus (FINAL, 12.9 KB):** `{continue, observe, pause}` semantics against in-flight group commit. Predicates pre-registered and indexed by `primitiveKind` + optional `subKind`. Witness body shape enables replay reconstruction. Backpressure: unbounded `pause` queue, bounded droppable `observe`.
+
+**Phase 2 Ripple Effects:**
+- Per-session directory layout (`~/.crucible/wal/sessions/<id>/`)
+- Cross-session hash-chain rule for fork child offsets
+- `SESSION_GENESIS_HASH` constant for root-session bootstrap
+- `monotonic_violation` row routing to Aperture
+- Predicate registration as Observation rows
+- CAS GC scope (post-snapshot dead bodies only)
+- Subscriber back-of-the-bus lifecycle (§10 session-close protocol)
+
+**No new ambiguity surfaced.**
+
+---
+
+### Rosella — CTD Phase 1 Lane 2: §7 (Generators L3)
+
+**Date:** 2026-05-28  
+**Author:** Rosella Dove (Plugin Dev)  
+**Status:** FINAL — §7 on disk at `docs/crucible-technical-design/07-generators-l3.md`
+
+§7 locks the `ProposalGenerator` 10-field shape (8-field Phase A core + R3 amendments `determinismClass` and `causalReadSet`). Splits into `DataProposalGenerator` / `StructuralProposalGenerator` with mandatory `dependentPaths[]` on structural variant (Q3). Defines §7.A Generic L3 Adapter Conformance Contract (8 property classes C-1…C-8). Charters Curator as detection+proposal-only. Locks trust-tier table to Round 2.3 `{builtin | adopted | community | external}` enum. Specifies no-zero-fill Pareto emission rule (Q8). Defines `PrescriptionResult.nonDominatedReason` and optional `incomparableWith` per R2-5.
+
+**`nonDominatedReason` Field — Locked Shape for Valanice §9:**
+```ts
+nonDominatedReason: 'optimal' | 'incomparable'
+incomparableWith?: string[]  // OPTIONAL
+```
+- **'optimal'** — dominates every comparable sibling on shared-axis intersection
+- **'incomparable'** — non-dominated only because no sibling shares axis set
+- **Set by:** `ParetoFitnessEvaluator` at evaluation time
+- **Propagated by:** Applier (§8) onto `DecisionPayload.nonDominatedReason`
+- **Consumed by:** Valanice §9 Aperture leaderboard for `[incomparable-axes]` badge
+
+**Phase 2 Hand-Off (Roger §3 + §10):**
+1. Manifest pinning at fork (R2-6 lockfile format in session snapshot)
+2. `LedgerWindowReader` read-only handle in `AdapterContext`
+
+**No new open question surfaced.**
+
+---
+
+### Alexander — CTD Phase 1 Lane 3: §12 (Copilot SDK Integration) + §8 (Applier + DecisionGate)
+
+**Date:** 2026-05-28  
+**Author:** Alexander Chen (SDK Integration Lead)  
+**Status:** FINAL — Both sections delivered to `docs/crucible-technical-design/`
+
+**§12 — Copilot SDK Integration (FINAL, 18,914 bytes, ≤3pp):** Specifies `SdkProvider` interface, registry/selection protocol pinned via `BootstrapPayload.sdkVersion`, session bootstrap sequence, Bootstrap-Capture handshake table (R2-2 LOCK). Package boundary separates `@akubly/crucible-runtime` (greenfield) from `@akubly/skillsmith-runtime` (legacy, coexist lock honored).
+
+**CRITICAL FINDING — R2-1: Copilot SDK Attention-Metadata Reality**
+- **Reality:** SDK does NOT expose per-emission attention or context-window metadata
+- **Decision:** Copilot SDK provider sets `declaresCausalContextWindow: false`
+- **v1 Path:** Every Applier-written Decision carries `commitmentMethod: 'fallback'` and `causalContextWindowSlice: null`
+- **Forward-compat:** Door open for future providers; no §2/§6/§3/§8 changes required
+
+**§8 — Applier + DecisionGate (FINAL, 17,455 bytes, ≤3pp):** Specifies `Applier` interface, proposed → approved → applying → applied|failed state machine with R2-3 `paused-awaiting-structural-ack` sub-state. Ledger-position fence pseudocode with bounded retry. `contextWindowCommitment` + `commitmentMethod` computation path via `LedgerWindowReader` + `ReadSetHasher`. R2-5 non-dominated tiebreak propagation onto `DecisionPayload.alternatives[]`. DecisionGate pure-policy interface with session-pinned default policy.
+
+**Coherence Self-Review:**
+- §8 Applier composition ↔ §12 runtime composition consistent
+- §8 state-machine ↔ §5 Router events aligned on R2-3 lock
+- §8 ↔ §9 StructuralApprovalQueue projection inputs consistent
+- §12 attention metadata ↔ §8 commitment path end-to-end coherent
+
+**No blocking new questions surfaced.**
+
+---
+
+### Laura — CTD Phase 1 Lane 4: §11 (Hermetic Replay)
+
+**Date:** 2026-05-28  
+**Author:** Laura Bow (Testing & Integration Specialist)  
+**Status:** FINAL — §11 on disk at `docs/crucible-technical-design/11-hermetic-replay.md` (14.9 KB)
+
+§11 specifies hermetic-replay implementation contract: capture scope mapped to §6 Observation sub-kinds, `CasStore` interface with 3–10× WAL volume projection, `ReplayDriver` re-feed loop never re-executing side effects, R2-1 context-window reconstruction protocol, Q6-locked replay-equivalence oracle with structural-vs-informational field table and `normalizeTimestamps()` helper. Five enumerated refuse-to-start conditions (bootstrap mismatch, missing transitive-dep rehydration, schema-version drift, CAS miss, source monotonicity violation). Literal A1–A4 / A9 conformance test pseudocode.
+
+**Cross-Section Dependencies (Phase 2 coordination items):**
+1. **Roger (§3):** `Observation.body` envelope for re-feed pairing must reflect §11.2 spec (`{requestHash, responseRef: CasDigest}` for `llm_response` / `tool_output` / `cross_session_memory`)
+2. **Alexander (§12):** `BootstrapPayload` → offset-0 row materialization sequence must clarify write order and `memoryManifest` landing in `SessionMetadata` for replay preflight
+
+**No new ambiguity surfaced.**
+
+---
+
+### Gabriel — CTD Phase 1, Lane 5: §5 (Router Design)
+
+**Date:** 2026-05-28  
+**Author:** Gabriel Knight (Infrastructure)  
+**Output:** `docs/crucible-technical-design/05-router-design.md` (14,083 bytes, ≤3pp)  
+**Status:** FINAL
+
+§5 Router Design (L4) specifies versioned policy table indexed by `(primitive_kind, source_tier, predicate, action)` per Round 2.3 trust-tier vocabulary, proposal lifecycle state machine with `paused-awaiting-structural-ack` sub-state implementing R2-3 lock as pure projection, full Pareto non-dominated surface (`prescriptionCandidates[]` tagged with `nonDominatedReason` per R2-5), debugger verdict extension point, and replayability rationale forbidding live policy reload. Collaborator names align with Laura §3.5.
+
+**CRITICAL — Aperture ↔ Router Event Shape Contract (R2-3 sync pair, for Valanice §9):**
+
+**Events Router emits:**
+- `router.paused` — hosted in Decision, carries `proposalId`, `dependentPaths`, policy/predicate info, reason, deadline
+- `router.decision` — hosted in Decision, carries outcome (`'apply' | 'reject' | 'resume'`), full `prescriptionCandidates[]` with `nonDominatedReason`, `causedBy` (ack Observation EventId)
+
+**Events Aperture emits:**
+- `aperture.structural-ack-prompt` — Question with `parentId` pointing at `router.paused`
+- `aperture.structural-ack` — Observation (`subKind: 'external_input'`) carrying verdict + user note
+
+**Contract guarantees:**
+1. Router emits exactly one `router.paused` per structural proposal
+2. Router emits exactly one terminal `router.decision` per `router.paused`
+3. Aperture MAY emit at most one terminal `aperture.structural-ack` per `pauseEventId`
+4. StructuralApprovalQueue is pure projection of un-acked `router.paused` rows (honors R2-3)
+5. Queue recomputed from L1 alone on Aperture boot (no persistent queue state)
+
+**No ambiguity surfaced for Aaron.**
+
+---
+
+### Graham — CTD Phase 1 Lane 6: §1 (Architectural Overview)
+
+**Date:** 2026-05-28  
+**Author:** Graham Knight (Lead / Architect)  
+**Output:** `docs/crucible-technical-design/01-architectural-overview.md` — FINAL
+
+§1 serves as canonical orientation piece: 5-layer stack diagram (L0 Provider → L1 WAL → L2 Derived Query → L3 Generators → L4 Router, with Aperture as L5-adjacent investigation surface), layer responsibility table keyed to `@akubly/crucible-*` package decomposition, chamber-to-layer map pinning Crucible/Curator/Alchemist/Aperture inside runtime and explicitly marking Cairn and Forge as *independent products outside the Crucible layer taxonomy* (Forge-as-L3 adapter as single sanctioned bridge), T5-consistent coexistence stance restating no-delegation/no-shared-substrate/converge-at-types-only invariants.
+
+**All Appendix C §1 acceptance criteria met.** No new open question surfaced.
+
+---
+
+### Graham — CTD Phase 1 Synthesis Review (Cross-Section Review & Errata Routing)
+
+**Date:** 2026-05-28  
+**Author:** Graham Knight (Lead / Architect)  
+**Status:** FINAL — Phase 2 gate decision: YELLOW
+
+Ran 12-check interface-coherence synthesis across all 10 Phase 0+1 CTD sections (~190 KB). **Verdict: YELLOW** (6 CLEAN / 4 MINOR / 2 STRUCTURAL / 1 APPLIED). Applied one additive vocabulary fix in §6.3 (four new Observation sub-kinds: `structural_proposal_{emitted,acked,rejected,expired}`). All 13 findings routed to Phase 2 owners; no locked decision re-litigated; no new open question for Aaron.
+
+**Findings Summary:**
+
+| # | Finding | Severity | Owner | Phase 2 Section |
+|---|---------|----------|-------|-----------------|
+| 6b | §5/§8 ack row sub-kind mismatch (external_input vs structural_proposal_*) | STRUCTURAL | Valanice | §9 |
+| 12b | §8 calls `appendFenced()` but §3 unspecified | STRUCTURAL | Roger | §10 |
+| 2a | Timestamp shape drift (§6 ms vs §3 ns) | MINOR | Roger | §10 |
+| 2b | §3 manifest flag missing from flags enum | MINOR | Roger | §10 |
+| 5 | `dependentPaths` type mismatch (string[] vs EventId[]) | MINOR | Gabriel + Rosella | §9/§10 |
+| 9 | §11 body shape not pinned in §3 | MINOR | Roger | §10/§15 |
+| 10 | §1 layer table vs §8 Applier placement | MINOR | Graham | Phase 3 |
+
+**No blockers for Phase 2 fan-out. All findings addressable within Phase 2 section work.**
+
+---
+
+### Graham — CTD Phase 1 / TDD-Strategy Reconciliation (Prior)
+
+**Date:** 2026-05-27  
+**Author:** Graham Knight (Lead / Architect)  
+**Status:** RESOLVED — All TDD Q1–Q8 locks baked into CTD plan rev. 3 and Phase 0+1 sections
+
+Pre-fan-out reconciliation of Laura's FINAL TDD strategy against CTD plan. No irreconcilable conflicts. All six new open questions (OQ-R2-1 through OQ-R2-6) resolved by Aaron prior to Phase 0 spawn. Recommended defaults provided for all six (pending Aaron explicit locks). All phase 1 sections authored using locked R2 decisions declaratively, no conditional hedge text.
+
+**R2 Locks Applied Across Sections:**
+- **R2-1** (Decision `contextWindowCommitment` + `commitmentMethod`): §2 emission, §3 WAL, §8 Applier, §11 replay reconstruction
+- **R2-2** (Bootstrap-Capture handshake): §2 boundary, §3 offset-0 batch, §12 session sequence
+- **R2-3** (Paused-awaiting-structural-ack): §5 Router sub-state, §8 Applier state machine, §9 Aperture queue
+- **R2-5** (`nonDominatedReason` + `incomparableWith`): §7 generator emission, §8 Applier propagation, §9 UI badge
+- **R2-6** (Transitive-dep lockfile format): §7 manifest pinning, §10 snapshot field, §15 shared-types
+
+**No new open questions emerged from Phase 1 authoring.**
+
+---
