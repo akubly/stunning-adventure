@@ -49,7 +49,7 @@ import type { SkillTestResultInsert } from '../db/skillTestResults.js';
 import { PRESCRIPTION_STATUSES } from '../types/index.js';
 import { checkIsScript } from '../utils/isScript.js';
 import { getPreference } from '../db/preferences.js';
-import { normalizeWorkdir } from '../hooks/gitContext.js';
+import { normalizeWorkdir } from '../utils/workdir.js';
 
 // ---------------------------------------------------------------------------
 // Server setup
@@ -131,8 +131,13 @@ server.registerTool(
         if (workdir !== undefined) {
           // Filter to a specific worktree session; still returned as an array
           // for shape consistency with the multi-session list shape.
-          const session = getActiveSession(db, repo_key, normalizeWorkdir(workdir));
-          sessions = session ? [session] : [];
+          const nwd = normalizeWorkdir(workdir);
+          if (nwd !== undefined) {
+            const session = getActiveSession(db, repo_key, nwd);
+            sessions = session ? [session] : [];
+          } else {
+            sessions = listActiveSessionsForRepo(db, repo_key);
+          }
         } else {
           sessions = listActiveSessionsForRepo(db, repo_key);
         }
@@ -225,7 +230,7 @@ server.registerTool(
       workdir: z
         .string()
         .optional()
-        .describe('Worktree root path for workdir-based lookup (use with repo_key).'),
+        .describe('Worktree root path for workdir-based lookup. Required when using repo_key. Optional when using session_id.'),
     },
     annotations: { readOnlyHint: true },
   },
@@ -262,7 +267,21 @@ server.registerTool(
             isError: true,
           };
         }
-        const resolved = getActiveSession(db, repo_key, normalizeWorkdir(workdir));
+        const nwd = normalizeWorkdir(workdir);
+        if (!nwd) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify({
+                  error: 'workdir must be a non-empty path.',
+                }),
+              },
+            ],
+            isError: true,
+          };
+        }
+        const resolved = getActiveSession(db, repo_key, nwd);
         if (!resolved) {
           return {
             content: [
@@ -695,10 +714,14 @@ server.registerTool(
         .string()
         .optional()
         .describe('Repository key to scope session lookup. Uses repo-scoped session instead of global most-recent.'),
+      workdir: z
+        .string()
+        .optional()
+        .describe('Worktree root path to scope session lookup to a specific worktree. Use with repo_key.'),
     },
     annotations: { readOnlyHint: false },
   },
-  async ({ prescription_id, disposition, reason, repo_key }) => {
+  async ({ prescription_id, disposition, reason, repo_key, workdir }) => {
     try {
       ensureDb();
 
@@ -736,8 +759,8 @@ server.registerTool(
         if (prescription.status !== 'accepted') {
           updatePrescriptionStatus(db, prescription_id, 'accepted');
         }
-        // Prefer repo-scoped user session; fall back to the most recent user session.
-        const activeSession = getUserSessionForMcpFallback(db, repo_key);
+        // Prefer repo+workdir-scoped user session; fall back to repo-scoped or global most-recent.
+        const activeSession = getUserSessionForMcpFallback(db, repo_key, normalizeWorkdir(workdir));
         let applyResult: { success: boolean; error?: string; path?: string };
         try {
           applyResult = applyPrescription(prescription_id, {
@@ -1157,7 +1180,7 @@ server.registerTool(
       try {
         ensureDb();
         const repoKey = process.env.CAIRN_REPO_KEY;
-        const session = getUserSessionForMcpFallback(db, repoKey);
+        const session = getUserSessionForMcpFallback(db, repoKey, normalizeWorkdir(process.env.CAIRN_WORKDIR));
         if (session) {
           logEvent(db, session.id, 'skill_lint', {
             path: filePath,
@@ -1251,7 +1274,7 @@ server.registerTool(
         try {
           ensureDb();
           const repoKey = process.env.CAIRN_REPO_KEY;
-          const session = getUserSessionForMcpFallback(db, repoKey);
+          const session = getUserSessionForMcpFallback(db, repoKey, normalizeWorkdir(process.env.CAIRN_WORKDIR));
           if (session) {
             const inserts: SkillTestResultInsert[] = report.results.map((r: ValidationResult) => ({
               skillPath: report.skillPath,
@@ -1317,7 +1340,7 @@ server.registerTool(
       try {
         ensureDb();
         const repoKey = process.env.CAIRN_REPO_KEY;
-        const session = getUserSessionForMcpFallback(db, repoKey);
+        const session = getUserSessionForMcpFallback(db, repoKey, normalizeWorkdir(process.env.CAIRN_WORKDIR));
         if (session) {
           const inserts: SkillTestResultInsert[] = results.map((r) => ({
             skillPath: filePath,

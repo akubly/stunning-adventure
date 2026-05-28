@@ -99,8 +99,7 @@ export function endSession(db: Database.Database, id: string, status: string = '
  * rows (backward compat — old callers can't accidentally pick up a worktree session).
  * When workdir is provided as a string: queries `AND workdir IS workdir` (exact worktree match).
  *
- * For MCP fallback paths that need any active user session regardless of worktree,
- * use getActiveUserSession (no workdir filter).
+ * For any-active-session lookup regardless of worktree, use getActiveUserSession (no workdir filter).
  */
 export function getActiveSession(
   db: Database.Database,
@@ -120,19 +119,72 @@ export function getActiveSession(
  *
  * Returns the updated session, or undefined if no unclaimed NULL-workdir
  * user session exists for this repo.
+ *
+ * @remarks The claim is atomic: a single `UPDATE … WHERE … AND workdir IS NULL`
+ * ensures two concurrent worktree starts cannot both adopt the same legacy row.
+ * Any additional NULL-workdir active user sessions for the same repo (orphans
+ * from abnormal exits) are completed as a cleanup side-effect so they do not
+ * accumulate.
+ *
+ * The session's full event history is retained — only the workdir column and
+ * (for orphans) status/ended_at are updated.
+ *
+ * @internal Not part of the public API surface — called only by archivist.startSession.
  */
 export function claimLegacyActiveSession(
   db: Database.Database,
   repoKey: string,
   workdir: string,
 ): Session | undefined {
-  const legacy = getActiveSessionByWorkdir(db, repoKey, null);
-  if (!legacy) return undefined;
-  db.prepare('UPDATE sessions SET workdir = ? WHERE id = ?').run(workdir, legacy.id);
-  return { ...legacy, workdir };
+  // Step 1: Identify the candidate row (most recently started NULL-workdir user session).
+  const candidate = db
+    .prepare(
+      `SELECT id FROM sessions
+       WHERE repo_key = ? AND status = 'active' AND session_kind = 'user' AND workdir IS NULL
+       ORDER BY started_at DESC LIMIT 1`,
+    )
+    .get(repoKey) as { id: string } | undefined;
+
+  if (!candidate) return undefined;
+
+  // Step 2: CAS claim — atomically set workdir only if still NULL.
+  // result.changes === 0 means another concurrent caller won the race.
+  const result = db
+    .prepare(`UPDATE sessions SET workdir = ? WHERE id = ? AND workdir IS NULL`)
+    .run(workdir, candidate.id);
+
+  if (result.changes !== 1) return undefined;
+
+  // Step 3: Orphan cleanup — complete any other NULL-workdir active user sessions
+  // for the same repo that were not the winner. These are stale rows from abnormal
+  // exits; cleaning them up now prevents future false-positive claims.
+  db.prepare(
+    `UPDATE sessions
+     SET status = 'completed', ended_at = datetime('now')
+     WHERE repo_key = ? AND status = 'active' AND session_kind = 'user'
+       AND workdir IS NULL AND id != ?`,
+  ).run(repoKey, candidate.id);
+
+  // Step 4: Read back the updated row.
+  const row = db
+    .prepare(
+      `SELECT id, repo_key, branch, started_at, ended_at, status, session_kind, workdir
+       FROM sessions WHERE id = ?`,
+    )
+    .get(candidate.id) as Record<string, unknown> | undefined;
+
+  return row ? mapSession(row) : undefined;
 }
 
-/** Return the most recent active user session for a repo, or undefined. */
+/**
+ * Return the most recent active user session for a repo, or undefined.
+ *
+ * @remarks Does not filter by workdir — returns the most recently started active
+ * user session for the repo regardless of which worktree it belongs to. In a
+ * multi-worktree setup multiple active sessions may exist for the same repo; this
+ * function returns only the most recent one. Prefer getActiveSession with an
+ * explicit workdir when worktree isolation is required.
+ */
 export function getActiveUserSession(db: Database.Database, repoKey: string): Session | undefined {
   return getActiveSessionWithDb(db, repoKey, 'user');
 }
