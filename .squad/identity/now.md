@@ -1,9 +1,9 @@
 ---
-updated_at: 2026-05-22T20:44:15Z
-focus_area: Eureka kickoff — new package `packages/eureka/` (agentic brain/memory/thinking/learning) + 3 hires (Genesta/Crispin/Edgar)
+updated_at: 2026-05-27T23:59:00Z
+focus_area: Eureka v1 implementation runway clear; M1 first red test next; OQ-1 monorepo accepted; §55 London-TDD spine canonical
 active_issues:
-  - "Eureka Phase 0: Genesta to scaffold packages/eureka/ charter, design principles, initial module layout"
-  - "Phase 4.6 ✅ COMPLETE — Change Vector Learning + 3-cycle persona review (1153 tests, 39 commits, primitives only — wiring deferred to Wave 2)"
+  - "Eureka v0.1 Technical Design — ✅ ASSEMBLED & LOCKED (§00–§70, 198KB, 3 ADRs; OQ-1 resolved via ADR-0002)"
+  - "§55 TDD Re-Pass — ✅ COMPLETE (§20/§30/§40/§50 all aligned with London-school mock contracts; zero blockers)"
   - "Phase 1: Monorepo restructuring ✅ COMPLETE"
   - "Phase 2: Live runtime verification ✅ COMPLETE (5/5 modules)"
   - "Phase 3: CopilotClient Integration ✅ COMPLETE (7 modules, 289 tests, 9-persona review)"
