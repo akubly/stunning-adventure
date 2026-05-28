@@ -981,13 +981,14 @@ Documented in PRD §14:
 3. Build production telemetry for BM25 threshold tuning
 4. Add branded types for Trust/Confidence in v1.5 (FR-12 mechanism #7)
 
+**Last updated:** 2026-05-27 (Eureka v0.1 Technical Design)
+
 ---
 
 ## 10. References
 
 - `.squad/decisions/eureka-prd-v5-final.md` — Canonical specification (FR-1 through FR-14)
-- `.squad/decisions/inbox/edgar-crucible-learning-overlap.md` — Crucible integration analysis
-- `.squad/decisions/inbox/cassima-crucible-eureka-impact.md` — Vocabulary orthogonality proof
+- `.squad/decisions.md` § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27) — Crucible integration analysis, vocabulary orthogonality proof
 - `.squad/decisions/learning-subpath-export-validation.md` — Extraction-ready design validation
 - `.squad/agents/edgar/charter.md` — Edgar's role and authority
 - `.squad/agents/edgar/history.md` — Design evolution and learnings

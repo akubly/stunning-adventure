@@ -66,7 +66,7 @@ The following decisions must be resolved before Eureka implementation proceeds. 
 | # | Question | Source | Impact | Recommendation |
 |---|----------|--------|--------|----------------|
 | **OQ-4** | **Dogfood sequencing:** Crucible-first, Eureka-first, or parallel? | §70 OQ-3 | MEDIUM — Affects both projects' risk profile. Crucible bootstrap loop is existential; Eureka demos are incremental. | Cassima recommends Crucible early → Eureka second (consumes Crucible logs). |
-| **OQ-5** | **Crucible A1 amendment impact:** If shared-substrate ownership (OQ-1) is NOT resolved, what's the fallback? | §70 T7 | CRITICAL — Implementation gate. No fallback exists; OQ-1 must be resolved. | Block implementation until OQ-1 decided. |
+| **OQ-5** | **CLOSED/MOOT** — OQ-1 resolved via ADR-0002 (monorepo accepted 2026-05-27). Originally framed as contingency "if OQ-1 NOT resolved" — no longer applicable. | §70 T7 | N/A — OQ-1 is resolved. | See `.squad/decisions.md` § "Narrower Substrate Freeze Proposal" and ADR-0002. |
 
 ### Friction Calibration
 

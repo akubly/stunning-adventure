@@ -2,6 +2,200 @@
 
 ## Open Decisions (Current Session)
 
+### 2026-05-28: PR #26 — Copilot Review Doc Alignment (Cycle 1)
+
+**Date:** 2026-05-28  
+**Author:** Cassima (PM — Eureka)  
+**Context:** Copilot automated review on PR #26 (eureka/v1-design-package branch merge)  
+**Status:** ✅ All 5 threads addressed
+
+---
+
+## Summary
+
+Post-merge alignment sweep to fix 5 documentation inconsistencies flagged by Copilot's automated review. Substrate ownership was decided (ADR-0002 Option A monorepo, accepted 2026-05-27), but several committed docs still:
+1. Referenced pre-decision state ("Four open decisions block...")
+2. Cited gitignored `.squad/decisions/inbox/` paths (broken for other contributors/CI)
+3. Claimed "pnpm workspaces, turborepo" when repo uses npm workspaces + `tsc --build`
+4. Described user/project tiers as "stubbed" when PRD FR-7.2 says "NOT SHIPPED in v1 at all"
+
+All edits were surgical — preserved doc structure, voice, and content except the specific inconsistencies.
+
+---
+
+## Changes Landed
+
+### Thread 1: Executive Summary — Tier Scope & OQ-1 Status
+
+**File:** `docs/eureka/technical-design.md` line 14
+
+**Before:**
+> three-tier storage (agent fully wired; user/project stubbed)
+> Four open decisions block implementation — most critically, shared substrate ownership across the `mem/` and `harness/` repositories.
+
+**After:**
+> three-tier storage (agent tier only in v1; user/project tiers reserved in schema, adapters deferred to v1.5 per PRD FR-7.2)
+> OQ-1 (substrate ownership) has been resolved via ADR-0002; remaining open decisions are tracked in the §00 ADR index.
+
+**Rationale:** Aligns with PRD FR-7.2 canonical wording ("NOT SHIPPED in v1 at all, not even as NotImplementedError stubs"). Updates OQ-1 status to reflect accepted ADR-0002.
+
+---
+
+### Thread 2: References Section — Remove Gitignored Inbox Links
+
+**File:** `docs/eureka/technical-design.md` lines 163-166
+
+**Before:**
+```markdown
+- **Crucible Impact Analysis:** [`.squad/decisions/inbox/cassima-crucible-eureka-impact.md`](...)
+- **Substrate Blocker Memo:** [`.squad/decisions/inbox/cassima-t7-shared-substrate-blocker.md`](...)
+```
+
+**After:**
+```markdown
+- **Crucible Impact Analysis:** See `.squad/decisions.md` § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27)
+- **Substrate Ownership:** See `.squad/decisions.md` § "Narrower Substrate Freeze Proposal" and ADR-0002 (2026-05-27)
+```
+
+**Rationale:** `.squad/decisions/inbox/` is gitignored (local-only working memos). Committed docs must reference content that resolves for all contributors. Merged substrate analysis now lives in `.squad/decisions.md` and ADR-0002.
+
+---
+
+### Thread 3: ADR-0002 Header — Remove Gitignored Tension Reference
+
+**File:** `docs/eureka/adrs/0002-shared-substrate-ownership.md` line 8
+
+**Before:**
+```markdown
+**Tension Reference:** §70 T7, `.squad/decisions/inbox/cassima-t7-shared-substrate-blocker.md`
+```
+
+**After:**
+```markdown
+**Tension Reference:** §70 T7; merged substrate analysis in `.squad/decisions.md` "Narrower Substrate Freeze Proposal" (2026-05-27)
+```
+
+**Rationale:** Same as Thread 2 — replace gitignored inbox link with reference to merged location.
+
+---
+
+### Thread 4: ADR-0002 Toolchain Claims — Correct to npm Workspaces Reality
+
+**Files:** `docs/eureka/adrs/0002-shared-substrate-ownership.md` lines 50-55, 138-145
+
+**Before (Pros, line ~53):**
+> TypeScript monorepo tooling is mature (pnpm workspaces, turborepo)
+
+**After:**
+> TypeScript monorepo tooling is mature (npm workspaces with `tsc --build` project references — already in use across `mem/`)
+
+**Before (M0 prerequisites, lines ~140-142):**
+> 2. **Monorepo scaffolding** (Roger + Gabriel) — pnpm workspace config, turborepo pipeline, unified `tsconfig` project references.
+> 3. **CI/CD consolidation** — Single GitHub Actions workflow replacing per-repo CI. Turborepo `--filter` for incremental builds...
+
+**After:**
+> 2. **Monorepo scaffolding** (Roger + Gabriel) — npm workspace config (already present), unified `tsconfig` project references with `tsc --build`. Must complete before any package code moves.
+> 3. **CI/CD consolidation** — Single GitHub Actions workflow replacing per-repo CI. Leverage `tsc --build` incremental compilation to mitigate whole-repo build time.
+> ...
+> 
+> *Note: Future migration to pnpm/turborepo could optimize build caching, but npm workspaces + `tsc --build` is sufficient for v1.*
+
+**Rationale:** Repo reality check confirmed:
+- Root `package.json` uses `"workspaces": [...]` (npm workspaces)
+- `package-lock.json` exists (npm, not pnpm)
+- Build command is `tsc --build` (TypeScript project references, not turborepo)
+
+ADR claimed aspirational tooling rather than current state. Fixed to reflect what's actually in use. Added note that pnpm/turborepo is a possible future optimization, not a v1 requirement.
+
+---
+
+### Thread 5: Tier Status Table — Align with PRD FR-7.2 "NOT SHIPPED"
+
+**File:** `docs/eureka/sections/00-overview.md` lines 242-246
+
+**Before:**
+| Tier | Path | v1 Status |
+|------|------|-----------|
+| User | ... | Stub (throws on write, empty on read) |
+| Project | ... | Stub (throws on write, empty on read) |
+
+**After:**
+| Tier | Path | v1 Status |
+|------|------|-----------|
+| User | ... | Not shipped in v1 — schema reserved, adapter deferred to v1.5 |
+| Project | ... | Not shipped in v1 — schema reserved, adapter deferred to v1.5 |
+
+Also updated "Recall Fan-Out Strategy" prose to note multi-tier fan-out is v1.5+:
+> 1. Sequential fan-out: agent → user → project (v1.5+)
+
+**Rationale:** PRD FR-7.2 line 184 is canonical: "User and project storage adapters are **not shipped** in v1 at all (not even as NotImplementedError stubs)." Table previously said "Stub" which contradicts this. Fixed to match PRD wording exactly.
+
+---
+
+## Rule Extracted
+
+**Committed docs must not cite paths under gitignored directories.**
+
+- `.squad/decisions/inbox/` is gitignored → broken for other contributors and CI.
+- References to decision content should point to:
+  1. Merged content in `.squad/decisions.md` (cite section heading + date), OR
+  2. Committed ADRs (`docs/eureka/adrs/*.md`), OR
+  3. Committed PRD (`.squad/decisions/eureka-prd-v5-final.md`)
+
+This rule is generalizable beyond Eureka — applies to any repo using gitignored working-memo directories.
+
+Skill documented in `.squad/skills/doc-references-respect-gitignore/SKILL.md`.
+
+---
+
+## Verification
+
+1. ✅ `technical-design.md` exec summary aligns with PRD FR-7.2 and ADR-0002 status
+2. ✅ `technical-design.md` References section has no gitignored paths
+3. ✅ `adrs/0002-shared-substrate-ownership.md` header has no gitignored paths
+4. ✅ `adrs/0002-shared-substrate-ownership.md` toolchain claims match repo reality (npm workspaces, not pnpm/turborepo)
+5. ✅ `sections/00-overview.md` tier table matches PRD FR-7.2 ("NOT SHIPPED", not "stubbed")
+
+All edits were surgical. No unrelated content changed. Voice and structure preserved.
+
+---
+
+## Next Steps
+
+None required. All 5 threads addressed. Skill extracted. Ready for next work.
+
+---
+
+## Cassima's Learning Notes
+
+**What worked:**
+- Surgical edits preserved doc structure and minimized churn.
+- Copilot's automated review caught real alignment issues (not false positives).
+- Rule "respect gitignore boundaries in committed docs" is simple, actionable, and prevents broken links for other contributors.
+
+**What I learned:**
+- Post-merge alignment sweeps are PM scope when they affect PRD/design consistency.
+- Toolchain claims in ADRs should match repository evidence or be clearly labeled as "future migration."
+- "Stubs" vs "not shipped" is a meaningful distinction — stubs imply user-visible surface, which contradicts PRD's scope deferral.
+
+**What I'd change next time:**
+- Could have proactively searched for other gitignored references during the sweep (did a grep after; none found).
+- Could have verified `package.json` / `package-lock.json` existence before editing ADR-0002 (I inferred from charter context, but explicit check is better).
+
+---
+
+### 2026-05-28: Directive — DecisionRecord Naming Disambiguation
+
+**By:** Aaron Kubly (via Copilot CLI)
+
+**What:** Be explicit about which "Decision" concept is being referenced. If it's a Squad decision markdown artifact, call it a "Squad decision dotfile" (or "Squad decision memo"). If it's the runtime `@akubly/types` `DecisionRecord` interface, use the system-qualified name: "Cairn DecisionRecord" or "Forge DecisionRecord" depending on which system the record belongs to. Never use bare "DecisionRecord" in documentation when both could be meant.
+
+**Why:** The Forge `DecisionRecord` TypeScript interface and Squad's `.squad/decisions/` workflow artifacts are conceptually different things; conflating them in docs creates ambiguity for readers and reviewers.
+
+**Usage example:** When discussing the Forge runtime audit interface, write "Forge DecisionRecord." When discussing Squad markdown memos, write "Squad decision dotfile" or "Squad decision memo."
+
+---
+
 ### 2026-05-27: Eureka v0.1 Technical Design — Assembled & Blocked on 4 Critical Decisions
 
 **Status:** ✅ DESIGN ASSEMBLED — Implementation blocked  

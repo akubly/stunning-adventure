@@ -65,17 +65,17 @@ packages/
 Extract shared packages into a third repo (`@akubly/substrate`):
 
 ```
-D:\git\akubly-substrate\
+<substrate-repo>/
   packages/
     cairn/
     forge/
     types/
 
-D:\git\mem\
+<mem-repo>/
   .gitmodules → substrate
   packages/eureka/
 
-D:\git\harness\
+<harness-repo>/
   .gitmodules → substrate
   packages/crucible/
 ```

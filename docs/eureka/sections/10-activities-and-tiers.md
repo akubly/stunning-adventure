@@ -469,7 +469,7 @@ Both systems consume the same **Cairn** (session lifecycle) and **Forge** (decis
 
 ### G4 Protocol for Substrate Changes
 
-**Governance Rule (from `.squad/decisions/inbox/genesta-crucible-eureka-overlap.md`):**
+**Governance Rule (from `.squad/decisions.md` § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27)):**
 
 > **G4 (Shared Substrate Changes):** Any change to Cairn, Forge, or `@akubly/types` that affects both Eureka and Crucible requires:
 > 1. Cross-project design review (Genesta + Crucible architect)

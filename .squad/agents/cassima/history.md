@@ -243,3 +243,58 @@
 
 **Status:** All 5 threads addressed. Skill documented. Ready for next work.
 
+---
+
+### 2026-05-28: PR #26 Cycle 2 Doc Alignment — 15 Inbox References Replaced, DecisionRecord Disambiguated, OQ-5 Resolved
+
+**Context:** Cycle 2 of cloud-review-cycle on PR #26. Copilot flagged 18 additional documentation issues (13 broken inbox citations, 3 content corrections, 2 machine paths). Scribe merged inbox files into `.squad/decisions.md` first, providing stable anchors (e.g., § "PR #26 — Copilot Review Doc Alignment (Cycle 1)" (2026-05-28), § "DecisionRecord Naming Disambiguation" (2026-05-28), § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27), etc.). Aaron directive: fix Rule R1 (no gitignored citations), Rule R2 (DecisionRecord naming), Rule R3 (no machine paths) across `docs/eureka/`, `.squad/handoffs/`, `.squad/skills/`, `.squad/decisions/`.
+
+**Changes landed:**
+
+**Group A — Inbox Citation Cleanup (15 threads, all same pattern):**
+1. `docs/eureka/sections/00-overview.md:425` → `.squad/decisions.md` § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27)
+2. `docs/eureka/sections/10-activities-and-tiers.md:470` → same
+3. `docs/eureka/sections/20-knowledge-representation.md:563` → same + § "Eureka PRD v5-final LOCKED" (2026-05-26)
+4. `docs/eureka/sections/30-learning-systems.md:986` → same
+5. `docs/eureka/sections/40-integration.md:648` → generic text (no specific committed doc yet for DI seam audit)
+6. `docs/eureka/sections/40-integration.md:752` → generic text (kernel coupling blockers documented if encountered)
+7. `docs/eureka/sections/40-integration.md:893` → `.squad/decisions.md` § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27) + scrubbed `D:\git\harness` machine path
+8. `docs/eureka/sections/60-ux-human-factors.md:283` → same
+9. `docs/eureka/sections/60-ux-human-factors.md:356` → same (Appendix A)
+10. `.squad/handoffs/2026-05-27-london-tdd-kickoff.md:21` → `.squad/decisions.md` § "Eureka v0.1 Technical Design — Assembled & Blocked on 4 Critical Decisions" (2026-05-27)
+11. `.squad/skills/doc-references-respect-gitignore/SKILL.md:139` → **SELF-VIOLATION FIX** — "Deliverable" example cited inbox path; replaced with § "PR #26 — Copilot Review Doc Alignment (Cycle 1)" (2026-05-28)
+12. `.squad/decisions.md:195` → Added usage example for DecisionRecord disambiguation (Rule R2); scrubbed remaining machine path (already fixed in main edit above)
+13. `.squad/decisions/eureka-prd-v5-final.md:434` → `.squad/decisions.md` § "Eureka PRD v5-final LOCKED" (2026-05-26)
+14. `.squad/decisions/eureka-prd-v5-final.md:848` → Collapsed 5-row SessionId R8 decision table into one reference to § "Eureka PRD v5-final LOCKED" (2026-05-26)
+15. `.squad/decisions/eureka-prd-v5-final.md:861` → Same (SessionId R8 panel verdicts all merged into decisions.md entry)
+
+**Group B — Content Corrections:**
+1. `docs/eureka/sections/20-knowledge-representation.md:449` → **DecisionRecord naming disambiguation (Rule R2)**. Forge `DecisionRecord` wrongly described as "materialized markdown file under `.squad/decisions/inbox/*.md`" — that conflates the TS interface with Squad workflow artifacts. Fixed to: "Forge DecisionRecord: Runtime TypeScript interface in `@akubly/types` representing audited decision metadata." Added note distinguishing Squad decision dotfiles (markdown memos) from Forge DecisionRecord (TS type).
+2. `docs/eureka/sections/30-learning-systems.md:967` → Stale date `2025-01-24` updated to `2026-05-27` (Eureka v0.1 Technical Design).
+3. `docs/eureka/technical-design.md:66` → **OQ-5 rewritten**. Originally framed as contingency "if OQ-1 NOT resolved" — OQ-1 IS resolved (ADR-0002 accepted). Marked OQ-5 **CLOSED/MOOT** with note: "OQ-1 resolved via ADR-0002 (monorepo accepted 2026-05-27); OQ-5 contingency no longer applicable."
+
+**Group C — Machine Path Cleanup:**
+1. `docs/eureka/adrs/0002-shared-substrate-ownership.md:63` → Option B submodule example used `D:\git\akubly-substrate\`, `D:\git\mem\`, `D:\git\harness\`. Replaced with generic placeholders: `<substrate-repo>/`, `<mem-repo>/`, `<harness-repo>/`.
+
+**Group D — Deferred (Coordinator Handles):**
+1. `.squad/orchestration-log/2026-05-27T08-13-25Z-valanice-ux-section.md:1` → Kept as historical archive per Aaron's strategy. Scribe owns lifecycle.
+2. `.squad/log/2026-05-27T08-13-25Z-eureka-tech-design-v01.md:1` → Same.
+
+**SKILL.md Enhancement:**
+Added "Pitfalls" section to `.squad/skills/doc-references-respect-gitignore/SKILL.md` with anti-pattern: "If you write examples in this skill, lint them against the rule — examples that violate the rule undermine credibility." The skill's own "Deliverable" line had an inbox citation (self-violation); fixed in this sweep.
+
+**What worked:**
+- Scribe-first dependency strategy unblocked the work — all stable anchors available before I started.
+- Batching 15 similar edits into one pass was efficient.
+- Rule R2 (DecisionRecord disambiguation) caught real conflation: doc described Forge's TS interface as "markdown files" which is wrong.
+- OQ-5 rewrite was straightforward once I confirmed ADR-0002 acceptance in decisions.md.
+
+**What I learned:**
+- Skills that codify rules should include a "Pitfalls" section warning authors about self-violations (meta-level discipline).
+- Large-scale citation cleanup requires grep to map topics → decisions.md headings efficiently (15 threads = 15 searches; grep was faster than manual scan).
+- Machine paths are easy to miss (only 2 threads but they're visually subtle in long file paths).
+
+**Deliverable:** `.squad/decisions/inbox/cassima-pr26-cycle2-doc-alignment.md` (this file) + 18 surgical edits.
+
+**Status:** All Group A/B/C threads addressed. Group D threads deferred per plan. SKILL.md enhanced with pitfall warning. Ready for coordinator to close review cycle.
+

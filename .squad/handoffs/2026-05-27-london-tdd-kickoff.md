@@ -18,7 +18,7 @@
 
 > **All implementation work uses London-school (mockist / outside-in) red/green TDD.** Red first (failing test that drives the next collaborator), green next (minimal pass), then refactor. Mock collaborators at the boundary of the unit under test; test interactions, not just state. Applies to all packages — cairn, forge, types, and Eureka going forward.
 
-Captured in `.squad/decisions/inbox/copilot-directive-2026-05-27T17-44Z-london-tdd.md` (will be merged into `decisions.md` on next Scribe pass).
+See `.squad/decisions.md` § "Eureka v0.1 Technical Design — Assembled & Blocked on 4 Critical Decisions" (2026-05-27) for merged directive.
 
 ## Why this matters
 

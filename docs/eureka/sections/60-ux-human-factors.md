@@ -282,7 +282,7 @@ Eureka and Crucible (D:\git\harness) share human surfaces at **session boundarie
 
 **UX implication:** These are **two lenses on the same decision**, not duplicates. Eureka is the "reasoning view" (why this option over alternatives?); Crucible is the "compliance view" (was it logged, who made it, when?). A human operator debugging a decision should check both — Eureka for reasoning depth, Crucible for audit integrity.
 
-**Cross-reference:** See `.squad/decisions/inbox/cassima-crucible-eureka-impact.md` §1.1 for full overlap analysis.
+**Cross-reference:** See `.squad/decisions.md` § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27) for full overlap analysis.
 
 ---
 
@@ -355,8 +355,7 @@ The worst UX is one that **trains humans to skip everything**. v1 avoids this by
 
 ## Appendix A — Crucible Cross-Reference
 
-For full Crucible ↔ Eureka overlap analysis, see:
-- `.squad/decisions/inbox/cassima-crucible-eureka-impact.md` (§1 mission overlap, §2 dependency direction, §3 shared packages)
+For full Crucible ↔ Eureka overlap analysis, see `.squad/decisions.md` § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27).
 
 Key takeaway: Crucible is the "what happened" system; Eureka is the "what I learned" system. The human sees both lenses, but never needs to reconcile them manually (shared `SessionId` auto-links).
 

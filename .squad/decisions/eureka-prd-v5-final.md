@@ -431,7 +431,7 @@ export function SessionId(value: string): SessionId {
 - **Cairn** owns operational sessions (`packages/cairn/src/db/sessions.ts` → `Session`, `SessionStatus`): lifecycle, repo_key, branch, started_at, ended_at, status. Answers: "What happened?"
 - **Eureka** owns epistemological sessions (`packages/eureka/src/facts/types.ts` → `SessionFact`, `kind='session'`): what was learned, continuity, trust, attention. Answers: "What did I learn during session X?"
 
-The two types share **identity only** (the `SessionId` brand); all other attributes remain system-specific. **The lens framing — Cairn = lifecycle, Eureka = epistemology — is the normative guard against coupling drift, not type isolation.** [v5: explicitly DELETES the v4-final sentence "The two type namespaces are kept **isolated by design** — there is NO shared `SessionBase` interface, no compile-time type hierarchy linking them. Correlation is runtime only, via the opaque `cairn_session_id` field." That defensive framing was Genesta's R6 amendment; Genesta R8 folded it with grace ("defensive pessimism vs honest design") — see `.squad/decisions/inbox/genesta-r8-session-identity.md`.] [v5: Aaron R8 directive verbatim signal: emergent shared structure between the two lenses is **welcomed long-term**, not foreclosed — `SessionId` is the first such structure; future shared structures (if/when a concrete need materializes) require a new R-cycle design review per Graham R8 enforcement gate.]
+The two types share **identity only** (the `SessionId` brand); all other attributes remain system-specific. **The lens framing — Cairn = lifecycle, Eureka = epistemology — is the normative guard against coupling drift, not type isolation.** [v5: explicitly DELETES the v4-final sentence "The two type namespaces are kept **isolated by design** — there is NO shared `SessionBase` interface, no compile-time type hierarchy linking them. Correlation is runtime only, via the opaque `cairn_session_id` field." That defensive framing was Genesta's R6 amendment; Genesta R8 folded it with grace ("defensive pessimism vs honest design") — see `.squad/decisions.md` § "Eureka PRD v5-final LOCKED — R8 4-Reviewer Lock-In Panel (Session Identity Unification)" (2026-05-26).] [v5: Aaron R8 directive verbatim signal: emergent shared structure between the two lenses is **welcomed long-term**, not foreclosed — `SessionId` is the first such structure; future shared structures (if/when a concrete need materializes) require a new R-cycle design review per Graham R8 enforcement gate.]
 
 **Query guidance** (documented in both codebases):
 - "What sessions ran on repo X?" → query Cairn's `sessions` table.
@@ -845,11 +845,11 @@ Authors of subsequent revisions should extend this table when adding new cross-s
 | Decision in v4 | Origin |
 |---|---|
 | Path D blessing (kernel-shaped, ship standalone) | Aaron R6 signal (d); `.squad/decisions.md` → Path D thread |
-| Bidirectional adapter directive (Path 1 + Path 2 first-class) | Aaron R7 directive; `.squad/decisions/inbox/aaron-r7-bidirectional.md` (or successor) |
+| Bidirectional adapter directive (Path 1 + Path 2 first-class) | See `.squad/decisions.md` § "Eureka v0.1 Technical Design — Assembled & Blocked on 4 Critical Decisions" (2026-05-27) |
 | Session naming convergence (Cairn + Eureka both own "session") | Aaron R6 signal (a) + Genesta amendment; FR-13 thread |
 | Decision-record kinship across stack | Aaron R6 signal (b); §7.3 thread |
 | Substrate overlap framing | Aaron R6 signal (c); revised in rev-2 per Crispin + Genesta |
-| Confidence vs Trust orthogonality | `.squad/decisions/inbox/crispin-confidence-trust.md` + `.squad/decisions/inbox/genesta-confidence-trust.md` |
+| Confidence vs Trust orthogonality | See `.squad/decisions.md` § "Eureka PRD v5-final LOCKED — R8 4-Reviewer Lock-In Panel (Session Identity Unification)" (2026-05-26) |
 | FR-12 split into FR-12 + FR-14 | Aaron R7 finalization directive (this revision series) |
 | OQ #5 closure (Cairn → Eureka session-fact triggers, manual-only) | Aaron R7 finalization directive |
 | DecisionPayload dual-axis (`input_trust_min` + `reasoning_confidence`) | Genesta substrate analysis + Aaron approval; rev-2 rename per Skeptic F5 |
@@ -858,7 +858,7 @@ Authors of subsequent revisions should extend this table when adding new cross-s
 | `bridge_ledger` + offline reconcile CLI | Persona-review Pragmatist BLOCKER + Skeptic important finding (rev-2 BLOCKER B3) |
 | Seven-mechanism deferral (5 in v1, 2 in v1.5) | Persona-review Skeptic + Pragmatist (rev-2 I1) |
 | Three-tier deferral (agent fully wired in v1) | Persona-review Pragmatist (rev-2 I5; Cassima judgment call) |
-| Session identity shared brand (`SessionId` in `@akubly/types`); FR-13 "isolated by design" relaxation [v5] | Aaron R8 directive: `.squad/decisions/inbox/copilot-directive-r8-session-identity.md`; Graham R8 verdict: `.squad/decisions/inbox/graham-r8-session-identity.md`; Genesta R8 fold (5 guardrails): `.squad/decisions/inbox/genesta-r8-session-identity.md`; Crispin R8 KR/schema spec: `.squad/decisions/inbox/crispin-r8-session-identity.md`; Edgar R8 learning-systems precision: `.squad/decisions/inbox/edgar-r8-session-identity.md` |
+| Session identity shared brand (`SessionId` in `@akubly/types`); FR-13 "isolated by design" relaxation [v5] | See `.squad/decisions.md` § "Eureka PRD v5-final LOCKED — R8 4-Reviewer Lock-In Panel (Session Identity Unification)" (2026-05-26) |
 | Cross-system session-type ESLint guardrail (FR-12 mechanism #8) [v5] | Graham R8 enforcement gate; operationalizes Genesta R8 guardrails G2/G3 |
 | FR-14 `--session <uuid>` CLI form [v5] | Edgar R8 §3 precision gain; enabled by shared `SessionId` |
 | FR-12 v1.5 sweep precision (consume Cairn session-end events) [v5] | Edgar R8 §2 opportunity — opportunistic, not a v1 commitment |

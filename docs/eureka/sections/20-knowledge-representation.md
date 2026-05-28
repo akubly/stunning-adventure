@@ -450,9 +450,9 @@ Eureka shares the `mem` ecosystem with **Crucible** (versioned CLI session store
 
 1. **Crucible `Decision`** (primitive): Transient session artifact, not persisted to Crucible store
 2. **Eureka `DecisionPayload`**: Persistent fact with `kind: 'decision'` in Eureka knowledge graph
-3. **Forge `DecisionRecord`**: Materialized markdown file (`.squad/decisions/inbox/*.md`)
+3. **Forge DecisionRecord**: Runtime TypeScript interface in `@akubly/types` representing audited decision metadata
 
-**Root cause**: Semantic overloading — "decision" conflates the **act of deciding** (Crucible event), the **epistemological artifact** (Eureka fact), and the **materialized document** (Forge output).
+**Root cause**: Semantic overloading — "decision" conflates the **act of deciding** (Crucible event), the **epistemological artifact** (Eureka fact), and the **audited decision record** (Forge DecisionRecord TypeScript interface). Note: Squad decision dotfiles (markdown memos under `.squad/decisions/`) are a separate, unrelated workflow artifact.
 
 **Mitigation** (FR-12 mechanism #8):
 - **ESLint rule**: `@akubly/no-crucible-decision-in-eureka` — ban `import { Decision } from '@akubly/crucible'` in Eureka code
@@ -563,8 +563,8 @@ export type SessionId = string & { readonly __brand: 'SessionId' };
 ## 11. References
 
 - **Eureka PRD v5-final**: `.squad/decisions/eureka-prd-v5-final.md` (FR-1, FR-2, FR-3, FR-7, FR-8, FR-9, FR-12, FR-13, FR-14)
-- **Crucible Overlap Analysis**: `.squad/decisions/inbox/crispin-crucible-kr-overlap.md`
-- **SessionId Brand Decision**: `.squad/decisions/inbox/crispin-session-brand.md` (R8 amendment)
+- **Crucible Overlap Analysis**: See `.squad/decisions.md` § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27) and § "Eureka PRD v5-final LOCKED — R8 4-Reviewer Lock-In Panel (Session Identity Unification)" (2026-05-26)
+- **SessionId Brand Decision**: See `.squad/decisions.md` § "Eureka PRD v5-final LOCKED — R8 4-Reviewer Lock-In Panel (Session Identity Unification)" (2026-05-26)
 - **ACT-R Decay Model**: Anderson, J. R. (1990). *The Adaptive Character of Thought*. LEA.
 - **PageRank**: Page, L., Brin, S., et al. (1998). *The PageRank Citation Ranking*. Stanford InfoLab.
 

@@ -126,6 +126,13 @@ Inbox memos are working drafts. Once decisions are locked, merge them into `.squ
 
 ---
 
+## Pitfalls
+
+**Writing examples in skill docs:**
+If you write examples in this skill that illustrate the rule, **lint those examples against the rule itself**. Examples that violate the rule undermine credibility. For instance, if this skill's "Learning Source" or "Deliverable" section cites an inbox path, that's a self-violation.
+
+---
+
 ## Related
 
 - **Inbox merge workflow:** `.squad/decisions/inbox/*.md` → `.squad/decisions.md` (Scribe owns merge ceremony)
@@ -139,5 +146,5 @@ Inbox memos are working drafts. Once decisions are locked, merge them into `.squ
 **PR #26 post-merge alignment sweep (2026-05-28):**  
 Copilot automated review flagged 3 broken inbox references in committed Eureka docs. All replaced with merged-content references. Rule extracted to prevent recurrence.
 
-**Deliverable:** `.squad/decisions/inbox/cassima-pr26-copilot-doc-alignment.md` (documents the fix sweep)
+**Cycle 1 Summary:** See `.squad/decisions.md` § "PR #26 — Copilot Review Doc Alignment (Cycle 1)" (2026-05-28) for full fix sweep documentation.
 

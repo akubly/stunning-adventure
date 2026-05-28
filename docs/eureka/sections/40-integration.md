@@ -647,7 +647,7 @@ export function recall(query: string, options?: RecallOptions): RecallResult[] {
 
 **v1 telemetry:** Emit `eureka_recall_failures_total` counter so v1.5 can diagnose failure modes.
 
-**v1.5 model boundary (deferred):** When `contemplate` and `meditate` land in v1.5, LLM calls will require a mockable `ModelProvider` interface similar to Crucible's router boundary. See audit recommendation in `.squad/decisions/inbox/roger-40-di-seam-audit-vs-55.md` §"Model (LLM call boundary)" for deferred design.
+**v1.5 model boundary (deferred):** When `contemplate` and `meditate` land in v1.5, LLM calls will require a mockable `ModelProvider` interface similar to Crucible's router boundary. DI seam audit for v1.5 is planned but not yet documented in committed decisions.
 
 ---
 
@@ -750,7 +750,7 @@ Eureka's integration wiring is staged across milestones M0–M5. This section do
 - `package.json` dependency additions
 
 **If canary fails (edit count ≥ 10):**
-- Document coupling points preventing extraction in `.squad/decisions/inbox/roger-kernel-coupling-blockers.md`
+- Document coupling points preventing extraction in a new Squad decision entry (if encountered during v1 extraction attempt)
 - Do NOT block v1 ship; defer kernel extraction to v1.5
 - Revisit design in v1.5 when cross-project reuse demand is concrete
 
@@ -892,7 +892,7 @@ npm test
 
 ## §40.12 — Crucible Boundary
 
-**Context:** Crucible (D:\git\harness) is a parallel project shipping v1 in the same timeframe. See `.squad/decisions/inbox/cassima-crucible-eureka-impact.md` for full overlap analysis.
+**Context:** Crucible is a parallel project shipping v1 in the same timeframe. See `.squad/decisions.md` § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27) for full overlap analysis.
 
 ### §40.12.1 — What Crucible and Eureka Share
 

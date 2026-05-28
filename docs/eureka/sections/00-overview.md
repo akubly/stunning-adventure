@@ -425,7 +425,7 @@ Architecture Decision Records for Eureka. Numbered series; authored as needed du
 ## 0.9 References
 
 - **PRD:** `.squad/decisions/eureka-prd-v5-final.md`
-- **Crucible Impact Analysis:** `.squad/decisions/inbox/cassima-crucible-eureka-impact.md`
+- **Crucible Impact Analysis:** See `.squad/decisions.md` § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27)
 - **Team History:** `.squad/agents/graham/history.md`
 - **Cairn Session Schema:** `packages/cairn/src/db/sessions.ts`
 - **Forge Decision Types:** `packages/types/src/index.ts`
