@@ -109,6 +109,31 @@
 
 **Status:** ✅ Documentation complete. Ready for team review.
 
+---
+
+### 2026-05-27: §30 Follow-Ups Executed — Post-§55 Review
+
+**Event:** Execute 3 queued follow-ups from §55 review verdict (non-blocking improvements to §30).
+
+**Deliverables:**
+1. ✅ §30 §1.2 updated to use Laura's `CuratorStore.retrieve(sessionId, query)` signature
+2. ✅ §30 §2.4 new subsection "Time Injection for Testability" added (ClockProvider interface)
+3. ✅ §30 §4.1 latency targets cross-referenced to §55 test assertions
+
+**Learnings:**
+
+1. **Outside-in signatures force architectural clarity** — Laura's `CuratorStore.retrieve(sessionId, query)` makes session isolation an explicit contract, not an implementation detail. Even outside TDD context, this is better architecture. The signature places the session boundary at the storage seam (where it belongs) rather than letting it leak into activity logic.
+
+2. **Testability seams are design decisions, not test infrastructure** — ClockProvider isn't just mock infrastructure; it's a boundary that declares "time is an external dependency" for the recency algorithm. Documenting this in §30 (algorithm spec) not just §55 (test strategy) makes the design intention visible to implementers, not just test authors. Future: replay/time-travel debugging in v1.5 will use this same seam.
+
+3. **Bidirectional cross-refs prevent spec-test drift** — Latency targets (§30) and test assertions (§55) can drift apart silently. Explicit pointers in both directions make drift visible during reviews. When §55 adds a dedicated performance-test section (future §6 or §7), these pointers provide backlinks for easy updates.
+
+4. **Lightweight coordination suffices for non-blocking hygiene work** — These three edits crossed Laura's domain (§55 test strategy) and potentially Crispin's domain (§20 representation boundaries). Checking for conflicts (read inbox files, verify no active audits) took 2 minutes; no synchronous meeting needed. Principle: coordinate by reading artifacts, not by scheduling.
+
+**Post-work:** Documented execution in `.squad/decisions/inbox/edgar-30-followups-executed.md` for Scribe merge.
+
+**Status:** ✅ COMPLETE — §30 ready for next phase.
+
 
 ---
 
@@ -151,3 +176,35 @@
 **Notes for Genesta:** Two overlaps flagged but not blocking:
 - AC mapping table (§55 §5) assigns some tests to `integrate` vs `recall` — Genesta should verify activity boundaries match her §10 semantics.
 - §55 flags OQ-2 (embedding strategy) as HIGH impact on mock boundaries — this is correct, and Genesta's prescriber migration timing (§30 §7.4 gate 1) may interact.
+
+---
+
+### 2026-05-27: TD Re-Pass Batch Complete — §30 Follow-Ups + London-TDD Alignment Verified
+
+**Event:** Part of Aaron's 6-agent TD re-pass batch (audits + follow-up executions across §20/§30/§40/§50).
+
+**Your role:** Execute 3 queued §30 follow-ups from §55 review (see this history entry §148 above).
+
+**Status:** ✅ ALL 3 COMPLETE
+
+**Deliverables:**
+1. ✅ §30 §1.2 (recall algorithm) — Adopted Laura's `CuratorStore.retrieve(sessionId, query)` signature for clarity
+2. ✅ §30 §2.4 (NEW subsection) — "Time Injection for Testability" documenting `ClockProvider` interface + determinism seams
+3. ✅ §30 §4.1–4.2 — Added cross-refs from latency targets to §55 test assertions for bidirectional hygiene
+
+**Key Insight:** Outside-in signatures (Laura's retrieve) force architectural clarity. Testability seams (ClockProvider) are design decisions, not just test infrastructure. When documented at algorithm level (§30, not just §55), they're visible to implementers.
+
+**Coordination:** Zero conflicts — checked Crispin's §20 audit findings; CuratorStore signature adoption is compatible with representation boundaries.
+
+**Learnings captured:** Bidirectional cross-refs prevent spec-test drift. Lightweight coordination (read artifacts, not meetings) suffices for non-blocking hygiene work.
+
+**Confidence:** HIGH (95%) — edits are documentation hygiene, zero algorithm changes.
+
+**Post-work:** Documented execution in `.squad/decisions/inbox/edgar-30-followups-executed.md` for Scribe merge.
+
+**Timeline:** Phase 1 complete. §30 now London-school-aligned with §55 spine. Ready for implementation.
+
+---
+
+**Team Update for Alexander, Valanice, Gabriel:** §20/§30/§40/§50 are now all London-school-aligned with §55 TDD spine. All seams identified, mock boundaries explicit. Future code in these areas should use the documented seams. No breaking changes to existing designs; all changes are additive seam documentation.
+

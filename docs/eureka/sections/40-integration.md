@@ -166,6 +166,8 @@ export function getActiveSession(db: Database.Database): Session | null {
 
 **Benefit:** Testable (inject in-memory `:memory:` DB), no global state leakage.
 
+**Cross-reference:** §55 §1.2 identifies storage I/O as a primary mock seam for London-school TDD. All Eureka storage functions follow this pattern, enabling fast unit tests with `:memory:` DB and contract tests with real sqlite3 files.
+
 ---
 
 ## §40.3 — Forge Integration
@@ -353,7 +355,133 @@ export function applyMigrations(db: Database.Database): void {
 
 ---
 
-## §40.6 — Tier-Aware Storage Paths
+## §40.6 — Testability Seams
+
+Eureka exposes three primary dependency-injection seams for test-time substitution, aligned with §55's London-school TDD mock boundaries.
+
+### §40.6.1 — Time Injection (ClockProvider)
+
+**Purpose:** Enable deterministic recency tests by abstracting time source behind a mockable interface.
+
+**Interface definition:** See **§30 §2.4 "Time Injection for Testability"** for complete `ClockProvider` interface and `MockClock` implementation.
+
+**Wiring pattern:** All time-dependent functions (`computeRecency`, `recall`, `rerank`, `sweep`) accept an optional `ClockProvider` parameter with default-value injection:
+
+```typescript
+// packages/eureka/src/learning/recency.ts
+import { ClockProvider, SystemClock } from './properties/clock';
+
+export function computeRecency(
+  lastAccessed: number,
+  clock: ClockProvider = SystemClock
+): number {
+  const age = (clock.now() - lastAccessed) / 86400;  // days
+  return Math.max(0.1, Math.pow(1 + age, -0.7));
+}
+```
+
+**Test usage:**
+```typescript
+import { MockClock } from '@akubly/eureka/learning/properties/clock';
+
+it('applies 7-day recency decay', () => {
+  const mockClock = new MockClock(1000000);
+  const score = computeRecency(1000000 - (7 * 86400), mockClock);
+  expect(score).toBeCloseTo(0.27);
+});
+```
+
+**Design rationale:** Default parameters (`clock: ClockProvider = SystemClock`) eliminate ceremony for production code while exposing the seam for tests. This is §55 §2.5's tier fan-out pattern: optional last parameter, production-ready default.
+
+### §40.6.2 — Random Source Injection (v1.5 Prep)
+
+**Purpose:** Enable deterministic stochastic activity tests (`meditate` clustering, `contemplate` sampling) by abstracting random number generation.
+
+**Status:** v1 does NOT implement stochastic activities (`meditate`, `contemplate` throw `NotImplementedError`). This seam is documented for v1.5 forward compatibility.
+
+**Interface shape:**
+```typescript
+// packages/eureka/src/learning/properties/rng.ts
+export interface RandomSource {
+  /** Returns random value in [0, 1) */
+  random(): number;
+}
+
+export const SystemRandom: RandomSource = {
+  random: () => Math.random()
+};
+
+export class DeterministicRandom implements RandomSource {
+  private _seed: number;
+  
+  constructor(seed: number) {
+    this._seed = seed;
+  }
+  
+  random(): number {
+    // Linear congruential generator for deterministic tests
+    this._seed = (this._seed * 1103515245 + 12345) & 0x7fffffff;
+    return this._seed / 0x7fffffff;
+  }
+}
+```
+
+**v1.5 usage pattern:**
+```typescript
+// packages/eureka/src/activities/meditate.ts (v1.5)
+import { RandomSource, SystemRandom } from '../learning/properties/rng';
+
+export function meditate(
+  facts: Fact[],
+  k: number,
+  rng: RandomSource = SystemRandom
+): Fact[] {
+  return facts.sort(() => rng.random() - 0.5).slice(0, k);
+}
+```
+
+**v1.5 test:**
+```typescript
+it('meditate samples k clusters deterministically', () => {
+  const deterministicRng = new DeterministicRandom(42);
+  const clusters = meditate([f1, f2, f3], 2, deterministicRng);
+  expect(clusters).toEqual([f1, f2]);  // reproducible
+});
+```
+
+### §40.6.3 — Default-Parameter Injection Pattern
+
+**Canonical form:** §55 §2.5 demonstrates the default-parameter injection pattern for tier fan-out:
+
+```typescript
+// From §55 §2.5 worked example
+export async function recall(
+  { query, sessionId, k }: RecallOptions,
+  { agentStore, userStore }: StoreCollaborators = defaultStores
+): Promise<Memory[]> {
+  // Test injects mocks; production uses defaults
+}
+```
+
+**Eureka adopts this for all collaborators:**
+
+| Seam | Production Default | Test Injection |
+|------|-------------------|----------------|
+| **Storage** | `getEurekaDb(tier)` | `:memory:` DB |
+| **Time** | `SystemClock` | `MockClock` |
+| **Random** | `SystemRandom` (v1.5) | `DeterministicRandom` |
+| **Model** | `OpenAIProvider` (v1.5) | `vi.fn()` mock |
+
+**Benefits:**
+1. **Zero ceremony for production** — Activities call `recall(query)` with no DI wiring.
+2. **Explicit for tests** — Tests inject mocks as last parameter, clear at call site.
+3. **Refactor-safe** — Default values live at function signature, not scattered across call sites.
+
+**Cross-reference:** §55 §3.1 "Mock Contract Style" provides full guidance on when to use default-parameter injection vs constructor injection.
+
+---
+
+## §40.7 — Tier-Aware Storage Paths
 
 Eureka supports multi-tier memory (agent/user/project/org), but **v1 only fully wires the agent tier** (PRD FR-7.2).
 
@@ -394,11 +522,11 @@ Eureka supports multi-tier memory (agent/user/project/org), but **v1 only fully 
 
 ---
 
-## §40.7 — API Surface
+## §40.8 — API Surface
 
 Eureka exposes two surfaces: **library** (TypeScript) and **CLI** (for manual ingestion).
 
-### §40.7.1 — Library API
+### §40.8.1 — Library API
 
 **Primary entry point:**
 
@@ -470,7 +598,7 @@ export function retire(factId: string): void;
 export function evict(factId: string): void;
 ```
 
-### §40.7.2 — CLI API
+### §40.8.2 — CLI API
 
 **Manual ingestion:**
 
@@ -490,7 +618,7 @@ eureka stats --tier agent
 
 **v1 scope:** CLI is for operator convenience, not agent invocation. Agents call the library API.
 
-### §40.7.3 — Error Handling
+### §40.8.3 — Error Handling
 
 **Fail-open principle:** Eureka MUST NOT block agent execution if recall fails.
 
@@ -507,11 +635,13 @@ export function recall(query: string, options?: RecallOptions): RecallResult[] {
 
 **v1 telemetry:** Emit `eureka_recall_failures_total` counter so v1.5 can diagnose failure modes.
 
+**v1.5 model boundary (deferred):** When `contemplate` and `meditate` land in v1.5, LLM calls will require a mockable `ModelProvider` interface similar to Crucible's router boundary. See audit recommendation in `.squad/decisions/inbox/roger-40-di-seam-audit-vs-55.md` §"Model (LLM call boundary)" for deferred design.
+
 ---
 
-## §40.8 — Build & Test Integration
+## §40.9 — Build & Test Integration
 
-### §40.8.1 — Build
+### §40.9.1 — Build
 
 Eureka uses the monorepo's existing `tsc --build` pipeline:
 
@@ -541,7 +671,7 @@ npm run build --workspace=@akubly/eureka
 
 **No Cairn/Forge build-time deps:** Eureka references `@akubly/types` only (via TypeScript project references). Cairn and Forge are devDependencies for schema docs and test fixtures, not runtime.
 
-### §40.8.2 — Test
+### §40.9.2 — Test
 
 **Test command:**
 
@@ -567,13 +697,15 @@ npm test
 
 **Quality bar:** ≥80% coverage on storage + activities. FTS5 eval suite ships with v1 and runs in CI (PRD FR-2 BM25 quality bar).
 
+**Testability cross-reference:** §40.6 documents DI seams for time, RNG, and storage. §55 §1.2 provides the mock-boundary rubric: mock at storage/network/I/O seams, use real pure functions (rankers, filters, scorers). Contract tests (§55 §3.3) validate that real implementations honor mocked interfaces.
+
 ---
 
-## §40.9 — Crucible Boundary
+## §40.10 — Crucible Boundary
 
 **Context:** Crucible (D:\git\harness) is a parallel project shipping v1 in the same timeframe. See `.squad/decisions/inbox/cassima-crucible-eureka-impact.md` for full overlap analysis.
 
-### §40.9.1 — What Crucible and Eureka Share
+### §40.10.1 — What Crucible and Eureka Share
 
 | Surface | Crucible | Eureka | Resolution |
 |---|---|---|---|
@@ -582,7 +714,7 @@ npm test
 | **Prescribers** | Router wraps Forge prescribers | Does not run prescribers | **SAFE** — Eureka is data source only |
 | **Event log** | L1 WAL (5 primitives) | Ingests Cairn `event_log` | **HIGH RISK** — Must merge or federate before L1 lands (Genesta finding §2) |
 
-### §40.9.2 — Shared Data Layer Risk
+### §40.10.2 — Shared Data Layer Risk
 
 **Blocker:** Crucible §1 assumes Cairn and Forge exist in `D:\git\harness\packages\`. But they actually live in `D:\git\mem\packages\`. Neither PRD acknowledges the cross-repo dependency.
 
@@ -594,7 +726,7 @@ npm test
 
 **v1 stance (Cassima recommendation):** Separate at v1, integrate at v1.5. Eureka and Crucible dogfood independently; integration designed from data, not speculation.
 
-### §40.9.3 — Learning Loop Feedback
+### §40.10.3 — Learning Loop Feedback
 
 **Crucible records everything** — every prompt, every tool call, every decision, every file read (§0). This is exactly the evidence Eureka needs for learning patterns.
 
@@ -609,7 +741,7 @@ on_session_end: eureka ingest-decisions --session $SESSION_ID
 
 ---
 
-## §40.10 — Open Questions
+## §40.11 — Open Questions
 
 1. **Cairn/Forge repo ownership** — Does the substrate (`cairn`, `forge`, `types`) stay in `mem`, move to `harness`, or extract to a third repo? Blocks both Crucible and Eureka v1.
 
@@ -627,7 +759,7 @@ on_session_end: eureka ingest-decisions --session $SESSION_ID
 
 ---
 
-## §40.11 — Risk Register
+## §40.12 — Risk Register
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
@@ -640,7 +772,7 @@ on_session_end: eureka ingest-decisions --session $SESSION_ID
 
 ---
 
-## §40.12 — Summary
+## §40.13 — Summary
 
 **What works in v1:**
 - Eureka lives in `packages/eureka/` with no runtime Cairn/Forge coupling

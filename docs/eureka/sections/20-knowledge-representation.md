@@ -18,6 +18,7 @@ This section defines the formal knowledge representation model for Eureka — th
 3. **Trust as event-driven signal**: Trust ∈ [0.15, 1.0], never auto-decays, only updated by explicit observation (FR-3).
 4. **Attention-tier materialization**: Hot/warm/cold tier as denormalized field, sweep-maintained (FR-8).
 5. **BM25 + power-law recency**: Hybrid recall using FTS5 and ACT-R-style time decay (FR-2).
+6. **Clean I/O seams**: Storage abstraction supports London-school TDD discipline (§55); query interfaces separate from persistence layer.
 
 ---
 
@@ -272,6 +273,8 @@ Eureka uses **three SQLite databases**, each with identical schema but different
 
 **Query federation**: Application layer queries all three tiers and merges results. No database-level federation (avoids `ATTACH` complexity).
 
+**TDD implication (§55 §2.5):** Application layer queries all three tiers via a `TierCoordinator` that composes three `FactStore` instances (agent, user, project). Tests mock tier-specific stores individually to validate fan-out logic and cross-tier ranking.
+
 ### 6.2 SQLite Configuration
 
 ```typescript
@@ -315,7 +318,7 @@ export function openDatabase(path: string): Database.Database {
 
 ## 7. Query Interfaces
 
-Eureka exposes **three query modes** to the runtime:
+Eureka exposes **three query modes** to the runtime. These interfaces define the application-layer API; the storage seam beneath them (§7.4) is the TDD mock boundary for §55's London-school discipline.
 
 ### 7.1 BM25 + Recency Hybrid Recall (FR-2)
 
@@ -324,6 +327,7 @@ Eureka exposes **three query modes** to the runtime:
 ```typescript
 interface RecallQuery {
   query: string;              // Natural language query
+  session_id?: SessionId;     // Session scope filter (see §30 §1.2)
   limit?: number;             // Max results (default: 10)
   tier?: AttentionTier[];     // Filter by tier (default: ['hot', 'warm'])
   kind?: FactKind[];          // Filter by kind
@@ -346,6 +350,19 @@ hybrid_score = bm25_score * recency^0.3 * trust^0.2
 ```
 
 Exponents tuned empirically; BM25 dominates, recency and trust provide tie-breaking.
+
+**Contract test requirement (§55 §3.3):** The storage layer (`FactStore.search()`) must return `bm25_score` normalized to [0,1]. Activity tests mock this interface; contract tests validate FTS5 normalization.
+
+**Example with session scope:**
+```typescript
+// Session-scoped recall (retrieves only facts from specific session)
+const results = recall({
+  query: 'authentication',
+  session_id: 'session-abc-123' as SessionId,
+  limit: 5,
+  min_trust: 0.6
+});
+```
 
 ### 7.2 Graph Traversal
 
@@ -386,6 +403,30 @@ export function filter(query: FilterQuery): Fact[];
 - "All decisions": `filter({ kind: 'decision' })`
 - "Hot facts from this session": `filter({ session_id, tier: 'hot' })`
 - "High-trust aspirations": `filter({ kind: 'aspiration', min_trust: 0.9 })`
+
+### 7.4 Storage Seam (Mock Boundary)
+
+All three query interfaces (`recall`, `traverse`, `filter`) delegate to a **storage abstraction layer** for I/O. This is the TDD mock boundary identified in §55's London-school discipline.
+
+**Interface shape:**
+```typescript
+// packages/eureka/src/persistence/fact-store.ts
+interface FactStore {
+  search(query: RecallQuery): RecallResult[];     // BM25 + filtering
+  traverse(query: TraversalQuery): Fact[];        // Graph traversal
+  filter(query: FilterQuery): Fact[];             // Structured property query
+}
+```
+
+**TDD contract (§55 §1.2, §3.3):**
+- **Activity tests** mock `FactStore` at the I/O boundary. Real BM25 scoring and recency computation happen in the activity layer; mocked data comes from `FactStore.search()`.
+- **Contract tests** validate that the real SQLite implementation honors query constraints:
+  - Session isolation: `search({ session_id })` returns only matching facts
+  - Trust floor: `search({ min_trust: 0.6 })` excludes facts below threshold
+  - Tier filtering: `filter({ tier: ['hot', 'warm'] })` respects tier constraints
+  - BM25 normalization: `search()` returns `bm25_score` ∈ [0, 1]
+
+**Integration with CuratorStore (§30 §1.2):** Edgar's `CuratorStore.retrieve(sessionId, query)` signature uses this storage seam. The two-argument form (session first, query second) is a convenience wrapper around `FactStore.search({ session_id, query })`.
 
 ---
 

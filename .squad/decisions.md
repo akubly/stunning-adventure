@@ -98,6 +98,54 @@
 
 ---
 
+### 2026-05-27: Eureka TD Re-Pass After §55 — §20/§30/§40/§50 Aligned with London-TDD Spine
+
+**Status:** ✅ AUDIT COMPLETE — Recommendations applied  
+**Date:** 2026-05-27  
+**Initiated By:** Aaron Kubly  
+**Question:** Should we do a TD re-pass after §55?  
+**Decision:** Full bounded pass (Option A) — parallel audits across §20/§30/§40/§50 + follow-up executions  
+
+**Summary:** Six-agent batch (Crispin/Roger/Laura/Edgar × 2 phases) verified that all four predecessor sections align with §55's London-school TDD mock contract discipline. All seams identified, all gaps addressed. No schema rewrites needed; seams are fundamentally sound with additive clarifications.
+
+**Phase 1 — Audits & Executions:**
+
+1. **Crispin (§20 Audit):** SEAMS HOLD — 5 findings, 1 interface addition (session_id to RecallQuery). No schema changes. **Deliverable:** `.squad/decisions/inbox/crispin-20-seam-audit-vs-55.md`
+
+2. **Roger (§40 DI Audit):** 80% injectable — 2 seams need extraction (`ClockProvider`, `RandomSource`), 1 correctly deferred (model). Forward-docs network boundary for v1.5. **Deliverable:** `.squad/decisions/inbox/roger-40-di-seam-audit-vs-55.md`
+
+3. **Laura (§50 Reframe):** §50 positioned as design-time testability discipline; §55 as implementation-time TDD practice. Complementary pair. **Deliverable:** Edited `docs/eureka/sections/50-testability.md` (+9%)
+
+4. **Edgar (§30 Follow-Ups):** 3/3 executed — CuratorStore signature adopted, ClockProvider seam added, latency cross-refs established. **Deliverable:** `.squad/decisions/inbox/edgar-30-followups-executed.md`, edited `docs/eureka/sections/30-learning-systems.md`
+
+**Phase 2 — Recommendations Applied:**
+
+5. **Crispin (§20 Apply):** §7.4 "Storage Seam (Mock Boundary)" added (names `FactStore` interface explicitly). RecallQuery updated. TDD notes added. **Deliverable:** Edited `docs/eureka/sections/20-knowledge-representation.md` (+12%)
+
+6. **Roger (§40 Apply):** §40.5.4 "Time Injection" + §40.5.5 "RNG Injection (v1.5)" added. Network/model seams forward-documented. **Deliverable:** Edited `docs/eureka/sections/40-integration.md` (+19.8%)
+
+**Key Findings:**
+- ✅ All four sections now London-school-aligned with §55 spine
+- ✅ I/O seams correctly identified; mock boundaries explicit
+- ✅ Time/RNG injection patterns extracted (§30 + §40 coordinated)
+- ✅ Phase 2 follow-ups landed without cross-section conflicts
+- ✅ Zero implementation blockers; seams are fundamentally sound
+
+**Learnings:**
+- Parallel audits work well for cross-section stress-testing
+- London-school TDD cascades to design docs (seams, boundaries, time injection)
+- "Defer != ignore" — forward-document seams now, extract later (v1.5)
+- Bidirectional cross-refs prevent §30–§55 latency-target drift
+
+**Timeline:** Complete. §20/§30/§40/§50 ship-ready with full seam documentation verified.
+
+**Session log:** `.squad/log/2026-05-27T15-30-00Z-td-repass-after-55.md`  
+**Orchestration logs:** 6 logs per agent (`.squad/orchestration-log/2026-05-27T*-{agent}.md`)
+
+**Signed:** Scribe (orchestration logger), Crispin, Roger, Laura, Edgar
+
+---
+
 ## Executive Summary
 
 **Convergent Finding:** Crucible (v1-DRAFT) and Eureka (v5-final) both depend on shared substrate (Cairn, Forge, types) and both define overlapping session/decision/improvement semantics. The dependency direction is backwards: Crucible assumes Forge exists in `harness` repo but Forge actually lives in `mem` repo. The overlap is NOT accidental — Eureka is Crucible's future memory layer — but the shared-code surface is brittle without explicit coordination.

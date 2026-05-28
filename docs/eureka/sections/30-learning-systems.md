@@ -83,7 +83,11 @@ function integrate(payload, session_id, trust_hint):
 ```
 function recall(query, limit, tier_filter, trust_floor):
   trust_floor = trust_floor ?? 0.15
-  candidates = searchBM25(query)  // BM25 lexical search
+  session_id = getCurrentSessionId()  // From active session context
+  
+  // Use CuratorStore.retrieve(sessionId, query) for session-scoped retrieval (§55 §2.3)
+  curator = new CuratorStore()
+  candidates = curator.retrieve(session_id, query)  // BM25 lexical search with session isolation
   
   if tier_filter is provided:
     candidates = candidates.filter(f => f.tier in tier_filter)
@@ -430,7 +434,70 @@ Query-time computation avoids batch recomputation. Stored timestamps are immutab
 
 ---
 
-### 2.3 Plasticity (v1.5 — deferred)
+### 2.4 Time Injection for Testability
+
+**Purpose:** Enable deterministic recency tests by abstracting time source behind a mockable interface.
+
+**Problem:** Recency formula `(now() - last_accessed) / 86400` relies on `now()`. Direct system clock calls make tests non-deterministic and time-travel scenarios (e.g., "simulate 7 days later") impossible.
+
+**Solution:** Introduce a `ClockProvider` interface that the recency algorithm depends on. Tests inject a `MockClock` with controllable time; production code uses `SystemClock`.
+
+**Interface Shape:**
+```typescript
+interface ClockProvider {
+  /** Returns current Unix timestamp in seconds */
+  now(): number;
+}
+
+class SystemClock implements ClockProvider {
+  now(): number {
+    return Date.now() / 1000;
+  }
+}
+
+class MockClock implements ClockProvider {
+  private _currentTime: number;
+  
+  constructor(initialTime: number) {
+    this._currentTime = initialTime;
+  }
+  
+  now(): number {
+    return this._currentTime;
+  }
+  
+  advance(seconds: number): void {
+    this._currentTime += seconds;
+  }
+}
+```
+
+**Usage in Recency Calculation:**
+```typescript
+function computeRecency(lastAccessed: number, clock: ClockProvider): number {
+  const t = (clock.now() - lastAccessed) / 86400;  // days
+  return Math.max(0.1, Math.pow(1 + t, -0.7));
+}
+```
+
+**Test Example:**
+```typescript
+it('applies 7-day recency decay', () => {
+  const clock = new MockClock(1000000);
+  const fact = { last_accessed: 1000000 - (7 * 86400) };
+  const recency = computeRecency(fact.last_accessed, clock);
+  expect(recency).toBeCloseTo(0.27);  // 7-day power-law decay
+});
+```
+
+**Design Notes:**
+- ClockProvider lives in `packages/eureka/src/learning/properties/clock.ts` (extraction-ready per FR-12).
+- All time-dependent algorithms (`recall`, `rerank`, `sweep`) accept optional `ClockProvider` parameter (defaults to `SystemClock`).
+- This seam is testability hygiene, not business logic. Production code never instantiates `MockClock`.
+
+---
+
+### 2.5 Plasticity (v1.5 — deferred)
 
 **Type:** Scalar `0..1` (planned)  
 **Purpose:** Control learning rate for trust/importance updates
@@ -523,7 +590,7 @@ Activities trigger on different cadences:
 
 **Measurable Latency:**
 - integrate: < 10ms (single fact insert)
-- recall: < 100ms (BM25 query + scoring for 10 results)
+- recall: < 100ms (BM25 query + scoring for 10 results) *(performance assertion: see §55 §2.1 example or future §55 perf-test cycle)*
 - rerank: < 50ms (rescore 10 facts)
 - decide: < 10ms (single-pass selection)
 - commit: < 500ms (batch persist for typical session of 50 facts)
@@ -548,7 +615,7 @@ Activities trigger on different cadences:
 4. **Stale flag emission:** `stale_aspiration`, `stale_trust`
 5. **Edge weight reconciliation:** Adjust weights against new evidence (no fact mutation)
 
-**Measurable Sweep Time:** < 5 seconds for 10,000 facts (v1 target)
+**Measurable Sweep Time:** < 5 seconds for 10,000 facts (v1 target) *(performance assertion: see §55 §5 AC-mapping for FR-12 sweep tests or future §55 perf-test cycle)*
 
 ---
 

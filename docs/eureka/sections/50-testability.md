@@ -2,9 +2,11 @@
 
 ## Overview
 
-This section defines the test strategy for Eureka v1, organized around the acceptance criteria as the test contract. Tests prioritize the riskiest behaviors: recall scoring dynamics, tier boundary resolution, trust/recency decay, and Forge↔Eureka ingestion integrity.
+**Positioning:** §55 (London-School TDD Strategy) is the implementation spine — London-school outside-in TDD drives collaborator shape from tests. §50 is the complementary layer underneath: property-based tests for trust/recency invariants, edge-case checklists, integration boundary tests at storage/bridge seams, and the contract-first patterns the outside-in tests can lean on. For the TDD workflow (red/green/refactor rhythm, mock discipline, AC mapping), see §55.
 
-**Test philosophy**: Contract-first (inline stubs before implementations), property-based for continuous properties (trust, recency), metamorphic for scoring curves, and human-in-loop for 80% precision threshold validation (AC-1.3).
+This section defines test patterns for Eureka v1's continuous properties, tier boundaries, and cross-package integration seams. Tests prioritize the riskiest behaviors: recall scoring dynamics, tier boundary resolution, trust/recency decay, and Forge↔Eureka ingestion integrity.
+
+**Test philosophy**: Property-based for continuous properties (trust, recency), metamorphic for scoring curves, contract testing for integration seams, and human-in-loop for 80% precision threshold validation (AC-1.3). For unit test workflow and mock patterns, see §55.
 
 **Test framework**: Vitest, following `packages/cairn/vitest.config.ts` patterns. In-memory SQLite for isolation, deterministic seeds for reproducibility, time-travel mocks for recency/decay testing.
 
@@ -12,7 +14,11 @@ This section defines the test strategy for Eureka v1, organized around the accep
 
 ## Test Layers
 
+**Note:** §55 defines the outside-in TDD workflow for activity tests (recall, integrate, rerank, etc.). This section documents the complementary property-based and integration test layers that validate invariants the outside-in tests assume.
+
 ### Unit Tests
+**Status:** Complementary to §55. For TDD workflow and mock discipline, see §55 §1-3.
+
 **Scope**: Pure functions, single-responsibility modules, schema contracts.
 
 **Coverage targets**:
@@ -29,6 +35,8 @@ This section defines the test strategy for Eureka v1, organized around the accep
 - Tier multipliers: hot=1.0, warm=0.5, cold=0.1 (FR-6)
 
 ### Integration Tests
+**Status:** Complementary to §55. Outside-in tests (§55) mock at storage/network seams; these tests validate the real implementations honor those contracts.
+
 **Scope**: Multi-module workflows, cross-package contracts, database boundaries.
 
 **Coverage targets**:
@@ -64,6 +72,8 @@ This section defines the test strategy for Eureka v1, organized around the accep
 - AC-6.3: Bridge ledger records all operations (test append-only invariant)
 
 ### Property-Based Tests
+**Status:** Complementary to §55. Outside-in tests (§55 §2) discover collaborator interfaces; these tests validate invariants hold across parameter ranges.
+
 **Scope**: Continuous property ranges, scoring dynamics, monotonicity invariants.
 
 **Trust scoring properties**:
@@ -108,6 +118,8 @@ This section defines the test strategy for Eureka v1, organized around the accep
 ---
 
 ## Verification Strategy Per Activity
+
+**Note:** For outside-in TDD workflow (red/green/refactor), see §55 §2 (worked recall example) and §55 §5 (AC-to-test mapping). This section documents complementary edge-case checklists and property tests.
 
 ### Recall (Primary)
 **Inputs**: Query string, session_id, tier scope (default: agent.db only in v1)
@@ -210,6 +222,8 @@ This section defines the test strategy for Eureka v1, organized around the accep
 
 ## Property Dynamics Testing
 
+**Status:** Complementary to §55. Outside-in tests (§55) drive scoring formula discovery; these property tests validate the formula honors trust/recency invariants across continuous ranges.
+
 ### Trust Scoring
 **Mutation space**: Trust updates from [0, 1] → [0, 1]
 **Invariants**:
@@ -261,6 +275,8 @@ This section defines the test strategy for Eureka v1, organized around the accep
 
 ## Tier Boundary Tests
 
+**Status:** Complementary to §55. Outside-in tests (§55 §2.5) drive tier fan-out logic; these tests validate tier stub behavior and write authority boundaries.
+
 ### Cross-Tier Resolution
 **v1 scope**: Only agent.db fully wired. user.db and project.db are stubs.
 
@@ -289,6 +305,8 @@ This section defines the test strategy for Eureka v1, organized around the accep
 ---
 
 ## Integration Tests: Cairn↔Eureka, Forge↔Eureka
+
+**Status:** Complementary to §55. These are contract tests (§55 §3.3) that validate real implementations (CuratorStore, DecisionBridge) honor the mocked interfaces from outside-in tests.
 
 ### Cairn↔Eureka (Session Lifecycle)
 **Shared contract**: SessionId brand from `@akubly/types`
@@ -324,6 +342,8 @@ This section defines the test strategy for Eureka v1, organized around the accep
 ---
 
 ## Test Infrastructure
+
+**Note:** For Vitest mock patterns (vi.fn(), interaction testing), see §55 §3. This section documents fixtures, time-travel mocks, and in-memory DB patterns that support both outside-in (§55) and property-based tests.
 
 ### Fixtures
 **Fact fixtures**:
@@ -390,6 +410,8 @@ afterEach(() => {
 
 ## Acceptance Criteria Mapping
 
+**Note:** For first-failing-test mapping of ACs to test files, see §55 §5. This table tracks complementary property and integration test coverage.
+
 | AC | Description | Test Category | M0 | M1 | M2 | Notes |
 |----|-------------|---------------|----|----|----|----- |
 | AC-1.1 | Store facts across 3 tiers | Integration | ✅ | 🔲 | 🔲 | M0: agent.db only. M1: user/project wired |
@@ -417,6 +439,8 @@ afterEach(() => {
 ---
 
 ## Critical Edge Cases to Write First
+
+**Note:** These edge cases complement the outside-in test flow (§55). While §55 drives normal-path behavior from ACs, these tests validate boundary conditions and error states.
 
 ### 1. Empty Graph (Zero Facts)
 **Risk**: Recall crashes or hangs on empty FTS5 index.
@@ -576,7 +600,7 @@ npm test -- eureka/properties
 
 ## Summary
 
-This test strategy prioritizes **contract-first testing** (acceptance criteria as the test contract), **property-based testing** (for continuous trust/recency/tier dynamics), and **metamorphic testing** (for scoring curves). Critical edge cases (empty graph, conflicting trust, plasticity enforcement, tier stubs) are tested first to validate foundational invariants before building higher-level workflows.
+This section documents property-based tests, integration contract tests, and edge-case checklists that complement §55's London-school TDD spine. While §55 drives collaborator discovery from observable activity behavior (outside-in), §50 validates the invariants those collaborators must honor: trust/recency monotonicity, tier boundary integrity, bridge ledger immutability, and scoring formula correctness across parameter ranges.
 
 **M0 test readiness**: AC-1.1, AC-1.2, AC-1.4, AC-2.1, AC-2.2, AC-2.3, AC-2.5, AC-6.1, AC-6.2, AC-6.3 are testable. AC-1.3 and AC-2.4 are blocked pending precision dataset and checkpoint schema (see Open Questions).
 

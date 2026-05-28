@@ -117,6 +117,52 @@
 
 **What I Learned About Technical Design Documentation:**
 
+---
+
+### 2026-05-27: TD Re-Pass Batch Complete — §20 Audit + Recommendation Application
+
+**Event:** Part of Aaron's 6-agent TD re-pass batch (audits + follow-up executions across §20/§30/§40/§50).
+
+**Phase 1 — Audit §20 Representation Seams vs §55 London-School TDD:**
+- **Task:** Stress-test §20 representation design to verify I/O seams align with §55's mock contract discipline
+- **Scope:** Two-table graph, query interfaces, persistence boundaries — do they support mocking at London-school boundaries?
+- **Verdict:** ✅ SEAMS HOLD — MINOR ALIGNMENT NEEDED
+- **Key findings:** 5 specific findings, 1 interface addition needed (`session_id?: SessionId` to `RecallQuery`)
+- **Deliverable:** `.squad/decisions/inbox/crispin-20-seam-audit-vs-55.md` (full audit report)
+- **Status:** ✅ PHASE 1 COMPLETE
+
+**Phase 2 — Apply §20 Recommendations After Aaron Approval:**
+- **Task:** Execute all 5 audit recommendations to align §20 with §55 TDD boundaries
+- **Recommendations applied:**
+  1. ✅ Added `session_id?: SessionId` to `RecallQuery` interface (§7.1) — unifies hybrid recall with session-scoped filtering
+  2. ✅ Added new §7.4 "Storage Seam (Mock Boundary)" subsection — explicitly names `FactStore` interface as I/O seam
+  3. ✅ Added TDD clarification note to §6.1 "Three-Tier Storage" — explains `TierCoordinator` composition for tier fan-out testing
+  4. ✅ Added contract test note to §7.1 "BM25 Scoring" — specifies BM25 normalization contract requirements
+  5. ✅ Updated §7.1 RecallResult example — demonstrates session_id parameter in context
+- **Content growth:** +12% (new §7.4, interface updates, clarification notes)
+- **Deliverable:** Edited `docs/eureka/sections/20-knowledge-representation.md` (+12%)
+- **Status:** ✅ PHASE 2 COMPLETE
+
+**Key Insight:** §20 seams are fundamentally sound — no schema rewrites needed. The audit was about making implicit boundaries explicit. §7.4 Storage Seam naming is the load-bearing change; it transforms "everyone understands the mock point" into "the mock point is documented in the section itself."
+
+**Learnings:**
+1. **Audit seams at the interface boundary, not the schema level.** §20's two-table graph already has clean I/O seams; the gap was documentation clarity, not design.
+2. **"Storage Seam" naming matters.** Making `FactStore` explicit as the interface (not just "the database") helps test authors discover the right mock point.
+3. **London-school TDD forces earlier seam visibility.** In traditional TDD, seams emerge during implementation. London-school requires them documented at design time.
+
+**Coordination:** Zero conflicts with parallel Edgar §30 follow-ups (checked inbox — CuratorStore adoption doesn't violate representation boundaries).
+
+**Confidence:** HIGH (95%) — audit validated seams are sound; recommendations are straightforward documentation improvements.
+
+**Deliverables:**
+- 2 orchestration logs (Phase 1 audit + Phase 2 apply)
+- Updated `.squad/agents/crispin/history.md` (this entry)
+
+**Timeline:** Complete. §20 now London-school-aligned with §55 spine. Implementation ready.
+
+**Team Update:** §20 seams, representation boundaries, and storage interface are now explicit in documentation. Future code should use §7.4 FactStore interface as the mock boundary for activity tests.
+
+
 - **Type sketches belong in architecture docs.** The schema section (§2) includes TypeScript interfaces even though this is "just" a design doc. These sketches are normative — they constrain implementation choices and serve as shared vocabulary for the squad. They're not aspirational code; they're architectural contracts.
 
 - **Property algorithms need data-shape specs first.** Trust, importance, recency, plasticity — Edgar owns the *algorithms*, but I own the *data shapes*. This is the KR Specialist mandate: define what a property IS (domain, constraints, semantics) before defining how it's computed. Plasticity is underspecified in v5-final, so I proposed the schema shape (§3.5) and flagged it as an open question for Edgar.
@@ -132,3 +178,71 @@
 **KR Principle Reinforced:** Formal schema documentation is a **shared epistemic artifact**. It doesn't just describe the current design; it creates a normative reference that prevents drift, anchors future decisions, and makes implicit constraints explicit. The section serves dual purposes: (1) operational (implementation teams know what to build), (2) epistemological (squad has shared understanding of what knowledge representation MEANS for Eureka).
 
 **Deliverable:** `docs/eureka/sections/20-knowledge-representation.md` — ready for squad review.
+
+---
+
+## 2026-05-27: §20 Seam Audit vs §55 London-School TDD — SEAMS HOLD
+
+**Context:** Aaron requested section owners stress-test their designs against §55's mock contract discipline. Specifically: does §20's representation support clean mocks at I/O seams, or does it leak schema concerns into tests?
+
+**Verdict:** **SEAMS HOLD — MINOR ALIGNMENT NEEDED**
+
+**Core finding:** §20's two-table graph, query interfaces, and persistence boundaries are already mock-ready. The three query interfaces (BM25 recall, graph traversal, structured filter) map directly to §55's mock rubric (§1.2: mock at storage I/O, not at pure functions). Edgar's `CuratorStore.retrieve(sessionId, query)` signature (from §55 §2.3 worked example) is **compatible** with §20's schema — both sessionId and query string are present in the design.
+
+**What I Learned About Representation vs TDD Seams:**
+
+- **Query interfaces ≠ I/O seams.** §20 §7 defines three query functions (`recall`, `traverse`, `filter`) but didn't explicitly name the **storage abstraction layer** beneath them. §55 requires mocking at the I/O boundary (database access), not at the query function level. The seam is `FactStore.search()` → SQLite, not `recall()` → `FactStore`. This is a documentation gap, not a design gap — the schema supports it, but §20 didn't make the boundary explicit.
+
+- **SessionId is both content and filter.** §20 §5.3 correctly describes `session_id` as the "load-bearing integration primitive" (provenance linkage with Cairn), but it's ALSO a query parameter for session-scoped retrieval. The schema stores it (§2.1 line 66), but §7.1 `RecallQuery` didn't expose it as a filter. One-line fix: add `session_id?: SessionId` to the interface. This unifies hybrid recall with session-scoped queries and makes Edgar's `retrieve(sessionId, query)` signature natural.
+
+- **Federation is a testing concern, not just a runtime concern.** §20 §6.1 describes three-tier storage (agent/user/project) with query federation at the application layer, but it didn't specify whether tests inject **one unified store** or **three composable stores**. §55 §2.5 shows the answer: tests mock tier-specific stores individually (`agentStore`, `userStore`) to validate fan-out logic. The design supports this (federation via `TierCoordinator` composing three `FactStore` instances), but §20 should clarify for implementers.
+
+- **Contract tests validate invariants, not formulas.** §20 §7.1 specifies the hybrid scoring formula (`bm25_score * recency^0.3 * trust^0.2`), but it didn't identify what needs contract testing. §55 §3.3 requires: every mock must have a contract test. The boundary: activity tests mock `FactStore.search()` (returns pre-scored BM25 data), and the contract test validates FTS5 normalization to [0,1]. The formula lives in the activity layer (real implementation), not the storage layer (mocked).
+
+- **Schema flexibility doesn't excuse interface ambiguity.** §20's discriminated-union design (caller-defined kinds, extensible edge types) is intentionally flexible. But flexibility in **data shape** doesn't excuse ambiguity in **I/O boundaries**. §55's outside-in TDD forces discovery of collaborators (CuratorStore, Ranker) through test failures. §20 should pre-emptively name the storage seam so implementers know where to draw the mock boundary.
+
+**KR Principle Reinforced:** A representation design isn't just about schema correctness (tables, constraints, types) — it's about **seam legibility**. London-school TDD requires clear I/O boundaries to mock. §20's schema is sound, but it didn't make the storage abstraction explicit. This audit revealed a documentation gap, not a design flaw. The fix: add subsection §7.4 "Storage Seam (Mock Boundary)" to name the interface (`FactStore`) and specify contract test requirements.
+
+**Deliverable:** `.squad/decisions/inbox/crispin-20-seam-audit-vs-55.md` — 5 findings, 0 schema changes, 1 interface addition, 4 wording clarifications. Verdict: SEAMS HOLD.
+
+---
+
+## 2026-05-27: §20 Seam Alignment Execution — All Audit Recommendations Applied
+
+**Context:** Aaron approved the §20 seam audit and directed execution of all 5 recommendations directly to `docs/eureka/sections/20-knowledge-representation.md`.
+
+**Changes applied:**
+
+1. **Added `session_id?: SessionId` to `RecallQuery` interface (§7.1)** — Unifies hybrid recall with session-scoped filtering. Makes Edgar's `CuratorStore.retrieve(sessionId, query)` signature (§30 §1.2) natural by exposing session as a first-class query parameter alongside text search.
+
+2. **Added §7.4: Storage Seam (Mock Boundary)** — Explicitly named `FactStore` interface as the TDD mock boundary. Specifies contract test requirements (session isolation, trust floor, tier filtering, BM25 normalization) per §55 §3.3. Documents the integration point with Edgar's `CuratorStore`.
+
+3. **Added TDD clarification to §6.1 (Three-Tier Storage)** — Documented `TierCoordinator` composition pattern for testing fan-out logic. Aligns with §55 §2.5 multi-store test pattern (mock agent/user/project stores individually).
+
+4. **Added contract test requirement to §7.1 (BM25 Scoring)** — Specified that `FactStore.search()` must return `bm25_score` normalized to [0,1]. Activity tests mock the interface; contract tests validate FTS5 normalization.
+
+5. **Added session_id usage example to §7.1** — Demonstrated session-scoped recall query with the new parameter.
+
+6. **Added cross-references to §55** — Linked §20's storage seam design to §55's London-school TDD discipline in overview (new principle #6), §7 intro, §6.1, and §7.4.
+
+**Length impact:** 11.96% increase (2,541 chars) — well within 15% constraint.
+
+**What I Learned About Audit → Execution:**
+
+- **Audit clarity enables autonomous execution.** The audit enumerated 5 specific, actionable recommendations with line numbers, rationale, and proposed wording. This made execution mechanical — no interpretation required, no decision points during edits. The audit did the thinking work; execution was pure application.
+
+- **Schema seams are documentation seams.** §20's schema already supported §55's TDD discipline — the two-table graph, query interfaces, and persistence layer were structurally sound. The gap wasn't in design; it was in **seam legibility**. The storage abstraction existed conceptually but wasn't named explicitly. Adding §7.4 made implicit boundaries explicit.
+
+- **Cross-references are bidirectional contracts.** §20 now references §55 (storage seam supports TDD), and §55 already referenced §20 (CuratorStore uses §20's schema). This bidirectional linkage creates a **coherence check**: if either section changes, the other must be reviewed for consistency. The references aren't just navigation aids; they're architectural constraints.
+
+- **Session_id is both data and filter.** Adding `session_id?: SessionId` to `RecallQuery` unified two roles: (1) provenance field in the schema (§2.1, §5.3), (2) query parameter for session-scoped retrieval. This duality was always present in the design but not surfaced in the query interface. The audit revealed the missing link between Edgar's `retrieve(sessionId, query)` signature and §20's schema.
+
+- **Contract tests validate seams, not algorithms.** The BM25 scoring formula (`bm25_score * recency^0.3 * trust^0.2`) lives in the activity layer (real implementation). The contract test requirement is narrower: validate that `FactStore.search()` returns normalized BM25 scores [0,1] from FTS5. The seam contract is about **data shape**, not algorithm correctness.
+
+- **TDD implications are first-class design concerns.** Initially, §6.1 described three-tier storage as a runtime concern (query federation, lifecycle management). Adding the TDD implication elevated it to a testability concern: how do you validate fan-out logic without hitting real databases? The `TierCoordinator` composition pattern was implicit; making it explicit serves both runtime implementers (how to build it) and test authors (how to mock it).
+
+**KR Principle Reinforced:** Representation design isn't complete until the **I/O boundaries are named**. §20's graph schema and query interfaces were correct, but they didn't explicitly identify the storage abstraction layer. London-school TDD forced this gap to surface: you can't mock at a seam you can't name. §7.4 fills that gap by naming `FactStore` and specifying its contract. The schema was always mock-ready; now the documentation is too.
+
+**Deliverable:** Updated `docs/eureka/sections/20-knowledge-representation.md` — all 5 audit recommendations applied, 6 cross-references to §55 added, 11.96% length increase.
+
+---
