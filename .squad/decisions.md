@@ -1716,6 +1716,172 @@ Observation: Laura's TDD strategy locks may inform Graham's CTD (Crucible Techni
 
 **CTD impact:** §7 (L3 Generators) or §8 (Applier + DecisionGate) — `PrescriptionResult` schema. §9 (Aperture) — leaderboard rendering. §13 (CLI) — JSON output schema. Rosella + Valanice finalize field/affordance names in their CTD sections.
 
+---
+
+## Crucible CTD Phase 2 Close-out + Consultant Advisories (2026-05-28)
+
+### Phase 2 — Roger (§10 + §15 + Phase 1 Errata)
+
+**Scope:** Session model schema, branching protocol, coexistence boundary, shared types evolution, Phase 1 findings 2a/2b/12b/5.
+
+**Deliverables:**
+- §10 Session Model & Branching — `sessions` table schema, bootstrap protocol, fork protocol, multi-path comparison
+- §15 Coexistence & Shared Types — two-product boundary, `@akubly/types` evolution table, monorepo layout, coexistence lock, R2-6 algorithm side
+- Phase 1 errata applied:
+  - Finding 2a: Split `Timestamp` (ms) from `TimestampNs` (ns); added type-level unit signals in §6
+  - Finding 2b: Added `manifestRoot: boolean` flag to §3.3 WalRow
+  - Finding 12b: Added full AppendProtocol.appendFenced specification to §3.4.1
+  - Finding 5: Patched §7 `dependentPaths` from `string[]` to `EventId[]` (content-addressed); coordinated with Rosella (CONCURRED)
+
+**Cross-Section Sync (R2-6 — Roger ↔ Rosella):** PluginVersionLock format agreed (flat dictionary, lockId footer via Blake3 over CBOR-canonical). Ownership boundary: Rosella owns install-phase algorithm; Roger owns lockfile format + fork-phase verbatim-copy rule + session-start pure-load contract.
+
+**Status:** FINAL. All acceptance criteria satisfied. No new ambiguity surfaced.
+
+### Phase 2 — Valanice (§9 + §13 + Phase 1 Errata 6b)
+
+**Scope:** Aperture projection surface, CLI shell vocabulary, Router ack/reject/expire sub-kinds alignment.
+
+**Deliverables:**
+- §9 Aperture — pure L2 projection end-to-end; ApertureEvent view-shape; StructuralApprovalQueue as CREATE VIEW; notification policy (four levels, structural locked to attention); bisect output with env-snapshot header+footer; leaderboard via `PrescriptionResult.nonDominatedReason`
+- §13 Crucible CLI Shell — thin REPL over `@akubly/crucible-runtime`; vocabulary covering session lifecycle, aperture verbs (watch/show/approve/reject/defer/why/bisect), data-tier decide verbs, saved queries; three render tiers (headline → body → slice)
+- Phase 1 errata 6b: Surgical §5.3 patch — replaced external_input reference with dedicated `structural_proposal_{acked,rejected,expired}` sub-kind family; Router subscribes by (primitiveKind, subKind)
+
+**Cross-Section Sync (R2-3 — Gabriel ↔ Valanice):** Aperture writes `_acked|_rejected|_expired` Observations; Router resumes via `outcome: 'resume' | 'reject'`. Payload shape preserved; subscription contract aligned.
+
+**Consultant Pull-In:** Sonny (debugger specialist) flagged for §9.8 (investigation tools) + §13.6 (JSON schemas) review. Both sections FINAL on disk; advisory non-blocking.
+
+**Status:** FINAL. Finding 6b closed. R2-3 CLOSED.
+
+### Phase 2 — Graham (§14 + Finding 10 Fix)
+
+**Scope:** Eureka integration contract, L4 layer disambiguation.
+
+**Deliverables:**
+- §14 Eureka Integration Surface — narrow contract (SHARED: SessionId, DecisionRecord via @akubly/types; PRIVATE: everything else). One v1.5-deliverable adapter (`@akubly/crucible-eureka-adapter`) must pass §7.A Generic L3 Adapter Conformance (C-1…C-8) unchanged. Eureka ↔ Cairn bridges remain Eureka's concern.
+- Finding 10 fix (applied to §1): §1.2 layer table split from single L4 row to two co-tier rows — "L4 — Router (decision sub-tier)" and "L4 — Applier (enforcement sub-tier)". Added prose note after table clarifying sub-tier framing and cross-referencing §5/§8.
+
+**Rationale (Finding 10):** §8 self-labels as L4 correctly. Sub-tier framing in §1.2 is cheaper and more honest than relabeling §8. Matches package decomposition already present in §1.4.
+
+**Status:** FINAL. Both deliverables stand on locked decisions. No Aaron triage required.
+
+### Phase 2 — Laura (§16 Test Strategy & Invariants)
+
+**Scope:** CTD-side reference to authoritative TDD strategy; cross-collaborator alignment.
+
+**Deliverables:**
+- §16 Test Strategy & Invariants — declarative CTD reference (does not re-litigate or duplicate TDD content). Net-new:
+  - Test-category matrix mapping categories to runners + CI stages
+  - Collaborator → CTD-section alignment matrix (all 17 roles from TDD §3.1–§3.7 present)
+  - One-week productivity-loop bar test
+  - Tooling subsection (bisect Q5/R2-4, replay CLI §11, why/predicate debug surface)
+  - Generic L3 Adapter Conformance execution spec + new-adapter opt-in flow
+  - Agentic-cost framing for zero-tolerance mock-drift gate (Q7) as design constraint
+
+**Collaborator Completeness:** All 17 roles mapped; two defer section details (QueryExecutor → L2 Derived Queries, CausalSliceEngine → L5 Investigation). Phase 3 synthesis will re-verify bindings.
+
+**Status:** FINAL. 3-page budget honored. Cross-ref density locked. No open questions.
+
+### Phase 2 Synthesis Review — Graham
+
+**Scope:** Interface-coherence synthesis across 17 new + 5 modified CTD sections; erratum-verification pass.
+
+**Verdict:** **GREEN.** Phase 3 (§17 Observability, §18 Security, §19 ADR Set) unblocked.
+
+**Verification Summary:**
+- 10 coherence checks (Appendix C "Phase 2 Synthesis") all CLEAN
+- 7 Phase 1 errata verified at landing (2a, 2b, 5, 6b, 10, 12a, 12b) — all CLOSED
+- Both Phase 2 sync pairs CLOSED (R2-3 Gabriel↔Valanice, R2-6 Rosella↔Roger)
+- Vocabulary consistency verified across Phase 2 surface
+- Phase 3 readiness confirmed: all §17/§18/§19 inputs pre-authored
+
+**Ownership:** No fixes routed forward. Two non-blocking advisory items (Sonny consult, L2/L5 future-work stubs) routed informationally to coordinator.
+
+**New Document:** `docs/crucible-technical-design/00-phase2-synthesis-review.md` (~13 KB, 10 coherence checks + erratum-verification pass).
+
+**Status:** GREEN for Phase 3 entry.
+
+### Advisory Reviews (Sonny + Erasmus)
+
+#### Sonny — CTD Phase 2 Debugger-UX Advisory (§9 + §13)
+
+**Authority:** ADVISORY ONLY. No decisions locked; Valanice + Aaron decide incorporation timeline.
+
+**Verdict:** **SOLID.** Time-travel-debugging surface credible for structural proposal + bisect + causal-slice happy paths. Bisect rendering with env-snapshot header+footer is best-in-class (better than `git bisect`).
+
+**Key Findings:**
+
+1. **§9.8 — Investigation tools (breakpoint/watchpoint/logpoint registry)**
+   - Strong: Read-only registry keeps pure-projection invariant; three-kind split matches DAP terminology; hitCount derived from row stream is correct approach
+   - Gap: No explicit predicate-shape spec. Prior art converges on sandboxed expressions over primitive envelope + payload, O(µs) evaluation. Recommend §4 or §9.8 cross-ref before Phase 3.
+   - Missing: Explicit behavior-level distinction between kinds (breakpoint=pause, watchpoint=change detection, logpoint=observe+template)
+   - Low-priority: No hit-count conditional (`ignoreCount`, `condition: 'hitCount % 10 == 0'`); no tracepoints with bounded collection
+
+2. **§13.1 — CLI vocabulary**
+   - Gap: Missing standard debugger navigation triad (`step`, `continue`, `print`)
+   - Gap: Missing high-leverage predicates (conditional, data, logpoint distinctions)
+   - Current: One-hop `why` with default; needs explicit spec on which edge types traversed (causalReadSet.primitiveIds vs parentId vs causalParentId)
+
+3. **DAP-shim viability:** MAYBE→YES. §13.6 JSON schemas already close; two small tweaks needed.
+
+**Advisory Items (Non-Blocking):**
+- Verb collision: watch vs tail — needs triage
+- 16 user stories identified: US-S-10..25 (predicate spec elaboration, standard nav triad, conditional distinctions, tracepoints)
+- Predicate-shape elaboration recommended before Phase 3
+
+**Prior Art References:** rr/Pernosco omniscient query model, Chrome DevTools Logpoint (2019), LLDB/GDB conventions, OpenTelemetry causal traces.
+
+#### Erasmus — CTD Phase 2 Architectural Review (§1 + §6 + prior art lens)
+
+**Authority:** ADVISORY ONLY. Read-only on CTD. Decision authority with Aaron/Graham. No blocking decisions.
+
+**Verdict:** **SOLID** (with two NEEDS-WORK areas).
+
+Crucible closer to rr/Pernosco-for-agents than LangGraph/AutoGen-for-agents. L1 WAL as central bet is correct and rare. Content-addressing via BLAKE3+CBOR is right call. L0 isolation as hermetic boundary is unusually disciplined.
+
+**Two NEEDS-WORK Areas:**
+
+1. **L0/L1 boundary implicitly Copilot-SDK-shaped.** §2 prohibits SDK-native types crossing seam, but primitive vocabulary (§6) curated around what Copilot SDK emits. Multi-provider future architecturally permitted but not anticipated. (Focus 5)
+
+2. **5-primitive taxonomy missing two kinds prior art needs.** Especially critical for scheduling, retry, recovery of sub-agents. (Focus 4)
+
+Neither is v1 blocker. Mitigations in prior-art grounding below.
+
+**Per-Focus Findings:**
+
+**Focus 1 — 5-layer stack (L0→L4+Aperture):**
+- Strong: L0 isolation as hermetic boundary correct and rare (Aider/OpenHands/AutoGen all leak types)
+- Strong: L2 Derived Query as pure projection layer genuinely novel for agentic harnesses (LangGraph checkpoints ≠ incremental projections)
+- Strong: L4 Router/Applier split with independently-testable contracts correct (Temporal Workflow/Activity separation survives mature load *because of it*)
+- At risk: L3 as single contract spanning Curator/Alchemist/Forge-as-adapter doing too much work (known failure mode: Eclipse plugins, vscode contributes, Emacs hooks). Contract starts simple, ends complex (lifecycle, cancellation, partial-progress, trust-tier ack channel). Prior art warning: easy v1 contract = unbreakable v3 contract
+- Slightly fudged: Aperture L5-adjacent placement reads like deference to brand. If truly never writes and is pure projection, rename to "Projection Plane" or "Investigation Plane" (not "L5-adjacent")
+- Missing: No explicit Scheduler/Executor tier between L3 (proposal generation) and L4 (decision). When generators async+expensive+parallel, "which runs now, on what budget" is load-bearing. Bazel/Buck/Salsa separate "what to compute" from "when/where to compute it". **Proposed: US-E-13.**
+
+**Focus 2 — L1 WAL as central design bet:**
+- Strong: "Ledger as source of truth, projections as cache" doctrine correct and rare in agentic domain (event-sourcing works: EventStore, Axon, Kafka, Datomic)
+- Strong: Content-addressing via BLAKE3+CBOR correct (Git/IPFS/Nix prior art; CBOR-canonical right over JSON)
+- Recommended: Pin CBOR canonical spec by version (RFC 8949 §4.2 has ambiguous floating-point corners)
+- Custom WAL over SQLite-as-WAL correct for v1 (group commit, monotonic-floor, format pinning; SQLite WAL = application WAL inside SQLite WAL)
+- At risk: WAL schema evolution hardest problem in event sourcing. §6.5 covers additive-only + explicit adapter at major bumps (good, insufficient). Derived-projection schema evolution the real nightmare (Greg Young decade of discussion; LinkedIn Samza/Kafka Streams war stories). Crucible's deterministic-replay property *should* make tractable but only if L2 projections versioned + replay budgets tracked. **Suggest US-E-15.**
+
+**Focus 3 — Coexistence with Cairn/Forge:**
+- Correct: Two-product fork (share identifiers, fork storage/write pattern/plugin/CLI/migration)
+
+**Focus 5 — SDK-shaping risk:**
+- Implicit: Vocabulary curated around Copilot SDK today (no multi-provider acknowledgment in §1 or §6)
+- Mitigation: Suggest §6.1 multi-provider future note + §2 SDK-boundary restatement in context
+
+**Focus 6 — "Crucible replaces Copilot CLI" framing:**
+- Highest-stakes call in doc; least prior-art-backed vs other architectural bets
+- Honest paragraph needed: how Aaron will actually daily-drive this vs mental model of CLI as invocation wrapper
+
+**Advisory Items (Non-Blocking):**
+- **US-E-13 — Generator Scheduler tier.** Explicit policy for when/how-many generators run (eager/on-demand/debounced/budgeted), separated from generator contract. Mitigates L3-as-junk-drawer risk.
+- **US-E-14 — Rename "Aperture L5-adjacent" to numbered or non-mystical name** (Projection Plane / Investigation Plane). Vocabulary hygiene, zero implementation cost.
+- **US-E-15 — WAL schema evolution and L2 projection versioning.** Operational nightmare mitigation for derived-projection schema changes over time.
+- **US-E-5 — Multi-provider future framing in §1/§2/§6.** Acknowledge Copilot SDK as v1 substrate; document multi-provider extensibility assumptions.
+
+**Prior Art References:** rr/Pernosco (event-sourced time travel), Temporal (Workflow/Activity separation), LangGraph (checkpointing vs event sourcing), Bazel/Buck/Salsa (scheduler/executor tiers), EventStore/Axon/Datomic (event sourcing), Honeycomb/Datadog/Jaeger (observability planes), LSP (wire/internal split), Roslyn (SyntaxNode/SyntaxToken discipline), GHC API (Hsc/Tc layer separation).
+
 ### R2-6 — Transitive dep resolution timing
 
 **Lock — three-phase separation:**

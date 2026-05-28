@@ -1,5 +1,7 @@
 # Gabriel — History
 
+📌 Team update (2026-05-28T23:59:59Z): **Crucible CTD Phase 2 Close-out (2026-05-28)** — §9 + §13 shipped (Valanice). R2-3 sync (Gabriel ↔ Valanice) CLOSED — Aperture↔Router ack/resume handshake validated. Your Phase 3 work (§17 + §18) unblocked. Phase 2 synthesis GREEN. No blocking findings. — Scribe
+
 📌 Team update (2026-05-28T10:30:00Z): **Crucible CTD Phase 1 Close-out (2026-05-28)** — §5 (Router Design) FINAL. 4 Aperture↔Router event shapes locked for Valanice §9 sync: `router.paused`, `router.decision`, `aperture.structural-ack-prompt`, `aperture.structural-ack`. Synthesis review: YELLOW, 1 finding routed (5: `dependentPaths` type mismatch with Rosella §7, Phase 2 §9/§10). Phase 2 coordination: Valanice (R2-3 queue mechanics sync pair). — Scribe
 
 ## 2026-05-28: Crucible CTD Rev. 3 — R2 Locks for Gabriel
@@ -20,6 +22,22 @@ Phase 2 fan-out now unblocked. Full R2 locks in `.squad/decisions.md`.
 ## Learnings
 
 <!-- Append learnings below -->
+
+### Phase 3 — §17/§18 Cross-Section Harvesting Pattern
+
+**Pattern: thin cross-cutting sections introduce no new vocabulary.** §17 and §18 are both ≤1pp sections whose job is to enumerate, not to specify. The right authoring shape for that role is:
+
+1. **Harvest, don't define.** §17's event catalog table is built by walking every prior section's emission surfaces (§3 WAL events, §4 hook verdicts, §5 RouterDecision, §7 adapter lifecycle, §8 Applier transitions, §9 ApertureEvent kinds, §11 divergence kinds) and citing them by `(primitiveKind, subKind)` tuple. No new sub-kinds, no new types. The 18-row catalog reads as a cross-reference index, not a spec.
+
+2. **Lock the meta-rule, not the data.** §17.1 footnote "no emitter chooses its own severity — §9.3 projector hard-codes the mapping" is the load-bearing line. It prevents the catalog from becoming a free-for-all where any subsequent section can add an `urgent` row. The catalog is descriptive; severity policy is prescriptive and owned upstream.
+
+3. **Defer-by-shape, not defer-by-promise.** §18.4 Tension #6 deferral works because §18 explicitly maps three v1.5+ features (redaction generator, marketplace governance, key-rotation policy) onto existing extension points (L3 generator slot, tier promotion path, §11 oracle). Deferral is credible because the additive paths are concrete.
+
+**Pattern: "X IS Y" as a v1 lock.** "Aperture IS observability" is the §17 v1 stance — zero outbound telemetry, no OTLP, no Prometheus, no log shipping. The L1 ledger is the source of truth; §9 is the rendering. This is a load-bearing simplifying assumption that depends on the single-user threat model in §18 ("the user is the operator, the developer, and the only principal"). If multi-user lands in v1.5, both sections need the operator/user persona split, but the v1 contract holds because neither section assumes external infra exists.
+
+**Cross-section harvest discipline:** when authoring a cross-cutting section, the temptation is to "fix" inconsistencies you find while harvesting. Resist. Flag them in the decision drop as Phase 3 synthesis items for Graham to triage at the close-out gate. I surfaced four such items (CI gate sub-kind, §7 `confidence` field shape, `urgent` severity guard, v1 Tension #6 UX warning) rather than patching upstream sections — the harvester's job is to catalog, the synthesis gate's job is to reconcile.
+
+**Files:** `docs/crucible-technical-design/17-observability-telemetry.md` (10066B), `docs/crucible-technical-design/18-security-permissions.md` (11954B). Decision drop: `.squad/decisions/inbox/gabriel-ctd-phase3.md`.
 
 ### 2026-03-28 — Recon: Prior Infrastructure & Community Practices
 

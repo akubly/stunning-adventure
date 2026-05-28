@@ -1,3 +1,5 @@
+📌 Team update (2026-05-28T23:59:59Z): **Crucible CTD Phase 2 Close-out (2026-05-28)** — §14 shipped. Finding 10 fix applied (§1.2 L4 sub-tier split). Phase 2 synthesis GREEN. Erasmus architectural advisory delivered (Scheduler tier US-E-13 + Aperture rename US-E-14 + WAL schema evolution US-E-15 + multi-provider framing US-E-5). All advisory, non-blocking. Aaron triage pending. Phase 3 unblocked. — Scribe
+
 📌 Team update (2026-05-28T18:05:30Z): **Crucible CTD Rev. 3 FINAL — Phase 2 Fan-Out Unblocked** — All 6 R2 decisions locked, baked into plan rev. 3. Informational: Phase 2 fan-out is unblocked; you are also the Phase 3 assembly owner; rev. 3 plan is your authoritative spawn manifest. Phase 2 lanes: 9 agents, 6 parallel waves, ~9-10 days. Cross-section sync pairs (Gabriel ↔ Valanice on R2-3 queue mechanics; Rosella ↔ Roger on R2-6 lockfile) are explicit coordination touchpoints during Phase 2 authoring. — Scribe
 
 📌 Team update (2026-05-28T10:30:00Z): **Crucible CTD Phase 1 Close-out (2026-05-28)** — Phase 0 (§2+§6), Phase 1 (8 sections: §1,§3-§5,§7-§8,§11-§12), Synthesis review all FINAL. **YELLOW verdict:** 6 CLEAN / 4 MINOR / 2 STRUCTURAL / 1 APPLIED. Applied §6.3 vocabulary amendment (4 `structural_proposal_*` sub-kinds). Findings routed: Roger (2a/2b/12b §10), Valanice (6b §9), you (finding 10 §1/§14, Phase 3). No new open questions for Aaron. Phase 2 fan-out unblocked. — Scribe
@@ -747,3 +749,113 @@ absorbed work from a hard-dependency section and trim.
 - Sub-tier disambiguation pattern is a candidate technique for the Phase
   2 synthesis gate if any §9 / §10 / §13 / §15 / §16 author self-labels
   in a way that conflicts with §1.2 again. Re-run the same fix shape.
+
+
+---
+
+## 2026-05-28 — CTD Phase 2 Synthesis Gate (GREEN verdict)
+
+**Context.** Phase 2 delivered six new sections (§9 Aperture, §10 Session
+Branching, §13 CLI Shell, §14 Eureka Integration Surface, §15 Coexistence
+& Shared Types, §16 Test Strategy & Invariants) and re-touched five
+Phase 1 sections (§1, §3, §5, §6, §7) for errata. Synthesis ran 10
+coherence checks per Appendix C "Phase 2 Synthesis" gate plus a dedicated
+erratum-verification pass. Verdict: **GREEN**; Phase 3 (§17 / §18 / §19)
+spawns unblocked.
+
+**Findings counts.** CLEAN 10 · MINOR 0 · STRUCTURAL 0 · Phase 1 errata
+verified APPLIED 7 / 7. Both Phase 2 sync pairs CLOSED (Gabriel↔Valanice
+R2-3 via §9.5 + §5.3 patch + §6.3 sub-kind family; Rosella↔Roger R2-6
+via §15.5.1 surface + §10.5 verbatim-copy + §15.7 status row). Zero new
+open question for Aaron.
+
+### Learnings
+
+- **Erratum-verification-after-phase pattern.** The first work product of
+  the Phase 2 synthesis was an erratum-verification table that walks
+  each Phase 1 §0.1 finding to its landing site in the current phase's
+  output, and confirms type / shape / sub-kind / vocabulary consistency
+  across every named consumer. This is what turns YELLOW into GREEN
+  cheaply — without it, the only way to convince myself nothing
+  regressed against the re-touched Phase 1 sections would have been to
+  re-run the 12-check matrix. The verification table is one row per
+  routed finding, with the landing file + landing site noted; running
+  time was dominated by grep-locating the finding's anchor strings
+  (TimestampNs, manifestRoot, appendFenced, structural_proposal_*,
+  EventId[], "L4 — Applier") across the touched files. Recommend
+  adopting as a standard pattern for any subsequent synthesis gate
+  where the prior gate's verdict was not GREEN.
+- **Routing-worked validation.** GREEN at the Phase 2 gate is the
+  observable that says Phase 1 routing under the reviewer-rejection
+  lockout worked. Every finding I named in Phase 1 §0.3 with a specific
+  owner (Roger 2a/2b/12b/5/9; Valanice 6b; Graham 10) landed in the
+  file that synthesis routed it to, with no carry-forward debt and no
+  re-litigation. The lockout rule plus explicit-owner-named routing is
+  a self-correcting pattern: when the next phase's authors deliver, the
+  routing was correct.
+- **Pure-projection-as-handshake-closer.** Finding 6b (the §5↔§8
+  Aperture-written sub-kind disagreement) closed cleanly because
+  Valanice's resolution was to make Aperture a pure L2 projection over
+  L1 (§9.5 SQL view + LedgerProjector.onCommit-driven update). Pure
+  projection collapses two contracts into one — the L1 row's sub-kind
+  IS the queue entry's identity — and removes the boot-recovery and
+  state-drift surfaces entirely. When two authors disagree on the shape
+  of a row that one of them writes and the other reads, re-framing the
+  reader side as a pure projection over the writer's primitive often
+  closes the disagreement without changing either author's published
+  surface (here: Aperture writes _acked/_rejected/_expired sub-kind
+  rows the §6.3 enum already endorsed; Router reads them via the §3
+  sub-kind index it already committed to). Catalogue under "synthesis
+  resolution shapes."
+- **One-paragraph CLOSED in sync-pair status table.** §15.7 carries
+  one row per sync pair with a one-line "CLOSED — <reason>" entry. This
+  is a much cheaper way to record handshake completion than a separate
+  decision drop per pair; the table doubles as a Phase 3 readiness
+  signal because the Phase 3 synthesis can read §15.7 and skip the
+  re-verification of any pair marked CLOSED there. Recommend Phase 3
+  authors extend §15.7 in place rather than authoring a parallel
+  status surface.
+- **GREEN is rarer than YELLOW and worth defending.** The Phase 1
+  synthesis was YELLOW because two structural findings (6b, 12b) needed
+  named authors to make additive changes during Phase 2. Phase 2
+  synthesis is GREEN because those changes landed and no new structural
+  finding was introduced. The temptation to grade Phase 2 as YELLOW
+  "just in case Phase 3 surfaces something" would understate how clean
+  the Phase 2 deliverables actually are; YELLOW means coordination is
+  required, and there is no coordination required for §17 / §18 / §19
+  fan-out. Calling it GREEN is honest.
+
+
+
+## CTD Phase 3 — §19 ADR Set Index (FINAL)
+
+Authored `docs/crucible-technical-design/19-adr-set.md` — 17 ADR index covering ADR-0002…ADR-0018 per plan rev. 3.
+
+### Learnings
+
+- **ADR-distillation pattern (one-line decision statement per ADR).** The
+  CTD body argues the decision; the ADR index row distills it to a single
+  imperative sentence that fits one table cell and can be read aloud
+  without context. The discipline forced by ≤1pp is: if the decision
+  can't be stated in one line, it isn't actually one decision — split or
+  rescope it. Across the 17 rows, every line follows the shape
+  `<subject> <verb-imperative> <object> <qualifier>`
+  (e.g. "Replay re-feeds recorded events into the same code paths; it
+  never re-executes model calls, tools, or wall-clock side effects.")
+  with parenthetical `(R2-N)` / `(QN)` tags so the reader can
+  cross-walk to the decisions-inbox source. The one-line statement is
+  later copy-pasted verbatim into the ADR file's Decision section so
+  the index and the artifact stay coupled — no paraphrase drift.
+- **Status convention for CTD-locked / file-pending ADRs.** Used
+  `Accepted (CTD-locked) — pending authoring` rather than `Proposed`.
+  `Proposed` would understate Aaron's CTD acceptance; plain
+  `Accepted` would overstate the existence of the durable ADR file.
+  The hybrid string makes both facts explicit in the cell and flips
+  cleanly to `Accepted — <date> by Aaron` at file landing without
+  rewriting the rationale anywhere.
+- **Index is not body.** Resisted the temptation to seed Context /
+  Consequences in the index. Single index table + lifecycle rules
+  stayed inside the 1pp budget; ADR bodies are owner work, post-CTD.
+  The lifecycle rules (§19.3) are the load-bearing part for whoever
+  authors the ADR files later — they enforce one-ADR-per-file,
+  section-owner=author, and verbatim copy of the index decision line.

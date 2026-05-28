@@ -209,3 +209,65 @@ T5 resolved — Crucible built on Copilot SDK, replaces Copilot CLI as Aaron's d
 **Coordination shape:** Separate "what must freeze now" from "future integration preference." For this memo, the immediate freeze was only `SessionId` + `DecisionRecord` + co-owned `@akubly/types`; the Eureka-aware prescriber stayed explicitly non-blocking and deferred until implementation demand exists.
 
 **Output:** `D:\git\harness\.squad\decisions\inbox\erasmus-cassima-reply.md`
+
+## CTD Phase 2 Architectural Review (2026-XX-XX)
+
+**Task:** Advisory review of Graham's §1 Architectural Overview from
+agentic-harness prior-art lens. Read-only on CTD. Output to inbox.
+
+**Verdict:** SOLID. Two NEEDS-WORK pockets (Copilot-shaped vocabulary at
+L0/L1; missing primitives — Failure, possibly Plan). Hermetic replay is the
+single most prior-art-distinguishing thing in the design and deserves louder
+framing.
+
+**Architecture-review patterns worth reusing:**
+
+1. **Per-focus-area triage (Strong / At-Risk / Prior-art / US-E-N
+   proposals).** Forces honest praise *before* critique; prevents the
+   review from devolving into a defect list. Each section ends with
+   concrete US-E-N proposals so the team has something to triage rather
+   than abstract concerns to internalize.
+2. **"What kills it in prior art" framing for risks.** Naming the actual
+   prior-art system that died from each risk (Cursor merge tax, Eclipse
+   plugin sprawl, Datomic compaction, shared-types fragmentation) gave
+   each risk a specific historical referent the team can go read.
+3. **Honesty-on-T5.** Aaron locked T5 in round 3; I withdrew US-E-NEW-12
+   in round 4. The advisory review nonetheless flagged T5 as the
+   highest-stakes architectural call with the *weakest prior-art
+   support*, while acknowledging the one prior-art-resistant
+   counter-argument (hermetic capture at the LLM boundary requires
+   SDK-level access). Lock discipline should not mean silence on
+   architectural debt; the right move is to be loud about the cost while
+   respecting the call.
+
+**Prior-art comparisons most illuminating for this review:**
+
+- **rr / Pernosco** as the gold standard for record-replay. Crucible is
+  closer to "rr-for-agents" than to "LangGraph-for-agents," and the doc
+  underplays this. Aperture's investigation UX should target Pernosco,
+  not Datadog/Honeycomb.
+- **Datomic** as the only mainstream "append-only fact log + recomputable
+  projections" system. Their compaction/excision story is directly
+  applicable to L1 long-term.
+- **Cursor (vs VS Code)** as the cautionary tale for T5. Owning the host
+  costs forever. Cursor can pay because they have funding; Crucible can't.
+- **Temporal** for the Router/Applier split (Workflow vs Activity) and
+  for deterministic-workflow rules that Crucible's L3 generators may
+  eventually need to adopt.
+- **Erlang/OTP `gen_server` callbacks** as evidence that a 5-primitive
+  taxonomy can stay 5 for 30 years if you start it disciplined. Good
+  precedent for §6's restraint.
+
+**Most consequential single finding:** The L3 generator contract is the
+abstraction being asked to do the most work, and prior art (Eclipse
+plugins, vscode `contributes.*`, every long-lived extension API)
+consistently shows that the contract that is easy in v1 is the contract
+you can't change in v3. Recommended an explicit Scheduler tier (US-E-13)
+between L3 and L4 to keep the generator contract small.
+
+**Prior-art system Aaron should personally study urgently:** **Pernosco.**
+It is the single best worked example of the UX layer over a replay
+substrate that Aperture is implicitly trying to be. Two hours of using it
+will reshape Aperture's verb surface more than any spec round.
+
+**Output:** `D:\git\harness\.squad\decisions\inbox\erasmus-ctd-p2-architectural-review.md`

@@ -1,3 +1,5 @@
+📌 Team update (2026-05-28T23:59:59Z): **Crucible CTD Phase 2 Close-out (2026-05-28)** — §16 shipped. All 17 collaborator roles mapped (none unmapped). Cross-ref matrix complete. 3-page budget honored. No open questions. Phase 3 synthesis will re-verify deferred-section bindings. Ready for triage. — Scribe
+
 📌 Team update (2026-05-22T14:07:59Z): **Phase 4.6 Wave 2 complete** — ChangeVectorProvider + ForgePrescriberOrchestrator + autoApplyEligible safety gate + hint dedup + forge-prescribe CLI all shipped. 1199 tests passing, 9 work items landed, 4 decisions merged. Wave 3 (Curator-driven orchestration + composition root) deferred behind ADR. — Scribe
 
 📌 Team update (2026-05-28T10:30:00Z): **Crucible CTD Phase 1 Close-out (2026-05-28)** — §11 (Hermetic Replay) FINAL. Cross-section dependencies flagged for Phase 2: Roger (§3 body shape pinning for `llm_response` / `tool_output` / `cross_session_memory` Observations), Alexander (§12 offset-0 materialization sequence + `memoryManifest` in SessionMetadata). Synthesis review: YELLOW, 1 finding routed to Roger §10/§15 on body-shape normalization. Ready for Phase 2 implementation. — Scribe

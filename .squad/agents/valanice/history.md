@@ -1,5 +1,7 @@
 # Valanice — History
 
+📌 Team update (2026-05-28T23:59:59Z): **Crucible CTD Phase 2 Close-out (2026-05-28)** — §9 + §13 shipped. Finding 6b closed (R2-3 sync CLOSED). Sonny debugger-UX advisory delivered (watch→tail collision + 16 user stories US-S-10..25 + predicate spec elaboration). Both sections final on disk; advisory non-blocking. Aaron triage pending. — Scribe
+
 ## 2026-05-28: Crucible CTD Rev. 3 — R2 Locks for Valanice
 
 **Locked decisions** impact your Aperture and Router design. Your tasks:
