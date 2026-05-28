@@ -173,7 +173,8 @@ describe('get_status structural shape (server.ts source)', () => {
 //  which binds to the real on-disk DB; invoke via MCP integration tests instead)
 // ---------------------------------------------------------------------------
 
-describe('get_session: DB-layer behavior (handler-error coverage TODO)', () => {
+describe('get_session: DB-layer behavior', () => {
+  // TODO: replace with handler-level invocation when handler is exported
   it('getActiveSession resolves the correct session when repo_key + workdir match', () => {
     // get_session handler delegates to getActiveSession(db, repo_key, workdir).
     // This exercises the same query the handler calls on the session-found path.
@@ -229,6 +230,35 @@ describe('get_session structural error paths (server.ts source)', () => {
     const handlerBody = source.slice(handlerStart);
 
     expect(handlerBody).toContain('No active session found for repo_key');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Area 5f: Threading guard — workdir flows through normalizeWorkdir in handlers
+// ---------------------------------------------------------------------------
+
+describe('handler workdir threading — normalizeWorkdir applied before DB lookup', () => {
+  it('get_session handler passes workdir through normalizeWorkdir before calling getActiveSession', () => {
+    // Guards against the normalization call being accidentally removed while
+    // editing the handler. The workdir value must be normalized before it
+    // reaches the DB query so paths with trailing slashes or backslashes still
+    // resolve to the correct session.
+    const source = fs.readFileSync(serverPath, 'utf8');
+    const handlerStart = source.indexOf("'get_session'");
+    expect(handlerStart).toBeGreaterThan(-1);
+    const handlerBody = source.slice(handlerStart);
+
+    expect(handlerBody).toContain('normalizeWorkdir(workdir)');
+  });
+
+  it('get_status handler passes workdir through normalizeWorkdir before calling getActiveSession', () => {
+    // Same guard for the get_status workdir-filter path.
+    const source = fs.readFileSync(serverPath, 'utf8');
+    const handlerStart = source.indexOf("'get_status'");
+    expect(handlerStart).toBeGreaterThan(-1);
+    const handlerBody = source.slice(handlerStart);
+
+    expect(handlerBody).toContain('normalizeWorkdir(workdir)');
   });
 });
 

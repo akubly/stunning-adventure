@@ -16,6 +16,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { getDb, closeDb } from '../db/index.js';
 import {
   createSession,
@@ -384,6 +385,48 @@ describe('legacy session claiming — claimLegacyActiveSession', () => {
     const claimed = claimLegacyActiveSession(db, REPO_KEY, WORKDIR_A);
     expect(claimed).toBeUndefined();
   });
+
+  it('second claim on the same session returns undefined — first caller wins', () => {
+    // After the first claim the NULL-workdir row now has a workdir, so the
+    // NULL-workdir lookup in the second call finds nothing.
+    createSession(db, REPO_KEY, 'main'); // single NULL-workdir session
+
+    const first = claimLegacyActiveSession(db, REPO_KEY, WORKDIR_A);
+    const second = claimLegacyActiveSession(db, REPO_KEY, WORKDIR_B);
+
+    expect(first).toBeDefined();
+    expect(first!.workdir).toBe(WORKDIR_A);
+    expect(second).toBeUndefined();
+  });
+
+  it('with two NULL-workdir sessions the most-recent is claimed; older remains active with NULL workdir', () => {
+    // claimLegacyActiveSession picks the most-recent NULL-workdir session
+    // (ORDER BY started_at DESC LIMIT 1). The older session is not touched —
+    // it remains active with NULL workdir. Callers needing full cleanup
+    // should close stale sessions before claiming.
+    const olderTime = "datetime('now', '-2 seconds')";
+    const olderId = randomUUID();
+    const newerId = randomUUID();
+    db.prepare(
+      `INSERT INTO sessions (id, repo_key, branch, session_kind, workdir, started_at) VALUES (?, ?, ?, ?, ?, ${olderTime})`,
+    ).run(olderId, REPO_KEY, 'main', 'user', null);
+    db.prepare(
+      "INSERT INTO sessions (id, repo_key, branch, session_kind, workdir, started_at) VALUES (?, ?, ?, ?, ?, datetime('now'))",
+    ).run(newerId, REPO_KEY, 'main', 'user', null);
+
+    const claimed = claimLegacyActiveSession(db, REPO_KEY, WORKDIR_A);
+
+    // Most-recent session is claimed
+    expect(claimed).toBeDefined();
+    expect(claimed!.id).toBe(newerId);
+    expect(claimed!.workdir).toBe(WORKDIR_A);
+
+    // Older session stays active with NULL workdir
+    const remaining = getActiveSession(db, REPO_KEY); // NULL-workdir lookup
+    expect(remaining).toBeDefined();
+    expect(remaining!.id).toBe(olderId);
+    expect(remaining!.workdir).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -419,6 +462,34 @@ describe('normalizeWorkdir — path canonicalization', () => {
     expect(session).toBeDefined();
     expect(session!.id).toBe(id);
     expect(session!.workdir).toBe('/repos/project');
+  });
+
+  it('empty string input returns empty string', () => {
+    // No trailing slash to strip, no backslashes to convert — result is ''.
+    expect(normalizeWorkdir('')).toBe('');
+  });
+
+  it('drive-letter case is preserved — no case folding applied', () => {
+    // normalizeWorkdir normalizes separators and trailing slashes only.
+    // It does NOT unify drive-letter case (c: ≠ C:). Callers are responsible
+    // for consistent casing before storage and lookup.
+    expect(normalizeWorkdir('C:\\repos')).toBe('C:/repos');
+    expect(normalizeWorkdir('c:\\repos')).toBe('c:/repos');
+    expect(normalizeWorkdir('C:\\repos')).not.toBe(normalizeWorkdir('c:\\repos'));
+  });
+
+  it('drive-letter root path: C:\\ strips trailing slash leaving C:', () => {
+    // Stripping the trailing slash from 'C:/' leaves 'C:' — a bare drive
+    // specifier with no separator. Callers should avoid storing bare drive
+    // roots as worktree paths; real worktrees always have a directory component.
+    expect(normalizeWorkdir('C:\\')).toBe('C:');
+  });
+
+  it('POSIX root path: / strips to empty string', () => {
+    // The sole '/' is treated as a trailing slash and stripped.
+    // Real worktrees always have a path below /, so this edge case should
+    // not arise in practice.
+    expect(normalizeWorkdir('/')).toBe('');
   });
 });
 
