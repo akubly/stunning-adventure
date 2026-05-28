@@ -24,7 +24,8 @@ import {
   listActiveSessionsForRepo,
   claimLegacyActiveSession,
 } from '../db/sessions.js';
-import { getWorkdir, normalizeWorkdir } from '../hooks/gitContext.js';
+import { getWorkdir } from '../hooks/gitContext.js';
+import { normalizeWorkdir } from '../utils/workdir.js';
 import { logEvent } from '../db/events.js';
 import { runSessionStart } from '../hooks/sessionStart.js';
 
@@ -399,11 +400,11 @@ describe('legacy session claiming — claimLegacyActiveSession', () => {
     expect(second).toBeUndefined();
   });
 
-  it('with two NULL-workdir sessions the most-recent is claimed; older remains active with NULL workdir', () => {
+  it('with two NULL-workdir sessions the most-recent is claimed; older orphan is completed (N5 cleanup)', () => {
     // claimLegacyActiveSession picks the most-recent NULL-workdir session
-    // (ORDER BY started_at DESC LIMIT 1). The older session is not touched —
-    // it remains active with NULL workdir. Callers needing full cleanup
-    // should close stale sessions before claiming.
+    // (ORDER BY started_at DESC LIMIT 1). The older NULL-workdir session is an
+    // orphan from an abnormal exit — it is completed as a side-effect of the
+    // claim so it does not accumulate and trigger a future false-positive claim.
     const olderTime = "datetime('now', '-2 seconds')";
     const olderId = randomUUID();
     const newerId = randomUUID();
@@ -421,11 +422,15 @@ describe('legacy session claiming — claimLegacyActiveSession', () => {
     expect(claimed!.id).toBe(newerId);
     expect(claimed!.workdir).toBe(WORKDIR_A);
 
-    // Older session stays active with NULL workdir
+    // Older NULL-workdir session is completed as orphan cleanup (N5)
+    const olderRow = db
+      .prepare('SELECT status FROM sessions WHERE id = ?')
+      .get(olderId) as { status: string };
+    expect(olderRow.status).toBe('completed');
+
+    // NULL-workdir lookup now finds nothing (orphan was cleaned up)
     const remaining = getActiveSession(db, REPO_KEY); // NULL-workdir lookup
-    expect(remaining).toBeDefined();
-    expect(remaining!.id).toBe(olderId);
-    expect(remaining!.workdir).toBeUndefined();
+    expect(remaining).toBeUndefined();
   });
 });
 
@@ -464,32 +469,55 @@ describe('normalizeWorkdir — path canonicalization', () => {
     expect(session!.workdir).toBe('/repos/project');
   });
 
-  it('empty string input returns empty string', () => {
-    // No trailing slash to strip, no backslashes to convert — result is ''.
-    expect(normalizeWorkdir('')).toBe('');
+  // N3: Windows drive letter uppercasing
+  it('uppercases a lowercase Windows drive letter', () => {
+    expect(normalizeWorkdir('c:/repos/project')).toBe('C:/repos/project');
   });
 
-  it('drive-letter case is preserved — no case folding applied', () => {
-    // normalizeWorkdir normalizes separators and trailing slashes only.
-    // It does NOT unify drive-letter case (c: ≠ C:). Callers are responsible
-    // for consistent casing before storage and lookup.
-    expect(normalizeWorkdir('C:\\repos')).toBe('C:/repos');
-    expect(normalizeWorkdir('c:\\repos')).toBe('c:/repos');
-    expect(normalizeWorkdir('C:\\repos')).not.toBe(normalizeWorkdir('c:\\repos'));
+  it('leaves an already-uppercase drive letter unchanged', () => {
+    expect(normalizeWorkdir('C:/repos/project')).toBe('C:/repos/project');
   });
 
-  it('drive-letter root path: C:\\ strips trailing slash leaving C:', () => {
-    // Stripping the trailing slash from 'C:/' leaves 'C:' — a bare drive
-    // specifier with no separator. Callers should avoid storing bare drive
-    // roots as worktree paths; real worktrees always have a directory component.
-    expect(normalizeWorkdir('C:\\')).toBe('C:');
+  it('uppercases drive letter when using backslash path', () => {
+    expect(normalizeWorkdir('c:\\repos\\project')).toBe('C:/repos/project');
   });
 
-  it('POSIX root path: / strips to empty string', () => {
-    // The sole '/' is treated as a trailing slash and stripped.
-    // Real worktrees always have a path below /, so this edge case should
-    // not arise in practice.
-    expect(normalizeWorkdir('/')).toBe('');
+  // N4: Empty and whitespace-only inputs
+  it('returns undefined for an empty string', () => {
+    expect(normalizeWorkdir('')).toBeUndefined();
+  });
+
+  it('returns undefined for a whitespace-only string', () => {
+    expect(normalizeWorkdir('   ')).toBeUndefined();
+  });
+
+  it('returns undefined for null', () => {
+    expect(normalizeWorkdir(null)).toBeUndefined();
+  });
+
+  it('returns undefined for undefined', () => {
+    expect(normalizeWorkdir(undefined)).toBeUndefined();
+  });
+
+  // N7: Root path preservation
+  it('preserves Unix filesystem root', () => {
+    expect(normalizeWorkdir('/')).toBe('/');
+  });
+
+  it('preserves Windows drive root (backslash form)', () => {
+    expect(normalizeWorkdir('C:\\')).toBe('C:/');
+  });
+
+  it('preserves Windows drive root (forward slash form)', () => {
+    expect(normalizeWorkdir('C:/')).toBe('C:/');
+  });
+
+  it('preserves Windows drive root (bare drive letter)', () => {
+    expect(normalizeWorkdir('C:')).toBe('C:/');
+  });
+
+  it('preserves Windows drive root with lowercase drive letter', () => {
+    expect(normalizeWorkdir('c:\\')).toBe('C:/');
   });
 });
 

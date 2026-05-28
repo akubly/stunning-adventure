@@ -7,15 +7,8 @@
 
 import { slugifyRepoKey } from '../config/repo.js';
 import { execSync } from 'node:child_process';
-
-/**
- * Normalize a worktree path for storage and comparison.
- * Converts backslashes to forward slashes and removes any trailing slash.
- * Applied to all workdir values before they enter the DB or are compared.
- */
-export function normalizeWorkdir(input: string): string {
-  return input.replace(/\\/g, '/').replace(/\/+$/, '');
-}
+import { normalizeWorkdir } from '../utils/workdir.js';
+export { normalizeWorkdir };
 
 /** Resolve the slugified repo key from a git working directory. */
 export function getRepoKey(cwd?: string): string {
