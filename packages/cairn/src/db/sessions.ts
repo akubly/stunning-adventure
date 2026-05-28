@@ -14,6 +14,7 @@ function mapSession(row: Record<string, unknown>): Session {
     endedAt: (row.ended_at as string | null) ?? undefined,
     status: row.status as string,
     kind: row.session_kind as SessionKind,
+    workdir: (row.workdir as string | null) ?? undefined,
   };
 }
 
@@ -22,14 +23,12 @@ function createSessionWithDb(
   repoKey: string,
   branch?: string,
   kind: SessionKind = 'user',
+  workdir?: string,
 ): string {
   const id = randomUUID();
-  db.prepare('INSERT INTO sessions (id, repo_key, branch, session_kind) VALUES (?, ?, ?, ?)').run(
-    id,
-    repoKey,
-    branch ?? null,
-    kind,
-  );
+  db.prepare(
+    'INSERT INTO sessions (id, repo_key, branch, session_kind, workdir) VALUES (?, ?, ?, ?, ?)',
+  ).run(id, repoKey, branch ?? null, kind, workdir ?? null);
   return id;
 }
 
@@ -41,7 +40,7 @@ function getActiveSessionWithDb(
   const kindClause = kind ? ' AND session_kind = ?' : '';
   const row = db
     .prepare(
-      `SELECT id, repo_key, branch, started_at, ended_at, status, session_kind
+      `SELECT id, repo_key, branch, started_at, ended_at, status, session_kind, workdir
        FROM sessions WHERE repo_key = ? AND status = 'active'${kindClause}
        ORDER BY started_at DESC LIMIT 1`,
     )
@@ -50,9 +49,35 @@ function getActiveSessionWithDb(
   return row ? mapSession(row) : undefined;
 }
 
+/**
+ * Inner helper for workdir-scoped lookup. Always applies `workdir IS ?`:
+ *   - `workdir = null`   → matches rows where workdir IS NULL (pre-migration backcompat)
+ *   - `workdir = 'path'` → matches rows where workdir = 'path' (worktree-specific)
+ */
+function getActiveSessionByWorkdir(
+  db: Database.Database,
+  repoKey: string,
+  workdir: string | null,
+): Session | undefined {
+  const row = db
+    .prepare(
+      `SELECT id, repo_key, branch, started_at, ended_at, status, session_kind, workdir
+       FROM sessions WHERE repo_key = ? AND status = 'active' AND workdir IS ?
+       ORDER BY started_at DESC LIMIT 1`,
+    )
+    .get(repoKey, workdir) as Record<string, unknown> | undefined;
+
+  return row ? mapSession(row) : undefined;
+}
+
 /** Create a new active session. Returns the generated session id. */
-export function createSession(db: Database.Database, repoKey: string, branch?: string): string {
-  return createSessionWithDb(db, repoKey, branch);
+export function createSession(
+  db: Database.Database,
+  repoKey: string,
+  branch?: string,
+  workdir?: string,
+): string {
+  return createSessionWithDb(db, repoKey, branch, 'user', workdir);
 }
 
 /** Mark a session as ended with the given status (default: 'completed'). */
@@ -63,8 +88,24 @@ export function endSession(db: Database.Database, id: string, status: string = '
   );
 }
 
-/** Return the most recent active session for a repo, or undefined. */
-export function getActiveSession(db: Database.Database, repoKey: string): Session | undefined {
+/**
+ * Return the most recent active session for a repo scoped by workdir identity.
+ *
+ * When workdir is omitted: no workdir filter applied — returns the most recent
+ * active session regardless of workdir (backward compat for pre-migration callers).
+ * When workdir is provided: filters with `workdir IS ?` (SQLite IS handles NULL
+ * correctly, so passing undefined coerced to null matches NULL-workdir rows).
+ *
+ * For MCP fallback paths that always need a user session, use getActiveUserSession.
+ */
+export function getActiveSession(
+  db: Database.Database,
+  repoKey: string,
+  workdir?: string,
+): Session | undefined {
+  if (workdir !== undefined) {
+    return getActiveSessionByWorkdir(db, repoKey, workdir);
+  }
   return getActiveSessionWithDb(db, repoKey);
 }
 
@@ -77,7 +118,7 @@ export function getActiveUserSession(db: Database.Database, repoKey: string): Se
 export function getMostRecentActiveSession(db: Database.Database): Session | undefined {
   const row = db
     .prepare(
-      `SELECT id, repo_key, branch, started_at, ended_at, status, session_kind
+      `SELECT id, repo_key, branch, started_at, ended_at, status, session_kind, workdir
        FROM sessions WHERE status = 'active'
        ORDER BY started_at DESC LIMIT 1`,
     )
@@ -90,13 +131,31 @@ export function getMostRecentActiveSession(db: Database.Database): Session | und
 export function getMostRecentUserSession(db: Database.Database): Session | undefined {
   const row = db
     .prepare(
-      `SELECT id, repo_key, branch, started_at, ended_at, status, session_kind
+      `SELECT id, repo_key, branch, started_at, ended_at, status, session_kind, workdir
        FROM sessions WHERE status = 'active' AND session_kind = 'user'
        ORDER BY started_at DESC LIMIT 1`,
     )
     .get() as Record<string, unknown> | undefined;
 
   return row ? mapSession(row) : undefined;
+}
+
+/**
+ * List all active user sessions for a repo, ordered by start time descending.
+ * Used by the get_status MCP tool to return a flat array of all active sessions
+ * so callers can distinguish sessions by workdir.
+ */
+export function listActiveSessionsForRepo(db: Database.Database, repoKey: string): Session[] {
+  const rows = db
+    .prepare(
+      `SELECT id, repo_key, branch, started_at, ended_at, status, session_kind, workdir
+       FROM sessions
+       WHERE repo_key = ? AND status = 'active' AND session_kind = 'user'
+       ORDER BY started_at DESC`,
+    )
+    .all(repoKey) as Array<Record<string, unknown>>;
+
+  return rows.map(mapSession);
 }
 
 function ensureSystemSessionInTransaction(db: Database.Database, repoKey: string): string {
@@ -119,3 +178,4 @@ export function ensureSystemSession(
 
   return db.transaction(() => ensureSystemSessionInTransaction(db, repoKey)).immediate();
 }
+

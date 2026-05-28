@@ -17,7 +17,7 @@ import { z } from 'zod';
 
 import type Database from 'better-sqlite3';
 import { getDb } from '../db/index.js';
-import { getActiveSession } from '../db/sessions.js';
+import { getActiveSession, listActiveSessionsForRepo } from '../db/sessions.js';
 import { getUserSessionForMcpFallback } from './sessionFallback.js';
 import { getInsights, getInsight, getInsightsByIds, countInsightsByStatus } from '../db/insights.js';
 import { logEvent } from '../db/events.js';
@@ -100,29 +100,48 @@ server.registerTool(
     title: 'Get Status',
     description:
       'Show the current Cairn session state and curator health. ' +
-      'Returns the active session (repo, branch, duration) and curator metrics ' +
+      'Returns all active sessions for a repo (each with its workdir) and curator metrics ' +
       '(last run time, cursor position, insight counts by status). ' +
+      'When workdir is provided, filters to the session for that specific worktree. ' +
       'Use this to understand what Cairn is tracking right now.',
     inputSchema: {
       repo_key: z
         .string()
         .optional()
-        .describe('Repository key to look up the active session. Omit to get curator status only.'),
+        .describe('Repository key to look up active sessions. Omit to get curator status only.'),
+      workdir: z
+        .string()
+        .optional()
+        .describe(
+          'Worktree root path to filter to a single worktree session. ' +
+          'When omitted, returns all active sessions for the repo.',
+        ),
     },
     annotations: { readOnlyHint: true },
   },
-  async ({ repo_key }) => {
+  async ({ repo_key, workdir }) => {
     try {
       ensureDb();
 
       const curatorStatus = getCuratorStatus();
-      const session = repo_key ? getActiveSession(db, repo_key) : undefined;
+
+      let sessions: ReturnType<typeof listActiveSessionsForRepo> = [];
+      if (repo_key) {
+        if (workdir !== undefined) {
+          // Filter to a specific worktree session; still returned as an array
+          // for shape consistency with the no-workdir case.
+          const session = getActiveSession(db, repo_key, workdir);
+          sessions = session ? [session] : [];
+        } else {
+          sessions = listActiveSessionsForRepo(db, repo_key);
+        }
+      }
 
       return {
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify({ session: session ?? null, curator: curatorStatus }, null, 2),
+            text: JSON.stringify({ sessions, curator: curatorStatus }, null, 2),
           },
         ],
       };
@@ -191,27 +210,69 @@ server.registerTool(
   {
     title: 'Get Session',
     description:
-      'Get detailed information about a specific session by its ID. ' +
+      'Get detailed information about a specific session. ' +
+      'Look up by session UUID (session_id), or by repo_key + workdir to resolve the ' +
+      'active session for a specific worktree without knowing the ID. ' +
       'Returns event counts (total, tool_use, errors), skip breadcrumbs, ' +
-      'and the 10 most recent events. Use this to inspect what happened ' +
-      'during a particular session.',
+      'and the 10 most recent events.',
     inputSchema: {
-      session_id: z.string().describe('The session UUID to look up.'),
+      session_id: z.string().optional().describe('The session UUID to look up.'),
+      repo_key: z
+        .string()
+        .optional()
+        .describe('Repository key for workdir-based lookup (alternative to session_id).'),
+      workdir: z
+        .string()
+        .optional()
+        .describe('Worktree root path for workdir-based lookup (use with repo_key).'),
     },
     annotations: { readOnlyHint: true },
   },
-  async ({ session_id }) => {
+  async ({ session_id, repo_key, workdir }) => {
     try {
       ensureDb();
 
-      const summary = getSessionSummary(db, session_id);
+      // Resolve session ID: explicit ID wins; fall back to (repo_key, workdir) lookup.
+      let resolvedSessionId = session_id;
+      if (!resolvedSessionId) {
+        if (!repo_key) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify({
+                  error: 'Provide either session_id or repo_key (with optional workdir).',
+                }),
+              },
+            ],
+            isError: true,
+          };
+        }
+        const resolved = getActiveSession(db, repo_key, workdir);
+        if (!resolved) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify({
+                  error: `No active session found for repo_key '${repo_key}'${workdir ? ` and workdir '${workdir}'` : ''}.`,
+                }),
+              },
+            ],
+            isError: true,
+          };
+        }
+        resolvedSessionId = resolved.id;
+      }
+
+      const summary = getSessionSummary(db, resolvedSessionId);
 
       if (!summary) {
         return {
           content: [
             {
               type: 'text' as const,
-              text: JSON.stringify({ error: `Session '${session_id}' not found.` }),
+              text: JSON.stringify({ error: `Session '${resolvedSessionId}' not found.` }),
             },
           ],
           isError: true,

@@ -10,7 +10,7 @@
 
 import { getDb, closeDb } from '../db/index.js';
 import { startSession, recordToolUse, recordError } from '../agents/archivist.js';
-import { getRepoKey, getBranch } from './gitContext.js';
+import { getRepoKey, getBranch, getWorkdir } from './gitContext.js';
 import { checkIsScript } from '../utils/isScript.js';
 
 interface HookInput {
@@ -47,7 +47,8 @@ async function main(): Promise<void> {
 
     const repoKey = getRepoKey(hookData.cwd);
     const branch = getBranch(hookData.cwd);
-    const sessionId = startSession(repoKey, branch);
+    const workdir = getWorkdir(hookData.cwd);
+    const sessionId = startSession(repoKey, branch, workdir);
 
     if (hookData.toolResult?.resultType === 'failure') {
       recordError(sessionId, 'tool_failure', `${hookData.toolName} failed`, {
@@ -56,9 +57,13 @@ async function main(): Promise<void> {
         result: hookData.toolResult?.textResultForLlm ?? '',
       });
     } else {
-      recordToolUse(sessionId, hookData.toolName, hookData.toolArgs ?? {}, {
-        resultType: hookData.toolResult?.resultType ?? 'unknown',
-      });
+      recordToolUse(
+        sessionId,
+        hookData.toolName,
+        hookData.toolArgs ?? {},
+        { resultType: hookData.toolResult?.resultType ?? 'unknown' },
+        workdir,
+      );
     }
   } catch {
     // Fail open — hooks must never break the user's workflow

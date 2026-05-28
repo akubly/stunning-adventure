@@ -7,6 +7,7 @@ export interface SessionSummary {
   repoKey: string;
   status: string;
   startedAt: string;
+  workdir?: string;
   eventCount: number;
   toolUseCount: number;
   errorCount: number;
@@ -18,7 +19,7 @@ export interface SessionSummary {
 /** Get a summary of a session's current state. */
 export function getSessionSummary(db: Database.Database, sessionId: string): SessionSummary | undefined {
   const session = db
-    .prepare('SELECT id, repo_key, status, started_at FROM sessions WHERE id = ?')
+    .prepare('SELECT id, repo_key, status, started_at, workdir FROM sessions WHERE id = ?')
     .get(sessionId) as Record<string, unknown> | undefined;
 
   if (!session) return undefined;
@@ -66,6 +67,7 @@ export function getSessionSummary(db: Database.Database, sessionId: string): Ses
     repoKey: session.repo_key as string,
     status: session.status as string,
     startedAt: session.started_at as string,
+    workdir: (session.workdir as string | null) ?? undefined,
     eventCount,
     toolUseCount,
     errorCount,

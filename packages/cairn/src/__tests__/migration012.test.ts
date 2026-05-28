@@ -37,7 +37,7 @@ describe('migration 012 — apply', () => {
     const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
       version: number;
     };
-    expect(row.version).toBe(14);
+    expect(row.version).toBe(15);
   });
 });
 
@@ -248,6 +248,6 @@ describe('migration 012 — idempotence', () => {
     const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
       version: number;
     };
-    expect(row.version).toBe(14);
+    expect(row.version).toBe(15);
   });
 });

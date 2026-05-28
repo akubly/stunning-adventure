@@ -21,7 +21,7 @@ import { catchUpPreviousSession } from '../agents/archivist.js';
 import { curate, type CurateResult } from '../agents/curator.js';
 import { prescribe } from '../agents/prescriber.js';
 import { incrementSessionCounter } from '../db/prescriptions.js';
-import { getRepoKey } from './gitContext.js';
+import { getRepoKey, getWorkdir } from './gitContext.js';
 import { parseSqliteDateToMs } from '../utils/timestamps.js';
 import { checkIsScript } from '../utils/isScript.js';
 
@@ -63,15 +63,16 @@ export async function runSessionStart(
   repoKey: string,
   prescriberOrchestrationConfig?: PrescriberOrchestrationConfig,
   afterCurate?: (curateResult: CurateResult) => void,
+  workdir?: string,
 ): Promise<{ fastPath: boolean }> {
   const db = getDb();
-  const existing = getActiveSession(db, repoKey);
+  const existing = getActiveSession(db, repoKey, workdir);
   if (existing && !isStaleSession(db, existing)) {
     return { fastPath: true };
   }
 
   // Either no active session or the active session is stale (orphan).
-  catchUpPreviousSession(repoKey);
+  catchUpPreviousSession(repoKey, workdir);
   const curateResult = await curate(undefined, prescriberOrchestrationConfig);
   try {
     afterCurate?.(curateResult);
@@ -130,6 +131,7 @@ export async function runSessionStartHook(
     // 10ms git call negligible. Restructuring to avoid it (CWD-based keys,
     // repo-agnostic pre-checks) would add complexity for marginal gain.
     const repoKey = getRepoKey(hookData.cwd);
+    const workdir = getWorkdir(hookData.cwd);
     let prescriberOrchestrationConfig: PrescriberOrchestrationConfig | undefined;
     try {
       prescriberOrchestrationConfig = createPrescriberOrchestrationConfig?.(db);
@@ -139,7 +141,7 @@ export async function runSessionStartHook(
       );
       prescriberOrchestrationConfig = undefined;
     }
-    await runSessionStart(repoKey, prescriberOrchestrationConfig, afterCurate);
+    await runSessionStart(repoKey, prescriberOrchestrationConfig, afterCurate, workdir);
   } catch {
     // Fail open — hooks must never break the user's workflow
   } finally {

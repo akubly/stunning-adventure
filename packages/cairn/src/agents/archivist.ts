@@ -16,25 +16,29 @@ export const AGENT_NAME = 'archivist';
 export const AGENT_DESCRIPTION = 'Session recording, narrative logging, NL queries';
 
 /** Start or resume an Archivist session for the given repo. */
-export function startSession(repoRemoteOrKey: string, branch?: string): string {
+export function startSession(repoRemoteOrKey: string, branch?: string, workdir?: string): string {
   const db = getDb();
   const repoKey = repoRemoteOrKey.includes('/')
     ? slugifyRepoKey(repoRemoteOrKey)
     : repoRemoteOrKey;
 
-  // Check for an existing active session
-  const existing = getActiveSession(db, repoKey);
+  // Check for an existing active session scoped to (repo_key, workdir)
+  const existing = getActiveSession(db, repoKey, workdir);
   if (existing) {
     // Log a session_resume event
-    logEvent(db, existing.id, 'session_resume', { resumedAt: new Date().toISOString() });
+    logEvent(db, existing.id, 'session_resume', {
+      resumedAt: new Date().toISOString(),
+      workdir: workdir ?? null,
+    });
     return existing.id;
   }
 
   // Create a new session
-  const sessionId = createSession(db, repoKey, branch);
+  const sessionId = createSession(db, repoKey, branch, workdir);
   logEvent(db, sessionId, 'session_start', {
     repoKey,
     branch: branch ?? null,
+    workdir: workdir ?? null,
     startedAt: new Date().toISOString(),
   });
   return sessionId;
@@ -50,18 +54,23 @@ export function stopSession(sessionId: string, status: string = 'completed'): vo
   endSession(db, sessionId, status);
 }
 
-/** Record a tool use event. Scrubs secrets from payload before logging. */
+/**
+ * Record a tool use event. Scrubs secrets from payload before logging.
+ * workdir is included in the payload when known, for per-worktree event tracing.
+ */
 export function recordToolUse(
   sessionId: string,
   toolName: string,
   args?: Record<string, unknown>,
   result?: Record<string, unknown>,
+  workdir?: string,
 ): number {
   const db = getDb();
   const payload = scrubSecrets({
     tool: toolName,
     args: args ?? {},
     result: result ?? {},
+    workdir: workdir ?? null,
     timestamp: new Date().toISOString(),
   });
   return logEvent(db, sessionId, 'tool_use', payload);
@@ -101,10 +110,16 @@ export function recordSkipEvent(
   });
 }
 
-/** Session-start catch-up: check if the previous session ended cleanly. */
-export function catchUpPreviousSession(repoKey: string): { recovered: boolean; sessionId?: string } {
+/**
+ * Session-start catch-up: check if the previous session ended cleanly.
+ * Scoped to (repo_key, workdir) so worktree crash recovery is isolated.
+ */
+export function catchUpPreviousSession(
+  repoKey: string,
+  workdir?: string,
+): { recovered: boolean; sessionId?: string } {
   const db = getDb();
-  const existing = getActiveSession(db, repoKey);
+  const existing = getActiveSession(db, repoKey, workdir);
   if (existing) {
     // Previous session is still "active" — it didn't end cleanly
     logEvent(db, existing.id, 'session_crash_detected', {

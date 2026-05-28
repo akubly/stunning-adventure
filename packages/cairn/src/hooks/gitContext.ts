@@ -36,3 +36,24 @@ export function getBranch(cwd?: string): string | undefined {
     return undefined;
   }
 }
+
+/**
+ * Resolve the worktree root for the given directory via `git rev-parse --show-toplevel`.
+ * In a linked worktree this returns the worktree path, not the main checkout root —
+ * which is exactly the isolation boundary we want for session identity.
+ * Returns undefined on failure (non-git dirs, bare repos, git not on PATH).
+ */
+export function getWorkdir(cwd?: string): string | undefined {
+  try {
+    return (
+      execSync('git rev-parse --show-toplevel', {
+        cwd: cwd ?? process.cwd(),
+        encoding: 'utf-8',
+        timeout: 2000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim() || undefined
+    );
+  } catch {
+    return undefined;
+  }
+}
