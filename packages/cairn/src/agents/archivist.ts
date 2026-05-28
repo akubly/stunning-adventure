@@ -6,7 +6,7 @@
  */
 
 import { getDb } from '../db/index.js';
-import { createSession, endSession, getActiveSession } from '../db/sessions.js';
+import { createSession, endSession, getActiveSession, claimLegacyActiveSession } from '../db/sessions.js';
 import { logEvent } from '../db/events.js';
 import { recordSkip } from '../db/skipBreadcrumbs.js';
 import { slugifyRepoKey } from '../config/repo.js';
@@ -31,6 +31,20 @@ export function startSession(repoRemoteOrKey: string, branch?: string, workdir?:
       workdir: workdir ?? null,
     });
     return existing.id;
+  }
+
+  // No (repo_key, workdir) session found — try to claim a legacy NULL-workdir
+  // session rather than creating a duplicate row.
+  if (workdir) {
+    const claimed = claimLegacyActiveSession(db, repoKey, workdir);
+    if (claimed) {
+      logEvent(db, claimed.id, 'session_resume', {
+        resumedAt: new Date().toISOString(),
+        workdir,
+        claimedLegacy: true,
+      });
+      return claimed.id;
+    }
   }
 
   // Create a new session
@@ -82,6 +96,7 @@ export function recordError(
   category: string,
   message: string,
   context?: Record<string, unknown>,
+  workdir?: string,
 ): number {
   const db = getDb();
   const scrubbedContext = context ? scrubSecrets(context) : {};
@@ -89,6 +104,7 @@ export function recordError(
     category,
     message: scrubSecrets(message),
     context: scrubbedContext,
+    workdir: workdir ?? null,
     timestamp: new Date().toISOString(),
   });
 }

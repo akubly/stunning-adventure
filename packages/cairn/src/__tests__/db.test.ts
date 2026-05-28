@@ -176,7 +176,7 @@ describe('sessions', () => {
     db.prepare("UPDATE sessions SET started_at = '2026-05-25 10:00:00' WHERE id = ?").run(userId);
     db.prepare("UPDATE sessions SET started_at = '2026-05-25 11:00:00' WHERE id = ?").run(systemId);
 
-    expect(getActiveSession(db, 'org_scoped_repo')!.id).toBe(systemId);
+    expect(getActiveSession(db, 'org_scoped_repo')!.id).toBe(userId);
     const userSession = getActiveUserSession(db, 'org_scoped_repo');
     expect(userSession!.id).toBe(userId);
     expect(userSession!.kind).toBe('user');

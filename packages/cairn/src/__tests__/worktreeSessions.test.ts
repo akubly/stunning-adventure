@@ -12,14 +12,6 @@
  *   4. getWorkdir() happy path: returns the workdir root inside a git repo;
  *      returns undefined (does NOT throw) outside a git repo.
  *
- * PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
- * These tests will fail until Roger ships:
- *   - 015-workdir-sessions.ts migration (workdir column on sessions)
- *   - Optional workdir param on createSession(db, repoKey, branch?, workdir?)
- *   - Optional workdir param on getActiveSession(db, repoKey, workdir?)
- *     with NULL-IS query semantics for backcompat
- *   - listActiveSessionsForRepo(db, repoKey) — new export from sessions.ts
- *   - getWorkdir(cwd?) — new export from hooks/gitContext.ts
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -28,11 +20,12 @@ import { getDb, closeDb } from '../db/index.js';
 import {
   createSession,
   getActiveSession,
-  // PROACTIVE: new export; will be undefined until Roger's WI-A lands
   listActiveSessionsForRepo,
+  claimLegacyActiveSession,
 } from '../db/sessions.js';
-// PROACTIVE: new export; will be undefined until Roger's WI-A lands
 import { getWorkdir } from '../hooks/gitContext.js';
+import { logEvent } from '../db/events.js';
+import { runSessionStart } from '../hooks/sessionStart.js';
 
 let db: ReturnType<typeof getDb>;
 
@@ -55,7 +48,6 @@ afterEach(() => {
 
 describe('worktree-aware lookup — getActiveSession with workdir', () => {
   it('returns the session matching the specified workdir', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     const idA = createSession(db, REPO_KEY, 'main', WORKDIR_A);
     const idB = createSession(db, REPO_KEY, 'feature', WORKDIR_B);
 
@@ -69,7 +61,6 @@ describe('worktree-aware lookup — getActiveSession with workdir', () => {
   });
 
   it('does not return a session from a different workdir', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     // Querying with an unknown workdir must not bleed into another worktree's session.
     createSession(db, REPO_KEY, 'main', WORKDIR_A);
 
@@ -78,7 +69,6 @@ describe('worktree-aware lookup — getActiveSession with workdir', () => {
   });
 
   it('session carries workdir in its fields', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     createSession(db, REPO_KEY, 'main', WORKDIR_A);
     const session = getActiveSession(db, REPO_KEY, WORKDIR_A);
 
@@ -87,7 +77,6 @@ describe('worktree-aware lookup — getActiveSession with workdir', () => {
   });
 
   it('returns the most recent active session when multiple exist for the same workdir', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     // End the first session, create a second; should find the newer one.
     const idFirst = createSession(db, REPO_KEY, 'main', WORKDIR_A);
     db.prepare("UPDATE sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?")
@@ -106,14 +95,12 @@ describe('worktree-aware lookup — getActiveSession with workdir', () => {
 
 describe('collision prevention — two workdirs for the same repo', () => {
   it('creates two distinct session rows for different workdirs', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     const idA = createSession(db, REPO_KEY, 'main', WORKDIR_A);
     const idB = createSession(db, REPO_KEY, 'feature', WORKDIR_B);
     expect(idA).not.toBe(idB);
   });
 
   it('neither session overrides the other — both remain active', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     const idA = createSession(db, REPO_KEY, 'main', WORKDIR_A);
     const idB = createSession(db, REPO_KEY, 'feature', WORKDIR_B);
 
@@ -122,7 +109,6 @@ describe('collision prevention — two workdirs for the same repo', () => {
   });
 
   it('listActiveSessionsForRepo returns all active sessions across workdirs', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     const idA = createSession(db, REPO_KEY, 'main', WORKDIR_A);
     const idB = createSession(db, REPO_KEY, 'feature', WORKDIR_B);
 
@@ -135,7 +121,6 @@ describe('collision prevention — two workdirs for the same repo', () => {
   });
 
   it('listActiveSessionsForRepo excludes sessions from other repos', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     createSession(db, REPO_KEY, 'main', WORKDIR_A);
     createSession(db, 'org/other-repo', 'main', '/repos/other');
 
@@ -145,7 +130,6 @@ describe('collision prevention — two workdirs for the same repo', () => {
   });
 
   it('listActiveSessionsForRepo excludes ended sessions', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     const idA = createSession(db, REPO_KEY, 'main', WORKDIR_A);
     const idB = createSession(db, REPO_KEY, 'feature', WORKDIR_B);
 
@@ -164,7 +148,6 @@ describe('collision prevention — two workdirs for the same repo', () => {
 
 describe('NULL-workdir backward compatibility', () => {
   it('a NULL-workdir session is findable via getActiveSession with no workdir arg', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     //
     // Simulate a pre-migration row: createSession without workdir inserts NULL.
     // Old callers that pass no workdir must still find it.
@@ -211,7 +194,6 @@ describe('NULL-workdir backward compatibility', () => {
   });
 
   it('listActiveSessionsForRepo includes both NULL-workdir and workdir-populated sessions', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     const nullId = createSession(db, REPO_KEY, 'main');
     const wdId   = createSession(db, REPO_KEY, 'feature', WORKDIR_A);
 
@@ -223,7 +205,6 @@ describe('NULL-workdir backward compatibility', () => {
   });
 
   it('raw DB row for a NULL-workdir session has workdir = NULL after migration 015', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     // Verifies the column itself is NULL — not an empty string or missing.
     const id = createSession(db, REPO_KEY, 'main'); // no workdir
     const row = db
@@ -239,7 +220,6 @@ describe('NULL-workdir backward compatibility', () => {
 
 describe('getWorkdir — git worktree context resolution', () => {
   it('returns a non-empty string inside the current git repo', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     // Test environment is a git worktree (D:\git\stunning-adventure-11).
     const result = getWorkdir();
     expect(typeof result).toBe('string');
@@ -247,14 +227,12 @@ describe('getWorkdir — git worktree context resolution', () => {
   });
 
   it('returns a string when called with an explicit git-repo cwd', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     // Mirrors the getRepoKey(cwd?) pattern: cwd param forwards to execSync.
     const result = getWorkdir(process.cwd());
     expect(typeof result).toBe('string');
   });
 
   it('returns undefined (not throw) when cwd is not inside a git repo', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     // getWorkdir must swallow the execSync error gracefully, just like getRepoKey.
     // Use the filesystem root (e.g. D:\ on Windows) — guaranteed not a git repo.
     const fsRoot = path.parse(process.cwd()).root;
@@ -263,3 +241,148 @@ describe('getWorkdir — git worktree context resolution', () => {
     expect(result).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Area 5: Workdir isolation — NULL-workdir session unaffected by workdir sessionStart
+// (T1 regression: orphan-claim was NOT implemented — Roger chose strict isolation)
+// ---------------------------------------------------------------------------
+
+describe('workdir isolation — runSessionStart does not cross workdir boundaries', () => {
+  it('runSessionStart with a workdir does not crash a fresh NULL-workdir session', async () => {
+    // A NULL-workdir session (pre-migration or no-cwd tool call) must survive
+    // unharmed when sessionStart fires for a different workdir. The workdir IS
+    // filter ensures the two are completely invisible to each other.
+    const nullId = createSession(db, REPO_KEY, 'main'); // workdir = NULL
+    logEvent(db, nullId, 'session_start', { repoKey: REPO_KEY });
+
+    await runSessionStart(REPO_KEY, { workdir: WORKDIR_A });
+
+    const row = db
+      .prepare('SELECT status FROM sessions WHERE id = ?')
+      .get(nullId) as { status: string };
+    expect(row.status).toBe('active'); // not crashed
+  });
+
+  it('runSessionStart with a workdir takes the fast path when a fresh matching session exists', async () => {
+    const wdId = createSession(db, REPO_KEY, 'main', WORKDIR_A);
+    logEvent(db, wdId, 'session_start', { repoKey: REPO_KEY });
+
+    const result = await runSessionStart(REPO_KEY, { workdir: WORKDIR_A });
+    expect(result.fastPath).toBe(true);
+  });
+
+  it('runSessionStart with a workdir takes the slow path when only a NULL-workdir session exists', async () => {
+    // The NULL-workdir session does not satisfy the workdir match → slow path.
+    const nullId = createSession(db, REPO_KEY, 'main');
+    logEvent(db, nullId, 'session_start', { repoKey: REPO_KEY });
+
+    const result = await runSessionStart(REPO_KEY, { workdir: WORKDIR_A });
+    expect(result.fastPath).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Area 6: Path normalization contract — workdir lookup uses exact string matching
+// ---------------------------------------------------------------------------
+
+describe('path normalization contract — no implicit normalization', () => {
+  it('exact-match path finds the session', () => {
+    const id = createSession(db, REPO_KEY, 'main', WORKDIR_A);
+    const session = getActiveSession(db, REPO_KEY, WORKDIR_A);
+    expect(session).toBeDefined();
+    expect(session!.id).toBe(id);
+  });
+
+  it('path with trailing slash does not match a session stored without it', () => {
+    // Workdir identity is an exact string. '/repos/project/' ≠ '/repos/project'.
+    // Callers are responsible for normalizing before storage and lookup.
+    createSession(db, REPO_KEY, 'main', WORKDIR_A);
+    const session = getActiveSession(db, REPO_KEY, `${WORKDIR_A}/`);
+    expect(session).toBeUndefined();
+  });
+
+  it('different casing does not match (case-sensitive exact match)', () => {
+    createSession(db, REPO_KEY, 'main', WORKDIR_A);
+    const session = getActiveSession(db, REPO_KEY, WORKDIR_A.toUpperCase());
+    expect(session).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Area 7: Kind-filter regression — getActiveSession returns USER sessions only
+// ---------------------------------------------------------------------------
+
+describe('kind-filter regression — getActiveSession scoped to user sessions', () => {
+  it('a SYSTEM session with the same workdir does not shadow a USER session', () => {
+    // Inserts a system session with the same (repo, workdir) via raw SQL to
+    // simulate a theoretical future misuse. getActiveSession must return the
+    // USER session, not the system one. This guards against losing the kind
+    // filter in getActiveSessionByWorkdir.
+    const userId = createSession(db, REPO_KEY, 'main', WORKDIR_A); // user kind
+    // Insert a SYSTEM session with the same workdir (not possible via public API,
+    // but the query must handle it correctly regardless).
+    const systemId = 'test-system-session-kind-regression';
+    db.prepare(
+      'INSERT INTO sessions (id, repo_key, branch, session_kind, workdir) VALUES (?, ?, ?, ?, ?)',
+    ).run(systemId, REPO_KEY, 'main', 'system', WORKDIR_A);
+
+    const session = getActiveSession(db, REPO_KEY, WORKDIR_A);
+    expect(session).toBeDefined();
+    expect(session!.id).toBe(userId);
+    expect(session!.kind).toBe('user');
+  });
+
+  it('listActiveSessionsForRepo excludes SYSTEM sessions even when they share a workdir', () => {
+    const userId = createSession(db, REPO_KEY, 'main', WORKDIR_A);
+    const systemId = 'test-system-kind-filter-list';
+    db.prepare(
+      'INSERT INTO sessions (id, repo_key, branch, session_kind, workdir) VALUES (?, ?, ?, ?, ?)',
+    ).run(systemId, REPO_KEY, 'main', 'system', WORKDIR_A);
+
+    const sessions = listActiveSessionsForRepo(db, REPO_KEY);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]!.id).toBe(userId);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Area 8: Legacy session claiming (B1)
+// ---------------------------------------------------------------------------
+
+describe('legacy session claiming — claimLegacyActiveSession', () => {
+  it('adopts a NULL-workdir session for the given workdir and updates the DB row', () => {
+    const id = createSession(db, REPO_KEY, 'main'); // workdir = NULL
+
+    const claimed = claimLegacyActiveSession(db, REPO_KEY, WORKDIR_A);
+
+    expect(claimed).toBeDefined();
+    expect(claimed!.id).toBe(id);
+    expect(claimed!.workdir).toBe(WORKDIR_A);
+
+    // The DB row now carries the workdir — findable via workdir-scoped lookup
+    const session = getActiveSession(db, REPO_KEY, WORKDIR_A);
+    expect(session).toBeDefined();
+    expect(session!.id).toBe(id);
+  });
+
+  it('returns undefined when no NULL-workdir session exists', () => {
+    createSession(db, REPO_KEY, 'main', WORKDIR_A); // already has a workdir
+    const claimed = claimLegacyActiveSession(db, REPO_KEY, WORKDIR_B);
+    expect(claimed).toBeUndefined();
+  });
+
+  it('does not claim a session belonging to another repo', () => {
+    createSession(db, 'org/other-repo', 'main'); // NULL workdir but wrong repo
+    const claimed = claimLegacyActiveSession(db, REPO_KEY, WORKDIR_A);
+    expect(claimed).toBeUndefined();
+  });
+
+  it('does not claim a session that is not active', () => {
+    const id = createSession(db, REPO_KEY, 'main'); // NULL workdir, active
+    db.prepare("UPDATE sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?")
+      .run(id);
+    const claimed = claimLegacyActiveSession(db, REPO_KEY, WORKDIR_A);
+    expect(claimed).toBeUndefined();
+  });
+});
+

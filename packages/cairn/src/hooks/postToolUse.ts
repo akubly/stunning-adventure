@@ -55,7 +55,7 @@ async function main(): Promise<void> {
         tool: hookData.toolName,
         args: hookData.toolArgs ?? {},
         result: hookData.toolResult?.textResultForLlm ?? '',
-      });
+      }, workdir);
     } else {
       recordToolUse(
         sessionId,

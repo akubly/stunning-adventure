@@ -50,9 +50,12 @@ function getActiveSessionWithDb(
 }
 
 /**
- * Inner helper for workdir-scoped lookup. Always applies `workdir IS ?`:
+ * Inner helper for workdir-scoped user-session lookup. Always applies `workdir IS ?`:
  *   - `workdir = null`   → matches rows where workdir IS NULL (pre-migration backcompat)
  *   - `workdir = 'path'` → matches rows where workdir = 'path' (worktree-specific)
+ *
+ * Restricts to `session_kind = 'user'` so system sessions are never returned
+ * through the workdir path, keeping identity semantics clean.
  */
 function getActiveSessionByWorkdir(
   db: Database.Database,
@@ -62,7 +65,8 @@ function getActiveSessionByWorkdir(
   const row = db
     .prepare(
       `SELECT id, repo_key, branch, started_at, ended_at, status, session_kind, workdir
-       FROM sessions WHERE repo_key = ? AND status = 'active' AND workdir IS ?
+       FROM sessions
+       WHERE repo_key = ? AND status = 'active' AND session_kind = 'user' AND workdir IS ?
        ORDER BY started_at DESC LIMIT 1`,
     )
     .get(repoKey, workdir) as Record<string, unknown> | undefined;
@@ -107,6 +111,27 @@ export function getActiveSession(
   return getActiveSessionByWorkdir(db, repoKey, workdir ?? null);
 }
 
+/**
+ * Claim a NULL-workdir active user session for the given worktree path.
+ *
+ * Called when starting a new worktree session and no (repo_key, workdir)
+ * session exists — promotes the legacy NULL-workdir row to carry the
+ * worktree identity instead of creating a duplicate session.
+ *
+ * Returns the updated session, or undefined if no unclaimed NULL-workdir
+ * user session exists for this repo.
+ */
+export function claimLegacyActiveSession(
+  db: Database.Database,
+  repoKey: string,
+  workdir: string,
+): Session | undefined {
+  const legacy = getActiveSessionByWorkdir(db, repoKey, null);
+  if (!legacy) return undefined;
+  db.prepare('UPDATE sessions SET workdir = ? WHERE id = ?').run(workdir, legacy.id);
+  return { ...legacy, workdir };
+}
+
 /** Return the most recent active user session for a repo, or undefined. */
 export function getActiveUserSession(db: Database.Database, repoKey: string): Session | undefined {
   return getActiveSessionWithDb(db, repoKey, 'user');
@@ -140,8 +165,8 @@ export function getMostRecentUserSession(db: Database.Database): Session | undef
 
 /**
  * List all active user sessions for a repo, ordered by start time descending.
- * Used by the get_status MCP tool to return a flat array of all active sessions
- * so callers can distinguish sessions by workdir.
+ * Returns both NULL-workdir and worktree-specific sessions so callers can
+ * distinguish sessions by workdir.
  */
 export function listActiveSessionsForRepo(db: Database.Database, repoKey: string): Session[] {
   const rows = db
