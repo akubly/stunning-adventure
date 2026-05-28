@@ -1,3 +1,5 @@
+📌 Team update (2026-05-26T22:27:00Z): **Wave 5-5 post-review complete** — W5-5 MCP forge_prescribe build break fixed (root: McpToolResult missing [key:string]:unknown index sig). +4 fail-open/structural tests from Laura's plan (5065082 + 4a4df6f). Tests 44→48 passing, root npm run build green ✅ — Scribe
+📌 **Wave 6 integrated onto phase-4.6/wave-6 (2026-05-26)** — W5-5 MCP forge_prescribe tool + fail-open prescriber_run CairnEvent preserved as commits 9499cb0, 5065082, 4a4df6f. Integration complete with W5-6 (Roger) + #17 (Laura). Awaiting Aaron's /review-cycle. — Scribe
 📌 Team update (2026-05-24T07:27:41Z): **Wave 4 W4-4 validation complete** — Laura fixed integration test infrastructure (module singleton fragmentation from mixed import paths). All 14 tests now passing. W4-3 forceRegenerate implementation validated end-to-end. 644/647 repo tests green. — Scribe
 📌 Team update (2026-05-23T21:25:00Z): **Wave 4 W4-3 complete** — forceRegenerate --force CLI knob shipped. Expire-then-insert semantics (UPDATE active hints to expired, then insertHintIfNew). MCP excluded per Aaron's D2 decision. 8/8 unit tests passing. Rosella coordinates with Roger (W4-1 atomicity) + Laura (integration tests). — Scribe
 📌 Team update (2026-05-22T14:07:59Z): **Phase 4.6 Wave 2 complete** — ChangeVectorProvider + ForgePrescriberOrchestrator + autoApplyEligible safety gate + hint dedup + forge-prescribe CLI all shipped. 1199 tests passing, 9 work items landed, 4 decisions merged. Wave 3 (Curator-driven orchestration + composition root) deferred behind ADR. — Scribe
@@ -58,6 +60,15 @@ Scribe orchestration complete: Graham's v3 scope finalized. Key scope decisions:
 - Active dedup statuses for optimization hints are pending, accepted, and deferred; terminal states (applied, rejected, expired, suppressed, failed) do not block reinsertion of the same (skillId, source, category) tuple.
 
 ## Learnings
+
+### W5-5 Post-Review Fixes (2026-05-26)
+
+- **McpToolResult index signature**: Any named interface returned from an MCP SDK `registerTool` callback must carry `[key: string]: unknown`. Without it, `tsc --build` fails with TS2345 even though inline return objects work fine. Named interfaces need it explicitly; this is a `CallToolResult` SDK contract constraint.
+- **Fail-open for observability writes**: CairnEvent log writes in MCP tool handlers must be wrapped in try/catch. A full disk or locked DB should never convert a successful prescriber run into an MCP error response. Pattern: `try { logEvent(...) } catch (err) { process.stderr.write(...) }`. The prescriber result is the primary value; the event is secondary telemetry.
+- **Test pattern for fail-open**: Use `vi.spyOn(cairn, 'logEvent').mockImplementationOnce(() => { throw new Error('DB full') })` to inject failures in unit tests. The stub `RunForgePrescribeFn` pattern makes this trivial since the spy applies to the cairn module boundary.
+- **Structural test for hot-path fs access**: Read the handler source via `fs.readFileSync(fileURLToPath(new URL('../mcp/handler.ts', import.meta.url)), 'utf8')` and assert no `fs.readFileSync|statSync|existsSync` in handler body. With vitest, `import.meta.url` points to the TypeScript source file so this works without build artifacts.
+
+
 
 ### W5-3 Tier Fallback (2026-05-25)
 
@@ -123,3 +134,4 @@ PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end
 ---
 
 **Older phase 4.6 cycle work archived to history-archive.md**
+

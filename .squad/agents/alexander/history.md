@@ -1,9 +1,56 @@
-📌 Team update (2026-05-22T20:35:00Z): **Wave 2 W2-5 complete** — ForgePrescriberOrchestrator shipped. Attenuation + autoApplyEligible propagation live. ATTENUATION_FLOOR=0.1 exported from @akubly/types. Fail-open on provider errors. Forge tests 609 passing (+10), root build green. — Scribe
-📌 Team update (2026-05-22T20:16:40Z): **Wave 0 complete** — canonical types in @akubly/types, getAllCategories helper in Cairn. category field reconciled to OptimizationCategory union. — Scribe
-📌 Team update (2026-05-22T20:03:56Z): Wave 2 v3.1 scope final — autoApplyEligible propagates through OptimizationHint; constants NEGATIVE_IMPACT_AUTO_APPLY_GATE=-0.2 and ATTENUATION_FLOOR=0.1; CLI surface only — no MCP in Wave 2. — Graham Knight
-# Alexander — History
+📌 Team update (2026-05-26T22:27:00Z): **Wave 5-5 post-review complete** — W5-5 MCP forge_prescribe build break fixed (root: McpToolResult missing [key:string]:unknown index sig). +4 fail-open/structural tests from Laura's plan (5065082 + 4a4df6f). Tests 44→48 passing, root npm run build green ✅ — Scribe
 
-## 2026-05-21: Wave 2 v3 Scope Ready — Curator Wiring Deferred to Wave 3
+# Alexander — History (Recent)
+
+## Learnings (2026-05-27 — Wave 6 Cycle-1 Post-Review — Copilot Review T1-T6)
+
+### PR #24 Copilot Review Threads Addressed
+All 6 accepted threads fixed in commit 10c2791 (new HEAD):
+
+**T1 (unused code):** Deleted `resolveRepoKey` function in loadMetrics.ts:28-34 — zero callers found. Only `resolveActiveRepoKey` is used.
+
+**T2 (semantic correctness — IMPORTANT LESSON):** Reverted cycle-2's `json_valid(payload)` guard from the sentinel query (loadMetrics.ts:77). **Lesson: presence-check semantics ≠ quality-check semantics.** The sentinel query answers "is the prescriber_run event type deployed in this database?" (feature-presence), NOT "are all rows parseable?" (data-quality). Adding `json_valid` to the sentinel made the function conflate the two: if all rows were malformed, the sentinel would return false (no rows found) and the function would signal "W5-5 not landed" (wrong!) instead of "W5-5 landed, skill has zero valid runs" (correct). Sentinel is now `WHERE event_type = 'prescriber_run'` only. The main query retains `json_valid()` to skip corrupt rows during json_extract. Test expectations unchanged — the I3 test already asserted the correct behavior (non-null on malformed-only dataset); updated test comment to clarify sentinel semantics.
+
+**T3 (doc sync):** Updated docs/issue-17-async-io-sweep-findings.md:170-174 to reflect both W5-5 async-IO test gaps are now CLOSED: (1) fail-open guarding landed (handler.ts:100-127 try/catch around logEvent), (2) structural no-fs test landed (forgePrescribeMcp.test.ts I5).
+
+**T4 (schema doc correction):** Updated .squad/decisions.md:1167-1181 to reflect the SHIPPED payload schema uses camelCase keys (`skillId`, `triggeredBy`, `sessionId`, `profileSource`, `totalHints`), not the originally documented snake_case. Added a correction addendum explaining the cycle-1 fix realigned to codebase convention. See handler.ts:102-118 for canonical payload construction.
+
+**T5, T6 (gitignore bypass cleanup):** Untracked two gitignored files that were force-added: `.squad/orchestration-log/2026-05-26-wave-6-integration.md` (gitignored by .gitignore:50) and `.squad/log/2026-05-26-wave-6-kickoff.md` (gitignored by .gitignore:51). **Lesson: force-adding gitignored files is an anti-pattern, especially for runtime state files.** These files should have stayed local-only; untracking them restores the .gitignore contract without deleting the local copies.
+
+**Verification:** Build + tests passed cleanly:
+- `npm run build` from root: exit 0
+- `npm test --workspace=@akubly/runtime-cli`: 24/24 passing
+- `npm test --workspace=@akubly/skillsmith-runtime`: 48/48 passing
+
+**Key takeaway:** The T2 lesson is foundational: when adding defensive guards (like `json_valid`), distinguish between **presence checks** (sentinel queries for feature deployment) and **quality checks** (row-level filters for parseability). Don't conflate them — the semantics diverge when all data is corrupt.
+
+---
+
+## Learnings (2026-05-26 — Wave 6 Cycle-1 Fix Wave)
+
+### Findings Addressed
+All 8 accepted findings fixed in 4 commits:
+- **B1 (BLOCKING)**: `prescriber_run` payload schema mismatch — handler wrote snake_case (`skill_id`, `profile_used`, `total_hints`); reader queried camelCase (`skillId`, `profileSource`, `totalHints`). SQL filter `json_extract(payload, '$.skillId')` never matched → `forge-metrics` CLI always returned empty prescriber runs in production.
+- **I1**: `triggeredBy` field was never set by handler; reader defaults to 'unknown'. Added `triggeredBy: 'mcp:forge_prescribe'` to interface + payload.
+- **I2**: Fail-open tests verified tool result was ok but never asserted stderr write happened. Added `vi.spyOn(process.stderr, 'write')` + assertions.
+- **I3**: Monolithic try/catch in `queryPrescriberRuns` returned null on ANY error (including SQLite throwing on malformed JSON in json_extract WHERE clause). Added `json_valid(payload)` guard to SQL + per-row JS try/catch for defense-in-depth.
+- **I4**: No handler→reader integration test — root cause of why B1 shipped. Added round-trip test calling real `forgePrescribeHandler` then `loadMetrics`.
+- **M1**: Duplicate `closeDb()` removed from `.catch()` in forge-metrics.ts.
+- **M2**: Vacuous force-flag assertions guarded by `if (inserted > 0)` restructured to unconditional relational contracts.
+- **M3**: "serial proof" language in mcp-async-io.test.ts and issue-17 findings doc replaced with "sync IO bounded and guarded"; added clarifying sentence about concurrent-handler serialization.
+
+### Root Cause
+Schema contract drift between W5-5 writer (handler.ts, Rosella) and W5-6 reader (loadMetrics.ts, Roger). Each package's test suite was internally consistent but neither tested the cross-package round-trip. The handler tests only verified that a payload was written; the reader tests only verified that a correctly-shaped payload was read. Nobody checked that the shapes matched.
+
+### The Lesson
+**Cross-deliverable contracts need at least one round-trip test.** When a writer and reader live in different packages and are developed in separate waves, the integration surface is invisible to unit tests on either side. The I4 round-trip test (forgePrescribeHandler writes → loadMetrics reads) is the test that *would have caught B1 before it shipped*. Going forward: any new event/payload pair that crosses a package boundary must have a round-trip test in the consuming package that imports the writer directly.
+
+### Collateral Discovery
+SQLite 3.47.x (bundled by better-sqlite3) throws `malformed JSON` from `json_extract()` when the payload column contains invalid JSON — even in the WHERE clause evaluation. The documented behavior (return NULL for invalid JSON) does not match actual behavior at this version. Added `json_valid(payload)` guard upstream of `json_extract()` to prevent the throw and skip invalid rows gracefully.
+
+
+
+## 2026-05-26: Wave 6 Kickoff Summary
 
 Scribe orchestration complete: Graham's v3 scope finalized and merged to `.squad/decisions.md`. Key scope decisions:
 - **ChangeVectorProvider** port with async return type for Phase 5 cloud readiness
@@ -157,3 +204,19 @@ PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end
 ---
 
 **Older learnings archived to history-archive.md**
+### 2026-05-27 — PR #24 Cloud Review Round 2 (8662579)
+
+**R2-T1: Constant deduplication** — ATTENUATION_FLOOR had a local duplicate in runtime-cli/src/metrics/loadMetrics.ts. Canonical source is @akubly/types/src/index.ts:246. Import from there; added @akubly/types to runtime-cli deps.
+
+**R2-T2: Clock skew resilience** — daysBetween() can return negative when updatedAt is greater than now. Clamp to >= 0 at caller (line 150 in loadMetrics.ts): Math.max(0, daysBetween(...)). Mirrors sessionsSinceUpdate pattern. No test added (review accepted existing pattern).
+
+**R2-T3: Circular import resolution** — mcp/handler.ts imported runForgePrescribe and loadExecutionProfile from ../index.js, while index.ts re-exported forgePrescribeHandler from handler. **Solution:** extracted core runtime logic to new runtime.ts module. Both handler.ts and index.ts now import from runtime.ts. index.ts maintains public API via re-exports. Pattern: when barrel (index.ts) and module create cycle, extract shared logic to third module.
+
+**R2-T4: MCP tool annotations** — forge_prescribe mutates state (inserts hints). Added annotations: { readOnlyHint: false } per Cairn MCP convention (see cairn/src/mcp/server.ts:323 for write tools, vs :112 for read tools). This is part of the MCP tool contract — signals mutation to clients/runtime.
+
+**Learnings:**
+- Shared constants belong in @akubly/types, not duplicated per package
+- Clamp time-delta computations to handle clock skew (NTP drift, VM suspend/resume)
+- Circular imports between barrel and impl → extract to third module
+- MCP readOnlyHint is a semantic contract, not optional metadata
+

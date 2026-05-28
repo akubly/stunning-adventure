@@ -1,3 +1,5 @@
+📌 Team update (2026-05-26T22:27:00Z): **Issue #17 async-sweep complete, W5-5 tests integrated** — 0 required fixes (8 areas swept, guards verified, 12 tests added). Laura's async-test plan integrated into W5-5 (4 new tests). All Cairn async-io tests passing. — Scribe
+📌 **Wave 6 integrated onto phase-4.6/wave-6 (2026-05-26)** — #17 async-IO sweep preserved as commit 2b4026a. Integration complete with W5-5 (Rosella) + W5-6 (Roger). MCP stdio transport proven serial, no async conversion needed. Awaiting Aaron's /review-cycle. — Scribe
 📌 Team update (2026-05-23T21:30:00Z): **Wave 4 W4-4 integration tests created** — 14 tests covering all three work items. Groups: A atomicity (3/3 ✅), B observability (5/5 ✅), C forceRegenerate (1/4, 3 = test infra), D E2E (0/2, test infra). Implementation quality validated; test infrastructure gaps identified (file-backed SQLite DB seeding issues). 639 Forge tests passing (+9). — Scribe
 📌 Team update (2026-05-22T14:07:59Z): **Phase 4.6 Wave 2 complete** — ChangeVectorProvider + ForgePrescriberOrchestrator + autoApplyEligible safety gate + hint dedup + forge-prescribe CLI all shipped. 1199 tests passing, 9 work items landed, 4 decisions merged. Wave 3 (Curator-driven orchestration + composition root) deferred behind ADR. — Scribe
 📌 Team update (2026-05-22T20:35:00Z): **Wave 2 W2-5 complete** — ForgePrescriberOrchestrator shipped. Attenuation + autoApplyEligible propagation live. ATTENUATION_FLOOR=0.1 exported from @akubly/types. Fail-open on provider errors. Forge tests 609 passing (+10), root build green. — Scribe
@@ -75,3 +77,46 @@
 **Key learning — test naming honesty (better-sqlite3 is synchronous):** Wave 4 test suite included a test called "concurrent inserts" that actually ran transactions sequentially. better-sqlite3 is synchronous — no actual concurrency happens. Renamed all sequential-dedup tests to drop "concurrent" terminology and use names that reflect the actual execution model (e.g., "BEGIN IMMEDIATE transactions prevent duplicate inserts"). Test names must match implementation reality, not the desired property being validated.
 
 **Example commitment:** If a test name says "concurrent," the reader expects async/parallel execution. When execution is sequential, honesty demands the name reflect that. This prevents future developers from misinterpreting test coverage scope.
+
+## 2026-05-26: Issue #17 — Async IO Sweep (Wave 6 Surface Area)
+
+**Status:** ✓ Complete. 12 new tests added, all passing (609 cairn total). W5-5 test plan written.
+
+**Scope swept:** Cairn MCP server, hook entry points (postToolUse/sessionStart), Cairn DB layer, Forge prescribers, skillsmith-runtime composition root, runtime-cli CLI entry point.
+
+**Concurrency model finding:** The Cairn MCP server uses a stdio transport — one request at a time. Sync IO inside tool handlers cannot starve other requests because no other requests are running concurrently. This changes the evaluation of every finding from "must fix" to "is the guard correct?"
+
+**Findings (0 required fixes):**
+- `resolveAndReadSkill` (MCP server) — `statSync` ×2 + `readFileSync` ×1. Guards are correct (name check, size limit, read error). Tested.
+- `gitContext.ts` — `execSync` ×2. Timeout-guarded at 2000ms, stdio-piped. Verified structurally.
+- `db/index.ts` — `mkdirSync` + `chmodSync`. Startup-only. Expected.
+- `applier.ts` — file writes. Low-frequency operator action. Expected.
+- `discovery.ts` — `readFileSync/statSync/readdirSync`. Curator-path, wrapped in safe helpers. Expected.
+- Forge prescribers, skillsmith-runtime, runtime-cli — all clean.
+
+**Hot-path criteria used:** A call is hot-path if it runs per-request in a concurrent server. For serial stdio MCP: nothing qualifies. For hook processes: startup cost is acceptable given the process lifecycle. For curator-path: periodic, not per-request.
+
+**Test approach for MCP async correctness:**
+1. Export `resolveAndReadSkill` to make it directly testable (minimal code change to server.ts).
+2. Mock `fs.statSync` with `vi.spyOn` to test the size guard without creating a 1MB fixture file. Mock first call to throw ENOENT (directory check fails = no directory append), second call returns oversized Stats.
+3. Structural tests read source code to assert: timeout numbers present in gitContext.ts, sync IO confined to `resolveAndReadSkill` (not leaking into other tool handler bodies).
+4. W5-5 handler test plan written as doc for Rosella; covers: Promise return check, CairnEvent fail-open, sequential re-use safety, forceRegenerate semantics, structural no-inline-fs assertion.
+
+**Branch:** `issue-17/async-io-sweep`  
+**Commit:** (see git log)  
+**Artifacts:** docs/issue-17-async-io-sweep-findings.md, .squad/decisions/inbox/laura-w5-5-async-test-plan.md, .squad/skills/async-io-audit/SKILL.md
+
+## Learnings
+
+**Sync IO patterns observed:**
+- MCP server file IO is isolated in one helper (`resolveAndReadSkill`) with three guards: name check, size check, read error. This is the correct pattern — extract + guard + test.
+- Hook processes are short-lived and use `execSync` with timeouts. Acceptable pattern for CLI tools that don't need async.
+- better-sqlite3 is synchronous throughout. This is by design; replacing it with async SQLite would add complexity for no benefit in a serial server.
+
+**Hot-path criterion:** "Can a second request arrive while this call is running?" For stdio MCP: no. For HTTP with concurrent connections: yes. Always establish the concurrency model before classifying sync IO.
+
+**Test approach for MCP async correctness:**
+- Prefer structural source-reading tests over runtime spy-heavy tests where possible.
+- When mocking `fs.statSync` for guard boundary tests, chain `mockImplementationOnce` calls to simulate the sequence: directory stat (throws ENOENT), size stat (returns fake Stats). Order matters.
+- Export internal helpers from the module under test rather than testing through opaque transport. `resolveAndReadSkill` export was the minimal code change that enabled full guard coverage.
+- W5-5 pattern for new MCP handlers: test CairnEvent write failure (fail-open), sequential invocation safety, and structural no-inline-fs assertion as a tripwire.

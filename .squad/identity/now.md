@@ -1,6 +1,6 @@
 ---
-updated_at: 2026-05-25T23:42:47-07:00
-focus_area: Phase 4.6 Wave 5 COMPLETE — Wave A (W5-1, W5-3) + Wave B (W5-2, W5-4) both landed locally on isolated branches. Aaron to review and merge all four Wave 5 PRs. Wave 6 backlog on hold pending PR merges.
+updated_at: 2026-05-26T22:27:53-07:00
+focus_area: "Phase 4.6 Wave 6 INTEGRATION ready — W5-5 (MCP forge_prescribe + fail-open CairnEvent), W5-6 (forge metrics CLI), #17 (async IO sweep, 0 required fixes) all consolidated on phase-4.6/wave-6 branch. Aaron to run /review-cycle. Worktree pattern (#11) pulled into Wave 6 tail per Aaron decision 2026-05-26."
 active_issues:
   - "Phase 1: Monorepo restructuring ✅ COMPLETE"
   - "Phase 2: Live runtime verification ✅ COMPLETE (5/5 modules)"
@@ -12,14 +12,19 @@ active_issues:
   - "Phase 4.6 Wave 3: Curator-driven prescriber orchestration ✅ COMPLETE (PR #21 merged f27a537; composition root R2 @akubly/skillsmith-runtime; always-on hook wiring; 14 Copilot findings addressed; 1219 tests passing)"
   - "Phase 4.6 Wave 4: COMPLETE ✅ (2026-05-24). W4-1 insertHintIfNew atomicity + W4-2 CairnEvent observability + W4-3 forceRegenerate CLI knob + W4-4 integration test infrastructure — all SHIPPED and VALIDATED. Result: 14/14 integration tests passing, 644/647 repo tests green. Branch phase-4.6/wave-4 ready for PR. Aaron to open PR manually (open_pr=false)."
   - "Phase 4.6 Wave 5 COMPLETE ✅ (2026-05-25). Wave A: W5-1 session-kind separation (commit 8b0a69a, 100/100 tests) + W5-3 tier fallback (commit c74463f, 18/18 tests). Wave B: W5-2 explicit DB hard cut (commit 963a0aa, 50 files refactored) + W5-4 staleness attenuation (commit 96f7d6e, 16/16 tests). All four commits on isolated branches. Decisions consolidated (commit cea40ac on main)."
+  - "Phase 4.6 Wave 6: INTEGRATION READY on phase-4.6/wave-6 — 9 commits, build/tests green. Includes: W5-5 (Rosella) MCP forge_prescribe tool + fail-open prescriber_run CairnEvent (48 skillsmith-runtime tests), W5-6 (Roger) forge-metrics CLI standalone subcommand (13 new runtime-cli tests, JSON-default + table format), #17 (Laura) async IO sweep (12 new cairn MCP tests, 0 required fixes, MCP stdio transport proven serial). Awaiting Aaron's /review-cycle pass."
+  - "#11 Worktree-aware sessions: PULLED INTO WAVE 6 TAIL — to be dispatched after /review-cycle completes."
   - "Phase 5: Cloud PGO + Full Graph — ROADMAP (docs/forge-phase5-roadmap.md, Azure budget prerequisite)"
-  - "#11 — Worktree-aware sessions (deferred)"
   - "awesome-copilot submission (deferred)"
 ---
 
 # What We're Focused On
 
-Phase 4.6 Wave 5 is COMPLETE. Aaron to review and merge PRs.
+## Wave 6 Integration Complete (2026-05-26)
+
+All Wave 6 deliverables (W5-5, W5-6, #17) consolidated onto phase-4.6/wave-6 via cherry-pick. Build and tests green. Ready for Aaron's /review-cycle.
+
+**Recovery note:** Parallel agents on shared checkout caused branch entanglement (w5-5-rosella-mcp-forge-prescribe vs w5-5-mcp-forge-prescribe). Worktrees required. #11 pulled into Wave 6 tail to enforce worktree pattern going forward.
 
 **Wave A (Complete as of 2026-05-25):**
 - ✅ **W5-1 Session-Kind Separation:** Migration 014 (session_kind column), getMostRecentUserSession() API, four MCP call sites corrected. Commit 8b0a69a on phase-4.6/w5-1-session-kind. Fixes MCP fallback correctness bug (was returning `__system__` session to user-facing tools). 100/100 tests passing.
