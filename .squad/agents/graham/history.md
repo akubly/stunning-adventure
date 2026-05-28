@@ -1,3 +1,4 @@
+📌 Team update (2026-05-28T18:05:30Z): **Crucible CTD Rev. 3 FINAL — Phase 2 Fan-Out Unblocked** — All 6 R2 decisions locked, baked into plan rev. 3. Informational: Phase 2 fan-out is unblocked; you are also the Phase 3 assembly owner; rev. 3 plan is your authoritative spawn manifest. Phase 2 lanes: 9 agents, 6 parallel waves, ~9-10 days. Cross-section sync pairs (Gabriel ↔ Valanice on R2-3 queue mechanics; Rosella ↔ Roger on R2-6 lockfile) are explicit coordination touchpoints during Phase 2 authoring. — Scribe
 📌 Team update (2026-05-27T07:07:46Z): **Cassima reply superseded** — Graham's prior draft (`graham-cassima-reply.md`) was panel-rejected on scoping complexity. Erasmus redrafted with narrower freeze (SessionId + DecisionRecord only, defers WAL/event + prescriber), aligned to Aaron's May 26 directives (storage fork + Eureka standalone). Aaron approved as-drafted. New decision posted to decisions.md; Graham's reply remains in ledger for audit. — Scribe
 📌 Team update (2026-05-27): **Eureka cross-PRD coordination position** — Position paper + reply to Cassima on shared schema freeze. Narrowed scope to `@akubly/types` only (SessionId brand + DecisionRecord); excluded Cairn's forked WAL from negotiation; proposed optional-adapter pattern for WAL-as-learning-source; deferred full freeze until post-Sprint-2 (both sides have exercised code). Three tensions surfaced: scope mismatch (cairn forked), coupling contradiction (standalone vs WAL consumption), premature freeze. — Graham Knight [**SUPERSEDED by Erasmus revision (2026-05-27T07:07:46Z)**]
 📌 Team update (2026-05-23): **Wave 3 decisions accepted** — R2 approved as `@akubly/skillsmith-runtime`; MCP dropped from Wave 3; always-on Curator hook; 7 work items, ~18 tests. Docs revised, ready to fan out. — Graham Knight
@@ -146,6 +147,144 @@ Roger (W2-1) + Rosella (W2-4): canonical `ChangeVectorSummary`, `ChangeVectorPro
 **Tech:** TypeScript/Node.js, npm monorepo, MCP SDK, Copilot CLI/Extensions/Engine SDKs
 
 ## Learnings
+
+### Multi-Phase Cadence: scope → reconcile-with-strategy → bake-in-locks → fan-out (2026-05-28)
+
+**The pattern that emerged across this CTD effort.** Four-beat cadence for
+architecture design at this scale:
+
+1. **Scope (rev. 1):** Plan the document — sections, owners, depth calibration,
+   dependency graph, spawn manifest. Get fan-out *structurally* unblocked.
+2. **Reconcile (rev. 2):** Merge in a parallel-authored strategy document (in
+   this case Laura's TDD strategy). Surface the latent design questions the
+   strategy forces precision on. Don't try to answer them in the reconciliation
+   pass — flag them as OQs and route to the Decision-Point gate.
+3. **Bake-in (rev. 3):** After the human lock pass, sweep declarative — every
+   "if X then Y" becomes "X. Y." This is the cheap pass; takes hours not days.
+   Crucially, also surface any *coordinator-added expansions* (small
+   refinements the human added beyond simple accept/reject) and weave them into
+   the affected section specs.
+4. **Fan-out:** Phase 2 authoring spawns. Plan is now a frozen reference.
+
+**Value of one-at-a-time R2 triage even when defaults were recommended.** Aaron
+took the six R2 questions through interactive triage rather than an accept-all
+flow, despite my recommended defaults being concur-able. Two of the six
+acquired coordinator-added expansions during that triage:
+- R2-1: `commitmentMethod: 'declared' | 'fallback'` tag on the Decision row,
+  so investigations can trace which path the hybrid took. I'd specified the
+  hybrid; I had NOT specified the traceability tag. The one-at-a-time pass
+  surfaced this.
+- R2-5: `nonDominatedReason: 'optimal' | 'incomparable'` field on
+  `PrescriptionResult`, parallel to the UI badge. I'd specified the badge;
+  I had NOT specified the data-model field. Same pattern.
+
+**Lesson:** An accept-all "ratify the recommendations" loop is faster but
+strictly worse for surfacing this category of refinement. The discussion
+discipline of going question-by-question, even when the human is leaning
+"concur," gives the human room to add small expansions that complete the
+spec. The 30 minutes saved by accept-all costs days of late-Phase-3 errata
+when the missing tag/field surfaces during authoring or implementation.
+Budget for one-at-a-time triage on locks of this scope.
+
+**Lesson:** Coordinator-added expansions should be threaded into the bake-in
+pass, not deferred to a separate revision. They tend to touch the same section
+specs as the parent lock, so the marginal cost of including them is near-zero
+once the bake-in is open. Treating them as "decisions to revisit later" guarantees
+drift between the lock record and the section specs.
+
+---
+
+### TDD-Strategy-as-Input-to-Architecture-Design Pattern (2026-05-27)
+
+**The ordering was unusual.** Laura authored her London-school TDD strategy with a
+firewall against my CTD plan; I then reconciled her strategy into the design plan
+after the fact. Normal sequence: architecture → test plan. Inverted sequence here
+to prevent Laura anchoring on my decomposition (so her acceptance scenarios came
+from the PRD, not my chamber boundaries).
+
+**What worked:**
+- Laura's `Collaborator Contract Inventory` (§3 of her strategy) gave me a ready-made
+  test-surface vocabulary. Adopting her names (`AppendProtocol`, `PreCommitHookBus`,
+  `ReadSetHasher`, `PolicyEngine`, `LedgerWindowReader`, `GenericL3AdapterContract`)
+  as canonical CTD names eliminates a whole class of mock-drift-by-name-mismatch.
+  Cheaper than re-naming her doc or living with two vocabularies.
+- Her acceptance scenarios A1-A12 are PRD-derived, so they pressure-tested my
+  section depth choices honestly. Several sections (§3, §7, §9) had their
+  "Key questions answered" lists materially extended because a scenario implied
+  precision I hadn't specified.
+- Her invariant tests (§6 of strategy) gave me enforcement-mechanism-by-section
+  homework: every invariant needs a CTD section that says "this is how the
+  invariant holds." That mapping is now an explicit table in my decision drop.
+
+**What was awkward:**
+- Six new open questions surfaced (OQ-R2-1 through OQ-R2-6) that I hadn't asked
+  Aaron because Laura's strategy forced precision the plan hadn't required. These
+  are not blocking but they ARE the kind of thing that, if not pre-called, makes
+  Phase 3 synthesis painful. Lesson: when the test surface is authored blind to
+  the design, expect to surface latent design choices. Triage them BEFORE fan-out,
+  not after.
+- The Eureka-adapter shrinkage (Q2 = defer to v1.5) wasn't a CTD decision I'd made,
+  but the strategy doc treats it as already-locked because Aaron locked it during
+  the Laura↔Coordinator Q-resolution loop. The CTD has to honor it. This is the
+  cost of parallel decision streams converging late.
+- Some of Laura's collaborator names (e.g., `PreCommitHookBus` vs my "Hook Bus")
+  are stylistic mismatches that don't matter individually but accumulate. The
+  alias-map convention in §2 and §7 is the cheap fix; the expensive alternative
+  would be a global rename pass.
+
+**General pattern lesson:** When design and test plans are authored by different
+hands with a firewall in between, the post-merge reconciliation phase should
+expect ~30% net new content in the design plan, mostly in invariant-enforcement
+specs and collaborator-shape clarifications. Budget for it.
+
+### Structural Commitment Model Shifted My L1 Mental Model (2026-05-27)
+
+**Pre-strategy mental model:** L1 WAL is a row store; Decision rows reference an
+"observation set" they consumed; replay re-feeds Observations and recomputes
+Decisions.
+
+**Post-strategy mental model (per Q1 lock):** L1 WAL is a *content-addressed
+causal-context log*. Each Decision commits to a Merkle hash over the entire
+visible context window (any primitive type — Request, Artifact, Observation,
+Decision, Question). Observations are first-class primitives, not envelope
+metadata. Bootstrap context (system prompts, tool defs, cross-session memory)
+is itself a sequence of Observation primitives at offset 0.
+
+**Implications I hadn't seen before:**
+
+1. **Context-window commitment is the integrity primitive, not row hash chains.**
+   Hash chains still exist (per-row, append-only audit) but the *semantically
+   meaningful* integrity check is "can I recompute the Merkle hash over the
+   causal-context window and match the stored commitment?" This is what makes
+   replay equivalence verifiable without re-executing the LLM.
+
+2. **Bootstrap is a first-class L1 operation, not a configuration concern.**
+   The L0 provider hands a `BootstrapPayload`; L1 atomically materializes a
+   batch of Observation primitives at offset 0; subsequent replays validate the
+   offset-0 row set against the manifest. This means session bootstrap has a
+   shape (`ledger.bootstrap(ctx)`), not just an initialization sequence.
+
+3. **The 5 primitives are now equal-rank.** I had been implicitly treating
+   Decision as the "important" primitive and the others as supporting. Q1
+   flips this: the LLM doesn't distinguish — *all* prior context is input.
+   Decision is just the primitive that commits to a hash of everything it saw.
+
+4. **The Aperture queue is a Router-coupled state machine, not just a UX.**
+   Q3's "default-not-applied-until-acked" means the Router has a paused-path
+   sub-state, the Applier has a paused-awaiting-structural-ack sub-state, and
+   Aperture owns the persistence/render of the queue. Three sections, one
+   handshake — a cross-section data dependency I hadn't named in rev. 1.
+
+5. **The "agentic cost function" framing (Q7) is a load-bearing design constraint,
+   not just a CI preference.** Future contributors will see "zero-tolerance
+   mock-drift gate" and assume it's optional CI strictness. It isn't — it's a
+   design constraint downstream of the fact that agentic systems make many
+   decisions per session against a drifted model, so drift cost compounds while
+   fix cost is near-zero. The CTD has to document this rationale in both §16
+   (test strategy) and §17 (observability) so it survives team turnover.
+
+---
+
 
 ### Coexistence Lock Impact on Design Planning (2026-05-27)
 
@@ -399,3 +538,4 @@ Resolved 10 design-tilted micros Cassima routed to me (not Aaron) after 8 Aaron-
 - **The anti-anchoring rule paid off on I.3.** First-thought was "archivist crash-detect is a safety issue, T1." Alternative considered: under D′.1.a's locked pause-before-fsync, the failure mode is "Aaron re-issues the operation," not silent corruption. That reclassification moved the answer from T1 to T2 cleanly. If I hadn't paused to enumerate the actual blast radius, ~3-5 eng-days would have stolen budget from Gabriel's NEW-15 fuzz regime, which catches the *class* of safety bugs the crash-detect heuristic only catches one symptom of.
 
 - **Cassima's batching paid for itself.** Routing 10 micros to me as a single cluster (rather than 10 separate Aaron pings) saved an enormous serialization cost — half the decisions cross-reference each other (I.4 + I.5 share the canonical-types principle; I.1 + I.2 share Roger's commit-driver work; I.7 references I.6 indirectly through join-key semantics). Resolving them in one pass let me check coherence inside the batch instead of over a week of sequential exchanges.
+

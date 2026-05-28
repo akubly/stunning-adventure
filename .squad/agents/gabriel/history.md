@@ -1,5 +1,14 @@
 # Gabriel — History
 
+## 2026-05-28: Crucible CTD Rev. 3 — R2 Locks for Gabriel
+
+**Locked decisions** impact your execution model and bisect infra. Your tasks:
+1. **R2-3 (Queue Mechanics):** Aperture↔Router ack/resume handshake event shapes (Gabriel ↔ Valanice cross-section sync pair during Phase 2 authoring)
+2. **R2-5 (Env Snapshot):** Coordinate on nonDominatedReason field usage across layers (Rosella generates, Valanice renders)
+3. **R2-4 & R2-6:** Bisect env-snapshot stamping and transitive-dep pinning may inform CI policy.
+
+Phase 2 fan-out now unblocked. Full R2 locks in `.squad/decisions.md`.
+
 ## Core Context
 
 - **Project:** A Copilot plugin marketplace for iterating on personal agentic engineering infrastructure

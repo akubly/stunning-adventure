@@ -1,5 +1,15 @@
 # Valanice — History
 
+## 2026-05-28: Crucible CTD Rev. 3 — R2 Locks for Valanice
+
+**Locked decisions** impact your Aperture and Router design. Your tasks:
+1. **R2-3 (Structural Queue):** StructuralApprovalQueue as L1-derived projection on Aperture boot (re-derive from L1 ledger, no write-state storage)
+2. **R2-4 (Env Snapshot):** Bisect output per-row env-snapshot stamp (one column, 16-char abbreviation acceptable)
+3. **R2-5 (Incomparable UI):** Leaderboard [incomparable-axes] badge for `nonDominatedReason === 'incomparable'` prescriptions
+4. **Cross-section sync pair (Gabriel ↔ Valanice):** Aperture↔Router ack/resume handshake event shapes (R2-3 mechanics). Coordinate with Gabriel on event schema during Phase 2 authoring.
+
+Phase 2 fan-out now unblocked. Full r2 locks in `.squad/decisions.md`.
+
 ## Project Context
 - **Project:** stunning-adventure — Industrial-grade agentic software engineering platform
 - **User:** Aaron

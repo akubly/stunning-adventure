@@ -1626,3 +1626,132 @@ Observation: Laura's TDD strategy locks may inform Graham's CTD (Crucible Techni
 - Laura's architectural insights (structural commitment Q1, agentic-cost framing Q7, generic-adapter pattern Q2) may surface as principles in CTD
 
 ---
+
+## Crucible CTD Rev. 3 — R2 Resolutions (2026-05-28)
+
+**Date:** 2026-05-28  
+**Decided by:** Aaron Kubly (interactive Decision-Point gate via coordinator)  
+**Source:** `docs/crucible-technical-design-plan.md` rev. 2 §"New Open Questions Surfaced by TDD Reconciliation"  
+**Status:** ALL 6 LOCKED — Graham bake-in revision COMPLETE; Phase 2 fan-out UNBLOCKED
+
+### Lock Summary
+
+| OQ | Topic | Resolution | Departure from Graham's default? |
+|---|---|---|---|
+| R2-1 | Context-window bound on Decision Merkle commitment | **B-with-A-fallback + `commitmentMethod: 'declared' \| 'fallback'` tag on Decision row** | Concur with Graham; coordinator added the tag |
+| R2-2 | BootstrapPayload schema scope | **(iii) Literal payload (what L0 injected as text) + named-source manifest of queryable memory sources** | Concur with Graham |
+| R2-3 | Structural-proposal queue persistence on restart | **(c) Re-derive queue from L1 ledger on every Aperture boot — projection is pure, queue is a view** | Concur with Graham |
+| R2-4 | Env-snapshot hash stamp on bisect output | **Yes — per-row stamp on every result row** | Concur with Graham |
+| R2-5 | Pareto incomparable UI surface | **Yes — `[incomparable-axes]` badge in UI + `nonDominatedReason: 'optimal' \| 'incomparable'` field in data model** | Concur with Graham; coordinator added the data-model field |
+| R2-6 | Transitive dep resolution timing | **(A) Resolved-at-install / snapshotted-at-fork / loaded-at-session-start from snapshot** | Concur with Graham |
+
+### R2-1 — Decision Merkle commitment window
+
+**Lock:**
+- Primary: L0 declares an explicit `causalContextWindow` slice per Decision listing which prior ledger row IDs the LLM had in context.
+- Fallback: if L0 doesn't declare, L1 uses the full ledger prefix up to (excluding) the Decision row's offset.
+- Decision row metadata includes `commitmentMethod: 'declared' | 'fallback'` so investigation can trace which path was taken.
+
+**Why hybrid:**
+- Pure A (full prefix) lies once LLM has pruned older content from its attended context.
+- Pure B (declared only) strands L0 providers that don't surface attention metadata (today: most, including Copilot SDK first cut).
+- Hybrid: B is honest when available; A is graceful degradation; tag preserves traceability.
+
+**Edge case:** If L0 declares a window that includes rows OUTSIDE the ledger prefix, that's a Bootstrap-Capture-Completeness invariant violation (Q1) — caught by Laura's bootstrap test, not silently absorbed by the commitment hash. Failure routes to the right test.
+
+**CTD impact:** §2 (L0/L1 Boundary) — `causalContextWindow` optional field on L0's Decision-emission contract. §3 (L1 WAL) — `commitmentMethod` tag on Decision rows. §11 (Replay) — replay protocol reads the tag and reconstructs the window accordingly.
+
+### R2-2 — BootstrapPayload schema scope
+
+**Lock — `BootstrapPayload` v1 shape:**
+- `literalContext`:
+  - `systemPrompt: string` — verbatim system prompt text
+  - `toolDefinitions: ToolDefinition[]` — tool schemas/descriptions as injected
+  - `injectedMemoryFragments: Array<{ sourceManifestId, content }>` — verbatim memory text the L0 provider chose to inject at bootstrap
+- `memoryManifest: Array<{ id, kind, versionHash, accessSurface }>` — named memory sources queryable later (NOT injected at bootstrap)
+
+**Boundary rule:** Capture what L0 *literally hands across* as bootstrap context. Memory sources the agent queries later via tool calls become normal Observation primitives at query time — not bootstrap concerns.
+
+**Why not full-verbatim-dump:** Multi-MB offset-0 rows would bloat every session start.
+**Why not pointers-only:** Silent replay drift when memory source content shifts.
+
+**CTD impact:** §2 (L0/L1 Boundary) — codifies the `BootstrapPayload` shape. §10 (Session Model) — bootstrap sequencing materializes offset-0 Observations from this payload. Roger + Alexander finalize field names in their CTD sections.
+
+### R2-3 — Structural-proposal queue persistence
+
+**Lock:** Queue is a **pure projection over L1 events**. On Aperture boot, the queue is recomputed by scanning L1 for structural-proposal-state events (emitted, acked, rejected, expired) and presenting all with latest_state = `pending`. No separate persistent queue state.
+
+**Why:**
+- Honors L1/L2 separation (L1 = truth, L2 = view).
+- No dedup gymnastics — re-emission is unnecessary because the projection is recomputed.
+- Cheap — structural proposals are bounded; linear scan at boot is free.
+- Forward-compatible: an "expired" L1 event from a future policy worker is just another input to the projection.
+
+**CTD impact:** §9 (Aperture) — `StructuralApprovalQueue` is a `SELECT` over the L2 `aperture_events` projection; no write-stateful storage. §5 (Router) — pause-resume handshake reads queue state from the projection.
+
+### R2-4 — Bisect output env-snapshot stamping
+
+**Lock:** Every bisect result row in the report includes the env-snapshot hash (16-char abbreviation acceptable).
+
+**Why:**
+- Bisect output is long-lived (CI artifacts, PR comments, issue paste-ins) and outlives the bisect run.
+- Per-row stamping preserves context when rows are sliced/grep'd/copied in isolation.
+- Cost: one column, trivial.
+- Honors Q5's "internally consistent, not externally hermetic" framing in user-visible surface.
+
+**CTD impact:** §13 (Crucible CLI Shell) or §16 (Test Strategy) Tooling subsection — bisect output schema includes `envSnapshotHash` column.
+
+### R2-5 — Pareto incomparable UI surface
+
+**Lock — both UI and data model:**
+- **Data model:** `PrescriptionResult.nonDominatedReason: 'optimal' | 'incomparable'`. Optionally `incomparableWith: string[]` listing other prescription IDs the comparison was incomparable against.
+- **UI:** Leaderboard surfaces an `[incomparable-axes]` badge on prescriptions with `nonDominatedReason === 'incomparable'`.
+
+**Why both surfaces:**
+- UI alone leaves CLI/JSON consumers blind.
+- Data-model field alone leaves users reading the UI unable to distinguish.
+- Both = honest at both surfaces.
+
+**Why distinguish at all:** Q8 locked "both remain non-dominated" but Q8 didn't say "treat them as equivalent." A future tool picking "the best prescription" needs to know whether "best" was actually *proved* (optimal) or *unchallenged* (incomparable).
+
+**CTD impact:** §7 (L3 Generators) or §8 (Applier + DecisionGate) — `PrescriptionResult` schema. §9 (Aperture) — leaderboard rendering. §13 (CLI) — JSON output schema. Rosella + Valanice finalize field/affordance names in their CTD sections.
+
+### R2-6 — Transitive dep resolution timing
+
+**Lock — three-phase separation:**
+- **Install** (`crucible plugin install foo`): Plugin Registry computes full transitive dep graph; writes lockfile. Owner: `@akubly/crucible-plugin-registry` (Rosella).
+- **Fork**: Lockfile contents copied verbatim into child session's `SessionMetadata.pluginVersions`. Owner: L1 WAL fork semantics (Roger).
+- **Session start**: Runtime reads `SessionMetadata.pluginVersions` and loads exactly those versions. No resolution; pure load.
+
+**Why:**
+- Only timing that satisfies "pinned at fork" without making fork slow or replay brittle.
+- Clean separation of concerns: install resolves (expensive, infrequent), fork copies (cheap, frequent), session-start loads (deterministic, frequent).
+- Replay determinism preserved — registry content drift after fork is invisible to that session.
+- Aligns Rosella ↔ Roger sync pair Graham already flagged.
+
+**Forward-compat note:** Mid-session installs (user installs a new plugin mid-session) are a v1.5+ story with their own ceremony (a new ledger event, a re-pin). NOT part of bootstrap timing. The install/fork/load triad doesn't preclude this; it just doesn't try to handle it as a bootstrap concern.
+
+**CTD impact:** §10 (Session Model) — `SessionMetadata.pluginVersions` field; fork semantics. §15 (Migration Plan) — install-time resolution algorithm package boundary. Rosella ↔ Roger cross-section sync pair handles the boundary during Phase 2 authoring.
+
+### Cross-Section Sync Pairs (Coordination During Authoring, Not Pre-Decisions)
+
+Graham flagged these in his rev. 2; they are NOT decisions but ongoing coordination touchpoints during Phase 2 authoring:
+
+1. **Gabriel ↔ Valanice** — Aperture queue ↔ Router pause-resume handshake (Q3 mechanics). Concretely: Aperture exposes ack/reject verbs that emit L1 events; Router subscribes to those events and resumes dependent paths. Both must agree on event shape.
+2. **Rosella ↔ Roger** — Plugin Registry transitive resolution timing (R2-6) — Rosella owns the install-time lockfile algorithm; Roger owns the snapshot field. Both must agree on lockfile format that copies cleanly into the WAL field.
+
+Coordinator will provide a shared scratchpad during Phase 2 for these pairs, or co-locate them in the same fan-out wave so handshake details can converge.
+
+### CTD Plan Rev. 3 Bake-In (2026-05-28)
+
+**Author:** Graham (Lead / Architect)  
+**Status:** COMPLETE  
+**Target:** `docs/crucible-technical-design-plan.md` rev. 3 (103KB → 108KB)
+
+Surgical bake-in pass over rev. 2 of the CTD plan. The former "New Open Questions Surfaced by TDD Reconciliation" section is now **"Resolved R2 Decisions (locked 2026-05-28)"** — a six-row lock summary table matching the coordinator drop's shape. Section detail text across §2, §3, §5, §7, §8, §9, §10, §11, §13, §15, §16, §17 is now declarative — every "if Aaron accepts the defaults," "pending OQ-R2-X resolution," and "Recommend (b) with..." hedge replaced with the locked answer in present-tense form. The two coordinator-added expansions are woven into the affected section specs: `commitmentMethod: 'declared' | 'fallback'` appears on the Decision row metadata contract (§2 emission, §3 WAL, §11 replay reconstruction), and `nonDominatedReason: 'optimal' | 'incomparable'` appears on the `PrescriptionResult` schema (§7 generator emission, §8 Applier propagation, §9 UI badge, §13 CLI JSON, §15 shared-types enumeration). Risk 6 flipped to RESOLVED. Header bumped to rev. 3. Spawn manifest acceptance criteria refreshed across §2, §3, §5, §7, §8, §9, §10, §11, §13, §15 to reference R2 locks declaratively (no structural changes to ownership, wave structure, or section count). Two cross-section sync pairs (Gabriel ↔ Valanice on R2-3 queue mechanics; Rosella ↔ Roger on R2-6 lockfile format) are explicit coordination touchpoints during Phase 2 authoring, called out in both the locks section and the affected manifest entries.
+
+**No new open questions emerged** — This was a pure bake-in pass. Reading every locked section detail back through the section-spec lens did not surface any new R3 questions. The R2 locks were internally consistent and the two coordinator expansions slotted into existing seams (Decision row metadata, `PrescriptionResult` schema) without surfacing new design choices. Section authors writing in Phase 2 have everything they need to proceed without further Aaron-triage rounds.
+
+**Phase 2 fan-out is unblocked.**
+
+---
