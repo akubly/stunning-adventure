@@ -176,5 +176,5 @@ Monorepo wins for v1 because it provides a compile-time type-safety guarantee fo
 | **2026-05-27** | ✅ Aaron chooses Option A (Monorepo) — decision accepted |
 | **This week** | Graham updates technical-design.md, decision inbox, ADR status |
 | **Next** | Repo merge plan drafted (Graham + Roger) |
-| **M0 prerequisite** | Monorepo scaffolding: pnpm workspace, turborepo, unified tsconfig (Roger + Gabriel) |
+| **M0 prerequisite** | Monorepo scaffolding: npm workspace config (already present), unified tsconfig with tsc --build (Roger + Gabriel) |
 | **M0 prerequisite** | CI/CD consolidation + ESLint guardrail wiring |

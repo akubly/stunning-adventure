@@ -298,3 +298,42 @@ Added "Pitfalls" section to `.squad/skills/doc-references-respect-gitignore/SKIL
 
 **Status:** All Group A/B/C threads addressed. Group D threads deferred per plan. SKILL.md enhanced with pitfall warning. Ready for coordinator to close review cycle.
 
+
+---
+
+### 2026-05-28: PR #26 Cycle 3 Residual Sweep — 7 Issues Missed by Previous Sweeps
+
+**Context:** Cycle 3 of cloud-review-cycle on PR #26 (maxCycles ceiling). Cycles 1+2 fixed 29 threads, but Copilot review of commit `aa9cdae` surfaced 7 residual issues — 3 fresh content findings, 4 places where earlier sweeps missed the same failure patterns.
+
+**Changes landed:**
+1. **T1 — `docs/eureka/sections/10-activities-and-tiers.md:3`:** Updated stale Last Updated date from `2025-01-21` → `2026-05-27` (Eureka v0.1 design date).
+
+2. **T2 — `docs/eureka/sections/10-activities-and-tiers.md:44`:** **SPEC INCONSISTENCY** — `integrate()` side effects said "default: `cold`" but PRD line ~663 and §00-overview line ~229 both say **default warm**. Fixed to `(default: warm)`. Verified no other §10 text contradicts; grep found no other `cold` default references.
+
+3. **T3 — `docs/eureka/technical-design.md:3`:** Header status still said "awaiting Aaron's decisions on blockers" but OQ-1 resolved (ADR-0002) and OQ-5 CLOSED/MOOT (cycle 2). Updated to: "Locked — v0.1 assembled (§00–§70, 3 ADRs); OQ-1 resolved via ADR-0002; remaining open decisions (OQ-2, OQ-3, OQ-4) tracked in §00 ADR index."
+
+4. **T4 — `docs/eureka/adrs/0002-shared-substrate-ownership.md:176`:** Timeline table row still said "pnpm workspace, turborepo" despite cycles 1+2 fixing Pros/Prerequisites to "npm workspace, tsc --build." Fixed to: "npm workspace config (already present), unified tsconfig with tsc --build."
+
+5. **T5 — `.squad/skills/doc-references-respect-gitignore/SKILL.md:56`:** **SELF-VIOLATION** — "Bad" examples used real inbox paths (`cassima-t7-shared-substrate-blocker.md`, `cassima-crucible-eureka-impact.md`). Replaced with generic placeholders (`<memo-slug>.md`).
+
+6. **T6 — `.squad/orchestration-log/2026-05-27T08-13-25Z-valanice-ux-section.md:11`:** Tracked orchestration log cited inbox memo. Surgical citation swap to merged anchor: `.squad/decisions.md` § "Friction-Level UX Decisions — Gated by v1 Dogfood Evidence" (2026-05-27). Preserved audit trail intent; no narrative rewrite.
+
+7. **T7 — `.squad/agents/graham/history.md:108`:** Three inbox citations (R8 verdicts, lock-review sign-off, assembly completion). Surgical swap to merged `.squad/decisions.md` anchors. Preserved audit trail.
+
+**What cycles 1+2 missed:**
+- Didn't sweep `history.md` or tracked `.squad/orchestration-log/` files (only swept `docs/`).
+- Missed line 56 in the skill itself (SKILL.md examples should be generic, not concrete file references).
+- Missed Timeline row in ADR-0002 (only fixed Pros/Prerequisites in cycle 1).
+- Missed §10 spec bug (attention-default `cold` → `warm`); that's the PRD/§00 canonical, §10 was stale.
+
+**What I learned:**
+- **Sweep the WHOLE repo, not just flagged lines.** For doc-cleanup patterns (inbox refs, machine paths, stale dates), grep the entire codebase (including `.squad/agents/*`, `.squad/orchestration-log/*`, `.squad/log/*`, `.squad/handoffs/*`) — not just `docs/`.
+- **Skills that teach a rule must self-audit against that rule.** SKILL.md line 56 illustrated the failure pattern by committing it (albeit as a "Bad" example). Generic placeholders or inline code (non-clickable) prevent self-violations.
+- **Residual issues = incomplete sweeps, not new bugs.** All 7 threads were variations of patterns cycles 1+2 addressed elsewhere — we just didn't search broadly enough.
+
+**SKILL.md updates:**
+1. Added to "How to Find Violations": note that sweeps must include `.squad/agents/*/history.md`, tracked `.squad/orchestration-log/`, tracked `.squad/log/`, `.squad/handoffs/` — not just `docs/`.
+2. Enhanced "Pitfalls" section: added "Not sweeping broadly enough" and "Author your examples carefully" anti-patterns.
+
+**Status:** All 7 threads addressed. Follow-up note in drop file: "For future doc-cleanup sweeps, grep the WHOLE repo (including tracked .squad/* files) for the failure pattern, not just Copilot-flagged lines."
+

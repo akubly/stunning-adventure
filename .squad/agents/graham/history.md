@@ -91,7 +91,7 @@
 3. ✓ Bridge ledger simplification: `cairn_session_id_hint?` → `session_id: SessionId` (required); `event_id` stays hint
 4. ✓ §14a T-orphan reframe: T6 "stale session reference" row in threat table (LOW/LOW severity); also in §13 per JC1 disposition
 5. ✓ Glossary "Session" entry: updated to "same identifier" via shared `SessionId` brand (was "linked only via opaque `cairn_session_id`")
-6. ✓ §15 Lineage: cites Aaron R8 directive + Graham/Genesta/Crispin/Edgar R8 verdicts with `.squad/decisions/inbox/` file paths
+6. ✓ §15 Lineage: cites Aaron R8 directive + Graham/Genesta/Crispin/Edgar R8 verdicts (now documented in `.squad/decisions.md`)
 7. ✓ FR-13 "isolated by design" sentence: explicitly DELETED; replaced with shared-brand framing + lens framing as normative guard
 8. ✓ Shared `SessionId` brand: lives in `@akubly/types` (neutral package, not Cairn or Eureka); full type definition + validator + constructor
 
@@ -105,7 +105,7 @@
 
 **Event:** Scribe ceremony — lock R8 verdicts into `.squad/decisions.md`, move v5-final to canonical location, archive R8 inbox files.
 
-**Your role:** Lock-review verification (item-by-item sign-off in `.squad/decisions/inbox/graham-r8-lock-verdict.md`).
+**Your role:** Lock-review verification (item-by-item sign-off — see `.squad/decisions.md` "R8 Lock-Review Orchestration").
 
 **Status:** ✅ R8 LOCKED — verdict documented and integrated into decisions.md.
 
@@ -140,7 +140,7 @@
 **Deliverables:**
 - `docs/eureka/technical-design.md` — Rewritten as canonical entry-point with executive summary, full TOC, Open Decisions for Aaron (OQ-1 through OQ-6), cross-section tensions, risk register (6 risks), milestone summary (M0→M5), section status table
 - `docs/eureka/adrs/0002-shared-substrate-ownership.md` — New ADR documenting T7 substrate-ownership decision as PENDING with three options (monorepo/submodule/npm)
-- `.squad/decisions/inbox/graham-design-v0.1-assembled.md` — Decision file documenting assembly completion and blockers
+- Assembly completion and blockers documented in `.squad/decisions.md` § "Eureka v0.1 Technical Design" (2026-05-27)
 
 **Cross-Section Tensions Reconciled:**
 1. **T7 Substrate ownership** — ESCALATED as OQ-1. `@akubly/types`/`cairn`/`forge` duplicated across `mem/` and `harness/`. Three options documented; awaiting Aaron.

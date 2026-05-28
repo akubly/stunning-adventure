@@ -11,7 +11,7 @@
 | File | Status | Size (KB) | Purpose |
 |------|--------|-----------|---------|
 | `docs/eureka/sections/60-ux-human-factors.md` | ✅ Created | 24.1 | §60: CLI interaction patterns, prompt friction levels, attention budget, v1.5 friction gates |
-| `.squad/decisions/inbox/valanice-eureka-friction-evidence-gates.md` | ✅ Created | 18.3 | Four friction-level decisions gated by v1 dogfood evidence (commit approval, tier-switching observability, empty-state actionability, contemplate verbosity) |
+| `.squad/decisions.md` § "Friction-Level UX Decisions — Gated by v1 Dogfood Evidence" (2026-05-27) | ✅ Merged | 18.3 | Four friction-level decisions gated by v1 dogfood evidence (commit approval, tier-switching observability, empty-state actionability, contemplate verbosity) |
 
 **Total authorship:** ~42.4KB (section + decision memo)
 

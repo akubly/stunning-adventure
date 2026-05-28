@@ -1,7 +1,7 @@
 # Eureka Technical Design
 
 **Version:** v0.1 draft (assembled)  
-**Status:** ✅ Sections drafted — awaiting Aaron's decisions on blockers  
+**Status:** ✅ Locked — v0.1 assembled (§00–§70, 3 ADRs); OQ-1 resolved via ADR-0002; remaining open decisions (OQ-2, OQ-3, OQ-4) tracked in §00 ADR index  
 **Assembled:** 2026-05-27  
 **Contributors:** Graham (Lead/Architect), Genesta (Cognitive), Crispin (Schema), Edgar (Learning), Roger (Platform), Laura (Test), Valanice (UX), Cassima (PM)
 

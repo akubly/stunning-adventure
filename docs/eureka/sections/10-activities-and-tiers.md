@@ -3,7 +3,7 @@
 **Author:** Genesta (Cognitive Systems Lead)  
 **Status:** Technical Design (v1 Specification)  
 **PRD Source:** `.squad/decisions/eureka-prd-v5-final.md` (locked after R8)  
-**Last Updated:** 2025-01-21
+**Last Updated:** 2026-05-27
 
 ---
 
@@ -41,7 +41,7 @@ Eureka exports **7 v1 activities** plus **2 reserved v1.5 activities**. This is 
 - Writes row to `facts` table in appropriate tier DB (v1: agent tier only)
 - Sets `createdAt`, `lastAccessedAt`, and `accessCount=1`
 - If `sessionId` present, writes association to `fact_sessions` table
-- Initializes attention state (default: `cold`)
+- Initializes attention state (default: `warm`)
 
 **Sync/Async:** Synchronous write with immediate durability
 

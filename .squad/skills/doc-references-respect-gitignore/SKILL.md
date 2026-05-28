@@ -56,7 +56,7 @@ All three were replaced with references to merged content in `.squad/decisions.m
 ### ❌ Bad (Broken for Other Contributors)
 
 ```markdown
-**Tension Reference:** §70 T7, `.squad/decisions/inbox/cassima-t7-shared-substrate-blocker.md`
+**Tension Reference:** §70 T7, `.squad/decisions/inbox/<memo-slug>.md`
 ```
 
 **Why broken:** `.squad/decisions/inbox/` is gitignored → file doesn't exist in other contributors' checkouts or CI.
@@ -74,7 +74,7 @@ All three were replaced with references to merged content in `.squad/decisions.m
 ### ❌ Bad (Broken Link in References Section)
 
 ```markdown
-- **Crucible Impact Analysis:** [`.squad/decisions/inbox/cassima-crucible-eureka-impact.md`](../../.squad/decisions/inbox/cassima-crucible-eureka-impact.md)
+- **Crucible Impact Analysis:** [`.squad/decisions/inbox/<memo-slug>.md`](../../.squad/decisions/inbox/<memo-slug>.md)
 ```
 
 **Why broken:** Link target is gitignored → 404 for other contributors.
@@ -99,6 +99,13 @@ git diff --cached | grep 'inbox/'
 ```
 
 If any committed docs reference `.squad/decisions/inbox/`, replace with merged-content references.
+
+**When sweeping for violations, search the ENTIRE repository** — not just `docs/`:
+- `.squad/agents/*/history.md` (agent audit trails)
+- Tracked `.squad/orchestration-log/*.md` (intentional historical archives)
+- Tracked `.squad/log/*.md` (session logs)
+- `.squad/handoffs/*.md` (cross-agent handoff records)
+- All `docs/` subdirectories
 
 **In PR review:**
 
@@ -130,6 +137,11 @@ Inbox memos are working drafts. Once decisions are locked, merge them into `.squ
 
 **Writing examples in skill docs:**
 If you write examples in this skill that illustrate the rule, **lint those examples against the rule itself**. Examples that violate the rule undermine credibility. For instance, if this skill's "Learning Source" or "Deliverable" section cites an inbox path, that's a self-violation.
+
+Use generic placeholders (e.g., `.squad/decisions/inbox/<memo-slug>.md`) or wrap concrete paths in inline code that's clearly labeled as "what NOT to do" — not clickable markdown links to real files.
+
+**Not sweeping broadly enough:**
+When fixing violations, don't just fix the specific flagged lines. Search the entire repository (including `.squad/agents/`, `.squad/orchestration-log/`, `.squad/log/`, `.squad/handoffs/`) for the same pattern. Partial sweeps leave broken links that surface in later review cycles.
 
 ---
 
