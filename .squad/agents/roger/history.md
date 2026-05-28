@@ -721,3 +721,22 @@ SQLite + FTS5 is enough for v1. Graph DB / LMDB / vector store deferred until v1
 - When adding an optional context param (like `workdir`) to a function with multiple optional callback params after it (like `afterCurate`), add the new param as the LAST optional so existing callers don't break by positional shift. Exception: if the new param is semantically earlier, introduce an options object instead.
 - In archivist.ts, `getDb()` at the agent level is fine — the DB injection rule applies to `packages/cairn/src/db/*.ts` helpers, not to agent-level orchestration code.
 
+
+## Session: 2026-05-28 Wave 6 Tail — WI-A Implementation Complete
+
+**Status:** Complete
+
+- Implemented migration 015 (workdir column + partial index)
+- Updated DB API: createSession, getActiveSession, listActiveSessionsForRepo
+- New export: getWorkdir() for git integration
+- Threaded workdir through archivist, sessionStart, postToolUse, types
+- MCP breaking change: get_status flat array, get_session identity lookup
+- Semantic correction applied (turn 2): getActiveSession no-arg → \AND workdir IS NULL\
+- Validation: Build clean, 647/647 tests passing
+
+**Commits:** 2613c78 + ea9ab58
+
+**Decision files:** roger-issue-11-implementation.md + roger-issue-11-api.md → merged to decisions.md
+
+**Next:** Branch ready for merge. WI-B (Gabriel) queued.
+

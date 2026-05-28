@@ -620,3 +620,21 @@ Writing tests before implementation means import bindings for not-yet-exported s
 - `packages/cairn/src/__tests__/worktreeSessions.test.ts`
 - `packages/cairn/src/__tests__/worktreeMcp.test.ts`
 - `.squad/decisions/inbox/laura-issue-11-tests.md`
+
+## Session: 2026-05-28 Wave 6 Tail — WI-A Tests Complete
+
+**Status:** Complete
+
+- 40 new tests in 3 files (migration015.test.ts, worktreeSessions.test.ts, worktreeMcp.test.ts)
+- Coverage: worktree lookup, collision prevention, NULL-workdir backcompat, getWorkdir contract, MCP surfaces
+- Suite total: 647/647 passing
+- Semantic flag raised: Roger's initial no-arg interpretation (no filter) vs. locked decision (IS NULL)
+- Issue reconciled with Aaron; semantic corrected in turn 2 (commit ea9ab58)
+- Tests updated to reflect correct behavior
+
+**Commit:** 907934f (tests), plus updates in ea9ab58
+
+**Decision file:** laura-issue-11-tests.md → merged to decisions.md
+
+**Next:** Tests ready to merge with WI-A code.
+

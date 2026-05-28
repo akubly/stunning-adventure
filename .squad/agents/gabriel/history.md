@@ -161,3 +161,16 @@
 **For you:** If your work depends on Eureka design decisions, those are now stable. Cross-refs and canonical values are in .squad/decisions.md (Cycle 1 + Cycle 3 sections).
 
 **Commits:** f68873d (cycle 2 fix wave) + 37370f9 (cycle 3 cleanup).
+## Session: 2026-05-28 Wave 6 Tail — WI-B Scope Locked (Deferred)
+
+**Status:** Queued — awaiting WI-A merge
+
+- Issue #11 scope split approved: WI-A (Cairn code), WI-B (coordinator dispatch policy change)
+- WI-B assigned to Gabriel (Infrastructure/Coordinator)
+- WI-B is intentionally deferred until WI-A merges (correctness dependency)
+- WI-B scope: Coordinator uses \git worktree add\ per-issue instead of shared checkout
+
+**Blocked on:** WI-A merge (Roger's implementation + Laura's tests)
+
+**Next:** Start WI-B after WI-A is merged to main.
+

@@ -207,4 +207,24 @@
 **Status:** §55 locked and integrated into technical design. Implementation checklist (§55 §7) now governs M1+ development rhythm.
 **Wave 4 Approved (2026-05-23):** Tight scope with 3 work items + integration tests. Roger (W4-1/W4-2 atomicity + observability), Rosella (W4-3 forceRegenerate), Laura (W4-4 tests). Observability gap identified as hidden dependency for Wave 5 re-prescribe triggers.
 
+**Issue #11 Scoped (2026-05-27):** Split into WI-A (Cairn session-resolution, migration 015) and WI-B (coordinator dispatch-policy). Roger owns WI-A, Gabriel owns WI-B, Laura owns tests. Recommended dogfooding via actual worktrees.
+
+## Learnings
+
+- **Stale migration numbers in issues:** Issue #11 referenced "migration 005" but the repo was at 014. Always verify the migrations directory before planning — issue bodies go stale as the codebase evolves. This cost zero time here because the handoff doc flagged it, but without that safety net it could have caused a collision.
+- **File paths in issues drift:** Issue #11 referenced `packages/cairn/src/git/gitContext.ts` and `packages/cairn/src/db/archivist.ts` — actual paths are `hooks/gitContext.ts` and `agents/archivist.ts`. Always glob-confirm before writing a plan.
+
 **Learnings summarized to history-archive.md**
+
+## Session: 2026-05-28 Wave 6 Tail — Issue #11 Scope Split
+
+**Status:** Complete
+
+- Proposed splitting issue #11 into WI-A (Cairn code) + WI-B (coordinator dispatch)
+- Corrected migration number from issue body's "005" to actual "015"
+- Confirmed Q1 (lazy NULL backfill), Q2 (flat array), Q3 (serialized WI-B)
+- Assigned: Roger (WI-A), Laura (WI-A tests), Gabriel (WI-B deferred)
+- Decision file: graham-issue-11-scope.md → merged to decisions.md
+
+**Next:** Coordinate WI-B launch after WI-A merge.
+
