@@ -323,6 +323,39 @@ describe('forge_prescribe handler — edge cases', () => {
     expect(body2.skipped).toBe(firstInserted);
     expect(body2.inserted).toBe(0);
   });
+
+  it('preserves result.profileSource on partial failure (exitCode=2)', async () => {
+    const db = cairn.getDb();
+    cairn.createSession(db, 'org/partial-fail-repo', 'main');
+    cairn.upsertExecutionProfile(db, makeProfile('skill-partial', { sessionCount: 15 }));
+
+    // Inject a runForgePrescribe stub that returns partial failure with profileSource
+    const stub: RunForgePrescribeFn = vi.fn().mockResolvedValue({
+      ok: false,
+      exitCode: 2,
+      skillId: 'skill-partial',
+      dbPath: ':memory:',
+      profileSource: 'per-model',
+      inserted: 1,
+      skipped: 0,
+      errored: 2,
+      totalHints: 3,
+      message: 'Failed to persist 2 optimization hints.',
+    });
+
+    await forgePrescribeHandler(
+      db,
+      { skill_id: 'skill-partial', repo_key: 'org/partial-fail-repo' },
+      stub,
+    );
+
+    // Verify event payload has result.profileSource, NOT preRunProfile.source
+    const events = cairn.getUnprocessedEvents(db, 0);
+    const evt = events.find(e => e.eventType === 'prescriber_run');
+    expect(evt).toBeDefined();
+    const payload = JSON.parse(evt!.payload);
+    expect(payload.profileSource).toBe('per-model');
+  });
 });
 
 // ---------------------------------------------------------------------------

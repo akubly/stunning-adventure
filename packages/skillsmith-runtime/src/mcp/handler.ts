@@ -108,7 +108,7 @@ export async function forgePrescribeHandler(
       triggeredBy: 'mcp:forge_prescribe',
       force,
       sessionId: session?.id ?? null,
-      profileSource: result.ok
+      profileSource: ('profileSource' in result && result.profileSource)
         ? result.profileSource
         : (preRunProfile?.source ?? null),
       confidence,

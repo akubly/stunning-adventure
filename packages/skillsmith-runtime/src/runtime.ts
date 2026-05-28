@@ -88,7 +88,7 @@ function clampNonNegativeFinite(value: number, fallback: number): number {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
-interface ExecutePrescriberRunOptions {
+export interface ExecutePrescriberRunOptions {
   db: RuntimeDb;
   skillId: string;
   profile: ExecutionProfile | null;
@@ -96,7 +96,7 @@ interface ExecutePrescriberRunOptions {
   forceRegenerate?: boolean;
 }
 
-interface ExecutedPrescriberRun extends PrescriberRunResult {
+export interface ExecutedPrescriberRun extends PrescriberRunResult {
   hints: OptimizationHint[];
 }
 
@@ -243,7 +243,7 @@ function defaultFallbackNotifier(info: ProfileFallbackInfo): void {
   );
 }
 
-function toOptimizationHintInsert(hint: OptimizationHint): OptimizationHintInsert {
+export function toOptimizationHintInsert(hint: OptimizationHint): OptimizationHintInsert {
   return {
     id: hint.id,
     source: hint.source,
@@ -263,11 +263,11 @@ function toOptimizationHintInsert(hint: OptimizationHint): OptimizationHintInser
   };
 }
 
-function isSkippedInsert(result: { inserted: boolean }): boolean {
+export function isSkippedInsert(result: { inserted: boolean }): boolean {
   return !result.inserted;
 }
 
-function emptyPrescriberRun(skillId: string): ExecutedPrescriberRun {
+export function emptyPrescriberRun(skillId: string): ExecutedPrescriberRun {
   return {
     skillId,
     hints: [],
@@ -278,7 +278,7 @@ function emptyPrescriberRun(skillId: string): ExecutedPrescriberRun {
   };
 }
 
-async function executePrescriberRun({
+export async function executePrescriberRun({
   db,
   skillId,
   profile,

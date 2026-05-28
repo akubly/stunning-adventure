@@ -59,8 +59,9 @@ server.registerTool(
     description:
       'Run the Forge prescriber for a skill to generate optimisation hints. ' +
       'Returns inserted/skipped/errored counts and the profile tier used. ' +
-      'Pass force=true to expire all active hints before generating — use ' +
-      'this as an operator escape hatch when hints are stuck in a bad state.',
+      'When force=true, existing active hints for the same (skill, source, category) ' +
+      'tuples are replaced with the new run\'s output; unrelated active hints are not affected. ' +
+      'Use as an operator escape hatch when hints are stuck in a bad state.',
     annotations: {
       readOnlyHint: false,
     },
