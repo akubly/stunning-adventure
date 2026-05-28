@@ -23,7 +23,7 @@ import {
   listActiveSessionsForRepo,
   claimLegacyActiveSession,
 } from '../db/sessions.js';
-import { getWorkdir } from '../hooks/gitContext.js';
+import { getWorkdir, normalizeWorkdir } from '../hooks/gitContext.js';
 import { logEvent } from '../db/events.js';
 import { runSessionStart } from '../hooks/sessionStart.js';
 
@@ -383,6 +383,42 @@ describe('legacy session claiming — claimLegacyActiveSession', () => {
       .run(id);
     const claimed = claimLegacyActiveSession(db, REPO_KEY, WORKDIR_A);
     expect(claimed).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Area 9: normalizeWorkdir — canonical form for path storage and lookup
+// ---------------------------------------------------------------------------
+
+describe('normalizeWorkdir — path canonicalization', () => {
+  it('strips a trailing slash', () => {
+    expect(normalizeWorkdir('/repos/project/')).toBe('/repos/project');
+  });
+
+  it('strips multiple trailing slashes', () => {
+    expect(normalizeWorkdir('/repos/project///')).toBe('/repos/project');
+  });
+
+  it('converts backslashes to forward slashes (Windows path support)', () => {
+    expect(normalizeWorkdir('C:\\repos\\project')).toBe('C:/repos/project');
+  });
+
+  it('handles Windows path with trailing backslash', () => {
+    expect(normalizeWorkdir('C:\\repos\\project\\')).toBe('C:/repos/project');
+  });
+
+  it('leaves an already-canonical path unchanged', () => {
+    expect(normalizeWorkdir('/repos/project')).toBe('/repos/project');
+  });
+
+  it('round-trip: normalized path stored and retrieved via getActiveSession', () => {
+    // Store a session with a normalized workdir; retrieve with the same normalized path.
+    const canonical = normalizeWorkdir('/repos/project/');
+    const id = createSession(db, REPO_KEY, 'main', canonical);
+    const session = getActiveSession(db, REPO_KEY, canonical);
+    expect(session).toBeDefined();
+    expect(session!.id).toBe(id);
+    expect(session!.workdir).toBe('/repos/project');
   });
 });
 

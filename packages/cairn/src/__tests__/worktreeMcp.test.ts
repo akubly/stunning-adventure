@@ -15,13 +15,6 @@
  *   5e. Sanity: no console.log/info/debug leak in server.ts (stdio corruption
  *       guard; tripwire for new handler additions).
  *
- * PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
- * These tests will fail until Roger ships:
- *   - listActiveSessionsForRepo(db, repoKey) added to sessions.ts
- *   - getActiveSession optional workdir param
- *   - get_status handler updated to: { sessions: [...], curator }
- *   - get_status inputSchema accepts optional workdir param
- *   - get_session inputSchema accepts optional (repo_key, workdir) resolution
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -32,7 +25,6 @@ import { getDb, closeDb } from '../db/index.js';
 import {
   createSession,
   getActiveSession,
-  // PROACTIVE: new export; will be undefined until Roger's WI-A lands
   listActiveSessionsForRepo,
 } from '../db/sessions.js';
 import { getCuratorStatus } from '../agents/curator.js';
@@ -61,7 +53,6 @@ afterEach(() => {
 
 describe('get_status backing logic — listActiveSessionsForRepo', () => {
   it('returns a flat array of all active sessions for the repo', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     const idA = createSession(db, REPO_KEY, 'main', WORKDIR_A);
     const idB = createSession(db, REPO_KEY, 'fix', WORKDIR_B);
 
@@ -74,14 +65,12 @@ describe('get_status backing logic — listActiveSessionsForRepo', () => {
   });
 
   it('returns an empty array when no active sessions exist', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     const sessions = listActiveSessionsForRepo(db, REPO_KEY);
     expect(Array.isArray(sessions)).toBe(true);
     expect(sessions).toHaveLength(0);
   });
 
   it('each session in the array includes a workdir field', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     createSession(db, REPO_KEY, 'main', WORKDIR_A);
 
     const sessions = listActiveSessionsForRepo(db, REPO_KEY);
@@ -105,7 +94,6 @@ describe('get_status backing logic — listActiveSessionsForRepo', () => {
 
 describe('get_status backing logic — workdir filter via getActiveSession', () => {
   it('getActiveSession with workdir returns only the matching session', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     // Backing logic when get_status is called with a workdir param: build a
     // single-element sessions array from the (repo_key, workdir) lookup.
     const idA = createSession(db, REPO_KEY, 'main', WORKDIR_A);
@@ -117,7 +105,6 @@ describe('get_status backing logic — workdir filter via getActiveSession', () 
   });
 
   it('workdir-filtered lookup returns undefined when that workdir has no session', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     createSession(db, REPO_KEY, 'main', WORKDIR_A);
 
     const session = getActiveSession(db, REPO_KEY, '/repos/no-such-workdir');
@@ -131,7 +118,6 @@ describe('get_status backing logic — workdir filter via getActiveSession', () 
 
 describe('get_status structural shape (server.ts source)', () => {
   it('get_status handler uses sessions (plural array) not session (singular)', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     //
     // Decision: get_status always returns { sessions: [...], curator }.
     // The old singular { session: ..., curator } shape must be gone.
@@ -157,7 +143,6 @@ describe('get_status structural shape (server.ts source)', () => {
   });
 
   it('get_status handler does not return a primary/siblings shape', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     // Decision: flat array only; no primary/siblings split.
     const source = fs.readFileSync(serverPath, 'utf8');
     const handlerStart = source.indexOf("'get_status'");
@@ -171,7 +156,6 @@ describe('get_status structural shape (server.ts source)', () => {
   });
 
   it('get_status inputSchema accepts an optional workdir param', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     const source = fs.readFileSync(serverPath, 'utf8');
     const handlerStart = source.indexOf("'get_status'");
     const handlerEnd = source.indexOf('// Tool:', handlerStart + 1);
@@ -184,13 +168,15 @@ describe('get_status structural shape (server.ts source)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Area 5d: get_session backing logic — (repo_key, workdir) identity
+// Area 5d: get_session DB-layer behavior
+// (handler-level invocation not possible in unit tests — handler uses ensureDb()
+//  which binds to the real on-disk DB; invoke via MCP integration tests instead)
 // ---------------------------------------------------------------------------
 
-describe('get_session backing logic — workdir-based identity resolution', () => {
-  it('resolves the correct session when repo_key + workdir are provided', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
-    // get_session with workdir resolves via getActiveSession(db, repoKey, workdir).
+describe('get_session: DB-layer behavior (handler-error coverage TODO)', () => {
+  it('getActiveSession resolves the correct session when repo_key + workdir match', () => {
+    // get_session handler delegates to getActiveSession(db, repo_key, workdir).
+    // This exercises the same query the handler calls on the session-found path.
     const idA = createSession(db, REPO_KEY, 'main', WORKDIR_A);
     createSession(db, REPO_KEY, 'fix', WORKDIR_B);
 
@@ -199,12 +185,50 @@ describe('get_session backing logic — workdir-based identity resolution', () =
     expect(resolved!.id).toBe(idA);
   });
 
-  it('does not resolve to a session from a different workdir', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
+  it('getActiveSession returns undefined for an unknown workdir (handler would return isError)', () => {
     createSession(db, REPO_KEY, 'main', WORKDIR_A);
 
     const resolved = getActiveSession(db, REPO_KEY, WORKDIR_B);
     expect(resolved).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Area 5d-err: get_session handler — structural error path (source guard)
+// ---------------------------------------------------------------------------
+
+describe('get_session structural error paths (server.ts source)', () => {
+  it('handler returns isError when no session_id and no repo_key — error message is in source', () => {
+    // The handler at the top of the no-ID branch:
+    //   if (!repo_key) { return { ..., isError: true } }
+    // This structural test guards against the error message being removed or
+    // the branch being collapsed. Full handler invocation requires MCP integration tests.
+    const source = fs.readFileSync(serverPath, 'utf8');
+    const handlerStart = source.indexOf("'get_session'");
+    expect(handlerStart).toBeGreaterThan(-1);
+    const handlerBody = source.slice(handlerStart);
+
+    expect(handlerBody).toContain('Provide either session_id or repo_key');
+    expect(handlerBody).toContain('isError: true');
+  });
+
+  it('handler returns isError when repo_key is provided without workdir (I2 guard)', () => {
+    // Roger I2: repo_key + no workdir is rejected with an actionable error
+    // directing callers to supply workdir or use session_id directly.
+    const source = fs.readFileSync(serverPath, 'utf8');
+    const handlerStart = source.indexOf("'get_session'");
+    const handlerBody = source.slice(handlerStart);
+
+    expect(handlerBody).toContain('Provide workdir with repo_key for worktree-scoped lookup');
+  });
+
+  it('handler returns isError when no active session found for the given repo_key/workdir', () => {
+    // Guards the "no session found" error branch in the handler.
+    const source = fs.readFileSync(serverPath, 'utf8');
+    const handlerStart = source.indexOf("'get_session'");
+    const handlerBody = source.slice(handlerStart);
+
+    expect(handlerBody).toContain('No active session found for repo_key');
   });
 });
 
