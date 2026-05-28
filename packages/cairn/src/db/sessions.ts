@@ -91,22 +91,20 @@ export function endSession(db: Database.Database, id: string, status: string = '
 /**
  * Return the most recent active session for a repo scoped by workdir identity.
  *
- * When workdir is omitted: no workdir filter applied — returns the most recent
- * active session regardless of workdir (backward compat for pre-migration callers).
- * When workdir is provided: filters with `workdir IS ?` (SQLite IS handles NULL
- * correctly, so passing undefined coerced to null matches NULL-workdir rows).
+ * When workdir is omitted: queries `AND workdir IS NULL`, matching only pre-migration
+ * rows (backward compat — old callers can't accidentally pick up a worktree session).
+ * When workdir is provided as a string: queries `AND workdir IS workdir` (exact worktree match).
  *
- * For MCP fallback paths that always need a user session, use getActiveUserSession.
+ * For MCP fallback paths that need any active user session regardless of worktree,
+ * use getActiveUserSession (no workdir filter).
  */
 export function getActiveSession(
   db: Database.Database,
   repoKey: string,
   workdir?: string,
 ): Session | undefined {
-  if (workdir !== undefined) {
-    return getActiveSessionByWorkdir(db, repoKey, workdir);
-  }
-  return getActiveSessionWithDb(db, repoKey);
+  // undefined → null so SQLite IS NULL matches pre-migration (NULL-workdir) rows.
+  return getActiveSessionByWorkdir(db, repoKey, workdir ?? null);
 }
 
 /** Return the most recent active user session for a repo, or undefined. */

@@ -175,39 +175,32 @@ describe('NULL-workdir backward compatibility', () => {
     expect(session!.id).toBe(id);
   });
 
-  it('getActiveSession without workdir arg returns most recent active session (no workdir filter applied)', () => {
-    // Roger's WI-A implementation: when workdir is omitted, the query does NOT add a
-    // workdir IS NULL clause — it returns the most recent active session regardless of
-    // workdir value. This satisfies the locked decision ("must still match NULL rows")
-    // without requiring exclusive NULL-only behavior.
-    //
-    // Trade-off: old callers without workdir awareness may see worktree sessions.
-    // Worktree-aware callers must explicitly pass workdir to obtain session isolation.
-    createSession(db, REPO_KEY, 'main', WORKDIR_A); // workdir = WORKDIR_A
+  it('getActiveSession with no workdir argument returns ONLY NULL-workdir sessions, not workdir-populated ones', () => {
+    // Aaron-confirmed semantic (2026-05-27): the locked decision Q1 ("no workdir arg matches NULL rows
+    // for backward compat") means ONLY NULL rows, not "most recent regardless of workdir."
+    // This prevents old callers from silently picking up a sibling worktree's session —
+    // the exact collision issue #11 is designed to prevent.
+    createSession(db, REPO_KEY, 'main', WORKDIR_A); // workdir = WORKDIR_A (non-NULL)
 
-    const session = getActiveSession(db, REPO_KEY); // no workdir arg — returns most recent (any workdir)
-    expect(session).toBeDefined();
-    expect(session!.id).toBeDefined();
+    const session = getActiveSession(db, REPO_KEY); // no workdir arg → AND workdir IS NULL
+    expect(session).toBeUndefined(); // no NULL-workdir session exists → undefined
   });
 
   it('mixed scenario: NULL session and workdir session coexist and are independently retrievable', () => {
-    // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
-    //
     // Decision: session identity = (repo_key, workdir). Both NULL and non-NULL workdir
     // sessions for the same repo must be independently retrievable via explicit lookup.
     const nullId = createSession(db, REPO_KEY, 'main');                // workdir = NULL
     const wdId   = createSession(db, REPO_KEY, 'feature', WORKDIR_A); // workdir = WORKDIR_A
 
+    // No-arg call finds only the NULL-workdir session (locked Q1 backcompat semantic)
+    const nullSession = getActiveSession(db, REPO_KEY);
+    expect(nullSession).toBeDefined();
+    expect(nullSession!.id).toBe(nullId);
+
     // Workdir-scoped lookup finds the correct session
     const wdSession = getActiveSession(db, REPO_KEY, WORKDIR_A);
     expect(wdSession).toBeDefined();
     expect(wdSession!.id).toBe(wdId);
-
-    // NULL session is verified to exist with workdir=NULL via raw DB (backcompat guarantee)
-    const rawRow = db
-      .prepare('SELECT id, workdir FROM sessions WHERE id = ?')
-      .get(nullId) as { id: string; workdir: string | null };
-    expect(rawRow.workdir).toBeNull();
 
     // listActiveSessionsForRepo sees both — full picture
     const all = listActiveSessionsForRepo(db, REPO_KEY);
