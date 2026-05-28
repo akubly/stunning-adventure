@@ -26,9 +26,11 @@ getActiveSession(db, repoKey, workdir?)         // updated: when workdir provide
 listActiveSessionsForRepo(db, repoKey)          // NEW: all active user sessions for repo
 ```
 
-**`getActiveSession` semantics (final after Laura's test reconciliation):**
-- No workdir arg → no workdir filter → most recent active session (backcompat)
+**`getActiveSession` semantics (final — Aaron-confirmed Q1 locked decision):**
+- No workdir arg → `AND workdir IS NULL` → only NULL-workdir rows (backcompat; old callers cannot pick up worktree sessions)
 - Workdir string arg → `AND workdir IS workdir` → exact worktree match  
+
+> **Correction applied 2026-05-27:** The initial WI-A commit used "no filter" for the no-arg path (per Laura's reconciled test). Aaron confirmed the correct semantic per the locked Q1 decision is `AND workdir IS NULL`. Fixed in commit `ea9ab58` — `getActiveSession` now delegates to `getActiveSessionByWorkdir(db, repoKey, null)` when workdir is `undefined`. `worktreeSessions.test.ts` updated accordingly (18 tests all green).
 
 Internal helper `getActiveSessionByWorkdir(db, repoKey, workdir: string | null)` added for explicit IS-NULL matching.
 
