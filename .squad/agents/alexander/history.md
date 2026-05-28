@@ -220,3 +220,16 @@ PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end
 - Circular imports between barrel and impl → extract to third module
 - MCP readOnlyHint is a semantic contract, not optional metadata
 
+
+### 2026-05-27 — PR #24 Cloud Review Round 5 (c3d4bda)
+
+**R5-T1: Tool description accuracy** — forge_prescribe description said "expire all active hints" but actual behavior (cairn.replaceActiveHintAtomically) only expires/replaces hints matching the same (skillId, source, category) tuple — scoped dedup-bust, not wholesale wipe. Updated description to match reality: "existing active hints for the same (skill, source, category) tuples are replaced."
+
+**R5-T2: Preserve result.profileSource on partial failures** — When constructing the prescriber_run event payload, profileSource was unconditionally sourced from preRunProfile when result.ok=false. But runForgePrescribe can return { ok: false, exitCode: 2, profileSource: 'per-model', ... } on partial failures (e.g., persistence errors after successful prescribe). Fixed: prefer result.profileSource when defined, fall back to preRunProfile?.source ?? null. Added test: partial failure with exitCode=2 and profileSource='per-model' correctly logs that source, not the pre-run snapshot.
+
+**R5-T3: Incomplete refactor cleanup** — executePrescriberRun, toOptimizationHintInsert, emptyPrescriberRun, isSkippedInsert were DUPLICATED between runtime.ts and index.ts. This was leftover from R2-T3 circular-break refactor — the extraction was incomplete. **Solution:** exported the functions from runtime.ts, deleted the duplicates from index.ts, added re-exports. Verified: external API surface (import from '@akubly/skillsmith-runtime') still works; no regressions in tests.
+
+**Learnings:**
+- When extracting shared code to break circular deps, DELETE the originals; don't leave dual definitions. Duplication creates drift risk (one copy gets fixed, the other doesn't).
+- Result objects may carry diagnostic info on the failure path (profileSource on exitCode=2). Prefer the operation's own output over snapshots taken before it ran — the operation knows more about what actually happened.
+
