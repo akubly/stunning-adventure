@@ -53,6 +53,13 @@ function isStaleSession(db: Database.Database, session: { id: string; startedAt:
   return ageMs > STALE_SESSION_THRESHOLD_MS;
 }
 
+/** Options for runSessionStart. */
+export interface RunSessionStartOptions {
+  prescriberOrchestrationConfig?: PrescriberOrchestrationConfig;
+  afterCurate?: (curateResult: CurateResult) => void;
+  workdir?: string;
+}
+
 /**
  * Core session-start logic, separated from stdin plumbing for testability.
  *
@@ -61,10 +68,9 @@ function isStaleSession(db: Database.Database, session: { id: string; startedAt:
  */
 export async function runSessionStart(
   repoKey: string,
-  prescriberOrchestrationConfig?: PrescriberOrchestrationConfig,
-  afterCurate?: (curateResult: CurateResult) => void,
-  workdir?: string,
+  options?: RunSessionStartOptions,
 ): Promise<{ fastPath: boolean }> {
+  const { prescriberOrchestrationConfig, afterCurate, workdir } = options ?? {};
   const db = getDb();
   const existing = getActiveSession(db, repoKey, workdir);
   if (existing && !isStaleSession(db, existing)) {
@@ -89,7 +95,7 @@ export async function runSessionStart(
   // Chain prescribe() when insights changed (DP1 hybrid trigger)
   if (curateResult.insightsChanged) {
     try {
-      prescribe();
+      prescribe({ repoKey, workdir });
     } catch {
       // Fail-open — prescriber errors must not break session start
     }
@@ -141,7 +147,7 @@ export async function runSessionStartHook(
       );
       prescriberOrchestrationConfig = undefined;
     }
-    await runSessionStart(repoKey, prescriberOrchestrationConfig, afterCurate, workdir);
+    await runSessionStart(repoKey, { prescriberOrchestrationConfig, afterCurate, workdir });
   } catch {
     // Fail open — hooks must never break the user's workflow
   } finally {

@@ -44,11 +44,12 @@ import { validateSkill, formatValidationSummary } from '../agents/skillValidator
 import { loadTestScenario, runTestScenario, formatTestReport } from '../agents/skillTestHarness.js';
 import { insertTestResults } from '../db/skillTestResults.js';
 
-import type { GrowthSummary, InsightStatus, PrescriptionStatus, ValidationResult } from '../types/index.js';
+import type { GrowthSummary, InsightStatus, PrescriptionStatus, Session, ValidationResult } from '../types/index.js';
 import type { SkillTestResultInsert } from '../db/skillTestResults.js';
 import { PRESCRIPTION_STATUSES } from '../types/index.js';
 import { checkIsScript } from '../utils/isScript.js';
 import { getPreference } from '../db/preferences.js';
+import { normalizeWorkdir } from '../hooks/gitContext.js';
 
 // ---------------------------------------------------------------------------
 // Server setup
@@ -125,12 +126,12 @@ server.registerTool(
 
       const curatorStatus = getCuratorStatus();
 
-      let sessions: ReturnType<typeof listActiveSessionsForRepo> = [];
+      let sessions: Session[] = [];
       if (repo_key) {
         if (workdir !== undefined) {
           // Filter to a specific worktree session; still returned as an array
-          // for shape consistency with the no-workdir case.
-          const session = getActiveSession(db, repo_key, workdir);
+          // for shape consistency with the multi-session list shape.
+          const session = getActiveSession(db, repo_key, normalizeWorkdir(workdir));
           sessions = session ? [session] : [];
         } else {
           sessions = listActiveSessionsForRepo(db, repo_key);
@@ -248,7 +249,20 @@ server.registerTool(
             isError: true,
           };
         }
-        const resolved = getActiveSession(db, repo_key, workdir);
+        if (workdir === undefined) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify({
+                  error: 'Provide workdir with repo_key for worktree-scoped lookup, or use session_id for direct lookup.',
+                }),
+              },
+            ],
+            isError: true,
+          };
+        }
+        const resolved = getActiveSession(db, repo_key, normalizeWorkdir(workdir));
         if (!resolved) {
           return {
             content: [
