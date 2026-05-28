@@ -19,32 +19,31 @@ active_issues:
 
 # What We're Focused On
 
+**Eureka v1 implementation runway — M1 first red test next.**
+
+Branch: `eureka/v1-design-package` (this PR), then back to `main` for M0/M1 work.
+
+**Current state:**
+- ✅ Eureka v0.1 technical design **ASSEMBLED & LOCKED** — `docs/eureka/technical-design.md` (§00–§70, ~198KB, 3 ADRs, 100% PRD acceptance criteria traced, 37/41 ACs testable in v1).
+- ✅ **OQ-1 RESOLVED** — Aaron accepted Option A (Monorepo). See `docs/eureka/adrs/0002-shared-substrate-ownership.md` and merged entries in `.squad/decisions.md`. M0 scaffolding unblocked.
+- ✅ §55 London-TDD spine canonical — §20/§30/§40/§50 aligned with London-school mock contracts; zero blockers.
+- ⏳ Remaining open decisions: OQ-2 (event schema topology), OQ-3 (Decision/SessionId schema), OQ-4 (dogfood sequencing) — tracked in §00 ADR index.
+
+**Next action:** M1 first red test (Laura — London-school outside-in TDD per §55).
+
+---
+
+## Previous focus (archived for context)
+
 **Phase 4.5: Local Feedback Loop** — SPECIFIED, ready for implementation
 
-Branch: TBD (branch from `main` after Phase 4 merge)
-
-Graham distilled the 2-round Phase 4.5 brainstorm (10 agents) into two spec documents:
+Two spec documents from the 10-agent brainstorm:
 - `docs/forge-phase4.5-spec.md` — Full implementation spec for the local PGO engine
 - `docs/forge-phase5-roadmap.md` — Roadmap for Phase 4.6 (change vector learning), Phase 5 (cloud PGO), and wild cards
 
-**Phase 4.5 delivers:**
-- 3 new modules: `telemetry/` (5 files), `prescribers/` (4 files), `applier/` (3 files)
-- DB migration 011: `signal_samples`, `execution_profiles`, `optimization_hints` tables
-- Drift score computation (5 weighted signals, GREEN/YELLOW/RED classification)
-- 2 new prescribers: prompt optimizer + token optimizer
-- Optimization applier with SKILL.md v2 frontmatter extensions
-- Self-tuning strategy parameters
-- ~1200 LOC production, ~600-800 LOC tests, 61-80 estimated tests
+**Phase 4.5 delivers:** 3 new modules (telemetry/, prescribers/, applier/), DB migration 011, drift score computation, 2 new prescribers, optimization applier, self-tuning strategy parameters.
 
-**Key design decisions:**
-- Determinism > Token Cost (Aaron's constraint — pervades all weights and priorities)
-- Collectors as HookObservers (no separate event bus)
-- Manual loop trigger in Forge, Curator-driven in Cairn
-- TelemetrySink abstraction bridges Phase 4.5 (LocalDBOMSink) → Phase 5 (AppInsightsSink)
-- FeedbackSource as new shared type in @akubly/types (first new shared type since Phase 2)
-- Canary bootstrap for cold start (gradual ramp from 0 → 3 → 5 → 10 sessions)
-
-**Work decomposition:** 4 streams. Alexander owns DB (6 items), Roger owns telemetry (7 items), Rosella owns prescribers + applier (8 items), Laura owns integration tests (5 items). 5 waves of parallelism.
+**Work decomposition:** Alexander owns DB, Roger owns telemetry, Rosella owns prescribers+applier, Laura owns integration tests.
 
 Branch: `main`
 

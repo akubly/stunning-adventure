@@ -212,3 +212,34 @@
 
 **Outcome:** All 5 findings landed as specified in canon. Zero deviations requiring inbox write-up. PRD v5-final updated from 617 → 692 lines (12.2% growth, within budget). Ready for cycle 2 review.
 
+### 2026-05-28: Post-Merge PR #26 Doc Alignment Sweep
+
+**Context:** Copilot automated review on PR #26 (eureka/v1-design-package branch) flagged 5 alignment issues post-merge. Substrate ownership decided (ADR-0002 Option A, monorepo), but several docs still reflected pre-decision state or contradicted locked PRD.
+
+**Changes landed:**
+1. **technical-design.md exec summary (line 14):** Updated three-tier description from "agent fully wired; user/project stubbed" to "agent tier only in v1; user/project tiers reserved in schema, adapters deferred to v1.5 per PRD FR-7.2." Replaced "Four open decisions block implementation" with "OQ-1 resolved via ADR-0002; remaining open decisions tracked in §00 ADR index."
+
+2. **technical-design.md References (lines 163-166):** Replaced `.squad/decisions/inbox/` links (gitignored, broken for other contributors) with references to merged content in `.squad/decisions.md` (Crucible Impact → "Crucible ↔ Eureka Cross-Project Overlap"; Substrate Blocker → "Narrower Substrate Freeze Proposal" + ADR-0002).
+
+3. **ADR-0002 header (line 8):** Replaced `.squad/decisions/inbox/cassima-t7-shared-substrate-blocker.md` reference with merged decision reference: "§70 T7; merged substrate analysis in `.squad/decisions.md` 'Narrower Substrate Freeze Proposal' (2026-05-27)."
+
+4. **ADR-0002 toolchain claims (lines 50-55, 138-145):** Corrected "pnpm workspaces, turborepo" to reflect repository reality: "npm workspaces with `tsc --build` project references — already in use across mem/." Updated M0 prerequisites to reference `tsc --build` incremental compilation. Added note: "Future migration to pnpm/turborepo could optimize build caching, but npm workspaces + `tsc --build` is sufficient for v1."
+
+5. **00-overview.md tier table (lines 242-246):** Changed user/project v1 Status from "Stub (throws on write, empty on read)" to "Not shipped in v1 — schema reserved, adapter deferred to v1.5" per PRD FR-7.2 canonical wording. Updated "Recall Fan-Out Strategy" to note v1.5+ for multi-tier fan-out.
+
+**Rule extracted:** Committed docs must not cite paths under gitignored directories (`.squad/decisions/inbox/` is gitignored → broken for other contributors/CI). References to decision content should point to merged locations in `.squad/decisions.md` or committed ADRs.
+
+**Toolchain reality check:** Confirmed repo uses npm workspaces (root `package.json` + `package-lock.json`), not pnpm/turborepo. Build command is `tsc --build`. ADR-0002 now reflects actual tooling rather than aspirational claims.
+
+**What worked:**
+- Surgical edits preserved doc structure and voice.
+- Rule "respect gitignore boundaries in committed docs" is generalizable beyond Eureka.
+- Tier-status alignment now consistent across executive summary, overview table, and PRD FR-7.2.
+
+**What I learned:**
+- Post-merge alignment sweeps are PM scope when they affect PRD/design consistency.
+- `.squad/decisions/inbox/` is for local-only working memos; references from committed docs must resolve for all team members.
+- Toolchain claims in ADRs should match repository evidence, not aspirational future state (or clearly label as "future migration").
+
+**Status:** All 5 threads addressed. Skill documented. Ready for next work.
+

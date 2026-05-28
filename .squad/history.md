@@ -14,6 +14,7 @@
 **Four critical blockers identified; require immediate Aaron decisions:**
 
 1. **OQ-1 (CRITICAL) — Shared substrate ownership** — `@akubly/types`, `cairn/`, `forge/` duplicated in `mem/` and `harness/` repos. Three options: A=monorepo (recommended), B=submodule, C=npm packages. **Decision required THIS WEEK before M0 scaffolding.**
+   - **Update 2026-05-27 — RESOLVED:** Aaron accepted Option A (Monorepo). See ADR-0002 (`docs/eureka/adrs/0002-shared-substrate-ownership.md`) and the merged decision in `.squad/decisions.md`. M0 scaffolding unblocked.
 
 2. **OQ-2 (MEDIUM) — Event schema topology** — Crucible's L1 WAL vs Cairn's event_log create dual-write trap. Options: A=merge to Cairn (Crucible primitives as eventType values), B=federate (Crucible in harness isolation). **Pre-sprint-2 sync required (Graham/Genesta/Roger).**
 

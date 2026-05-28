@@ -241,11 +241,11 @@ Three persistence tiers exist in schema/API from day one:
 | Tier | Path | v1 Status |
 |------|------|-----------|
 | Agent | `~/.copilot/eureka/agent.db` | ✅ Fully wired |
-| User | `~/.copilot/eureka/user.db` | Stub (throws on write, empty on read) |
-| Project | `<repo>/.eureka/project.db` | Stub (throws on write, empty on read) |
+| User | `~/.copilot/eureka/user.db` | Not shipped in v1 — schema reserved, adapter deferred to v1.5 |
+| Project | `<repo>/.eureka/project.db` | Not shipped in v1 — schema reserved, adapter deferred to v1.5 |
 
 **Recall Fan-Out Strategy (v1):**
-1. Sequential fan-out: agent → user → project
+1. Sequential fan-out: agent → user → project (v1.5+)
 2. Early exit at k=10 results above trust floor
 3. P95 < 50ms for typical fan-out (single tier in v1)
 

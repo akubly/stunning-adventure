@@ -5,7 +5,7 @@
 **Date:** 2026-05-27  
 **Deciders:** Aaron (required), Graham, Cassima  
 **PRD Reference:** FR-13 (SessionId brand), FR-12 mechanism #8 (ESLint guardrail)  
-**Tension Reference:** §70 T7, `.squad/decisions/inbox/cassima-t7-shared-substrate-blocker.md`
+**Tension Reference:** §70 T7; merged substrate analysis in `.squad/decisions.md` "Narrower Substrate Freeze Proposal" (2026-05-27)
 
 ---
 
@@ -50,7 +50,7 @@ packages/
 **Pros:**
 - Single source of truth for all shared packages
 - Atomic CI/CD — schema changes are validated across both projects
-- TypeScript monorepo tooling is mature (pnpm workspaces, turborepo)
+- TypeScript monorepo tooling is mature (npm workspaces with `tsc --build` project references — already in use across `mem/`)
 - `SessionId` brand enforcement is trivial
 
 **Cons:**
@@ -138,11 +138,13 @@ Monorepo wins for v1 because it provides a compile-time type-safety guarantee fo
 **M0 prerequisites (sequenced):**
 
 1. **Repo merge plan** (Graham + Roger) — Draft the file-move strategy, git-history preservation approach, and branch protection rules for the unified repo. Target: 1–2 days after this ADR lands.
-2. **Monorepo scaffolding** (Roger + Gabriel) — pnpm workspace config, turborepo pipeline, unified `tsconfig` project references. Must complete before any package code moves.
-3. **CI/CD consolidation** — Single GitHub Actions workflow replacing per-repo CI. Turborepo `--filter` for incremental builds to mitigate whole-repo build time.
+2. **Monorepo scaffolding** (Roger + Gabriel) — npm workspace config (already present), unified `tsconfig` project references with `tsc --build`. Must complete before any package code moves.
+3. **CI/CD consolidation** — Single GitHub Actions workflow replacing per-repo CI. Leverage `tsc --build` incremental compilation to mitigate whole-repo build time.
 4. **ESLint guardrail wiring** (FR-12 #8) — Single lint config enforces the cross-system session-type import ban. Trivially enforceable once packages share one workspace.
 5. **SessionId brand validation** — Confirm `@akubly/types` `SessionId` brand compiles and validates from both `packages/eureka/` and `packages/crucible/` import paths. Single source of truth by construction.
 6. **CODEOWNERS** — Shared packages (`cairn`, `forge`, `types`) require both teams' approval. Project packages (`eureka`, `crucible`) are team-scoped.
+
+*Note: Future migration to pnpm/turborepo could optimize build caching, but npm workspaces + `tsc --build` is sufficient for v1.*
 
 ### If Option B (Submodule)
 - New `@akubly/substrate` repo created before M0

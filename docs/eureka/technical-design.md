@@ -11,7 +11,7 @@
 
 Eureka is the **cognitive memory layer** for agentic systems — making knowledge durable, addressable, and progressively disclosed across session boundaries. It eliminates the "rediscovery tax" where agents re-learn context every session.
 
-The v1 design delivers: **7 core activities** (integrate, recall, rerank, decide, commit, retire, evict) + 2 reserved (meditate, contemplate); **BM25-based recall** with composite ranking (relevance 50% + importance 20% + trust 20% + recency 10%); **three-tier storage** (agent fully wired; user/project stubbed); **bidirectional Forge bridges** for decision audit; and an **extraction-ready learning kernel** for future Cairn refactor. Four open decisions block implementation — most critically, shared substrate ownership across the `mem/` and `harness/` repositories.
+The v1 design delivers: **7 core activities** (integrate, recall, rerank, decide, commit, retire, evict) + 2 reserved (meditate, contemplate); **BM25-based recall** with composite ranking (relevance 50% + importance 20% + trust 20% + recency 10%); **three-tier storage** (agent tier only in v1; user/project tiers reserved in schema, adapters deferred to v1.5 per PRD FR-7.2); **bidirectional Forge bridges** for decision audit; and an **extraction-ready learning kernel** for future Cairn refactor. OQ-1 (substrate ownership) has been resolved via ADR-0002; remaining open decisions are tracked in the §00 ADR index.
 
 ---
 
@@ -161,8 +161,8 @@ From §00-overview, keyed to PRD acceptance criteria.
 ## References
 
 - **PRD:** [`.squad/decisions/eureka-prd-v5-final.md`](../../.squad/decisions/eureka-prd-v5-final.md)
-- **Crucible Impact Analysis:** [`.squad/decisions/inbox/cassima-crucible-eureka-impact.md`](../../.squad/decisions/inbox/cassima-crucible-eureka-impact.md)
-- **Substrate Blocker Memo:** [`.squad/decisions/inbox/cassima-t7-shared-substrate-blocker.md`](../../.squad/decisions/inbox/cassima-t7-shared-substrate-blocker.md)
+- **Crucible Impact Analysis:** See `.squad/decisions.md` § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27)
+- **Substrate Ownership:** See `.squad/decisions.md` § "Narrower Substrate Freeze Proposal" and ADR-0002 (2026-05-27)
 - **Team Decisions:** [`.squad/decisions.md`](../../.squad/decisions.md)
 
 ---
