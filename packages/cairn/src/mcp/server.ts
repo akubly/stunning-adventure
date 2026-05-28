@@ -49,7 +49,7 @@ import type { SkillTestResultInsert } from '../db/skillTestResults.js';
 import { PRESCRIPTION_STATUSES } from '../types/index.js';
 import { checkIsScript } from '../utils/isScript.js';
 import { getPreference } from '../db/preferences.js';
-import { normalizeWorkdir } from '../utils/workdir.js';
+import { normalizeWorkdir, getSkillToolWorkdir } from '../utils/workdir.js';
 
 // ---------------------------------------------------------------------------
 // Server setup
@@ -1180,7 +1180,7 @@ server.registerTool(
       try {
         ensureDb();
         const repoKey = process.env.CAIRN_REPO_KEY;
-        const session = getUserSessionForMcpFallback(db, repoKey, normalizeWorkdir(process.env.CAIRN_WORKDIR));
+        const session = getUserSessionForMcpFallback(db, repoKey, getSkillToolWorkdir(), 'env-var');
         if (session) {
           logEvent(db, session.id, 'skill_lint', {
             path: filePath,
@@ -1274,7 +1274,7 @@ server.registerTool(
         try {
           ensureDb();
           const repoKey = process.env.CAIRN_REPO_KEY;
-          const session = getUserSessionForMcpFallback(db, repoKey, normalizeWorkdir(process.env.CAIRN_WORKDIR));
+          const session = getUserSessionForMcpFallback(db, repoKey, getSkillToolWorkdir(), 'env-var');
           if (session) {
             const inserts: SkillTestResultInsert[] = report.results.map((r: ValidationResult) => ({
               skillPath: report.skillPath,
@@ -1340,7 +1340,7 @@ server.registerTool(
       try {
         ensureDb();
         const repoKey = process.env.CAIRN_REPO_KEY;
-        const session = getUserSessionForMcpFallback(db, repoKey, normalizeWorkdir(process.env.CAIRN_WORKDIR));
+        const session = getUserSessionForMcpFallback(db, repoKey, getSkillToolWorkdir(), 'env-var');
         if (session) {
           const inserts: SkillTestResultInsert[] = results.map((r) => ({
             skillPath: filePath,

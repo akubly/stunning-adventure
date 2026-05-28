@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import type { Session, SessionKind } from '../types/index.js';
+import { getLastEventTime } from './events.js';
 
 /** Sentinel repo key used for system-generated events that are not tied to a user session. */
 export const SYSTEM_SESSION_REPO_KEY = '__system__';
@@ -155,15 +156,41 @@ export function claimLegacyActiveSession(
 
   if (result.changes !== 1) return undefined;
 
-  // Step 3: Orphan cleanup — complete any other NULL-workdir active user sessions
-  // for the same repo that were not the winner. These are stale rows from abnormal
-  // exits; cleaning them up now prevents future false-positive claims.
-  db.prepare(
-    `UPDATE sessions
-     SET status = 'completed', ended_at = datetime('now')
-     WHERE repo_key = ? AND status = 'active' AND session_kind = 'user'
-       AND workdir IS NULL AND id != ?`,
-  ).run(repoKey, candidate.id);
+  // Step 3: Orphan cleanup — complete NULL-workdir active user sessions for the
+  // same repo that are not the winner, provided they have been inactive long
+  // enough to be considered stale. Sessions with activity in the last 5 minutes
+  // are skipped with a warning: they may belong to a concurrent archivist that
+  // hasn't had a chance to claim yet.
+  const ORPHAN_GRACE_MS = 5 * 60 * 1000; // 5 minutes
+  const orphans = db
+    .prepare(
+      `SELECT id, started_at FROM sessions
+       WHERE repo_key = ? AND status = 'active' AND session_kind = 'user'
+         AND workdir IS NULL AND id != ?`,
+    )
+    .all(repoKey, candidate.id) as Array<{ id: string; started_at: string }>;
+
+  for (const orphan of orphans) {
+    const lastActivity = getLastEventTime(db, orphan.id) ?? orphan.started_at;
+    // SQLite datetime() returns 'YYYY-MM-DD HH:MM:SS' in UTC without a 'Z'
+    // suffix. Appending 'Z' forces correct UTC parsing in JavaScript so the
+    // idle duration comparison is correct regardless of host timezone.
+    const lastActivityIso = lastActivity.includes('T')
+      ? lastActivity
+      : lastActivity.replace(' ', 'T') + 'Z';
+    const idleMs = Date.now() - new Date(lastActivityIso).getTime();
+    if (idleMs < ORPHAN_GRACE_MS) {
+      process.stderr.write(
+        `[cairn] claimLegacyActiveSession: skipping orphan session ${orphan.id} ` +
+        `(last activity ${Math.round(idleMs / 1000)}s ago — within 5-minute grace window). ` +
+        `It will be cleaned up on the next claim cycle.\n`,
+      );
+      continue;
+    }
+    db.prepare(
+      `UPDATE sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?`,
+    ).run(orphan.id);
+  }
 
   // Step 4: Read back the updated row.
   const row = db

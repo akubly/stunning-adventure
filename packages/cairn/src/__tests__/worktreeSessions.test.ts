@@ -405,7 +405,8 @@ describe('legacy session claiming — claimLegacyActiveSession', () => {
     // (ORDER BY started_at DESC LIMIT 1). The older NULL-workdir session is an
     // orphan from an abnormal exit — it is completed as a side-effect of the
     // claim so it does not accumulate and trigger a future false-positive claim.
-    const olderTime = "datetime('now', '-2 seconds')";
+    // The orphan must be outside the 5-minute grace window to be eligible for cleanup.
+    const olderTime = "datetime('now', '-10 minutes')";
     const olderId = randomUUID();
     const newerId = randomUUID();
     db.prepare(
@@ -431,6 +432,29 @@ describe('legacy session claiming — claimLegacyActiveSession', () => {
     // NULL-workdir lookup now finds nothing (orphan was cleaned up)
     const remaining = getActiveSession(db, REPO_KEY); // NULL-workdir lookup
     expect(remaining).toBeUndefined();
+  });
+
+  it('orphan within the 5-minute grace window is not completed (Item 2 safety)', () => {
+    // An orphan that was active recently (e.g. 2 seconds ago) is left alone by
+    // the cleanup step. It may belong to a concurrent archivist that hasn't had a
+    // chance to claim yet — completing it would be data loss.
+    const recentTime = "datetime('now', '-2 seconds')";
+    const recentId = randomUUID();
+    const newerId = randomUUID();
+    db.prepare(
+      `INSERT INTO sessions (id, repo_key, branch, session_kind, workdir, started_at) VALUES (?, ?, ?, ?, ?, ${recentTime})`,
+    ).run(recentId, REPO_KEY, 'main', 'user', null);
+    db.prepare(
+      "INSERT INTO sessions (id, repo_key, branch, session_kind, workdir, started_at) VALUES (?, ?, ?, ?, ?, datetime('now'))",
+    ).run(newerId, REPO_KEY, 'main', 'user', null);
+
+    claimLegacyActiveSession(db, REPO_KEY, WORKDIR_A);
+
+    // The recently-started orphan must not have been completed
+    const recentRow = db
+      .prepare('SELECT status FROM sessions WHERE id = ?')
+      .get(recentId) as { status: string };
+    expect(recentRow.status).toBe('active');
   });
 });
 
