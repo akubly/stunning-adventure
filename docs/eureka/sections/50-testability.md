@@ -30,7 +30,7 @@ This section defines test patterns for Eureka v1's continuous properties, tier b
 
 **Critical invariants**:
 - `trust ∈ [0, 1]`, `importance ∈ [0, 1]`, `recency ∈ [0, 1]`
-- `committed=true` facts immutable (plasticity policy enforcement)
+- Committed facts are partially immutable — `content`, `kind`, `sources`, `provenance` immutable post-commit; `trust`, `importance`, `last_accessed`, `access_count`, `retired` always mutable (required for learning, decay, retirement; see §20 schema and §30 §X mutation policy)
 - BM25 relevance scores normalized to [0, 1] before blending
 - Tier multipliers: hot=1.0, warm=0.5, cold=0.1 (FR-6)
 
@@ -93,7 +93,7 @@ This section defines test patterns for Eureka v1's continuous properties, tier b
 
 **Plasticity policies**:
 - `committed=false` facts: Read/write allowed
-- `committed=true` facts: Read-only (write attempts rejected)
+- Committed facts: Content fields (`content`, `kind`, `sources`, `provenance`) are immutable; learning fields (`trust`, `importance`, `last_accessed`, `access_count`, `retired`) are always mutable (see §20 schema and §30 §X for mutation policy)
 - Escalation: Test commit transition is irreversible
 
 **Attention tier properties**:
@@ -180,12 +180,13 @@ This section defines test patterns for Eureka v1's continuous properties, tier b
 **Outputs**: Fact with committed=true, modified_in edge to session
 **Contracts**:
 - Irreversible: committed=true facts cannot transition back to committed=false
-- Write protection: Subsequent update attempts rejected
+- Partial immutability: Content fields (`content`, `kind`, `sources`, `provenance`) immutable post-commit; learning fields (`trust`, `importance`, `last_accessed`, `access_count`, `retired`) remain mutable (see §20 schema and §30 §X)
 - Provenance: modified_in edge records committing session
 
 **Tests**:
 - Unit: Commit transition (committed=false → committed=true)
-- Integration: Write rejection after commit (test UPDATE on committed fact fails)
+- Integration: Content field write rejection after commit (test UPDATE on committed fact's `content` field fails)
+- Integration: Learning field mutation after commit (test UPDATE on committed fact's `trust` field succeeds)
 - Edge cases: Double-commit (idempotent or error?), commit on already-committed fact
 
 ### Retire (Soft Delete)
@@ -252,11 +253,12 @@ This section defines test patterns for Eureka v1's continuous properties, tier b
 **Mutation space**: committed ∈ {false, true}
 **Invariants**:
 - Irreversible: committed=false → committed=true allowed, reverse blocked
-- Write protection: committed=true facts reject UPDATE/DELETE
+- Partial immutability: Content fields (`content`, `kind`, `sources`, `provenance`) reject UPDATE after commit; learning fields (`trust`, `importance`, `last_accessed`, `access_count`, `retired`) allow UPDATE regardless of commit status (see §20 schema and §30 §X)
 
 **Test cases**:
 - Commit transition: committed=false → committed=true, validate success
-- Write rejection: UPDATE on committed=true fact, validate error
+- Content field write rejection: UPDATE `content` on committed=true fact, validate error
+- Learning field mutation: UPDATE `trust` on committed=true fact, validate success
 - Attempted reversal: committed=true → committed=false, validate error
 
 ### Attention Tier Dynamics
@@ -470,7 +472,8 @@ afterEach(() => {
 
 **Test cases**:
 - Commit fact (committed=false → committed=true), validate success
-- UPDATE committed fact, validate error ("Fact is committed and immutable")
+- UPDATE committed fact's content field, validate error ("Content fields immutable after commit")
+- UPDATE committed fact's trust field, validate success (learning fields always mutable)
 - DELETE committed fact, validate error or policy decision (allowed? TBD)
 - Attempt to revert commit (committed=true → committed=false), validate error
 

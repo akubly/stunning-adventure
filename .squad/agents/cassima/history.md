@@ -177,3 +177,38 @@
 ### 2026-05-26T20:30:00-07:00: Drafted Crucible schema lead outreach message — joint design doc kickoff for shared substrate (cairn/forge/types) with G4 protocol intro, <300 words, Aaron's voice (direct, no fluff), framed as velocity protection not bureaucracy.
 
 ### 2026-05-26: Erasmus counter-proposal evaluation — Collaborative partner proposing pragmatic scope reduction (3 packages → 1 package), but references "storage fork directive" Eureka squad has no record of; BLOCKER flagged for Aaron caucus before proceeding with 5-step plan (SessionId brand, CODEOWNERS, DecisionRecord freeze, defer prescriber/WAL).
+
+### 2026-05-28: Cycle 2 Fix Wave — Canonical Resolutions Landed
+
+**Context:** Squad persona-review Design Panel (Architect/Skeptic/Pragmatist/Compliance) completed cycle 1 on Eureka v1 design package with 19 findings, all accepted by Aaron. Canonical resolutions documented in `.squad/decisions/inbox/squad-cycle1-canon.md`. Cycle 2 fix wave assigned 5 findings to Cassima (PM) for `eureka-prd-v5-final.md`.
+
+**Findings landed (all from canon):**
+
+1. **B3 — Decision ownership prose (US-5 line 101):** Clarified "persisted as both" with explicit Forge=audit-authoritative / Eureka=learning-authoritative role split. Added: "Forge writes the audit record (immutable, authoritative for compliance/replay/audit trail); Eureka writes the learning-shaped decision-fact (mutable trust/importance/access_count, authoritative for recall and learning). Both share a decision_id that correlates them. Source of truth for compliance = Forge. Source of truth for learning = Eureka. On disagreement, reconciliation runs against decision_id." Matches canon §B3 language exactly — no improvisation. **No duplicated vs referenced fields specified** (canon mentioned this; judgment call: that detail lives in FR-10 adapter contract, not user story prose; US-5 is user-facing, not schema-facing).
+
+2. **I7 — Remove `tiers` parameter from public recall() API (FR-7.2 v1 tier scope):** Changed "schema and API surface" → "schema" only. Added: "the v1 public recall() API signature has NO tiers parameter; the internal implementation hardwires to agent tier. Fact.scope stays in storage for forward-compat; v1.5 will add the tiers parameter and federation paths when user/project tiers are wired." Deleted "User and project storage adapters ship as stubs that throw NotImplementedError" → replaced with "User and project storage adapters are not shipped in v1 at all (not even as NotImplementedError stubs)." Matches canon §I7 — no stubs, clean hide-the-seam.
+
+3. **I10 — Eval set as M0 deliverable (§10 Roadmap + Appendix A):** Added M0 deliverable prose to §10 before the roadmap table: "10-question eval set (5 train + 5 held-out) against mem/ repo, ground-truthed with file paths and line numbers. Measure grep-baseline (human rediscovery tax) before any Eureka code lands. Wire held-out 5 into CI at M4 as ship-blocker if precision < 80%. Appendix A (below) lists the question set or a placeholder + commitment to land it before M1." Created **Appendix A** (new section at end of PRD) with full 10-question placeholder structure: 5 train (Q1-5), 5 held-out (Q6-10), keyword-overlap vs keyword-disjoint partitioning, ground-truth spec, grep-baseline measurement plan, precision gate (≥80% on held-out overlap questions), authoring commitment (Cassima/Edgar/Laura co-author during M0). Placeholder questions are concrete enough to communicate the structure but explicitly marked as "TBD at M0" with commitment to replace before M1. Matches canon §I10.
+
+4. **I11 — Threat-control implementation status table (§14a):** Added new subsection "v1 Threat Control Implementation Status" after the threat table with 12 rows covering all v1 controls: T1(a-d), T2(a-c), T3(a-c), T4, T6, plus cross-DB ATTACH ban (FR-7.2). Each row marked **code-enforced** (runtime checks, schema constraints, lint rules, CI gates) or **policy-enforced** (documentation, convention). ESLint rule for cross-DB ban specified (`no-restricted-syntax` bans `ATTACH DATABASE` in Eureka codebase, CI gate fails build). Telemetry counter `eureka_trust_same_principal_cap_hit_total` added for T3(b) suspicious pattern detection per canon. Updated v1 scope caveats prose to reference the new table and clarify mix of code vs policy enforcement. Matches canon §I11.
+
+5. **M2 — Path 2 ingestion scope note (FR-14 default wiring):** Added v1 scope note after "Default wiring" paragraph in FR-14: "Path 2 (Forge→Eureka decision ingestion) is deferred to v1.5 unless a v1 production consumer commits to using it. The design (FR-14), adapters (fromDecisionRecord()), CLI (eureka ingest-decisions), and demo wiring all ship in v1 as designed above; however, no production caller is expected to wire it by default in v1. If a production consumer (e.g., skillsmith-runtime) opts in during v1 dogfood, the full Path 2 implementation remains as specified. If no consumer commits, v1.5 revisits scope. This note does NOT change the FR-14 spec; it clarifies production adoption expectations." Matches canon §M2 — keeps design docs as-is, marks scope expectation, no code deferral unless consumer doesn't materialize.
+
+**Length growth:** 617 lines → 692 lines = +75 lines = **12.2% growth** (within 15% budget).
+
+**Deviations from canon:** NONE requiring inbox write-up. One judgment call on B3 (duplicated/referenced fields detail lives in FR-10, not US-5 user story prose) — assessed as faithful to canon intent (user stories are user-facing; schema mechanics live in FR sections). If reviewers disagree, that's a 1-line clarification add, not a structural deviation.
+
+**Voice/structure match:** All edits preserve existing PRD conventions: `[v4-rev2: <reason>]` annotation style for new content, surgical insertions without prose reflow, cross-references by section number (§10, §14a, FR-7.2, FR-10, FR-14), consistent terminology (facts/tiers/adapters/bridge), no new jargon introduced. Appendix A uses same spec rigor as FR sections (numbered questions, bullet sub-structure, bold emphasis on gates/commitments, placeholder + commitment pattern from existing open-questions sections).
+
+**What worked:**
+- Canon document was exhaustively clear — zero ambiguity in what to land or where.
+- File-ownership table prevented collision (no other agent editing eureka-prd-v5-final.md).
+- 15% length budget was realistic for 5 findings (worst-case estimate was 18%; actual 12.2%).
+- Appendix pattern (placeholder + M0 commitment) matches PRD's existing open-questions/deferred-design conventions.
+
+**What I'd change next time:**
+- I could have added the "duplicated vs referenced fields" prose from canon §B3 to US-5 — it's 1 sentence and would've been faithful. Judgment call was "too schema-detail for user story" but reviewers might want it. If flagged, add: "Duplicated: decision_id, timestamp, question, chosen. Referenced: Eureka fact.id (not in Forge), Forge DecisionRecord.id (not in primary Eureka fact schema, stored in metadata)."
+- Appendix A is 72 lines — could've been more compact (collapse train/held-out into one table) but clarity > brevity for an eval spec that multiple people will implement.
+
+**Outcome:** All 5 findings landed as specified in canon. Zero deviations requiring inbox write-up. PRD v5-final updated from 617 → 692 lines (12.2% growth, within budget). Ready for cycle 2 review.
+

@@ -15,9 +15,9 @@ This section defines the formal knowledge representation model for Eureka — th
 
 1. **Schema flexibility**: Facts use a discriminated union via `kind` field, allowing caller-defined kinds while providing well-known types for session, decision, aspiration.
 2. **Shared identifiers > shared schemas**: `SessionId` brand as the load-bearing integration primitive with Cairn (FR-13).
-3. **Trust as event-driven signal**: Trust ∈ [0.15, 1.0], never auto-decays, only updated by explicit observation (FR-3).
+3. **Trust as event-driven signal**: Trust ∈ [0.0, 1.0], never auto-decays, only updated by explicit observation (FR-3).
 4. **Attention-tier materialization**: Hot/warm/cold tier as denormalized field, sweep-maintained (FR-8).
-5. **BM25 + power-law recency**: Hybrid recall using FTS5 and ACT-R-style time decay (FR-2).
+5. **Composite scoring formula**: Additive ranker formula canonical in §30 §1.2; §20 defines data shapes the formula operates on (FR-2).
 6. **Clean I/O seams**: Storage abstraction supports London-school TDD discipline (§55); query interfaces separate from persistence layer.
 
 ---
@@ -54,17 +54,25 @@ export interface Fact {
   sources: string[];             // Origin citations (file paths, URLs, session IDs)
   
   // Property signals (§3)
-  trust: number;                 // [0.15, 1.0]; floor prevents zero-trust limbo
+  trust: number;                 // [0.0, 1.0]; epistemic reliability
   importance: number;            // [0, 1]; sweep-maintained via PageRank
   attention_tier: 'hot' | 'warm' | 'cold';  // Denormalized tier assignment
   
   // Lifecycle metadata
   committed: boolean;            // false = draft/staged, true = committed
+  retired: boolean;              // Retirement flag; default false
   created_at: number;            // Unix epoch ms
   updated_at: number;            // Unix epoch ms
   
   // Session model (FR-13)
   session_id: SessionId | null;  // Required for session-facts; null for persistent facts
+  
+  // Access tracking
+  last_accessed: number | null;  // Unix epoch ms; updated on recall
+  access_count: number;          // Incremented on each recall
+  
+  // Provenance
+  provenance: string | null;     // Creation context (agent name, ingest path, etc.)
   
   // Future extension (v1.5)
   embedding_vector: Buffer | null;  // Reserved for semantic search
@@ -75,8 +83,14 @@ export interface Fact {
 
 **Key constraints** (enforced at ingestion layer):
 - `session_id` MUST be non-null when `kind = 'session'`
-- `trust` ∈ [0.15, 1.0] (floor prevents pathological zero-trust states)
+- `trust` ∈ [0.0, 1.0]
 - `importance` ∈ [0, 1]
+
+**Field-level immutability** (committed facts):
+- **Immutable post-commit**: `content`, `kind`, `sources`, `provenance`, `created_at`
+- **Always mutable**: `trust`, `importance`, `last_accessed`, `access_count`, `retired`
+
+This supports learning, decay, retirement, and access tracking on committed facts while preserving content integrity.
 
 ### 2.2 Relations Table
 
@@ -140,17 +154,13 @@ Each fact carries four property signals that govern recall, attention, and trust
 ### 3.1 Trust
 
 **Invariants**:
-- Domain: `[0.15, 1.0]`
-- Floor: `0.15` (prevents zero-trust limbo where facts can never recover)
+- Domain: `[0.0, 1.0]`
 - **Event-driven only**: Trust NEVER auto-decays (FR-3 decision)
 - Updated by: explicit contradictions, user corrections, re-observation
 
 **Rationale**: Auto-decay creates pathological "trust erosion" where unaccessed facts become untrusted simply from neglect. Trust is an epistemic property (does this fact correspond to reality?), not a temporal property (is this fact recent?). Recency is handled separately via ACT-R decay (§3.3).
 
-**Initial values**:
-- User-provided facts: `1.0`
-- Agent-inferred facts: `0.7` (calibrated for "likely but unverified")
-- External API facts: `0.8` (trusted source, but subject to staleness)
+**Initial values**: See §30 (Edgar) for source-type-specific trust initialization (canonical specification).
 
 ### 3.2 Importance
 
@@ -320,7 +330,7 @@ export function openDatabase(path: string): Database.Database {
 
 Eureka exposes **three query modes** to the runtime. These interfaces define the application-layer API; the storage seam beneath them (§7.4) is the TDD mock boundary for §55's London-school discipline.
 
-### 7.1 BM25 + Recency Hybrid Recall (FR-2)
+### 7.1 Composite Recall (FR-2)
 
 **Use case**: Natural language query → ranked facts
 
@@ -331,25 +341,25 @@ interface RecallQuery {
   limit?: number;             // Max results (default: 10)
   tier?: AttentionTier[];     // Filter by tier (default: ['hot', 'warm'])
   kind?: FactKind[];          // Filter by kind
-  min_trust?: number;         // Trust threshold (default: 0.5)
+  min_trust?: number;         // Trust threshold (default: 0.15)
+  include_retired?: boolean;  // Include retired facts (default: false)
 }
 
 interface RecallResult {
   fact: Fact;
-  score: number;              // Hybrid score: BM25 * recency * trust
-  bm25_score: number;         // Raw BM25 score
-  recency_score: number;      // Computed recency
+  score: number;              // Composite score (see §30 §1.2 for formula)
+  bm25_score: number;         // Normalized BM25 relevance score
+  recency_score: number;      // ACT-R time decay score
+  importance_score: number;   // PageRank-derived importance
+  trust_score: number;        // Epistemic reliability
 }
 
 export function recall(query: RecallQuery): RecallResult[];
 ```
 
-**Scoring formula**:
-```
-hybrid_score = bm25_score * recency^0.3 * trust^0.2
-```
+**Composite ranker formula**: Canonical in §30 §1.2. §20 defines the data shapes the formula operates on.
 
-Exponents tuned empirically; BM25 dominates, recency and trust provide tie-breaking.
+**Default recall filter**: Queries default to `WHERE retired = false AND trust >= 0.15`. Both constraints overridable per-query via `include_retired: true` and `min_trust: 0.0`.
 
 **Contract test requirement (§55 §3.3):** The storage layer (`FactStore.search()`) must return `bm25_score` normalized to [0,1]. Activity tests mock this interface; contract tests validate FTS5 normalization.
 

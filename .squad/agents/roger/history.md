@@ -522,4 +522,63 @@ SQLite + FTS5 is enough for v1. Graph DB / LMDB / vector store deferred until v1
 **File updated:** `docs/eureka/sections/40-integration.md` (666 → 798 lines, +§40.6 Testability Seams)
 
 
+## 2026-05-28: Cycle 2 Fix Wave — 7 Persona-Review Findings
+
+**Context:** Persona-review cycle 1 surfaced 19 findings (all accepted by Aaron). Canonical resolutions in `.squad/decisions/inbox/squad-cycle1-canon.md`. Roger assigned 7 findings spanning milestones, reconciliation, feature flags, and load-test wiring.
+
+**Task:** Apply I1, I5, I6, I8, I9, M3, M4 canonical resolutions to `docs/eureka/sections/40-integration.md`.
+
+**Changes applied:**
+
+1. **I1 — Dep-direction lint to M1:** Moved dependency-direction guardrail from M5 to M1 milestone. Added ESLint `no-restricted-imports` rule specification in §40.9.2 M1 deliverable. Documented enforcement mechanism (ESLint custom rule or `no-restricted-imports` pattern match) so Cairn/Forge cannot import from `@akubly/eureka`.
+
+2. **I5 — Auto-flush feature flag (v1 opt-in):** Added feature flag `eureka.auto_flush_on_session_end: boolean = false` to §40.2.2. Documented Forge runtime hook integration point (`packages/forge/src/runtime/session.ts`). Wrote actionable error UX text for "Memory not captured — fix steps" with 3-step recovery path (manual CLI, enable flag, telemetry counter). Cross-referenced §60 for full error-message patterns.
+
+3. **I6 — M0 monorepo merge time-box:** Documented M0 5-day budget in new §40.9.1. Added 4-hour scaffolding spike (pnpm workspace + turborepo + one cross-package import). Specified rollback procedure: revert to ADR-0002 Option C (npm packages with private registry) if M0 exceeds budget. Rationale: time-box prevents sunk-cost fallacy on messy package boundaries.
+
+4. **I8 — Bridge reconciliation (cron + telemetry + runbook):** Created new §40.10 "Bridge Reconciliation" with 4 subsections:
+   - §40.10.1: `eureka reconcile` CLI command spec
+   - §40.10.2: Weekly cron schedule (Sunday 02:00 UTC), telemetry counter `eureka_reconcile_divergence_count`
+   - §40.10.3: Written decision tree for divergence response (4 scenarios: missing in Eureka, orphaned in Eureka, mutable-field drift, immutable-field drift). Each scenario has root cause, fix command, and prevention guidance.
+   - §40.10.4: v1.5 design note (push-based event-stream comparison instead of pull-audit)
+
+5. **I9 — M4 load-test wiring:** Added load-test deliverable to §40.9.3 M4 milestone. Spec: 1000 facts (NFR-2 target), measure P50/P95/P99 recall latency, ship-blocker if P95 > 500ms. Production telemetry: histogram `eureka_recall_latency_ms`. Cross-referenced I9 canonical SLO from §30 (Edgar owns the SLO statement; §40 owns the cross-package test wiring).
+
+6. **M3 — Kernel-extraction canary at M5:** Added §40.9.4 M5 deliverable: literally move `packages/eureka/src/learning/` to `packages/learning-kernel/src/` on throwaway branch, run tests, count required edits. Success criterion: edit count < 10 (extraction is "mechanical"). Defined what counts as edit (interface changes, test rewrites) vs what doesn't (import-path replacements). If canary fails, document blockers and defer to v1.5.
+
+7. **M4 — Partial-restore test at M4:** Added partial-restore test to §40.9.3 M4 milestone. Two scenarios: delete Eureka DB (keep Cairn), delete Cairn DB (keep Eureka). Success criteria: no crashes, graceful degradation, empty result sets, opaque session_id handling. Implementation note (NFR-6): `session_id` is opaque metadata, not traversable FK — Eureka MUST NOT query Cairn sessions table at runtime.
+
+**Section reorganization:**
+- Created new §40.9 "Milestone Deliverables & Acceptance" (4 subsections: M0, M1, M4, M5)
+- Created new §40.10 "Bridge Reconciliation" (4 subsections: command, schedule, runbook, v1.5 note)
+- Renumbered existing §40.9–§40.13 → §40.11–§40.15
+- Cross-referenced §30 (Edgar) for 500ms SLO statement, §60 for error UX patterns, ADR-0002 for rollback option
+
+**Length impact:** 798 → 987 lines (23.7% increase, over 20% target but unavoidable with 7 substantive findings requiring milestones + runbook + feature-flag prose).
+
+**Learnings:**
+
+1. **Milestone ownership discipline:** §40 owns cross-package wiring deliverables (lint rules, build topology, load tests, reconciliation cron). Activity-specific logic (BM25 ranker, trust decay, recency formula) lives in §10/§30/§55. This prevents section bloat — §40 documents *when* and *how* integration happens, not *what* algorithms run.
+
+2. **Runbooks are first-class documentation:** I8's divergence-response decision tree (4 scenarios × [root cause + fix + prevention]) is more valuable than the reconciliation algorithm itself. Operators need playbooks, not just CLI commands. The runbook is 60 lines; the algorithm spec is 15 lines.
+
+3. **Time-boxing prevents sunk-cost traps:** I6's "5-day budget + 4-hour spike + rollback procedure" is a hedge against monorepo unknowns. Documenting the rollback (Option C: private npm registry) before starting M0 gives the team permission to bail if integration is messier than expected. This is anti-heroics engineering.
+
+4. **Feature flags need error UX, not just boolean config:** I5's auto-flush flag isn't just `boolean = false` — it needs actionable error text when disabled and forgotten. The 3-step recovery path (manual CLI, enable flag, telemetry counter) turns a "memory not captured" failure into a learning moment for operators.
+
+5. **Canaries validate design claims:** M3's kernel-extraction throwaway branch is a design validator, not a v1 deliverable. "Edit count < 10" operationalizes "kernel-shaped" (PRD §1 claim). If the canary fails, v1 ships anyway but v1.5 extraction risk is known. This is lightweight architecture decision record (ADR) via experiment.
+
+6. **Graceful degradation requires opaque-metadata discipline:** M4's partial-restore test validates NFR-6 (graceful degradation) by literally deleting databases and asserting no crashes. The implementation note "`session_id` is opaque metadata, not traversable FK" prevents future coupling drift — if Eureka ever queries Cairn's `sessions` table at runtime, the partial-restore test catches it.
+
+7. **Cross-section coordination via canon works:** All 7 findings referenced other sections (§30 for SLO, §60 for UX, ADR-0002 for rollback, §55 for test patterns) without collision. The canon document (squad-cycle1-canon.md) acted as the coordination point — I didn't need to read Edgar's or Laura's changes to know what to cross-reference.
+
+**Length overage justification:**
+- 7 findings (heaviest load of any agent in cycle 2)
+- 2 new top-level sections (§40.9 milestones + §40.10 reconciliation)
+- Runbook prose unavoidable (4 divergence scenarios × decision tree)
+- All content substantive (no fluff; every line serves acceptance criteria or operational guidance)
+
+**File updated:** `docs/eureka/sections/40-integration.md` (798 → 987 lines, +§40.9 Milestones, +§40.10 Reconciliation)
+
+
 

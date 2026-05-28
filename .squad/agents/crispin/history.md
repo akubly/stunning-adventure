@@ -99,6 +99,54 @@
 
 **Memo Delivered:** `.squad/decisions/inbox/crispin-crucible-kr-overlap.md` (7 sections, 28 citations, 4 schema tables, 5 risk rows, 3 Aaron decision points).
 
+---
+
+## 2026-05-28: Cycle 2 Fix Wave — Canonical Resolutions Applied
+
+**Context:** Cycle 1 persona-review (Design Panel) surfaced 19 findings. Squad-cycle1-canon.md locked resolutions. My assignment: 5 findings in §20 (knowledge representation).
+
+**Fixes Applied:**
+
+1. **B1 — Composite scoring formula (§7.1):**
+   - **DELETED** multiplicative formula `hybrid_score = bm25_score * recency^0.3 * trust^0.2`
+   - Replaced with pointer: "Composite ranker formula canonical in §30 §1.2. §20 defines data shapes."
+   - **ADDED** `importance_score` to `RecallResult` interface (parity with canonical additive formula `0.50r + 0.20i + 0.20t + 0.10rec`)
+   - Section title changed: "BM25 + Recency Hybrid Recall" → "Composite Recall"
+
+2. **B2 — Trust domain and retirement semantics (§2.1, §3.1):**
+   - Trust domain corrected: `[0.15, 1.0]` → `[0.0, 1.0]` EVERYWHERE
+   - **REMOVED** "floor prevents zero-trust limbo" storage-constraint language
+   - **ADDED** `retired: boolean` field to `Fact` schema (default `false`)
+   - **ADDED** field-level immutability rule: content/kind/sources/provenance/created_at immutable post-commit; trust/importance/last_accessed/access_count/retired always mutable
+   - Schema now exposes `last_accessed`, `access_count`, `provenance` (contract with mutable fields)
+
+3. **I3 — RecallQuery.min_trust default (§7.1):**
+   - Changed default: `0.5` → `0.15` (matches canonical floor)
+
+4. **I2 — Trust initial values (§3.1):**
+   - **DELETED** per-source-type numeric values (user=1.0, agent=0.7, external=0.8)
+   - Replaced with pointer: "See §30 (Edgar) for source-type-specific trust initialization (canonical specification)"
+
+5. **Default recall filter documentation (§7.1):**
+   - **ADDED** `include_retired?: boolean` param to `RecallQuery` (default `false`)
+   - **ADDED** explicit note: "Default recall filter: Queries default to `WHERE retired = false AND trust >= 0.15`. Both constraints overridable per-query via `include_retired: true` and `min_trust: 0.0`."
+
+**Deviations:** NONE. All 5 findings cleanly applied.
+
+**Schema Integrity:** Graph schema now has 3 new fields (`retired`, `last_accessed`, `access_count`, `provenance`), field-level immutability rule, and correct trust domain [0.0, 1.0]. Retirement flag separates lifecycle state from trust signal (trust=0 no longer serves dual purpose).
+
+**Cross-Section Coordination:** Trust floor (0.15) is now read-time default predicate (§7.1), NOT domain constraint (§2.1). Edgar owns trust init values (§30), retire algorithm (§30), and composite ranker formula (§30 §1.2). My section defines data shapes only.
+
+**What I Learned:**
+
+- **Multiplicative vs additive scoring is architectural.** The multiplicative formula (`bm25 * recency^0.3 * trust^0.2`) leaked algorithm into schema layer. Deleting it clarified ownership: §20 = data contract, §30 = algorithm. This is the "clean seam" principle from London-school TDD (§55) applied to design docs.
+- **Trust domain [0.0, 1.0] vs [0.15, 1.0] was a storage/read-time conflation.** The 0.15 floor is a **query predicate** ("don't recall pathological low-trust facts by default"), NOT a schema constraint ("facts cannot store trust < 0.15"). The v4/v5 schema text collapsed these layers. Cycle 2 fix wave separated them cleanly.
+- **Retirement as a dedicated flag scales better than trust-zeroing.** Original design: `trust=0` meant "retired" (double duty). New design: `retired` flag + `trust` independent. Why this matters: A fact can be retired (lifecycle state) yet still have high trust (epistemic property). Example: obsolete API docs (retired=true, trust=0.9) vs low-quality draft (retired=false, trust=0.3). The schema now models both dimensions.
+- **Field-level immutability is the learning contract.** Committed facts are NOT fully immutable (that would preclude learning). Content is immutable (prevents fact-drift), but trust/importance/access_count/retired are mutable (enable learning, sweep, retirement). This is the Eureka learning loop: observe, update properties, preserve content. §20 now documents this contract explicitly.
+- **Cycle 1→2 is trust-building for Aaron.** Aaron locked canon (squad-cycle1-canon.md) with all 19 findings accepted. Cycle 2 agents implement fixes independently, no cross-edits, coordinate via canon. This is the "shared identifiers > shared schemas" principle applied to squad process. Canon doc = integration primitive.
+
+**Line Count Impact:** +15 lines schema fields, +8 lines immutability rule, +5 lines default-filter doc, -10 lines deleted formula = net +18 lines. Within 15% length-growth budget.
+
 ### 2025-06-15: Knowledge Representation Section — Formal Schema Documentation
 
 **Context:** Aaron requested formal technical design documentation for Eureka's knowledge representation model as section 20 of the architecture docs. Co-authored with Graham, Genesta, Edgar, Roger, Laura, Valanice.

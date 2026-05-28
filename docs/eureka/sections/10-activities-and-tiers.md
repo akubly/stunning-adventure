@@ -15,7 +15,7 @@ This section specifies Eureka's **activity model** (what verbs the system suppor
 - **Activities are verbs, not nouns:** Each activity is a discrete, named operation with defined inputs, outputs, and side effects
 - **Tiers are scopes, not users:** Tiers represent knowledge authority boundaries (agent < user < project < org), not just data partitions
 - **Resolution is sequential, not hierarchical:** Queries fan-out from narrow to broad scope until `k` results are found
-- **v1 ships agent tier only:** User and project tiers return empty on reads, throw `NotImplementedError` on writes
+- **v1 ships agent tier only:** User and project tiers are forward-compatibility placeholders; `Fact.scope` field remains in schema for v1.5 federation
 
 ---
 
@@ -51,7 +51,7 @@ Eureka exports **7 v1 activities** plus **2 reserved v1.5 activities**. This is 
 
 ---
 
-#### `recall(query: string, k: number, tier?: Tier) → Fact[]`
+#### `recall(query: string, k: number) → Fact[]`
 
 **Verb:** Retrieve the top `k` most relevant facts matching a natural-language query.
 
@@ -60,7 +60,6 @@ Eureka exports **7 v1 activities** plus **2 reserved v1.5 activities**. This is 
 **Inputs:**
 - `query: string` — Natural-language query string (user intent or semantic concept)
 - `k: number` — Maximum number of facts to return
-- `tier?: Tier` — Optional tier override (default: fan-out across all tiers per FR-7.2)
 
 **Outputs:**
 - `Fact[]` — Array of up to `k` facts, ranked by composite score
@@ -131,9 +130,11 @@ exclude if trust < 0.15
 - `DecisionRecord` — Structured record with `question`, `options`, `chosen`, `rationale`, `confidence`, `constraints`, `sessionId`
 
 **Side Effects:**
-- Writes to Forge decision log via `toDecisionRecord()` adapter (US-5)
-- Does **not** write to Eureka DB (Forge is authoritative source for decisions per FR-14)
-- Creates audit trail in Forge with full fact provenance
+- Emits a decision event
+- **Forge** writes the audit record (immutable, authoritative for compliance/replay/audit trail)
+- **Eureka** subscribes to the event and writes a learning-shaped decision-fact (mutable `trust`/`importance`/`access_count`, authoritative for recall and learning)
+- Shared `decision_id` correlates both records
+- **Source of truth for compliance = Forge. Source of truth for learning = Eureka.**
 
 **Sync/Async:** Synchronous (decision synthesis happens in-process; Forge write is blocking)
 
@@ -164,9 +165,7 @@ exclude if trust < 0.15
 **Sync/Async:** Synchronous write
 
 **Trust Policy (FR-2):**
-- New facts default to `trust=0.5` (neutral)
-- User-confirmed facts: `trust → 0.9`
-- LLM-inferred facts: `trust → 0.3–0.7` depending on confidence
+- Trust initial values per source type: see §30 §2.X
 - Facts below `trust=0.15` are excluded from `recall()` results
 
 **Open Questions for Implementation:**
@@ -328,9 +327,7 @@ org (v2+)
 
 **Read Access:** All agents running as that OS user.
 
-**v1 Status:** ⚠️ Reserved. DB file created but not wired:
-- `recall()` returns `[]` for user tier
-- `integrate()` throws `NotImplementedError('User tier writes not implemented in v1')`
+**v1 Status:** ⚠️ Reserved. DB file created but not wired; v1 implementation hardwires to agent tier only. v1.5 will add federation paths for user tier writes and reads.
 
 **Use Cases (future v1.5+):**
 - Cross-session facts (knowledge that persists across agent restarts)
@@ -351,9 +348,7 @@ org (v2+)
 
 **Read Access:** All agents working in that repo.
 
-**v1 Status:** ⚠️ Reserved. DB file created but not wired:
-- `recall()` returns `[]` for project tier
-- `integrate()` throws `NotImplementedError('Project tier writes not implemented in v1')`
+**v1 Status:** ⚠️ Reserved. DB file created but not wired; v1 implementation hardwires to agent tier only. v1.5 will add federation paths for project tier writes and reads.
 
 **Use Cases (future v1.5+):**
 - Codebase-specific facts (architecture decisions, module relationships)

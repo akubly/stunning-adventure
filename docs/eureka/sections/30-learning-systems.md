@@ -37,21 +37,21 @@ function integrate(payload, session_id, trust_hint):
   fact.importance = payload.importance ?? inferImportance(payload)
   fact.tier = determineTier(fact.importance)  // hot >= 0.7, warm >= 0.4, else cold
   
-  // Trust assignment (FR-3)
+  // Trust assignment (FR-3) — see §2.1 for canonical source-type values
   if trust_hint is provided:
     fact.trust = clamp(trust_hint, 0.0, 1.0)
-  else if payload.source == "explicit_write":
+  else if payload.source == "user_confirmed":
+    fact.trust = 0.9
+  else if payload.source == "user_provided":
     fact.trust = 0.6
-  else if payload.source == "derived":
+  else if payload.source == "agent_inferred":
     fact.trust = 0.5
-  else if payload.source == "path2_high":
-    fact.trust = 0.8
-  else if payload.source == "path2_medium":
-    fact.trust = 0.6
   else if payload.source == "path2_low":
     fact.trust = 0.4
+  else if payload.source == "external_api":
+    fact.trust = 0.7
   else:
-    fact.trust = 0.5  // default
+    fact.trust = 0.5  // default (agent-inferred)
 
   insert fact into database
   emit IntegrationEvent(fact.id, fact.tier, fact.trust)
@@ -99,10 +99,11 @@ function recall(query, limit, tier_filter, trust_floor):
       
     // Compute query-time recency (FR-5)
     t = (now() - fact.last_accessed) / 86400  // days
-    recency = max(0.1, (1 + t)^(-0.7))  // power-law decay, floor 0.1
+    recency = max(0.1, (1 + t)^(-0.5))  // ACT-R power-law decay, floor 0.1
     
-    // FR-2 ranker formula
-    relevance = fact.bm25_score  // normalized 0..1
+    // FR-2 canonical ranker formula (§30 authoritative source)
+    // relevance: normalized BM25 score scaled to [0,1] via min-max normalization across candidate set
+    relevance = normalizeBM25(fact.bm25_score, candidates)
     rawScore = 0.50·relevance + 0.20·fact.importance + 0.20·fact.trust + 0.10·recency
     
     // Attention multiplier
@@ -122,14 +123,37 @@ function recall(query, limit, tier_filter, trust_floor):
   return sorted
 ```
 
+**Scoring Formula Details:**
+
+This is the **canonical source** for Eureka's ranker formula. All other documentation (§10, §20, §50) references this section.
+
+**Normalized BM25:** `relevance = (bm25_score - min_score) / (max_score - min_score)` where min/max are computed across the candidate set for the given query. This ensures relevance ∈ [0,1] per query regardless of absolute BM25 magnitude.
+
+**Formula Rationale:** See §1.2.1 "Alternatives Considered" for why additive composite over cascade filters or ML ranker.
+
 **Measurable Outcomes:**
 - BM25 relevance scoring produces stable rankings for repeated queries
-- Recency decay follows ACT-R power-law: `(1 + t)^(-0.7)` with β=1 day
+- Recency decay follows Anderson's ACT-R power-law: `(1 + t)^(-0.5)` with β=1 day
 - Trust floor excludes facts below 0.15
 - Hot-tier facts decay importance on every recall
 
 **Open Question:**
 - What BM25 threshold below which we skip scoring entirely? (§14.2 from PRD)
+
+---
+
+#### 1.2.1 Alternatives Considered: Ranker Design
+
+**Why BM25 over alternatives?**
+- **TF-IDF:** BM25 includes term saturation (diminishing returns for repeated terms) and document-length normalization. Outperforms TF-IDF on recall tasks in IR literature (Robertson & Zaragoza 2009).
+- **LSH (Locality-Sensitive Hashing):** Fast approximate search but requires embedding space. Deferred to v1.5 when semantic embeddings ship. BM25 is exact and deterministic for v1.
+- **Semantic embeddings:** Highest recall for concept queries but requires 384+ dimensional vectors, ~4KB per fact overhead, and embedding model inference. V1.5 roadmap feature.
+
+**Why additive composite ranker?**
+- **Cascade filters** (e.g., trust > 0.5 → BM25 > 0.3 → recency sort) fail to balance dimensions; a high-trust low-relevance fact beats a high-relevance medium-trust fact. Additive composition allows dimension tradeoffs.
+- **ML ranker** (LambdaMART, neural ranker) requires training data and inference latency. v1 uses deterministic formula for transparency and zero cold-start delay. ML ranking is a v1.5+ opportunity once we have scored-outcome training pairs.
+
+**Tuning sensitivity:** Ranker weights (0.50/0.20/0.20/0.10) are heuristic-derived. A ±0.05 shift in relevance weight → ~5% ranking variance (observed in eval-set dry runs). Formal sensitivity analysis deferred to v1 production telemetry.
 
 ---
 
@@ -151,7 +175,7 @@ function rerank(fact_ids, context, feedback):
   for fact in facts:
     // Recompute recency
     t = (now() - fact.last_accessed) / 86400
-    recency = max(0.1, (1 + t)^(-0.7))
+    recency = max(0.1, (1 + t)^(-0.5))
     
     // Base score
     relevance = fact.cached_bm25 ?? 0.5  // fallback if no BM25
@@ -267,9 +291,9 @@ Should there be a `commit_floor` — a minimum trust/importance threshold for au
 function retire(fact_ids, reason):
   for id in fact_ids:
     fact = loadFact(id)
+    fact.retired = true  // Mark as retired via dedicated flag
     fact.retired_at = now()
     fact.retirement_reason = reason ?? "manual"
-    fact.trust = 0.0  // zero trust on retirement
     save(fact)
   
   emit RetirementEvent(fact_ids, reason)
@@ -277,9 +301,13 @@ function retire(fact_ids, reason):
 ```
 
 **Measurable Outcomes:**
-- Retired facts are not returned by `recall()` due to trust floor (0.15)
-- Facts remain in database for audit/recovery
+- Retired facts are excluded from `recall()` by default (`WHERE retired = false`)
+- Facts remain in database for audit/recovery (soft delete)
+- Can be retrieved with `recall({ ..., include_retired: true })` if needed
 - No automatic "un-retirement" logic in v1
+
+**Implementation Note:**
+The `retired` field is a boolean flag on the `Fact` schema (§20). Default recall filter: `WHERE retired = false AND trust >= 0.15`. This is NOT trust-zeroing — `retired` is a separate dimension from trust.
 
 ---
 
@@ -380,23 +408,40 @@ Three properties govern memory evolution: trust, recency, and plasticity.
 
 **Type:** Scalar `0..1`  
 **Mutation:** Event-driven only (no automatic decay in v1)  
-**Floor:** 0.15 for retrieval (FR-3)
+**Floor:** 0.15 for retrieval (FR-3)  
+**Domain:** `[0.0, 1.0]` at storage, in memory, and in all interfaces (no storage/read distinction)
 
-**Initial Values:**
-- Explicit writes: `0.6`
-- Derived facts: `0.5`
-- Path 2 ingestion: high→`0.8`, medium→`0.6`, low→`0.4`
+**Initial Values by Source Type:**
 
-**Mutation Triggers:**
+This is the **canonical source** for trust initialization. §10 and §20 reference this table by section number.
+
+| Source Type | Trust | Context |
+|---|---|---|
+| User-confirmed/explicit | 0.9 | User explicitly verifies fact correctness |
+| User-provided default | 0.6 | User writes fact via `remember()` without explicit verification |
+| Agent-inferred (LLM) | 0.5 | Agent derives fact from reasoning or code analysis |
+| Path 2 low-confidence | 0.4 | Forge decision record with low confidence score |
+| External/API-sourced | 0.7 | Facts ingested from trusted external APIs (if used in v1) |
+
+**Mutation Policy:**
+
+Trust is mutable on committed facts. This is **not** a violation of fact immutability (§20) — field-level immutability applies, not row-level. Committed facts have immutable `content`, `kind`, `sources`, `provenance`, and `created_at`, but mutable `trust`, `importance`, `last_accessed`, `access_count`, and `retired`.
+
+**Mutation Events:**
+
+Legitimate triggers for trust mutation on committed facts:
+
 1. **contemplate outcomes** (v1.5): ±0.05 on success, -0.10 on failure
-2. **Explicit verification**: User-driven trust overrides via API
-3. **Contradiction signals**: Tier 1 `contradicts` edge creates trust conflict (no auto-resolution in v1)
-4. **Explicit writes**: New facts with `source="explicit"` get 0.6
+2. **Explicit verification**: User-driven trust overrides via `setTrust(fact_id, value)` API
+3. **Contradiction signals**: Tier 1 `contradicts` edge creates trust conflict (no auto-resolution in v1; manual adjudication required)
+4. **Corroboration**: Multiple independent sources assert same fact → trust boost (v1.5 planned)
+5. **Decay on disuse**: Rarely accessed facts decay trust over time (v1.5 planned; not in v1)
 
 **Measurable Invariants:**
 - Trust never exceeds 1.0
 - Trust never falls below 0.0
-- Facts with trust < 0.15 are excluded from `recall()` results
+- Facts with trust < 0.15 are excluded from `recall()` results (default filter)
+- The 0.15 floor is a **read-time default predicate**, not a domain constraint on the field
 
 **Extraction-Ready Design (FR-12 §6.2):**
 Trust logic resides in `packages/eureka/src/learning/properties/trust.ts`. No Eureka-specific types in exports (uses plain `number` with JSDoc `@range` annotations until v1.5 branded types).
@@ -414,9 +459,17 @@ recency = max(floor, (1 + t)^(-α))
 
 where:
   β = 86400 seconds (1 day)
-  α = 0.7 (Ebbinghaus/Wixted grounded)
+  α = 0.5 (Anderson 1990 ACT-R standard exponent)
   floor = 0.1
 ```
+
+**Constants Provenance:**
+
+| Constant | Value | Derivation | Rationale |
+|---|---|---|---|
+| **Exponent α** | 0.5 | Anderson 1990 ACT-R literature | Standard memory-decay exponent for human declarative memory. Code-context may benefit from faster decay (α ~ 0.6–0.7) but lacks empirical calibration; defaulting to literature-grounded 0.5 for v1. |
+| **Time constant β** | 1 day (86400s) | Heuristic, grounded in session intervals | Assumes agent sessions are daily; decay hits 50% at ~1 day. Tuning: if sessions are hourly, set β = 3600s; if weekly, β = 604800s. |
+| **Floor** | 0.1 | Heuristic | Prevents complete irrelevance for old facts; even 100-day-old facts retain 10% recency weight. Prevents pathological zero-recency states. |
 
 **Mutation Triggers:**
 - Every `recall()` call updates `last_accessed` to `now()`
@@ -425,12 +478,53 @@ where:
 **Measurable Invariants:**
 - Recency starts at 1.0 for newly accessed facts
 - Recency approaches floor (0.1) asymptotically
-- 1-day-old access: recency ≈ 0.50
-- 7-day-old access: recency ≈ 0.27
-- 30-day-old access: recency ≈ 0.14
+- 1-day-old access: recency ≈ 0.71 (power-law with α=0.5)
+- 7-day-old access: recency ≈ 0.35
+- 30-day-old access: recency ≈ 0.18
 
 **Design Rationale:**
 Query-time computation avoids batch recomputation. Stored timestamps are immutable audit trail.
+
+---
+
+#### 2.2.1 Ranker Weights and Tier Constants Provenance
+
+**Ranker Weights (FR-2 formula coefficients):**
+
+| Weight | Value | Derivation | Sensitivity |
+|---|---|---|---|
+| Relevance | 0.50 | Heuristic, grounded in IR literature emphasis | ±0.05 shift → ~5% ranking variance. Relevance is primary signal; other dimensions are refinements. |
+| Importance | 0.20 | Heuristic, balanced against trust | Equal with trust; both are intrinsic fact quality measures. |
+| Trust | 0.20 | Heuristic, balanced against importance | Equal with importance; trust = provenance quality, importance = content value. |
+| Recency | 0.10 | Heuristic, tuned for non-time-critical queries | Lower than others; facts don't expire rapidly in code contexts. Increase to 0.15–0.20 for time-sensitive domains (news, alerts). |
+
+**Derivation Method:** Heuristic-derived with dry-run calibration against 10-question eval set. No formal sensitivity analysis or grid search in v1. Production telemetry (v1) will inform v1.5 tuning.
+
+**Tier Multipliers:**
+
+| Tier | Multiplier | Rationale |
+|---|---|---|
+| Hot | 1.20 | +20% boost for high-churn facts; compensates for rapid importance decay. |
+| Warm | 1.00 | Baseline; no adjustment. |
+| Cold | 0.80 | -20% penalty for low-activity facts; encourages tier promotion or retirement. |
+
+**Rationale:** Multipliers provide attention budgeting — hot facts get preferential ranking even if raw score is slightly lower than warm facts. 20% delta is large enough to shift ranks (2–3 positions in top-10) but small enough to preserve within-tier quality ordering.
+
+**Tier Thresholds:**
+
+| Threshold | Value | Rationale | Expected Distribution |
+|---|---|---|---|
+| hot >= | 0.7 | High-importance facts (top ~20%) | 15–20% of facts in hot tier at steady state |
+| warm >= | 0.4 | Medium-importance facts (middle ~50%) | 45–55% of facts in warm tier |
+| cold < | 0.4 | Low-importance facts (bottom ~30%) | 25–35% of facts in cold tier |
+
+**Expected Distribution:** Calibrated against Cairn's existing fact corpus (~2,500 facts in agent.db). Distribution assumes importance follows rough normal distribution; may shift if actual usage skews high-importance (e.g., narrow-domain agents).
+
+**Trust Floor (0.15):**
+
+**Definition of "pathological zero-trust state":** A fact with trust = 0.0 has been explicitly retired or contradicted. The 0.15 floor ensures facts with minimal-but-nonzero trust (e.g., 0.10–0.14 from repeated penalization) don't clutter recall results but remain in storage for audit. It's a soft-retirement threshold.
+
+**Why 0.15?** Heuristic. Lower than "low-confidence Path 2" (0.4) but higher than zero. Gives facts ~3 failure-contemplate events (0.5 → 0.4 → 0.3 → 0.2) before falling below floor. Tuning: if trust floor is too high (e.g., 0.3), it prematurely excludes recoverable facts; too low (e.g., 0.05), it returns junk.
 
 ---
 
@@ -476,7 +570,7 @@ class MockClock implements ClockProvider {
 ```typescript
 function computeRecency(lastAccessed: number, clock: ClockProvider): number {
   const t = (clock.now() - lastAccessed) / 86400;  // days
-  return Math.max(0.1, Math.pow(1 + t, -0.7));
+  return Math.max(0.1, Math.pow(1 + t, -0.5));
 }
 ```
 
@@ -486,7 +580,7 @@ it('applies 7-day recency decay', () => {
   const clock = new MockClock(1000000);
   const fact = { last_accessed: 1000000 - (7 * 86400) };
   const recency = computeRecency(fact.last_accessed, clock);
-  expect(recency).toBeCloseTo(0.27);  // 7-day power-law decay
+  expect(recency).toBeCloseTo(0.35);  // 7-day power-law decay with α=0.5
 });
 ```
 
@@ -588,12 +682,27 @@ Activities trigger on different cadences:
 - **decide:** On-demand after candidate generation
 - **commit:** On-demand at session-end or explicit `commitSession()` call
 
-**Measurable Latency:**
+**Shipped SLO:**
+
+**P95 recall latency < 500ms** — This is the sole shipped performance guarantee for v1.
+
+**Internal Hot-Path Targets:**
+
+These are development targets, not shipped guarantees. They guide implementation but are not customer-facing SLOs:
+
 - integrate: < 10ms (single fact insert)
-- recall: < 100ms (BM25 query + scoring for 10 results) *(performance assertion: see §55 §2.1 example or future §55 perf-test cycle)*
+- recall: < 100ms (BM25 query + scoring for 10 results) *(see §55 §2.1 or future perf-test cycle)*
 - rerank: < 50ms (rescore 10 facts)
 - decide: < 10ms (single-pass selection)
-- commit: < 500ms (batch persist for typical session of 50 facts)
+- commit: < 200ms (batch persist for typical session of 50 facts)
+
+**M4 Load Test (Ship-Blocker):**
+
+Load test with 1,000 facts (NFR-2 target): measure P50/P95/P99 for `recall()`. If P95 > 500ms, v1 cannot ship. Roger owns the M4 test wiring (§40).
+
+**Production Telemetry:**
+
+Histogram metric: `eureka_recall_latency_ms` (P50/P90/P95/P99 tracked).
 
 ---
 

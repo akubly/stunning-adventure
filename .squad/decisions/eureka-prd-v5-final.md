@@ -98,7 +98,7 @@ As an agent with a constrained context budget, I want `recall` to return pointer
 
 ### US-5: Deliberative Decision-Making (contemplative path)
 
-As an agent facing a structured choice, I can call `decide` with options and rationales, receive a ranked recommendation, and have the decision persisted as both a Eureka fact AND a Forge audit record. [v4: bidirectional adapter clarifies this is Path 1]
+As an agent facing a structured choice, I can call `decide` with options and rationales, receive a ranked recommendation, and have the decision persisted as both a Eureka fact AND a Forge audit record. **Forge writes the audit record** (immutable, authoritative for compliance/replay/audit trail); **Eureka writes the learning-shaped decision-fact** (mutable `trust`/`importance`/`access_count`, authoritative for recall and learning). Both share a `decision_id` that correlates them. Source of truth for compliance = Forge. Source of truth for learning = Eureka. On disagreement, reconciliation runs against `decision_id`. [v4: bidirectional adapter clarifies this is Path 1]
 
 ### US-6: Learning From In-Flow Decisions (Path 2 — in-flow ingestion) [v4: NEW — Aaron R7 directive; backed by FR-14]
 
@@ -181,7 +181,7 @@ No shared FK constraints with Cairn. **No cross-database `ATTACH` queries at run
 
 **Operational guidance:** Both `~/.cairn/` AND `~/.copilot/eureka/` are stateful — backup both for full state recovery. Disk usage scales independently. Correlation across systems is via the shared `session_id: SessionId` brand (defined in `@akubly/types`; see FR-13). The shared identifier is a **type-level construct**, not a runtime foreign key — the no-cross-DB-ATTACH rule above is unchanged. [v5: was "via `cairn_session_id` opaque metadata only"; the identifier is no longer opaque, but the no-ATTACH rule survives unchanged — that is the load-bearing isolation, not the opacity of the link]
 
-**v1 tier scope [v4-rev2: I5 — three tiers = YAGNI for v1 ship; schema/API preserved, surfaces deferred]:** All three tiers (agent / user / project) remain in the **schema and API surface** — `Fact.scope`, recall fan-out signature, edge resolution all assume three tiers. However, only **`agent.db` is fully wired in v1**. User and project storage adapters ship as stubs that throw `NotImplementedError('user-tier deferred to v1.5; see roadmap')` on write attempts. Recall fan-out gracefully treats unwired tiers as empty result sets. Killer demos (US-1, US-2) operate against agent-tier only; nothing in the design changes when v1.5 wires the other two. Test/implementation burden in v1 drops to one tier. Cassima accepts this deferral on the judgment that the fan-out is layered such that adding tiers is additive, not architectural. [v4-rev2]
+**v1 tier scope [v4-rev2: I5 — three tiers = YAGNI for v1 ship; schema/API preserved, surfaces deferred]:** All three tiers (agent / user / project) remain in the **schema** — `Fact.scope` and edge resolution all assume three tiers. However, the **v1 public `recall()` API signature has NO `tiers` parameter**; the internal implementation hardwires to agent tier. `Fact.scope` stays in storage for forward-compat; v1.5 will add the `tiers` parameter and federation paths when user/project tiers are wired. User and project storage adapters are **not shipped** in v1 at all (not even as `NotImplementedError` stubs). Recall fan-out in v1 operates against agent tier only. Killer demos (US-1, US-2) operate against agent-tier only; nothing in the design changes when v1.5 wires the other two. Test/implementation burden in v1 drops to one tier. Cassima accepts this deferral on the judgment that the fan-out is layered such that adding tiers is additive, not architectural. [v4-rev2]
 
 #### FR-7.3: Bridge Telemetry [v4: Graham amendment]
 
@@ -464,6 +464,8 @@ Rationale: (1) keeps coupling unidirectional — Eureka still does not observe F
 
 **Default wiring [v4-rev2: Pragmatist F7 — Path 2 wiring premature]:** The adapter code ships in v1, but **default caller wiring is opt-in**, not automatic. `skillsmith-runtime` and similar production harnesses do NOT invoke `ingestDecisions` by default; demo wiring and the MCP wrapper (v1.5) may opt in. See §7.3 for the production-vs-demo wiring policy.
 
+**v1 scope note:** Path 2 (Forge→Eureka decision ingestion) is **deferred to v1.5 unless a v1 production consumer commits to using it**. The design (FR-14), adapters (`fromDecisionRecord()`), CLI (`eureka ingest-decisions`), and demo wiring all ship in v1 as designed above; however, no production caller is expected to wire it by default in v1. If a production consumer (e.g., `skillsmith-runtime`) opts in during v1 dogfood, the full Path 2 implementation remains as specified. If no consumer commits, v1.5 revisits scope. This note does NOT change the FR-14 spec; it clarifies production adoption expectations.
+
 **Adapter `fromDecisionRecord(record): DecisionPayload`** lives at `packages/eureka/src/interop/fromDecisionRecord.ts`. Mapping rules:
 - `record.chosenOption` → `payload.chosen`
 - `record.alternatives[]` + `chosenOption` → `payload.options[]` (synthesized ids; labels preserved)
@@ -667,6 +669,8 @@ Each Eureka DB has its own `facts` + `relations` + `facts_fts` (FTS5 virtual) ta
 
 ## 10. Roadmap
 
+**M0 deliverable (before M1 — baseline eval set):** 10-question eval set (5 train + 5 held-out) against mem/ repo, ground-truthed with file paths and line numbers. Measure grep-baseline (human rediscovery tax) before any Eureka code lands. Wire held-out 5 into CI at M4 as ship-blocker if precision < 80%. Appendix A (below) lists the question set or a placeholder + commitment to land it before M1.
+
 | Capability | v1 | v1.5 | v2 |
 |---|---|---|---|
 | Core CRUD, attention tiers, trust (event-driven), importance, recall (BM25), rerank, decide (Path 1), commit, retire, evict | ✅ | | |
@@ -761,7 +765,25 @@ These are out of scope for v4-final lock; they remain open for v1.5+ planning. [
 | T4 | **Adapter replay** | A `DecisionRecord` from Forge is replayed (e.g., from a stale log) → Eureka would naively create a duplicate `kind=decision` fact, inflating apparent decision history. | Idempotency keyed by `DecisionRecord.id` (FR-14 invariant #1) + pre-write dedup (FR-14 invariant #2). Replay is a no-op counted under `skipped_duplicate`. | — (v1 mitigation considered sufficient). |
 | T6 [v5: REFRAMED from v4-rev2 implicit T-orphan-via-NFR-6; T-orphan was tracked in §13 + NFR-6, not §14a — included here for adversarial completeness] | **Stale session reference** | A `kind=session` fact's `session_id` references a Cairn session that was deleted, never existed locally, or belongs to a different machine (e.g., partial backup restore, multi-machine sync gap pre-v2). | Tolerated per NFR-6 + Path D decoupling: Eureka facts retain value independently of Cairn lifecycle. Required field at write time (a session-fact cannot be authored without a `session_id`), so no NULL-induced ambiguity. The shared `SessionId` brand is a type-level construct; no runtime FK to enforce. Reconciliation CLI surfaces the divergence. [v5: severity unchanged from v4-final T-orphan tracking (LOW/LOW); wording revised — "dangling `cairn_session_id` audit ref" → "stale `session_id` reference" — same risk, honest naming per Aaron R8] | Cross-machine sync conflict resolution → v2 (CRDT layer). |
 
-**v1 scope caveats:** Eureka is local-first (NFR-5). Multi-user / remote-write / cross-organization threats are out of v1 scope. This threat model will be revisited when the sync layer (v2) lands. Cassima notes that the v1 controls above are **policy and convention** — not all are enforced by code in v1; the gaps are tracked in the Deferred column. Compliance reviewer flagged the *absence* of this model as the BLOCKER; the model itself can ratchet up as the surface widens.
+**v1 Threat Control Implementation Status:**
+
+| Control | Implementation Status | Notes |
+|---|---|---|
+| T1(a) — Provenance recording | **Code-enforced** | Every `integrate` call records `principal_id` + `source` in `metadata`; storage layer rejects writes without these fields. |
+| T1(b) — Trust floor (0.15) | **Code-enforced** | Default predicate in ranker; overridable per-query via `min_trust` param. |
+| T1(c) — Write trust caps | **Code-enforced** | New facts cap at documented defaults (0.6 explicit, 0.5 derived); >0.8 requires verified-source flag checked at storage layer. |
+| T1(d) — Bridge ledger audit trail | **Code-enforced** | FR-7.4 bridge reliability contract; every emit/ingest writes to `bridge_ledger`. |
+| T2(a) — Scope mismatch rejection | **Code-enforced** | Storage adapter checks `Fact.scope` matches target DB; throws on mismatch. |
+| T2(b) — Project-tier kind allowlist | **Code-enforced** | Project-tier write path allowlists `kind ∈ {session, decision, aspiration}`; rejects other kinds. |
+| T2(c) — Schema PII warnings | **Policy-enforced** | Schema comments + developer docs warn against PII in project-tier; no runtime scanning in v1. |
+| T3(a) — Trust mutation principal tracking | **Code-enforced** | FR-3 event-driven trust; each mutation event logs `principal_id`. |
+| T3(b) — Same-principal confirmation cap | **Code-enforced** | Configurable cap (default N=3) enforced in trust mutation handler; stops incrementing after N same-principal events per fact. Telemetry counter `eureka_trust_same_principal_cap_hit_total` emits on cap hit for suspicious pattern detection. |
+| T3(c) — Contradiction signal trust decrement | **Code-enforced** | Tier 1 `contradicts` edge creation triggers trust decrement regardless of source principal. |
+| T4 — Adapter replay idempotency | **Code-enforced** | FR-14 invariant #1 + #2; dedup on `DecisionRecord.id` before write; replays counted under `skipped_duplicate`. |
+| T6 — Stale session reference toleration | **Policy-enforced** | NFR-6 documented behavior; no runtime FK enforcement; reconciliation CLI surfaces divergence. |
+| Cross-DB ATTACH ban (FR-7.2) | **Code-enforced** | ESLint `no-restricted-syntax` rule bans `ATTACH DATABASE` statements in Eureka codebase; CI gate fails build on violation. |
+
+**v1 scope caveats:** Eureka is local-first (NFR-5). Multi-user / remote-write / cross-organization threats are out of v1 scope. This threat model will be revisited when the sync layer (v2) lands. Cassima notes that the v1 controls above mix **code-enforced** (runtime checks, schema constraints, lint rules) and **policy-enforced** (documentation, convention, manual review). The Deferred column in the threat table above tracks future enforcement. Compliance reviewer flagged the *absence* of this model as the BLOCKER; the model itself can ratchet up as the surface widens.
 
 ---
 
@@ -842,6 +864,82 @@ Authors of subsequent revisions should extend this table when adding new cross-s
 | FR-12 v1.5 sweep precision (consume Cairn session-end events) [v5] | Edgar R8 §2 opportunity — opportunistic, not a v1 commitment |
 
 **Lock recommendation:** v5-final is ready for the R8 lighter-weight lock ceremony (Graham + the trio: Genesta/Crispin/Edgar — no full 8-reviewer panel per Aaron R8 disposition). On unanimous re-accept, supersedes v4-final and merges into `.squad/decisions.md` as canonical.
+
+---
+
+## Appendix A: M0 Baseline Eval Set
+
+**Purpose:** Ground-truth question set for measuring BM25 recall precision against the mem/ repo. Measures keyword-overlap recall (v1 ship gate) and keyword-disjoint recall (tracked but not gated until v1.5).
+
+**M0 deliverable commitment:** This appendix lands in full (with file paths, line ranges, and ground-truth expected facts) **before M1 begins**. The placeholder questions below will be replaced with actual mem/ codebase questions during the M0 eval-set authoring sprint. Grep-baseline measurement (human rediscovery time) must be recorded before any Eureka implementation code lands.
+
+**Train set (5 questions — used for BM25 tuning):**
+
+1. **[Keyword-overlap]** "What memory systems exist in this repo?"
+   - **Ground truth:** Expected facts should reference `packages/eureka/`, Cairn observability, and the `facts` table schema.
+   - **File paths:** `README.md`, `packages/eureka/DESIGN.md` (placeholder paths)
+   - **Grep baseline:** TBD at M0 (measure human time to discover these 3 files starting cold)
+
+2. **[Keyword-overlap]** "How does the session model work?"
+   - **Ground truth:** Expected facts should reference `SessionId` brand, Cairn sessions table, Eureka `kind=session` facts.
+   - **File paths:** `packages/types/src/session.ts`, `packages/cairn/src/db/sessions.ts` (placeholder paths)
+   - **Grep baseline:** TBD at M0
+
+3. **[Keyword-overlap]** "What is the trust scoring mechanism?"
+   - **Ground truth:** Expected facts should reference event-driven trust mutation (FR-3), trust floor (0.15), initial trust values by source.
+   - **File paths:** `packages/eureka/src/learning/trust.ts` (placeholder path)
+   - **Grep baseline:** TBD at M0
+
+4. **[Keyword-disjoint]** "How do I record what I learned?" (no literal 'record', 'learned', 'fact' keywords in expected source)
+   - **Ground truth:** Expected facts should reference `integrate` activity, `Fact` schema, write paths.
+   - **File paths:** `packages/eureka/src/activities/integrate.ts` (placeholder path)
+   - **Grep baseline:** TBD at M0
+   - **v1 CI gate:** NOT gated — tracked only
+
+5. **[Keyword-overlap]** "What storage engine is used?"
+   - **Ground truth:** Expected facts should reference SQLite, `better-sqlite3`, FTS5, BM25.
+   - **File paths:** `packages/eureka/package.json`, FR-7.1 in PRD (self-reference acceptable for meta-question)
+   - **Grep baseline:** TBD at M0
+
+**Held-out set (5 questions — NOT used for tuning; CI ship gate at M4):**
+
+6. **[Keyword-overlap]** "How are decisions persisted?"
+   - **Ground truth:** Expected facts should reference `decide` activity, `DecisionPayload`, Forge audit record, Path 1 vs Path 2.
+   - **File paths:** `packages/eureka/src/activities/decide.ts`, `packages/eureka/src/interop/toDecisionRecord.ts` (placeholder paths)
+   - **CI gate:** Precision ≥ 80% required to ship v1
+
+7. **[Keyword-overlap]** "What is the attention tier mechanism?"
+   - **Ground truth:** Expected facts should reference hot/warm/cold tiers, attention multipliers (1.2/1.0/0.8), tier demotion logic.
+   - **File paths:** `packages/eureka/src/learning/ranker.ts` (placeholder path)
+   - **CI gate:** Precision ≥ 80% required to ship v1
+
+8. **[Keyword-disjoint]** "What happens at the end of a work session?" (no literal 'sweep', 'flush', 'session-end' keywords in expected source)
+   - **Ground truth:** Expected facts should reference sweep triggers, `flushHints()` helper, session-close capture gap.
+   - **File paths:** `packages/eureka/src/learning/sweep.ts`, FR-12 in PRD (placeholder paths)
+   - **CI gate:** NOT gated — tracked only
+
+9. **[Keyword-overlap]** "How does recall ranking work?"
+   - **Ground truth:** Expected facts should reference composite ranker formula (0.50·relevance + 0.20·importance + 0.20·trust + 0.10·recency), attention multiplier, trust floor.
+   - **File paths:** FR-2 in PRD (self-reference), `packages/eureka/src/learning/ranker.ts` (placeholder path)
+   - **CI gate:** Precision ≥ 80% required to ship v1
+
+10. **[Keyword-overlap]** "What bridge mechanisms exist between Eureka and other systems?"
+    - **Ground truth:** Expected facts should reference `bridge_ledger` table, reconciliation CLI, `toDecisionRecord` / `fromDecisionRecord` adapters.
+    - **File paths:** FR-7.4, FR-10, FR-14 in PRD (self-references), `packages/eureka/src/interop/` (placeholder path)
+    - **CI gate:** Precision ≥ 80% required to ship v1
+
+**Precision measurement:**
+- Recall returns top-10 facts for each question.
+- Precision = (# of top-10 facts that match ground truth) / 10
+- Gate: held-out keyword-overlap questions (6, 7, 9, 10) must achieve P ≥ 0.80 individually; aggregate held-out precision across all 5 ≥ 0.80.
+- Keyword-disjoint questions (4, 8) are measured and reported but do NOT block ship in v1 (known v1.5 gap per FR-2 BM25 quality bar).
+
+**Grep baseline:**
+- For each question, measure time (in minutes) for a human engineer unfamiliar with mem/ to rediscover the ground-truth files using only `grep`, `find`, and `cat` (no Eureka, no IDE, no web search).
+- Record baseline at M0; compare against Eureka recall latency (P95 < 500ms per US-1 AC-1.2) to quantify token-tax savings.
+
+**Authoring commitment:**
+Cassima (PM), Edgar (Learning Systems Lead), and Laura (Test Lead) will co-author the final question set during M0, replacing these placeholders with actual mem/ codebase queries and verified ground truth. The locked question list will be committed to `packages/eureka/test-data/eval-set-v1.json` before M1 begins.
 
 ---
 

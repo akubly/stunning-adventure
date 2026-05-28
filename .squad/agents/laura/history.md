@@ -129,6 +129,26 @@
 
 ## Learnings
 
+## Cycle 2 Fix Wave — Field-Level Immutability + Side-Effect Testing (2026-05-28)
+
+**Assignment:** Land 4 findings from cycle 1 persona-review across §50 and §55:
+- **I1 (§55):** Updated file paths in worked examples from forge/cairn to eureka package structure
+- **B2 (§50):** Fixed committed=true immutability contradiction — replaced row-level "read-only" with field-level immutability (content/kind/sources/provenance immutable; trust/importance/access_count/retired always mutable)
+- **M1 (§55):** Added §2.6 side-effect test example (accessCount, lastAccessedAt mutations)
+- **M5 (§55):** Added "Alternatives Considered" subsection explaining why London-school TDD over Detroit-school
+
+**Key learning:**
+- **Field-level immutability is load-bearing for learning systems:** Committed facts need stable semantics (content can't mutate) but mutable learning signals (trust decay, attention promotion, retirement). The old "committed=true → read-only" rule was a false abstraction — it conflated two concerns (content integrity vs learning dynamics).
+- **London-school forces side-effect discovery:** Return-value tests alone let side-effects (accessCount++, lastAccessedAt updates, attention promotion) go untested. Explicit side-effect assertions (§2.6 pattern) force implementers to honor the learning contracts documented in §10/§30.
+- **Path corrections early = cleaner canon:** The file paths in §55 worked examples (packages/forge/src/__tests__/recall.test.ts) were pre-substrate-decision placeholders. Fixing them now (→ packages/eureka/src/activities/__tests__/recall.test.ts) prevents copy-paste errors during M0 implementation.
+
+**Evidence of success:**
+- All 4 findings landed cleanly; no deviations required
+- §50 length growth: 3.2% (well under 15% budget)
+- §55 length growth: 9.8% (well under 15% budget)
+- §50 now correctly states field-level immutability in 6 locations (line 33, 96, 183, 188, 255, 473)
+- §55 now teaches side-effect testing pattern with two worked examples (accessCount, lastAccessedAt)
+
 ## R6 Ceremony — Source-Reading Rule Lifted (2026-05-24)
 
 **Milestone:** R6 opened — Eureka source-reading unlocked; trio (Genesta/Crispin/Edgar) reconciled v3 PRD against Cairn/Forge substrate.

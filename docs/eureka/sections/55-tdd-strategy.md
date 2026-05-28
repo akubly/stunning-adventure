@@ -77,7 +77,7 @@ This section walks through the first test cycle for the `recall` activity, demon
 ### 2.1 RED: First Failing Test
 
 ```typescript
-// packages/forge/src/__tests__/recall.test.ts
+// packages/eureka/src/activities/__tests__/recall.test.ts
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { recall } from '../recall';
 import type { SessionId } from '@akubly/types';
@@ -117,7 +117,7 @@ describe('recall', () => {
 ### 2.2 GREEN: Minimal Implementation
 
 ```typescript
-// packages/forge/src/recall.ts
+// packages/eureka/src/activities/recall.ts
 import type { SessionId } from '@akubly/types';
 
 export interface RecallOptions {
@@ -180,7 +180,7 @@ export async function recall(options: RecallOptions): Promise<Memory[]> {
 **Green again:** Create `CuratorStore` stub:
 
 ```typescript
-// packages/cairn/src/curator-store.ts
+// packages/eureka/src/storage/curator-store.ts
 export class CuratorStore {
   async retrieve(sessionId: SessionId, query: string): Promise<Memory[]> {
     // Mock with test fixture
@@ -219,6 +219,37 @@ it('fans out to user tier when agent tier has <k results', async () => {
 ```
 
 This test follows the same red/green/refactor cadence: RED (force tier resolution to exist), GREEN (hardcode fan-out with two tiers), REFACTOR (parameterize tier selection logic). The mocked stores at the seam allow fast iteration on fan-out logic; the real ranker ensures cross-tier composite scoring works.
+
+### 2.6 Side-Effect Test: Assert Internal Mutations
+
+London-school tests focused solely on return values never force discovery of write side-effects. The `recall` activity has mandatory side-effects specified in §10 and §30: incrementing `accessCount`, updating `lastAccessedAt`, and promoting facts to hotter attention tiers when repeatedly accessed. These side-effects are load-bearing for learning dynamics and must be tested explicitly.
+
+```typescript
+it('increments accessCount for returned facts', async () => {
+  const factId = 'fact-123';
+  const store = new InMemoryCuratorStore([
+    { id: factId, content: 'JWT authentication flow', accessCount: 1, /* ... */ }
+  ]);
+  
+  await recall({ query: 'auth', sessionId, k: 5 }, { store });
+  
+  expect(store.getAccessCount(factId)).toBe(2); // Incremented from 1 → 2
+});
+
+it('updates lastAccessedAt for returned facts', async () => {
+  const factId = 'fact-456';
+  const store = new InMemoryCuratorStore([
+    { id: factId, content: 'OAuth2 client credentials', lastAccessedAt: new Date('2026-01-01'), /* ... */ }
+  ]);
+  const testNow = new Date('2026-01-15');
+  
+  await recall({ query: 'oauth', sessionId, k: 5 }, { store, now: testNow });
+  
+  expect(store.getLastAccessedAt(factId)).toEqual(testNow);
+});
+```
+
+**Why this matters:** Return-value assertions alone would pass even if `recall` never wrote side-effects, silently breaking learning dynamics. These tests force implementers to recognize and honor the write contracts documented in §10 §X and §30 §X (attention promotion, access tracking).
 
 ---
 
@@ -424,9 +455,28 @@ This section flags seams affected by Open Questions (§TD open decisions registe
 - ADR-0002: Shared Substrate Ownership (SessionId seam stability)
 - PRD v5-final: Canonical specification (user stories, acceptance criteria)
 
-### C. Change Log
+### C. Alternatives Considered
+
+**TDD Methodology Selection: Why London-School over Detroit-School?**
+
+Eureka's outside-in activity design made London-school TDD the natural fit. The core design question: "Should tests use real collaborators (Detroit-school) or mock at boundaries (London-school)?"
+
+**Detroit-school (real collaborators):**
+- **Pro:** Tests verify real integrated behavior; fewer test-to-production gaps.
+- **Con:** Collaborator interfaces discovered late in the process. For Eureka, this would have meant guessing storage and ranking contracts before activities forced their shape.
+- **Con:** Test failures cascade — a broken ranker fails every activity test, obscuring the actual failure point.
+
+**London-school (mock at boundaries):**
+- **Pro:** Forces contract clarity early. Writing `const mockStore = { retrieve: vi.fn() }` before `CuratorStore` exists forces us to define the retrieval contract as a precondition for activity tests.
+- **Con:** Mock/real divergence risk. Mitigated by contract tests (§3.3) — every mock must have a corresponding real-implementation validation test.
+- **Pro:** Fast feedback loops. Activity tests run without database or network I/O, enabling sub-second red/green/refactor cycles.
+
+**Why London-school wins for Eureka:** The activity-centric design (§10's 7 observable verbs) is an outside-in architecture by nature. London-school TDD mirrors that design: start from activity observable behavior, discover collaborators by need, mock at I/O seams (storage, network), and keep pure functions real (rankers, scorers). This approach makes contract boundaries load-bearing rather than accidental.
+
+### D. Change Log
 
 - 2026-05-27: Initial draft (Laura) - London-school spine, worked recall example, mock contracts, AC mapping, OQ seams
+- 2026-05-28: Cycle 2 fixes (Laura) - Updated file paths to eureka/ (I1), added side-effect test example (M1), added alternatives considered (M5)
 
 ---
 

@@ -62,7 +62,7 @@ cairn → types       (CairnBridgeEvent, SessionIdentity)
 ```
 
 **Key constraints:**
-1. **No circular deps** — Eureka is a *consumer* of Cairn/Forge, never a producer. Cairn and Forge do NOT import from `@akubly/eureka`.
+1. **No circular deps** — Eureka is a *consumer* of Cairn/Forge, never a producer. Cairn and Forge do NOT import from `@akubly/eureka`. **M1 deliverable:** Dependency-direction lint guardrail wired (ESLint custom rule enforcing no imports from `@akubly/eureka` in Cairn/Forge source). Implemented via ESLint `no-restricted-imports` rule or custom plugin detecting cross-package import violations.
 2. **Runtime decoupling** — Eureka reads Cairn session-end events and Forge decision exports via **file-based ingestion** or **event streams**, not cross-database ATTACH.
 3. **Shared primitives only in `@akubly/types`** — `SessionId` brand, `DecisionRecord` shape, `ProvenanceTier` enum live in the shared types package.
 
@@ -121,6 +121,18 @@ eureka ingest-session --session <uuid>
 - On `session_end`, triggers ingestion automatically
 
 **Current v1 stance:** Manual only. AC-2.5 telemetry counter `eureka_sessions_ended_without_flush_total` measures the gap.
+
+**Auto-flush feature flag (v1 opt-in):**
+- Feature flag: `eureka.auto_flush_on_session_end: boolean = false` (default disabled in v1)
+- When enabled, Forge runtime hook calls `flushHints()` on session close (integration point: Forge session lifecycle handler in `packages/forge/src/runtime/session.ts`)
+- **Failure UX:** When auto-flush is disabled and manual flush is forgotten, emit actionable error:
+  ```
+  Memory not captured — fix steps:
+  1. Run `eureka ingest-session --session <uuid>` to capture this session's learning
+  2. Or enable auto-flush: set `eureka.auto_flush_on_session_end=true` in config
+  3. Telemetry counter: eureka_sessions_ended_without_flush_total
+  ```
+- Cross-reference: §60 for full error-message patterns and actionable UX guidance.
 
 ### §40.2.3 — Migration Strategy
 
@@ -639,9 +651,186 @@ export function recall(query: string, options?: RecallOptions): RecallResult[] {
 
 ---
 
-## §40.9 — Build & Test Integration
+## §40.9 — Milestone Deliverables & Acceptance
 
-### §40.9.1 — Build
+Eureka's integration wiring is staged across milestones M0–M5. This section documents the cross-package wiring deliverables that §40 owns (activity-specific logic lives in §10/§30/§55).
+
+### §40.9.1 — M0: Monorepo Scaffolding (Time-Boxed)
+
+**Time budget:** 5 days max.
+
+**Pre-flight spike:** 4-hour scaffolding experiment before committing to M0:
+- Set up pnpm workspace + turborepo (or npm workspaces if simpler)
+- Wire one cross-package import: `packages/eureka/src/index.ts` imports `SessionId` from `@akubly/types`
+- Run `npm run build` and `npm test` in monorepo root
+- **Success criterion:** Build + test green with zero-config cross-package reference resolution
+
+**Rollback procedure (if M0 exceeds 5 days):**
+- Revert to **ADR-0002 Option C** (npm packages with private registry)
+- Publish `@akubly/types`, `@akubly/cairn`, `@akubly/forge` to private npm registry (GitHub Packages or Verdaccio)
+- Eureka consumes them as versioned dependencies (`"@akubly/types": "^1.0.0"`)
+- Trade-off: Lose monorepo build caching + atomic cross-package refactors; gain independence and decoupled versioning
+
+**Rationale:** Monorepo has high payoff (shared tooling, atomic commits, zero publish overhead) but unknown integration cost in this codebase. Time-box prevents sunk-cost fallacy if package boundaries are messier than expected.
+
+### §40.9.2 — M1: Core Wiring + Lint Guardrails
+
+**Deliverables:**
+1. **Package topology complete** — `packages/eureka/` exists with `package.json`, `tsconfig.json`, basic exports (`recall`, `integrate`, `commit` stubs)
+2. **Dependency-direction lint enforced** — ESLint rule wired so Cairn/Forge cannot import from `@akubly/eureka`:
+   ```json
+   // .eslintrc.json (monorepo root)
+   {
+     "overrides": [
+       {
+         "files": ["packages/cairn/**/*.ts", "packages/forge/**/*.ts"],
+         "rules": {
+           "no-restricted-imports": ["error", {
+             "patterns": ["@akubly/eureka", "@akubly/eureka/*"]
+           }]
+         }
+       }
+     ]
+   }
+   ```
+   Alternative: Custom ESLint plugin if `no-restricted-imports` insufficient for monorepo path resolution.
+3. **Shared types wired** — `SessionId` brand exported from `@akubly/types`, consumed by Cairn (`sessions.id`) and Eureka (`facts.session_id`)
+4. **Build green** — `npm run build` at repo root compiles all packages in dependency order (types → cairn → forge → eureka)
+
+**Acceptance:**
+- Lint fails if Cairn or Forge imports `@akubly/eureka`
+- TypeScript compilation succeeds with cross-package references
+- Zero runtime Cairn/Forge → Eureka coupling (verified by ESLint rule)
+
+### §40.9.3 — M4: Load Test + Partial-Restore Test
+
+**Load test (NFR-2 target):**
+- Seed Eureka agent tier with 1000 facts (mixed kinds: 40% session, 30% operational, 20% decision, 10% aspiration)
+- Run recall queries across semantic clusters (authentication, file I/O, error handling, configuration, testing)
+- Measure P50/P95/P99 latency for `recall(query, { k: 10 })`
+- **Ship-blocker:** P95 > 500ms fails M4 acceptance (see I9 canonical SLO)
+- **Telemetry:** Emit histogram `eureka_recall_latency_ms` in production (percentiles computed in observability backend)
+
+**Partial-restore test (NFR-6 graceful degradation):**
+- Simulate partial DB loss scenarios:
+  1. **Scenario A:** Delete `~/.cairn/eureka-agent.db`, keep Cairn `knowledge.db` intact
+  2. **Scenario B:** Delete Cairn `knowledge.db`, keep `eureka-agent.db` intact
+- **Success criteria:**
+  - No crashes (both Cairn and Eureka degrade gracefully)
+  - Eureka recall returns empty result set when DB missing (fail-open, not fail-closed)
+  - Cairn sessions table unavailable → Eureka treats `session_id` as opaque metadata (no JOIN attempts)
+  - Orphaned ledger references tolerated (facts with `session_id` pointing to nonexistent Cairn session do NOT crash recall)
+- **Implementation note (NFR-6):** `session_id` is opaque metadata, not a traversable FK. Eureka MUST NOT query Cairn's `sessions` table at runtime to resolve session metadata. Cross-DB coupling happens only at ingestion time (CLI), never at query time (library API).
+
+**Acceptance:**
+- P95 recall latency < 500ms on 1000-fact corpus
+- Partial DB loss scenarios degrade gracefully (no crashes, empty results, opaque session_id handling)
+
+### §40.9.4 — M5: Kernel-Extraction Canary
+
+**Purpose:** Validate that Eureka's learning subsystem is extractable to `packages/learning-kernel/` with minimal surgery (forward-compat for v1.5 cross-project reuse).
+
+**Deliverable (throwaway branch, not merged):**
+1. Create branch `m5-kernel-canary`
+2. Move `packages/eureka/src/learning/` → `packages/learning-kernel/src/`
+3. Update import paths in Eureka's activities (`recall.ts`, `rerank.ts`, `sweep.ts`) to consume from `@akubly/learning-kernel`
+4. Run full test suite (`npm test --workspace=@akubly/eureka`)
+5. Count required edits beyond mechanical import-path updates (e.g., interface changes, test rewrites, circular-dep fixes)
+
+**Success criterion:** Edit count < 10 (i.e., extraction is "mechanical" — no major refactoring required).
+
+**What counts as an edit:**
+- Interface signature change (adding/removing parameters, changing return types)
+- Test rewrite (not just import-path update)
+- Circular dependency fix (splitting modules to break cycles)
+
+**What does NOT count:**
+- Mechanical import-path replacements (`../learning/recency` → `@akubly/learning-kernel/recency`)
+- TypeScript project reference updates in `tsconfig.json`
+- `package.json` dependency additions
+
+**If canary fails (edit count ≥ 10):**
+- Document coupling points preventing extraction in `.squad/decisions/inbox/roger-kernel-coupling-blockers.md`
+- Do NOT block v1 ship; defer kernel extraction to v1.5
+- Revisit design in v1.5 when cross-project reuse demand is concrete
+
+**Rationale:** Eureka is "kernel-shaped" (PRD §1) — designed to be extractable later but shipped standalone in v1. M5 canary validates the design claim before v1 ships, so v1.5 extraction is low-risk.
+
+---
+
+## §40.10 — Bridge Reconciliation (Forge Audit Trail)
+
+Per B3 canonical resolution, Forge is audit-authoritative for decisions; Eureka is learning-authoritative. Divergence between Forge's immutable audit records and Eureka's mutable learning facts requires periodic reconciliation.
+
+### §40.10.1 — Reconciliation Command
+
+**CLI:**
+```bash
+eureka reconcile --session <uuid>
+```
+
+**Behavior:**
+- Reads Forge's `DecisionRecord` export for session `<uuid>`
+- Reads Eureka's `kind='decision'` facts for same session
+- Compares by `decision_id` (shared correlation key)
+- Emits divergence report:
+  - **Missing in Eureka:** Decisions in Forge audit but not in Eureka DB (ingestion gap)
+  - **Orphaned in Eureka:** Decisions in Eureka but not in Forge audit (should never happen; possible DB corruption)
+  - **Attribute drift:** Same `decision_id` but content/rationale differs (learning mutation vs audit immutability — expected for trust/importance, unexpected for question/options)
+
+### §40.10.2 — Scheduled Reconciliation
+
+**v1 deployment wiring:**
+- **Weekly cron** (every Sunday 02:00 UTC): `eureka reconcile --all-sessions`
+- Telemetry counter: `eureka_reconcile_divergence_count` (increments per divergence detected)
+- Alert threshold: `> 10 divergences/week` triggers operational review
+
+### §40.10.3 — Divergence Response Runbook
+
+When `eureka reconcile` reports divergence:
+
+**Decision tree:**
+
+1. **Missing in Eureka (most common):**
+   - **Root cause:** Manual ingestion CLI not run; auto-flush disabled
+   - **Fix:** Run `eureka ingest-decisions --session <uuid>` to backfill
+   - **Prevention:** Enable auto-flush feature flag (see §40.2.2)
+
+2. **Orphaned in Eureka (rare, HIGH severity):**
+   - **Root cause:** Possible DB corruption, or Forge audit export incomplete
+   - **Fix:** Verify Forge audit export integrity first (check `DecisionRecord` export file for session). If Forge audit is complete and Eureka has orphans, **DELETE orphaned Eureka facts** (they have no audit trail for compliance).
+   - **Command:** `eureka evict --fact-id <id>`
+   - **Post-fix:** File incident report; investigate DB integrity (SQLite PRAGMA integrity_check)
+
+3. **Attribute drift (mutable fields — EXPECTED):**
+   - **Fields allowed to diverge:** `trust`, `importance`, `access_count`, `last_accessed` (Eureka learning mutations)
+   - **Fields NOT allowed to diverge:** `question`, `chosenOption`, `alternatives` (immutable audit fields)
+   - **Fix (if immutable fields differ):** Forge audit wins. Replay from Forge: `eureka ingest-decisions --session <uuid> --force-overwrite`
+
+4. **Attribute drift (immutable fields — CRITICAL):**
+   - **Root cause:** Bug in ingestion adapter or manual DB edit
+   - **Fix:** Force re-ingest from Forge audit (authoritative source)
+   - **Command:** `eureka ingest-decisions --session <uuid> --force-overwrite`
+   - **Post-fix:** File bug report; add contract test validating immutable-field projection in `fromDecisionRecord()` adapter
+
+### §40.10.4 — v1.5 Design Note
+
+**v1 limitation:** Reconciliation is pull-based (weekly cron). Divergence detected with 1-week latency.
+
+**v1.5 improvement:** Push-based event-stream comparison:
+- Forge emits `decision_committed` event on write
+- Eureka subscribes to event stream
+- On event receipt, Eureka writes learning fact + emits `decision_ingested` ack
+- Forge telemetry tracks `decision_committed` vs `decision_ingested` delta
+- Alert if delta > 10 events (ingestion lag or failure)
+
+**Rationale for v1 deferral:** Push-based requires event-stream infrastructure (Kafka, NATS, or file-based event log federation). v1 uses manual CLI ingestion; event streams land in v1.5 with automatic ingestion (see §40.2.2 Path 2).
+
+---
+
+## §40.11 — Build & Test Integration
+
+### §40.11.1 — Build
 
 Eureka uses the monorepo's existing `tsc --build` pipeline:
 
@@ -671,7 +860,7 @@ npm run build --workspace=@akubly/eureka
 
 **No Cairn/Forge build-time deps:** Eureka references `@akubly/types` only (via TypeScript project references). Cairn and Forge are devDependencies for schema docs and test fixtures, not runtime.
 
-### §40.9.2 — Test
+### §40.11.2 — Test
 
 **Test command:**
 
@@ -701,11 +890,11 @@ npm test
 
 ---
 
-## §40.10 — Crucible Boundary
+## §40.12 — Crucible Boundary
 
 **Context:** Crucible (D:\git\harness) is a parallel project shipping v1 in the same timeframe. See `.squad/decisions/inbox/cassima-crucible-eureka-impact.md` for full overlap analysis.
 
-### §40.10.1 — What Crucible and Eureka Share
+### §40.12.1 — What Crucible and Eureka Share
 
 | Surface | Crucible | Eureka | Resolution |
 |---|---|---|---|
@@ -714,7 +903,7 @@ npm test
 | **Prescribers** | Router wraps Forge prescribers | Does not run prescribers | **SAFE** — Eureka is data source only |
 | **Event log** | L1 WAL (5 primitives) | Ingests Cairn `event_log` | **HIGH RISK** — Must merge or federate before L1 lands (Genesta finding §2) |
 
-### §40.10.2 — Shared Data Layer Risk
+### §40.12.2 — Shared Data Layer Risk
 
 **Blocker:** Crucible §1 assumes Cairn and Forge exist in `D:\git\harness\packages\`. But they actually live in `D:\git\mem\packages\`. Neither PRD acknowledges the cross-repo dependency.
 
@@ -726,7 +915,7 @@ npm test
 
 **v1 stance (Cassima recommendation):** Separate at v1, integrate at v1.5. Eureka and Crucible dogfood independently; integration designed from data, not speculation.
 
-### §40.10.3 — Learning Loop Feedback
+### §40.12.3 — Learning Loop Feedback
 
 **Crucible records everything** — every prompt, every tool call, every decision, every file read (§0). This is exactly the evidence Eureka needs for learning patterns.
 
@@ -741,7 +930,7 @@ on_session_end: eureka ingest-decisions --session $SESSION_ID
 
 ---
 
-## §40.11 — Open Questions
+## §40.13 — Open Questions
 
 1. **Cairn/Forge repo ownership** — Does the substrate (`cairn`, `forge`, `types`) stay in `mem`, move to `harness`, or extract to a third repo? Blocks both Crucible and Eureka v1.
 
@@ -759,7 +948,7 @@ on_session_end: eureka ingest-decisions --session $SESSION_ID
 
 ---
 
-## §40.12 — Risk Register
+## §40.14 — Risk Register
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
@@ -772,7 +961,7 @@ on_session_end: eureka ingest-decisions --session $SESSION_ID
 
 ---
 
-## §40.13 — Summary
+## §40.15 — Summary
 
 **What works in v1:**
 - Eureka lives in `packages/eureka/` with no runtime Cairn/Forge coupling

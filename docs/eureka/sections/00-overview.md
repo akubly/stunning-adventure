@@ -109,7 +109,7 @@ Eureka is designed **kernel-shaped**: extractable into a shared learning kernel 
 
 ### Data Flow Summary
 
-1. **Path 1 (Contemplative):** Agent invokes `decide()` → Eureka stores `kind=decision` fact → emits to Forge via `toDecisionRecord()` for audit.
+1. **Path 1 (Contemplative):** Agent invokes `decide()` → emits decision event → Forge writes audit record (immutable, authoritative for compliance) → Eureka subscribes and writes learning-shaped decision-fact (mutable, authoritative for recall).
 
 2. **Path 2 (In-Flow):** Agent makes inline decision → Forge captures `DecisionRecord` → operator/demo invokes `eureka ingest-decisions` → Eureka ingests via `fromDecisionRecord()` → stored as `kind=decision` fact.
 

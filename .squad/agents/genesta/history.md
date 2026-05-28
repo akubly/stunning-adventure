@@ -241,3 +241,26 @@
 - Flag cross-cutting concerns as "Notes for [Other Reviewer]" rather than findings — signal potential overlaps without making verdicts outside my authority.
 - Positive findings (e.g., correct tier deferral) are as valuable as issues — document what was verified as correct, not just what needs fixing.
 - Reviewer Rejection Protocol creates healthy pressure to be precise: findings must cite specific line numbers and explain *why* they matter, not just list observations.
+
+### 2026-05-28: Cycle 2 Fix Wave — Four Canon Findings Landed in §10 and §00
+**Task:** Apply canonical resolutions from cycle 1 persona review (B3, I7, I2 findings) to owned sections.
+
+**Changes Applied:**
+1. **B3 (decide ownership) in §10 (L133-136)** — Removed "Does **not** write to Eureka DB" line; replaced with role-split prose: Forge writes audit record (immutable, compliance-authoritative); Eureka subscribes and writes learning-fact (mutable trust/importance, recall-authoritative); shared `decision_id` correlates them. Source of truth split: compliance=Forge, learning=Eureka.
+2. **B3 (Path 1 order) in §00 (L112)** — Fixed data flow sequence. Was: "Eureka stores fact → emits to Forge." Now: "decide() emits event → Forge writes audit record (immutable) → Eureka subscribes and writes learning-fact (mutable)." Corrects audit discipline: Forge writes FIRST (authoritative), Eureka writes AFTER on subscription.
+3. **I7 (recall signature) in §10 (L54, L63, L18, L331-333, L354-356)** — Removed `tier?: Tier` parameter from `recall()` signature. v1 public API has NO tier control (hardwired to agent tier internally). Replaced NotImplementedError stub language ("returns `[]` / throws NotImplementedError") with forward-compat phrasing: "DB file created but not wired; v1 hardwires to agent tier only; v1.5 adds federation paths." Preserves `Fact.scope` schema field for v1.5; does NOT ship tier-control stubs in v1 API.
+4. **I2 (trust cross-ref) in §10 (L167-169)** — Replaced inline trust initial values (0.5 neutral, 0.9 user-confirmed, 0.3-0.7 LLM-inferred) with pointer to §30: "Trust initial values per source type: see §30 §2.X". Canonicalizes source-type trust init values in §30 only (Edgar's section).
+
+**Length Impact:** §10 grew ~30 lines (B3 prose expansion from 3→5 lines; tier v1 status rewording added clarity); §00 grew ~10 chars (Path 1 reordering + detail). Both within 15% length budget.
+
+**Key Learning:** When applying canonical resolutions with explicit target prose (canon §B3: "replace with the role-split prose: Forge=audit-authoritative, Eureka=learning-authoritative..."), use the canon language verbatim — it's already been vetted by Design Panel + Aaron's accept. Don't rephrase for style; copy. For findings without explicit replacement prose (I7, I2), cross-check canon constraints ("DELETE NotImplementedError stubs", "replace numerics with pointer") and apply minimally — remove what canon says remove; add only what canon specifies. The "deviation file" path is for when a finding CAN'T be applied cleanly due to section structure conflict; stylistic preferences are NOT deviations. Trust the canon's explicit wording.
+
+**Pattern for Fix Waves:**
+- Read canon FIRST before touching owned files (avoids guess-and-fix cycles).
+- When canon gives exact prose ("replace with..."), copy it verbatim.
+- When canon gives directive ("remove X", "cross-ref §Y"), apply literally without elaboration.
+- Deviation file is for structural blockers (e.g., "canon says fix §10.3 but that section doesn't exist"), not style disagreements.
+- Length budget (≤15% growth) is real but rarely binding — clarity wins over compression.
+
+**Status:** All four findings landed cleanly. No deviations. Ready for Edgar/Crispin parallel fix waves.
+
