@@ -14,8 +14,8 @@ This section specifies Eureka's **activity model** (what verbs the system suppor
 **Key Principles:**
 - **Activities are verbs, not nouns:** Each activity is a discrete, named operation with defined inputs, outputs, and side effects
 - **Tiers are scopes, not users:** Tiers represent knowledge authority boundaries (agent < user < project < org), not just data partitions
-- **Resolution is sequential, not hierarchical:** Queries fan-out from narrow to broad scope until `k` results are found
-- **v1 ships agent tier only:** User and project tiers are forward-compatibility placeholders; `Fact.scope` field remains in schema for v1.5 federation
+- **Resolution is sequential, not hierarchical (v1.5+):** Queries fan-out from narrow to broad scope until `k` results are found
+- **v1 ships agent tier only:** v1 implements only the agent-tier path. User and project tier paths are reserved for v1.5 and are not exercised in v1 — there is no v1 fan-out execution. `Fact.scope` field remains in schema for v1.5 federation
 
 ---
 
@@ -76,13 +76,15 @@ exclude if trust < 0.15
 - Updates `lastAccessedAt` timestamp
 - Promotes attention state (cold → warm after 2 accesses, warm → hot after 5 accesses, per FR-2)
 
-**Tier Resolution (FR-7.2):**
-1. Query agent tier (`~/.copilot/eureka/agent.db`)
+**Tier Resolution:**
+
+**v1:** Queries agent tier only (`~/.copilot/eureka/agent.db`). User and project tier paths are not implemented; `recall()` executes a single agent-tier query with no fan-out behavior.
+
+**v1.5+ (Reserved):** Multi-tier fan-out will be added:
+1. Query agent tier
 2. If `results.length < k`, query user tier (`~/.copilot/eureka/user.db`) and merge
 3. If `results.length < k`, query project tier (`<repo>/.eureka/project.db`) and merge
 4. Stop at first tier reaching `k` results (early exit optimization)
-
-**v1 Constraint:** User and project tiers return `[]` (not implemented).
 
 **Sync/Async:** Synchronous read (target P95 < 50ms per FR-7.2)
 
@@ -327,7 +329,7 @@ org (v2+)
 
 **Read Access:** All agents running as that OS user.
 
-**v1 Status:** ⚠️ Reserved. DB file created but not wired; v1 implementation hardwires to agent tier only. v1.5 will add federation paths for user tier writes and reads.
+**v1 Status:** ⚠️ **v1.5 (Reserved).** DB file may be created by v1 filesystem initialization, but user tier read/write paths are not implemented in v1. v1.5 will add federation paths for user tier writes and reads.
 
 **Use Cases (future v1.5+):**
 - Cross-session facts (knowledge that persists across agent restarts)
@@ -348,7 +350,7 @@ org (v2+)
 
 **Read Access:** All agents working in that repo.
 
-**v1 Status:** ⚠️ Reserved. DB file created but not wired; v1 implementation hardwires to agent tier only. v1.5 will add federation paths for project tier writes and reads.
+**v1 Status:** ⚠️ **v1.5 (Reserved).** DB file may be created by v1 filesystem initialization, but project tier read/write paths are not implemented in v1. v1.5 will add federation paths for project tier writes and reads.
 
 **Use Cases (future v1.5+):**
 - Codebase-specific facts (architecture decisions, module relationships)
@@ -367,9 +369,11 @@ org (v2+)
 
 ---
 
-### Tier Resolution Algorithm (FR-7.2)
+### Tier Resolution Algorithm (v1.5+ Design)
 
-When `recall(query, k)` is called **without** a tier override:
+**v1 Behavior:** `recall(query, k)` queries agent tier only. No fan-out logic is executed in v1.
+
+**v1.5+ Design (Reserved):** When user and project tiers are implemented, `recall(query, k)` will use sequential fan-out:
 
 ```python
 def recall(query: str, k: int) -> list[Fact]:
@@ -394,12 +398,12 @@ def recall(query: str, k: int) -> list[Fact]:
 ```
 
 **Key Properties:**
-- **Sequential fan-out:** Each tier is queried only if prior tiers didn't satisfy `k`
+- **Sequential fan-out (v1.5+):** Each tier is queried only if prior tiers didn't satisfy `k`
 - **Early exit:** Stop as soon as `k` results are found (don't over-fetch)
 - **No cross-DB queries:** FR-7.2 explicitly bans `ATTACH` at runtime; tiers are resolved in application code
 - **Merge strategy:** Results from multiple tiers are concatenated, not de-duplicated (facts have unique `FactId`s per tier)
 
-**Performance Target (FR-7.2):** P95 < 50ms per tier query (total recall latency ~150ms worst-case for 3-tier fan-out).
+**Performance Target (FR-7.2):** P95 < 50ms per tier query (v1 agent-tier only; v1.5+ total recall latency ~150ms worst-case for 3-tier fan-out).
 
 ---
 
@@ -520,8 +524,8 @@ These are **semantic ambiguities or unspecified behaviors** that require Edgar's
    - Should `evict()` validate that no other facts reference the target fact before deleting?
    - Or is it caller's responsibility to ensure referential integrity?
 
-8. **Tier Merge Strategy:**
-   - When `recall()` combines results from agent + user tiers, how are they merged? Concatenate? Interleave by score?
+8. **Tier Merge Strategy (v1.5+):**
+   - When `recall()` combines results from agent + user tiers (v1.5+), how are they merged? Concatenate? Interleave by score?
    - Do we de-duplicate by `FactId` (facts should be unique per tier, but edge case: user tier fact manually copied from agent tier)?
 
 9. **SessionId Optional vs. Required:**
@@ -538,7 +542,7 @@ These are **semantic ambiguities or unspecified behaviors** that require Edgar's
 
 **Activities:** Eureka v1 exports 7 verbs (`integrate`, `recall`, `rerank`, `decide`, `commit`, `retire`, `evict`) plus 2 reserved v1.5 verbs (`meditate`, `contemplate`). Each activity has defined inputs, outputs, side effects, and tier scope.
 
-**Tiers:** Eureka v1 implements agent tier only; user and project tiers are reserved but return empty/throw on access. Resolution is sequential fan-out (agent → user → project) with early exit at `k` results.
+**Tiers:** Eureka v1 implements agent tier only; user and project tiers are reserved for v1.5. v1 executes no fan-out logic — `recall()` queries agent tier with no fallback paths. v1.5 will add sequential resolution (agent → user → project) with early exit at `k` results.
 
 **Coordination:** Eureka and Crucible share `SessionId` brand via `@akubly/types`; substrate changes require G4 dual sign-off. No API surface overlap.
 

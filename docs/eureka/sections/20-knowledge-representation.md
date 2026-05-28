@@ -177,7 +177,7 @@ Each fact carries four property signals that govern recall, attention, and trust
 
 ```typescript
 function computeRecency(fact: Fact, now: number): number {
-  const ageMs = now - fact.updated_at;
+  const ageMs = now - fact.last_accessed;
   const ageDays = ageMs / (1000 * 60 * 60 * 24);
   return Math.pow(ageDays + 1, -0.5);  // d = 0.5 (decay exponent)
 }

@@ -446,6 +446,25 @@ Legitimate triggers for trust mutation on committed facts:
 **Extraction-Ready Design (FR-12 §6.2):**
 Trust logic resides in `packages/eureka/src/learning/properties/trust.ts`. No Eureka-specific types in exports (uses plain `number` with JSDoc `@range` annotations until v1.5 branded types).
 
+#### 2.1.1 Zombie-Fact Semantics: Trust=0 vs. Retirement
+
+**Issue:** The trust penalty formula (`max(0.0, fact.trust - 0.10)`) can decay a fact's trust to 0.0 through repeated contradiction. With the B2 policy (trust ∈ [0,1] storage, default recall filter `WHERE retired=false AND trust>=0.15`), such a fact is **effectively invisible** (filtered by the 0.15 floor) but **formally not retired** (`retired=false`). This is a "zombie fact" — it occupies space and shows up in raw queries but never surfaces to users.
+
+**Policy (chosen):** **Preserve the distinction.** Trust=0 means "epistemically dead" (the system has lost all confidence), but the fact is preserved for forensic analysis, replay, and future re-evaluation. Explicit retirement (`retired=true`) is reserved for deliberate lifecycle decisions: user "forget this", policy sweep, supersession, or explicit contradiction detection.
+
+**Rationale:** Separating epistemic state (trust) from lifecycle state (retirement) provides:
+1. **Audit trail:** Trust decay history (via `contemplate` outcomes) vs. explicit retirement (via `retire()` API) are distinguishable in telemetry
+2. **Recovery path:** A trust=0 fact can regain trust via corroboration (v1.5) or manual correction without un-retiring
+3. **Forensic value:** Operators can query "why did this fact lose trust?" by examining decision events; can't do that after deletion or conflation with retirement
+
+**Operator Guidance:**
+- Facts with trust=0.0 are filtered from default recall but retain `retired=false`
+- Use `recall({ include_retired: true, min_trust: 0.0 })` in diagnostic queries to surface zombie facts
+- Use `retire(fact_ids)` explicitly when a fact should be lifecycle-removed (superseded, incorrect, policy-mandated deletion)
+- Trust=0 facts remain subject to `sweep()` and may be demoted or flagged for manual review
+
+**Implementation Note:** The trust-update algorithm (in `contemplate`) applies `max(0.0, ...)` bounds-checking but does NOT set `retired=true` when trust reaches 0.0. Retirement remains a manual or policy-driven action.
+
 ---
 
 ### 2.2 Recency
@@ -522,7 +541,7 @@ Query-time computation avoids batch recomputation. Stored timestamps are immutab
 
 **Trust Floor (0.15):**
 
-**Definition of "pathological zero-trust state":** A fact with trust = 0.0 has been explicitly retired or contradicted. The 0.15 floor ensures facts with minimal-but-nonzero trust (e.g., 0.10–0.14 from repeated penalization) don't clutter recall results but remain in storage for audit. It's a soft-retirement threshold.
+**Definition of "pathological zero-trust state":** A fact with trust = 0.0 has lost all epistemic confidence (via repeated contradiction penalties). The 0.15 floor ensures facts with minimal-but-nonzero trust (e.g., 0.10–0.14 from repeated penalization) don't clutter recall results but remain in storage for audit. It's a soft-retirement threshold. See §2.1.1 for zombie-fact semantics (trust=0 vs. explicit retirement).
 
 **Why 0.15?** Heuristic. Lower than "low-confidence Path 2" (0.4) but higher than zero. Gives facts ~3 failure-contemplate events (0.5 → 0.4 → 0.3 → 0.2) before falling below floor. Tuning: if trust floor is too high (e.g., 0.3), it prematurely excludes recoverable facts; too low (e.g., 0.05), it returns junk.
 

@@ -32,7 +32,7 @@ This section defines test patterns for Eureka v1's continuous properties, tier b
 - `trust ∈ [0, 1]`, `importance ∈ [0, 1]`, `recency ∈ [0, 1]`
 - Committed facts are partially immutable — `content`, `kind`, `sources`, `provenance` immutable post-commit; `trust`, `importance`, `last_accessed`, `access_count`, `retired` always mutable (required for learning, decay, retirement; see §20 schema and §30 §X mutation policy)
 - BM25 relevance scores normalized to [0, 1] before blending
-- Tier multipliers: hot=1.0, warm=0.5, cold=0.1 (FR-6)
+- Tier multipliers per §30 §2.2.1: hot=1.20, warm=1.00, cold=0.80 (attention-budgeting rationale)
 
 ### Integration Tests
 **Status:** Complementary to §55. Outside-in tests (§55) mock at storage/network seams; these tests validate the real implementations honor those contracts.
@@ -84,7 +84,7 @@ This section defines test patterns for Eureka v1's continuous properties, tier b
 **Recency decay properties**:
 - Time-monotonic: Older facts have lower recency scores (test across 1-hour, 1-day, 1-week, 1-month spans)
 - Boundary behavior: Recency at session boundary (t=0) vs. t=1ms vs. t=1s
-- Decay curve: Exponential decay model (half-life TBD, test parameterization)
+- Decay curve: Power-law (ACT-R, exponent 0.5 per Anderson 1990; see §30 §2 for rationale)
 
 **Importance properties**:
 - Importance ∈ [0, 1] enforced at write time (schema validation)
@@ -97,7 +97,7 @@ This section defines test patterns for Eureka v1's continuous properties, tier b
 - Escalation: Test commit transition is irreversible
 
 **Attention tier properties**:
-- Tier multipliers: hot=1.0, warm=0.5, cold=0.1 (FR-6)
+- Tier multipliers per §30 §2.2.1: hot=1.20, warm=1.00, cold=0.80 (attention-budgeting rationale)
 - Tier transitions: Test manual demotion (hot→warm→cold) and promotion (cold→warm→hot)
 - Sweep-triggered tier changes: Test attention_tier updates after `similar_to` edge creation
 
@@ -128,7 +128,7 @@ This section defines test patterns for Eureka v1's continuous properties, tier b
 - P95 latency < 500ms (AC-1.2) with N=1000 facts
 - P95 latency < 200ms (AC-2.3) with session-scoped search (N~50 facts)
 - Trust floor: No facts with trust < 0.15 in results
-- Scoring formula: Validate coefficient weights (0.50, 0.20, 0.20, 0.10) and tier multipliers
+- Scoring formula: Validate coefficient weights (0.50, 0.20, 0.20, 0.10) and tier multipliers per §30 §2.2.1
 
 **Tests**:
 - Unit: Scoring function with known inputs (trust=0.9, importance=0.8, recency=0.7, relevance=1.0) → rawScore=0.88
@@ -241,7 +241,7 @@ This section defines test patterns for Eureka v1's continuous properties, tier b
 **Mutation space**: Timestamps from [now - 90 days, now]
 **Invariants**:
 - Time-monotonic: Older facts have lower recency scores
-- Decay curve: Exponential decay (half-life TBD, parameterize in tests)
+- Decay curve: Power-law (ACT-R; see §30 §2 for decay formula and rationale)
 - Session boundary: Facts from current session have recency ≈ 1.0
 
 **Test cases**:
@@ -264,7 +264,7 @@ This section defines test patterns for Eureka v1's continuous properties, tier b
 ### Attention Tier Dynamics
 **Mutation space**: attention_tier ∈ {hot, warm, cold}
 **Invariants**:
-- Tier multipliers: hot=1.0, warm=0.5, cold=0.1
+- Tier multipliers per §30 §2.2.1: hot=1.20, warm=1.00, cold=0.80
 - Manual transitions: All tier changes allowed (no one-way restrictions like commit)
 - Sweep-triggered: Tier changes from similar_to edge creation (v1.5)
 

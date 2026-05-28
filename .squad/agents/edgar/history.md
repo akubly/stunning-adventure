@@ -265,3 +265,38 @@
 
 **Status:** ✅ CYCLE 2 FIX WAVE COMPLETE — §30 ready for team review.
 
+---
+
+### 2026-05-28: Cycle 3 — Zombie-Fact Semantics Resolution
+
+**Context:** Architect cycle 2 advisory flagged ambiguity in §30's trust=0 semantics. With B2 policy (`retired: boolean` field separate from trust), trust-penalty formula (`max(0.0, fact.trust - 0.10)`) can decay trust to 0.0. Default filter `WHERE retired=false AND trust>=0.15` means trust=0 facts are **effectively invisible** (filtered by 0.15 floor) but **formally not retired** (retired=false). This is a "zombie fact" — occupies space, appears in raw queries, never surfaces to users.
+
+**Decision Required:** Does trust=0 trigger automatic retirement, or is "low-trust-but-not-retired" a meaningful state?
+
+**Policy Chosen:** **Option 2 — Preserve the distinction.** Trust=0 means "epistemically dead" (system lost confidence), but fact is preserved for forensic analysis, replay, and future re-evaluation. Explicit retirement (`retired=true`) is reserved for deliberate lifecycle decisions (user "forget this", policy sweep, supersession).
+
+**Rationale:** Separates epistemic state (trust) from lifecycle state (retirement), which is the whole point of B2 policy. Provides:
+1. **Audit trail:** Trust decay (via contemplate outcomes) vs explicit retirement (via retire() API) are distinguishable in telemetry
+2. **Recovery path:** Trust=0 facts can regain trust via corroboration (v1.5) or manual correction without un-retiring
+3. **Forensic value:** Operators can query "why did this fact lose trust?" by examining decision events
+
+**Deliverable:** Added §2.1.1 "Zombie-Fact Semantics: Trust=0 vs. Retirement" subsection to §30 (22 lines, ~1.5% of file). Clarified:
+- trust=0 facts retain `retired=false`
+- Diagnostic query pattern: `recall({ include_retired: true, min_trust: 0.0 })`
+- Trust-update algorithm does NOT set `retired=true` when trust reaches 0.0
+- Updated §2.3 trust-floor definition (line 525) to remove "explicitly retired" contradiction
+
+**Learnings:**
+
+1. **Zombie facts ARE a meaningful state** — Not a bug to fix, but a design feature to document. The distinction between "system lost confidence" (trust=0, retired=false) and "user/policy decided to remove" (retired=true) is valuable for operators who need to understand WHY facts vanished from recall. If both states collapse to the same outcome (invisible), operators can't distinguish algorithmic failure from deliberate removal.
+
+2. **Semantic precision prevents future creep** — Without explicit documentation, future implementers might add "if trust == 0.0: retired = true" optimization to save space. That optimization destroys the epistemic/lifecycle distinction. Documenting the policy NOW (with rationale) creates a forcing function: if you want to auto-retire trust=0, you need to CHANGE the policy, not "fix a bug."
+
+3. **Extraction-ready designs need extraction-ready semantics** — If learning-kernel is extracted (Path D), the trust=0/retirement distinction becomes a kernel contract. External consumers (Cairn, Crucible, future adoption) need to know whether trust=0 has lifecycle implications. Documenting this in §30 (not just implementation comments) makes it visible at the API level.
+
+**Post-work:** Recorded decision in `.squad/decisions/inbox/edgar-cycle3-zombie-policy.md` for Scribe merge. Updated Edgar history (this entry).
+
+**Confidence:** HIGH (90%) — Option 2 aligns with B2's epistemic/lifecycle separation. No edge cases found where conflation is simpler.
+
+**Status:** ✅ CYCLE 3 COMPLETE — zombie-fact semantics closed.
+

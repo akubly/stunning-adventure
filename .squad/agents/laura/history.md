@@ -523,3 +523,31 @@
 - Genesta + Edgar to review §55 draft
 - Implementation agents (Crispin, Edgar, Roger) use §55 as TDD workflow spine starting with first `recall` test
 - Laura available for clarifications on mock discipline or contract test patterns
+
+### Cycle 3 — §50/§55 Canonical Alignment (2026-05-28)
+
+**Assignment:** Close out B1 PARTIAL residue + 2 advisory findings from Cycle 2 verification (commit f68873d).
+
+**Fixes delivered:**
+1. **§50 tier multipliers (B1 PARTIAL residue):** Replaced incorrect values hot=1.0, warm=0.5, cold=0.1 with canonical hot=1.20, warm=1.00, cold=0.80 per §30 §2.2.1 (attention-budgeting rationale). Fixed in 5 locations (lines 35, 100, 131, 267, plus Critical Invariants block).
+2. **§50 decay model wording (B1 PARTIAL residue):** Replaced "exponential decay" with "power-law (ACT-R, exponent 0.5 per Anderson 1990)" per §30 §2 canonical source. Fixed in 2 locations (lines 87, 244).
+3. **§55 tier fan-out clarification (advisory):** Added v1 vs v1.5 scoping note at §2.5 — v1 is hardwired to agent tier per I7; tier fan-out tests illustrate v1.5 semantics, not v1 contract. Clarified comment in worked example.
+4. **§55 §2.6 side-effect coverage (advisory):** Extended side-effect test section to cover all 3 side-effects (accessCount, lastAccessedAt, attention tier promotion). Added new it('promotes attention tier when access threshold met', ...) test block.
+
+**Key learnings:**
+- **Canonical parameter anchoring:** When multiple sections reference the same parametric values (tier multipliers, decay exponents), they must all point to the canonical definition (§30) or hard-code the same values. Divergence across sections causes confusion during implementation.
+- **Version scoping in worked examples:** Test examples that exercise future-version features (like tier fan-out across user/project in v1.5) must explicitly scope the version, or implementers will treat them as v1 acceptance criteria.
+- **Side-effect testing completeness:** When a spec (§10/§30) documents N side-effects for an activity, test examples (§55) must cover all N, not a representative subset. Partial coverage signals "optional" when all side-effects are mandatory.
+- **Pointer vs duplication trade-off:** For stable parametric values (like tier multipliers), a pointer to the canonical section (per §30 §2.2.1) is safer than duplication — changes propagate automatically. For volatile design elements, duplication with version scoping is clearer.
+
+**Evidence of success:**
+- All 4 fixes landed cleanly; no deviations required
+- §50: 5 occurrences of tier multipliers now match §30 canonical values
+- §50: 2 occurrences of decay model now reference ACT-R power-law per §30
+- §55: Tier fan-out test explicitly scoped to v1.5, with v1 hardwiring caveat
+- §55: §2.6 now demonstrates all 3 side-effects (accessCount, lastAccessedAt, tier promotion)
+- Length growth: §50 ~2.5% (well under 10% budget), §55 ~4.8% (well under 10% budget)
+
+**Next steps:**
+- No deviations logged — inbox clean
+- Learnings appended to history.md

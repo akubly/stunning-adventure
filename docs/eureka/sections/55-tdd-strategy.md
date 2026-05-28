@@ -202,11 +202,13 @@ export class CuratorStore {
 
 ### 2.5 Next Test Cycle — Tier Fan-Out
 
+*Note: v1 is hardwired to agent tier per I7. This test illustrates v1.5 cross-tier fan-out semantics; v1 worked examples should NOT exercise the `tiers` parameter.*
+
 The next outside-in cycle surfaces tier resolution as a discovered concern. AC-2.1 requires cross-session recall, which naturally forces fan-out logic across agent and user tiers (§10 FR-7.2 semantics). This test demonstrates the fan-out seam:
 
 ```typescript
 it('fans out to user tier when agent tier has <k results', async () => {
-  // AC-2.1: Cross-session recall requires user tier
+  // AC-2.1: Cross-session recall requires user tier (v1.5 semantics)
   const agentStore = { retrieve: vi.fn().mockResolvedValue([fact1, fact2]) }; // only 2
   const userStore = { retrieve: vi.fn().mockResolvedValue([fact3, fact4, fact5]) };
 
@@ -246,6 +248,20 @@ it('updates lastAccessedAt for returned facts', async () => {
   await recall({ query: 'oauth', sessionId, k: 5 }, { store, now: testNow });
   
   expect(store.getLastAccessedAt(factId)).toEqual(testNow);
+});
+
+it('promotes attention tier when access threshold met', async () => {
+  const factId = 'fact-789';
+  const store = new InMemoryCuratorStore([
+    { id: factId, content: 'JWT token expiration', attentionTier: 'cold', accessCount: 4, /* ... */ }
+  ]);
+  
+  // Trigger tier promotion (cold→warm at 5 accesses; see §30 §2.3.2 for thresholds)
+  await recall({ query: 'jwt', sessionId, k: 5 }, { store });
+  
+  const fact = store.getFact(factId);
+  expect(fact.attentionTier).toBe('warm'); // Promoted from cold
+  expect(fact.accessCount).toBe(5); // Incremented to threshold
 });
 ```
 

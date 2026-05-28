@@ -264,3 +264,21 @@
 
 **Status:** All four findings landed cleanly. No deviations. Ready for Edgar/Crispin parallel fix waves.
 
+### 2026-05-28: Cycle 3 Skeptic Advisory — Tier Consistency Clarification
+**Task:** Close Skeptic finding from cycle 2 review. §10 still described tier fan-out behavior in detail (including "user/project return `[]`"), but PRD + cycle 2 edits clarified v1 hardwires to agent tier with no `tiers` parameter in public API. Risk: implementers reading §10 prose might build tier fan-out execution path with v1.5 stubs instead of simply not implementing fan-out at all.
+
+**Changes Applied:**
+1. **Overview principles (L17-18)** — Moved fan-out description to v1.5 scope: "Resolution is sequential, not hierarchical **(v1.5+)**". Clarified v1 constraint: "v1 implements only the agent-tier path. User and project tier paths are reserved for v1.5 and are not exercised in v1 — there is no v1 fan-out execution."
+2. **recall() Tier Resolution block (L79-87)** — Split v1 vs v1.5+ behavior. v1 section says "Queries agent tier only... executes a single agent-tier query with no fan-out behavior." v1.5+ section documents future design (fan-out steps 1-4) clearly marked as reserved.
+3. **User/project tier subsections (L330, L351)** — Reworded v1 status from "not wired" to "read/write paths are not implemented in v1" to emphasize absence of execution path (not just stub).
+4. **Tier Resolution Algorithm heading (L370)** — Added "(v1.5+ Design)" to heading, prepended "**v1 Behavior:** `recall(query, k)` queries agent tier only. No fan-out logic is executed in v1." before pseudocode.
+5. **Key Properties performance note (L402)** — Qualified P95 latency: "v1 agent-tier only; v1.5+ total recall latency ~150ms worst-case for 3-tier fan-out".
+6. **Summary (L541)** — Replaced "return empty/throw on access" phrasing with "v1 executes no fan-out logic — `recall()` queries agent tier with no fallback paths."
+7. **Open question #8 (L523)** — Marked as "v1.5+" scoped (merge strategy only relevant when multi-tier implemented).
+
+**Length Impact:** +4% (75 words added for v1/v1.5 splits; -30 words removed from stub language). Within ≤10% budget.
+
+**Key Learning:** "Not implemented" vs "returns `[]`" distinction matters. The former says "this code path doesn't exist"; the latter implies a stub execution path that returns empty. When v1 scope excludes a feature, documentation should describe what v1 *does* (agent-tier-only query), not what v1.5 *would return* if invoked (stubs returning `[]`). This prevents implementers from building unnecessary stub surface. The pattern: lead with positive v1 behavior statement ("v1 does X"), follow with v1.5 reserved design (clearly marked), never describe v1 in terms of "doesn't do v1.5 thing" (negative framing invites stub implementation).
+
+**Architectural Principle:** When a design document describes future behavior (v1.5 fan-out) alongside present behavior (v1 agent-only), the v1 section must be **implementation-unambiguous**: "no fan-out logic is executed" is clearer than "user/project tiers return `[]`" because the former says "don't build this", the latter says "build this stub". The Skeptic finding was correct: describing v1 via v1.5 stubs risks building unnecessary surface. Fix: describe each version's behavior positively (what it does), not negatively (what it doesn't do).
+

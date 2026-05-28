@@ -294,3 +294,40 @@
 **Deliverable:** Updated `docs/eureka/sections/20-knowledge-representation.md` — all 5 audit recommendations applied, 6 cross-references to §55 added, 11.96% length increase.
 
 ---
+
+## 2026-06-15: Cycle 3 — B1 PARTIAL Gap Fix (Recency Field Name Consistency)
+
+**Context:** Cycle 2 Skeptic identified residual B1 drift in §20 around line 180 — recency pseudocode used `updated_at` while §30's canonical recency formula consistently uses `last_accessed`. This violated formula consistency established in Cycle 2.
+
+**Issue:** §20 §3.3 `computeRecency()` pseudocode calculated age via `now - fact.updated_at`, but:
+- §20 schema (line 71) defines `last_accessed: number | null` for access tracking
+- §20 schema (line 65) defines `updated_at: number` for lifecycle metadata (row modification time)
+- §30 §2.2 canonical recency formula: `t = (now - last_accessed) / 86400`
+- §30 mutation policy: "Every `recall()` call updates `last_accessed` to `now()`"
+
+**Root cause:** The two fields serve different purposes:
+- `updated_at` = row-level lifecycle timestamp (schema modification, not access semantics)
+- `last_accessed` = recency timestamp (access semantics, updated on recall)
+
+Using `updated_at` for recency computation conflates **modification time** with **access time**, breaking the ACT-R decay model (which requires last access, not last modification).
+
+**Fix applied:**
+- Changed line 180: `const ageMs = now - fact.updated_at;` → `const ageMs = now - fact.last_accessed;`
+- Single-line surgical edit in §3.3 recency pseudocode
+- No other occurrences of `updated_at` in recency context found (verified via grep)
+
+**Verification:** Grep audit of §20 for "recency|freshness" confirmed no other recency-related uses of `updated_at`. The field remains in schema for its intended purpose (lifecycle metadata), but recency calculations now correctly use `last_accessed`.
+
+**What I Learned:**
+
+- **Schema field overloading is subtle.** Both `updated_at` and `last_accessed` are timestamps, both measure "when something happened," but they track orthogonal concerns: modification vs access. The overload isn't in schema structure (two distinct fields, correctly typed) — it's in **conceptual semantics**. Using the wrong one compiles fine but violates domain semantics.
+
+- **Canonical formulas own their field names.** §30 established `last_accessed` as the recency input field. §20 pseudocode using `updated_at` was a **local deviation** that broke cross-section consistency. The formula itself (`(1 + t)^(-0.5)`) was correct in both sections — the inconsistency was in the **input field binding**. This is a representation-layer concern (my domain) but only surfaces via learning-system contracts (Edgar's domain). Coordination via canonical naming is load-bearing.
+
+- **Cycle 2 → Cycle 3 gap closure is incremental trust-building.** Cycle 2 addressed 19 findings. Skeptic re-read and found residual drift (B1 PARTIAL). This isn't a Cycle 2 failure — it's how exhaustive review works: multiple passes, each closing remaining gaps. The B1 finding was marked PARTIAL after Cycle 2 (formula consistency achieved in most places but not all). This cycle closed the remaining gap.
+
+**KR Principle Reinforced:** Field names in pseudocode are normative contracts, not arbitrary variable choices. When §20 writes `fact.updated_at` but §30 writes `fact.last_accessed`, the schema must clarify which is canonical for recency. The schema now has both fields, each with distinct semantics. Recency calculations must always use `last_accessed`; lifecycle tracking uses `updated_at`. This is documented at line 71 (`last_accessed: number | null; // Unix epoch ms; updated on recall`) vs line 65 (`updated_at: number; // Unix epoch ms`).
+
+**Deliverable:** Single-line fix in `docs/eureka/sections/20-knowledge-representation.md` (line 180).
+
+---
