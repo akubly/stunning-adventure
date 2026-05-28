@@ -1,0 +1,33 @@
+Lock Crucible TDD strategy: 8 open questions resolved
+
+All 8 open questions from Crucible TDD Strategy §11 have been resolved via
+interactive Decision-Point gates with Aaron. Laura's dual-layer validation
+passed all architecture decisions.
+
+Key departures from Laura's original recommendations:
+- Q5: Aaron chose env-snapshot approach (closes mid-bisect-drift failure mode)
+- Q7: Aaron instituted zero-tolerance mock-drift gate (agentic cost functions)
+- Q1: Aaron refined to structural-commitment model (context-window Merkle)
+
+New invariants introduced:
+- Bootstrap-Capture-Completeness: Extra-ledger context at offset 0
+- Monotonic-Timestamps-Within-Session: Prevent clock skew, tampering
+
+New test deliverables:
+- Generic L3 Adapter Conformance Suite (v1 Forge, reused for Eureka v1.5+)
+
+Strategy document finalized (137KB, all 8 Qs resolved, no new ambiguities).
+
+Changes:
+- docs/crucible-tdd-strategy.md: Updated to FINAL status
+- .squad/decisions.md: Merged 4 inbox files, integrated all 8 Q-locks
+- .squad/orchestration-log: 4 new entries (validation passes, coordinator, revision)
+- .squad/log: 1 new session log entry
+
+Removed from inbox (merged to decisions.md):
+- coordinator-crucible-tdd-q-resolutions.md
+- laura-q1-option-e-validation.md
+- laura-q1-refinement-validation.md
+- laura-crucible-tdd-strategy-revision.md
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>

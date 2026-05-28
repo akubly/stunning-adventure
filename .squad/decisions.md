@@ -1369,3 +1369,260 @@ All seven open governance questions resolved by Aaron:
 ---
 
 *End of Eureka overlap analysis.*
+
+---
+
+## Crucible TDD Strategy — Q1-Q8 Resolutions (2026-05-27)
+
+**Date:** 2026-05-27  
+**Decided by:** Aaron Kubly (interactive Decision-Point gate via coordinator)  
+**Source:** `docs/crucible-tdd-strategy.md` §11 (8 open questions)  
+**Status:** ALL LOCKED — Strategy doc finalized FINAL status
+
+### Resolution Summary
+
+All 8 open questions locked after coordinator-mediated Decision-Point sequence and Laura's dual-layer validation.
+
+| Q | Topic | Resolution | Departure from Laura's rec? |
+|---|---|---|---|
+| Q1 | Observation capture & primitive scale | **Refined Option E + tool-call scale + M3 synthetic_output + bootstrap-capture invariant** | Yes — Aaron reframed from Laura's B to deeper structural-commitment model |
+| Q2 | Eureka prescriber integration in v1 tests | **C (defer Eureka adapter to v1.5) + ADD generic L3 adapter conformance suite in v1** | Concur with Laura's C; Aaron added generic-adapter scope |
+| Q3 | Structural proposal approval UX | **B (Aperture async notification + queue, default-not-applied until acked)** | Concur with Laura |
+| Q4 | Plugin pinning scope at fork | **B (transitive dep graph)** | Concur with Laura |
+| Q5 | Bisect test command execution | **D (env snapshot at bisect start + shell out)** — coordinator-proposed refinement | Departed from Laura's A; D closes mid-bisect-drift failure mode |
+| Q6 | Timestamp normalization in conformance suite | **A + monotonicity invariant** — coordinator-proposed addition | Concur with Laura's A; added separate property test for timestamp monotonicity within session |
+| Q7 | Mock-drift detection threshold | **A (zero-tolerance)** — Aaron-driven | Departed from Laura's B; Aaron's framing: agentic cost functions invert vs human teams |
+| Q8 | Pareto fitness with non-overlapping axes | **A (incomparable → both non-dominated)** | Concur with Laura |
+
+### Q1 — Observation capture & primitive scale (deepest decision — REFINED OPTION E)
+
+**Lock:** The Decision primitive's commitment is a **Merkle hash over the causal-context window** — every prior ledger row visible to the LLM at the moment of commitment, regardless of primitive type.
+
+**Details:**
+- **Window bounds:** From session-bootstrap (or most recent fork point) through the row offset immediately preceding this Decision
+- **Window contents:** Every primitive in that range (Requests, Artifacts, Observations, prior Decisions, Questions) in canonical row order
+- **Observation primitive:** First-class L1 row type. Streams naturally; not envelope metadata on other rows
+- **Pruning signal:** If the LLM's context-window manager drops content, that drop is itself an Observation primitive ("context truncated, oldest N tokens dropped at offset X")
+- **Extra-ledger context** (system prompts, tool definitions, cross-session memory) MUST be captured as Observation primitives at session offset 0 — **NEW INVARIANT: Bootstrap-Capture-Completeness**
+- **Primitive scale:** One L1 row per tool-call boundary. A `str_replace` that changes 50 lines is one Artifact; fifty sequential `edit` calls are fifty Artifacts
+- **M3 (side-effect-only tool calls):** Always emit Artifact with synthetic output (e.g., exit code, side-effect descriptor). Keeps row-per-tool-call invariant clean
+
+**Why better than A/B/C/D:**
+- Removes agent-intent dependence — commitment is structurally computed from session lineage, not the agent's claim about which observations mattered
+- M1 (orphan observations) and M2 (empty observation-set hash) dissolve under structural model
+- A2 (hermetic replay) becomes EASIER ("replay prefix → compare hashes")
+- A4 (causal slice) becomes STRONGER (data lineage + authorization lineage both available)
+- Merkle canonicalization risk eliminated — ledger order is already canonical
+
+**Validation:** Laura APPROVED-WITH-MODIFICATIONS on original Option E, then APPROVED outright on refinement. Verdicts treated as independent gates.
+
+### Q2 — Eureka adapter scope + generic L3 adapter conformance suite
+
+**v1 strategy covers:**
+- Generic L3 Generator adapter contract — interface specification + property-based conformance suite that any adapter implementation can be run against
+- Covers: `PrescriberOrchestrator` interface compliance, fail-open behavior, hint attribution, registration/discovery, lifecycle hooks
+- Same conformance suite applies to Forge-as-L3-prescriber. Make this explicit in §3
+
+**Deferred to v1.5:**
+- Eureka-specific adapter implementation. Runs the v1 conformance suite — no new test infra needed
+- Any Eureka-specific contract tests
+
+**Why:** Honors Aaron's May-26 storage-fork directive (Crucible storage fork + Eureka standalone v1). Eureka v1 API isn't frozen; testing against moving target produces brittle contract tests. Crucible ships sooner. Future-compatible.
+
+### Q3 — Aperture async notification for structural proposals
+
+**v1 behavior:**
+- Structural proposals (from `StructuralProposalGenerator`) surface as Aperture attention-tier notifications, queued for async user review
+- **Default not auto-applied.** Aperture is the notification surface; explicit ack mutates the ledger to apply
+- Approve via `crucible aperture act <id>` (or equivalent CLI affordance)
+- Router refuses to act on dependent paths until structural change is acked
+
+**Why not blocking modal:** Contradicts agentic UX premise; collapses Crucible into "human stops everything for every structural change."
+
+### Q4 — Transitive plugin pinning at fork
+
+**v1 behavior:**
+- `SessionMetadata.pluginVersions` includes the **resolved transitive dependency graph**, not just direct deps
+- Computed at install time (Gabriel Sprint 6.5 manifest schema already produces this)
+- Persisted at fork; replay reads from `SessionMetadata`
+
+**Why not direct-only:** Transitive dep update silently changes behavior; replay drifts. Provably unsafe for determinism-obsessed system.
+
+### Q5 — Bisect execution: env snapshot at start
+
+**v1 behavior:**
+- Bisect captures `process.env` + relevant config files at bisect start
+- Each bisect iteration shells out to user's shell with the **fixed snapshot env**, not the live env
+- Internally consistent (iterations agree on env), not externally hermetic (re-run days later may differ)
+
+**Why D over Laura's A:** Closes mid-bisect-drift failure mode (innocent ledger event blamed for env-drift bug).
+
+### Q6 — Timestamp normalization + monotonicity invariant
+
+**v1 behavior:**
+- Conformance suite excludes wall-clock timestamps from byte-equality check (`normalizeTimestamps()` helper sets to 0 before compare)
+- Timestamps are informational metadata, not load-bearing for replay — L1 row offsets are the structural ordering
+- **NEW SEPARATE PROPERTY TEST:** `monotonicTimestampsWithinSession` asserts every row's timestamp ≥ previous row's. Orthogonal to conformance; catches clock skew, manual tampering, fork-time inheritance bugs
+
+### Q7 — Zero-tolerance mock-drift gate
+
+**v1 behavior:**
+- Single contract test failure blocks PRs
+- Mock audit is a routine agent spawn (not a sprint that pauses feature work)
+
+**Why (Aaron's framing — captured as principle):**
+- In agentic-development cost functions, drift cost = correctness compounding across agent actions (high, opaque); fix cost = near-zero (spawn agent to address)
+- The human-team failure modes that make zero-tolerance brittle (context-switch tax, resentment, disabled tests) don't apply: agents don't experience context-switch tax and don't disable tests for expediency
+- Late drift detection cost in agentic systems is much higher than in human-team systems because the system makes many decisions per session against the drifted model
+
+### Q8 — Pareto incomparable → both non-dominated
+
+**v1 behavior:**
+- When two prescriptions have non-overlapping fitness axes, they are **incomparable**
+- Both remain in the non-dominated set
+- Router policy handles the larger candidate set (escalate, prompt user, apply tiebreaker — Router's concern, not the fitness comparator's)
+
+**Why not zero-fill (B):** Treats absent-data as best-possible-data. Same epistemic violation as orphan observations from Q1.
+
+### New Invariants Introduced (Integrated into §6 of Strategy Doc)
+
+1. **Bootstrap-Capture-Completeness (Q1):** Extra-ledger context (system prompts, tool definitions, cross-session memory) is captured as Observation primitives at session offset 0. Replay drifts if violated.
+2. **Monotonic-Timestamps-Within-Session (Q6):** Every L1 row's timestamp ≥ previous row's. Independent of conformance suite.
+
+### New Contract Tests (Integrated into §5 of Strategy Doc)
+
+1. **Generic L3 Adapter Conformance Suite (Q2):** Property-based contract tests any adapter must pass — `PrescriberOrchestrator` compliance, fail-open, hint attribution, registration/discovery, lifecycle hooks. Runs against Forge in v1, reused for Eureka v1.5+.
+
+### Document Status
+
+`docs/crucible-tdd-strategy.md` updated to **FINAL**:
+- All 12 sections revised to reflect 8 locks
+- Original 8 question subsections (§11) deleted and replaced with resolution summary
+- No newly-discovered ambiguities
+- Ready for Sprint 0 test-infrastructure work
+
+---
+
+## Appendix: Q1-Q8 Validation Trail
+
+### Laura Bow Q1 Option E Validation (2026-05-27)
+
+**Source:** `.squad/decisions/inbox/laura-q1-option-e-validation.md`
+
+**Scope:** Independent validation of Aaron's locked Q1 resolution (Option E + tool-call scale)
+
+**Verdict:** APPROVE WITH MODIFICATIONS
+
+Option E is architecturally sound and testable. Introduces three implementation ambiguities:
+- **M1:** Clarify Observation primitive lifecycle — are orphan Observations legal?
+- **M2:** Define Decision-without-observations semantics — can a Decision commit with empty observation set?
+- **M3:** Specify tool-call-boundary granularity for side-effect-only operations — does a tool call with no output still emit Artifact?
+
+Three ambiguities flagged and passed to Aaron for refinement.
+
+**Impact on acceptance scenarios:**
+- **A2 (Hermetic Replay):** EASIER — simplified by structural commitment model
+- **A3 (Pre-Commit Hook Veto):** NO CHANGE
+- **A4 (Backward Causal Slice):** STRONGER — data lineage + authorization lineage available
+
+### Laura Bow Q1 Refinement Validation (2026-05-27)
+
+**Source:** `.squad/decisions/inbox/laura-q1-refinement-validation.md`
+
+**Scope:** Second validation pass on Aaron's structural-commitment refinement (Option E evolved)
+
+**Verdict:** APPROVE
+
+Aaron's structural commitment model dissolves M1, M2, M3 by reframing the commitment primitive entirely:
+- Shifted from observation-set commitment to causal-context window commitment
+- Acknowledges that LLM doesn't distinguish between Observation primitives, prior Decisions, Artifacts, or Questions — all context is input
+- Commitment is over everything visible
+
+**Why better:**
+1. **M1 (orphan Observations) disappears** — every Observation is part of some Decision's commitment window
+2. **M2 (empty observation-set) disappears** — empty commitment is impossible except at offset-0 (degenerate)
+3. **M3 resolved** — Aaron's synthetic_output rule means every tool call produces Artifact
+
+**New invariant introduced:** Bootstrap-Capture-Completeness (extra-ledger context captured at offset 0).
+
+**Test strategy impact:** POSITIVE — fixtures simpler, A2 precision improved, bootstrap-capture becomes single property test.
+
+### Laura Bow Crucible TDD Strategy Revision (2026-05-27)
+
+**Source:** `.squad/decisions/inbox/laura-crucible-tdd-strategy-revision.md`
+
+**Status:** COMPLETE — Strategy doc finalized with all 8 open questions resolved
+
+**Scope:** Revise `docs/crucible-tdd-strategy.md` to reflect every resolution. Laura integrated all 8 Q-locks across 12 sections.
+
+**Section-by-section changes:**
+- §1: Added agentic-development test discipline distinctions (structural commitment, zero-tolerance gate)
+- §2: A2/A4/A6 updated per Q1/Q4
+- §3: Renamed `ObservationCaptureStore` → `LedgerWindowReader`; added `GenericL3AdapterContract` (Q2); refined `BisectOrchestrator` (Q5)
+- §4: Session Fork walkthrough updated with transitive-dep-graph test (Q4)
+- §5: Added generic L3 adapter conformance (Q2); updated to zero-tolerance CI policy (Q7)
+- §6: Context-window commitment per Q1; added two new invariants (Q1, Q6)
+- §7: Zero-tolerance rationale + agentic-cost framing (Q7)
+- §8-10: No changes
+- §9: Added three fixture builders: `LedgerPrefixBuilder` (Q1), `TransitiveDepGraphBuilder` (Q4), `EnvSnapshotBuilder` (Q5)
+- §11: All 8 question subsections deleted; resolution summary table added
+- §12: No changes
+
+**Document footer:** Updated from "DRAFT Complete" to "FINAL — 8 Open Questions Resolved 2026-05-27"
+
+**Newly-discovered ambiguities:** None. All cascading dependencies cleanly resolved.
+
+**Key architectural insights:**
+1. **Structural-commitment model** (Q1): Merkle hash over causal-context window removes agent-intent dependence
+2. **Agentic-cost-function principle** (Q7): Zero-tolerance gate justified by inverted cost functions (drift cost high/opaque, fix cost near-zero)
+3. **Generic-adapter-conformance pattern** (Q2): Single property suite reused for Forge (v1), Eureka (v1.5+), marketplace plugins
+
+---
+
+## Crucible TDD Locks — Cross-Agent Impact Notes (2026-05-27)
+
+Observations posted to affected agent histories:
+
+### Roger — L1 WAL schema implications (Q1)
+
+Observation: Decision's commitment is Merkle hash over causal-context window. Implications for Roger:
+- Observation as first-class primitive type (not envelope metadata)
+- Decision rows carry context-window Merkle commitment
+- Primitive scale = per-tool-call boundary (governs row granularity in WAL schema)
+
+### Alexander — bootstrap-capture invariant (Q1)
+
+Observation: Extra-ledger context (system prompts, tool defs, cross-session memory) MUST be captured as Observation primitives at session offset 0.
+- Impacts runtime execution model (what counts as "session bootstrap")
+- Replay drifts if bootstrap observations missing
+- New test invariant: `Bootstrap-Capture-Completeness`
+
+### Rosella — generic L3 adapter conformance (Q2)
+
+Observation: Generic L3 Generator adapter conformance suite is now v1 test deliverable.
+- Property-based contract tests any adapter must pass (interface compliance, fail-open, hint attribution, lifecycle hooks)
+- Forge adapter validation in v1 CI; Eureka-specific adapter deferred to v1.5
+- No new test infra per adapter
+
+### Valanice — Aperture approval surface (Q3)
+
+Observation: Aperture is the locked surface for structural-proposal approval.
+- Q3 = B (Aperture async notification + queue, default-not-applied until acked)
+- Router refuses to act on dependent paths until structural change is acked
+- No blocking modal; async user review model locked
+
+### Gabriel — execution model & CI policy (Q5, Q7)
+
+Observations:
+- **Q5 (env snapshot at bisect start):** Locked execution model for bisect; closes mid-bisect-drift failure mode
+- **Q7 (zero-tolerance mock-drift gate):** Locked CI policy; single contract test failure blocks all PRs (agentic cost functions justify this vs human-team systems)
+- **Q4 (transitive-dep-graph pinning at fork):** Locked requirement (already part of Sprint 6.5 manifest schema)
+
+### Graham — informational (TDD strategy locks may inform CTD section)
+
+Observation: Laura's TDD strategy locks may inform Graham's CTD (Crucible Technical Design) section content.
+- Firewall between docs still applies (Graham doesn't read Laura's strategy)
+- Cross-team locks like Aperture (Q3), zero-tolerance (Q7), and coexistence (Eureka v1.5 defer) already in decisions.md
+- Laura's architectural insights (structural commitment Q1, agentic-cost framing Q7, generic-adapter pattern Q2) may surface as principles in CTD
+
+---

@@ -1,6 +1,6 @@
 # Crucible Test-Driven Development Strategy
 
-**Status:** DRAFT (Incremental Build in Progress)  
+**Status:** FINAL — 8 Open Questions Resolved 2026-05-27  
 **Author:** Laura Bow (Tester)  
 **Date:** 2026-05-27  
 **Target:** London-school TDD discipline for agentic runtime with strict invariants
@@ -53,6 +53,8 @@ Crucible is a **greenfield 5-layer agentic runtime** with strict invariants gove
    - **CI double-check runs** swap mocks for integration stubs on critical paths
    - **Hermetic replay as test oracle**: Production ledger snapshots become regression test inputs
 
+6. **Structural commitment model and zero-tolerance mock-drift gate distinguish agentic development.** Unlike human teams where context-switch tax and resentment limit test discipline, agent-driven development inverts the cost function: mock drift compounds across many automated decisions (high opaque cost), while fixing drift is near-zero (spawn agent to address). This enables zero-tolerance contract-test policies impractical for human teams.
+
 ### 1.2 Acceptance-First Development Cadence
 
 Every feature begins with an acceptance test:
@@ -92,14 +94,16 @@ These 12 acceptance scenarios anchor outside-in development. Each scenario maps 
 **Source:** US-G-NEW-2 (determinism contract), US-E-NEW-11 (hermetic replay boundary), v1 commitment #4 (hermetic replay boundary)
 
 **Given** a Crucible session with 100 primitives, including 3 LLM calls and 12 tool executions  
-**And** all LLM responses and tool outputs are captured in observation store  
+**And** observations (LLM responses, tool outputs, extra-ledger context) are captured as first-class Observation primitives at tool-call boundaries  
+**And** bootstrap context (system prompts, tool definitions) captured as Observation primitives at session offset 0 (Bootstrap-Capture-Completeness invariant)  
 **When** the user runs `crucible replay <session_id>`  
-**Then** replay consumes captured observations instead of re-executing LLM/tool calls  
+**Then** replay reconstructs causal-context window from ledger prefix for each Decision  
+**And** all Decision commitment hashes (Merkle hash over context window) match original  
 **And** the resulting ledger is byte-identical to the original (excluding wall-clock timestamps)  
 **And** all hook verdicts fire identically  
 **And** replay completes in <10% of original wall-clock time
 
-**Collaborators:** L1 Ledger (append protocol), L0 Bridge (observation capture), L4 Router (hook replay)
+**Collaborators:** L1 Ledger (append protocol), L0 Bridge (observation capture as primitives), L4 Router (hook replay), ReadSetHasher (context-window commitment)
 
 ---
 
@@ -124,13 +128,15 @@ These 12 acceptance scenarios anchor outside-in development. Each scenario maps 
 **Source:** US-S-3 (backward causal slice), Sonny's highest-priority invariant (read-set capture at L1)
 
 **Given** a Crucible session where primitive P47 (`Decision{status:'accepted'}`) was emitted by L4 Router  
-**And** P47's `causal_read_set` = `[P23, P31, P44]` (the primitives consulted to produce the decision)  
+**And** P47's `causalContextWindow` = full ledger prefix [P0..P46] visible at decision time  
+**And** P47's commitment hash is Merkle hash over that context window (all prior primitives, any type: Request, Artifact, Observation, Decision, Question)  
 **When** the user runs `crucible why P47`  
-**Then** the CLI displays the causal ancestry: P47 ← P44 ← P31 ← P23  
+**Then** the CLI displays the causal ancestry: full context window or traced subset depending on query mode  
 **And** for each ancestor, shows: primitive kind, timestamp, producer layer, one-line summary  
-**And** user can drill into any ancestor with `crucible show P23` to see full payload
+**And** user can drill into any ancestor with `crucible show P23` to see full payload  
+**And** the system can verify Decision P47's integrity by recomputing context-window hash and comparing to stored commitment
 
-**Collaborators:** L1 Ledger (read-set storage), L5 Investigation (causal slice engine), CLI (renderer)
+**Collaborators:** L1 Ledger (context-window storage, commitment hashes), L5 Investigation (causal slice engine), CLI (renderer), ReadSetHasher (Merkle verification)
 
 ---
 
@@ -155,14 +161,15 @@ These 12 acceptance scenarios anchor outside-in development. Each scenario maps 
 **Source:** v1 commitment #7 (plugin pinning at fork), US-Ro-NEW-2 (branching as plugin-safe)
 
 **Given** a Crucible session using plugin `@akubly/skill-x` v1.2.3  
+**And** `skill-x` has transitive dependencies: `@akubly/util-lib` v2.0.1, `lodash` v4.17.21  
 **And** the session forks at event offset 50  
 **When** the child session is created  
-**Then** the child session inherits pinned plugin version v1.2.3 (not latest available)  
-**And** even if `@akubly/skill-x` v1.3.0 is installed globally, child session uses v1.2.3  
-**And** plugin version is recorded in session metadata  
-**And** replay of the child session uses v1.2.3 deterministically
+**Then** the child session inherits **resolved transitive dependency graph**: `skill-x@1.2.3`, `util-lib@2.0.1`, `lodash@4.17.21` (not just direct deps)  
+**And** even if newer versions are installed globally, child session uses pinned transitive graph  
+**And** transitive dependency graph is recorded in session metadata (`SessionMetadata.pluginVersions`)  
+**And** replay of the child session uses the same transitive graph deterministically
 
-**Collaborators:** L1 Ledger (session metadata), Plugin Registry (version resolution), L3 Prescribers (load-time version lock)
+**Collaborators:** L1 Ledger (session metadata with transitive graph), Plugin Registry (transitive resolution at install), L3 Prescribers (load-time version lock)
 
 ---
 
@@ -302,17 +309,18 @@ London-school TDD relies on **abstract collaborator roles** that each layer inte
 - **Spy:** Records SDK method calls for observation-capture verification
 - **Fake:** In-memory event stream generator for replay tests
 
-#### `ObservationCaptureStore`
-**Contract:** Persists LLM responses and tool outputs for hermetic replay  
+#### `LedgerWindowReader`
+**Contract:** Provides read access to ledger prefix for context-window reconstruction  
 **Responsibilities:**
-- Stores observation by `(sessionId, turnIndex, callId)` key
-- Retrieves observation during replay deterministically
-- Supports compaction (prune observations for sessions beyond retention window)
+- Accepts query `(sessionId, startOffset, endOffset)` → returns ledger row slice
+- Returns all primitives in range (any type: Request, Artifact, Observation, Decision, Question) in canonical row order
+- Supports efficient prefix queries (L5 Investigation causal-slice construction)
+- Used by Decision commitment to reconstruct context window for Merkle hashing
 
 **Test Doubles:**
-- **Stub:** Returns fixed observations for known keys
-- **Fake:** In-memory `Map<key, observation>` for fast test execution
-- **Spy:** Records all store/retrieve calls to verify capture completeness
+- **Stub:** Returns fixed ledger prefix for known session/range
+- **Fake:** In-memory row array for fast test execution
+- **Spy:** Records all queries to verify context-window read patterns
 
 ---
 
@@ -402,6 +410,22 @@ London-school TDD relies on **abstract collaborator roles** that each layer inte
 - **Spy:** Records emitted primitives per prescriber (attribution testing)
 - **Stub:** Returns fixed hint set for known skills (Router policy tests)
 
+#### `GenericL3AdapterContract`
+**Contract:** Conformance suite for any L3 Generator adapter (Forge today, Eureka v1.5+, marketplace plugins)  
+**Responsibilities:**
+- Validates `PrescriberOrchestrator` interface compliance (discovery, invocation, aggregation)
+- Validates fail-open behavior (adapter crash does not block session)
+- Validates hint attribution (emitted primitives tagged with adapter ID)
+- Validates lifecycle hooks (adapter init/shutdown, per-skill setup/teardown)
+- Validates registration/discovery (adapter registers in plugin registry, discovered by orchestrator)
+
+**Test Doubles:**
+- **Stub:** Minimal adapter implementation (returns empty hint set, validates interface shape)
+- **Mock:** Adapter that fails in controlled ways (crash on init, timeout on invocation, validates fail-open)
+- **Spy:** Records all lifecycle hook invocations (validates hook call order)
+
+**Usage:** Run conformance suite against Forge in v1 CI. Reuse suite for Eureka adapter in v1.5 (no new test infra needed).
+
 #### `ChangeVectorProvider`
 **Contract:** Supplies historical change vector summaries for skill  
 **Responsibilities:**
@@ -477,13 +501,15 @@ London-school TDD relies on **abstract collaborator roles** that each layer inte
 **Contract:** Binary-searches event range to find regression-introducing primitive  
 **Responsibilities:**
 - Accepts `(goodOffset, badOffset, testCommand)` → returns first-failing offset
-- For each candidate offset: forks session, replays to offset, executes test command
+- Captures `process.env` + relevant config files at bisect start (env snapshot)
+- For each candidate offset: forks session, replays to offset, executes test command with **fixed snapshot env** (not live env)
 - Interprets exit code (0 = pass, non-zero = fail)
 - Returns `{failingOffset, primitive, exitCode, stderr}`
+- Internally consistent (all iterations use same env), not externally hermetic (re-run days later may differ)
 
 **Test Doubles:**
-- **Mock:** Verifies fork/replay invocations, returns canned failing offset
-- **Fake:** In-memory test command simulator (deterministic pass/fail per offset)
+- **Mock:** Verifies fork/replay invocations, env snapshot capture, returns canned failing offset
+- **Fake:** In-memory test command simulator (deterministic pass/fail per offset, simulated env snapshot)
 - **Stub:** Always returns `goodOffset + 1` (minimal bisect for fast tests)
 
 ---
@@ -697,7 +723,7 @@ export class ForkLineage {
 }
 ```
 
-**Refactor 2: Add invariant test (fork point ≤ parent ledger size)**
+**Refactor 2: Add invariant test (fork point ≤ parent ledger size, transitive-dep-graph captured)**
 
 ```typescript
 // packages/crucible-core/src/__tests__/unit/session-manager.test.ts
@@ -711,6 +737,31 @@ it('rejects fork beyond parent ledger size', async () => {
   await expect(
     manager.forkSession('parent-id', 50) // 50 > 47
   ).rejects.toThrow('Fork point 50 exceeds parent ledger size 47');
+});
+
+it('child session inherits transitive dependency graph from parent', async () => {
+  const parentPlugins = {
+    '@akubly/skill-x': '1.2.3',
+    '@akubly/util-lib': '2.0.1', // Transitive dep of skill-x
+    'lodash': '4.17.21'           // Transitive dep of util-lib
+  };
+  
+  mockDB.getSession.mockResolvedValue({
+    id: 'parent-id',
+    ledgerSize: 47,
+    pluginVersions: parentPlugins
+  });
+  
+  const manager = new SessionManager(mockDB);
+  const childId = await manager.forkSession('parent-id', 23);
+  
+  expect(mockDB.insertSession).toHaveBeenCalledWith({
+    id: expect.any(String),
+    parentSessionId: 'parent-id',
+    forkPointEventId: 23,
+    pluginVersions: parentPlugins, // Full transitive graph inherited
+    createdAt: expect.any(Number),
+  });
 });
 ```
 
@@ -1239,12 +1290,15 @@ Crucible's 5-layer architecture demands **5 test tiers** plus cross-cutting conf
 **Dependencies:** Real implementation of one collaborator, rest mocked  
 **Speed:** ~50-200ms per test (may touch DB/filesystem)  
 **Examples:**
-- Real `Database.insertSession()` accepts `{id, parentSessionId, forkPointEventId, createdAt}` shape
+- Real `Database.insertSession()` accepts `{id, parentSessionId, forkPointEventId, pluginVersions, createdAt}` shape
 - Real `AppendProtocol.append()` returns monotonically increasing offsets
 - Real `ApertureProjector` produces same output for same input (projection purity)
 - Real `PolicyEngine.evaluate()` returns `{verdict, reason}` shape for all test cases
+- **Generic L3 Adapter conformance:** Any L3 Generator adapter (Forge, future Eureka v1.5+, marketplace plugins) passes interface compliance, fail-open, hint attribution, lifecycle hooks tests
 
 **Failure mode:** Mock drift—component tests pass but real implementation has different interface
+
+**CI Policy:** Single contract test failure **blocks all PRs** (zero-tolerance). Mock drift in agentic development has compounding cost (agent makes many decisions against drifted model), while fix cost is near-zero (spawn agent to address). This inverts the human-team trade-off where context-switch tax and resentment make zero-tolerance brittle.
 
 #### Tier 4: Integration Tests (Layer Boundaries, Real Implementations)
 
@@ -1282,9 +1336,9 @@ Beyond the pyramid, **conformance suites** validate architectural invariants acr
 **Input:** Production ledger snapshots (golden files)  
 **Execution:**
 1. Load snapshot → extract session metadata + event sequence
-2. Replay session with captured observations
-3. Compare resulting ledger byte-for-byte (exclude wall-clock timestamps)
-4. Assert: all primitives match, all hook verdicts match, all read-set hashes match
+2. Replay session: reconstruct context windows, recompute Decision commitment hashes
+3. Compare resulting ledger byte-for-byte (exclude wall-clock timestamps via `normalizeTimestamps()` helper)
+4. Assert: all primitives match, all hook verdicts match, all context-window commitment hashes match
 
 **Failure:** Determinism regression (non-hermetic operation leaked into replay path)
 
@@ -1295,9 +1349,10 @@ Beyond the pyramid, **conformance suites** validate architectural invariants acr
 **Execution:**
 1. Load dataset → extract prescriptions with fitness contracts
 2. Run Pareto frontier computation
-3. Assert: non-dominated set matches expected (no false dominance)
+3. Assert: non-dominated set matches expected
+4. Handle incomparable prescriptions (non-overlapping axes): both remain in non-dominated set (no zero-fill, no partial dominance for v1)
 
-**Failure:** Fitness computation regression (multi-objective dominance logic broken)
+**Failure:** Fitness computation regression (multi-objective dominance logic broken, or incomparable-handling regression)
 
 #### Hook Budget Conformance Suite
 
@@ -1384,49 +1439,73 @@ describe('Append-Only Invariant', () => {
 
 **Failure mode:** Ledger UPDATE or DELETE detected (immutability broken)
 
-### 6.2 Hash-Chain Integrity
+### 6.2 Hash-Chain Integrity (Context-Window Commitment)
 
-**Invariant:** Each primitive's `causalReadSetHash` is deterministically derived from `causalReadSet` via CBOR+BLAKE3.
+**Invariant:** Each Decision primitive's commitment hash is a **Merkle hash over its causal-context window**—every prior ledger row visible at decision time (any primitive type), in canonical row order.
 
 **Property Test:**
 
 ```typescript
-describe('Hash-Chain Integrity', () => {
-  it('identical read-sets produce identical hashes', () => {
+describe('Hash-Chain Integrity (Context-Window Commitment)', () => {
+  it('identical context windows produce identical commitment hashes', () => {
     fc.assert(
       fc.property(
-        fc.array(fc.integer({ min: 0, max: 1000 })), // Read-set = array of primitive IDs
-        (readSet) => {
-          const hasher = new ReadSetHasher();
+        fc.array(arbitraryPrimitive, { minLength: 5, maxLength: 50 }), // Ledger prefix
+        async (ledgerPrefix) => {
+          const hasher = new ContextWindowHasher();
           
-          // Hash same input twice
-          const hash1 = hasher.hash({ primitiveIds: readSet, projectionKeys: [], externalInputs: [] });
-          const hash2 = hasher.hash({ primitiveIds: readSet, projectionKeys: [], externalInputs: [] });
+          // Hash same ledger prefix twice (context window = full prefix)
+          const hash1 = hasher.hashContextWindow(ledgerPrefix);
+          const hash2 = hasher.hashContextWindow(ledgerPrefix);
           
           // Assert: Determinism (same input → same output)
           expect(hash1).toEqual(hash2);
           
-          // Hash shuffled input (order matters per CBOR canonicalization)
-          const shuffled = [...readSet].sort(() => Math.random() - 0.5);
-          const hash3 = hasher.hash({ primitiveIds: shuffled, projectionKeys: [], externalInputs: [] });
+          // Hash with one additional primitive (extended window)
+          const extendedPrefix = [...ledgerPrefix, arbitraryPrimitive];
+          const hash3 = hasher.hashContextWindow(extendedPrefix);
           
-          // Assert: Order sensitivity (shuffled → different hash, unless readSet was already sorted)
-          if (JSON.stringify(readSet) !== JSON.stringify(shuffled.sort((a, b) => a - b))) {
-            expect(hash3).not.toEqual(hash1);
+          // Assert: Different window → different hash
+          expect(hash3).not.toEqual(hash1);
+          
+          // Hash with same prefix but different order (should not occur in practice, but validates ordering sensitivity)
+          const shuffled = [...ledgerPrefix].sort(() => Math.random() - 0.5);
+          const hash4 = hasher.hashContextWindow(shuffled);
+          
+          // Assert: Order sensitivity (unless ledgerPrefix was already [randomly] in shuffled order)
+          if (JSON.stringify(ledgerPrefix) !== JSON.stringify(shuffled)) {
+            expect(hash4).not.toEqual(hash1);
           }
         }
       ),
       { numRuns: 100 }
     );
   });
+  
+  it('context window includes all primitive types in range', () => {
+    const ledgerPrefix = [
+      new PrimitiveBuilder().ofKind('request').build(),
+      new PrimitiveBuilder().ofKind('artifact').build(),
+      new PrimitiveBuilder().ofKind('observation').build(),
+      new PrimitiveBuilder().ofKind('decision').build(),
+      new PrimitiveBuilder().ofKind('question').build(),
+    ];
+    
+    const hasher = new ContextWindowHasher();
+    const hash = hasher.hashContextWindow(ledgerPrefix);
+    
+    // Hash must be computed over all 5 primitives (not just Observations or Decisions)
+    expect(hash).not.toBeNull();
+    expect(hash).toHaveLength(64); // BLAKE3 produces 32-byte hex string
+  });
 });
 ```
 
-**Failure mode:** Non-deterministic hashing (CBOR serialization bug, BLAKE3 misuse)
+**Failure mode:** Non-deterministic hashing (CBOR serialization bug, BLAKE3 misuse, incorrect window bounds)
 
 ### 6.3 Replay Equivalence
 
-**Invariant:** Replaying a session with captured observations produces **byte-identical ledger** (modulo wall-clock timestamps).
+**Invariant:** Replaying a session produces **byte-identical ledger** (modulo wall-clock timestamps, which are excluded from equality check via `normalizeTimestamps()` helper).
 
 **Property Test:**
 
@@ -1440,20 +1519,19 @@ describe('Replay Equivalence', () => {
           primitivePayload: fc.object({ maxDepth: 2 }),
         }), { minLength: 5, maxLength: 50 }),
         async (primitives) => {
-          // Original execution
+          // Original execution: primitives appended, context windows captured
           const ledger1 = await createLedger();
-          const observationStore = new ObservationCaptureStore();
           
           for (const primitive of primitives) {
-            await ledger1.append(primitive, { observationStore });
+            await ledger1.append(primitive); // Observations captured as first-class primitives
           }
           
           const snapshot1 = await ledger1.queryAll();
           
-          // Replay execution
+          // Replay execution: reconstruct context windows from ledger, recompute hashes
           const ledger2 = await createLedger();
           for (const primitive of primitives) {
-            await ledger2.append(primitive, { replayFrom: observationStore });
+            await ledger2.append(primitive, { replayMode: true });
           }
           
           const snapshot2 = await ledger2.queryAll();
@@ -1472,7 +1550,7 @@ function normalizeTimestamps(events: any[]): any[] {
 }
 ```
 
-**Failure mode:** Replay diverges from original (non-hermetic operation leaked)
+**Failure mode:** Replay diverges from original (non-hermetic operation leaked, context-window reconstruction bug)
 
 ### 6.4 Fork Lineage Transitivity
 
@@ -1662,17 +1740,168 @@ describe('Trust-Tier Monotonicity', () => {
 
 **Failure mode:** Auto-promotion accidentally downgrades tier (regression in tier-transition logic)
 
-### 6.8 Summary: Invariant Coverage
+---
+
+### 6.8 Bootstrap-Capture-Completeness (Q1 New Invariant)
+
+**Invariant:** Extra-ledger context (system prompts, tool definitions, cross-session memory) is captured as **Observation primitives at session offset 0**. Replay drifts if this invariant is violated.
+
+**Property Test:**
+
+```typescript
+describe('Bootstrap-Capture-Completeness', () => {
+  it('session bootstrap captures all extra-ledger context as offset-0 observations', async () => {
+    // Arrange: Session bootstrap with system prompt, tool definitions, cross-session memory
+    const bootstrapContext = {
+      systemPrompt: 'You are a helpful assistant...',
+      toolDefinitions: [
+        { name: 'read_file', description: '...' },
+        { name: 'edit_file', description: '...' },
+      ],
+      crossSessionMemory: { facts: ['User prefers TypeScript', 'Use 2-space indent'] },
+    };
+    
+    const ledger = await createLedger();
+    await ledger.bootstrap(bootstrapContext);
+    
+    // Act: Query ledger at offset 0
+    const offset0Primitives = await ledger.queryEvents({ range: [0, 0] });
+    
+    // Assert: All extra-ledger context captured as Observation primitives
+    const observations = offset0Primitives.filter(p => p.primitiveKind === 'observation');
+    
+    expect(observations.length).toBeGreaterThan(0);
+    
+    // Assert: System prompt captured
+    const systemPromptObs = observations.find(o => o.primitivePayload.type === 'system_prompt');
+    expect(systemPromptObs).toBeDefined();
+    expect(systemPromptObs.primitivePayload.content).toContain('You are a helpful assistant');
+    
+    // Assert: Tool definitions captured
+    const toolDefsObs = observations.find(o => o.primitivePayload.type === 'tool_definitions');
+    expect(toolDefsObs).toBeDefined();
+    expect(toolDefsObs.primitivePayload.tools).toHaveLength(2);
+    
+    // Assert: Cross-session memory captured
+    const memoryObs = observations.find(o => o.primitivePayload.type === 'cross_session_memory');
+    expect(memoryObs).toBeDefined();
+    expect(memoryObs.primitivePayload.facts).toEqual(['User prefers TypeScript', 'Use 2-space indent']);
+  });
+  
+  it('replay fails if bootstrap observations missing', async () => {
+    // Original session with bootstrap
+    const ledger1 = await createLedger();
+    await ledger1.bootstrap({ systemPrompt: 'System prompt', toolDefinitions: [], crossSessionMemory: {} });
+    await ledger1.append({ primitiveKind: 'decision', primitivePayload: { decision: 'test' } });
+    
+    const snapshot = await ledger1.queryAll();
+    
+    // Replay session WITHOUT bootstrap observations (simulate corrupted ledger)
+    const ledger2 = await createLedger();
+    const nonBootstrapPrimitives = snapshot.filter(p => p.commitOffset > 0); // Skip offset 0
+    
+    for (const primitive of nonBootstrapPrimitives) {
+      await ledger2.append(primitive, { replayMode: true });
+    }
+    
+    // Assert: Replay produces different output (context-window hashes don't match)
+    const replaySnapshot = await ledger2.queryAll();
+    const originalDecision = snapshot.find(p => p.primitiveKind === 'decision');
+    const replayedDecision = replaySnapshot.find(p => p.primitiveKind === 'decision');
+    
+    expect(replayedDecision.commitmentHash).not.toEqual(originalDecision.commitmentHash);
+  });
+});
+```
+
+**Failure mode:** Bootstrap context not captured → replay context-window diverges from original
+
+---
+
+### 6.9 Monotonic-Timestamps-Within-Session (Q6 New Invariant)
+
+**Invariant:** Every L1 row's timestamp ≥ previous row's timestamp. Independent of replay conformance (which excludes timestamps from equality check).
+
+**Property Test:**
+
+```typescript
+describe('Monotonic-Timestamps-Within-Session', () => {
+  it('ledger row timestamps never decrease within session', async () => {
+    fc.assert(
+      fc.property(
+        fc.array(arbitraryPrimitive, { minLength: 10, maxLength: 100 }),
+        async (primitives) => {
+          const ledger = await createLedger();
+          
+          for (const primitive of primitives) {
+            await ledger.append(primitive);
+            await new Promise(resolve => setTimeout(resolve, 1)); // Ensure time advances
+          }
+          
+          const events = await ledger.queryAll();
+          
+          // Assert: Timestamps monotonically increase (or stay equal, if appended within same millisecond)
+          for (let i = 1; i < events.length; i++) {
+            expect(events[i].timestamp).toBeGreaterThanOrEqual(events[i - 1].timestamp);
+          }
+        }
+      ),
+      { numRuns: 30 }
+    );
+  });
+  
+  it('detects manual tampering with timestamp order', async () => {
+    const ledger = await createLedger();
+    
+    // Append two primitives
+    await ledger.append({ primitiveKind: 'observation', primitivePayload: { a: 1 } });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    await ledger.append({ primitiveKind: 'observation', primitivePayload: { b: 2 } });
+    
+    const events = await ledger.queryAll();
+    
+    // Manually tamper: swap timestamps
+    const db = ledger._getDB(); // Test-only accessor
+    db.prepare('UPDATE wal_records SET timestamp = ? WHERE offset = ?').run(events[0].timestamp, 1);
+    db.prepare('UPDATE wal_records SET timestamp = ? WHERE offset = ?').run(events[1].timestamp, 0);
+    
+    // Run monotonicity check
+    const tampered = await ledger.queryAll();
+    
+    // Assert: Monotonicity violation detected
+    expect(tampered[1].timestamp).toBeLessThan(tampered[0].timestamp); // Violation
+    
+    // Invariant test suite should flag this
+    expect(() => assertMonotonicTimestamps(tampered)).toThrow('Timestamp monotonicity violated');
+  });
+});
+
+function assertMonotonicTimestamps(events: any[]): void {
+  for (let i = 1; i < events.length; i++) {
+    if (events[i].timestamp < events[i - 1].timestamp) {
+      throw new Error(`Timestamp monotonicity violated at offset ${i}: ${events[i].timestamp} < ${events[i - 1].timestamp}`);
+    }
+  }
+}
+```
+
+**Failure mode:** Clock skew, manual tampering, fork-time inheritance bug
+
+---
+
+### 6.10 Summary: Invariant Coverage
 
 | Invariant | Property Test | Failure Detection |
 |---|---|---|
 | Append-only | Ledger snapshots are prefixes | UPDATE/DELETE leaked |
-| Hash-chain determinism | Same read-set → same hash | CBOR or BLAKE3 bug |
-| Replay equivalence | Replay = original (mod timestamps) | Non-hermetic operation |
+| Hash-chain (context-window commitment) | Same context window → same hash | CBOR, BLAKE3, or window-bounds bug |
+| Replay equivalence | Replay = original (mod timestamps) | Non-hermetic operation, context-window reconstruction bug |
 | Fork lineage transitivity | Multi-gen forks trace to root | Parent pointer corruption |
 | Hook verdict determinism | Same input → same verdict | Time-based policy leak |
 | Projection purity | Same input → same output | Hidden projector state |
 | Trust-tier monotonicity | Tier never downgrades (except revocation) | Auto-promotion regression |
+| **Bootstrap-Capture-Completeness (Q1)** | **Offset-0 observations capture all extra-ledger context** | **Bootstrap context missing → replay drift** |
+| **Monotonic-Timestamps-Within-Session (Q6)** | **Every row timestamp ≥ previous** | **Clock skew, manual tampering, fork-time bug** |
 
 **Test execution:** Property tests run in CI nightly (longer runtime than unit tests). Failures trigger bisect to find minimal counterexample.
 
@@ -1682,7 +1911,7 @@ describe('Trust-Tier Monotonicity', () => {
 
 **Mock drift** is the London-school testing hazard: mocked interfaces diverge from real implementations, causing component tests to pass while integration/acceptance tests fail. Crucible mitigates this via **four defense layers**.
 
-### 7.1 Defense Layer 1: Contract Tests
+### 7.1 Defense Layer 1: Contract Tests (Zero-Tolerance Gate)
 
 **Mechanism:** For every collaborator role mocked in component tests, a **contract test suite** validates that the real implementation honors the mocked interface.
 
@@ -1735,7 +1964,16 @@ describe('AppendProtocol Contract', () => {
 });
 ```
 
-**CI Policy:** Contract tests run on every PR. Failures block merge (highest priority—mock drift detected).
+**CI Policy:** **Single contract test failure blocks all PRs** (zero-tolerance).
+
+**Why zero-tolerance for agentic development:**
+- **Cost function inversion:** In human teams, zero-tolerance is brittle due to context-switch tax (developer pulled from feature work to fix mock) and resentment (developers disable tests for expediency). In agentic development, these failure modes don't apply:
+  - **Context-switch tax = near-zero:** Spawn background agent to address contract test failure. Agent investigates, fixes mock or real implementation, commits. No human context switch.
+  - **Resentment = non-existent:** Agents don't experience frustration or disable tests out of expediency.
+  - **Drift cost = compounding:** Mock drift compounds across agent actions. An agent making 20 decisions per session against a drifted model produces cumulative correctness debt. Detection cost scales linearly with drift duration.
+  - **Fix cost = near-zero:** Agent-driven fix (update mock, update component tests, validate contract) completes in minutes.
+
+**Traditional human-team threshold (≥3 failures → mock audit)** is too permissive for agentic systems. Localized drift (one contract test) in an agentic context is immediate correctness risk, not acceptable iteration noise.
 
 ### 7.2 Defense Layer 2: Shared Fixture Builders
 
@@ -1935,7 +2173,7 @@ jobs:
 
 | Defense Layer | Mechanism | Detection Speed | Cost |
 |---|---|---|---|
-| Contract tests | Real impl honors mocked interface | PR-time (immediate) | Low (30-60 tests, ~10s) |
+| Contract tests (zero-tolerance) | Real impl honors mocked interface | PR-time (immediate) | Low (30-60 tests, ~10s) |
 | Shared fixture builders | Builders enforce schema invariants | Build-time (compile errors) | Low (one-time setup) |
 | Golden file tests | Production snapshots as regression inputs | Nightly | Medium (slower tests) |
 | CI double-check runs | Swap mocks for real impls on critical paths | PR-time (parallel job) | Medium (2× test time) |
@@ -1943,13 +2181,15 @@ jobs:
 
 **Combined effect:** Mock drift detected within **one PR cycle** (minutes to hours), not weeks later in production.
 
+**Zero-tolerance rationale (Q7):** Agentic-development cost functions invert vs human teams. In human teams, ≥3-failure threshold balances iteration speed vs correctness (context-switch tax makes zero-tolerance brittle). In agentic teams, drift cost is high and opaque (compounds across many automated decisions), while fix cost is near-zero (spawn agent to address). This enables zero-tolerance policies impractical for human-only workflows.
+
 ### 7.7 When Mock Drift is Detected
 
 **Triage Protocol:**
 
 1. **Contract test fails:** Mock has diverged from real implementation.
-   - **Fix:** Update mock to match real interface. Update component tests if needed.
-   - **Review:** Why did interface change? Was it documented?
+   - **Fix (zero-tolerance):** Spawn background agent immediately. Agent updates mock to match real interface, updates component tests if needed, validates contract. No PR merge until fixed.
+   - **Review:** Why did interface change? Was it documented? If undocumented breaking change, escalate to API design review.
 
 2. **Golden test fails:** Real implementation behavior changed.
    - **Investigation:** Is this expected (new feature) or regression (bug)?
@@ -1963,7 +2203,7 @@ jobs:
    - **Review:** Is this a breaking change? Update major version if yes.
    - **Action:** Update mocks across all test suites. Document breaking change in CHANGELOG.
 
-**Escalation:** If mock drift is detected in >3 components simultaneously, schedule **mock audit sprint** (1-2 days to systematically review all mocks vs real implementations).
+**Escalation (removed for agentic development):** In human teams, ≥3 simultaneous failures → mock audit sprint. In agentic teams, **single failure** triggers background agent spawn (no escalation delay needed).
 
 ---
 
@@ -2238,6 +2478,204 @@ const primitives = new PrimitiveBuilder()
 1. **Schema evolution:** When `Primitive` gains new required field (e.g., `schemaVersion`), update builder once. All tests adapt.
 2. **Readability:** `new PrimitiveBuilder().ofKind('decision').fromSource('builtin')` is self-documenting.
 3. **Invariant enforcement:** Builders validate constraints (e.g., `causalReadSet` cannot reference negative offsets).
+
+---
+
+#### Builder Example: `LedgerPrefixBuilder` (Q1 Context-Window Testing)
+
+```typescript
+// packages/crucible-core/src/__tests__/fixtures/ledger-prefix-builder.ts
+
+export class LedgerPrefixBuilder {
+  private primitives: Primitive[] = [];
+  
+  withBootstrapContext(context: {
+    systemPrompt: string;
+    toolDefinitions: any[];
+    crossSessionMemory: any;
+  }): this {
+    // Offset 0: System prompt observation
+    this.primitives.push(
+      new PrimitiveBuilder()
+        .ofKind('observation')
+        .withPayload({ type: 'system_prompt', content: context.systemPrompt })
+        .build()
+    );
+    
+    // Offset 1: Tool definitions observation
+    this.primitives.push(
+      new PrimitiveBuilder()
+        .ofKind('observation')
+        .withPayload({ type: 'tool_definitions', tools: context.toolDefinitions })
+        .build()
+    );
+    
+    // Offset 2: Cross-session memory observation
+    this.primitives.push(
+      new PrimitiveBuilder()
+        .ofKind('observation')
+        .withPayload({ type: 'cross_session_memory', facts: context.crossSessionMemory })
+        .build()
+    );
+    
+    return this;
+  }
+  
+  appendRequest(payload: object): this {
+    this.primitives.push(
+      new PrimitiveBuilder().ofKind('request').withPayload(payload).build()
+    );
+    return this;
+  }
+  
+  appendArtifact(payload: object): this {
+    this.primitives.push(
+      new PrimitiveBuilder().ofKind('artifact').withPayload(payload).build()
+    );
+    return this;
+  }
+  
+  appendObservation(payload: object): this {
+    this.primitives.push(
+      new PrimitiveBuilder().ofKind('observation').withPayload(payload).build()
+    );
+    return this;
+  }
+  
+  appendDecision(contextWindowSize: number): this {
+    // Decision commits over entire ledger prefix up to this point
+    const contextWindow = this.primitives.slice(0, contextWindowSize);
+    const commitmentHash = hashContextWindow(contextWindow);
+    
+    this.primitives.push(
+      new PrimitiveBuilder()
+        .ofKind('decision')
+        .withPayload({ status: 'accepted', commitmentHash })
+        .build()
+    );
+    return this;
+  }
+  
+  build(): Primitive[] {
+    // Assign commit offsets
+    return this.primitives.map((p, i) => ({ ...p, commitOffset: i }));
+  }
+}
+
+// Usage in context-window commitment tests
+const ledgerPrefix = new LedgerPrefixBuilder()
+  .withBootstrapContext({
+    systemPrompt: 'You are a helpful assistant',
+    toolDefinitions: [{ name: 'read_file' }],
+    crossSessionMemory: { facts: ['Use TypeScript'] }
+  })
+  .appendRequest({ content: 'Read package.json' })
+  .appendArtifact({ file: 'package.json', content: '...' })
+  .appendDecision(5) // Decision over [0..4]
+  .build();
+```
+
+**Use case:** Testing Bootstrap-Capture-Completeness invariant (Q1), context-window commitment correctness.
+
+---
+
+#### Builder Example: `TransitiveDepGraphBuilder` (Q4 Plugin Pinning)
+
+```typescript
+// packages/crucible-core/src/__tests__/fixtures/transitive-dep-graph-builder.ts
+
+export class TransitiveDepGraphBuilder {
+  private graph: Map<string, { version: string; deps: string[] }> = new Map();
+  
+  addPlugin(name: string, version: string, deps: string[] = []): this {
+    this.graph.set(name, { version, deps });
+    return this;
+  }
+  
+  build(): Record<string, string> {
+    // Resolve transitive dependency graph (BFS)
+    const resolved: Record<string, string> = {};
+    const queue: string[] = Array.from(this.graph.keys());
+    const visited = new Set<string>();
+    
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      
+      const node = this.graph.get(current);
+      if (!node) continue;
+      
+      resolved[current] = node.version;
+      
+      for (const dep of node.deps) {
+        if (!visited.has(dep)) {
+          queue.push(dep);
+        }
+      }
+    }
+    
+    return resolved;
+  }
+}
+
+// Usage in fork pinning tests
+const transitiveGraph = new TransitiveDepGraphBuilder()
+  .addPlugin('@akubly/skill-x', '1.2.3', ['@akubly/util-lib'])
+  .addPlugin('@akubly/util-lib', '2.0.1', ['lodash'])
+  .addPlugin('lodash', '4.17.21', [])
+  .build();
+
+// Result: { '@akubly/skill-x': '1.2.3', '@akubly/util-lib': '2.0.1', 'lodash': '4.17.21' }
+```
+
+**Use case:** Testing plugin pinning at session fork (Q4), validating transitive-dep-graph capture.
+
+---
+
+#### Builder Example: `EnvSnapshotBuilder` (Q5 Bisect Env Consistency)
+
+```typescript
+// packages/crucible-core/src/__tests__/fixtures/env-snapshot-builder.ts
+
+export class EnvSnapshotBuilder {
+  private env: Record<string, string> = {};
+  private configFiles: Map<string, string> = new Map();
+  
+  withEnvVar(key: string, value: string): this {
+    this.env[key] = value;
+    return this;
+  }
+  
+  withConfigFile(path: string, content: string): this {
+    this.configFiles.set(path, content);
+    return this;
+  }
+  
+  withDefaults(): this {
+    // Default env vars relevant to bisect
+    this.env['NODE_ENV'] = 'test';
+    this.env['PATH'] = process.env.PATH || '';
+    this.env['HOME'] = process.env.HOME || '/home/user';
+    return this;
+  }
+  
+  build(): { env: Record<string, string>; configFiles: Map<string, string> } {
+    return { env: this.env, configFiles: this.configFiles };
+  }
+}
+
+// Usage in bisect tests
+const envSnapshot = new EnvSnapshotBuilder()
+  .withDefaults()
+  .withEnvVar('CRUCIBLE_TEST_MODE', 'bisect')
+  .withConfigFile('.crucible/config.json', '{ "debug": false }')
+  .build();
+
+// Bisect orchestrator uses fixed snapshot for all iterations (internal consistency)
+```
+
+**Use case:** Testing bisect env snapshot at start (Q5), validating internal consistency across iterations.
 
 ### 9.2 Golden Files (Production-Derived Data)
 
@@ -2715,167 +3153,37 @@ it('evaluatePolicy vetoes external sources', () => {
 
 ## 11. Open Questions
 
-These ambiguities in the PRD require resolution before full test strategy execution. Each question identifies a **testing blocker**—a decision that affects test design, fixture requirements, or acceptance criteria.
+**Status:** ALL 8 QUESTIONS RESOLVED — 2026-05-27
 
-### Q1: Session-End Hook Contract (Observation Capture Completeness)
+All ambiguities from the initial draft have been locked via Decision-Point gate with Aaron Kubly. Resolutions integrated throughout this document. See `.squad/decisions/inbox/coordinator-crucible-tdd-q-resolutions.md` for full resolution rationale.
 
-**PRD Source:** Round 2.2 lock #7 (Sprint-2-exit Alexander+Roger spike), US-A-NEW-5 (ledger-append transactional contract)
+**Resolved decisions summary:**
 
-**Question:** At what granularity does observation capture happen?
-- **Option A:** Per-tool-call (current Cairn pattern: `permissionDecision` captures tool inputs/outputs)
-- **Option B:** Per-primitive-write (L1 row append captures full LLM turn context)
-- **Option C:** Per-turn (session-end sweep captures accumulated observations)
+| Q | Topic | Resolution |
+|---|---|---|
+| Q1 | Observation capture & primitive scale | **Refined Option E:** Decision commits Merkle hash over causal-context window (all prior ledger rows, any type). Observation = first-class primitive. Primitive scale = per-tool-call-boundary. M3: side-effect-only tool calls emit Artifact with synthetic output. Bootstrap-Capture-Completeness invariant added. |
+| Q2 | Eureka prescriber integration in v1 tests | **Option C + generic L3 adapter suite:** Defer Eureka adapter to v1.5. ADD generic L3 Generator adapter conformance suite in v1 (applies to Forge today, Eureka v1.5+, marketplace plugins). |
+| Q3 | Structural proposal approval UX | **Option B:** Aperture async notification + queue, default-not-applied until acked. |
+| Q4 | Plugin pinning scope at fork | **Option B:** Transitive dependency graph pinned at fork (not just direct deps). |
+| Q5 | Bisect test command execution | **Option D (coordinator refinement):** Env snapshot at bisect start + shell out with fixed env per iteration. Internally consistent, not externally hermetic. |
+| Q6 | Timestamp normalization in conformance suite | **Option A + monotonicity invariant:** Exclude timestamps from byte-equality check. ADD separate property test: Monotonic-Timestamps-Within-Session. |
+| Q7 | Mock-drift detection threshold | **Option A (zero-tolerance):** Single contract test failure blocks PRs. Agentic cost functions invert vs human teams (drift cost compounds; fix cost near-zero). |
+| Q8 | Pareto fitness with non-overlapping axes | **Option A:** Incomparable prescriptions (non-overlapping axes) both remain in non-dominated set. No zero-fill, no partial dominance for v1. |
 
-**Testing Impact:**
-- **If A:** Hermetic replay tests must mock tool calls individually (fine-grained, slow)
-- **If B:** Replay tests validate per-row observation linkage (read-set tests must include observation keys)
-- **If C:** Replay tests validate session-end hook fires (risk: mid-session crash loses observations)
+**New ambiguities discovered during resolution integration:** None. All 8 questions cleanly resolved with no cascading dependencies requiring further locks.
 
-**Blocker:** Acceptance scenario A2 (Hermetic Replay) cannot be fully specified until this resolves.
-
-**Recommendation:** Lock Option B (per-primitive-write) for **v1 commitment #4** (hermetic replay boundary). Per-row observation capture aligns with read-set capture (both L1 row metadata). Session-end sweep (Option C) risks data loss on crash.
-
----
-
-### Q2: Eureka Prescriber Integration Path
-
-**PRD Source:** Cassima cross-PRD coordination (locked v1 freeze: `SessionId`, `DecisionRecord`, `@akubly/types` co-ownership), Gabriel marketplace mechanics (deferred prescriber API design)
-
-**Question:** How does Eureka integrate with Crucible's prescriber orchestration?
-- **Option A:** Eureka is a standalone L3 prescriber (invoked like Forge via `PrescriberOrchestrator`)
-- **Option B:** Eureka is a library consumed by Forge prescribers (not standalone chamber)
-- **Option C:** Eureka integration deferred to v1.5+ (v1 ships without Eureka)
-
-**Testing Impact:**
-- **If A:** Contract tests must validate Eureka honors `PrescriberOrchestrator` interface (prescriber discovery, fail-open, hint attribution)
-- **If B:** Integration tests validate Forge prescribers call Eureka library correctly (mock `eureka.ingestDecisions()`, `eureka.queryFacts()`)
-- **If C:** No Eureka testing in v1 strategy (defer to v1.5 addendum)
-
-**Blocker:** Test layering (§5) assumes all prescribers follow same orchestration pattern. If Eureka is special-cased, need separate test tier.
-
-**Recommendation:** Lock Option C (defer to v1.5) per Aaron's May 26 directive (Crucible storage fork + Eureka standalone). Remove Eureka from v1 test strategy scope.
-
----
-
-### Q3: Structural Proposal Approval UX
-
-**PRD Source:** Rosella dual-interface split (DataProposalGenerator vs StructuralProposalGenerator), Router policy escalation
-
-**Question:** What does "explicit user review" mean for structural proposals?
-- **Option A:** Blocking modal (user must ACK/REJECT before session continues)
-- **Option B:** Aperture attention-tier notification (user can review async, proposal queued)
-- **Option C:** Separate review CLI (`crucible review structural` lists pending structural proposals)
-
-**Testing Impact:**
-- **If A:** Acceptance test A10 (Router Policy Escalation) must validate session blocks until user responds (mock stdin input in CLI test)
-- **If B:** Test validates notification appears in Aperture, proposal in queue, user can approve via `crucible aperture act <id>`
-- **If C:** Test validates `crucible review structural` lists proposals, approval mutates ledger
-
-**Blocker:** Acceptance scenario A10 cannot specify assertion ("proposal appears in user's review queue") without knowing where queue lives.
-
-**Recommendation:** Lock Option B (Aperture notification + async review) per Valanice UX framing ("Mirror is query-over-router-queue"). Blocking modals break flow; async review fits Aperture push/pull duality.
-
----
-
-### Q4: Plugin Pinning at Fork — Scope
-
-**PRD Source:** v1 commitment #7 (plugin pinning at fork), US-Ro-NEW-2 (branching as plugin-safe)
-
-**Question:** What is pinned at session fork?
-- **Option A:** Only direct dependencies (plugins user explicitly loaded)
-- **Option B:** Transitive dependencies (plugins + all their dependencies)
-- **Option C:** Full environment snapshot (plugins + Node.js version + OS)
-
-**Testing Impact:**
-- **If A:** Acceptance test A6 validates `pluginVersions` metadata contains only top-level plugins (shallow snapshot)
-- **If B:** Test validates transitive dependency graph is resolved and pinned (need `resolveTransitiveDeps()` test fixture)
-- **If C:** Test validates environment snapshot includes Node.js/OS (hermetic replay must reproduce environment)
-
-**Blocker:** Fixture builders (§9) need to know what data to include in `SessionMetadata.pluginVersions` field.
-
-**Recommendation:** Lock Option B (transitive dependencies) per Gabriel Sprint 6.5 scope (`transitive_deps[]` in manifest schema, transitive graph resolved at install). Option C (full environment) is overfit for solo-user v1 (no multi-machine reproducibility requirement).
-
----
-
-### Q5: Bisect Test Command Execution Environment
-
-**PRD Source:** US-S-6 (cairn-bisect), US-Ga-NEW-12 (bisect tooling)
-
-**Question:** How does bisect execute test commands?
-- **Option A:** Shell out to user's current shell (inherits environment, may be non-hermetic)
-- **Option B:** Isolated subprocess with controlled environment (hermetic, but requires env setup)
-- **Option C:** In-process test runner integration (fast, but limited to Node.js tests)
-
-**Testing Impact:**
-- **If A:** Acceptance test A11 must mock shell execution (spy on `child_process.spawn`), validate command string correctness
-- **If B:** Test validates environment isolation (env vars, working directory), seed controlled environment in test fixture
-- **If C:** Test validates in-process runner integration (mock Vitest runner, validate test discovery)
-
-**Blocker:** Integration test for bisect (§5 tier 4) cannot be written without knowing execution model.
-
-**Recommendation:** Lock Option A (shell out) for v1 MVM. Hermetic execution (Option B) is desirable but adds complexity (env snapshotting, cross-platform shell detection). Defer hermetic bisect to v1.5.
-
----
-
-### Q6: Determinism Conformance — Timestamp Normalization
-
-**PRD Source:** v1 commitment #2 (determinism conformance suite), US-G-NEW-2 (determinism contract)
-
-**Question:** How are wall-clock timestamps handled in replay?
-- **Option A:** Timestamps excluded from byte-equality check (normalized to zero)
-- **Option B:** Timestamps replaced with deterministic sequence (0, 1, 2, …) during replay
-- **Option C:** Timestamps preserved but marked as non-deterministic field (test ignores specific column)
-
-**Testing Impact:**
-- **If A:** Conformance suite uses `normalizeTimestamps()` helper (maps all `timestamp` fields to 0) before comparing ledgers
-- **If B:** Replay protocol must inject deterministic clock (test validates clock sequence, not wall-clock values)
-- **If C:** Conformance suite validates all fields **except** `timestamp` column (need schema-aware differ)
-
-**Blocker:** Property test §6.3 (Replay Equivalence) uses `normalizeTimestamps()` helper, assuming Option A. If Option B/C is chosen, test must change.
-
-**Recommendation:** Lock Option A (exclude timestamps from equality check) for v1. Simplest implementation; timestamps are metadata, not deterministic data. Option B (deterministic clock) is overengineered for v1 (no multi-machine replay requirement).
-
----
-
-### Q7: Mock Drift Detection — Failure Threshold
-
-**PRD Source:** §7 (Mock Drift Defenses), contract test suite
-
-**Question:** How many contract test failures trigger "mock audit sprint"?
-- **Option A:** Single contract test failure blocks all PRs (zero-tolerance)
-- **Option B:** ≥3 contract tests fail in same layer → declare mock audit (localized drift tolerated)
-- **Option C:** ≥10% of contract tests fail → declare mock audit (statistical threshold)
-
-**Testing Impact:**
-- **If A:** High discipline (mock drift fixed immediately), but risk of false positives blocking development
-- **If B:** Balanced (localized drift allowed, systemic drift escalated), need layer-aware failure counting
-- **If C:** Statistical approach (scales with test suite growth), but 10% drift may be too permissive
-
-**Blocker:** CI policy (§8.3) references "mock audit sprint" but does not define trigger threshold.
-
-**Recommendation:** Lock Option B (≥3 failures in same layer). Localized mock drift (one contract test) is acceptable risk for fast iteration. Systemic drift (multiple failures in L1, or failures across L1+L4) indicates architectural issue requiring escalation.
-
----
-
-### Q8: Pareto Fitness Contract — Missing Fitness Axes
-
-**PRD Source:** US-L-NEW-9 (Pareto fitness contract), v1 commitment #1
-
-**Question:** What happens when competing prescriptions have **non-overlapping fitness axes**?
-- **Option A:** Reject comparison (incomparable prescriptions, both remain non-dominated)
-- **Option B:** Zero-fill missing axes (prescription without `tokensUsed` axis gets `tokensUsed: 0`)
-- **Option C:** Partial dominance (P1 dominates P2 on shared axes, ignore non-shared axes)
-
-**Testing Impact:**
-- **If A:** Property test validates incomparable prescriptions both appear in non-dominated set (test fixture: two prescriptions with disjoint axes)
-- **If B:** Test validates zero-fill behavior (prescription missing axis treated as optimal on that axis)
-- **If C:** Test validates partial dominance (P1 dominates P2 if better on all shared axes)
-
-**Blocker:** Acceptance scenario A8 (Pareto Fitness Contract) assumes prescriptions have **identical axes**. Real prescribers may emit heterogeneous fitness contracts.
-
-**Recommendation:** Lock Option A (incomparable → both non-dominated) for v1. Zero-fill (Option B) is unsafe (missing data != optimal). Partial dominance (Option C) is theoretically sound but complex to test. Defer heterogeneous fitness to v1.5 once more prescribers exist.
-
----
+**Strategy doc sections revised to reflect resolutions:**
+- §1: Added agentic-development test discipline distinctions (structural commitment, zero-tolerance gate)
+- §2: A2 (hermetic replay) simplified per Q1; A4 (causal slice) enriched per Q1; A6 (plugin pinning) per Q4
+- §3: Renamed `ObservationCaptureStore` → `LedgerWindowReader` per Q1; added `GenericL3AdapterContract` per Q2; refined `BisectOrchestrator` per Q5
+- §4: Walkthrough A updated with transitive-dep-graph pinning (Q4)
+- §5: Added generic L3 adapter conformance tier (Q2); updated contract-test policy to zero-tolerance (Q7)
+- §6: Added Bootstrap-Capture-Completeness (Q1); added Monotonic-Timestamps (Q6); revised Hash-Chain Integrity for context-window commitment (Q1)
+- §7: Replaced ≥3-failure policy with zero-tolerance + agentic-cost framing (Q7)
+- §8: No change
+- §9: Added `LedgerPrefixBuilder` (Q1), `EnvSnapshotBuilder` (Q5), `TransitiveDepGraphBuilder` (Q4)
+- §10: No change
+- §12: No change
 
 ## 12. Anti-Goals
 
@@ -3098,16 +3406,24 @@ describe('Fork Lineage Transitivity', () => {
 
 ---
 
-**Document Status:** DRAFT Complete (12 sections, ~22,000 words, ~70 pages at standard formatting)
+**Document Status:** FINAL — 8 Open Questions Resolved 2026-05-27
+
+**Change Log:**
+- **2026-05-27 (Initial Draft):** 12 sections, 8 open questions (Q1-Q8) requiring resolution
+- **2026-05-27 (Final):** All 8 questions resolved via Aaron Decision-Point gate. Integrated throughout:
+  - Q1: Context-window commitment model (§1, §2, §3, §6, §9)
+  - Q2: Generic L3 adapter conformance suite (§3, §5)
+  - Q3: Aperture async structural proposal queue (no doc change needed—§2 A10 already specified)
+  - Q4: Transitive-dep-graph pinning (§2 A6, §4, §9)
+  - Q5: Bisect env snapshot at start (§3, §9)
+  - Q6: Timestamp normalization + monotonicity invariant (§5, §6)
+  - Q7: Zero-tolerance mock-drift gate (§1, §5, §7)
+  - Q8: Pareto incomparable → both non-dominated (§5)
 
 **Next Steps:**
-1. Laura presents strategy to Aaron for review
-2. Aaron provides feedback on Open Questions (§11) — locks decisions Q1-Q8
-3. Laura updates strategy based on feedback
-4. Strategy moves to `.squad/decisions/inbox/` for formal acceptance
-5. Extract skill: `london-tdd-for-agentic-runtimes` (if pattern is reusable across projects)
-
-**Post-Acceptance:**
-- Append learnings to `.squad/agents/laura/history.md`
-- Create decision record: `.squad/decisions/inbox/laura-crucible-tdd-strategy.md`
-- Begin Sprint 0 (types lock, test infrastructure setup, first red/green/refactor cycle)
+1. ~~Laura presents strategy to Aaron for review~~ ✓ COMPLETE (8 questions resolved via Decision-Point gate)
+2. ~~Aaron provides feedback on Open Questions (§11)~~ ✓ COMPLETE (all 8 locked)
+3. ~~Laura updates strategy based on feedback~~ ✓ COMPLETE (this revision)
+4. Append learnings to `.squad/agents/laura/history.md`
+5. Create decision record: `.squad/decisions/inbox/laura-crucible-tdd-strategy-revision.md`
+6. Begin Sprint 0 (types lock, test infrastructure setup, first red/green/refactor cycle)

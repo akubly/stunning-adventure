@@ -182,6 +182,64 @@ Wave 3 delivers fully-realized E2E validation of Curator-driven orchestration. I
 
 ---
 
+## 2026-05-27: Q1 Option E Validation — APPROVE WITH MODIFICATIONS
+
+**Task:** Independent validation of Aaron's locked Q1 resolution (Observation-as-primitive + Decision-as-commitment + tool-call scale). Verify testability against 12 acceptance scenarios, identify test-strategy changes, flag new risks and PRD ambiguities.
+
+**Verdict:** **APPROVE WITH MODIFICATIONS**. Option E is architecturally superior to my original Option B recommendation because:
+1. Eliminates vocabulary collision (Observation is now unambiguous: first-class primitive, not overloaded payload-envelope)
+2. Centralizes observational context at Decision primitive (moment of commitment), not scattered across all primitives
+3. Reduces storage overhead (only Decisions carry observation-set hashes; non-Decision primitives inherit via `causal_parent_id`)
+4. Enriches causal graph (explicit authorization lineage via `causal_parent_id`, not just data dependencies via `causalReadSet`)
+
+## 2026-05-27: Q1 Refinement Validation — Structural Commitment Model — APPROVE
+
+**Task:** Second validation pass on Aaron's refined Option E. He reframed commitment from "observation-set hash" to "structural commitment over causal-context window" (entire ledger prefix visible to LLM, not just Observation primitives).
+
+**Epistemic challenge:** Aaron pushed back on my M1 (orphan Observations) and M2 (empty observation-set) concerns, arguing these were type-system artifacts. His point: LLM sees token stream, not typed primitives. Prior Decisions, Artifacts, Questions — all shape the LLM's output. Committing over "Observations only" was unfaithful to LLM epistemics.
+
+**Verdict:** **APPROVE** (no modifications). Structural commitment **dissolves M1 and M2** by reframing the commitment primitive:
+- **M1 dissolves:** Every Observation is part of *some* Decision's causal-context window (next Decision in temporal order, or still-pending tail). No "orphans" because commitment isn't about explicit references — it's about temporal visibility.
+- **M2 dissolves:** Empty commitment is impossible except at Decision-at-offset-0 (bootstrap edge case). Every other Decision commits over non-empty ledger prefix.
+- **M3 resolved:** Aaron's `always_emit_synthetic_output` rule (concur).
+
+**Key insight:** Structural commitment is *more* defensible than observation-set commitment because:
+1. Removes agent-intent dependence (no "which Observations did this Decision consult?" question)
+2. Commitment is mechanical: hash the ledger window [0..N], done
+3. Test fixtures simplify — ledger-snapshot replay replaces observation-set bookkeeping
+4. Merkle determinism risk eliminated — ledger order *is* canonical order (no set-ordering ambiguity)
+
+**New invariant:** Bootstrap-Capture-Completeness — extra-ledger context (system prompts, tool definitions, cross-session memory) MUST be captured as Observation primitives at session offset 0. Testable via one property test + one contract test for `SessionBootstrapper`.
+
+**V1 limitation flagged:** Pruning-divergence detection (if LLM context-window manager drops tokens) requires SDK cooperation. If SDK doesn't expose pruning events, structural commitment is best-effort (commits over ledger rows, not actual LLM tokens). Document as v1 limitation; defer detection to v2.
+
+**Test strategy impact:** Positive. A2 hermetic replay becomes simpler (ledger-snapshot fixtures, cleaner oracle checks). Estimated effort: 1 day (down from 1-2 days for observation-set commitment).
+
+**Biggest test-design delta:** Shift from observation-set bookkeeping to ledger-snapshot replay. No tracking "which Observations each Decision referenced" — commitment is over entire ledger prefix. This matches hermetic replay's actual mechanism and removes a layer of test complexity.
+
+**Most important new invariant:** Bootstrap-Capture-Completeness. If extra-ledger context isn't captured at offset 0, replay drifts when system prompt changes. This is the *only* way structural commitment remains hermetic.
+
+**Recommendation:** Proceed with structural commitment model. Ship as locked Q1 resolution. Update `docs/crucible-tdd-strategy.md` §11 Q1 with structural commitment resolution.
+**Test-strategy impact:** Manageable. 2 new collaborator contracts (`ObservationSetCommitter`, `CausalParentResolver`), 1 modified contract (`ObservationCaptureStore`), 1 walkthrough rewrite (§4.2 pre-commit hook veto), 3 new contract tests, 2 new invariant tests + 1 modified (replay equivalence), 2 new fixture builders. Total: ~12 new tests, ~8 modified tests. Estimated 1-2 days.
+
+**New test risks:**
+1. **Merkle commitment determinism (HIGH)** — observation-set hash must canonicalize IDs before hashing; non-determinism breaks hermetic replay
+2. **Decision-without-observations edge case (MEDIUM)** — empty observation set must have canonical hash (recommend `hash([])`)
+3. **Causal-parent-ID correctness (MEDIUM)** — invalid parent IDs break causal slicing; needs L1 append-time validation
+4. **Observation orphans (LOW)** — unreferenced Observations legal? (recommend yes; affects storage, not replay)
+5. **Tool-call boundary for side-effects (LOW)** — side-effect-only tool calls emit Artifact with null output? (recommend yes)
+
+**Three PRD ambiguities exposed** (require Aaron resolution before A2 hermetic replay test writeable):
+- **M1:** Orphan Observation semantics (recommend: legal, retained indefinitely)
+- **M2:** Empty observation-set hash (recommend: `hash([])`, not nullable)
+- **M3:** Side-effect tool-call Artifact emission (recommend: always emit, even with null output)
+
+**Key learning:** My original Q1 framing (A/B/C options) missed the **primitive-scale axis** entirely. Aaron's per-Decision observation capture + tool-call scale resolves both vocabulary collision and scale ambiguity. Fourth option (per-Decision) was the right answer I didn't see.
+
+**Deliverable:** `.squad/decisions/inbox/laura-q1-option-e-validation.md` (5.2KB validation doc with 5-section breakdown)
+
+---
+
 ## Deliberation Round (2026-05-24)
 
 Cross-pollination against Erasmus's 4-layer stack + Aaron's branching/agentic-debugger/determinism insights. Full position written to `.squad/decisions/inbox/laura-deliberation-position.md`.
@@ -463,3 +521,70 @@ No change to my round-2 commitments on Pareto fitness ownership, branching-as-ev
 ✅ All acceptance scenarios reference PRD user stories (US-*) or v1 commitments explicitly
 
 **Outcome:** Strategy document complete at ~28 pages (slightly over 15-25 target but comprehensive). Awaiting Aaron resolution of 8 open questions before formal acceptance.
+
+---
+
+## 2026-05-27 — Crucible TDD Strategy: 8 Open Questions Resolved
+
+**Task:** Revise `docs/crucible-tdd-strategy.md` in place to integrate 8 resolved questions from Aaron's Decision-Point gate.
+
+**Context:** Initial strategy draft (12 sections, 8 open questions Q1-Q8) presented to Aaron via coordinator. All 8 questions locked via interactive Decision-Point gate. My task: integrate every resolution throughout the doc, moving status from DRAFT → FINAL.
+
+**Key learnings:**
+
+### 1. Refined Option E (Context-Window Commitment Model) — Q1 Resolution
+
+**What:** Decision primitive's commitment is a **Merkle hash over the causal-context window**—every prior ledger row visible to the LLM at decision time, regardless of primitive type (Request, Artifact, Observation, Decision, Question).
+
+**Why this is architecturally significant:**
+- **Removes agent-intent dependence:** Commitment is structurally computed from session lineage, not agent's claim about "which observations mattered." Eliminates M1 (orphan observations) and M2 (empty observation-set hash) failure modes from my original Option B.
+- **Makes hermetic replay easier:** Replay logic becomes "replay prefix → recompute context-window hashes → compare to stored commitments." No separate observation-capture store needed—observations are first-class primitives in the ledger itself.
+- **Strengthens causal slice:** Data lineage (what content influenced the decision) + authorization lineage (who/what produced the context) both available via single context-window query.
+- **Bootstrap-Capture-Completeness invariant:** Extra-ledger context (system prompts, tool definitions, cross-session memory) MUST be captured as Observation primitives at session offset 0. Replay drifts if violated.
+
+**Testing implications:**
+- New fixture builder: `LedgerPrefixBuilder` with `.withBootstrapContext()` and `.appendDecision(contextWindowSize)` methods
+- New invariant test: §6.8 Bootstrap-Capture-Completeness (validates offset-0 observations capture all extra-ledger context)
+- Revised §6.2 Hash-Chain Integrity property test (now tests context-window hashing, not just read-set hashing)
+- Collaborator contract: Renamed `ObservationCaptureStore` → `LedgerWindowReader` (provides read access to ledger prefix for context-window reconstruction)
+
+**Pattern to reuse:** Structural commitment over causal-context windows is a general agentic-system primitive. When designing determinism for any agent runtime, compute commitments over the **full visible state** (not agent's self-reported dependencies). Prevents "agent forgot to declare a dependency" bugs.
+
+---
+
+### 2. Agentic-Cost-Function Principle (Zero-Tolerance Gate) — Q7 Resolution
+
+**What:** Single contract test failure blocks all PRs (zero-tolerance). No ≥3-failure threshold, no "mock audit sprint" escalation.
+
+**Why traditional human-team thresholds don't apply:**
+- **Human teams:** Context-switch tax (developer pulled from feature work to fix mock) + resentment (developers disable tests for expediency) make zero-tolerance brittle. ≥3-failure threshold balances iteration speed vs correctness.
+- **Agentic teams:** Cost functions invert:
+  - **Context-switch tax = near-zero:** Spawn background agent to address contract test failure. Agent investigates, fixes mock or real implementation, commits. No human context switch.
+  - **Resentment = non-existent:** Agents don't experience frustration or disable tests out of expediency.
+  - **Drift cost = compounding:** Mock drift compounds across agent actions. An agent making 20 decisions per session against a drifted model produces cumulative correctness debt. Detection cost scales linearly with drift duration.
+  - **Fix cost = near-zero:** Agent-driven fix (update mock, update component tests, validate contract) completes in minutes.
+
+**Pattern to reuse:** When designing test gates for agentic workflows, reconsider human-team trade-offs. Policies that are "too strict" for human teams (zero-tolerance, exhaustive coverage) may be correct for agentic teams where fix cost approaches zero. The bottleneck shifts from "developer time to fix" to "agent-spawn latency" (seconds to minutes).
+
+---
+
+### 3. Generic Adapter Conformance Suite Pattern — Q2 Resolution
+
+**What:** Define a **generic L3 Generator adapter conformance suite** that any adapter implementation must pass. Applies to Forge today, Eureka v1.5+, marketplace plugins. No Eureka-specific tests in v1 (deferred to v1.5).
+
+**Why this is better than per-adapter test strategies:**
+- **Interface standardization:** Conformance suite defines the `PrescriberOrchestrator` contract once. Any adapter (Forge, Eureka, future marketplace plugins) plugs into the same test harness.
+- **No new test infra per adapter:** Eureka v1.5 will run the v1 conformance suite. No need to design Eureka-specific contract tests from scratch.
+- **Future-compatible:** Marketplace plugin developers get a conformance suite to validate their adapters against. Self-service validation.
+
+**Pattern to reuse:** For any pluggable system (prescribers, projectors, hooks), define a **generic conformance suite** as a first-class test artifact. Don't write per-implementation contract tests—write one conformance suite all implementations must pass. Benefits: standardization, self-service validation, no per-plugin test debt.
+
+---
+
+### 4. Deliverables
+
+1. **`docs/crucible-tdd-strategy.md`** revised in place ✓ — Status: FINAL — 8 Open Questions Resolved 2026-05-27
+2. **`.squad/decisions/inbox/laura-crucible-tdd-strategy-revision.md`** decision drop created ✓
+3. **`.squad/agents/laura/history.md`** appended (this entry) ✓
+
+---
