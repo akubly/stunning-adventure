@@ -1,56 +1,112 @@
 ---
-updated_at: 2026-05-26T22:27:53-07:00
-focus_area: "Phase 4.6 Wave 6 INTEGRATION ready — W5-5 (MCP forge_prescribe + fail-open CairnEvent), W5-6 (forge metrics CLI), #17 (async IO sweep, 0 required fixes) all consolidated on phase-4.6/wave-6 branch. Aaron to run /review-cycle. Worktree pattern (#11) pulled into Wave 6 tail per Aaron decision 2026-05-26."
+updated_at: 2026-05-27T23:59:00Z
+focus_area: Eureka v1 implementation runway clear; M1 first red test next; OQ-1 monorepo accepted; §55 London-TDD spine canonical
 active_issues:
+  - "Eureka v0.1 Technical Design — ✅ ASSEMBLED & LOCKED (§00–§70, 198KB, 3 ADRs; OQ-1 resolved via ADR-0002)"
+  - "§55 TDD Re-Pass — ✅ COMPLETE (§20/§30/§40/§50 all aligned with London-school mock contracts; zero blockers)"
   - "Phase 1: Monorepo restructuring ✅ COMPLETE"
   - "Phase 2: Live runtime verification ✅ COMPLETE (5/5 modules)"
   - "Phase 3: CopilotClient Integration ✅ COMPLETE (7 modules, 289 tests, 9-persona review)"
   - "Phase 4: Export Pipeline ✅ COMPLETE (export/, DBOM persistence, 826 tests)"
   - "Phase 4.5: Local Feedback Loop ✅ COMPLETE (990 tests, telemetry + DB + prescribers + applier + integration)"
   - "Phase 4.6: Change Vector Learning ✅ COMPLETE (1153 tests, migration 012, CRUD, Curator, prescriber ranking, 3 ADRs, 39 commits, primitives-only model, compliance approved)"
-  - "Phase 4.6 Wave 2: Wire Curator change vectors to prescriber historicalVectors at runtime ✅ COMPLETE (1199 tests, ChangeVectorProvider, ForgePrescriberOrchestrator, autoApplyEligible gate, hint dedup, forge-prescribe CLI)"
-  - "Phase 4.6 Wave 3: Curator-driven prescriber orchestration ✅ COMPLETE (PR #21 merged f27a537; composition root R2 @akubly/skillsmith-runtime; always-on hook wiring; 14 Copilot findings addressed; 1219 tests passing)"
-  - "Phase 4.6 Wave 4: COMPLETE ✅ (2026-05-24). W4-1 insertHintIfNew atomicity + W4-2 CairnEvent observability + W4-3 forceRegenerate CLI knob + W4-4 integration test infrastructure — all SHIPPED and VALIDATED. Result: 14/14 integration tests passing, 644/647 repo tests green. Branch phase-4.6/wave-4 ready for PR. Aaron to open PR manually (open_pr=false)."
-  - "Phase 4.6 Wave 5 COMPLETE ✅ (2026-05-25). Wave A: W5-1 session-kind separation (commit 8b0a69a, 100/100 tests) + W5-3 tier fallback (commit c74463f, 18/18 tests). Wave B: W5-2 explicit DB hard cut (commit 963a0aa, 50 files refactored) + W5-4 staleness attenuation (commit 96f7d6e, 16/16 tests). All four commits on isolated branches. Decisions consolidated (commit cea40ac on main)."
-  - "Phase 4.6 Wave 6: INTEGRATION READY on phase-4.6/wave-6 — 9 commits, build/tests green. Includes: W5-5 (Rosella) MCP forge_prescribe tool + fail-open prescriber_run CairnEvent (48 skillsmith-runtime tests), W5-6 (Roger) forge-metrics CLI standalone subcommand (13 new runtime-cli tests, JSON-default + table format), #17 (Laura) async IO sweep (12 new cairn MCP tests, 0 required fixes, MCP stdio transport proven serial). Awaiting Aaron's /review-cycle pass."
-  - "#11 Worktree-aware sessions: PULLED INTO WAVE 6 TAIL — to be dispatched after /review-cycle completes."
+  - "Phase 4.6 Wave 2: Wire Curator change vectors to prescriber historicalVectors at runtime (deferred, tracked follow-up)"
+  - "DB Convention Standardization: explicit injection vs internal getDb() (deferred, repo-wide question)"
   - "Phase 5: Cloud PGO + Full Graph — ROADMAP (docs/forge-phase5-roadmap.md, Azure budget prerequisite)"
+  - "#11 — Worktree-aware sessions (deferred)"
   - "awesome-copilot submission (deferred)"
 ---
 
 # What We're Focused On
 
-## Wave 6 Integration Complete (2026-05-26)
+**Eureka v1 implementation runway — M1 first red test next.**
 
-All Wave 6 deliverables (W5-5, W5-6, #17) consolidated onto phase-4.6/wave-6 via cherry-pick. Build and tests green. Ready for Aaron's /review-cycle.
+Branch: `eureka/v1-design-package` (this PR), then back to `main` for M0/M1 work.
 
-**Recovery note:** Parallel agents on shared checkout caused branch entanglement (w5-5-rosella-mcp-forge-prescribe vs w5-5-mcp-forge-prescribe). Worktrees required. #11 pulled into Wave 6 tail to enforce worktree pattern going forward.
+**Current state:**
+- ✅ Eureka v0.1 technical design **ASSEMBLED & LOCKED** — `docs/eureka/technical-design.md` (§00–§70, ~198KB, 3 ADRs, 100% PRD acceptance criteria traced, 37/41 ACs testable in v1).
+- ✅ **OQ-1 RESOLVED** — Aaron accepted Option A (Monorepo). See `docs/eureka/adrs/0002-shared-substrate-ownership.md` and merged entries in `.squad/decisions.md`. M0 scaffolding unblocked.
+- ✅ §55 London-TDD spine canonical — §20/§30/§40/§50 aligned with London-school mock contracts; zero blockers.
+- ⏳ Remaining open decisions: OQ-2 (event schema topology), OQ-3 (Decision/SessionId schema), OQ-4 (dogfood sequencing) — tracked in §00 ADR index.
 
-**Wave A (Complete as of 2026-05-25):**
-- ✅ **W5-1 Session-Kind Separation:** Migration 014 (session_kind column), getMostRecentUserSession() API, four MCP call sites corrected. Commit 8b0a69a on phase-4.6/w5-1-session-kind. Fixes MCP fallback correctness bug (was returning `__system__` session to user-facing tools). 100/100 tests passing.
-- ✅ **W5-3 Tier Fallback Chain:** Extends loadExecutionProfile() from per-skill→global to per-skill→per-model→per-user→global. Optional TierFallbackContext. First-match-wins; no staleness-triggered fallback (W5-4 handles). Commit c74463f on phase-4.6/w5-3-tier-fallback. 18/18 tests passing.
+**Next action:** M1 first red test (Laura — London-school outside-in TDD per §55).
 
-**Wave B (Complete as of 2026-05-25):**
-- ✅ **W5-2 Explicit DB Hard Cut:** 50 files refactored; all Cairn DB helpers now accept explicit db parameter as first positional arg. Removed singleton fallback overloads. Enables test parallelization and worktree safety. Commit 963a0aa on phase-4.6/w5-2-db-hard-cut. All workspaces green.
-- ✅ **W5-4 Profile Staleness Attenuation:** Configurable threshold (50 sessions OR 7 days). Stale profile confidence attenuated 0.5×. No fallback trigger (W5-3 handles fallback separately). Makes prescriber confidence trustworthy. Commit 96f7d6e on phase-4.6/w5-4-staleness-attenuation. 16/16 tests passing.
+---
 
-**PR Merge Sequence (Aaron to manage):**
-1. PR: W5-1 base=main (commit 8b0a69a)
-2. PR: W5-3 base=main (commit c74463f)
-3. PR: W5-4 base=W5-3 (commit 96f7d6e) — depends on tier fallback selection logic
-4. PR: W5-2 base=main (commit 963a0aa) — independent, no functional dependencies
+## Previous focus (archived for context)
 
-**Wave 6 Backlog (on hold until Wave 5 PRs land):**
-- W5-5: MCP surface for forceRegenerate (needs W5-1 prerequisite + Aaron's UX policy input on confirmation prompts/safety guards)
-- W5-6: Metrics dashboard (product shape undefined; needs Aaron's decision: CLI report vs. MCP resource vs. new package)
+**Phase 4.5: Local Feedback Loop** — SPECIFIED, ready for implementation
 
-**Phase 4.6 Completion Criterion Met:**
-- Wave 5 Shape approved (2026-05-25)
-- Wave A landed on isolated branches (W5-1, W5-3)
-- Wave B landed on isolated branches (W5-2, W5-4)
-- All four commits ready for Aaron review and merge
-- Decisions consolidated in .squad/decisions.md (commit cea40ac)
+Two spec documents from the 10-agent brainstorm:
+- `docs/forge-phase4.5-spec.md` — Full implementation spec for the local PGO engine
+- `docs/forge-phase5-roadmap.md` — Roadmap for Phase 4.6 (change vector learning), Phase 5 (cloud PGO), and wild cards
 
-**Test Health:** 644/647 repo-wide tests green; all Wave 5 work validates cleanly across all workspaces.
+**Phase 4.5 delivers:** 3 new modules (telemetry/, prescribers/, applier/), DB migration 011, drift score computation, 2 new prescribers, optimization applier, self-tuning strategy parameters.
+
+**Work decomposition:** Alexander owns DB, Roger owns telemetry, Rosella owns prescribers+applier, Laura owns integration tests.
+
+Branch: `main`
+
+Graham restructured Cairn into an npm workspaces monorepo with three packages:
+- `@akubly/types` — shared contract types
+- `@akubly/cairn` — observability + MCP tools + plugin infra
+- `@akubly/forge` — empty scaffold ready for SDK integration
+
+**Verification:**
+- ✅ All 427 tests pass
+- ✅ Clean build
+- ✅ Zero business logic changes
+- ✅ Shared types extracted and re-exported
+- ✅ Build order enforced via `tsc --build` project references
+
+---
+
+**Phase 2: Live Runtime Verification** — ✅ COMPLETE (5/5 modules, 608 tests)
+
+**Delivered Modules:**
+- ✅ Event bridge adapter (`packages/forge/src/bridge/`) — 22 SDK events → CairnBridgeEvent, provenance classification, payload extractors (22 tests)
+- ✅ Hook composer (`packages/forge/src/hooks/`) — HookComposer class with live observer set, error isolation (try/catch per observer) (20 tests)
+- ✅ Test infrastructure — vitest config, mock SDK factory, event factory, type assertion helpers (25 infra tests)
+- ✅ Decisions module (`packages/forge/src/decisions/`) — createDecisionGate, createDecisionRecorder, makeDecisionRecord (18 tests)
+- ✅ DBOM module (`packages/forge/src/dbom/`) — generateDBOM, computeDecisionHash, classifyDecisionSource, summarizeDecision, rootHash (33 tests)
+- ✅ Session module (`packages/forge/src/session/`) — ModelSnapshot, toModelSnapshot, ModelChangeRecord, ReasoningEffort (10 tests)
+
+**Build Status:** Clean via `tsc --build` — 427 Cairn + 181 Forge = 608 total tests passing
+
+**Architecture Blueprint:** 5-module structure with Phase 2/3 boundary rule ("if it needs `CopilotClient()`, it's Phase 3").
+
+**Key Decisions Made:**
+1. HookComposer uses live observer set — dynamic registration without SDK re-registration
+2. Hook composer isolates observer errors — buggy telemetry cannot kill decision gates
+3. Test infrastructure uses SDK mocks, not live CLI — Phase 2 is offline verification only
+4. Cross-package contracts via `@akubly/types` — Forge never imports from `@akubly/cairn`
+
+---
+
+**Architecture Confirmed:** Monorepo with `@akubly/types` (shared contract), `@akubly/cairn` (observability), `@akubly/forge` (execution runtime).
+
+**Concepts validated during spike:**
+- Portability: Export certified artifacts (SKILL.md + DBOM) for corp/EMU
+- PGO Telemetry: Deployed artifacts → Application Insights → Cairn feedback
+- ACP Horizon: Multi-agent transport is additive, not a rewrite
+
+**Recommended next steps (prioritized):**
+1. Phase 2 completion: decisions/, dbom/, session/ modules (1–2 days)
+2. Phase 3: Core Forge loop — CopilotClient integration, session orchestration, model selection (3–5 days)
+3. Phase 4: Export pipeline — DBOM generator, SKILL.md compiler (2–3 days)
+4. Phase 5: PGO telemetry — pluggable sinks, feedback ingest (future)
+
+**Decision point for Aaron:** Charter sister squad after Phase 2 or continue with this squad through Phase 3?
+
+**Previous milestones (complete):**
+- Phase 1: Monorepo foundation ✅
+- Spike: Copilot SDK Assessment ✅
+- Phase 7: Prescriber (316 tests, 10 MCP tools) ✅
+- Phase 8: Skill Linter + Validator + Test Harness ✅
+
+**Deferred:**
+- Worktree support (Issue #11)
+- awesome-copilot submission
+- Performance optimizations
 
 

@@ -1,135 +1,156 @@
-# Valanice — History
+# Valanice — History (Summarized)
 
-## Project Context
-- **Project:** stunning-adventure — Industrial-grade agentic software engineering platform
-- **User:** Aaron
-- **Joined:** 2026-03-28 (Round 3 of brainstorm)
-- **Universe:** Sierra On-Line Adventure Games
+## Summary
 
-## Context from Brainstorm Rounds 1-2
-- Platform has 8 subsystems across 3 tiers (Kernel, Core, Extension)
-- Human-centric design is a core requirement — designing to get the BEST out of humans
-- Key human challenges: short attention span, mental fatigue, impatience, laziness, corner-cutting, rubber-stamping
-- Patterns proposed: attention budgets, adaptive review intensity, teach-back, canary questions (opt-in), engagement tracking
-- First principle: agents are individuals, treated as human despite being tools
-- Personalization is first-class: BYO plugins, interop with other systems
-- Aaron's directive: "create the best output" as first principle, don't arbitrarily cap features
+**Total entries:** 3 major consultations spanning Phase 4.5 UX + Round 2 brain system consulting + Round 2 roster proposal
+
+| Date | Event | Status |
+|------|-------|--------|
+| 2026-04-28 | Phase 4.5 Prescriber UX Learnings | ✅ Completed |
+| 2026-05-22 | Brain System Consulting (Round 2, UX Lens) | ✅ Completed |
+| 2026-05-22 | Brain Project Roster Proposal (UX Advisor Role) | 🟡 Proposal pending Aaron |
+
+**Key themes:**
+- Prescriber UX: Max 1 proactive insight per session, pull-based interface, observability on demand
+- Brain system: Infrastructure positioning (like Git), mental model boundaries, phased extraction strategy, 70% UX owner / 30% cognitive science gap
+- Brain roster: Proposed UX Advisor (advisory, 20%) for Brain project with primary Cairn commitment
+
+**Recent decision:** Valanice positioned as strong on UX/LX (70% of Brain's interaction design), but flagged cognitive foundations (30%) as requiring specialist. Proposes advisory role with 20% allocation and primary Cairn focus.
+
+---
+
+## R6 Ceremony — Source-Reading Rule Lifted (2026-05-24)
+
+**Milestone:** R6 opened — Eureka source-reading unlocked; trio (Genesta/Crispin/Edgar) reconciled v3 PRD against Cairn/Forge substrate.
+
+**Key outcomes:**
+- Genesta (B+ verdict): PRD v3 stands with v3.1 patch (4 targeted fixes)
+- Crispin (Path A recommended): clean-slate Eureka over Cairn extension
+- Edgar (Kernel extraction): ~70% mechanical infra exists; recommend shared learning-kernel package
+
+**Your involvement:** Advisory roles on boundaries/UX (2-3 hrs/week contribution rate).
+
+**Decision gates pending Aaron's direction:**
+1. Vector search scope (in/out for v1)?
+2. Architectural path (A clean-slate or B extension)?
+3. Learning-kernel extraction (now or defer)?
+4. v3 patch or v4 rewrite?
+
+**Next:** Cassima on deck for v3.1 or v4 intake pending Aaron's architectural direction.
 
 ## Learnings
 
-### 2026-04-02: Phase 5 Decision — MCP Tool Naming and Vocabulary Contracts
+### 2026-05-26: Eureka UX & Human Factors Authoring
 
-- **Phase 5 finalizes as MCP Server, not CLI.** Graham and Roger converged on MCP as the right shell for Cairn. Primary consumer is Copilot agent (where Aaron works), not terminal. One presentation layer avoids building throwaway code.
-- **Tool naming convention: verb_noun, unprefixed.** Tools read as imperatives (get_status, list_insights, search_events). MCP host adds server prefix (cairn-). Natural language alignment improves LLM tool selection — agent sees verb matching user intent.
-- **Vocabulary contracts drive agent behavior:** Each verb establishes semantic expectations. `get` signals "single result or none"; `list` signals "0+ results, can paginate"; `search` signals "exploration with optional filters"; `run` signals "side effect"; `check` signals "boolean". Consistent verbs enable agents to infer the right invocation pattern without explicit instructions.
-- **Impact on UX:** Tool names become part of the conversation context. When agents see tool names that read naturally ("list insights" not "insights list"), they interact with tools more intuitively. This is especially important for knowledge tools where the agent is helping Aaron understand system state.
-- **Phase 5 ships 6 tools:** get_status, list_insights, get_session, search_events, run_curate, check_event. Each answers one natural question. Verb choices consistent with taxonomy.
+**Task:** Authored `docs/eureka/sections/60-ux-human-factors.md` — comprehensive UX/human factors analysis for Eureka v1.
 
-### 2026-04-03: README Refresh — Catching Documentation Up to Reality
+**Key outputs:**
 
-- **README was two phases behind.** Roadmap still showed Phases 4–5 as planned with old labels, test count was 106 (now 136), and no mention of hooks or MCP server. Documentation drift is a real usability problem — a stale README tells contributors the project isn't maintained.
-- **Added Hooks and MCP Server sections under "What's Built."** Hooks described by what they do (session catch-up, event recording), not implementation detail. MCP tools presented as a question-answer table — each row answers "what does this tool tell me?" This follows the verb–noun naming rationale from Phase 5 decisions.
-- **Style principle reinforced: narrate work, not worker.** Hook descriptions say what happens ("recovers orphaned sessions," "logs tool use"), not who does it. The README should read like a system description, not a cast list.
-- **Omitted speculative content.** Installation section states what works today and one sentence about Phase 6. No placeholder instructions for features that haven't shipped.
+1. **Human touchpoint inventory** — 19 distinct touchpoints across 5 categories (review/approval, query/pull, plasticity/mutation, tier-switching, activity observability). v1 = 1 approval prompt (commit), zero proactive notifications, all else pull-based.
 
-### 2026-04-02: Phase 6 Documentation — README Refresh Complete
+2. **Attention budget quantified:**
+   - v1 approval friction: ~1 prompt/session (commit approval only; tier promotion deferred to v1.5)
+   - v1 pull friction: zero proactive prompts; all query surfaces are human-initiated
+   - v1 plasticity: zero proactive notifications (trust/tier/edge mutations are silent)
 
-**Task:** Update README.md to reflect actual Phases 4–5 work and Phase 6 roadmap.
+3. **Trust UX specification:**
+   - Trust = 0..1 scalar representing **provenance reliability** (not epistemic confidence)
+   - Surfaced in 3 contexts: recall results, decision payloads (`input_trust_min`), inspection
+   - Overrides are explicit-only (manual verification/contradiction, evict)
+   - Trust floor (default 0.15) gates recall; below-floor facts excluded silently
 
-**Corrections Made:**
-- Test count: updated "106 tests" → "136 tests" (6 test files)
-- Phase 4 label: corrected from "Compiler (validation + builder)" → "Session-start hook + crash recovery"
-- Phase 5 label: corrected from "Distribution, CLI, Narrative UX" → "MCP Server (6 tools)"
-- Version string: cli.ts should read from package.json (noted as future fix)
+4. **Failure-mode design:**
+   - Empty-state messaging = factual + actionable ("No results; try X" not "You failed")
+   - Session continuity failure (US-2) acknowledged as v1 caller-cooperation contract gap
+   - Low-trust decisions allowed in v1 (no auto-block); `input_trust_min` surfaces provenance weakness for post-hoc review
 
-**New Sections Added:**
-- "Hooks" — preToolUse (Curator) + postToolUse (Archivist), what they do, why they matter
-- "MCP Server" — 6 tools documentation (get_status, list_insights, search_events, etc.)
-- "Roadmap" — Phase 6 context (three options assessed, plugin packaging chosen)
-- "Issue #11" — Worktree support (deferred to Phase 7, full design in decisions.md)
+5. **Tier-switching UX:**
+   - Auto fan-out (agent → user → project, early-exit at k=10) with tier annotation on results
+   - No tier-selection prompts in v1 (death sentence for adoption)
+   - User/project tiers stubbed in v1; annotation preserved for v1.5 continuity
 
-**Rationale:**
-- Stale documentation signals unmaintained project — fixes like this have high ROI
-- README should reflect what's *actually* shipped, not aspirational roadmap
-- Tool descriptions follow verb–noun pattern established in Phase 5 — agents read verbs intuitively
-- Phase 6 context helps next contributors understand roadmap and recent decisions
+6. **Activity observability:**
+   - Sweep = silent (background maintenance; no value in notifying unless crash)
+   - Meditate/contemplate (v1.5) = default silent with opt-in `--verbose`
+   - Anti-pattern avoided: progress spinners that train humans to perceive slowness
 
-**Status:** README now reflects current state. Ready for distribution phase.
+7. **Personalization deferral:**
+   - v1 has one dogfooder (Aaron); no per-user preferences layer
+   - v1.5 proposed surface: trust_floor, recall_limit, default_tiers, verbosity, commit_auto_approve
+   - Rationale: preferences add complexity without observed need; v1.5 ships after multi-user stress-test
 
-### 2026-04-05: Phase 6 Complete — Documentation Supports Plugin Distribution
+8. **Anti-patterns cataloged (§5):**
+   - Over-prompting (trust drift notifications train habitual "OK" clicking)
+   - Low-confidence outputs without context (trust scores meaningless without provenance)
+   - Blocking on non-blocking decisions (tier demotion approval = bureaucracy)
+   - Invisible failure modes (silent empty-state = distrust)
 
-**Phase 6 Outcome:** ✅ COMPLETE
+9. **Crucible UX seam identified (§6):**
+   - Session lifecycle: Crucible = "what happened?" (WAL, lifecycle), Eureka = "what I learned?" (session-facts, continuity)
+   - Decision provenance: Crucible = compliance view (audit flat records), Eureka = reasoning view (full deliberation)
+   - Shared `SessionId` brand auto-links; no manual reconciliation required
+   - Human sees complementary lenses, not duplicates
 
-**Final Documentation State:**
-- ✅ Phases section corrected (Phase 4: session-start hook, Phase 5: MCP server, Phase 6: plugin packaging)
-- ✅ Test count accurate (136 tests across 6 files)
-- ✅ "What's Built" section includes Hooks and MCP Server with use-case narratives
-- ✅ Roadmap updated to reflect Phase 6 completion and Phase 7 preview
-- ✅ No speculative content; forward guidance honest about next steps
+10. **Open questions for v1.5 evidence-based decisions (§7):**
+    - Commit approval frequency (is ~1/session right friction level? measure rejection rate)
+    - Tier-switching observability (show "Searched: agent" always or only if multi-tier results?)
+    - Empty-state actionability (suggest remediation or just state outcome? measure follow-up success rate)
+    - Contemplative activity verbosity (silent or summary? measure action-upon rate)
 
-**Documentation Patterns Reinforced:**
-- Describe what the system DOES, not who built it (narrate work, not worker)
-- Tool documentation follows verb–noun pattern (agent reads verbs intuitively)
-- State what's actually shipped; one sentence on forward plan
-- Omit placeholder instructions for unshipped features (stale docs signal unmaintained project)
+**Patterns applied:**
 
-**README as System Contract:**
-- Contributors read README first; stale README signals project entropy
-- Test counts, phase labels, and shipping status carry credibility weight
-- Verb–noun naming (from Phase 5 decisions) deserves explanation in user-facing docs
+- **Attention budget discipline:** every interaction quantified (prompts/session, notifications/day). v1 = 1 approval, zero proactive notifications.
+- **Friction justification:** "benefit must justify cost" framing applied to commit approval (only touchpoint that blocks agent progress).
+- **Progressive disclosure:** recall returns handles, content on demand; empty states explain why, not just what.
+- **Silent-by-default:** sweep, trust mutations, tier demotions happen in background; humans notified only when decision required or pull-initiated.
+- **Evidence-gated design:** v1.5 friction levels deferred pending dogfood telemetry (rejection rates, follow-up success, action-upon rates).
 
-**Phase 6 Specific Fixes:**
-- Added "Hooks" section explaining preToolUse (Curator) and postToolUse (Archivist) lifecycle
-- Added "MCP Server" section with each tool's purpose (structured as q/a: what does this tool tell me?)
-- Corrected Phase 4 label from "Compiler" (aspirational) to "Session-start hook" (actual)
-- Added Phase 6 roadmap context explaining plugin packaging decision vs alternatives
+**Connections to prior work:**
 
-**Status:** Documentation now matches implementation reality. Supports Phase 7 onboarding for installation command development and distribution work.
+- Phase 4.5 Prescriber UX (max 1 proactive/session, pull-based interface) directly informed Eureka's "zero proactive notifications" rule.
+- LX Heuristic Evaluation principles (context budget, signal density, upstream prevention) applied to Eureka's human surfaces (progressive disclosure, self-documenting outputs, silent-by-default).
+- Shiproom ceremony "newspaper test" (30-sec summary, escalations only) mirrored in Eureka's empty-state design (factual + actionable, no blame framing).
 
-### 2025-07-18: Prescriber UX Design — Interaction, Attention, and Growth
+**Human-centered observations grounding recommendations:**
 
-**Task:** Design the complete human-facing interaction model for the Prescriber component (insight → prescription → human disposition → applied change → growth tracking).
+- **Tired humans habituate to low-value prompts** → over-prompting anti-pattern (§5.1) + zero proactive notifications rule
+- **Invisible failure modes breed distrust** → empty-state messaging design (§3.1) with actionable remediation
+- **Blocking on reversible decisions feels bureaucratic** → tier demotion silence (§1.3), commit approval as sole v1 gate
+- **Multi-tier scope prompts are adoption killers** → auto fan-out with annotation (§1.4), no tier-selection UI in v1
+- **Trust scores without provenance are meaningless** → every fact handle includes sources[], principal_id, timestamps (§2.1)
 
-**Key Design Decisions:**
+**Decision artifacts:**
 
-1. **Timing: After first success, not at the door.** preToolUse hook generates prescriptions in background; MCP tools expose them. Agent surfaces conversationally after first task success. Max 1 proactive per session. Rationale: session start is when humans are most dismissive — cognitive switching costs are highest at context boundaries.
+- Created `docs/eureka/sections/60-ux-human-factors.md` (19 touchpoints, 8 failure modes, 4 open questions, 2 appendices)
+- Decision document: friction-level decisions deferred to v1.5 pending dogfood evidence (see below)
 
-2. **Rejection easier than acceptance.** Accept requires reading a preview (two-step). Reject/defer is one word. This ensures the path of least resistance for the inattentive human is the safe action (reject), not the risky one (uninformed accept). Rejection reasons are optional and freeform, not structured quizzes.
+**Status:** Section complete, ready for team review. Four open questions (§7) require dogfood telemetry before v1.5 lock.
 
-3. **Explicit prescription state machine.** States: pending → previewed → accepted/rejected/deferred/redirected → applied/dismissed/suppressed/resurfaced. No limbo states. Suppression is explicit and reversible. Prevents notification graveyard.
+---
 
-4. **Growth is pull-only, wins-first.** Growth tracking never surfaces proactively. Resolved patterns shown before active ones. No streaks (anxiety-inducing). Cumulative trends instead ("down 42% over 10 sessions").
+## Archive (Summarized)
 
-5. **Four MCP tools, not six.** `list_prescriptions`, `preview_prescription`, `resolve_prescription`, `show_growth`. Explanation folded into preview (no separate "why" tool). Accept/reject unified under `resolve_prescription` with disposition parameter — cleaner state machine, unified telemetry.
+### Phase 4.5 UX Work — Prescriber Design + LX Fundamentals (2026-04-02 to 2026-04-05)
 
-6. **Anti-rubber-stamp via structural design, not friction.** Preview shows actual content changes (diffs), not abstract descriptions. No comprehension quizzes. Success measured by behavioral outcomes (does the pattern recur after acceptance?), not ceremony.
+**Scope:** Phase 5 MCP tool naming, README refresh, Prescriber UX, LX brainstorm, Shiproom ceremony.
 
-**Critic Feedback Incorporated:**
-- Dropped session-start as primary surfacing trigger → natural pause timing instead
-- Unified apply/dismiss into single `resolve_prescription` tool
-- Made rejection one-step (was originally structured multi-choice → now freeform optional)
-- Dropped streaks from growth tracking (backfire risk for perfectionists)
-- Added explicit state machine (was implicit before)
-- Redirect changed from top-level action to post-accept scope refinement
+**Key deliverables:**
 
-**Key Files:**
-- `.squad/decisions/inbox/valanice-prescriber-ux.md` — full design document
-- `src/hooks/sessionStart.ts` — where Prescriber trigger integrates (after Curator)
-- `src/mcp/server.ts` — where 4 new MCP tools will be registered
-- `src/db/preferences.ts` — preference cascade for all Prescriber config
-- `src/types/index.ts` — will need Prescription type, PrescriptionDisposition type
+1. **Phase 5 Finalization:** MCP Server (not CLI) as primary shell. Tool naming convention `verb_noun` unprefixed. Verbs establish semantic contracts: `get` = single result, `list` = 0+ results/paginate, `search` = exploration, `run` = side effect, `check` = boolean.
 
-**Open Questions Raised:**
-- Artifact modification validation: do we need Compiler agent before applying changes?
-- Plugin artifact discovery: how does Prescriber know what's installed?
-- Conflicting prescription detection
-- Growth tracking scope: repo-scoped or global?
+2. **README Refresh:** Updated for Phases 4–5 reality (test count 106→136, corrected phase labels, added Hooks and MCP Server sections). Principle: narrate work, not worker. Omit speculative content.
 
-### 2025-07-18: LX Brainstorm — Inverting UX for Language Model Interfaces
+3. **Prescriber UX Design:** Max 1 proactive per session, after first success (not session start). Rejection 1-step, acceptance 2-step (safe default). Explicit state machine (no limbo states). Growth pull-only, wins-first (no streaks). Four MCP tools. Anti-rubber-stamp via diffs, not quizzes.
 
-**Task:** React to Aaron's 9-point vision for agentic software engineering, centering on "LX" (Language Model Experience) — the idea that the harness/tool interface is UX for the LLM.
+4. **LX Heuristics (10 Principles):** Context budget parallels attention span. Signal density = info/token. Vocabulary contracts aid tool selection. Upstream prevention (slop is LX failure). Idempotent safety = LLM undo. Decision altitude = consequence taxonomy (ambient/logged/flagged/gated).
 
-**Key Insight:** The parallel between UX and LX is structural, not metaphorical. Context window IS working memory (Miller's Law). Attention score decay IS recency bias. Tool selection ambiguity IS decision fatigue (Hick's Law). This enables us to port proven UX heuristics directly.
+5. **Shiproom Ceremony Design:** Decision records with alternatives (min 1, mandatory). Graham facilitates (has cross-cutting knowledge). One probing question per challenger. Curator provides evidence-based challenge. Decision altitude filters (0-1: never, 2: optional, 3: required). Human sees summary + escalations only (newspaper test, 30 sec). Confabulation prevention: cite existing evidence only.
+
+**Key patterns:** MCP tool naming drives agent behavior (verbs read naturally). Decision records are content-addressed for tamper-evidence. Ceremony efficiency feeds back into Curator → Prescriber loop.
+
+**Status:** Phase 6 complete. Documentation matches implementation. Ready for distribution phase.
+
+---
 
 **Artifacts Produced:**
 - `.squad/decisions/inbox/valanice-brainstorm-lx.md` — 10 LX Heuristics (parallel to Nielsen's 10), Decision Consequence Taxonomy, slop-as-upstream-LX-failure analysis, OOP mental model mapping, new LX vocabulary
@@ -181,3 +202,225 @@
 - Auto-trigger threshold calibration (start at 3+ Altitude ≥ 2, adapt via amendment/overturn rates)
 - Confabulation measurement methodology
 - Ceremony cost budget in tokens
+
+### 2025-01-18: Brain/Memory System — UX Lens and Repo Placement
+
+**Task:** Provide UX/human factors analysis for Aaron's brain/memory/thinking/learning system sizing. Graham, Roger, and Alexander handling technical sizing; Valanice addresses human experience implications and repo placement decision.
+
+**Aaron's Brain Dump:**
+- TIERS: agent/subagent, organizational (team/vertical/discipline), project (per repo), user (local/global, cwd-aware via hooks)
+- KINDS: Practical, Semantic, Syntactic, Linguistic, Symbolic (code graph), Philosophical
+- PROPERTIES: recency (gradient?), trustworthiness, plasticity
+- ACTIVITIES: recall, integrate, meditate, explore, ideate, dream, decide, pray, re-evaluate
+- REPRESENTATION: graph, cross-ref, markdown
+- ACQUISITION: codebase exploration, periodic discovery, journaling
+
+**Key UX Questions Addressed:**
+
+1. **User-memory tier identity: USER product or DEV TOOL?**
+   - Answer: **BOTH — infrastructure that feels like a product** (like Git, not VS Code Settings Sync).
+   - Installation model: Global install (`npm install -g @akubly/brain`), per-repo opt-in (`.brain/config.yml`), agents auto-discover via MCP.
+   - Identity determines repo placement: If `@akubly/brain`, it's part of the ecosystem. If standalone brand (Synapse, Mneme), it's infrastructure.
+
+2. **Knowledge activities: Observable or invisible?**
+   - Answer: **Invisible by default, observable on demand** (pull interface, not push notifications).
+   - Silent activities: recall (cache-like), integrate (post-session), explore (background indexing), meditate (scheduled reflection), re-evaluate (trust decay).
+   - Observable activities: ideate ("What does my brain think about X?"), dream ("Show me surprising connections"), decide ("Should I use pattern X?").
+   - **UX Principle:** Max 1 proactive insight per session, only after first success (Prescriber pattern). Default is pull, not push.
+
+3. **Trust/plasticity/recency settings: CLI, GUI, config, MCP, IDE?**
+   - Answer: **Config files as source of truth + MCP for runtime queries + CLI for curation.**
+   - Config files (`.brain/config.yml` per repo, `~/.brain/global.yml` globally): trust thresholds, recency gradients, plasticity policies. Versionable, auditable, follows Git's `.gitconfig` model.
+   - MCP server: agent-facing interface (`brain_recall`, `brain_ideate`, `brain_decide`, `brain_list_memories`). LX-optimized, follows verb_noun conventions.
+   - CLI: human curation (`brain list`, `brain forget`, `brain lock`, `brain stats`, `brain meditate --now`). Power user interface.
+   - GUI: Not recommended unless "dream" (graph visualization) becomes a killer feature. Phase 10+, not MVP.
+
+4. **Branding/positioning: Does the brain want its own identity?**
+   - Answer: **YES, if infrastructure. NO, if Cairn-specific extension.**
+   - Branding test: If the brain is meant for use by other tools (not just Cairn/Forge), it needs standalone identity (Synapse, Mneme, Cortex).
+   - Current architecture: Cairn (observer) + Forge (executor) + Brain (cognition). Three pillars argue for three brands IF the brain is infrastructure.
+   - Evidence from Aaron's dump: "user-memory tier follows the user," "cross-repo," "cwd-aware via hooks," "dynamically configures harness" — all suggest **upstream infrastructure**, not downstream feature.
+
+**Recommendation: NEW REPO**
+
+**Rationale:**
+1. **Mental model boundary**: The brain is infrastructure (like Git, Redis), not a Cairn feature. Users install globally, configure per-repo, serves multiple tools.
+2. **Installation story**: `npm install -g @akubly/brain`. Cairn/Forge detect via MCP discovery. Per-repo config via `.brain/config.yml`.
+3. **Branding**: Needs distinct identity — "the memory layer for agentic systems," not "Cairn's memory." Naming candidates: Synapse, Mneme, Cortex, Engram.
+4. **Development velocity**: Separate repo = separate release cadence. Brain can ship v2.0 without forcing Cairn/Forge to upgrade.
+5. **Dependency direction**: Cairn/Forge depend on brain, not vice versa. Upstream shouldn't be bundled with downstream.
+6. **User discoverability**: Infrastructure wants broad reach (npm search, GitHub trending). Separate repo maximizes visibility.
+7. **Governance**: Separate repo clarifies contribution boundaries, attracts contributors building other agent frameworks.
+
+**Phased Approach:**
+- Prototype in Cairn/Forge monorepo under `experiments/brain/` or `packages/brain/` to validate concept.
+- Extract to new repo once brain has: its own CLI, its own MCP server, its own test suite, branding decision made.
+- **Threshold: "Does the brain have its own release cadence and changelog?" If yes, separate repo.**
+
+**UX Interfaces (Priority Order):**
+1. Config files (source of truth, versionable, declarative)
+2. MCP server (agent queries, LX-first)
+3. CLI (human curation, power users)
+4. IDE plugin (Phase N, only if usage warrants)
+5. GUI (Phase 10+, only if visual graph exploration becomes killer feature)
+
+**Key UX Principles Applied:**
+- Mental model boundaries → repo boundaries (users think "install separately" → separate repo)
+- Dependency direction → upstream separation (brain is upstream of Cairn/Forge)
+- Discoverability → branding independence (infrastructure wants broad reach)
+- Installation story → source of truth (global install argues for separate repo)
+
+**Open Questions for Aaron:**
+1. Is brain Cairn/Forge-exclusive or infrastructure for any agent?
+2. What's MVP scope (2 weeks prototype vs 2 months with CLI+MCP)?
+3. Who is primary user (agents via LX, or humans via UX)?
+4. Does brain need visual interface (text queries vs graph visualization)?
+
+**Artifacts:**
+- `.squad/decisions/inbox/valanice-brain-ux.md` — full UX analysis and recommendation
+
+## Consultation: Brain/Memory System Repo Placement (Round 2)
+
+**Date:** 2026-05-22  
+**Session:** Refined recommendation following Aaron's brain dump clarification  
+**Artifact:** .squad/orchestration-log/2026-05-22T20-25-51-valanice-*.md  
+**Merged into:** .squad/decisions.md as "Open Question: Brain/Memory/Learning System"
+
+### Summary
+
+Participated in Round 2 consulting on repo placement for new agentic brain/memory/learning system. Analyzed Aaron's five-dimension expansion (TIERS, KINDS, PROPERTIES, ACTIVITIES, REPRESENTATION, ACQUISITION) and refined position from Round 1.
+
+**Outcome:** Recommendation documented in .squad/orchestration-log/2026-05-22T20-25-51-valanice-brain-refined.md. All deliberation merged to decisions.md for Aaron's consideration.
+
+---
+
+### 2026-05-23: Self-Fit Assessment — Is Valanice the Right Person for the Brain Project?
+
+**Task:** Aaron asked — "Does this squad think they're the RIGHT squad for the brain/memory/thinking/learning project?" Valanice conducted honest self-assessment of expertise fit.
+
+**Key Findings:**
+
+1. **✅ Strong transfer (70% of the work):**
+   - Mental model boundaries (repo placement, branding independence)
+   - Config-file preference model (global defaults + per-repo overrides)
+   - MCP tool UX/LX optimization (verb_noun naming, signal density, context budget)
+   - Observability design (pull-based insights, max 1 proactive per session)
+   - Engagement patterns and friction calibration
+   - **Confidence: HIGH** — This is core UX/HCI work; proven track record
+
+2. **❌ Critical gaps (30% of the work):**
+   - **Cognitive science validation:** Activities (meditate, dream, pray, re-evaluate) are quasi-cognitive operations; need neuroscience grounding
+   - **Ontology design:** The "kinds" taxonomy (Practical, Semantic, Syntactic, Linguistic, Symbolic, Philosophical) is philosophical/knowledge-representational, not UX
+   - **Knowledge architecture:** Graph structure, traversal algorithms, semantic linking require information architecture expertise
+   - **Learning primitives:** Recency gradient, trustworthiness decay, plasticity policies are machine learning / cognitive science, not interaction design
+   - **Confidence: LOW** — Can design the UI to set these, but can't validate what they mean
+
+3. **Would Valanice want in?** YES, but with a specialist.
+   - The UX/LX challenges are interesting and novel
+   - But don't ask me to defend what "meditation" means cognitively
+   - Bring a cognitive scientist or information architect for foundational grounding
+
+4. **Specialist needed:** Cognitive scientist OR information architect
+   - Validate activities taxonomy (what are the distinct cognitive operations?)
+   - Validate kinds ontology (are these the right knowledge categories?)
+   - Design graph structure and traversal semantics
+   - Ground learning primitives in cognitive science / machine learning
+
+**Artifact:** `.squad/decisions/inbox/valanice-self-fit.md` — full confidence matrix, squad composition recommendation, and honest assessment of scope
+
+**Recommendation:** Brain project is **70% interaction design (Valanice owns) + 30% cognitive science/IA (needs specialist)**. Proceed with prototype, but validate cognitive foundations BEFORE full design. Don't ask me to defend what "meditation" means — bring someone who can.
+
+---
+
+## Brain Project — Proposed Role (2026-05-22)
+
+**Status:** Proposal pending Aaron approval
+
+**Role:** UX Advisor (advisory) for Brain project
+
+**Allocation:** 20% named advisor capacity
+
+**Mandate:** Config surface design, observability UX, "is this usable?" gut checks
+
+**Contribution Model:**
+- Advisory capacity only; no blocking dependencies
+- No ongoing commitment; focused review feedback
+- Primary commitment: Cairn
+
+**Scope:**
+- User tier configuration surface (how does user ~/ brain work?)
+- Activity observability (making meditation/recall visible)
+- Mental models and learnability
+
+**Notes:** Valanice positioned as 70% UX owner for Brain's interaction design layer; 30% (cognitive foundations) requires specialist. Recommendation: proceed with prototype, validate cognitive foundations BEFORE full design. Brain needs epistemology/learning systems specialists for the cognition layer.
+
+---
+
+## Eureka Project Kickoff (2026-05-22)
+
+**Date:** 2026-05-22  
+**Event:** Aaron approved project name + hired 3 specialists; primary focus shift to Eureka  
+**New Colleagues:** Genesta (Cognitive Systems Lead), Crispin (Knowledge Representation), Edgar (Learning Systems)  
+**Role:** UX/LX Lead for Eureka; 60% allocation (Cairn advisory: 40%)
+
+### Context & Rationale
+
+Aaron decided: Build Eureka in `packages/eureka/` (monorepo); hire domain specialists to fill cognitive science gaps.
+
+Round 3 self-assessment outcome:
+- Valanice identified: 70% UX/LX transfer (mental models, config surfaces, pull-based observability, signal density)
+- Valanice identified: 30% cognitive science gap (can't defend what "meditation" means neurologically; can't validate kinds ontology; graph architecture outside UX domain)
+- ✅ New hires fill the cognitive gap; Valanice owns UX surface design with specialist input
+
+### Impact on Valanice
+
+**Primary focus:** Eureka UX/LX design (60% allocation)
+- Config file surfaces (`.brain/config.yml` — global defaults + per-repo overrides, analogous to `.gitconfig`)
+- Activity observability (making meditation/recall/dream observable without overwhelming the user)
+- MCP tool naming + command semantics (verb_noun patterns from Phase 5)
+- Decision UI for Eureka ↔ Forge integration (how does a human review Eureka's suggestions?)
+- Max-1-proactive insight design (Prescriber pattern transfer to Eureka)
+
+**Secondary focus:** Cairn advisory (40% allocation)
+- Continue UX/LX consultancy on Prescriber design
+- Maintain LX Heuristics reference (10 principles) for cross-project consistency
+
+**Cross-project responsibility:**
+- UX principle alignment: Cairn's "context budget" principle applies to Eureka memory recall (don't overwhelm the agent with every stored memory)
+- Signal density optimization: Which insights surface, which stay quiet
+- Mental model boundaries: Eureka is "infrastructure like Git," not "feature of Forge"
+
+**Key context:**
+- Genesta (Cognitive Systems Lead) brings epistemology expertise to validate activities taxonomy
+- Crispin (Knowledge Representation Specialist) brings ontology + graph architecture to inform config surfaces
+- Edgar (Learning Systems Specialist) brings learning primitives expertise to ground trust/plasticity/recency policies
+- Valanice's 70% UX transfer is maximized with their 30% cognitive science + 100% agentic reasoning expertise alongside
+
+### Design Partnership
+
+**Valanice owns:** How Eureka's knowledge surfaces to humans  
+**Specialists own:** What Eureka's knowledge *means* cognitively  
+**Interface:** Config files as the agreed-upon "source of truth" — Valanice designs UI to set policies; specialists define what those policies mean
+
+
+
+---
+
+## Cross-Team Context: Eureka v1 Design Package Locked (2026-05-28)
+
+**Status:** Eureka v1 design package completed 3-cycle persona review and is now **M1 implementation-ready**.
+
+**What changed:** 19 cycle-1 findings (3 blocking, 11 important, 5 minor) all accepted and landed in cycle 2 fix wave. Cycle 3 cleanup addressed 4 advisories. Design contradictions resolved:
+- B1: Scoring formula canonicalized to additive (0.50 relevance + 0.20 importance + 0.20 trust + 0.10 recency)
+- B2: Trust/retire semantics: field-level immutability + explicit retirement flag + zombie-fact preservation
+- B3: Decision ownership: Forge writes audit (immutable), Eureka writes learning fact (mutable), shared decision_id
+
+**Key fact-correction:** ACT-R exponent corrected 0.7 → 0.5 (caught by Compliance reviewer during cycle 2).
+
+**Deliverables:** PRD v5, TDD Strategy (§55), Technical Design (§00–§50). All documents locked for M1.
+
+**M1 Go/No-Go:** Design ready. Eval set grounded in mem/ repo (M0 deliverable). M1–M5 milestones validated by Pragmatist reviewer.
+
+**For you:** If your work depends on Eureka design decisions, those are now stable. Cross-refs and canonical values are in .squad/decisions.md (Cycle 1 + Cycle 3 sections).
+
+**Commits:** f68873d (cycle 2 fix wave) + 37370f9 (cycle 3 cleanup).

@@ -11,12 +11,27 @@
         "ralph"
       ],
       "universe": "Sierra On-Line Adventure Games"
+    },
+    "eureka-expansion-2026-05-22T20:44:15.542Z": {
+      "created_at": "2026-05-22T20:44:15.542Z",
+      "agents": [
+        "genesta",
+        "crispin",
+        "edgar"
+      ],
+      "universe": "Sierra On-Line Adventure Games",
+      "expansion_kind": "diegetic",
+      "context": "Eureka package — cognitive/contemplative roles drawn from same universe"
     }
   },
   "universe_usage_history": [
     {
       "universe": "Sierra On-Line Adventure Games",
       "used_at": "2026-03-28T06:21:47.368Z"
+    },
+    {
+      "universe": "Sierra On-Line Adventure Games",
+      "used_at": "2026-05-22T20:44:15.542Z"
     }
   ]
 }

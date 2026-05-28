@@ -17,6 +17,9 @@ How to decide who handles what.
 | Scope & priorities | Graham | What to build next, trade-offs, decisions |
 | Session logging | Scribe | Automatic — never needs routing |
 | UX / Human Factors | Valanice | Review experience, personalization UX, engagement patterns, attention management |
+| Eureka architecture, activity model, tier boundaries | Genesta | Brain charter, activity semantics, package-level scope decisions for `packages/eureka/` |
+| Eureka knowledge representation | Crispin | Graph schema, kind taxonomies, cross-reference model, persistence formats |
+| Eureka learning systems | Edgar | Activity implementations (recall/meditate/dream/decide), plasticity/trust/recency algorithms |
 
 ## Issue Routing
 
@@ -55,4 +58,7 @@ How to decide who handles what.
 | UX / Human Factors | Valanice | — |
 | SDK runtime, session lifecycle, model selection | Alexander | Roger |
 | Test strategy, test code, runtime verification | Laura | — |
+| Eureka — architecture & activities | Genesta | Graham (cross-package) |
+| Eureka — knowledge representation | Crispin | — |
+| Eureka — learning systems & activities | Edgar | Crispin |
 
