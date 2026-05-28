@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { getDb, closeDb } from '../db/index.js';
-import { createSession, getActiveSession } from '../db/sessions.js';
+import { createSession, ensureSystemSession, getActiveSession } from '../db/sessions.js';
 import { logEvent } from '../db/events.js';
 import { getInsights, createInsight, getInsight } from '../db/insights.js';
 import { curate, getCuratorStatus } from '../agents/curator.js';
@@ -21,19 +23,80 @@ import {
   confidenceToWords,
   resetProactiveHintCounter,
 } from '../mcp/server.js';
+import { getUserSessionForMcpFallback } from '../mcp/sessionFallback.js';
 import {
+
   getSessionSummary,
   hasEventOccurred,
   findEvents,
 } from '../agents/sessionState.js';
 
+let db: ReturnType<typeof getDb>;
+
 beforeEach(() => {
   closeDb();
-  getDb(':memory:');
+  db = getDb(':memory:');
 });
 
 afterEach(() => {
   closeDb();
+});
+
+function seedUserThenNewerSystemSession(): string {
+  const userId = createSession(db, 'org/user-repo', 'main');
+  const systemId = ensureSystemSession(db);
+  db.prepare("UPDATE sessions SET started_at = '2026-05-25 10:00:00' WHERE id = ?").run(userId);
+  db.prepare("UPDATE sessions SET started_at = '2026-05-25 11:00:00' WHERE id = ?").run(systemId);
+  return userId;
+}
+
+// ---------------------------------------------------------------------------
+// MCP user-session fallback — backing logic for four call sites
+// ---------------------------------------------------------------------------
+
+describe('MCP user-session fallback logic', () => {
+  it('resolve_prescription fallback excludes newer __system__ sessions', () => {
+    const userId = seedUserThenNewerSystemSession();
+    expect(getUserSessionForMcpFallback(db)!.id).toBe(userId);
+  });
+
+  it('lint_skill telemetry fallback excludes newer __system__ sessions', () => {
+    const userId = seedUserThenNewerSystemSession();
+    expect(getUserSessionForMcpFallback(db)!.id).toBe(userId);
+  });
+
+  it('test_skill scenario telemetry fallback excludes newer __system__ sessions', () => {
+    const userId = seedUserThenNewerSystemSession();
+    expect(getUserSessionForMcpFallback(db)!.id).toBe(userId);
+  });
+
+  it('test_skill validation telemetry fallback excludes newer __system__ sessions', () => {
+    const userId = seedUserThenNewerSystemSession();
+    expect(getUserSessionForMcpFallback(db)!.id).toBe(userId);
+  });
+
+  it('keeps repo-scoped lookup user-only when repo_key is provided', () => {
+    const db = getDb();
+    seedUserThenNewerSystemSession();
+    const repoScopedId = createSession(db, 'org/scoped-repo', 'feature');
+    const scopedSystemId = ensureSystemSession(db, 'org/scoped-repo');
+    db.prepare("UPDATE sessions SET started_at = '2026-05-25 10:00:00' WHERE id = ?").run(repoScopedId);
+    db.prepare("UPDATE sessions SET started_at = '2026-05-25 11:00:00' WHERE id = ?").run(scopedSystemId);
+    expect(getUserSessionForMcpFallback(db, 'org/scoped-repo')!.id).toBe(repoScopedId);
+  });
+
+  // The four per-handler tests above are intentionally identical in logic — they
+  // test the same backing helper. The separate test names exist as documentation
+  // that each named MCP handler depends on this fallback behavior. The structural
+  // test below verifies wiring at the source level.
+
+  it('wires all four MCP fallback call sites through the user-session helper', () => {
+    const serverPath = fileURLToPath(new URL('../mcp/server.ts', import.meta.url));
+    const serverSource = fs.readFileSync(serverPath, 'utf8');
+    const helperUses = serverSource.match(/getUserSessionForMcpFallback\(/g) ?? [];
+    expect(helperUses).toHaveLength(4); // four call sites (definition lives in sessionFallback.ts)
+    expect(serverSource).not.toContain('getMostRecentActiveSession');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -41,16 +104,16 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('get_status logic', () => {
-  it('should return curator status with zeroed state on fresh db', () => {
+  it('should return curator status with zeroed state on fresh db', async () => {
     const status = getCuratorStatus();
     expect(status.lastProcessedEventId).toBe(0);
     expect(status.totalInsights).toBe(0);
     expect(status.activeInsights).toBe(0);
   });
 
-  it('should return active session when one exists', () => {
-    const sessionId = createSession('org/repo', 'main');
-    const session = getActiveSession('org/repo');
+  it('should return active session when one exists', async () => {
+    const sessionId = createSession(db, 'org/repo', 'main');
+    const session = getActiveSession(db, 'org/repo');
     expect(session).toBeDefined();
     expect(session!.id).toBe(sessionId);
     expect(session!.repoKey).toBe('org/repo');
@@ -58,8 +121,8 @@ describe('get_status logic', () => {
     expect(session!.status).toBe('active');
   });
 
-  it('should return undefined session for unknown repo', () => {
-    const session = getActiveSession('no/such/repo');
+  it('should return undefined session for unknown repo', async () => {
+    const session = getActiveSession(db, 'no/such/repo');
     expect(session).toBeUndefined();
   });
 });
@@ -69,18 +132,18 @@ describe('get_status logic', () => {
 // ---------------------------------------------------------------------------
 
 describe('list_insights logic', () => {
-  it('should return empty list on fresh db', () => {
-    const insights = getInsights();
+  it('should return empty list on fresh db', async () => {
+    const insights = getInsights(db);
     expect(insights).toHaveLength(0);
   });
 
-  it('should return insights after curator processes errors', () => {
-    const sessionId = createSession('org/repo', 'main');
-    logEvent(sessionId, 'error', { category: 'build', message: 'compile failed' });
-    logEvent(sessionId, 'error', { category: 'build', message: 'compile failed' });
-    curate();
+  it('should return insights after curator processes errors', async () => {
+    const sessionId = createSession(db, 'org/repo', 'main');
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'compile failed' });
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'compile failed' });
+    await curate();
 
-    const insights = getInsights('active');
+    const insights = getInsights(db, 'active');
     expect(insights.length).toBeGreaterThanOrEqual(1);
     const buildInsight = insights.find((i) => i.patternType === 'recurring_error');
     expect(buildInsight).toBeDefined();
@@ -88,15 +151,15 @@ describe('list_insights logic', () => {
     expect(buildInsight!.confidence).toBeGreaterThan(0);
   });
 
-  it('should filter by status', () => {
-    const sessionId = createSession('org/repo', 'main');
-    logEvent(sessionId, 'error', { category: 'build', message: 'fail' });
-    logEvent(sessionId, 'error', { category: 'build', message: 'fail' });
-    curate();
+  it('should filter by status', async () => {
+    const sessionId = createSession(db, 'org/repo', 'main');
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'fail' });
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'fail' });
+    await curate();
 
-    expect(getInsights('active').length).toBeGreaterThanOrEqual(1);
-    expect(getInsights('stale')).toHaveLength(0);
-    expect(getInsights('pruned')).toHaveLength(0);
+    expect(getInsights(db, 'active').length).toBeGreaterThanOrEqual(1);
+    expect(getInsights(db, 'stale')).toHaveLength(0);
+    expect(getInsights(db, 'pruned')).toHaveLength(0);
   });
 });
 
@@ -105,13 +168,13 @@ describe('list_insights logic', () => {
 // ---------------------------------------------------------------------------
 
 describe('get_session logic', () => {
-  it('should return session summary with event counts', () => {
-    const sessionId = createSession('org/repo', 'main');
-    logEvent(sessionId, 'tool_use', { tool: 'grep' });
-    logEvent(sessionId, 'tool_use', { tool: 'edit' });
-    logEvent(sessionId, 'error', { category: 'build', message: 'fail' });
+  it('should return session summary with event counts', async () => {
+    const sessionId = createSession(db, 'org/repo', 'main');
+    logEvent(db, sessionId, 'tool_use', { tool: 'grep' });
+    logEvent(db, sessionId, 'tool_use', { tool: 'edit' });
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'fail' });
 
-    const summary = getSessionSummary(sessionId);
+    const summary = getSessionSummary(db, sessionId);
     expect(summary).toBeDefined();
     expect(summary!.sessionId).toBe(sessionId);
     expect(summary!.eventCount).toBe(3);
@@ -121,19 +184,19 @@ describe('get_session logic', () => {
     expect(summary!.recentEvents).toHaveLength(3);
   });
 
-  it('should return undefined for nonexistent session', () => {
-    const summary = getSessionSummary('00000000-0000-0000-0000-000000000000');
+  it('should return undefined for nonexistent session', async () => {
+    const summary = getSessionSummary(db, '00000000-0000-0000-0000-000000000000');
     expect(summary).toBeUndefined();
   });
 
-  it('should include skip breadcrumbs in summary', () => {
-    const sessionId = createSession('org/repo', 'main');
-    const db = getDb();
+  it('should include skip breadcrumbs in summary', async () => {
+    const sessionId = createSession(db, 'org/repo', 'main');
+    db = getDb();
     db.prepare(
       "INSERT INTO skip_breadcrumbs (session_id, what_skipped, reason) VALUES (?, 'review', 'too busy')",
     ).run(sessionId);
 
-    const summary = getSessionSummary(sessionId);
+    const summary = getSessionSummary(db, sessionId);
     expect(summary!.skipCount).toBe(1);
     expect(summary!.skips[0].whatSkipped).toBe('review');
   });
@@ -144,58 +207,58 @@ describe('get_session logic', () => {
 // ---------------------------------------------------------------------------
 
 describe('search_events logic', () => {
-  it('should find events by type pattern', () => {
-    const sessionId = createSession('org/repo', 'main');
-    logEvent(sessionId, 'tool_use', { tool: 'grep' });
-    logEvent(sessionId, 'error', { category: 'build', message: 'fail' });
-    logEvent(sessionId, 'tool_use', { tool: 'edit' });
+  it('should find events by type pattern', async () => {
+    const sessionId = createSession(db, 'org/repo', 'main');
+    logEvent(db, sessionId, 'tool_use', { tool: 'grep' });
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'fail' });
+    logEvent(db, sessionId, 'tool_use', { tool: 'edit' });
 
-    const errors = findEvents(sessionId, 'error');
+    const errors = findEvents(db, sessionId, 'error');
     expect(errors).toHaveLength(1);
     expect(errors[0].eventType).toBe('error');
 
-    const tools = findEvents(sessionId, 'tool');
+    const tools = findEvents(db, sessionId, 'tool');
     expect(tools).toHaveLength(2);
   });
 
-  it('should return empty array for no matches', () => {
-    const sessionId = createSession('org/repo', 'main');
-    logEvent(sessionId, 'tool_use', { tool: 'grep' });
+  it('should return empty array for no matches', async () => {
+    const sessionId = createSession(db, 'org/repo', 'main');
+    logEvent(db, sessionId, 'tool_use', { tool: 'grep' });
 
-    const results = findEvents(sessionId, 'nonexistent');
+    const results = findEvents(db, sessionId, 'nonexistent');
     expect(results).toHaveLength(0);
   });
 
-  it('should return events in chronological order', () => {
-    const sessionId = createSession('org/repo', 'main');
-    logEvent(sessionId, 'error', { category: 'a', message: 'first' });
-    logEvent(sessionId, 'error', { category: 'b', message: 'second' });
+  it('should return events in chronological order', async () => {
+    const sessionId = createSession(db, 'org/repo', 'main');
+    logEvent(db, sessionId, 'error', { category: 'a', message: 'first' });
+    logEvent(db, sessionId, 'error', { category: 'b', message: 'second' });
 
-    const events = findEvents(sessionId, 'error');
+    const events = findEvents(db, sessionId, 'error');
     expect(events).toHaveLength(2);
     expect(events[0].id).toBeLessThan(events[1].id);
   });
 
-  it('should respect the limit parameter', () => {
-    const sessionId = createSession('org/repo', 'main');
+  it('should respect the limit parameter', async () => {
+    const sessionId = createSession(db, 'org/repo', 'main');
     for (let i = 0; i < 5; i++) {
-      logEvent(sessionId, 'error', { category: 'build', message: `fail ${i}` });
+      logEvent(db, sessionId, 'error', { category: 'build', message: `fail ${i}` });
     }
 
-    const limited = findEvents(sessionId, 'error', 3);
+    const limited = findEvents(db, sessionId, 'error', 3);
     expect(limited).toHaveLength(3);
 
-    const all = findEvents(sessionId, 'error');
+    const all = findEvents(db, sessionId, 'error');
     expect(all).toHaveLength(5);
   });
 
-  it('should support SQL LIKE wildcards in pattern', () => {
-    const sessionId = createSession('org/repo', 'main');
-    logEvent(sessionId, 'tool_use', { tool: 'grep' });
-    logEvent(sessionId, 'error', { category: 'build', message: 'fail' });
+  it('should support SQL LIKE wildcards in pattern', async () => {
+    const sessionId = createSession(db, 'org/repo', 'main');
+    logEvent(db, sessionId, 'tool_use', { tool: 'grep' });
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'fail' });
 
     // '_' matches any single character — 'tool_us_' should match 'tool_use'
-    const withUnderscore = findEvents(sessionId, 'tool_us_');
+    const withUnderscore = findEvents(db, sessionId, 'tool_us_');
     expect(withUnderscore).toHaveLength(1);
     expect(withUnderscore[0].eventType).toBe('tool_use');
   });
@@ -206,58 +269,58 @@ describe('search_events logic', () => {
 // ---------------------------------------------------------------------------
 
 describe('run_curate logic', () => {
-  it('should return zero counts on empty event stream', () => {
-    const result = curate();
+  it('should return zero counts on empty event stream', async () => {
+    const result = await curate();
     expect(result.eventsProcessed).toBe(0);
     expect(result.insightsCreated).toBe(0);
     expect(result.insightsReinforced).toBe(0);
   });
 
-  it('should process events and create insights', () => {
-    const sessionId = createSession('org/repo', 'main');
-    logEvent(sessionId, 'error', { category: 'build', message: 'type mismatch' });
-    logEvent(sessionId, 'error', { category: 'build', message: 'type mismatch' });
-    logEvent(sessionId, 'skip', { whatSkipped: 'lint' });
-    logEvent(sessionId, 'skip', { whatSkipped: 'lint' });
+  it('should process events and create insights', async () => {
+    const sessionId = createSession(db, 'org/repo', 'main');
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'type mismatch' });
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'type mismatch' });
+    logEvent(db, sessionId, 'skip', { whatSkipped: 'lint' });
+    logEvent(db, sessionId, 'skip', { whatSkipped: 'lint' });
 
-    const result = curate();
+    const result = await curate();
     expect(result.eventsProcessed).toBe(4);
     expect(result.insightsCreated).toBeGreaterThanOrEqual(2);
   });
 
-  it('should advance cursor so events are not reprocessed', () => {
-    const sessionId = createSession('org/repo', 'main');
-    logEvent(sessionId, 'tool_use', { tool: 'grep' });
+  it('should advance cursor so events are not reprocessed', async () => {
+    const sessionId = createSession(db, 'org/repo', 'main');
+    logEvent(db, sessionId, 'tool_use', { tool: 'grep' });
 
-    const first = curate();
+    const first = await curate();
     expect(first.eventsProcessed).toBe(1);
 
-    const second = curate();
+    const second = await curate();
     expect(second.eventsProcessed).toBe(0);
   });
 
-  it('should update curator status after run', () => {
-    const sessionId = createSession('org/repo', 'main');
-    logEvent(sessionId, 'tool_use', { tool: 'grep' });
-    curate();
+  it('should update curator status after run', async () => {
+    const sessionId = createSession(db, 'org/repo', 'main');
+    logEvent(db, sessionId, 'tool_use', { tool: 'grep' });
+    await curate();
 
     const status = getCuratorStatus();
     expect(status.lastProcessedEventId).toBeGreaterThan(0);
     expect(status.lastRunAt).not.toBeNull();
   });
 
-  it('should return capped and insightsChanged fields', () => {
-    const result = curate();
+  it('should return capped and insightsChanged fields', async () => {
+    const result = await curate();
     expect(result.capped).toBe(false);
     expect(result.insightsChanged).toBe(false);
   });
 
-  it('should return insightsChanged: true when insights are generated', () => {
-    const sessionId = createSession('org/repo', 'main');
-    logEvent(sessionId, 'error', { category: 'build', message: 'compile failed' });
-    logEvent(sessionId, 'error', { category: 'build', message: 'compile failed' });
+  it('should return insightsChanged: true when insights are generated', async () => {
+    const sessionId = createSession(db, 'org/repo', 'main');
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'compile failed' });
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'compile failed' });
 
-    const result = curate();
+    const result = await curate();
     expect(result.insightsChanged).toBe(true);
   });
 });
@@ -267,27 +330,27 @@ describe('run_curate logic', () => {
 // ---------------------------------------------------------------------------
 
 describe('check_event logic', () => {
-  it('should return true when event type exists', () => {
-    const sessionId = createSession('org/repo', 'main');
-    logEvent(sessionId, 'error', { category: 'build', message: 'fail' });
+  it('should return true when event type exists', async () => {
+    const sessionId = createSession(db, 'org/repo', 'main');
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'fail' });
 
-    expect(hasEventOccurred(sessionId, 'error')).toBe(true);
+    expect(hasEventOccurred(db, sessionId, 'error')).toBe(true);
   });
 
-  it('should return false when event type does not exist', () => {
-    const sessionId = createSession('org/repo', 'main');
-    logEvent(sessionId, 'tool_use', { tool: 'grep' });
+  it('should return false when event type does not exist', async () => {
+    const sessionId = createSession(db, 'org/repo', 'main');
+    logEvent(db, sessionId, 'tool_use', { tool: 'grep' });
 
-    expect(hasEventOccurred(sessionId, 'error')).toBe(false);
+    expect(hasEventOccurred(db, sessionId, 'error')).toBe(false);
   });
 
-  it('should be scoped to the given session', () => {
-    const session1 = createSession('org/repo1', 'main');
-    const session2 = createSession('org/repo2', 'main');
-    logEvent(session1, 'error', { category: 'build', message: 'fail' });
+  it('should be scoped to the given session', async () => {
+    const session1 = createSession(db, 'org/repo1', 'main');
+    const session2 = createSession(db, 'org/repo2', 'main');
+    logEvent(db, session1, 'error', { category: 'build', message: 'fail' });
 
-    expect(hasEventOccurred(session1, 'error')).toBe(true);
-    expect(hasEventOccurred(session2, 'error')).toBe(false);
+    expect(hasEventOccurred(db, session1, 'error')).toBe(true);
+    expect(hasEventOccurred(db, session2, 'error')).toBe(false);
   });
 });
 
@@ -296,7 +359,7 @@ describe('check_event logic', () => {
 // ---------------------------------------------------------------------------
 
 function createTestInsight(opts?: { confidence?: number; patternType?: string }): number {
-  return createInsight(
+  return createInsight(db,
     (opts?.patternType ?? 'recurring_error') as 'recurring_error' | 'error_sequence' | 'skip_frequency',
     'Recurring build: compile failed',
     'Build errors occurring repeatedly',
@@ -311,7 +374,7 @@ function createTestPrescription(
   insightId: number,
   opts?: { confidence?: number; status?: string },
 ): number {
-  return createPrescription({
+  return createPrescription(db, {
     insightId,
     patternType: 'recurring_error',
     title: 'Prevent recurring build errors',
@@ -332,33 +395,33 @@ function createTestPrescription(
 // ---------------------------------------------------------------------------
 
 describe('list_prescriptions logic', () => {
-  it('should return empty list on fresh db', () => {
-    const prescriptions = listPrescriptions();
+  it('should return empty list on fresh db', async () => {
+    const prescriptions = listPrescriptions(db);
     expect(prescriptions).toHaveLength(0);
   });
 
-  it('should return prescriptions filtered by status', () => {
+  it('should return prescriptions filtered by status', async () => {
     const insightId = createTestInsight();
     createTestPrescription(insightId);
 
-    const generated = listPrescriptions({ status: 'generated' });
+    const generated = listPrescriptions(db, { status: 'generated' });
     expect(generated).toHaveLength(1);
 
-    const applied = listPrescriptions({ status: 'applied' });
+    const applied = listPrescriptions(db, { status: 'applied' });
     expect(applied).toHaveLength(0);
   });
 
-  it('should return all prescriptions when no filter', () => {
+  it('should return all prescriptions when no filter', async () => {
     const insightId = createTestInsight();
     const id1 = createTestPrescription(insightId);
     createTestPrescription(insightId);
-    updatePrescriptionStatus(id1, 'rejected');
+    updatePrescriptionStatus(db, id1, 'rejected');
 
-    const all = listPrescriptions();
+    const all = listPrescriptions(db);
     expect(all).toHaveLength(2);
   });
 
-  it('should include confidence in words via helper', () => {
+  it('should include confidence in words via helper', async () => {
     expect(confidenceToWords(0.9)).toBe('high');
     expect(confidenceToWords(0.7)).toBe('high');
     expect(confidenceToWords(0.5)).toBe('medium');
@@ -367,20 +430,20 @@ describe('list_prescriptions logic', () => {
     expect(confidenceToWords(0.0)).toBe('emerging');
   });
 
-  it('should include proactive hint when generated prescriptions exist', () => {
+  it('should include proactive hint when generated prescriptions exist', async () => {
     resetProactiveHintCounter();
     const insightId = createTestInsight();
     createTestPrescription(insightId);
 
-    const counts = countPrescriptionsByStatus();
+    const counts = countPrescriptionsByStatus(db);
     expect(counts['generated']).toBe(1);
   });
 
-  it('should track proactive hint counter resets', () => {
+  it('should track proactive hint counter resets', async () => {
     resetProactiveHintCounter();
     // Counter starts at 0, so first call would show hint
     // This tests the reset mechanism
-    const counts = countPrescriptionsByStatus();
+    const counts = countPrescriptionsByStatus(db);
     expect(counts).toBeDefined();
   });
 });
@@ -390,25 +453,25 @@ describe('list_prescriptions logic', () => {
 // ---------------------------------------------------------------------------
 
 describe('get_prescription logic', () => {
-  it('should return full prescription detail with insight context', () => {
+  it('should return full prescription detail with insight context', async () => {
     const insightId = createTestInsight();
     const prescriptionId = createTestPrescription(insightId);
 
-    const prescription = getPrescription(prescriptionId);
+    const prescription = getPrescription(db, prescriptionId);
     expect(prescription).toBeDefined();
     expect(prescription!.title).toBe('Prevent recurring build errors');
 
-    const insight = getInsight(insightId);
+    const insight = getInsight(db, insightId);
     expect(insight).toBeDefined();
     expect(insight!.title).toBe('Recurring build: compile failed');
     expect(insight!.occurrenceCount).toBe(5);
   });
 
-  it('should return observation framing not judgment', () => {
+  it('should return observation framing not judgment', async () => {
     const insightId = createTestInsight();
     createTestPrescription(insightId);
 
-    const insight = getInsight(insightId);
+    const insight = getInsight(db, insightId);
     expect(insight).toBeDefined();
 
     // Observation framing: "Cairn has noticed..." not "You keep making..."
@@ -419,11 +482,11 @@ describe('get_prescription logic', () => {
     expect(observation).toContain('recurring');
   });
 
-  it('should include diff preview from proposed change', () => {
+  it('should include diff preview from proposed change', async () => {
     const insightId = createTestInsight();
     const pId = createTestPrescription(insightId);
 
-    const prescription = getPrescription(pId);
+    const prescription = getPrescription(db, pId);
     expect(prescription).toBeDefined();
 
     // Diff preview: lines prefixed with +
@@ -435,8 +498,8 @@ describe('get_prescription logic', () => {
     expect(diffLines[0]).toMatch(/^\+ /);
   });
 
-  it('should return error for nonexistent prescription ID', () => {
-    const prescription = getPrescription(99999);
+  it('should return error for nonexistent prescription ID', async () => {
+    const prescription = getPrescription(db, 99999);
     expect(prescription).toBeUndefined();
   });
 });
@@ -446,69 +509,69 @@ describe('get_prescription logic', () => {
 // ---------------------------------------------------------------------------
 
 describe('resolve_prescription logic', () => {
-  it('should accept and transition to accepted status', () => {
+  it('should accept and transition to accepted status', async () => {
     const insightId = createTestInsight();
     const prescriptionId = createTestPrescription(insightId);
 
-    updatePrescriptionStatus(prescriptionId, 'accepted');
-    const updated = getPrescription(prescriptionId);
+    updatePrescriptionStatus(db, prescriptionId, 'accepted');
+    const updated = getPrescription(db, prescriptionId);
     expect(updated!.status).toBe('accepted');
   });
 
-  it('should reject and store reason', () => {
+  it('should reject and store reason', async () => {
     const insightId = createTestInsight();
     const prescriptionId = createTestPrescription(insightId);
 
-    updatePrescriptionStatus(prescriptionId, 'rejected', {
+    updatePrescriptionStatus(db, prescriptionId, 'rejected', {
       dispositionReason: 'Not relevant to my workflow',
     });
 
-    const updated = getPrescription(prescriptionId);
+    const updated = getPrescription(db, prescriptionId);
     expect(updated!.status).toBe('rejected');
     expect(updated!.dispositionReason).toBe('Not relevant to my workflow');
   });
 
-  it('should defer and increment counter with cooldown', () => {
+  it('should defer and increment counter with cooldown', async () => {
     const insightId = createTestInsight();
     const prescriptionId = createTestPrescription(insightId);
 
-    deferPrescription(prescriptionId, 'not now', 3);
-    const updated = getPrescription(prescriptionId);
+    deferPrescription(db, prescriptionId, 'not now', 3);
+    const updated = getPrescription(db, prescriptionId);
     expect(updated!.status).toBe('deferred');
     expect(updated!.deferCount).toBe(1);
     expect(updated!.deferUntilSession).toBeDefined();
   });
 
-  it('should auto-suppress after 3 deferrals', () => {
+  it('should auto-suppress after 3 deferrals', async () => {
     const insightId = createTestInsight();
     const prescriptionId = createTestPrescription(insightId);
 
     // Defer 3 times
-    deferPrescription(prescriptionId, 'not now', 3);
+    deferPrescription(db, prescriptionId, 'not now', 3);
     // Reset to generated to defer again
-    updatePrescriptionStatus(prescriptionId, 'generated');
-    deferPrescription(prescriptionId, 'still not now', 3);
-    updatePrescriptionStatus(prescriptionId, 'generated');
-    deferPrescription(prescriptionId, 'nope', 3);
+    updatePrescriptionStatus(db, prescriptionId, 'generated');
+    deferPrescription(db, prescriptionId, 'still not now', 3);
+    updatePrescriptionStatus(db, prescriptionId, 'generated');
+    deferPrescription(db, prescriptionId, 'nope', 3);
 
-    const afterThird = getPrescription(prescriptionId);
+    const afterThird = getPrescription(db, prescriptionId);
     expect(afterThird!.deferCount).toBe(3);
 
     // Check auto-suppress threshold
-    const suppressed = checkAutoSuppress(prescriptionId, afterThird!.deferCount);
+    const suppressed = checkAutoSuppress(db, prescriptionId, afterThird!.deferCount);
     expect(suppressed).toBe(true);
 
-    const final = getPrescription(prescriptionId);
+    const final = getPrescription(db, prescriptionId);
     expect(final!.status).toBe('suppressed');
   });
 
-  it('should require generated status for resolution', () => {
+  it('should require generated status for resolution', async () => {
     const insightId = createTestInsight();
     const prescriptionId = createTestPrescription(insightId);
 
     // Reject it first
-    updatePrescriptionStatus(prescriptionId, 'rejected');
-    const rx = getPrescription(prescriptionId);
+    updatePrescriptionStatus(db, prescriptionId, 'rejected');
+    const rx = getPrescription(db, prescriptionId);
     expect(rx!.status).toBe('rejected');
 
     // Trying to resolve again: guard should prevent this
@@ -522,43 +585,43 @@ describe('resolve_prescription logic', () => {
 // ---------------------------------------------------------------------------
 
 describe('show_growth logic', () => {
-  it('should return cumulative stats', () => {
+  it('should return cumulative stats', async () => {
     const insightId = createTestInsight();
     createTestPrescription(insightId);
     createTestPrescription(insightId);
 
-    const counts = countPrescriptionsByStatus();
+    const counts = countPrescriptionsByStatus(db);
     expect(counts['generated']).toBe(2);
   });
 
-  it('should lead with resolved patterns', () => {
+  it('should lead with resolved patterns', async () => {
     const insightId = createTestInsight();
     const prescriptionId = createTestPrescription(insightId);
 
     // Simulate accept → apply cycle
-    updatePrescriptionStatus(prescriptionId, 'accepted');
-    updatePrescriptionStatus(prescriptionId, 'applied');
+    updatePrescriptionStatus(db, prescriptionId, 'accepted');
+    updatePrescriptionStatus(db, prescriptionId, 'applied');
 
-    const applied = listPrescriptions({ status: 'applied' });
+    const applied = listPrescriptions(db, { status: 'applied' });
     expect(applied).toHaveLength(1);
 
     // Resolved patterns come first in the show_growth response
-    const insight = getInsight(insightId);
+    const insight = getInsight(db, insightId);
     expect(insight).toBeDefined();
     expect(applied[0].insightId).toBe(insightId);
   });
 
-  it('should use natural language for acceptance rates', () => {
+  it('should use natural language for acceptance rates', async () => {
     const insightId = createTestInsight();
     const id1 = createTestPrescription(insightId);
     const id2 = createTestPrescription(insightId);
     createTestPrescription(insightId);
 
-    updatePrescriptionStatus(id1, 'accepted');
-    updatePrescriptionStatus(id1, 'applied');
-    updatePrescriptionStatus(id2, 'rejected');
+    updatePrescriptionStatus(db, id1, 'accepted');
+    updatePrescriptionStatus(db, id1, 'applied');
+    updatePrescriptionStatus(db, id2, 'rejected');
 
-    const counts = countPrescriptionsByStatus();
+    const counts = countPrescriptionsByStatus(db);
     const applied = counts['applied'] ?? 0;
     const accepted = counts['accepted'] ?? 0;
     const rejected = counts['rejected'] ?? 0;
@@ -569,8 +632,8 @@ describe('show_growth logic', () => {
     expect(display).toBe('1 of 2 resolved');
   });
 
-  it('should return session count for summary', () => {
-    const sessions = getSessionsSinceInstall();
+  it('should return session count for summary', async () => {
+    const sessions = getSessionsSinceInstall(db);
     expect(typeof sessions).toBe('number');
     expect(sessions).toBeGreaterThanOrEqual(0);
   });
@@ -581,12 +644,12 @@ describe('show_growth logic', () => {
 // ---------------------------------------------------------------------------
 
 describe('run_curate prescription chaining', () => {
-  it('should chain prescribe when insights change', () => {
-    const sessionId = createSession('org/repo', 'main');
-    logEvent(sessionId, 'error', { category: 'build', message: 'compile failed' });
-    logEvent(sessionId, 'error', { category: 'build', message: 'compile failed' });
+  it('should chain prescribe when insights change', async () => {
+    const sessionId = createSession(db, 'org/repo', 'main');
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'compile failed' });
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'compile failed' });
 
-    const result = curate();
+    const result = await curate();
     expect(result.insightsChanged).toBe(true);
 
     // Prescribe should generate from the new insights
@@ -594,8 +657,8 @@ describe('run_curate prescription chaining', () => {
     expect(prescribeResult.prescriptionsGenerated).toBeGreaterThanOrEqual(1);
   });
 
-  it('should not chain prescribe when no insights change', () => {
-    const result = curate();
+  it('should not chain prescribe when no insights change', async () => {
+    const result = await curate();
     expect(result.insightsChanged).toBe(false);
     // No insights → prescribe would generate 0
     const prescribeResult = prescribe();
@@ -651,7 +714,7 @@ Short.
 Maybe do something, possibly.
 `;
 
-  it('validates a skill file without scenario', () => {
+  it('validates a skill file without scenario', async () => {
     const parsed = parseSkill(GOOD_SKILL);
     const results = validateSkill(parsed);
     expect(results.length).toBeGreaterThan(0);
@@ -666,7 +729,7 @@ Maybe do something, possibly.
     }
   });
 
-  it('formats validation summary with scores', () => {
+  it('formats validation summary with scores', async () => {
     const parsed = parseSkill(GOOD_SKILL);
     const results = validateSkill(parsed);
     const summary = formatValidationSummary(results);
@@ -675,7 +738,7 @@ Maybe do something, possibly.
     expect(summary).toContain('Overall');
   });
 
-  it('detects quality issues in a minimal skill', () => {
+  it('detects quality issues in a minimal skill', async () => {
     const parsed = parseSkill(MINIMAL_SKILL);
     const results = validateSkill(parsed);
 
@@ -684,7 +747,7 @@ Maybe do something, possibly.
     expect(failures.length).toBeGreaterThan(0);
   });
 
-  it('persists test results to DB', () => {
+  it('persists test results to DB', async () => {
     const parsed = parseSkill(GOOD_SKILL);
     const results = validateSkill(parsed);
 
@@ -700,16 +763,16 @@ Maybe do something, possibly.
       evidence: r.evidence,
     }));
 
-    const ids = insertTestResults(inserts);
+    const ids = insertTestResults(db, inserts);
     expect(ids.length).toBe(results.length);
 
-    const stored = getTestResults('/test/SKILL.md');
+    const stored = getTestResults(db, '/test/SKILL.md');
     expect(stored.length).toBe(results.length);
     expect(stored[0].skillName).toBe('test-skill');
   });
 
-  it('logs skill_test event when session exists', () => {
-    const sessionId = createSession('org/repo', 'main');
+  it('logs skill_test event when session exists', async () => {
+    const sessionId = createSession(db, 'org/repo', 'main');
     const parsed = parseSkill(GOOD_SKILL);
     const results = validateSkill(parsed);
 
@@ -725,17 +788,17 @@ Maybe do something, possibly.
       evidence: r.evidence,
       sessionId,
     }));
-    insertTestResults(inserts);
+    insertTestResults(db, inserts);
 
-    logEvent(sessionId, 'skill_test', {
+    logEvent(db, sessionId, 'skill_test', {
       path: '/test/SKILL.md',
       skillName: parsed.name,
     });
 
-    expect(hasEventOccurred(sessionId, 'skill_test')).toBe(true);
+    expect(hasEventOccurred(db, sessionId, 'skill_test')).toBe(true);
   });
 
-  it('returns all 5 quality vectors in results', () => {
+  it('returns all 5 quality vectors in results', async () => {
     const parsed = parseSkill(GOOD_SKILL);
     const results = validateSkill(parsed);
 
@@ -753,7 +816,7 @@ Maybe do something, possibly.
 // ---------------------------------------------------------------------------
 
 describe('MCP tool annotations', () => {
-  it('should have correct readOnlyHint for new tools', () => {
+  it('should have correct readOnlyHint for new tools', async () => {
     // This test verifies our design intent via code review — the tool registrations
     // use readOnlyHint: true for list/get/show and false for resolve.
     // We validate the exported helpers exist and function correctly.
@@ -761,3 +824,4 @@ describe('MCP tool annotations', () => {
     expect(typeof resetProactiveHintCounter).toBe('function');
   });
 });
+

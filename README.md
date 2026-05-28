@@ -90,6 +90,11 @@ Ten tools expose Cairn's knowledge base to Copilot conversations. Tool names fol
 
 **As a library:**
 
+> **Note:** `@akubly/cairn` is a workspace-internal package. The API follows
+> pre-1.0 SemVer (minor bumps signal breaking changes). External use is not
+> officially supported — pin to an exact version if you depend on it outside
+> this monorepo.
+
 ```bash
 npm install @akubly/cairn
 ```

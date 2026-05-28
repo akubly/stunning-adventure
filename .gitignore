@@ -36,6 +36,16 @@ logs/
 # Temporary files
 tmp/
 temp/
+
+# SQLite test/dev artifacts
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite-journal
+*.db
+*.db-shm
+*.db-wal
+
 # Squad: ignore runtime state (logs, inbox, sessions)
 .squad/orchestration-log/
 .squad/log/

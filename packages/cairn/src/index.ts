@@ -34,13 +34,48 @@ export {
   AGENT_NAME as CURATOR_AGENT_NAME,
 } from './agents/curator.js';
 
+// Hooks
+export { runSessionStart, runSessionStartHook } from './hooks/sessionStart.js';
+export type { SessionStartOrchestrationFactory } from './hooks/sessionStart.js';
+
 // Database (low-level — prefer agent APIs above)
 export { getDb, closeDb } from './db/index.js';
-export { createSession, endSession, getActiveSession, getMostRecentActiveSession } from './db/sessions.js';
+export {
+  createSession,
+  endSession,
+  getActiveSession,
+  getActiveUserSession,
+  getMostRecentActiveSession,
+  getMostRecentUserSession,
+  ensureSystemSession,
+  SYSTEM_SESSION_REPO_KEY,
+} from './db/sessions.js';
 export { logEvent, getUnprocessedEvents } from './db/events.js';
 export { getPreference, setPreference } from './db/preferences.js';
 export { recordSkip, getSkips } from './db/skipBreadcrumbs.js';
 export { getLastProcessedEventId, advanceCursor } from './db/curatorState.js';
+export { SqliteChangeVectorProvider } from './db/sqliteChangeVectorProvider.js';
+export { getSessionsSinceInstall } from './db/prescriptions.js';
+export {
+  upsertExecutionProfile,
+  getExecutionProfile,
+  listExecutionProfilesForSkill,
+  listExecutionProfiles,
+  deleteExecutionProfile,
+} from './db/executionProfiles.js';
+export {
+  insertOptimizationHint,
+  insertHintIfNew,
+  replaceActiveHintAtomically,
+  replaceActiveHintsAtomically,
+  getOptimizationHint,
+  queryOptimizationHints,
+  listOptimizationHints,
+  updateOptimizationHintStatus,
+  deleteOptimizationHint,
+  ACTIVE_HINT_STATUSES,
+} from './db/optimizationHints.js';
+export { insertChangeVector } from './db/changeVectors.js';
 export {
   createInsight,
   reinforceInsight,
@@ -73,6 +108,16 @@ export type {
   Insight,
   CuratorStatus,
 } from './types/index.js';
+export type { ExecutionProfileUpsert, ExecutionProfileRow } from './db/executionProfiles.js';
+export type {
+  HintSource,
+  HintStatus,
+  InsertHintIfNewResult,
+  ReplaceActiveHintsAtomicallyResult,
+  OptimizationHintInsert,
+  OptimizationHintQuery,
+  OptimizationHintRow,
+} from './db/optimizationHints.js';
 export type { SessionSummary } from './agents/sessionState.js';
 export type { CurateResult } from './agents/curator.js';
 export type {

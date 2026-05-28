@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { getDb } from '../db/index.js';
 import { getPrescription, updatePrescriptionStatus } from '../db/prescriptions.js';
 import {
   upsertManagedArtifact,
@@ -162,8 +163,10 @@ export function applyPrescription(
   prescriptionId: number,
   opts: ApplyOptions = {},
 ): ApplyResult {
+  const db = getDb();
+
   // 1. Load prescription
-  const prescription = getPrescription(prescriptionId);
+  const prescription = getPrescription(db, prescriptionId);
   if (!prescription) {
     return { success: false, error: `Prescription ${prescriptionId} not found` };
   }
@@ -192,7 +195,7 @@ export function applyPrescription(
     targetPath = prescription.targetPath;
   } else {
     // Backward compat: recompute when targetPath was not persisted
-    const prefix = getPreference('prescriber.sidecar_prefix') ?? DEFAULT_SIDECAR_PREFIX;
+    const prefix = getPreference(db, 'prescriber.sidecar_prefix') ?? DEFAULT_SIDECAR_PREFIX;
     if (!isValidPrefix(prefix)) {
       return { success: false, error: `Invalid sidecar prefix '${prefix}' — must be alphanumeric with dashes/underscores` };
     }
@@ -204,7 +207,7 @@ export function applyPrescription(
   }
 
   // 4. Check for drift if file is already tracked
-  const existingArtifact = getManagedArtifact(targetPath);
+  const existingArtifact = getManagedArtifact(db, targetPath);
   if (existingArtifact) {
     if (!fs.existsSync(targetPath)) {
       // Tracked file was deleted — this is drift
@@ -255,7 +258,7 @@ export function applyPrescription(
     const checksum = sha256(newContent);
 
     // 9. Track in managed_artifacts (atomic upsert avoids delete+insert gap)
-    upsertManagedArtifact({
+    upsertManagedArtifact(db, {
       path: targetPath,
       artifactType: 'instruction',
       scope: prescription.artifactScope ?? 'user',
@@ -266,12 +269,12 @@ export function applyPrescription(
     });
 
     // 10. Update prescription status
-    updatePrescriptionStatus(prescriptionId, 'applied');
+    updatePrescriptionStatus(db, prescriptionId, 'applied');
 
     // 11. Log event (fail-soft — apply already succeeded)
     try {
       if (opts.sessionId) {
-        logEvent(opts.sessionId, 'prescription_applied', {
+        logEvent(db, opts.sessionId, 'prescription_applied', {
           prescriptionId,
           path: targetPath,
           checksum,
@@ -314,8 +317,10 @@ export function rollbackPrescription(
   prescriptionId: number,
   opts: ApplyOptions = {},
 ): RollbackResult {
+  const db = getDb();
+
   // 1. Find managed artifact for this prescription
-  const artifacts = listManagedArtifacts(prescriptionId);
+  const artifacts = listManagedArtifacts(db, prescriptionId);
   if (artifacts.length === 0) {
     return { success: false, error: `No managed artifact found for prescription ${prescriptionId}` };
   }
@@ -333,7 +338,7 @@ export function rollbackPrescription(
     // belong to the rolled-back prescription (nor necessarily to any single
     // active one), so we mark it as restored/orphaned.
     const restoredChecksum = sha256(artifact.rollbackContent);
-    upsertManagedArtifact({
+    upsertManagedArtifact(db, {
       path: artifact.path,
       artifactType: artifact.artifactType,
       scope: artifact.scope,
@@ -345,16 +350,16 @@ export function rollbackPrescription(
     if (fs.existsSync(artifact.path)) {
       fs.unlinkSync(artifact.path);
     }
-    removeManagedArtifact(artifact.path);
+    removeManagedArtifact(db, artifact.path);
   }
 
   // 5. Update prescription status
-  updatePrescriptionStatus(prescriptionId, 'failed');
+  updatePrescriptionStatus(db, prescriptionId, 'failed');
 
   // 6. Log event (fail-soft — rollback already succeeded)
   try {
     if (opts.sessionId) {
-      logEvent(opts.sessionId, 'prescription_rolled_back', {
+      logEvent(db, opts.sessionId, 'prescription_rolled_back', {
         prescriptionId,
         path: artifact.path,
         restored: artifact.rollbackContent !== undefined,
@@ -374,8 +379,10 @@ export function rollbackPrescription(
  * the stored `current_checksum` in managed_artifacts.
  */
 export function checkDrift(filePath: string): DriftResult | undefined {
+  const db = getDb();
+
   // Get tracked artifact
-  const artifact = getManagedArtifact(filePath);
+  const artifact = getManagedArtifact(db, filePath);
   if (!artifact) return undefined;
 
   const expected = artifact.currentChecksum ?? '';

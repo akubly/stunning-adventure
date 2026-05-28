@@ -9,6 +9,8 @@
  * Uses cursor-based polling from Phase 1b infrastructure.
  */
 
+import type { PrescriberOrchestrationConfig, PrescriberRunResult } from '@akubly/types';
+import type Database from 'better-sqlite3';
 import { getDb } from '../db/index.js';
 import { getUnprocessedEvents } from '../db/events.js';
 import { getLastProcessedEventId, advanceCursor } from '../db/curatorState.js';
@@ -124,6 +126,9 @@ const BATCH_SIZE = 1000;
 /** Soft time cap (ms) for curate() — checked between batches. */
 export const TIME_BUDGET_MS = 3000;
 
+/** Soft time cap (ms) for post-sweep prescriber orchestration. */
+export const PRESCRIBER_TIME_BUDGET_MS = 5000;
+
 // ---------------------------------------------------------------------------
 // Core pipeline
 // ---------------------------------------------------------------------------
@@ -136,6 +141,8 @@ export interface CurateResult {
   insightsChanged: boolean;
   /** Structured diagnostics from the change-vector sweep run. */
   changeVectorSweep: ChangeVectorSweepResult;
+  /** Per-skill prescriber orchestration results for skills whose vectors were just computed. */
+  prescribers?: PrescriberRunResult[];
 }
 
 /**
@@ -146,12 +153,16 @@ export interface CurateResult {
  *
  * Each batch is wrapped in a transaction. Loops until caught up.
  */
-export function curate(changeVectorConfig?: ChangeVectorConfig): CurateResult {
+export async function curate(
+  changeVectorConfig?: ChangeVectorConfig,
+  prescriberOrchestrationConfig?: PrescriberOrchestrationConfig,
+): Promise<CurateResult> {
   const startTime = Date.now();
   let totalProcessed = 0;
   let totalCreated = 0;
   let totalReinforced = 0;
   let capped = false;
+  const db = getDb();
 
   // Track the last event per session across batches so sequence detection
   // can find pairs that straddle batch boundaries.
@@ -160,30 +171,30 @@ export function curate(changeVectorConfig?: ChangeVectorConfig): CurateResult {
   // Process in batches to bound memory usage
   let hasMore = true;
   while (hasMore) {
-    const cursor = getLastProcessedEventId();
-    const events = getUnprocessedEvents(cursor, BATCH_SIZE);
+    const cursor = getLastProcessedEventId(db);
+    // TODO(cycle-1 I10): Wave 5 should decide whether Curator skips __system__ events; filtering here must still advance the raw-event cursor.
+    const events = getUnprocessedEvents(db, cursor, BATCH_SIZE);
 
     if (events.length === 0) break;
 
     let insightsCreated = 0;
     let insightsReinforced = 0;
 
-    const db = getDb();
     db.transaction(() => {
-      const errorResult = detectRecurringErrors(events);
+      const errorResult = detectRecurringErrors(db, events);
       insightsCreated += errorResult.created;
       insightsReinforced += errorResult.reinforced;
 
-      const sequenceResult = detectErrorSequences(events, lastEventPerSession);
+      const sequenceResult = detectErrorSequences(db, events, lastEventPerSession);
       insightsCreated += sequenceResult.created;
       insightsReinforced += sequenceResult.reinforced;
 
-      const skipResult = detectSkipFrequency(events);
+      const skipResult = detectSkipFrequency(db, events);
       insightsCreated += skipResult.created;
       insightsReinforced += skipResult.reinforced;
 
       const lastEvent = events[events.length - 1];
-      advanceCursor(lastEvent.id);
+      advanceCursor(db, lastEvent.id);
     })();
 
     // Update last-event-per-session for next batch's boundary detection
@@ -205,9 +216,16 @@ export function curate(changeVectorConfig?: ChangeVectorConfig): CurateResult {
     }
   }
 
-  updateLastRunTimestamp();
+  updateLastRunTimestamp(db);
 
-  const changeVectorSweep = sweepChangeVectors(changeVectorConfig);
+  const changeVectorSweep = sweepChangeVectors(db, changeVectorConfig);
+  const prescribers = prescriberOrchestrationConfig
+    ? await runPrescribersForComputedSkills(
+        changeVectorSweep,
+        changeVectorConfig,
+        prescriberOrchestrationConfig,
+      )
+    : undefined;
 
   return {
     eventsProcessed: totalProcessed,
@@ -216,7 +234,54 @@ export function curate(changeVectorConfig?: ChangeVectorConfig): CurateResult {
     capped,
     insightsChanged: totalCreated > 0 || totalReinforced > 0,
     changeVectorSweep,
+    ...(prescribers !== undefined ? { prescribers } : {}),
   };
+}
+
+async function runPrescribersForComputedSkills(
+  changeVectorSweep: ChangeVectorSweepResult,
+  changeVectorConfig: ChangeVectorConfig | undefined,
+  prescriberOrchestrationConfig: PrescriberOrchestrationConfig,
+): Promise<PrescriberRunResult[]> {
+  const minSessions = changeVectorConfig?.minSessionsObserved ?? DEFAULT_MIN_SESSIONS;
+  const results: PrescriberRunResult[] = [];
+  const prescriberStart = Date.now();
+  const totalSkills = changeVectorSweep.computedSkillIds.length;
+
+  for (const [index, skillId] of changeVectorSweep.computedSkillIds.entries()) {
+    if (Date.now() - prescriberStart >= PRESCRIBER_TIME_BUDGET_MS) {
+      console.warn(
+        `runPrescribersForComputedSkills: time budget ${PRESCRIBER_TIME_BUDGET_MS}ms exceeded after ${results.length}/${totalSkills} skills; skipping remaining`,
+      );
+      results.push(
+        ...changeVectorSweep.computedSkillIds.slice(index).map((remainingSkillId) => ({
+          skillId: remainingSkillId,
+          hintsGenerated: 0,
+          hintsInserted: 0,
+          hintsDuplicated: 0,
+          hintsError: 0,
+          skippedReason: 'time-budget-exceeded' as const,
+        })),
+      );
+      break;
+    }
+
+    try {
+      results.push(await prescriberOrchestrationConfig.runForSkill(skillId, minSessions));
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`curate: prescriber orchestration failed for skill ${skillId}: ${message}`);
+      results.push({
+        skillId,
+        hintsGenerated: 0,
+        hintsInserted: 0,
+        hintsDuplicated: 0,
+        hintsError: 1,
+      });
+    }
+  }
+
+  return results;
 }
 
 // ---------------------------------------------------------------------------
@@ -232,7 +297,7 @@ interface DetectionResult {
  * Detect recurring errors: group error events by category+message,
  * create/reinforce insights for groups that meet the threshold.
  */
-function detectRecurringErrors(events: CairnEvent[]): DetectionResult {
+function detectRecurringErrors(db: Database.Database, events: CairnEvent[]): DetectionResult {
   let created = 0;
   let reinforced = 0;
 
@@ -258,7 +323,7 @@ function detectRecurringErrors(events: CairnEvent[]): DetectionResult {
     const normMessage = message.replace(/\s+/g, ' ').trim();
     const title = `Recurring ${category}: ${truncateWithHash(normMessage, 120)}`;
 
-    const existing = getInsightByPattern('recurring_error', title);
+    const existing = getInsightByPattern(db, 'recurring_error', title);
     const totalOccurrences = (existing?.occurrenceCount ?? 0) + group.events.length;
 
     // Threshold applies to total occurrences across all batches, not just
@@ -273,10 +338,10 @@ function detectRecurringErrors(events: CairnEvent[]): DetectionResult {
     const confidence = Math.min(1.0, totalOccurrences / 5);
 
     if (existing) {
-      reinforceInsight(existing.id, evidence, Math.max(existing.confidence, confidence), group.events.length);
+      reinforceInsight(db, existing.id, evidence, Math.max(existing.confidence, confidence), group.events.length);
       reinforced++;
     } else {
-      createInsight('recurring_error', title, description, evidence, confidence, group.events.length, prescription);
+      createInsight(db, 'recurring_error', title, description, evidence, confidence, group.events.length, prescription);
       created++;
     }
   }
@@ -291,6 +356,7 @@ function detectRecurringErrors(events: CairnEvent[]): DetectionResult {
  * Accepts carryover events from the previous batch to detect boundary-straddling pairs.
  */
 function detectErrorSequences(
+  db: Database.Database,
   events: CairnEvent[],
   lastEventPerSession: Map<string, CairnEvent> = new Map(),
 ): DetectionResult {
@@ -358,7 +424,7 @@ function detectErrorSequences(
   for (const [seqKey, data] of sequenceCounts) {
     const title = `Sequence: ${seqKey}`;
 
-    const existingInsight = getInsightByPattern('error_sequence', title);
+    const existingInsight = getInsightByPattern(db, 'error_sequence', title);
     const totalCount = (existingInsight?.occurrenceCount ?? 0) + data.count;
 
     if (totalCount < SEQUENCE_THRESHOLD) continue;
@@ -368,7 +434,7 @@ function detectErrorSequences(
     const confidence = Math.min(1.0, totalCount / 4);
 
     if (existingInsight) {
-      reinforceInsight(
+      reinforceInsight(db,
         existingInsight.id,
         data.evidence,
         Math.max(existingInsight.confidence, confidence),
@@ -376,7 +442,7 @@ function detectErrorSequences(
       );
       reinforced++;
     } else {
-      createInsight('error_sequence', title, description, data.evidence, confidence, data.count, prescription);
+      createInsight(db, 'error_sequence', title, description, data.evidence, confidence, data.count, prescription);
       created++;
     }
   }
@@ -387,7 +453,7 @@ function detectErrorSequences(
 /**
  * Detect skip frequency: find guardrails that get skipped repeatedly.
  */
-function detectSkipFrequency(events: CairnEvent[]): DetectionResult {
+function detectSkipFrequency(db: Database.Database, events: CairnEvent[]): DetectionResult {
   let created = 0;
   let reinforced = 0;
 
@@ -410,7 +476,7 @@ function detectSkipFrequency(events: CairnEvent[]): DetectionResult {
   for (const [what, group] of skipGroups) {
     const title = `Frequently skipped: ${what}`;
 
-    const existing = getInsightByPattern('skip_frequency', title);
+    const existing = getInsightByPattern(db, 'skip_frequency', title);
     const totalOccurrences = (existing?.occurrenceCount ?? 0) + group.events.length;
 
     if (totalOccurrences < SKIP_FREQUENCY_THRESHOLD) continue;
@@ -421,10 +487,10 @@ function detectSkipFrequency(events: CairnEvent[]): DetectionResult {
     const confidence = Math.min(1.0, totalOccurrences / 4);
 
     if (existing) {
-      reinforceInsight(existing.id, evidence, Math.max(existing.confidence, confidence), group.events.length);
+      reinforceInsight(db, existing.id, evidence, Math.max(existing.confidence, confidence), group.events.length);
       reinforced++;
     } else {
-      createInsight('skip_frequency', title, description, evidence, confidence, group.events.length, prescription);
+      createInsight(db, 'skip_frequency', title, description, evidence, confidence, group.events.length, prescription);
       created++;
     }
   }
@@ -463,7 +529,7 @@ export function getCuratorStatus(): CuratorStatus {
     .prepare('SELECT last_processed_event_id, last_run_at FROM curator_state WHERE id = 1')
     .get() as { last_processed_event_id: number; last_run_at: string | null } | undefined;
 
-  const counts = countInsightsByStatus();
+  const counts = countInsightsByStatus(db);
 
   const activeCount = counts['active'] ?? 0;
   const staleCount = counts['stale'] ?? 0;
@@ -518,6 +584,8 @@ export interface ChangeVectorSweepResult {
   eligible: number;
   /** Change vectors successfully inserted. */
   computed: number;
+  /** Distinct skill IDs whose vectors were newly computed in this sweep cycle. */
+  computedSkillIds: string[];
   /** Hints skipped because the profile didn't exist or hadn't accumulated enough sessions. */
   skippedInsufficientSessions: number;
   /** Hints skipped because metric_snapshot couldn't be parsed. */
@@ -557,12 +625,16 @@ export interface ChangeVectorSweepResult {
  *
  * @returns Structured diagnostic counts for this sweep run.
  */
-function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResult {
+function sweepChangeVectors(
+  db: Database.Database,
+  config?: ChangeVectorConfig,
+): ChangeVectorSweepResult {
   const minSessions = config?.minSessionsObserved ?? DEFAULT_MIN_SESSIONS;
-  const db = getDb();
+  const computedSkillIds = new Set<string>();
   const result: ChangeVectorSweepResult = {
     eligible: 0,
     computed: 0,
+    computedSkillIds: [],
     skippedInsufficientSessions: 0,
     skippedMalformedSnapshot: 0,
     alreadyComputed: 0,
@@ -688,6 +760,7 @@ function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResul
 
     if (insertResult.changes > 0) {
       result.computed++;
+      computedSkillIds.add(hint.skill_id);
       // Emit the legacy-snapshot warning only on the sweep that actually
       // computes the vector. The LEFT JOIN above will exclude this hint from
       // future sweeps, so the warning is naturally one-shot per hint instead
@@ -703,12 +776,12 @@ function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResul
     }
   }
 
+  result.computedSkillIds = [...computedSkillIds].sort();
   return result;
 }
 
 /** Update the last_run_at timestamp in curator_state. */
-function updateLastRunTimestamp(): void {
-  const db = getDb();
+function updateLastRunTimestamp(db: Database.Database): void {
   db.prepare(
     `INSERT OR IGNORE INTO curator_state (id, last_processed_event_id) VALUES (1, 0)`,
   ).run();

@@ -7,11 +7,13 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { ATTENUATION_FLOOR } from '@akubly/types';
 import { getDb, closeDb } from '../db/index.js';
 import {
   insertChangeVector,
   getChangeVectorsByHintId,
   getChangeVectorsByCategoryAndSkill,
+  getAllCategories,
   summarizeChangeVectors,
   computeNetImpact,
   CHANGE_VECTOR_WEIGHTS,
@@ -20,6 +22,9 @@ import {
 } from '../db/changeVectors.js';
 import { insertOptimizationHint } from '../db/optimizationHints.js';
 import type { OptimizationHintInsert } from '../db/optimizationHints.js';
+
+let db: ReturnType<typeof getDb>;
+
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -63,7 +68,7 @@ function makeDeltas(overrides: Partial<ChangeVectorDeltas> = {}): ChangeVectorDe
 beforeEach(() => {
   closeDb();
   hintCounter = 0;
-  getDb(':memory:');
+  db = getDb(':memory:');
 });
 
 afterEach(() => {
@@ -169,8 +174,8 @@ describe('CHANGE_VECTOR_WEIGHTS', () => {
 
 describe('insertChangeVector', () => {
   it('inserts a change vector and returns a positive integer id', () => {
-    const db = getDb();
-    const hintId = insertOptimizationHint(makeHint());
+    db = getDb();
+    const hintId = insertOptimizationHint(db, makeHint());
     const id = insertChangeVector(db, {
       hintId,
       deltas: makeDeltas(),
@@ -182,8 +187,8 @@ describe('insertChangeVector', () => {
   });
 
   it('round-trips all delta fields and net_impact correctly', () => {
-    const db = getDb();
-    const hintId = insertOptimizationHint(makeHint());
+    db = getDb();
+    const hintId = insertOptimizationHint(db, makeHint());
     const deltas = makeDeltas();
     const id = insertChangeVector(db, {
       hintId,
@@ -207,7 +212,7 @@ describe('insertChangeVector', () => {
   });
 
   it('throws (FK violation) when hint_id does not reference an existing optimization_hints row', () => {
-    const db = getDb();
+    db = getDb();
     expect(() =>
       insertChangeVector(db, {
         hintId: 'nonexistent-hint-id',
@@ -225,15 +230,15 @@ describe('insertChangeVector', () => {
 
 describe('getChangeVectorsByHintId', () => {
   it('returns empty array when no vectors exist for the given hint_id', () => {
-    const db = getDb();
-    insertOptimizationHint(makeHint({ id: 'h-exists' }));
+    db = getDb();
+    insertOptimizationHint(db, makeHint({ id: 'h-exists' }));
     const result = getChangeVectorsByHintId(db, 'h-exists');
     expect(result).toEqual([]);
   });
 
   it('returns a single vector for a hint that has one change vector', () => {
-    const db = getDb();
-    const hintId = insertOptimizationHint(makeHint());
+    db = getDb();
+    const hintId = insertOptimizationHint(db, makeHint());
     insertChangeVector(db, { hintId, deltas: makeDeltas(), sessionsObserved: 5, computedAt: '2026-05-03T20:59:53.000Z' });
 
     const rows = getChangeVectorsByHintId(db, hintId);
@@ -244,8 +249,8 @@ describe('getChangeVectorsByHintId', () => {
   it('UNIQUE(hint_id) — inserting a second change vector for the same hint throws', () => {
     // Phase 4.6 cycle 2 (#4): UNIQUE(hint_id) ensures at most one change vector per hint.
     // Each hint can only be evaluated once (the snapshot is point-in-time).
-    const db = getDb();
-    const hintId = insertOptimizationHint(makeHint());
+    db = getDb();
+    const hintId = insertOptimizationHint(db, makeHint());
     insertChangeVector(db, { hintId, deltas: makeDeltas(), sessionsObserved: 3, computedAt: '2026-05-03T20:00:00.000Z' });
     expect(() =>
       insertChangeVector(db, { hintId, deltas: makeDeltas({ deltaDrift: -0.2 }), sessionsObserved: 6, computedAt: '2026-05-03T21:00:00.000Z' }),
@@ -253,9 +258,9 @@ describe('getChangeVectorsByHintId', () => {
   });
 
   it('does not return vectors belonging to a different hint_id', () => {
-    const db = getDb();
-    const hint1 = insertOptimizationHint(makeHint());
-    const hint2 = insertOptimizationHint(makeHint());
+    db = getDb();
+    const hint1 = insertOptimizationHint(db, makeHint());
+    const hint2 = insertOptimizationHint(db, makeHint());
     insertChangeVector(db, { hintId: hint2, deltas: makeDeltas(), sessionsObserved: 5, computedAt: '2026-05-03T20:59:53.000Z' });
 
     const rows = getChangeVectorsByHintId(db, hint1);
@@ -269,14 +274,14 @@ describe('getChangeVectorsByHintId', () => {
 
 describe('getChangeVectorsByCategoryAndSkill', () => {
   it('returns empty array when no vectors match the given category and skill_id', () => {
-    const db = getDb();
+    db = getDb();
     const result = getChangeVectorsByCategoryAndSkill(db, 'convergence', 'skill-a');
     expect(result).toEqual([]);
   });
 
   it('returns vectors whose parent hint matches category and skill_id', () => {
-    const db = getDb();
-    const hintId = insertOptimizationHint(makeHint({ skillId: 'skill-a', category: 'convergence' }));
+    db = getDb();
+    const hintId = insertOptimizationHint(db, makeHint({ skillId: 'skill-a', category: 'convergence' }));
     insertChangeVector(db, { hintId, deltas: makeDeltas(), sessionsObserved: 5, computedAt: '2026-05-03T20:59:53.000Z' });
 
     const rows = getChangeVectorsByCategoryAndSkill(db, 'convergence', 'skill-a');
@@ -285,8 +290,8 @@ describe('getChangeVectorsByCategoryAndSkill', () => {
   });
 
   it('does not return vectors for a different category', () => {
-    const db = getDb();
-    const hintId = insertOptimizationHint(makeHint({ skillId: 'skill-a', category: 'convergence' }));
+    db = getDb();
+    const hintId = insertOptimizationHint(db, makeHint({ skillId: 'skill-a', category: 'convergence' }));
     insertChangeVector(db, { hintId, deltas: makeDeltas(), sessionsObserved: 5, computedAt: '2026-05-03T20:59:53.000Z' });
 
     const rows = getChangeVectorsByCategoryAndSkill(db, 'prompt-structure', 'skill-a');
@@ -294,12 +299,46 @@ describe('getChangeVectorsByCategoryAndSkill', () => {
   });
 
   it('does not return vectors for a different skill_id', () => {
-    const db = getDb();
-    const hintId = insertOptimizationHint(makeHint({ skillId: 'skill-a', category: 'convergence' }));
+    db = getDb();
+    const hintId = insertOptimizationHint(db, makeHint({ skillId: 'skill-a', category: 'convergence' }));
     insertChangeVector(db, { hintId, deltas: makeDeltas(), sessionsObserved: 5, computedAt: '2026-05-03T20:59:53.000Z' });
 
     const rows = getChangeVectorsByCategoryAndSkill(db, 'convergence', 'skill-OTHER');
     expect(rows).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getAllCategories
+// ---------------------------------------------------------------------------
+
+describe('getAllCategories', () => {
+  it('returns empty array when no hints exist for the skill', () => {
+    db = getDb();
+
+    expect(getAllCategories(db, 'skill-a')).toEqual([]);
+  });
+
+  it('returns the single canonical category for a skill with one hint', () => {
+    db = getDb();
+    insertOptimizationHint(db, makeHint({ skillId: 'skill-a', category: 'tool-guidance' }));
+
+    expect(getAllCategories(db, 'skill-a')).toEqual(['tool-guidance']);
+  });
+
+  it('returns deduplicated canonical categories in alphabetical order', () => {
+    db = getDb();
+    insertOptimizationHint(db, makeHint({ skillId: 'skill-cats', category: 'prompt-structure' }));
+    insertOptimizationHint(db, makeHint({ skillId: 'skill-cats', category: 'cache-optimization' }));
+    insertOptimizationHint(db, makeHint({ skillId: 'skill-cats', category: 'prompt-structure' }));
+    insertOptimizationHint(db, makeHint({ skillId: 'skill-cats', category: 'convergence' }));
+    insertOptimizationHint(db, makeHint({ skillId: 'other-skill', category: 'context-management' }));
+
+    expect(getAllCategories(db, 'skill-cats')).toEqual([
+      'cache-optimization',
+      'convergence',
+      'prompt-structure',
+    ]);
   });
 });
 
@@ -309,15 +348,15 @@ describe('getChangeVectorsByCategoryAndSkill', () => {
 
 describe('summarizeChangeVectors', () => {
   it('returns vectorCount=0 and meanNetImpact=0 when no vectors exist for the category+skillId', () => {
-    const db = getDb();
+    db = getDb();
     const summary = summarizeChangeVectors(db, 'convergence', 'skill-a');
     expect(summary.vectorCount).toBe(0);
     expect(summary.meanNetImpact).toBe(0);
   });
 
   it('returns correct meanNetImpact for a single vector', () => {
-    const db = getDb();
-    const hintId = insertOptimizationHint(makeHint({ skillId: 'skill-a', category: 'convergence' }));
+    db = getDb();
+    const hintId = insertOptimizationHint(db, makeHint({ skillId: 'skill-a', category: 'convergence' }));
     const deltas = makeDeltas();
     insertChangeVector(db, { hintId, deltas, sessionsObserved: 5, computedAt: '2026-05-03T20:59:53.000Z' });
 
@@ -327,9 +366,9 @@ describe('summarizeChangeVectors', () => {
   });
 
   it('computes meanNetImpact as arithmetic mean across multiple vectors', () => {
-    const db = getDb();
-    const hint1 = insertOptimizationHint(makeHint({ skillId: 'skill-a', category: 'convergence' }));
-    const hint2 = insertOptimizationHint(makeHint({ skillId: 'skill-a', category: 'convergence' }));
+    db = getDb();
+    const hint1 = insertOptimizationHint(db, makeHint({ skillId: 'skill-a', category: 'convergence' }));
+    const hint2 = insertOptimizationHint(db, makeHint({ skillId: 'skill-a', category: 'convergence' }));
     const d1 = makeDeltas({ deltaConvergence: -4 }); // high improvement
     const d2 = makeDeltas({ deltaConvergence: -1 }); // low improvement
     insertChangeVector(db, { hintId: hint1, deltas: d1, sessionsObserved: 5, computedAt: '2026-05-03T20:00:00.000Z' });
@@ -342,17 +381,17 @@ describe('summarizeChangeVectors', () => {
   });
 
   it('returns category and skillId on the summary object', () => {
-    const db = getDb();
+    db = getDb();
     const summary = summarizeChangeVectors(db, 'cache-optimization', 'skill-x');
     expect(summary.category).toBe('cache-optimization');
     expect(summary.skillId).toBe('skill-x');
   });
 
   it('confidenceBoost is log-scaled: log(1+vc)/log(1+mv) — equals 1.0 at vectorCount=minVectors', () => {
-    const db = getDb();
-    const hint1 = insertOptimizationHint(makeHint({ skillId: 'skill-b', category: 'convergence' }));
-    const hint2 = insertOptimizationHint(makeHint({ skillId: 'skill-b', category: 'convergence' }));
-    const hint3 = insertOptimizationHint(makeHint({ skillId: 'skill-b', category: 'convergence' }));
+    db = getDb();
+    const hint1 = insertOptimizationHint(db, makeHint({ skillId: 'skill-b', category: 'convergence' }));
+    const hint2 = insertOptimizationHint(db, makeHint({ skillId: 'skill-b', category: 'convergence' }));
+    const hint3 = insertOptimizationHint(db, makeHint({ skillId: 'skill-b', category: 'convergence' }));
     for (const hintId of [hint1, hint2, hint3]) {
       insertChangeVector(db, { hintId, deltas: makeDeltas(), sessionsObserved: 5, computedAt: '2026-05-03T20:59:53.000Z' });
     }
@@ -367,7 +406,7 @@ describe('summarizeChangeVectors', () => {
     // Phase 4.6 / ADR-P4.6-002: absence of vectors = neutral = identity multiplier.
     // computeConfidenceBoost(0) in forge returns 1.0; this test locks in the same
     // contract for the Cairn side without introducing a cross-package import.
-    const db = getDb();
+    db = getDb();
     const summary = summarizeChangeVectors(db, 'convergence', 'skill-a');
 
     expect(summary).toMatchObject({ vectorCount: 0, meanNetImpact: 0, confidenceBoost: 1.0 });
@@ -376,15 +415,6 @@ describe('summarizeChangeVectors', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Policy placeholder
-// ---------------------------------------------------------------------------
-
-describe('change vector policy', () => {
-  it.todo(
-    'penalizes confidence on negative meanNetImpact (Wave 2 — deferred per Aaron policy 2026-05-03)',
-  );
-});
 
 // ---------------------------------------------------------------------------
 // DEFAULT_MIN_SESSIONS — constant regression pin (Phase 4.6 cycle 2, Finding #15)
@@ -403,47 +433,94 @@ describe('DEFAULT_MIN_SESSIONS — cairn constant regression pin', () => {
 // summarizeChangeVectors — confidence clamp regression (Phase 4.6 cycle 2, Finding #2)
 // ---------------------------------------------------------------------------
 
-describe('summarizeChangeVectors — confidence clamp (vectors never attenuate)', () => {
-  it('confidenceBoost is exactly 1.0 when vectorCount === 1 and minVectors === 3 (clamp applied)', () => {
-    // Before cycle-2 fix: log(2)/log(4) ≈ 0.5 would halve confidence.
-    // After fix: Math.max(1.0, 0.5) = 1.0 — sparse evidence is neutral, not penalising.
-    const db = getDb();
-    const hintId = insertOptimizationHint(makeHint({ skillId: 'skill-clamp', category: 'convergence' }));
-    insertChangeVector(db, { hintId, deltas: makeDeltas(), sessionsObserved: 3, computedAt: '2026-05-03T20:59:53.000Z' });
+describe('summarizeChangeVectors — maturity gradient attenuation', () => {
+  it('keeps sparse evidence neutral and auto-apply eligible', () => {
+    db = getDb();
+    const h1 = insertOptimizationHint(db, makeHint({ skillId: 'skill-sparse', category: 'convergence' }));
+    const h2 = insertOptimizationHint(db, makeHint({ skillId: 'skill-sparse', category: 'convergence' }));
+    insertChangeVector(db, {
+      hintId: h1,
+      deltas: makeDeltas({
+        deltaDrift: 0,
+        deltaCost: 0,
+        deltaSuccessRate: 0,
+        deltaConvergence: 2 / CHANGE_VECTOR_WEIGHTS.deltaConvergence,
+        deltaCacheHit: 0,
+      }),
+      sessionsObserved: 3,
+      computedAt: '2026-05-03T20:00:00.000Z',
+    });
+    insertChangeVector(db, {
+      hintId: h2,
+      deltas: makeDeltas({
+        deltaDrift: 0,
+        deltaCost: 0,
+        deltaSuccessRate: 0,
+        deltaConvergence: 1 / CHANGE_VECTOR_WEIGHTS.deltaConvergence,
+        deltaCacheHit: 0,
+      }),
+      sessionsObserved: 3,
+      computedAt: '2026-05-03T21:00:00.000Z',
+    });
 
-    const summary = summarizeChangeVectors(db, 'convergence', 'skill-clamp', 3);
-    expect(summary.vectorCount).toBe(1);
-    expect(summary.confidenceBoost).toBe(1.0);
-  });
-
-  it('confidenceBoost is exactly 1.0 when vectorCount === 2 and minVectors === 3 (clamp applied)', () => {
-    const db = getDb();
-    const h1 = insertOptimizationHint(makeHint({ skillId: 'skill-clamp2', category: 'convergence' }));
-    const h2 = insertOptimizationHint(makeHint({ skillId: 'skill-clamp2', category: 'convergence' }));
-    insertChangeVector(db, { hintId: h1, deltas: makeDeltas(), sessionsObserved: 3, computedAt: '2026-05-03T20:00:00.000Z' });
-    insertChangeVector(db, { hintId: h2, deltas: makeDeltas(), sessionsObserved: 3, computedAt: '2026-05-03T21:00:00.000Z' });
-
-    const summary = summarizeChangeVectors(db, 'convergence', 'skill-clamp2', 3);
+    const summary = summarizeChangeVectors(db, 'convergence', 'skill-sparse', 3);
     expect(summary.vectorCount).toBe(2);
-    // log(3)/log(4) ≈ 0.79 — clamped to 1.0
     expect(summary.confidenceBoost).toBe(1.0);
+    expect(summary.autoApplyEligible).toBe(true);
   });
 
-  it('vectors never attenuate confidence — confidenceBoost is always >= 1.0', () => {
-    // Wave 1 policy: positive boost only (Aaron, 2026-05-03).
-    // For any vectorCount from 0..minVectors, confidenceBoost must never drop below 1.0.
-    const db = getDb();
-    const hints = [
-      insertOptimizationHint(makeHint({ skillId: 'skill-noatt', category: 'convergence' })),
-      insertOptimizationHint(makeHint({ skillId: 'skill-noatt', category: 'convergence' })),
-    ];
-    for (const hintId of hints) {
-      insertChangeVector(db, { hintId, deltas: makeDeltas(), sessionsObserved: 3, computedAt: '2026-05-03T20:59:53.000Z' });
+  it('attenuates mature negative evidence below the gate and blocks auto-apply', () => {
+    db = getDb();
+    for (let index = 0; index < 4; index += 1) {
+      const hintId = insertOptimizationHint(db,
+        makeHint({ skillId: 'skill-negative', category: 'convergence' }),
+      );
+      insertChangeVector(db, {
+        hintId,
+        deltas: makeDeltas({
+          deltaDrift: 0,
+          deltaCost: 0,
+          deltaSuccessRate: 0,
+          deltaConvergence: 0.5 / CHANGE_VECTOR_WEIGHTS.deltaConvergence,
+          deltaCacheHit: 0,
+        }),
+        sessionsObserved: 3,
+        computedAt: `2026-05-03T0${index}:00:00.000Z`,
+      });
     }
 
-    // Test with minVectors = 10 (sparse vectors would give log(3)/log(11) ≈ 0.46 without clamp)
-    const summary = summarizeChangeVectors(db, 'convergence', 'skill-noatt', 10);
-    expect(summary.confidenceBoost).toBeGreaterThanOrEqual(1.0);
+    const summary = summarizeChangeVectors(db, 'convergence', 'skill-negative', 3);
+    expect(summary.vectorCount).toBe(4);
+    expect(summary.meanNetImpact).toBeCloseTo(-0.5, 10);
+    expect(summary.confidenceBoost).toBeCloseTo(0.5, 10);
+    expect(summary.autoApplyEligible).toBe(false);
+  });
+
+  it('floors catastrophic mature evidence at ATTENUATION_FLOOR', () => {
+    db = getDb();
+    for (let index = 0; index < 4; index += 1) {
+      const hintId = insertOptimizationHint(db,
+        makeHint({ skillId: 'skill-catastrophic', category: 'convergence' }),
+      );
+      insertChangeVector(db, {
+        hintId,
+        deltas: makeDeltas({
+          deltaDrift: 0,
+          deltaCost: 0,
+          deltaSuccessRate: 0,
+          deltaConvergence: 0.95 / CHANGE_VECTOR_WEIGHTS.deltaConvergence,
+          deltaCacheHit: 0,
+        }),
+        sessionsObserved: 3,
+        computedAt: `2026-05-03T1${index}:00:00.000Z`,
+      });
+    }
+
+    const summary = summarizeChangeVectors(db, 'convergence', 'skill-catastrophic', 3);
+    expect(summary.vectorCount).toBe(4);
+    expect(summary.meanNetImpact).toBeCloseTo(-0.95, 10);
+    expect(summary.confidenceBoost).toBe(ATTENUATION_FLOOR);
+    expect(summary.autoApplyEligible).toBe(false);
   });
 });
 
@@ -457,8 +534,8 @@ describe('summarizeChangeVectors — confidence clamp (vectors never attenuate)'
 
 describe('summarizeChangeVectors — minVectors=0 safeMin guard', () => {
   it('called with minVectors=0 returns a finite confidenceBoost (not NaN, not Infinity)', () => {
-    const db = getDb();
-    const hintId = insertOptimizationHint(makeHint({ skillId: 'skill-safmin', category: 'convergence' }));
+    db = getDb();
+    const hintId = insertOptimizationHint(db, makeHint({ skillId: 'skill-safmin', category: 'convergence' }));
     insertChangeVector(db, { hintId, deltas: makeDeltas(), sessionsObserved: 3, computedAt: '2026-05-04T00:00:00.000Z' });
 
     const summary = summarizeChangeVectors(db, 'convergence', 'skill-safmin', 0);
@@ -470,7 +547,7 @@ describe('summarizeChangeVectors — minVectors=0 safeMin guard', () => {
 
   it('vectorCount=0 with minVectors=0 still returns confidenceBoost 1.0 (early-exit path)', () => {
     // No vectors inserted → vectorCount=0 → early return 1.0 regardless of minVectors.
-    const db = getDb();
+    db = getDb();
     const summary = summarizeChangeVectors(db, 'convergence', 'skill-safmin-empty', 0);
     expect(summary.confidenceBoost).toBe(1.0);
   });

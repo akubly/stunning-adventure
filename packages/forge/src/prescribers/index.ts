@@ -12,12 +12,18 @@ export {
   type TokenOptimizerConfig,
 } from "./tokenOptimizer.js";
 
+export {
+  runForgePrescribers,
+  type ForgePrescriberOrchestratorOptions,
+} from "./forgePrescriberOrchestrator.js";
+
 export type {
   ChangeVectorSummary,
   MetricSnapshot,
   OptimizationCategory,
   OptimizationEvidence,
   OptimizationHint,
+  PrescriberConfig,
   PrescriberResult,
 } from "./types.js";
 

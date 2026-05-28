@@ -25,13 +25,16 @@ import {
 } from '../db/managedArtifacts.js';
 import { setPreference, getPreference } from '../db/preferences.js';
 
+let db: ReturnType<typeof getDb>;
+
+
 let insightId: number;
 
 beforeEach(() => {
   closeDb();
-  getDb(':memory:');
+  db = getDb(':memory:');
   // Seed an insight for FK references
-  insightId = createInsight('recurring_error', 'Test pattern', 'A test pattern', [1, 2], 0.8);
+  insightId = createInsight(db, 'recurring_error', 'Test pattern', 'A test pattern', [1, 2], 0.8);
 });
 
 afterEach(() => {
@@ -44,7 +47,7 @@ afterEach(() => {
 
 describe('prescriptions migration', () => {
   it('should create prescriptions and prescriber_state tables', () => {
-    const db = getDb();
+    db = getDb();
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
       .all() as Array<{ name: string }>;
@@ -54,7 +57,7 @@ describe('prescriptions migration', () => {
   });
 
   it('should create managed_artifacts table', () => {
-    const db = getDb();
+    db = getDb();
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
       .all() as Array<{ name: string }>;
@@ -62,7 +65,7 @@ describe('prescriptions migration', () => {
   });
 
   it('should seed prescriber_state singleton row', () => {
-    const db = getDb();
+    db = getDb();
     const row = db.prepare('SELECT * FROM prescriber_state WHERE id = 1').get() as Record<
       string,
       unknown
@@ -73,11 +76,11 @@ describe('prescriptions migration', () => {
   });
 
   it('should record schema version 9', () => {
-    const db = getDb();
+    db = getDb();
     const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
       version: number;
     };
-    expect(row.version).toBe(12);
+    expect(row.version).toBe(14);
   });
 });
 
@@ -87,7 +90,7 @@ describe('prescriptions migration', () => {
 
 describe('prescription CRUD', () => {
   it('should create a prescription and return its id', () => {
-    const id = createPrescription({
+    const id = createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'Fix error pattern',
@@ -98,7 +101,7 @@ describe('prescription CRUD', () => {
   });
 
   it('should get a prescription by id', () => {
-    const id = createPrescription({
+    const id = createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'Fix it',
@@ -110,7 +113,7 @@ describe('prescription CRUD', () => {
       confidence: 0.85,
       priorityScore: 42.5,
     });
-    const p = getPrescription(id);
+    const p = getPrescription(db, id);
     expect(p).toBeDefined();
     expect(p!.id).toBe(id);
     expect(p!.insightId).toBe(insightId);
@@ -129,34 +132,34 @@ describe('prescription CRUD', () => {
   });
 
   it('should return undefined for non-existent prescription', () => {
-    expect(getPrescription(9999)).toBeUndefined();
+    expect(getPrescription(db, 9999)).toBeUndefined();
   });
 
   it('should update prescription status', () => {
-    const id = createPrescription({
+    const id = createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'Test',
       rationale: 'Reason',
       proposedChange: 'Change',
     });
-    updatePrescriptionStatus(id, 'accepted', { dispositionReason: 'Looks good' });
-    const p = getPrescription(id);
+    updatePrescriptionStatus(db, id, 'accepted', { dispositionReason: 'Looks good' });
+    const p = getPrescription(db, id);
     expect(p!.status).toBe('accepted');
     expect(p!.dispositionReason).toBe('Looks good');
     expect(p!.resolvedAt).toBeDefined();
   });
 
   it('should set applied_at when marking as applied', () => {
-    const id = createPrescription({
+    const id = createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'Apply test',
       rationale: 'Reason',
       proposedChange: 'Change',
     });
-    updatePrescriptionStatus(id, 'applied');
-    const p = getPrescription(id);
+    updatePrescriptionStatus(db, id, 'applied');
+    const p = getPrescription(db, id);
     expect(p!.status).toBe('applied');
     expect(p!.appliedAt).toBeDefined();
   });
@@ -168,7 +171,7 @@ describe('prescription CRUD', () => {
 
 describe('prescription status constraints', () => {
   it('should reject invalid status values', () => {
-    const db = getDb();
+    db = getDb();
     expect(() => {
       db.prepare(
         `INSERT INTO prescriptions
@@ -179,7 +182,7 @@ describe('prescription status constraints', () => {
   });
 
   it('should reject invalid artifact_scope values', () => {
-    const db = getDb();
+    db = getDb();
     expect(() => {
       db.prepare(
         `INSERT INTO prescriptions
@@ -190,7 +193,7 @@ describe('prescription status constraints', () => {
   });
 
   it('should reject confidence out of range', () => {
-    const db = getDb();
+    db = getDb();
     expect(() => {
       db.prepare(
         `INSERT INTO prescriptions
@@ -207,41 +210,41 @@ describe('prescription status constraints', () => {
 
 describe('prescription listing', () => {
   it('should list prescriptions by status', () => {
-    createPrescription({
+    createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'P1',
       rationale: 'R1',
       proposedChange: 'C1',
     });
-    const id2 = createPrescription({
+    const id2 = createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'P2',
       rationale: 'R2',
       proposedChange: 'C2',
     });
-    updatePrescriptionStatus(id2, 'accepted');
+    updatePrescriptionStatus(db, id2, 'accepted');
 
-    const generated = listPrescriptions({ status: 'generated' });
+    const generated = listPrescriptions(db, { status: 'generated' });
     expect(generated).toHaveLength(1);
     expect(generated[0].title).toBe('P1');
 
-    const accepted = listPrescriptions({ status: 'accepted' });
+    const accepted = listPrescriptions(db, { status: 'accepted' });
     expect(accepted).toHaveLength(1);
     expect(accepted[0].title).toBe('P2');
   });
 
   it('should list prescriptions by insight id', () => {
-    const insight2 = createInsight('skip_frequency', 'Other', 'Another', [3], 0.5);
-    createPrescription({
+    const insight2 = createInsight(db, 'skip_frequency', 'Other', 'Another', [3], 0.5);
+    createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'P1',
       rationale: 'R1',
       proposedChange: 'C1',
     });
-    createPrescription({
+    createPrescription(db, {
       insightId: insight2,
       patternType: 'skip_frequency',
       title: 'P2',
@@ -249,14 +252,14 @@ describe('prescription listing', () => {
       proposedChange: 'C2',
     });
 
-    const filtered = listPrescriptions({ insightId: insight2 });
+    const filtered = listPrescriptions(db, { insightId: insight2 });
     expect(filtered).toHaveLength(1);
     expect(filtered[0].title).toBe('P2');
   });
 
   it('should respect limit', () => {
     for (let i = 0; i < 5; i++) {
-      createPrescription({
+      createPrescription(db, {
         insightId,
         patternType: 'recurring_error',
         title: `P${i}`,
@@ -264,7 +267,7 @@ describe('prescription listing', () => {
         proposedChange: 'C',
       });
     }
-    const limited = listPrescriptions({ limit: 3 });
+    const limited = listPrescriptions(db, { limit: 3 });
     expect(limited).toHaveLength(3);
   });
 });
@@ -275,7 +278,7 @@ describe('prescription listing', () => {
 
 describe('priority retrieval', () => {
   it('should get the top prescription by priority score', () => {
-    createPrescription({
+    createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'Low',
@@ -283,7 +286,7 @@ describe('priority retrieval', () => {
       proposedChange: 'C',
       priorityScore: 10,
     });
-    createPrescription({
+    createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'High',
@@ -291,7 +294,7 @@ describe('priority retrieval', () => {
       proposedChange: 'C',
       priorityScore: 99,
     });
-    createPrescription({
+    createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'Mid',
@@ -300,18 +303,18 @@ describe('priority retrieval', () => {
       priorityScore: 50,
     });
 
-    const top = getTopPrescription();
+    const top = getTopPrescription(db);
     expect(top).toBeDefined();
     expect(top!.title).toBe('High');
     expect(top!.priorityScore).toBe(99);
   });
 
   it('should return undefined when no generated prescriptions exist', () => {
-    expect(getTopPrescription()).toBeUndefined();
+    expect(getTopPrescription(db)).toBeUndefined();
   });
 
   it('should skip non-generated prescriptions in top query', () => {
-    const id = createPrescription({
+    const id = createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'Accepted',
@@ -319,9 +322,9 @@ describe('priority retrieval', () => {
       proposedChange: 'C',
       priorityScore: 100,
     });
-    updatePrescriptionStatus(id, 'accepted');
+    updatePrescriptionStatus(db, id, 'accepted');
 
-    expect(getTopPrescription()).toBeUndefined();
+    expect(getTopPrescription(db)).toBeUndefined();
   });
 });
 
@@ -331,36 +334,36 @@ describe('priority retrieval', () => {
 
 describe('count by status', () => {
   it('should count prescriptions grouped by status', () => {
-    createPrescription({
+    createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'G1',
       rationale: 'R',
       proposedChange: 'C',
     });
-    createPrescription({
+    createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'G2',
       rationale: 'R',
       proposedChange: 'C',
     });
-    const id3 = createPrescription({
+    const id3 = createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'A1',
       rationale: 'R',
       proposedChange: 'C',
     });
-    updatePrescriptionStatus(id3, 'accepted');
+    updatePrescriptionStatus(db, id3, 'accepted');
 
-    const counts = countPrescriptionsByStatus();
+    const counts = countPrescriptionsByStatus(db);
     expect(counts.generated).toBe(2);
     expect(counts.accepted).toBe(1);
   });
 
   it('should return empty record on fresh database', () => {
-    const counts = countPrescriptionsByStatus();
+    const counts = countPrescriptionsByStatus(db);
     expect(Object.keys(counts)).toHaveLength(0);
   });
 });
@@ -371,7 +374,7 @@ describe('count by status', () => {
 
 describe('expiration', () => {
   it('should expire prescriptions older than 7 days', () => {
-    const db = getDb();
+    db = getDb();
     // Insert a prescription with a backdated generated_at
     db.prepare(
       `INSERT INTO prescriptions
@@ -379,7 +382,7 @@ describe('expiration', () => {
        VALUES (?, ?, ?, ?, ?, datetime('now', '-8 days'))`,
     ).run(insightId, 'recurring_error', 'Old', 'Reason', 'Change');
 
-    createPrescription({
+    createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'Fresh',
@@ -387,23 +390,23 @@ describe('expiration', () => {
       proposedChange: 'Change',
     });
 
-    const expired = expireAbandonedPrescriptions();
+    const expired = expireAbandonedPrescriptions(db);
     expect(expired).toBe(1);
 
-    const generated = listPrescriptions({ status: 'generated' });
+    const generated = listPrescriptions(db, { status: 'generated' });
     expect(generated).toHaveLength(1);
     expect(generated[0].title).toBe('Fresh');
   });
 
   it('should not expire non-generated prescriptions', () => {
-    const db = getDb();
+    db = getDb();
     db.prepare(
       `INSERT INTO prescriptions
         (insight_id, pattern_type, title, rationale, proposed_change, status, generated_at)
        VALUES (?, ?, ?, ?, ?, 'accepted', datetime('now', '-8 days'))`,
     ).run(insightId, 'recurring_error', 'Accepted old', 'Reason', 'Change');
 
-    const expired = expireAbandonedPrescriptions();
+    const expired = expireAbandonedPrescriptions(db);
     expect(expired).toBe(0);
   });
 });
@@ -414,16 +417,16 @@ describe('expiration', () => {
 
 describe('deferral', () => {
   it('should defer a prescription and increment defer_count', () => {
-    const id = createPrescription({
+    const id = createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'Deferred',
       rationale: 'R',
       proposedChange: 'C',
     });
-    deferPrescription(id, 'Not now');
+    deferPrescription(db, id, 'Not now');
 
-    const p = getPrescription(id);
+    const p = getPrescription(db, id);
     expect(p!.status).toBe('deferred');
     expect(p!.deferCount).toBe(1);
     expect(p!.dispositionReason).toBe('Not now');
@@ -431,19 +434,19 @@ describe('deferral', () => {
   });
 
   it('should set defer_until_session when session count provided', () => {
-    incrementSessionCounter();
-    incrementSessionCounter(); // sessions = 2
+    incrementSessionCounter(db);
+    incrementSessionCounter(db); // sessions = 2
 
-    const id = createPrescription({
+    const id = createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'Cooldown',
       rationale: 'R',
       proposedChange: 'C',
     });
-    deferPrescription(id, 'Later', 3); // defer until session 2 + 3 = 5
+    deferPrescription(db, id, 'Later', 3); // defer until session 2 + 3 = 5
 
-    const p = getPrescription(id);
+    const p = getPrescription(db, id);
     expect(p!.deferUntilSession).toBe(5);
   });
 });
@@ -454,48 +457,48 @@ describe('deferral', () => {
 
 describe('suppression', () => {
   it('should suppress a prescription', () => {
-    const id = createPrescription({
+    const id = createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'Suppressed',
       rationale: 'R',
       proposedChange: 'C',
     });
-    suppressPrescription(id);
+    suppressPrescription(db, id);
 
-    const p = getPrescription(id);
+    const p = getPrescription(db, id);
     expect(p!.status).toBe('suppressed');
     expect(p!.resolvedAt).toBeDefined();
   });
 
   it('should unsuppress a prescription back to generated', () => {
-    const id = createPrescription({
+    const id = createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'Toggle',
       rationale: 'R',
       proposedChange: 'C',
     });
-    suppressPrescription(id);
-    unsuppressPrescription(id);
+    suppressPrescription(db, id);
+    unsuppressPrescription(db, id);
 
-    const p = getPrescription(id);
+    const p = getPrescription(db, id);
     expect(p!.status).toBe('generated');
     expect(p!.resolvedAt).toBeUndefined();
   });
 
   it('should only unsuppress if currently suppressed', () => {
-    const id = createPrescription({
+    const id = createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'Not suppressed',
       rationale: 'R',
       proposedChange: 'C',
     });
-    updatePrescriptionStatus(id, 'accepted');
-    unsuppressPrescription(id); // should be a no-op
+    updatePrescriptionStatus(db, id, 'accepted');
+    unsuppressPrescription(db, id); // should be a no-op
 
-    const p = getPrescription(id);
+    const p = getPrescription(db, id);
     expect(p!.status).toBe('accepted');
   });
 });
@@ -506,14 +509,14 @@ describe('suppression', () => {
 
 describe('session counter', () => {
   it('should start at zero', () => {
-    expect(getSessionsSinceInstall()).toBe(0);
+    expect(getSessionsSinceInstall(db)).toBe(0);
   });
 
   it('should increment the counter', () => {
-    incrementSessionCounter();
-    expect(getSessionsSinceInstall()).toBe(1);
-    incrementSessionCounter();
-    expect(getSessionsSinceInstall()).toBe(2);
+    incrementSessionCounter(db);
+    expect(getSessionsSinceInstall(db)).toBe(1);
+    incrementSessionCounter(db);
+    expect(getSessionsSinceInstall(db)).toBe(2);
   });
 });
 
@@ -525,7 +528,7 @@ describe('managed artifacts CRUD', () => {
   let prescriptionId: number;
 
   beforeEach(() => {
-    prescriptionId = createPrescription({
+    prescriptionId = createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'Source',
@@ -535,7 +538,7 @@ describe('managed artifacts CRUD', () => {
   });
 
   it('should track a managed artifact', () => {
-    const id = trackManagedArtifact({
+    const id = trackManagedArtifact(db, {
       path: '~/.copilot/instructions.md',
       artifactType: 'instruction',
       scope: 'user',
@@ -547,7 +550,7 @@ describe('managed artifacts CRUD', () => {
   });
 
   it('should get a managed artifact by path', () => {
-    trackManagedArtifact({
+    trackManagedArtifact(db, {
       path: '~/.copilot/agents/test.agent.md',
       artifactType: 'agent',
       logicalId: 'test-agent',
@@ -558,7 +561,7 @@ describe('managed artifacts CRUD', () => {
       rollbackContent: '# Original content',
     });
 
-    const a = getManagedArtifact('~/.copilot/agents/test.agent.md');
+    const a = getManagedArtifact(db, '~/.copilot/agents/test.agent.md');
     expect(a).toBeDefined();
     expect(a!.path).toBe('~/.copilot/agents/test.agent.md');
     expect(a!.artifactType).toBe('agent');
@@ -572,62 +575,62 @@ describe('managed artifacts CRUD', () => {
   });
 
   it('should return undefined for non-existent path', () => {
-    expect(getManagedArtifact('/nonexistent')).toBeUndefined();
+    expect(getManagedArtifact(db, '/nonexistent')).toBeUndefined();
   });
 
   it('should list all managed artifacts', () => {
-    trackManagedArtifact({
+    trackManagedArtifact(db, {
       path: '/a',
       artifactType: 'instruction',
       scope: 'user',
       prescriptionId,
     });
-    trackManagedArtifact({
+    trackManagedArtifact(db, {
       path: '/b',
       artifactType: 'agent',
       scope: 'project',
       prescriptionId,
     });
 
-    const all = listManagedArtifacts();
+    const all = listManagedArtifacts(db);
     expect(all).toHaveLength(2);
   });
 
   it('should list artifacts filtered by prescription id', () => {
-    const p2 = createPrescription({
+    const p2 = createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'Other',
       rationale: 'R',
       proposedChange: 'C',
     });
-    trackManagedArtifact({
+    trackManagedArtifact(db, {
       path: '/a',
       artifactType: 'instruction',
       scope: 'user',
       prescriptionId,
     });
-    trackManagedArtifact({
+    trackManagedArtifact(db, {
       path: '/b',
       artifactType: 'agent',
       scope: 'project',
       prescriptionId: p2,
     });
 
-    const filtered = listManagedArtifacts(prescriptionId);
+    const filtered = listManagedArtifacts(db, prescriptionId);
     expect(filtered).toHaveLength(1);
     expect(filtered[0].path).toBe('/a');
   });
 
   it('should remove a managed artifact', () => {
-    trackManagedArtifact({
+    trackManagedArtifact(db, {
       path: '/removable',
       artifactType: 'hook',
       scope: 'project',
       prescriptionId,
     });
-    removeManagedArtifact('/removable');
-    expect(getManagedArtifact('/removable')).toBeUndefined();
+    removeManagedArtifact(db, '/removable');
+    expect(getManagedArtifact(db, '/removable')).toBeUndefined();
   });
 });
 
@@ -639,7 +642,7 @@ describe('drift detection', () => {
   let prescriptionId: number;
 
   beforeEach(() => {
-    prescriptionId = createPrescription({
+    prescriptionId = createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'Drift source',
@@ -649,7 +652,7 @@ describe('drift detection', () => {
   });
 
   it('should detect no drift when checksums match', () => {
-    trackManagedArtifact({
+    trackManagedArtifact(db, {
       path: '/stable',
       artifactType: 'instruction',
       scope: 'user',
@@ -658,7 +661,7 @@ describe('drift detection', () => {
       currentChecksum: 'aaa',
     });
 
-    const result = detectDrift('/stable');
+    const result = detectDrift(db, '/stable');
     expect(result).toBeDefined();
     expect(result!.drifted).toBe(false);
     expect(result!.expected).toBe('aaa');
@@ -666,7 +669,7 @@ describe('drift detection', () => {
   });
 
   it('should detect drift when checksums differ', () => {
-    trackManagedArtifact({
+    trackManagedArtifact(db, {
       path: '/drifted',
       artifactType: 'instruction',
       scope: 'user',
@@ -675,7 +678,7 @@ describe('drift detection', () => {
       currentChecksum: 'bbb',
     });
 
-    const result = detectDrift('/drifted');
+    const result = detectDrift(db, '/drifted');
     expect(result).toBeDefined();
     expect(result!.drifted).toBe(true);
     expect(result!.expected).toBe('aaa');
@@ -683,7 +686,7 @@ describe('drift detection', () => {
   });
 
   it('should detect drift after checksum update', () => {
-    trackManagedArtifact({
+    trackManagedArtifact(db, {
       path: '/updated',
       artifactType: 'skill',
       scope: 'project',
@@ -692,15 +695,15 @@ describe('drift detection', () => {
       currentChecksum: 'orig',
     });
 
-    updateArtifactChecksum('/updated', 'modified');
+    updateArtifactChecksum(db, '/updated', 'modified');
 
-    const result = detectDrift('/updated');
+    const result = detectDrift(db, '/updated');
     expect(result!.drifted).toBe(true);
     expect(result!.actual).toBe('modified');
   });
 
   it('should return undefined for non-existent path', () => {
-    expect(detectDrift('/ghost')).toBeUndefined();
+    expect(detectDrift(db, '/ghost')).toBeUndefined();
   });
 });
 
@@ -710,21 +713,21 @@ describe('drift detection', () => {
 
 describe('managed artifacts constraints', () => {
   it('should enforce unique path constraint', () => {
-    const prescriptionId = createPrescription({
+    const prescriptionId = createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'Constraint test',
       rationale: 'R',
       proposedChange: 'C',
     });
-    trackManagedArtifact({
+    trackManagedArtifact(db, {
       path: '/unique',
       artifactType: 'instruction',
       scope: 'user',
       prescriptionId,
     });
     expect(() => {
-      trackManagedArtifact({
+      trackManagedArtifact(db, {
         path: '/unique',
         artifactType: 'agent',
         scope: 'project',
@@ -734,8 +737,8 @@ describe('managed artifacts constraints', () => {
   });
 
   it('should reject invalid scope values', () => {
-    const db = getDb();
-    const prescriptionId = createPrescription({
+    db = getDb();
+    const prescriptionId = createPrescription(db, {
       insightId,
       patternType: 'recurring_error',
       title: 'Scope test',
@@ -757,18 +760,18 @@ describe('managed artifacts constraints', () => {
 
 describe('prescriber preference infrastructure', () => {
   it('should support setting and reading prescriber preferences', () => {
-    setPreference('prescriber.enabled', 'true', 'system');
-    expect(getPreference('prescriber.enabled')).toBe('true');
+    setPreference(db, 'prescriber.enabled', 'true', 'system');
+    expect(getPreference(db, 'prescriber.enabled')).toBe('true');
 
-    setPreference('prescriber.max_proactive', '1', 'system');
-    expect(getPreference('prescriber.max_proactive')).toBe('1');
+    setPreference(db, 'prescriber.max_proactive', '1', 'system');
+    expect(getPreference(db, 'prescriber.max_proactive')).toBe('1');
 
-    setPreference('prescriber.defer_sessions', '3', 'system');
-    setPreference('prescriber.suppress_threshold', '3', 'system');
-    setPreference('prescriber.min_confidence', '0.3', 'system');
-    setPreference('prescriber.auto_apply', 'false', 'system');
-    setPreference('prescriber.sidecar_prefix', 'cairn-prescribed', 'system');
+    setPreference(db, 'prescriber.defer_sessions', '3', 'system');
+    setPreference(db, 'prescriber.suppress_threshold', '3', 'system');
+    setPreference(db, 'prescriber.min_confidence', '0.3', 'system');
+    setPreference(db, 'prescriber.auto_apply', 'false', 'system');
+    setPreference(db, 'prescriber.sidecar_prefix', 'cairn-prescribed', 'system');
 
-    expect(getPreference('prescriber.sidecar_prefix')).toBe('cairn-prescribed');
+    expect(getPreference(db, 'prescriber.sidecar_prefix')).toBe('cairn-prescribed');
   });
 });

@@ -1,0 +1,26 @@
+{
+  "name": "@akubly/runtime-cli",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "forge-prescribe": "dist/cli.js",
+    "forge-metrics": "dist/forge-metrics.js"
+  },
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@akubly/cairn": "*",
+    "@akubly/skillsmith-runtime": "*",
+    "@akubly/types": "*"
+  },
+  "devDependencies": {
+    "vitest": "^3"
+  }
+}

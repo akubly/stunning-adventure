@@ -8,6 +8,10 @@
 
 ## Learnings
 
+### 2026-05-22: Wave 2 Complete — 1199 Tests Passing
+
+Phase 4.6 Wave 2 fully shipped: ChangeVectorProvider + ForgePrescriberOrchestrator + autoApplyEligible safety gate + hint dedup + forge-prescribe CLI all shipped. Wave 3 (Curator-driven orchestration + composition root) deferred behind its own ADR. 9 work items landed. 39 commits. 4 decisions merged into squad/decisions.md.
+
 <!-- Append learnings below -->
 
 ### 2026-05-27T17:55Z: Directive Merge — London-School TDD Captured to decisions.md

@@ -12,11 +12,13 @@
  * Fail-open: any error exits with code 0. Hooks must never break the user.
  */
 
+import type Database from 'better-sqlite3';
+import type { PrescriberOrchestrationConfig } from '@akubly/types';
 import { getDb, closeDb } from '../db/index.js';
 import { getActiveSession } from '../db/sessions.js';
 import { getLastEventTime } from '../db/events.js';
 import { catchUpPreviousSession } from '../agents/archivist.js';
-import { curate } from '../agents/curator.js';
+import { curate, type CurateResult } from '../agents/curator.js';
 import { prescribe } from '../agents/prescriber.js';
 import { incrementSessionCounter } from '../db/prescriptions.js';
 import { getRepoKey } from './gitContext.js';
@@ -38,8 +40,8 @@ interface HookInput {
  */
 const STALE_SESSION_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
 
-function isStaleSession(session: { id: string; startedAt: string }): boolean {
-  const lastEvent = getLastEventTime(session.id);
+function isStaleSession(db: Database.Database, session: { id: string; startedAt: string }): boolean {
+  const lastEvent = getLastEventTime(db, session.id);
   const referenceTime = lastEvent ?? session.startedAt;
   const referenceMs = parseSqliteDateToMs(referenceTime);
   // Fail-safe toward recovery: if we can't parse the timestamp, treat the
@@ -57,19 +59,31 @@ function isStaleSession(session: { id: string; startedAt: string }): boolean {
  * Returns `{ fastPath: true }` when a recent active session exists (no work).
  * Returns `{ fastPath: false }` after crash recovery + curator pipeline.
  */
-export function runSessionStart(repoKey: string): { fastPath: boolean } {
-  const existing = getActiveSession(repoKey);
-  if (existing && !isStaleSession(existing)) {
+export async function runSessionStart(
+  repoKey: string,
+  prescriberOrchestrationConfig?: PrescriberOrchestrationConfig,
+  afterCurate?: (curateResult: CurateResult) => void,
+): Promise<{ fastPath: boolean }> {
+  const db = getDb();
+  const existing = getActiveSession(db, repoKey);
+  if (existing && !isStaleSession(db, existing)) {
     return { fastPath: true };
   }
 
   // Either no active session or the active session is stale (orphan).
   catchUpPreviousSession(repoKey);
-  const curateResult = curate();
+  const curateResult = await curate(undefined, prescriberOrchestrationConfig);
+  try {
+    afterCurate?.(curateResult);
+  } catch (error) {
+    console.warn(
+      `sessionStart: afterCurate callback failed; continuing without post-curate hook: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 
   // Increment session counter BEFORE prescribe() so shouldResurface()
   // sees the correct session number without needing an off-by-one hack.
-  incrementSessionCounter();
+  incrementSessionCounter(db);
 
   // Chain prescribe() when insights changed (DP1 hybrid trigger)
   if (curateResult.insightsChanged) {
@@ -83,37 +97,60 @@ export function runSessionStart(repoKey: string): { fastPath: boolean } {
   return { fastPath: false };
 }
 
-async function main(): Promise<void> {
+export type SessionStartOrchestrationFactory = (
+  db: Database.Database,
+) => PrescriberOrchestrationConfig | undefined;
+
+export async function runSessionStartHook(
+  createPrescriberOrchestrationConfig?: SessionStartOrchestrationFactory,
+  afterCurate?: (curateResult: CurateResult) => void,
+): Promise<void> {
   let raw = '';
   for await (const chunk of process.stdin) {
     raw += chunk;
   }
 
-  if (!raw.trim()) process.exit(0);
+  if (!raw.trim()) return;
 
   let hookData: HookInput;
   try {
     hookData = JSON.parse(raw);
   } catch {
-    process.exit(0);
+    return;
   }
 
   let dbOpened = false;
   try {
-    getDb();
+    const db = getDb();
     dbOpened = true;
     // getRepoKey() shells out to `git remote get-url origin` (~10ms on
     // Windows). This runs before the fast-path DB check because
-    // getActiveSession() requires a repo-scoped key. The cost is acceptable:
+    // getActiveSession(db) requires a repo-scoped key. The cost is acceptable:
     // node startup + DB open (~400ms) dominate the hook budget, making the
     // 10ms git call negligible. Restructuring to avoid it (CWD-based keys,
     // repo-agnostic pre-checks) would add complexity for marginal gain.
-    const repoKey = getRepoKey(hookData!.cwd);
-    runSessionStart(repoKey);
+    const repoKey = getRepoKey(hookData.cwd);
+    let prescriberOrchestrationConfig: PrescriberOrchestrationConfig | undefined;
+    try {
+      prescriberOrchestrationConfig = createPrescriberOrchestrationConfig?.(db);
+    } catch (error) {
+      console.warn(
+        `sessionStart: prescriber orchestration factory failed; continuing without orchestration: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      prescriberOrchestrationConfig = undefined;
+    }
+    await runSessionStart(repoKey, prescriberOrchestrationConfig, afterCurate);
   } catch {
     // Fail open — hooks must never break the user's workflow
   } finally {
     if (dbOpened) closeDb();
+  }
+}
+
+async function main(): Promise<void> {
+  try {
+    await runSessionStartHook();
+  } finally {
     process.exit(0);
   }
 }

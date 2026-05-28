@@ -1,12 +1,12 @@
-# Graham — History (Summarized)
+📌 Team update (2026-05-26T22:27:00Z): **Wave 5-6 kickoff underway** — W5-5 post-review fixes completed. Root cause documented (McpToolResult index signature). Integration branch ready. Phase 4.6 architecture stable at 597 Cairn + 644 Forge tests passing. — Scribe
+📌 Team update (2026-05-25): **Cycle 2 fixes shipped** (f096c20) — N1: package-lock resync + CHANGELOG; N2: `allowGlobalFallback` boolean → `FallbackPolicy` string-literal union (`'per-skill-only'` | `'full-chain'`); N3: telemetry now shows chain/skipped/selected. All 26 runtime tests green, 4 suites passing. — Graham Knight
+📌 Team update (2026-05-23): **Wave 3 decisions accepted** — R2 approved as `@akubly/skillsmith-runtime`; MCP dropped from Wave 3; always-on Curator hook; 7 work items, ~18 tests. Docs revised, ready to fan out. — Graham Knight
 
-## Core Context
+# Graham — History
 
-- **Project:** A Copilot plugin marketplace for iterating on personal agentic engineering infrastructure
-- **Role:** Lead
-- **Joined:** 2026-03-28T06:21:47.377Z
+**Role:** Architecture scoping (phase decomposition, composition patterns), Design review triage, Spec clarification
 
-## Learnings
+**Key Leadership Pattern:** When option space is analyzed independently, reconcile labels early (R1–R5 mapping). Convergence signals from two independent analyses indicate strong design.
 
 ## R6 Ceremony — Source-Reading Rule Lifted (2026-05-24)
 
@@ -205,3 +205,6 @@
 - No semantic change to §50; only TOC reference updated to note complementarity
 
 **Status:** §55 locked and integrated into technical design. Implementation checklist (§55 §7) now governs M1+ development rhythm.
+**Wave 4 Approved (2026-05-23):** Tight scope with 3 work items + integration tests. Roger (W4-1/W4-2 atomicity + observability), Rosella (W4-3 forceRegenerate), Laura (W4-4 tests). Observability gap identified as hidden dependency for Wave 5 re-prescribe triggers.
+
+**Learnings summarized to history-archive.md**

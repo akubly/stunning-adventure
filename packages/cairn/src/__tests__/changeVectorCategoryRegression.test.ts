@@ -1,26 +1,19 @@
 /**
  * L5 — ChangeVectorSummary.category regression guard (Phase 4.6 cycle 2, Finding #7).
  *
- * Per ADR-P4.6-005: ChangeVectorSummary is NOT promoted to @akubly/types. Instead this
- * regression test asserts that all category values returned by Cairn's
- * `summarizeChangeVectors` are valid `OptimizationCategory` members (the union from
- * forge's prescribers/types.ts).
- *
- * Purpose: guards the duck-typed cross-boundary contract between Cairn (category: string)
- * and Forge (category: OptimizationCategory). If the OptimizationCategory union changes
- * in Forge (a value is renamed or removed), or if Cairn ever stores invalid category
- * strings, this test will catch the divergence in CI on every PR.
- *
- * Why cross-package import is OK here: Laura's test suite (not production code) is
- * permitted to import from @akubly/forge. There is no acyclic-dep constraint on tests.
- * This is the same pattern as DRIFT_WEIGHTS mirror test in forge/weight-consistency.test.ts.
+ * ChangeVectorSummary now comes from @akubly/types, where `category` is the canonical
+ * OptimizationCategory union. Cairn narrows raw SQLite strings at the read boundary in
+ * `getAllCategories()`, so summaries and providers only surface valid categories.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { getDb, closeDb } from '../db/index.js';
-import { insertChangeVector, summarizeChangeVectors } from '../db/changeVectors.js';
+import { getAllCategories, insertChangeVector, summarizeChangeVectors } from '../db/changeVectors.js';
 import { insertOptimizationHint } from '../db/optimizationHints.js';
-import type { OptimizationCategory } from '@akubly/forge';
+import type { OptimizationCategory } from '@akubly/types';
+
+let db: ReturnType<typeof getDb>;
+
 
 // ---------------------------------------------------------------------------
 // Canonical set of valid OptimizationCategory values (mirrors forge's union).
@@ -49,7 +42,7 @@ let hintCounter = 0;
 
 function makeHintId(category: string): string {
   hintCounter += 1;
-  return insertOptimizationHint({
+  return insertOptimizationHint(db, {
     id: `hint-cat-reg-${hintCounter}`,
     source: 'prompt-optimizer',
     skillId: 'skill-reg',
@@ -71,7 +64,7 @@ function makeHintId(category: string): string {
 beforeEach(() => {
   closeDb();
   hintCounter = 0;
-  getDb(':memory:');
+  db = getDb(':memory:');
 });
 
 afterEach(() => {
@@ -87,7 +80,7 @@ describe('summarizeChangeVectors — category is a valid OptimizationCategory me
     // Guard: for each valid OptimizationCategory, assert that summarizeChangeVectors
     // returns it unchanged. If forge ever renames a category, this test will fail
     // because the stored string will no longer be in VALID_OPTIMIZATION_CATEGORIES.
-    const db = getDb();
+    db = getDb();
     const categoriesToTest: OptimizationCategory[] = [
       'convergence',
       'prompt-structure',
@@ -119,40 +112,22 @@ describe('summarizeChangeVectors — category is a valid OptimizationCategory me
     }
   });
 
-  it('invalid category string is NOT recognized as a valid OptimizationCategory', () => {
-    // This documents that cairn does NOT filter invalid categories — it echoes them.
-    // The prescriber layer is responsible for only querying with valid category values.
-    // If summarizeChangeVectors ever starts filtering (returning empty for unknown
-    // categories), update this test.
-    const db = getDb();
-    const invalidCategory = 'not-a-real-category';
-    const hintId = makeHintId(invalidCategory);
-    insertChangeVector(db, {
-      hintId,
-      deltas: { deltaDrift: 0, deltaCost: 0, deltaSuccessRate: 0, deltaConvergence: 0, deltaCacheHit: 0 },
-      sessionsObserved: 3,
-      computedAt: '2026-05-03T20:59:53.000Z',
-    });
+  it('getAllCategories filters invalid category strings at the DB boundary', () => {
+    db = getDb();
+    makeHintId('not-a-real-category');
+    makeHintId('convergence');
 
-    const summary = summarizeChangeVectors(db, invalidCategory, 'skill-reg');
-
-    // Cairn echoes the category string — it's the prescriber's job to pass valid values.
-    expect(summary.category).toBe(invalidCategory);
-    // The validator correctly rejects it:
-    expect(isValidOptimizationCategory(summary.category)).toBe(false);
-    // Document: calling prescribers with invalid categories is undefined behaviour.
-    // This test is the regression guard — if summarizeChangeVectors ever changes to
-    // filter out invalid categories, this assertion should be flipped.
+    expect(getAllCategories(db, 'skill-reg')).toEqual(['convergence']);
   });
 
   it('categories from all valid OptimizationCategory members round-trip through DB unchanged', () => {
     // Full coverage: every valid category value survives insert → summarize unchanged.
-    const db = getDb();
+    db = getDb();
 
     for (const category of VALID_OPTIMIZATION_CATEGORIES) {
       // Use a unique skillId per category to avoid cross-category interference
       const skillId = `skill-roundtrip-${category}`;
-      const hintId = insertOptimizationHint({
+      const hintId = insertOptimizationHint(db, {
         id: `hint-rt-${category}`,
         source: 'prompt-optimizer',
         skillId,

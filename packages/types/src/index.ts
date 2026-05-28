@@ -160,6 +160,13 @@ export interface ProfileSignals {
   promptStability: number;
 }
 
+export type ProfileStalenessReason = 'count' | 'age' | 'count+age' | null;
+
+export interface ProfileStaleness {
+  stale: boolean;
+  reason: ProfileStalenessReason;
+}
+
 /** Aggregated execution profile for a skill at a given granularity. */
 export interface ExecutionProfile {
   skillId: string;
@@ -191,6 +198,10 @@ export interface ExecutionProfile {
    * profiles persisted before this field landed will simply omit it.
    */
   signals?: ProfileSignals;
+  /** Confidence in this profile's freshness/relevance after runtime annotations. */
+  confidence?: number;
+  /** Runtime annotation explaining confidence attenuation due to profile staleness. */
+  staleness?: ProfileStaleness;
   updatedAt: string;
 }
 
@@ -213,6 +224,66 @@ export interface OptimizationHint {
  */
 export interface StrategyParameters {
   [key: string]: unknown;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4.6 — Change vector contracts
+// ---------------------------------------------------------------------------
+
+/** Shared optimization categories for hints and learned change vectors. */
+export type OptimizationCategory =
+  | 'prompt-structure'
+  | 'tool-guidance'
+  | 'context-management'
+  | 'cache-optimization'
+  | 'model-selection'
+  | 'convergence';
+
+/** Threshold below which mature negative vectors should not auto-apply. */
+export const NEGATIVE_IMPACT_AUTO_APPLY_GATE = -0.2;
+
+/** Minimum mature-negative confidence boost after attenuation. */
+export const ATTENUATION_FLOOR = 0.1;
+
+/** Aggregated change vector data for a category+skillId pair. */
+export interface ChangeVectorSummary {
+  category: OptimizationCategory;
+  skillId: string;
+  meanNetImpact: number;
+  vectorCount: number;
+  confidenceBoost: number;
+  /** False when meanNetImpact <= NEGATIVE_IMPACT_AUTO_APPLY_GATE and vectorCount >= minVectors. */
+  autoApplyEligible?: boolean;
+}
+
+/** Async source of historical change vector summaries for a skill (Phase 5 may fetch them remotely). */
+export interface ChangeVectorProvider {
+  getSummaries(skillId: string): Promise<ChangeVectorSummary[]>;
+}
+
+// ---------------------------------------------------------------------------
+// Wave 3 — Prescriber orchestration contracts
+// ---------------------------------------------------------------------------
+
+/** What the prescriber orchestrator reports after processing one skill. */
+export interface PrescriberRunResult {
+  skillId: string;
+  hintsGenerated: number;
+  hintsInserted: number;
+  hintsDuplicated: number;
+  hintsError: number;
+  /**
+   * Reason this skill's run was skipped (e.g. orchestrator hit its time
+   * budget). Absent when the skill was processed normally — even with
+   * zero hints generated.
+   */
+  skippedReason?: 'time-budget-exceeded';
+}
+
+/** Curator-facing port for running prescribers against one skill. */
+export interface PrescriberOrchestrationConfig {
+  runForSkill: (skillId: string, minSessions: number) => Promise<PrescriberRunResult>;
+  loadProfile?: (skillId: string) => ExecutionProfile | null;
 }
 
 /**
