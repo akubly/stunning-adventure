@@ -7,6 +7,8 @@
 - [Brain Project Proposal — Name, Roster, Loop-In Model](#brain-project-proposal--name-roster-loop-in-model)
 - [Unified Package Scope → @akubly](#unified-package-scope--akubly)
 - [Phase 4.5 Brainstorm Round 2 — Aaron's Decisions](#phase-45-brainstorm-round-2--aarons-decisions)
+- [Eureka v1 Design — Cycle 1 Persona Review Canonical Resolutions](#eureka-v1-design--cycle-1-persona-review-canonical-resolutions)
+- [Eureka v1 Design — Cycle 3 Zombie-Fact Semantics Decision](#eureka-v1-design--cycle-3-zombie-fact-semantics-decision)
 
 ---
 
@@ -457,3 +459,300 @@ Aaron pressure-tested G4 continuous coordination by proposing branch-tree-with-r
 ### Key Learning
 
 **Git merge is a line editor, not a type checker.** Deferred coordination doesn't eliminate coordination — it just moves it to the worst possible time (post-ship, cold context, both teams blocked). Front-load schema decisions when context is hot and changes are in-flight. Continuous coordination at commit time is **10-40× cheaper** than reconciliation at integration time.
+
+
+---
+
+## Eureka v1 Design — Cycle 1 Persona Review Canonical Resolutions
+
+# Cycle 1 Persona Review — Canonical Resolutions
+
+**Date:** 2026-05-28
+**Reviewer:** Squad persona-review Design Panel (Architect/Skeptic/Pragmatist/Compliance)
+**Requested by:** Aaron Kubly
+**Status:** All 19 findings accepted by Aaron. This document is the canonical source of truth for the fix wave.
+
+All fix agents in cycle 2 MUST read this file and apply the resolutions below. If a finding spans multiple sections, every agent who owns one of those sections must update their section to match — coordinate through this file, not by reading each other's edits.
+
+---
+
+## B1 — Scoring formula: ADDITIVE wins
+
+- **Canonical formula:** `rawScore = 0.50·relevance + 0.20·importance + 0.20·trust + 0.10·recency`
+- **Final:** `finalScore = rawScore × attention_multiplier` where `attention_multiplier ∈ {hot=1.2, warm=1.0, cold=0.8}`
+- `relevance` is **normalized BM25** score, scaled to [0,1] per query (min-max across the candidate set, or sigmoid — Edgar's call which to specify)
+- **Owner section:** §30 (Edgar). All other docs reference §30 §1.2 by section number.
+- **§20 contract:** `RecallResult` interface MUST expose `importance_score` (parity with the formula). The multiplicative formula is **deleted** from §20.
+
+## B2 — Trust + retire semantics: field-level immutability + retired flag
+
+- **Trust domain:** `[0.0, 1.0]` EVERYWHERE — at storage, in memory, in interfaces. **No storage/read distinction.**
+- **Retirement:** dedicated `retired: boolean` field on `Fact` (NOT trust-zeroing). Default `false`.
+- **Committed-fact immutability:** **field-level**, not row-level.
+  - **Immutable post-commit:** `content`, `kind`, `sources`, `provenance`, `created_at`
+  - **Always mutable:** `trust`, `importance`, `last_accessed`, `access_count`, `retired`
+- **Default recall filter:** `WHERE retired = false AND trust >= 0.15`
+  - Both overridable per-query: `recall({ ..., include_retired: true, min_trust: 0.0 })`
+- The 0.15 floor is a **read-time default predicate, NOT a domain constraint** on the field.
+- **Owner section:** §20 (Crispin) for schema; §30 (Edgar) for mutation policy + retire algorithm. §10/§50 reference these.
+
+## B3 — Decision ownership: Forge audit-authoritative, Eureka learning-authoritative
+
+- `decide()` emits a decision event.
+- **Forge** writes the audit record — immutable, authoritative for compliance/replay/audit trail.
+- **Eureka** subscribes to the event and writes a learning-shaped decision-fact — mutable `trust`/`importance`/`access_count`, authoritative for recall and learning.
+- Shared `decision_id` correlates them.
+- **Source of truth for compliance = Forge. Source of truth for learning = Eureka.**
+- Reconciliation runs against `decision_id`.
+- **§10 fix:** Remove "decide() does NOT write to Eureka DB" — replace with the role-split prose above.
+- **§00 fix:** Path 1 order — Forge writes first (audit record), Eureka writes on subscribed event (learning fact). Not the other way around.
+- **PRD fix:** Clarify "persisted as both" with the role split; specify duplicated vs referenced fields; specify reconcile-on-disagree policy.
+
+## I1 — §55 worked-example file paths
+
+- Replace `packages/forge/src/__tests__/recall.test.ts` → `packages/eureka/src/activities/__tests__/recall.test.ts`
+- Replace `packages/forge/src/recall.ts` → `packages/eureka/src/activities/recall.ts`
+- Replace `packages/cairn/src/curator-store.ts` → `packages/eureka/src/storage/curator-store.ts`
+- Add dep-direction lint guardrail to **M1**, not M5 (mention in §40 acceptance criteria).
+
+## I2 — Trust initial values: canonicalize in §30
+
+- §30 (Edgar) is the single source. Source-type initial trust values:
+  - User-confirmed/explicit: **0.9**
+  - User-provided default: **0.6**
+  - Agent-inferred (LLM): **0.5**
+  - Path 2 low-confidence: **0.4**
+  - External/API-sourced: **0.7** (if used in v1)
+- §10 and §20 reference §30 by section number rather than restating numeric values.
+- §55 AC mapping (FR-4.3) gets per-source-type test cases.
+
+## I3 — §20 `RecallQuery.min_trust` default
+
+- Change default from **0.5 → 0.15** to match the canonical floor.
+
+## I4 — Constants provenance
+
+- Edgar adds rationale to §30 for each constant:
+  - Ranker weights (0.50/0.20/0.20/0.10): derivation method + sensitivity-analysis note
+  - Tier multipliers (1.2/1.0/0.8): rationale
+  - Tier thresholds (hot ≥ 0.7, warm ≥ 0.4): rationale + expected distribution
+  - Trust floor (0.15): definition of "pathological zero-trust state" + why 0.15
+  - Recency exponent (0.7): **fact-check vs Anderson's ACT-R (typically 0.5)** — if 0.7 is intentional, document why; if accidental, fix to 0.5
+  - Time constant β (1 day): rationale + tuning guidance
+
+## I5 — Manual-flush failure mode
+
+- Ship opt-in auto-flush-on-session-end **feature flag** in v1 (not v1.5).
+- Add actionable error UX text (referencing §60-style messages): "Memory not captured — fix steps:".
+- Owner section: §40 (Roger) for the flag wiring; UX text can be inline or in §60 — Roger's discretion.
+
+## I6 — M0 monorepo merge time-box
+
+- Document in §40 (or ADR-0002): time-box M0 to **5 days**.
+- Run a **4-hour scaffolding spike** first (pnpm workspace + turborepo + one cross-package import).
+- **Rollback procedure:** if M0 exceeds 5 days, revert to **Option C (npm packages)** with private registry for v1.
+
+## I7 — Ship one tier, hide the seam
+
+- v1 public `recall()` signature has **NO `tiers` parameter**.
+- Internal implementation hardwires to agent tier.
+- **`Fact.scope` STAYS** in the storage schema for forward-compat.
+- **DELETE `NotImplementedError` stubs** for user/project tier write paths — don't ship them at all in v1.
+- v1.5 will add the `tiers` parameter and the federation paths when those tiers actually wire.
+- Owner sections: PRD (Cassima) for the public API spec; §10 (Genesta) for the activity signature.
+
+## I8 — Bridge reconciliation: schedule + telemetry + runbook
+
+- **Weekly cron** runs `eureka reconcile`.
+- Telemetry counter: `eureka_reconcile_divergence_count`.
+- **Written playbook** for divergence response: when reconcile reports ∅ ≠ empty, what does the operator do? Replay from Forge? Manual INSERT into Cairn? Delete orphaned ledger row? Document the decision tree.
+- v1.5 design note: push-based event-stream comparison instead of pull-audit.
+- Owner section: §40 (Roger).
+
+## I9 — Single 500ms latency SLO + M4 load test
+
+- Collapse the four conflicting targets into **one shipped SLO: P95 recall < 500ms**.
+- 50ms / 100ms / 200ms become **internal targets for hot paths**, not shipped guarantees.
+- **M4 load test** with 1000 facts (NFR-2 target): measure P50/P95/P99. P95 > 500ms = ship-blocker.
+- Production telemetry: histogram `eureka_recall_latency_ms`.
+- Owner section: §30 (Edgar) for the SLO statement; §40 (Roger) for test wiring if cross-package.
+
+## I10 — Eval set in M0
+
+- Create eval set as **M0 deliverable**: 10 questions (5 train + 5 held-out).
+- Target codebase: **mem/ repo** (dogfood).
+- Ground-truth each question (file paths, line numbers, expected facts).
+- **Measure grep-baseline** (human rediscovery tax) before any Eureka code lands.
+- Wire held-out 5 into **CI at M4** as ship-blocker if precision < 80%.
+- Owner section: PRD (Cassima) for the deliverable spec; appendix with question list and ground truth.
+
+## I11 — Threat-control implementation status table
+
+- Add to PRD §14a: "v1 Threat Control Implementation Status" table.
+- Each control marked **code-enforced / policy-enforced / deferred**.
+- Auto-check ESLint rule for the cross-DB ban (FR-7.2).
+- Telemetry counter for suspicious same-principal trust patterns (visible, not enforced in v1).
+- Owner section: PRD (Cassima).
+
+## M1 — §55 side-effect test example
+
+- Add §55 §2.5 or §2.6 demonstrating side-effect assertion:
+  ```typescript
+  it('increments accessCount for returned facts', async () => {
+    await recall(...);
+    expect(store.getAccessCount(factId)).toBe(2);
+  });
+  ```
+- Teach the implementer that London-school requires explicit side-effect assertions, not just return-value checks.
+
+## M2 — Path 2 ingestion scope
+
+- **Defer Path 2 to v1.5** unless a v1 production consumer commits to using it.
+- Keep design docs as-is; do not ship code for it in v1.
+- Owner section: PRD (Cassima); §40 (Roger) for the wiring decision.
+
+## M3 — Kernel-extraction success criterion
+
+- M5 canary: literally move `packages/eureka/src/learning/` → `packages/learning-kernel/src/`, run tests, count required edits.
+- **Define "extraction-ready":** moving the package to a new path requires only import-path updates, no interface changes, no test rewrites. Edit count < 10 = success.
+- Owner section: §40 (Roger) for the canary spec.
+
+## M4 — Partial-restore test
+
+- M4 deliverable: simulate partial restore (delete one DB at a time, verify graceful degradation).
+- Document in NFR-6: "`session_id` is opaque metadata, not a traversable FK."
+- Owner section: §40 (Roger).
+
+## M5 — "Alternatives Considered" subsections
+
+- Add brief sections to §30 (ranker — BM25 vs TF-IDF vs LSH vs semantic embeddings) and §55 (TDD methodology — London-school vs Detroit-school vs classical).
+- Brief; not full ADR depth.
+- Owner sections: §30 (Edgar), §55 (Laura).
+
+---
+
+## File-ownership fix-wave assignment
+
+| Agent | Files owned | Findings to land |
+|---|---|---|
+| Cassima (PM) | `.squad/decisions/eureka-prd-v5-final.md` | B3 (PRD prose), I7 (remove `tiers` from public API spec), I10 (M0 eval-set deliverable + appendix), I11 (threat-control status table), M2 (Path 2 defer note) |
+| Genesta (Cognitive Systems Lead) | `docs/eureka/sections/10-activities-and-tiers.md`, `docs/eureka/sections/00-overview.md` | B3 (§10 remove "decide does NOT write"; §00 Path 1 order fix), I7 (§10 recall signature without tiers param), I2 (cross-ref §30) |
+| Crispin (Knowledge Rep) | `docs/eureka/sections/20-knowledge-representation.md` | B1 (strip multiplicative; add `importance_score` to RecallResult), B2 (trust∈[0,1]; add `retired` field; field-level immutability schema rule), I3 (`min_trust` default 0.5→0.15), I2 (cross-ref §30) |
+| Edgar (Learning Systems) | `docs/eureka/sections/30-learning-systems.md` | B1 (canonical additive formula + normalized BM25 spec), B2 (retire via flag in algorithm; trust mutation policy), I2 (trust init source-type values canonical), I4 (constants provenance + ACT-R fact-check), I9 (single 500ms SLO in §30), M5 (alternatives subsection in §30) |
+| Roger (Platform) | `docs/eureka/sections/40-integration.md` | I1 (dep-direction lint to M1), I5 (auto-flush flag wiring), I6 (M0 5-day time-box + rollback), I8 (reconciliation cron + telemetry + runbook), I9 (load-test M4 wiring), M3 (kernel-extraction canary spec), M4 (partial-restore test) |
+| Laura (Tester) | `docs/eureka/sections/50-testability.md`, `docs/eureka/sections/55-tdd-strategy.md` | I1 (§55 paths to eureka/), B2 reflection (§50 "committed=read-only" → field-level immutability), M1 (§55 side-effect test example), M5 (§55 alternatives subsection) |
+
+No two agents edit the same file. All cross-section coordination happens through this canon document.
+
+
+---
+
+## Eureka v1 Design — Cycle 3 Zombie-Fact Semantics Decision
+
+# Cycle 3 Decision: Zombie-Fact Semantics (trust=0 vs. retirement)
+
+**Agent:** Edgar (Learning Systems Specialist)  
+**Date:** 2026-05-28  
+**Context:** Architect cycle 2 advisory flagged semantic ambiguity in §30  
+**Status:** RESOLVED — Option 2 chosen
+
+---
+
+## Problem
+
+With B2 policy (`retired: boolean` field separate from trust), the trust-penalty formula `max(0.0, fact.trust - 0.10)` can decay a fact's trust to 0.0 through repeated contradiction. Default recall filter `WHERE retired=false AND trust>=0.15` means trust=0 facts are:
+
+- **Effectively invisible** (filtered by 0.15 floor)
+- **Formally not retired** (`retired=false`)
+
+This is a "zombie fact" — occupies space, shows up in raw queries, never surfaces to users.
+
+**Question:** Should the system auto-retire facts when trust decays to 0.0, or is "low-trust-but-not-retired" a meaningful state?
+
+---
+
+## Options Considered
+
+### Option 1: Auto-retire on trust=0
+
+When trust decays to 0.0 (via penalty, never via explicit set), the trust-update algorithm also sets `retired=true`.
+
+**Rationale:** trust=0 means "system has lost all confidence" — that's a lifecycle signal, not just a quality signal. Simpler mental model: filter applies, retirement applies, both visible to operators.
+
+**Rejected:** Conflates epistemic state (trust) with lifecycle state (retirement). Makes it impossible to distinguish "algorithm lost confidence" from "user/policy decided to remove."
+
+### Option 2: Preserve the distinction ✅ CHOSEN
+
+trust=0 means "epistemically dead" but the fact is preserved (for forensic analysis, replay, future re-evaluation). Explicit retirement (`retired=true`) is reserved for deliberate lifecycle decisions: user "forget this", policy sweep, supersession.
+
+**Rationale:** Separates epistemic state from lifecycle state, which is the whole point of B2. Better audit trail. Provides recovery path (trust=0 facts can regain trust via corroboration or manual correction without un-retiring).
+
+---
+
+## Decision
+
+**Policy:** Preserve the distinction. Trust=0 facts retain `retired=false`.
+
+**Implementation:**
+- trust-update algorithm (in `contemplate`) applies `max(0.0, ...)` bounds-checking but does NOT set `retired=true` when trust reaches 0.0
+- Retirement remains a manual or policy-driven action via `retire()` API
+
+**Operator Guidance:**
+- Facts with trust=0.0 are filtered from default recall but remain in database
+- Use `recall({ include_retired: true, min_trust: 0.0 })` in diagnostic queries to surface zombie facts
+- Use `retire(fact_ids)` explicitly when a fact should be lifecycle-removed
+
+---
+
+## Rationale Detail
+
+1. **Audit trail:** Trust decay history (via `contemplate` outcomes) vs explicit retirement (via `retire()` API) are distinguishable in telemetry. Operators can query "why did this fact lose trust?" by examining decision events.
+
+2. **Recovery path:** A trust=0 fact can regain trust via corroboration (v1.5 planned) or manual correction without requiring un-retirement. If trust=0 triggered `retired=true`, recovery would require lifecycle reversal (un-retire), which is semantically different.
+
+3. **Forensic value:** Zombie facts remain subject to `sweep()` and may be demoted or flagged for manual review. If auto-retired, this feedback loop is broken.
+
+4. **Extraction-ready contract:** If learning-kernel is extracted (Path D), the trust=0/retirement distinction becomes a kernel contract. External consumers (Cairn, Crucible, future adoption) need to know whether trust=0 has lifecycle implications.
+
+---
+
+## Documentation Changes
+
+1. **§30 §2.1.1 added:** "Zombie-Fact Semantics: Trust=0 vs. Retirement" subsection (22 lines, ~1.5% of file)
+2. **§30 §2.3 updated:** Removed "explicitly retired or contradicted" language from trust-floor definition (was contradictory)
+
+---
+
+## Cross-Team Impact
+
+- **Crispin (§20 Schema):** `retired: boolean` field semantics now explicitly documented; trust=0 does NOT imply retired=true
+- **Roger (§40 Curator):** Default filter `WHERE retired=false AND trust>=0.15` excludes zombie facts; diagnostic queries require explicit `include_retired: true, min_trust: 0.0`
+- **Genesta (§10 Activities):** `contemplate` trust-update logic does NOT trigger retirement on trust=0
+
+---
+
+## Open Questions (none blocking)
+
+None. Policy is internally consistent with B2 and extraction-ready design.
+
+---
+
+## Verification
+
+Zombie-fact policy documented in:
+- §30 §2.1.1 (algorithmic semantics)
+- §30 §1.6 (retire algorithm — confirms retirement is explicit, not automatic)
+- §30 §2.1 (trust mutation policy — confirms trust=0 is a valid stored state)
+
+Cross-refs verified for consistency.
+
+---
+
+## Confidence
+
+**HIGH (90%)** — Option 2 aligns with B2's epistemic/lifecycle separation. No edge cases found where conflation is simpler.
+
+---
+
+**For Scribe:** Merge this decision summary into `.squad/decisions.md` under "Cycle 3 Resolutions" section. Archive to `.squad/decisions/archive/` after lock.
+

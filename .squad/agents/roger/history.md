@@ -21,7 +21,21 @@
 
 ---
 
-## R6 Ceremony — Source-Reading Rule Lifted (2026-05-24)
+## Core Context
+
+**Load-bearing platform decisions for Eureka v1:**
+- **Integration seam (§40 owner):** Roger owns cross-package integration, M0 monorepo merge (5-day sprint + 4-hour spike first), rollback to npm packages + private registry if exceeded
+- **Reconciliation playbook:** Weekly cron for `eureka reconcile`; telemetry counter `eureka_reconcile_divergence_count`; written decision tree for divergence response (Forge replay vs manual INSERT vs delete orphaned row)
+- **Auto-flush feature flag:** Opt-in auto-flush-on-session-end for v1 (not deferred); actionable error UX text with §60 message style
+- **Kernel-extraction canary:** M3 success criterion: move packages/eureka/src/learning/ → packages/learning-kernel/src/, count edits; success = < 10 edits. Validates extraction-ready contract.
+- **Partial-restore test (M4):** Delete one DB at a time; verify graceful degradation. session_id is opaque metadata (NFR-6), not traversable FK.
+- **Load-test SLO (M4):** 1000 facts, measure P50/P95/P99; P95 < 500ms = shipped SLO; P95 > 500ms = ship-blocker. Telemetry histogram `eureka_recall_latency_ms`.
+- **Dep-direction lint (M1):** Cross-package import guard moved to M1 acceptance criteria (from M5). Auto-check via ESLint rule.
+- **Cycle 2 findings landed:** I1 (lint), I5 (auto-flush), I6 (M0 5-day), I8 (reconciliation), I9 (load test), M3 (canary), M4 (restore test) — 7 findings in §40 (+23.7% size)
+
+**Dependencies:** Eureka design package locked (2026-05-28). M0 time-box starts immediately; integration is critical path for M1.
+
+---
 
 **Milestone:** R6 opened — Eureka source-reading unlocked; trio (Genesta/Crispin/Edgar) reconciled v3 PRD against Cairn/Forge substrate.
 

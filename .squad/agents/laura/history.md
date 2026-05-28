@@ -111,21 +111,31 @@
 - Two commits: one for curator/migration/prescribers; one for category regression/weight-consistency/contracts
 - **Lesson:** UNIQUE constraint adds `sqlite_autoindex_*` — excluded by `NOT LIKE 'sqlite_%'` filter, so explicit index count tests are unaffected. Always check filter criteria when migration schema changes.
 
-## Core Patterns Established
+## Core Context
 
-**Test organization:** Inline contract implementations before real modules exist. Switch from inline to real imports with zero test changes (only implementation changes).
+**Load-bearing patterns for future work:**
+- **Contract-first testing:** Inline contract implementations before real modules. Switch imports with zero test changes; behavioral divergence surfaces immediately.
+- **Field-level immutability (Eureka v1):** Committed facts have immutable content/kind/sources/provenance/created_at; mutable trust/importance/access_count/retired. Row-level "read-only" was false abstraction.
+- **London-school side-effect assertions:** Return-value tests miss side-effects (accessCount++, lastAccessedAt, attention). Explicit side-effect assertions force learning contracts to be honored.
+- **Metamorphic regression testing:** Test response curves (hint↓ as drift↓), not terminal states. L5 tests catch O(N) regressions; constant alignment tests prevent silent divergence.
+- **Lockout rule for defects:** Author cannot fix own defect. Three-phase triage (find/decide/fix) divides ownership, improves quality.
+- **Cross-boundary contracts:** Type arrays at compile time (forge category renames trigger CI errors); runtime round-trip assertions verify bidirectional consistency.
+- **Cursor state tracking:** INSERT OR IGNORE idempotence: assert `alreadyComputed` on _second_ curate() call, not first.
+- **SDK testing:** Unit tests use mocks; integration tests require live Copilot CLI process.
 
-**SDK testing constraint:** SDK requires running Copilot CLI process for full integration tests. Unit tests use mocks, integration tests require live CLI.
+**Dependencies:** Eureka design package locked (2026-05-28); §55 TDD strategy now canonical. M1 implementation depends on side-effect test patterns taught in §55 §2.6.
 
-**Metamorphic testing:** Response curves, not terminal states. Operator effects simulated at profile level. Generic bounds catch regressions without hardcoding expected values.
+## Historical Context (Phase 2–4.6)
 
-**Regression guards:** L5 tests catch O(N) complexity regressions. Weight consistency tests (e.g., cairn/forge constant alignment) prevent silent divergence. Schema regression suites catch structural drift.
+Phases 2–4.6 testing wave (2026-04-28 to 2026-05-03):
+- Phase 2: 54 contract tests (bridge, events, records)
+- Phase 3: 87 integration tests (forge session lifecycle, 268 total forge tests)
+- Phase 4.5: 36 feedback-loop tests (convergence curves, 990 total)
+- Phase 4 Export: 62 rewritten contract tests (renderFrontmatter, compileSkill, etc., 37 production tests from Roger)
+- Phase 4.6 Wave 1–3: 15 findings consolidated → 1102 total tests
+- Phase 4.6 Wave 4 (Cycle 2): 15 code-panel findings landed → 1133 tests (548 cairn, 585 forge)
 
-**Defect resolution pattern:** Lockout rule (author cannot fix own defect) prevents blind spots. Three-phase triage (find → decide → fix) divides ownership, improves quality.
-
-**Cross-boundary category contract:** cairn stores `category: string`; forge uses `OptimizationCategory` union. Regression test uses `readonly OptimizationCategory[]` array — TypeScript enforces membership at compile time, runtime asserts round-trip. If forge renames a category, the array gets a type error in CI.
-
-**Test isolation + cursor state:** INSERT OR IGNORE idempotence tests must assert `alreadyComputed` on the _second_ curate() call — the first sweep has changes=1, the second has changes=0 (INSERT OR IGNORE does nothing). Always track which sweep call you're asserting on.
+Key learnings consolidated into § Core Patterns above.
 
 ## Learnings
 
