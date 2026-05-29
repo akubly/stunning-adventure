@@ -247,7 +247,7 @@ server.registerTool(
               {
                 type: 'text' as const,
                 text: JSON.stringify({
-                  error: 'Provide either session_id or repo_key (with optional workdir).',
+                    error: 'Provide either session_id, or both repo_key and workdir.',
                 }),
               },
             ],

@@ -209,7 +209,7 @@ describe('get_session structural error paths (server.ts source)', () => {
     expect(handlerStart).toBeGreaterThan(-1);
     const handlerBody = source.slice(handlerStart);
 
-    expect(handlerBody).toContain('Provide either session_id or repo_key');
+    expect(handlerBody).toContain('Provide either session_id, or both repo_key and workdir');
     expect(handlerBody).toContain('isError: true');
   });
 
