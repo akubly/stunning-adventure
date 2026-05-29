@@ -101,6 +101,9 @@ export function endSession(db: Database.Database, id: string, status: string = '
  * When workdir is provided as a string: queries `AND workdir IS workdir` (exact worktree match).
  *
  * For any-active-session lookup regardless of worktree, use getActiveUserSession (no workdir filter).
+ *
+ * @remarks Returns ONLY user sessions (`session_kind = 'user'`). System sessions are excluded.
+ * For system-session lookup, use a dedicated helper (e.g. `getActiveUserSession` with kind override).
  */
 export function getActiveSession(
   db: Database.Database,

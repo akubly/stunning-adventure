@@ -263,6 +263,29 @@ describe('handler workdir threading — normalizeWorkdir applied before DB looku
 });
 
 // ---------------------------------------------------------------------------
+// Area 5f: get_status invalid-workdir guard (I1 regression)
+// ---------------------------------------------------------------------------
+
+describe('get_status invalid-workdir guard', () => {
+  it('server.ts returns isError when workdir normalizes to undefined (whitespace-only)', () => {
+    // If callers pass a workdir that collapses to nothing after normalization
+    // (e.g. '   ' or '\t'), the handler must return an explicit isError rather
+    // than silently falling back to the all-sessions list.
+    const source = fs.readFileSync(serverPath, 'utf8');
+    const handlerStart = source.indexOf("'get_status'");
+    expect(handlerStart).toBeGreaterThan(-1);
+    const handlerEnd = source.indexOf('// Tool:', handlerStart + 1);
+    const handlerBody = handlerStart > -1 && handlerEnd > -1
+      ? source.slice(handlerStart, handlerEnd)
+      : source.slice(handlerStart);
+
+    // The guard must be present: isError + an empty/whitespace message
+    expect(handlerBody).toContain('isError');
+    expect(handlerBody).toContain('Invalid workdir');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Area 5e: Sanity — no console.log/info/debug leaks in server.ts
 // ---------------------------------------------------------------------------
 

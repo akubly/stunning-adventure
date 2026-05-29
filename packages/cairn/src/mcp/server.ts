@@ -129,16 +129,22 @@ server.registerTool(
       let sessions: Session[] = [];
       if (repo_key) {
         if (workdir !== undefined) {
+          // Caller explicitly passed a workdir — normalize and filter.
+          // If normalization collapses it (empty/whitespace), reject rather than
+          // silently falling back to the all-sessions list shape.
+          const nwd = normalizeWorkdir(workdir);
+          if (nwd === undefined) {
+            return {
+              isError: true,
+              content: [{ type: 'text' as const, text: 'Invalid workdir: empty or whitespace-only string. Omit workdir to list all sessions, or provide a non-empty path.' }],
+            };
+          }
           // Filter to a specific worktree session; still returned as an array
           // for shape consistency with the multi-session list shape.
-          const nwd = normalizeWorkdir(workdir);
-          if (nwd !== undefined) {
-            const session = getActiveSession(db, repo_key, nwd);
-            sessions = session ? [session] : [];
-          } else {
-            sessions = listActiveSessionsForRepo(db, repo_key);
-          }
+          const session = getActiveSession(db, repo_key, nwd);
+          sessions = session ? [session] : [];
         } else {
+          // the all-sessions case: no workdir → list every active session for this repo
           sessions = listActiveSessionsForRepo(db, repo_key);
         }
       }
@@ -247,7 +253,7 @@ server.registerTool(
               {
                 type: 'text' as const,
                 text: JSON.stringify({
-                    error: 'Provide either session_id, or both repo_key and workdir.',
+                  error: 'Provide either session_id, or both repo_key and workdir.',
                 }),
               },
             ],
