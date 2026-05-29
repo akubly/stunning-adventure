@@ -24,6 +24,7 @@ import {
   listActiveSessionsForRepo,
   claimLegacyActiveSession,
 } from '../db/sessions.js';
+import { startSession } from '../agents/archivist.js';
 import { getWorkdir } from '../hooks/gitContext.js';
 import { normalizeWorkdir } from '../utils/workdir.js';
 import { logEvent } from '../db/events.js';
@@ -545,3 +546,45 @@ describe('normalizeWorkdir — path canonicalization', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Area 10: Race regression + UNIQUE constraint (migration 016)
+// ---------------------------------------------------------------------------
+
+describe('startSession race regression — unique active session per (repo_key, workdir)', () => {
+  // startSession slugifies keys that contain '/'. Use an already-slugged key so
+  // the DB lookup key matches what createSession / listActiveSessionsForRepo use.
+  const SLUG_KEY = 'org-worktree-test-repo';
+
+  it('two sequential startSession calls with same (repo_key, workdir) yield one active session', () => {
+    // startSession wraps its find-or-create sequence in an IMMEDIATE transaction.
+    // Two sequential calls with the same (repo_key, workdir) must produce exactly
+    // one active session: the second call resumes rather than creates.
+    const id1 = startSession(SLUG_KEY, 'main', WORKDIR_A);
+    const id2 = startSession(SLUG_KEY, 'main', WORKDIR_A);
+
+    expect(id1).toBe(id2);
+    const actives = listActiveSessionsForRepo(db, SLUG_KEY);
+    expect(actives.filter((s) => s.workdir === WORKDIR_A)).toHaveLength(1);
+  });
+
+  it('UNIQUE index rejects a direct duplicate createSession for the same (repo_key, workdir)', () => {
+    createSession(db, REPO_KEY, 'main', WORKDIR_A);
+    // A second INSERT for the same (repo_key, workdir) while the first is still
+    // active must throw due to the UNIQUE partial index added by migration 016.
+    expect(() => createSession(db, REPO_KEY, 'main', WORKDIR_A)).toThrow();
+  });
+
+  it('completed session allows a new active session for the same (repo_key, workdir)', () => {
+    const id1 = createSession(db, REPO_KEY, 'main', WORKDIR_A);
+    db.prepare("UPDATE sessions SET status = 'completed' WHERE id = ?").run(id1);
+
+    // The UNIQUE partial index only covers status='active', so a new session is
+    // allowed once the previous one is completed.
+    const id2 = createSession(db, REPO_KEY, 'main', WORKDIR_A);
+    expect(id2).not.toBe(id1);
+
+    const actives = listActiveSessionsForRepo(db, REPO_KEY);
+    expect(actives.filter((s) => s.workdir === WORKDIR_A)).toHaveLength(1);
+    expect(actives[0].id).toBe(id2);
+  });
+});

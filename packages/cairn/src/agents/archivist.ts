@@ -22,40 +22,45 @@ export function startSession(repoRemoteOrKey: string, branch?: string, workdir?:
     ? slugifyRepoKey(repoRemoteOrKey)
     : repoRemoteOrKey;
 
-  // Check for an existing active session scoped to (repo_key, workdir)
-  const existing = getActiveSession(db, repoKey, workdir);
-  if (existing) {
-    // Log a session_resume event
-    logEvent(db, existing.id, 'session_resume', {
-      resumedAt: new Date().toISOString(),
-      workdir: workdir ?? null,
-    });
-    return existing.id;
-  }
-
-  // No (repo_key, workdir) session found — try to claim a legacy NULL-workdir
-  // session rather than creating a duplicate row.
-  if (workdir) {
-    const claimed = claimLegacyActiveSession(db, repoKey, workdir);
-    if (claimed) {
-      logEvent(db, claimed.id, 'session_resume', {
+  // Wrap the entire find-or-create sequence in an IMMEDIATE transaction so that
+  // two concurrent startSession calls for the same (repo_key, workdir) cannot
+  // both observe "no active session" and both insert a new row.
+  return db.transaction((): string => {
+    // Check for an existing active session scoped to (repo_key, workdir)
+    const existing = getActiveSession(db, repoKey, workdir);
+    if (existing) {
+      // Log a session_resume event
+      logEvent(db, existing.id, 'session_resume', {
         resumedAt: new Date().toISOString(),
-        workdir,
-        claimedLegacy: true,
+        workdir: workdir ?? null,
       });
-      return claimed.id;
+      return existing.id;
     }
-  }
 
-  // Create a new session
-  const sessionId = createSession(db, repoKey, branch, workdir);
-  logEvent(db, sessionId, 'session_start', {
-    repoKey,
-    branch: branch ?? null,
-    workdir: workdir ?? null,
-    startedAt: new Date().toISOString(),
-  });
-  return sessionId;
+    // No (repo_key, workdir) session found — try to claim a legacy NULL-workdir
+    // session rather than creating a duplicate row.
+    if (workdir) {
+      const claimed = claimLegacyActiveSession(db, repoKey, workdir);
+      if (claimed) {
+        logEvent(db, claimed.id, 'session_resume', {
+          resumedAt: new Date().toISOString(),
+          workdir,
+          claimedLegacy: true,
+        });
+        return claimed.id;
+      }
+    }
+
+    // Create a new session
+    const sessionId = createSession(db, repoKey, branch, workdir);
+    logEvent(db, sessionId, 'session_start', {
+      repoKey,
+      branch: branch ?? null,
+      workdir: workdir ?? null,
+      startedAt: new Date().toISOString(),
+    });
+    return sessionId;
+  }).immediate();
 }
 
 /** End an active session. */

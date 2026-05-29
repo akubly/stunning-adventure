@@ -38,13 +38,13 @@ describe('migration 015 — apply', () => {
     expect(() => getDb(':memory:')).not.toThrow();
   });
 
-  it('schema_version records version 15 as the latest migration', () => {
+  it('schema_version includes version 15', () => {
     // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     db = getDb(':memory:');
-    const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
+    const row = db.prepare('SELECT version FROM schema_version WHERE version = 15').get() as {
       version: number;
-    };
-    expect(row.version).toBe(15);
+    } | undefined;
+    expect(row?.version).toBe(15);
   });
 
   it('migration 015 description is recorded in schema_version', () => {
@@ -158,13 +158,13 @@ describe('migration 015 — idempotence', () => {
     expect(() => applyMigrations(db)).not.toThrow();
   });
 
-  it('schema_version stays at 15 after a second applyMigrations() call', () => {
+  it('schema_version still includes version 15 after a second applyMigrations() call', () => {
     // PROACTIVE: written from issue #11 spec; expects Roger's WI-A implementation.
     db = getDb(':memory:');
     applyMigrations(db);
-    const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
+    const row = db.prepare('SELECT version FROM schema_version WHERE version = 15').get() as {
       version: number;
-    };
-    expect(row.version).toBe(15);
+    } | undefined;
+    expect(row?.version).toBe(15);
   });
 });
