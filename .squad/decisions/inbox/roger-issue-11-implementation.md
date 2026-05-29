@@ -3,7 +3,7 @@
 **Author:** Roger (Platform Dev)  
 **Branch:** `squad/11-worktree-aware-sessions`  
 **Worktree:** `D:\git\stunning-adventure-11`  
-**Status:** Cloud review cycle 4 applied — ready for push
+**Status:** Cloud review cycle 5 applied — ready for push
 
 ---
 
@@ -204,9 +204,30 @@ New test added: orphan within grace window is preserved.
 
 ---
 
-## Cloud Review Cycle 4 Fixes (commit efe756d)
+## Cloud Review Cycle 5 Fixes (commit 469b741)
 
-### I1 — `get_status` silent fallback when workdir normalizes to undefined
+### J1 — Remove unused `randomUUID` import
+
+`worktreeSessions.test.ts` had `import { randomUUID } from 'node:crypto'` left
+over from orphan-cleanup tests removed in cycle-3 H1. Dropped the import;
+ESLint `no-unused-vars` now clean.
+
+### J2 — Tighten `claimLegacyActiveSession` CAS UPDATE predicate
+
+The outer `UPDATE` in the CAS step only guarded `AND workdir IS NULL`, leaving
+a theoretical race where a session that changed status or kind between the
+SELECT and the UPDATE would still have its workdir overwritten.
+
+Added `AND status = 'active' AND session_kind = 'user'` to the outer UPDATE so
+the CAS is self-contained: the guard predicates match exactly the conditions
+used to select the candidate.
+
+Regression test added in Area 7: creates a NULL-workdir session, completes it
+between selection and claim, asserts claim returns `undefined` and the row's
+`status` remains `'completed'` with `workdir` still NULL.
+
+**Status:** Cloud review cycle 5 applied — ready for push
+
 
 When `workdir !== undefined` is passed but `normalizeWorkdir(workdir)` returns
 `undefined` (e.g. `'   '` or `'\t'`), the old code silently fell through to
