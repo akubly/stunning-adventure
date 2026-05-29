@@ -2,7 +2,7 @@
 
 ## Summary
 
-**Total entries:** 4 major consultations spanning Phase 4.5 telemetry + Phase 4.6 change vectors + Round 2 brain system consulting + Round 2 roster proposal
+**Total entries:** 4 major consultations spanning Phase 4.5 telemetry + Phase 4.6 change vectors + Round 2 brain system consulting + Round 2 roster proposal + Eureka M2 integration notes
 
 | Date | Event | Status |
 |------|-------|--------|
@@ -10,14 +10,16 @@
 | 2026-05-01 | Persona Review Fixes (F1-F7) | ✅ Completed |
 | 2026-05-03–2026-05-22 | Brain System Consulting & Architecture Analysis (Round 1–2) | ✅ Completed |
 | 2026-05-22 | Brain Project Roster Proposal (Platform Engineer Core Role) | 🟡 Proposal pending Aaron |
+| 2026-05-28 | Eureka M2 integration (§40 monorepo seams) | ✅ M2 baseline preserved |
 
 **Key themes:**
 - Telemetry aggregation: meanFromMeta() fix, convergence floor, signal component surface
 - Bridge event contracts: EVENT_MAP alignment, COLLECTOR_BRIDGE_EVENTS constant, contract test
 - Brain system: Evolved from "extend Curator" → "new package monorepo" → "new repo with Platform Engineer Phase 1–3 lead"
-- Brain roster: Proposed Platform Engineer (core) role with 60/40 Cairn/Brain split during Phase 1
+- Brain roster: Proposed Platform Engineer (core) role for Brain Phase 1–3 infrastructure
+- Eureka M2: §40 monorepo integration seams hold. tsc --build clean. Cairn/Forge/runtime baselines preserved.
 
-**Recent decision:** Roger proposes Platform Engineer role for Brain Phase 1–3 infrastructure (tiers, properties, representation, acquisition); recommends bringing in specialists for cognitive layers (KINDS, reasoning ACTIVITIES).
+**Recent decision:** Roger proposes Platform Engineer role for Brain Phase 1–3 infrastructure. Eureka M2 validates monorepo substrate is sound (no new coupling risks discovered).
 
 ---
 

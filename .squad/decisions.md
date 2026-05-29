@@ -2,6 +2,37 @@
 
 ## Open Decisions (Current Session)
 
+### 2026-05-28: M2 Decision Drop — recall() GREEN
+
+**Author:** Edgar (Learning Systems Specialist)  
+**Status:** LANDED — GREEN
+
+M2 London-school TDD beat complete. `recall()` is implemented and the AC-1.3 seed test passes.
+
+**Test Result:** `packages/eureka/src/activities/__tests__/recall.test.ts` — 1/1 tests passed
+
+**Baseline preserved:**
+- `tsc --build` exit code 0 ✅
+- Cairn: 26 test files, 609 tests ✅
+- Forge: 24 test files, 644 passed | 3 todo ✅
+- Eureka: 1 test file, 1 test ✅
+- skillsmith-runtime + runtime-cli: all passing ✅
+
+**Implementation (Locked at M2):**
+- File: `packages/eureka/src/activities/recall.ts`
+- Signature: `recall(options: RecallOptions, deps: RecallDeps): Promise<RecallResult[]>`
+- Delegates to injected `factStore.search()` with trust floor (0.15) filtering
+- Returns up to `k` results; composite ranker deferred to M3
+
+**Named M3 Next-Red-Beat:**
+- Activity: `recall()` ordering
+- FR/AC: FR-2 (composite ranker formula)
+- Requires: Ranker collaborator mock, ClockProvider for recency, sorted score validation
+
+**Decision notes:** §30 pseudocode shows `new CuratorStore()` inside recall — violates London-school. Test contract (injected factStore) is authoritative. §30 pseudocode should update when M3 landsranker design.
+
+---
+
 ### 2026-05-28: PR #26 — Copilot Review Doc Alignment (Cycle 1)
 
 **Date:** 2026-05-28  

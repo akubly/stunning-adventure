@@ -4,7 +4,13 @@
 
 **Project:** Eureka — agentic brain/memory/learning system. `packages/eureka/` in monorepo.
 **Role:** Knowledge Representation Specialist. Own graph schema, kind taxonomies, persistence formats.
-**Current status:** Eureka v5-final LOCKED. R8 design cycle CLOSED.
+**Current status:** Eureka v5-final LOCKED. R8 design cycle CLOSED. M2 RED→GREEN: recall() landed, FactStore seams locked.
+
+---
+
+## Recent Team Activity
+
+📌 **2026-05-28: Eureka M2 recall() GREEN landed** — London-school TDD beat complete. FactStore.search() seam locked (injection point, shape: `search(query, sessionId, k) → Promise<RecallResult[]>`). SessionId brand (from @akubly/types) in use. M3 anchor: composite-ranker (FR-2 formula). Crispin: FactStore contract test (fact-store.contract.test.ts) flagged for M2 follow-up (session isolation, trust floor, tier filtering validation). — Scribe
 
 ---
 

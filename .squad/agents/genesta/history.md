@@ -4,7 +4,13 @@
 
 **Project:** Eureka — agentic brain/memory/learning system for `packages/eureka/` in stunning-adventure monorepo.
 **Role:** Lead Eureka + Substrate/Storage specialist. Co-lead with Graham.
-**Current status:** Eureka v5-final LOCKED. R8 design cycle CLOSED.
+**Current status:** Eureka v5-final LOCKED. R8 design cycle CLOSED. M2 RED→GREEN: recall() landed, storage seams locked for v1.
+
+---
+
+## Recent Team Activity
+
+📌 **2026-05-28: Eureka M2 recall() GREEN landed** — London-school TDD beat complete. Storage seam locked (injected FactStore, abstract search interface). No concrete storage impl needed yet (§20 §7.4 contract test flagged). Trust floor (0.15) applied. SessionId brand incorporated. Baseline: Cairn 609, Forge 644+3todo, Eureka 1/1 ✅. M3: composite-ranker (depends on resolved FactStore interface). — Scribe
 
 ---
 

@@ -315,3 +315,55 @@
 
 **Baseline preserved:** Cairn 26/26 ✅, Forge 24/24 ✅, tsc --build ✅.
 
+---
+
+## 2026-05-28: M2 — recall() Driven to GREEN
+
+**Event:** M2 London-school TDD beat — implement minimal `recall()` to make AC-1.3 test GREEN.
+
+**GREEN Status:** recall.test.ts ✅ — 1/1 test passed. Full baseline preserved.
+
+**Baseline verification:**
+- Cairn 26/26 test files, 609 tests ✅
+- Forge 24/24 test files, 644 passed | 3 todo ✅
+- Eureka 1/1 test file, 1 test ✅
+- `tsc --build` clean exit ✅
+
+---
+
+## Learnings
+
+### 2026-05-28: M2 recall() Shape Locked
+
+**Implementation shape (`packages/eureka/src/activities/recall.ts`):**
+
+```
+recall(options: RecallOptions, deps: RecallDeps): Promise<RecallResult[]>
+
+RecallOptions = { query: string; sessionId: SessionId; k: number }
+RecallDeps    = { factStore: FactStore }
+FactStore     = { search(args: { query, sessionId, limit }): Promise<RecallResult[]> }
+RecallResult  = { content: string; trust: number; attention_tier: string; [key: string]: unknown }
+```
+
+- Delegates to injected `factStore.search()` — no concrete store import, no `new` (London-school discipline)
+- Applies trust floor (0.15 per §30 §2.3) as the only filter in M2
+- Returns up to `k` results; all 5 mock facts pass the 0.15 floor so all 5 are returned
+- 4 of 5 mock entries contain 'auth'/'login'/'credential' keywords (note: "OAuth2" contains 'auth' as substring of 'oauth') — satisfies ≥4/5 = ≥80% precision
+
+**§55 interpretation calls made at M2:**
+
+1. **No ranking at M2:** §30 §1.2 specifies the full composite ranker (BM25+importance+trust+recency). The test only asserts on keyword overlap precision — NOT on ordering. London-school discipline: implement only what the current test exercises. Ranker deferred to the M3 red beat.
+
+2. **FactStore.search() args are not asserted:** The test mock does not use `expect(factStore.search).toHaveBeenCalledWith(...)`. Passed `{ query, sessionId, limit: k }` as a reasonable shape matching §20 §7.4, but this is not locked at M2.
+
+3. **accessCount / lastAccessedAt NOT implemented:** §10 §10.1 specifies side effects (increment accessCount, update lastAccessedAt, attention promotion). These require a mutable store or write-side seam that the M2 test does not exercise. Deferred — a future red test will demand this.
+
+**Named M3 next-red-beat:**
+
+The outside-in cascade reveals: the composite ranker (§30 §1.2) is unexercised. The minimal M2 recall passes because the test doesn't assert on ORDER — only on presence of ≥4 relevant entries. The next red beat is:
+
+> **M3: Composite-ranker ordering** — a test asserting that `recall()` returns results sorted by the FR-2 formula (`0.50·relevance + 0.20·importance + 0.20·trust + 0.10·recency × attention_multiplier`), driving the Ranker collaborator into existence (§30 §1.2 canonical source; §55 §2.3 Ranker seam).
+
+This is Edgar's domain. The next collaborator to mock is a `Ranker` or the scoring logic becomes internal to `recall()` — that's the key design decision at M3.
+
