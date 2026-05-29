@@ -544,6 +544,19 @@ describe('normalizeWorkdir — path canonicalization', () => {
   it('preserves Windows drive root with lowercase drive letter', () => {
     expect(normalizeWorkdir('c:\\')).toBe('C:/');
   });
+
+  // Regression: transforms must operate on trimmed input, not raw input (G1 fix)
+  it('trims leading/trailing whitespace before transforming (Unix root)', () => {
+    expect(normalizeWorkdir(' /')).toBe('/');
+  });
+
+  it('trims leading/trailing whitespace before transforming (Windows path)', () => {
+    expect(normalizeWorkdir('  D:/proj  ')).toBe('D:/proj');
+  });
+
+  it('treats tab-only input as empty', () => {
+    expect(normalizeWorkdir('\t')).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

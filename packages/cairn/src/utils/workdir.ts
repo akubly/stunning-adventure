@@ -34,9 +34,11 @@
  *   normalize before storage and use the same function for lookup comparison.
  */
 export function normalizeWorkdir(input: string | undefined | null): string | undefined {
-  if (input == null || !input.trim()) return undefined;
+  if (input == null) return undefined;
+  const trimmed = input.trim();
+  if (!trimmed) return undefined;
   // Backslashes → forward slashes
-  let result = input.replace(/\\/g, '/');
+  let result = trimmed.replace(/\\/g, '/');
   // Uppercase Windows drive letter
   result = result.replace(/^([a-z]):/, (_, d: string) => d.toUpperCase() + ':');
   // Strip trailing slashes
