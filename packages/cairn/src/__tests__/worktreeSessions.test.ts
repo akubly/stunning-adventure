@@ -224,7 +224,7 @@ describe('NULL-workdir backward compatibility', () => {
 
 describe('getWorkdir — git worktree context resolution', () => {
   it('returns a non-empty string inside the current git repo', () => {
-    // Test environment is a git worktree (D:\git\stunning-adventure-11).
+    // Test environment is a git worktree; getWorkdir() should resolve its root.
     const result = getWorkdir();
     expect(typeof result).toBe('string');
     expect((result as string).length).toBeGreaterThan(0);

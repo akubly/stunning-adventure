@@ -765,8 +765,21 @@ server.registerTool(
         if (prescription.status !== 'accepted') {
           updatePrescriptionStatus(db, prescription_id, 'accepted');
         }
+        // Reject invalid workdir early (consistent with get_status / get_session).
+        const nwd = workdir !== undefined ? normalizeWorkdir(workdir) : undefined;
+        if (workdir !== undefined && nwd === undefined) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify({ error: 'workdir is invalid (empty or whitespace).' }),
+              },
+            ],
+            isError: true,
+          };
+        }
         // Prefer repo+workdir-scoped user session; fall back to repo-scoped or global most-recent.
-        const activeSession = getUserSessionForMcpFallback(db, repo_key, normalizeWorkdir(workdir));
+        const activeSession = getUserSessionForMcpFallback(db, repo_key, nwd, 'explicit');
         let applyResult: { success: boolean; error?: string; path?: string };
         try {
           applyResult = applyPrescription(prescription_id, {
