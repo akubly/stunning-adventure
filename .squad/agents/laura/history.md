@@ -1,4 +1,6 @@
-📌 Team update (2026-05-28T23:26:48Z): **Eureka M2 recall() GREEN landed** — London-school TDD beat complete. AC-1.3 seed test (keyword precision ≥80%) passing. §55 canonical seams locked (FactStore.search injection, SessionId brand, RecallResult shape). M3 anchor: composite-ranker (§30 §1.2, FR-2 formula). Baseline: Cairn 609, Forge 644+3todo, Eureka 1/1 ✅. — Scribe
+📌 **2026-05-28: Eureka M3 RED — composite-ranker ordering contract written** — M3 RED test added to recall.test.ts: "ranks results by FR-2 composite formula descending (§30 §1.2)". Fixture design: 4 facts with unambiguous score margins (B=0.960, C=0.620, D=0.440, A=0.168 per §30 §1.2). Seam decision: inline scoring (Option b). Ranker stays pure function; no new Ranker collaborator. Trust floor (0.15) preserved from M2. M3 next owner: Edgar (GREEN). — Scribe
+
+📌 **2026-05-28: Eureka M2 recall() GREEN landed** — London-school TDD beat complete. AC-1.3 seed test (keyword precision ≥80%) passing. §55 canonical seams locked (FactStore.search injection, SessionId brand, RecallResult shape). M3 anchor: composite-ranker (§30 §1.2, FR-2 formula). Baseline: Cairn 609, Forge 644+3todo, Eureka 1/1 ✅. — Scribe
 
 📌 Team update (2026-05-26T22:27:00Z): **Issue #17 async-sweep complete, W5-5 tests integrated** — 0 required fixes (8 areas swept, guards verified, 12 tests added). Laura's async-test plan integrated into W5-5 (4 new tests). All Cairn async-io tests passing. — Scribe
 📌 **Wave 6 integrated onto phase-4.6/wave-6 (2026-05-26)** — #17 async-IO sweep preserved as commit 2b4026a. Integration complete with W5-5 (Rosella) + W5-6 (Roger). MCP stdio transport proven serial, no async conversion needed. Awaiting Aaron's /review-cycle. — Scribe
@@ -116,6 +118,34 @@ Phases 2–4.6 testing wave (2026-04-28 to 2026-05-03):
 Key learnings consolidated into § Core Patterns above.
 
 ## Learnings
+
+## M3 RED — Composite-Ranker Ordering Contract (2026-05-28)
+
+**Assignment:** Write the M3 RED test for FR-2 composite-ranker ordering in `recall()`. London-school outside-in; Edgar owns M3 GREEN.
+
+**Ranker seam decision: Option (b) — inline scoring, real ranker, mocked storage.**
+- Citation: §55 §1.2 ("Allow real collaborators for: Pure functions (rankers, filters, scorers)") + §55 §2.3 Key Lesson #3 ("Real ranker — BM25 and composite scorer use real implementations because algorithm correctness matters more than I/O mocking.")
+- FactStore.search() remains mocked (I/O seam). Composite scoring logic is inline in recall(), not a separate Ranker collaborator.
+
+**Fixture design — unambiguous ordering pattern:**
+- Use `last_accessed = 0` (Unix epoch) to floor recency at 0.1 for ALL facts. t ≈ 20,440 days → recency = max(0.1, 20441^−0.5) = 0.1. Makes ordering purely a function of relevance/importance/trust/attention_tier.
+- All facts clear trust floor (≥ 0.15). Storage order A,B,C,D. FR-2 desired order B>C>D>A.
+- Score margins: B-C=0.340, C-D=0.180, D-A=0.272 — all unambiguous.
+
+**Formula (§30 §1.2 canonical):**
+`finalScore = (0.50·relevance + 0.20·importance + 0.20·trust + 0.10·recency) × attentionMultiplier`
+Multipliers: hot=1.20, warm=1.00, cold=0.80
+
+**§-tension flagged:** Old §50 testability doc (line 211) recorded wrong attention multipliers (hot=1.0, warm=0.5, cold=0.1). §30 §1.2 is the authoritative source (hot=1.20, warm=1.00, cold=0.80). The old values pre-date v5-final; §30 is canonical. Escalated in decision drop.
+
+**RecallResult schema gap:** Current interface lacks explicit `relevance`, `importance`, `last_accessed` fields. `[key: string]: unknown` passes them through for now. Edgar must extend RecallResult in M3 GREEN to make the scoring typesafe.
+
+**RED evidence:**
+- M3 test: FAIL — `expected ["Cold low-relevance fact", ...] to deeply equal ["Hot high-relevance fact", ...]` — ordering failure, not type/import error.
+- M2 test: PASS — keyword precision unaffected.
+- Baseline: Cairn 26/26 (609 tests), Forge 24/24 (644+3 todo), build clean.
+
+**Files touched:** `packages/eureka/src/activities/__tests__/recall.test.ts` (new it-block added to existing describe)
 
 ## Cycle 2 Fix Wave — Field-Level Immutability + Side-Effect Testing (2026-05-28)
 

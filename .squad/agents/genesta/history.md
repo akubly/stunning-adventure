@@ -10,6 +10,8 @@
 
 ## Recent Team Activity
 
+📌 **2026-05-28: Eureka M3 composite-ranker GREEN landed** — Edgar implemented FR-2 formula inline with §30 §1.2 canonical attention multipliers (hot=1.20, warm=1.00, cold=0.80). **SCHEMA TENSION FLAGGED:** §50 testability doc line 211 records stale multipliers (hot=1.0, warm=0.5, cold=0.1; pre-v5 placeholders). **ACTION REQUIRED:** Genesta should correct §50 line 211 to match §30 §1.2 canonical values. Not a bug — spec inconsistency between design docs. — Scribe
+
 📌 **2026-05-28: Eureka M2 recall() GREEN landed** — London-school TDD beat complete. Storage seam locked (injected FactStore, abstract search interface). No concrete storage impl needed yet (§20 §7.4 contract test flagged). Trust floor (0.15) applied. SessionId brand incorporated. Baseline: Cairn 609, Forge 644+3todo, Eureka 1/1 ✅. M3: composite-ranker (depends on resolved FactStore interface). — Scribe
 
 ---

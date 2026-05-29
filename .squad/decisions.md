@@ -2,6 +2,108 @@
 
 ## Open Decisions (Current Session)
 
+### 2026-05-28: Team Norm — London-School TDD Ownership
+
+**Date:** 2026-05-28T23:49:42Z  
+**Origin:** Aaron Kubly (via Scribe, coordinator mandate)  
+**Status:** NORM — durable team discipline
+
+**Rule:** London-school TDD ownership:
+- Tester owns ALL RED beats (failing tests that define contracts)
+- Implementer agents own GREEN beats only (production code to satisfy contracts)
+- Implementer may NAME next RED target but never claim ownership of writing the test
+
+**First instance:** M1 RED (Laura) → M2 GREEN (Edgar) → M3 RED (Laura) → M3 GREEN (Edgar) → M4 TARGET named by Edgar (ClockProvider injection), M4 RED owned by Laura.
+
+**Enforcement:** Git history verification, `.squad/agents/*/history.md` records ownership, Scribe calls out violations in orchestration logs.
+
+---
+
+### 2026-05-28: M3 RED — Composite-Ranker Ordering Contract
+
+**Author:** Laura (Tester)  
+**Date:** 2026-05-28  
+**Status:** LANDED — RED  
+**Next owner:** Edgar (M3 GREEN)
+
+New test added to `packages/eureka/src/activities/__tests__/recall.test.ts`:
+```
+✓ recall > surfaces keyword-overlapping entries at ≥80% precision  (M2 — still green)
+✗ recall > ranks results by FR-2 composite formula descending (§30 §1.2)  (M3 — RED)
+```
+
+**Failure:** AssertionError ordering (storage order returned instead of FR-2 descending order). No type/import/config errors.
+
+**Ranker seam decision:** Option (b) — Inline Scoring. Drive composite scoring inline in `recall()`. No new Ranker collaborator. (§55 §1.2, §55 §2.3 Key Lesson #3)
+
+**Fixture design (FR-2 formula: rawScore = 0.50·relevance + 0.20·importance + 0.20·trust + 0.10·recency; finalScore = rawScore × attention_multiplier; multipliers: hot=1.20, warm=1.00, cold=0.80; recency = max(0.1, (1+t)^-0.5), t=days since last_accessed):**
+
+| Fact | relevance | importance | trust | tier | finalScore |
+|------|-----------|-----------|-------|------|-----------|
+| A (Cold low-relevance)      | 0.2 | 0.2 | 0.3 | cold | 0.168 |
+| B (Hot high-relevance)      | 0.9 | 0.8 | 0.9 | hot  | 0.960 |
+| C (Warm medium-high)        | 0.7 | 0.6 | 0.7 | warm | 0.620 |
+| D (Warm medium)             | 0.5 | 0.4 | 0.5 | warm | 0.440 |
+
+Score margins unambiguous: B−C=0.340, C−D=0.180, D−A=0.272.
+
+**What Edgar implements (M3 GREEN):**
+1. Extend `RecallResult` with explicit fields: relevance, importance, last_accessed
+2. Add composite scoring per §30 §1.2 formula (inline in recall())
+3. Do NOT change trust floor (0.15) — M2 locked
+4. Do NOT change call signature — M2 locked
+
+**§-Tension (escalate to Aaron/Cassima):** §50 testability doc line 211 records `hot=1.0, warm=0.5, cold=0.1` (pre-v5 placeholders). Implementation must use §30 §1.2 canonical values (`hot=1.20, warm=1.00, cold=0.80`). §50 needs correction.
+
+**Baseline:** tsc --build clean, Cairn 609 tests, Forge 644+3, Eureka 1 pass + 1 fail (correct).
+
+---
+
+### 2026-05-28: M3 GREEN — Composite-Ranker Ordering: Landing Record
+
+**Author:** Edgar (Learning Systems Specialist)  
+**Date:** 2026-05-28  
+**Status:** LANDED — GREEN  
+**Next owner:** Laura owns M4 RED
+
+Both tests passed after implementing FR-2 composite scoring inline in `recall()`.
+
+**Baseline preserved:** Cairn 609, Forge 644+3, Eureka 2/2 ✅, tsc --build clean ✅
+
+**Implementation shape (File: `packages/eureka/src/activities/recall.ts`):**
+
+RecallResult extension: Added optional typed fields `relevance`, `importance`, `last_accessed` (preserve backward compat with M2 mocks).
+
+Inline composite scorer (pure helper): 
+```
+rawScore = 0.50·relevance + 0.20·importance + 0.20·trust + 0.10·recency
+recency = max(0.1, (1+t)^-0.5) where t=days
+multiplier = ATTENTION_MULTIPLIERS[fact.tier]
+finalScore = rawScore × multiplier
+```
+
+Attention multipliers (§30 §1.2 canonical): hot=1.20, warm=1.00, cold=0.80
+
+Pipeline: candidates → filter(trust≥0.15) → score → sort(desc) → slice(k) → return
+
+Date.now() captured at entry; ready for ClockProvider injection M4.
+
+**Ranker seam:** Option (b) confirmed — inline pure function, no new Ranker collaborator (per §55 §2.3).
+
+**Recency derivation lock:** `last_accessed` is milliseconds (EPOCH_MS unit). Formula: `tDays = (nowMs - last_accessed) / 86_400_000`. All future tests must use millisecond unit.
+
+**§-Tensions:**
+
+1. **Tension 1 (Laura-flagged, confirmed):** §50 line 211 stale (pre-v5 values). §30 §1.2 is canonical. Crispin/Genesta should correct §50. Not Edgar's file.
+
+2. **Tension 2 (new):** §30 §1.2 pseudocode references `CuratorStore.retrieve(sessionId, query)` but impl uses `FactStore.search()`. Equivalent seams; `FactStore` is current concrete interface. Future refactor may rename for alignment (deliberate rename, not bug fix).
+
+**Named M4 TARGET:** recall (recency-sensitive ranking). Collaborator seam: `ClockProvider` (injectable `nowMs()` function per §30 §2.4). Assertion: fact with `last_accessed=yesterday` must outrank identical fact with `last_accessed=30 days ago`. Laura owns M4 RED.
+
+**Post-work:** recall.ts composite scoring ✅, edgar/history.md appended ✅, london-school-green-beat/SKILL.md refined ✅
+
+---
+
 ### 2026-05-28: M2 Decision Drop — recall() GREEN
 
 **Author:** Edgar (Learning Systems Specialist)  

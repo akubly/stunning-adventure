@@ -367,3 +367,63 @@ The outside-in cascade reveals: the composite ranker (§30 §1.2) is unexercised
 
 This is Edgar's domain. The next collaborator to mock is a `Ranker` or the scoring logic becomes internal to `recall()` — that's the key design decision at M3.
 
+---
+
+## 2026-05-28: M3 — Composite-Ranker Ordering Driven to GREEN
+
+**Event:** M3 London-school TDD beat — implement FR-2 composite scoring in `recall()` to make the ranking-order test GREEN.
+
+**GREEN Status:** recall.test.ts ✅ — 2/2 tests passed. Full baseline preserved.
+
+**Baseline verification:**
+- Cairn 26/26 test files, 609 tests ✅
+- Forge 24/24 test files, 644 passed | 3 todo ✅
+- Eureka 1/1 test file, 2 tests ✅
+- `tsc --build` clean exit ✅
+
+---
+
+## Learnings
+
+### 2026-05-28: M3 Composite-Ranker Shape Locked
+
+**Implementation shape (`packages/eureka/src/activities/recall.ts`):**
+
+Extended `RecallResult` with optional typed fields:
+```
+RecallResult = {
+  content: string; trust: number; attention_tier: string;
+  relevance?: number; importance?: number; last_accessed?: number;
+  [key: string]: unknown;
+}
+```
+
+Extracted `compositeScore(fact, nowMs)` as a pure inline helper:
+```
+compositeScore(fact, nowMs):
+  tDays   = (nowMs - fact.last_accessed) / 86_400_000   // ms → days
+  recency = max(0.1, (1 + tDays)^−0.5)                 // ACT-R power-law, floor 0.1
+  raw     = 0.50·relevance + 0.20·importance + 0.20·trust + 0.10·recency
+  return  raw × ATTENTION_MULTIPLIERS[attention_tier]   // hot=1.20 / warm=1.00 / cold=0.80
+```
+
+`recall()` pipeline: filter trust≥0.15 → map to (fact, score) → sort descending → slice(k) → map to fact.
+
+**Attention multiplier source-of-truth:** §30 §1.2 (hot=1.20, warm=1.00, cold=0.80). §50 line 211 contains stale values (hot=1.0/warm=0.5/cold=0.1) — flagged in decision drop for Crispin/Genesta cleanup; implementation uses §30.
+
+**Recency derivation lock:**
+- `last_accessed` is Unix epoch **milliseconds** (test fixture sets `EPOCH_MS = 0`)
+- `tDays = (Date.now() - last_accessed) / 86_400_000`
+- With `last_accessed = 0` in 2026 (~20,000+ days elapsed), `(1+tDays)^-0.5 ≈ 0.007` → floor = 0.1 for all four fixture facts
+- All fixture scores depend only on relevance/importance/trust/tier — deterministic ordering
+
+**Optional-field safety:** `relevance` and `importance` default to 0 when missing (M2 mock doesn't provide them). `last_accessed` defaults to `tDays = 0` (treat as now, recency = 1.0) when not a number. M2 test passes because ordering doesn't matter for its assertion.
+
+**Named M4 next-red-beat (TARGET — Laura owns RED):**
+
+The cascade next demands: recency that **changes over time** rather than a static floor. Currently all tests pin `last_accessed = 0` (ancient facts, floor = 0.1). A real clock dependency is needed to verify that recently-accessed facts outrank older ones. The seam is `ClockProvider` (§30 §2.4 "Time Injection for Testability"). The test would inject a deterministic `ClockProvider` returning a controlled `nowMs`, and assert that a fact accessed 1 day ago outranks an identical fact accessed 30 days ago.
+
+> **M4 TARGET: ClockProvider injection for recency decay** (§30 §2.4; seam documented, not yet mocked in any test).
+
+Laura owns M4 RED.
+

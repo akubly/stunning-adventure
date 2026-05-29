@@ -10,6 +10,8 @@
 
 ## Recent Team Activity
 
+📌 **2026-05-28: Eureka M3 composite-ranker GREEN landed** — Edgar implemented FR-2 formula inline: rawScore = 0.50·relevance + 0.20·importance + 0.20·trust + 0.10·recency; finalScore = rawScore × attention_multiplier (hot=1.20, warm=1.00, cold=0.80). **SCHEMA TENSION FLAGGED:** §50 testability doc line 211 records stale multipliers (hot=1.0, warm=0.5, cold=0.1; pre-v5 placeholders). §30 §1.2 canonical is authoritative. **ACTION REQUIRED:** Crispin should correct §50 line 211 to match §30 §1.2 values. Not a bug — spec inconsistency. — Scribe
+
 📌 **2026-05-28: Eureka M2 recall() GREEN landed** — London-school TDD beat complete. FactStore.search() seam locked (injection point, shape: `search(query, sessionId, k) → Promise<RecallResult[]>`). SessionId brand (from @akubly/types) in use. M3 anchor: composite-ranker (FR-2 formula). Crispin: FactStore contract test (fact-store.contract.test.ts) flagged for M2 follow-up (session isolation, trust floor, tier filtering validation). — Scribe
 
 ---
