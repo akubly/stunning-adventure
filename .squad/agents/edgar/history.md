@@ -300,3 +300,18 @@
 
 **Status:** ✅ CYCLE 3 COMPLETE — zombie-fact semantics closed.
 
+
+---
+
+## 2026-05-28: Eureka M1 First Red Test — London-School TDD Kickoff
+
+**Event:** Laura (Tester) delivered M1 first red test per §55 London-school outside-in TDD.
+
+**RED Status:** AC-1.3 (keyword-scoped recall ≥80% precision) locked as seed. FactStore.search() mock seam established.
+
+**Impact for Edgar:** recall() activity signature finalized with DI parameter. M2 cascade: implement recall.ts delegating to factStore.search(), add side-effects (accessCount, lastAccessedAt) per §55 §2.6.
+
+**Package scaffold:** @akubly/eureka created. SessionId branded type added to @akubly/types. Root tsconfig.json updated with eureka project reference.
+
+**Baseline preserved:** Cairn 26/26 ✅, Forge 24/24 ✅, tsc --build ✅.
+

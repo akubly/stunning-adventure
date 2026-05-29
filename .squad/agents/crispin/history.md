@@ -331,3 +331,17 @@ Using `updated_at` for recency computation conflates **modification time** with 
 **Deliverable:** Single-line fix in `docs/eureka/sections/20-knowledge-representation.md` (line 180).
 
 ---
+---
+
+## 2026-05-28: Eureka M1 First Red Test — Knowledge Graph Schema Cascade Entry
+
+**Event:** Laura (Tester) delivered M1 first red test per §55 London-school TDD. FactStore.search() seam locked.
+
+**RED Status:** AC-1.3 seed test established. Mock contracts finalized: FactStore.search() returns { content: string; trust: number; attention_tier: string } array.
+
+**Impact for Crispin:** M2 cascade: formalize FactStore interface per §20 §7.4. Add contract test validating session isolation, trust floor filtering, tier filtering, BM25 normalization. This test locks the persistence layer contract that your graph schema will depend on.
+
+**SessionId context:** Branded type now available in @akubly/types (added in M1 scaffold). Use for cross-package coordination.
+
+**Baseline preserved:** Cairn 26/26 ✅, Forge 24/24 ✅, tsc --build ✅.
+

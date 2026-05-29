@@ -591,3 +591,34 @@ Key learnings consolidated into § Core Patterns above.
 - When mocking `fs.statSync` for guard boundary tests, chain `mockImplementationOnce` calls to simulate the sequence: directory stat (throws ENOENT), size stat (returns fake Stats). Order matters.
 - Export internal helpers from the module under test rather than testing through opaque transport. `resolveAndReadSkill` export was the minimal code change that enabled full guard coverage.
 - W5-5 pattern for new MCP handlers: test CairnEvent write failure (fail-open), sequential invocation safety, and structural no-inline-fs assertion as a tripwire.
+
+
+## Learnings
+
+### M1 — Eureka First Red Test (2026-05-28)
+
+**AC chosen:** AC-1.3 — "Keyword-scoped recall at >=80% precision" (§55 §5, §00 §0.5)
+
+**Rationale:** §55 §2 provides a complete worked example for ecall with AC-1.3 as the seed criterion — it is the canonical first test per the TDD spine itself. ecall is the highest-value observable activity (agents call it first to surface prior knowledge; §10 §10.1); testing it first drives FactStore seam discovery and anchors the entire outside-in cascade. AC-1.3 is non-trivial enough to force real collaborator injection (factStore must return keyword-matching content) while remaining a single focused assertion.
+
+**Seam locked:** FactStore.search() (§20 §7.4) — structural inline mock ({ search: vi.fn() }). The FactStore interface will be formalised in M2 when Edgar/Crispin descend into the storage layer.
+
+**§55 interpretation calls:**
+- §55 §2.1 shows recall({ query, sessionId, k }) with no second argument; §55 §2.5 and the task brief both prescribe dependency injection. Resolved: added { factStore } as second argument to recall(). This is the correct London-school form and drives a cleaner GREEN phase.
+- SessionId branded type was missing from @akubly/types; §20 §8.3 places it there. Added as prerequisite so the import resolves and the test fails for the right reason (missing implementation, not missing type).
+- Created packages/eureka/src/index.ts (empty export {};) to satisfy tsc --build "no inputs" requirement — infrastructure, not production logic.
+
+**RED failure (verbatim):**
+  Error: Cannot find module '../recall.js' imported from
+    'D:/git/mem/packages/eureka/src/activities/__tests__/recall.test.ts'
+
+**Baseline preserved:** Cairn 26/26 + Forge 24/24 + root tsc --build all green.
+
+**Files created/modified:**
+- packages/types/src/index.ts (added SessionId brand type)
+- packages/eureka/package.json (new)
+- packages/eureka/tsconfig.json (new)
+- packages/eureka/vitest.config.ts (new)
+- packages/eureka/src/index.ts (new — minimal scaffold)
+- packages/eureka/src/activities/__tests__/recall.test.ts (new — first red test)
+- tsconfig.json (root) — added eureka project reference

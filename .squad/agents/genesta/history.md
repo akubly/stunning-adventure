@@ -282,3 +282,18 @@
 
 **Architectural Principle:** When a design document describes future behavior (v1.5 fan-out) alongside present behavior (v1 agent-only), the v1 section must be **implementation-unambiguous**: "no fan-out logic is executed" is clearer than "user/project tiers return `[]`" because the former says "don't build this", the latter says "build this stub". The Skeptic finding was correct: describing v1 via v1.5 stubs risks building unnecessary surface. Fix: describe each version's behavior positively (what it does), not negatively (what it doesn't do).
 
+
+---
+
+## 2026-05-28: Eureka M1 First Red Test — Substrate/Storage Cascade Entry
+
+**Event:** Laura (Tester) delivered M1 first red test per §55 London-school TDD. FactStore.search() seam locked.
+
+**RED Status:** AC-1.3 seed test established. Mock contracts finalized for persistence layer. Package scaffold complete. SessionId branded type available in @akubly/types.
+
+**Impact for Genesta:** M2 cascade: coordinate with Crispin (FactStore interface finalization, contract test). Your substrate integration (§40) will depend on FactStore contract lock. M0 monorepo merge (5-day sprint per your timeline) critical path for M1→M2 transition.
+
+**Load-bearing:** Integration seam (§40 owner per your notes) = Roger's responsibility. Coordinate cross-package import guards early in M2 (ESLint enforcement, build-time lint).
+
+**Baseline preserved:** Cairn 26/26 ✅, Forge 24/24 ✅, tsc --build ✅.
+

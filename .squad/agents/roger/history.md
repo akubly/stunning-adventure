@@ -697,3 +697,18 @@ SQLite + FTS5 is enough for v1. Graph DB / LMDB / vector store deferred until v1
 
 
 
+
+---
+
+## 2026-05-28: Eureka M1 First Red Test — Integration Cascade Entry
+
+**Event:** Laura (Tester) delivered M1 first red test per §55 London-school TDD. @akubly/eureka package created. SessionId branded type in @akubly/types.
+
+**RED Status:** AC-1.3 seed test established. FactStore.search() mock seam locked. tsconfig.json updated with eureka project reference.
+
+**Impact for Roger:** M0 monorepo merge (5-day sprint + 4-hour spike first per your timeline) critical path for M1→M2 transition. Cross-package import guards (ESLint enforcement) now accepted in M1 criteria. Dep-direction lint must be ready before M2 implementations begin.
+
+**Key integration points ready:** SessionId branded primitive in @akubly/types (shared across Cairn/Eureka per R8 amendment). Integration seam (§40) dependencies crystal clear from M1 test seam.
+
+**Baseline preserved:** Cairn 26/26 ✅, Forge 24/24 ✅, tsc --build ✅.
+

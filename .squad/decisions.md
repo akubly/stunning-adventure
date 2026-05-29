@@ -3033,3 +3033,513 @@ Implemented as a defensive `try/catch` around `json_extract(payload, '$.skillId'
 - `packages/runtime-cli/src/__tests__/forgeMetrics.test.ts` (13 tests)
 - `packages/runtime-cli/package.json` (added `forge-metrics` bin entry)
 
+
+---
+# PR #26 Cycle 2 Doc Alignment — Inbox References Replaced, DecisionRecord Disambiguated
+
+# PR #26 Cycle 2 Doc Alignment — Inbox References Replaced, DecisionRecord Disambiguated
+
+**Date:** 2026-05-28  
+**Agent:** Cassima (PM, Eureka)  
+**Context:** Cycle 2 sweep on PR #26 (cloud-review-cycle). Copilot automated review flagged 18 additional doc issues after cycle 1 merge. Scribe merged inbox files into `.squad/decisions.md` first, providing stable citation anchors.
+
+---
+
+## Summary
+
+Addressed 18 documentation threads across 3 rule categories:
+
+- **Rule R1 (No Gitignored Citations):** Replaced 15 broken inbox links with merged `.squad/decisions.md` citations
+- **Rule R2 (DecisionRecord Disambiguation):** Fixed TS type vs Squad dotfile conflation in `20-knowledge-representation.md`
+- **Rule R3 (No Machine Paths):** Scrubbed `D:\git\...` paths from ADR-0002 and `40-integration.md`
+
+---
+
+## Changes Landed
+
+### Group A — Inbox Citation Cleanup (15 threads)
+
+All replaced gitignored `.squad/decisions/inbox/` links with stable committed references:
+
+1. **`docs/eureka/sections/00-overview.md:425`** — Crucible Impact Analysis  
+   → `.squad/decisions.md` § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27)
+
+2. **`docs/eureka/sections/10-activities-and-tiers.md:470`** — G4 governance rule source  
+   → Same as #1
+
+3. **`docs/eureka/sections/20-knowledge-representation.md:563`** — References section  
+   → § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27) + § "Eureka PRD v5-final LOCKED — R8 4-Reviewer Lock-In Panel (Session Identity Unification)" (2026-05-26)
+
+4. **`docs/eureka/sections/30-learning-systems.md:986`** — References section  
+   → § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27)
+
+5. **`docs/eureka/sections/40-integration.md:648`** — DI seam audit citation  
+   → Removed inbox link; noted "DI seam audit for v1.5 is planned but not yet documented in committed decisions"
+
+6. **`docs/eureka/sections/40-integration.md:752`** — Kernel coupling blockers  
+   → Removed inbox link; noted "Document coupling points in new Squad decision entry if encountered during v1 extraction"
+
+7. **`docs/eureka/sections/40-integration.md:893`** — Crucible boundary  
+   → § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27) + scrubbed `D:\git\harness` machine path
+
+8. **`docs/eureka/sections/60-ux-human-factors.md:283`** — DecisionPayload vs DecisionRecord  
+   → Same as #7
+
+9. **`docs/eureka/sections/60-ux-human-factors.md:356`** — Appendix A cross-reference  
+   → Same as #7
+
+10. **`.squad/handoffs/2026-05-27-london-tdd-kickoff.md:21`** — London-TDD directive  
+    → § "Eureka v0.1 Technical Design — Assembled & Blocked on 4 Critical Decisions" (2026-05-27)
+
+11. **`.squad/skills/doc-references-respect-gitignore/SKILL.md:139`** — **SELF-VIOLATION FIX**  
+    → Skill's own "Learning Source" section cited inbox path while codifying the rule against it. Replaced with § "PR #26 — Copilot Review Doc Alignment (Cycle 1)" (2026-05-28)
+
+12. **`.squad/decisions.md:195`** — DecisionRecord disambiguation directive  
+    → Added usage example ("write 'Forge DecisionRecord' or 'Squad decision dotfile'")
+
+13. **`.squad/decisions/eureka-prd-v5-final.md:434`** — FR-13 session-identity narrative  
+    → § "Eureka PRD v5-final LOCKED" (2026-05-26)
+
+14. **`.squad/decisions/eureka-prd-v5-final.md:848`** — Decision-log pointers table  
+    → Collapsed multiple inbox artifact rows into single reference to § "Eureka PRD v5-final LOCKED" (2026-05-26)
+
+15. **`.squad/decisions/eureka-prd-v5-final.md:861`** — SessionId R8 panel verdicts row  
+    → Same as #14 (5 inbox verdict files → 1 decisions.md entry)
+
+**Stable anchors used:**
+- § "PR #26 — Copilot Review Doc Alignment (Cycle 1)" (2026-05-28)
+- § "DecisionRecord Naming Disambiguation" (2026-05-28)
+- § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27)
+- § "Narrower Substrate Freeze Proposal" (2026-05-27)
+- § "Eureka v0.1 Technical Design — Assembled & Blocked on 4 Critical Decisions" (2026-05-27)
+- § "Eureka PRD v5-final LOCKED — R8 4-Reviewer Lock-In Panel (Session Identity Unification)" (2026-05-26)
+
+---
+
+### Group B — Content Corrections (3 threads)
+
+1. **`docs/eureka/sections/20-knowledge-representation.md:449`** — DecisionRecord naming collision (Rule R2)  
+   **Problem:** Forge `DecisionRecord` described as "materialized markdown file under `.squad/decisions/inbox/*.md`" — conflates TS interface with Squad workflow artifacts.  
+   **Fix:** Clarified Forge DecisionRecord = "Runtime TypeScript interface in `@akubly/types` representing audited decision metadata." Added note distinguishing Squad decision dotfiles (markdown memos) from Forge DecisionRecord (TS type). Matches Aaron's directive (2026-05-28): use "Forge DecisionRecord" for TS type, "Squad decision dotfile" for workflow artifacts.
+
+2. **`docs/eureka/sections/30-learning-systems.md:967`** — Stale date  
+   **Problem:** Date `2025-01-24` is pre-Eureka v0.1 design (project in 2026-05).  
+   **Fix:** Updated to `2026-05-27` (Eureka v0.1 Technical Design date). Added note: "Last updated: 2026-05-27 (Eureka v0.1 Technical Design)."
+
+3. **`docs/eureka/technical-design.md:66`** — OQ-5 framed as contingency  
+   **Problem:** OQ-5 framed as "if OQ-1 NOT resolved" — OQ-1 IS resolved (ADR-0002 accepted 2026-05-27).  
+   **Fix:** Marked OQ-5 **CLOSED/MOOT** with note: "OQ-1 resolved via ADR-0002 (monorepo accepted 2026-05-27); OQ-5 contingency no longer applicable." No residual question remains.
+
+---
+
+### Group C — Machine Path Cleanup (1 thread, Rule R3)
+
+1. **`docs/eureka/adrs/0002-shared-substrate-ownership.md:63`** — Option B submodule example  
+   **Problem:** Used machine-specific paths: `D:\git\akubly-substrate\`, `D:\git\mem\`, `D:\git\harness\`.  
+   **Fix:** Replaced with generic placeholders: `<substrate-repo>/`, `<mem-repo>/`, `<harness-repo>/`. Reads cleanly as illustrative without tying to Aaron's local machine.
+
+---
+
+### Group D — Deferred (Not Touched)
+
+1. **`.squad/orchestration-log/2026-05-27T08-13-25Z-valanice-ux-section.md:1`** — Aaron's call: keep as historical archive. Scribe owns lifecycle. Coordinator will reply on thread and resolve.
+2. **`.squad/log/2026-05-27T08-13-25Z-eureka-tech-design-v01.md:1`** — Same as #1.
+
+**Rationale:** Aaron's strategy: gitignored logs are historical archive, not live docs. No citation cleanup needed.
+
+---
+
+## SKILL.md Enhancement
+
+**`.squad/skills/doc-references-respect-gitignore/SKILL.md`** — Added "Pitfalls" section:
+
+> **Writing examples in skill docs:**  
+> If you write examples in this skill that illustrate the rule, **lint those examples against the rule itself**. Examples that violate the rule undermine credibility. For instance, if this skill's "Learning Source" or "Deliverable" section cites an inbox path, that's a self-violation.
+
+**Context:** The skill's own "Learning Source" section cited `.squad/decisions/inbox/cassima-pr26-copilot-doc-alignment.md` while codifying the rule against inbox citations. Fixed in this sweep by pointing to merged decisions.md entry. Added pitfall warning to prevent recurrence.
+
+---
+
+## Decisions.md Enhancement
+
+**`.squad/decisions.md:195`** — DecisionRecord Naming Disambiguation directive  
+Added usage example after "Why" paragraph:
+
+> **Usage example:** When discussing the Forge runtime audit interface, write "Forge DecisionRecord." When discussing Squad markdown memos, write "Squad decision dotfile" or "Squad decision memo."
+
+**Rationale:** Directive was clear on WHAT to do but lacked HOW example. One-sentence add makes it actionable.
+
+---
+
+## What Worked
+
+1. **Scribe-first dependency strategy:** All stable anchors (`§ "Crucible ↔ Eureka Cross-Project Overlap"`, etc.) available before I started — no blind references.
+2. **Batch efficiency:** 15 similar edits (Group A) done in one pass via grep → decisions.md heading search → surgical replace.
+3. **Rule R2 caught real bug:** DecisionRecord conflation was conceptually wrong, not just a citation fix. The doc said Forge's TS interface = "markdown files" which is incorrect.
+4. **OQ-5 rewrite was clean:** ADR-0002 acceptance made OQ-5 moot. Simple CLOSED/MOOT marker + one-line note.
+
+---
+
+## What I Learned
+
+1. **Skills that codify rules should warn about self-violations.** Meta-level discipline — if you write a rule, your examples must honor it. Added "Pitfalls" section to SKILL.md to codify this.
+2. **Large-scale citation cleanup = grep + heading search.** 15 threads = 15 topic searches in decisions.md. Grep was faster than manual scan for patterns like "SessionId," "Crucible," "Substrate."
+3. **Machine paths are visually subtle.** Only 2 threads (C1 + A7) but easy to miss in long file paths. Used grep for `D:\\git\\` to catch stragglers.
+4. **DecisionRecord disambiguation is load-bearing.** The naming collision isn't cosmetic — Forge's TS interface vs Squad's markdown memos are different artifact types. Conflating them in docs creates reader confusion about "where does decision data live?"
+
+---
+
+## Files Changed
+
+### Committed docs (`docs/eureka/`)
+- `sections/00-overview.md` — 1 inbox ref → decisions.md citation
+- `sections/10-activities-and-tiers.md` — 1 inbox ref → decisions.md citation
+- `sections/20-knowledge-representation.md` — 2 edits (inbox ref + DecisionRecord disambiguation)
+- `sections/30-learning-systems.md` — 2 edits (inbox ref + stale date update)
+- `sections/40-integration.md` — 3 edits (2 inbox refs + machine path scrub)
+- `sections/60-ux-human-factors.md` — 2 edits (2 inbox refs)
+- `technical-design.md` — 1 edit (OQ-5 rewrite)
+- `adrs/0002-shared-substrate-ownership.md` — 2 edits (machine path scrub in Option B)
+
+### Squad dotfiles
+- `.squad/handoffs/2026-05-27-london-tdd-kickoff.md` — 1 inbox ref → decisions.md citation
+- `.squad/skills/doc-references-respect-gitignore/SKILL.md` — 2 edits (self-violation fix + pitfall warning)
+- `.squad/decisions.md` — 1 edit (added usage example for DecisionRecord directive)
+- `.squad/decisions/eureka-prd-v5-final.md` — 2 edits (collapsed 2 inbox-heavy table rows)
+
+**Total:** 12 files, 18 edits (15 Group A, 3 Group B, 2 Group C overlapping with A).
+
+---
+
+## Next Steps for Coordinator
+
+1. **Verify all threads addressed.** Group A/B/C should be green. Group D (orchestration-log, log files) need coordinator reply.
+2. **Confirm SKILL.md pitfall addition.** Meta-rule: "Examples must honor the rule" is useful for all skills, not just this one.
+3. **Close cycle 2.** If no new threads flagged, ready for merge.
+
+---
+
+## Rationale for Key Decisions
+
+### Why "Forge DecisionRecord" vs "Squad decision dotfile"?
+- **Forge DecisionRecord:** Runtime TS interface in `@akubly/types` representing audited decision metadata (e.g., `{ decision_id, timestamp, question, chosen, rationale }`).
+- **Squad decision dotfile:** Markdown workflow artifact under `.squad/decisions/` (e.g., `cassima-crucible-eureka-impact.md`, `graham-r8-session-identity.md`).
+- These are different artifact types. Calling them both "DecisionRecord" conflates runtime data structures with team memo files.
+
+### Why mark OQ-5 CLOSED/MOOT instead of rewriting?
+- OQ-5 was framed as "what if OQ-1 fails?" contingency. OQ-1 didn't fail — it's resolved (ADR-0002).
+- No residual question survives. Rewriting would invent a new question that wasn't in the original OQ-5.
+- CLOSED/MOOT + one-line note is honest: "This question is no longer relevant."
+
+### Why generic placeholders `<substrate-repo>/` instead of example paths like `~/repos/akubly-substrate/`?
+- Aaron's rule R3: "No machine-specific absolute paths in committed docs."
+- `D:\git\mem\` is Aaron's local path. `~/repos/mem/` is Unix convention. `<mem-repo>/` is platform-neutral.
+- ADR-0002 Option B is illustrative (not chosen). Generic placeholders keep it abstract.
+
+---
+
+## Delivery
+
+- **History entry:** `.squad/agents/cassima/history.md` § "PR #26 Cycle 2 Doc Alignment" (appended)
+- **Drop file:** `.squad/decisions/inbox/cassima-pr26-cycle2-doc-alignment.md` (this file)
+- **SKILL.md enhancement:** Pitfalls section added
+
+**Status:** All Group A/B/C threads addressed. Group D deferred per plan. Ready for coordinator review.
+
+---
+# PR #26 Cycle 3 Residual Sweep — 7 Issues Addressed
+
+# PR #26 Cycle 3 Residual Sweep — 7 Issues Addressed
+
+**Date:** 2026-05-28  
+**Author:** Cassima (PM — Eureka)  
+**Context:** Cycle 3 of cloud-review-cycle on PR #26 (maxCycles ceiling)  
+**Status:** ✅ All 7 threads addressed
+
+---
+
+## Summary
+
+Copilot's review of commit `aa9cdae` surfaced 7 residual issues — 3 fresh content findings, 4 places where cycles 1+2 missed the same failure patterns:
+
+1. **T1 — Stale date header** in §10-activities-and-tiers.md (2025-01-21 → 2026-05-27)
+2. **T2 — Spec inconsistency** in §10 line 44: `integrate()` default `cold` contradicts PRD/§00 (canonical: `warm`)
+3. **T3 — Stale status header** in technical-design.md (still said "awaiting blockers" despite OQ-1 resolved)
+4. **T4 — Missed Timeline row** in ADR-0002 (pnpm/turborepo → npm/tsc --build)
+5. **T5 — SKILL.md self-violation** in line 56 examples (used real inbox paths instead of placeholders)
+6. **T6 — Orchestration log citation** in valanice log (inbox reference → merged .squad/decisions.md anchor)
+7. **T7 — Graham history citations** (3 inbox refs → merged anchors)
+
+---
+
+## Changes Landed
+
+### T1: Date Header Alignment
+**File:** `docs/eureka/sections/10-activities-and-tiers.md` line 3  
+**Change:** `Last Updated: 2025-01-21` → `Last Updated: 2026-05-27`  
+**Rationale:** Matches Eureka v0.1 design date (2026-05-27) used throughout design package.
+
+---
+
+### T2: Attention-Default Spec Correction
+**File:** `docs/eureka/sections/10-activities-and-tiers.md` line 44  
+**Change:** `(default: cold)` → `(default: warm)`  
+**Rationale:** PRD line ~663 and §00-overview line ~229 both say **default warm**. §10 was stale. Verified no other §10 text contradicts the new default (grep found no other `cold` default references).
+
+---
+
+### T3: Design Status Header Update
+**File:** `docs/eureka/technical-design.md` line 3  
+**Before:** `Status: ✅ Sections drafted — awaiting Aaron's decisions on blockers`  
+**After:** `Status: ✅ Locked — v0.1 assembled (§00–§70, 3 ADRs); OQ-1 resolved via ADR-0002; remaining open decisions (OQ-2, OQ-3, OQ-4) tracked in §00 ADR index`  
+**Rationale:** OQ-1 resolved (ADR-0002 Accepted), OQ-5 CLOSED/MOOT (cycle 2 fix), body Executive Summary already reflects this. Header now matches body.
+
+---
+
+### T4: ADR-0002 Timeline Toolchain Correction
+**File:** `docs/eureka/adrs/0002-shared-substrate-ownership.md` line 176  
+**Before:** `Monorepo scaffolding: pnpm workspace, turborepo, unified tsconfig`  
+**After:** `Monorepo scaffolding: npm workspace config (already present), unified tsconfig with tsc --build`  
+**Rationale:** Cycles 1+2 fixed Pros section and M0 Prerequisites to say "npm workspaces with tsc --build" but missed the Timeline row. All references now consistent.
+
+---
+
+### T5: SKILL.md Self-Violation Fix
+**File:** `.squad/skills/doc-references-respect-gitignore/SKILL.md` line 56  
+**Before:** "Bad" examples cited concrete inbox paths: `.squad/decisions/inbox/cassima-t7-shared-substrate-blocker.md`, `.squad/decisions/inbox/cassima-crucible-eureka-impact.md`  
+**After:** Generic placeholders: `.squad/decisions/inbox/<memo-slug>.md`  
+**Rationale:** Skill codifies rule against citing gitignored paths; its own examples were self-violations (albeit as "Bad" illustrations). Placeholders convey "this is what NOT to write" without being real broken links.
+
+---
+
+### T6: Orchestration Log Citation Swap
+**File:** `.squad/orchestration-log/2026-05-27T08-13-25Z-valanice-ux-section.md` line 11  
+**Before:** `.squad/decisions/inbox/valanice-eureka-friction-evidence-gates.md`  
+**After:** `.squad/decisions.md` § "Friction-Level UX Decisions — Gated by v1 Dogfood Evidence" (2026-05-27)  
+**Rationale:** Tracked orchestration log (intentional historical archive per Aaron) referenced gitignored inbox memo. Surgical citation swap preserves audit trail intent; citation TARGET moved, reference still means the same thing. No narrative rewrite.
+
+---
+
+### T7: Graham History Citations
+**File:** `.squad/agents/graham/history.md` lines ~94, ~108, ~143  
+**Changes:**
+1. Line 94: "cites Aaron R8 directive + verdicts with `.squad/decisions/inbox/` file paths" → "cites Aaron R8 directive + verdicts (now documented in `.squad/decisions.md`)"
+2. Line 108: "item-by-item sign-off in `.squad/decisions/inbox/graham-r8-lock-verdict.md`" → "item-by-item sign-off — see `.squad/decisions.md` 'R8 Lock-Review Orchestration'"
+3. Line 143: "`.squad/decisions/inbox/graham-design-v0.1-assembled.md` — Decision file documenting assembly completion" → "Assembly completion and blockers documented in `.squad/decisions.md` § 'Eureka v0.1 Technical Design' (2026-05-27)"
+
+**Rationale:** History.md is audit trail; surgical swap to point at merged locations. Preserves what was said (the events described remain the same), just updates citation targets to committed files.
+
+---
+
+## What Cycles 1+2 Missed
+
+1. **Didn't sweep tracked `.squad/` files:** history.md, orchestration-log, log, handoffs — only swept `docs/`.
+2. **Missed line 56 in SKILL.md itself:** The skill that teaches "don't cite inbox paths" had concrete inbox paths in its own "Bad" examples.
+3. **Missed Timeline row in ADR-0002:** Only fixed Pros/Prerequisites in cycle 1; Timeline table row still had stale toolchain.
+4. **Missed §10 spec bug:** Attention-default `cold` in §10 contradicts PRD/§00 canonical `warm`. That's not a citation issue — it's a spec inconsistency. Copilot caught it in cycle 3.
+
+**Root cause:** Incomplete sweeps — all 7 threads were variations of patterns cycles 1+2 addressed elsewhere. We just didn't search broadly enough.
+
+---
+
+## SKILL.md Enhancements
+
+Updated `.squad/skills/doc-references-respect-gitignore/SKILL.md`:
+
+1. **"How to Find Violations" section:** Added note that sweeps must include `.squad/agents/*/history.md`, tracked `.squad/orchestration-log/`, tracked `.squad/log/`, and `.squad/handoffs/` — not just `docs/`.
+
+2. **"Pitfalls" section enhancements:**
+   - Added "Not sweeping broadly enough" anti-pattern: "When fixing violations, don't just fix the specific flagged lines. Search the entire repository (including `.squad/agents/`, `.squad/orchestration-log/`, `.squad/log/`, `.squad/handoffs/`) for the same pattern. Partial sweeps leave broken links that surface in later review cycles."
+   - Enhanced existing "Writing examples in skill docs" pitfall: "Use generic placeholders (e.g., `.squad/decisions/inbox/<memo-slug>.md`) or wrap concrete paths in inline code that's clearly labeled as 'what NOT to do' — not clickable markdown links to real files."
+
+---
+
+## Follow-Up Note
+
+**For future doc-cleanup sweeps:** Grep the WHOLE repo (including tracked `.squad/*` files) for the failure pattern, not just Copilot-flagged lines.
+
+**Pattern:** When Copilot flags 3 instances of a citation/path/format issue, assume there are 7–10 more instances elsewhere. Run repo-wide grep for the pattern:
+
+```bash
+# Example: Find all inbox citations
+git grep -n 'inbox/' -- '*.md'
+
+# Example: Find all machine paths
+git grep -n 'D:\\git\\' -- '*.md'
+
+# Example: Find stale dates (year 2025 in 2026 context)
+git grep -n '2025-' -- 'docs/eureka/**/*.md'
+```
+
+Surgical fix all matches, not just Copilot-flagged lines. This is the discipline that prevents residual issues in cycle 3.
+
+---
+
+## Verification
+
+After all edits:
+- ✅ §10 default attention = `warm` (matches PRD line 663, §00 line 229)
+- ✅ §10 Last Updated = 2026-05-27 (matches design package date)
+- ✅ technical-design.md status header reflects OQ-1 resolved
+- ✅ ADR-0002 Timeline/Pros/Prerequisites all say "npm workspace, tsc --build"
+- ✅ SKILL.md examples use generic placeholders, not real paths
+- ✅ Orchestration log and history.md cite `.squad/decisions.md` anchors, not inbox
+- ✅ No grep matches for `.squad/decisions/inbox/` in committed `docs/eureka/` or tracked `.squad/*` files
+
+---
+
+## Cassima's Learnings
+
+**What worked:**
+- Surgical edits preserved doc structure, voice, and audit trail intent.
+- T2 spec bug was caught by Copilot review (not a citation issue — genuine inconsistency).
+- SKILL.md enhancements codify "sweep broadly" discipline for future agents.
+
+**What I learned:**
+- **Sweep the WHOLE repo for each failure pattern, not just flagged lines.** Residual issues = incomplete sweeps.
+- **Skills that teach a rule must self-audit against that rule.** SKILL.md line 56 was a self-violation (examples cited real inbox paths).
+- **Attention-default spec inconsistency was subtle.** PRD §9 Glossary line 663 is canonical; §10 line 44 was stale. This shows cross-section alignment sweeps need to verify spec consistency, not just citations.
+
+**What I'd change next time:**
+- Run `git grep -n 'inbox/' -- '*.md'` at the START of cycle 1 to find all 22 instances (not just the 5 Copilot flagged). Would've avoided cycles 2+3.
+- For spec inconsistencies like T2, add a checklist: "After fixing one spec claim (e.g., attention-default in §00), grep the entire design package for the old value (e.g., `cold`) and verify no other sections contradict."
+
+---
+
+## Status
+
+✅ All 7 threads addressed. SKILL.md enhanced. Ready for cloud-review-cycle coordinator to evaluate maxCycles decision (merge clean or escalate to Aaron).
+
+---
+# Laura — M1 Decision Drop: First Red Test for Eureka v1
+
+# Laura — M1 Decision Drop: First Red Test for Eureka v1
+
+**Date:** 2026-05-28  
+**Author:** Laura (Tester)  
+**Audience:** Edgar, Crispin, Roger — M2+ implementers  
+**Status:** Record only — no decision required. Anchors the TDD cascade.
+
+---
+
+## Seed Acceptance Criterion
+
+**AC-1.3** — Keyword-scoped recall at ≥80% precision  
+Source: §00 §0.5 Acceptance Criteria Index; §55 §5 PRD-to-Test Mapping
+
+### Why AC-1.3 is the seed
+
+1. **§55 §2 prescribes it.** The canonical §55 worked example walks through `recall` with AC-1.3 as the first test. The TDD spine itself names this AC.
+2. **`recall` is the highest-value observable entry point.** It is what agents call first to surface prior knowledge (§10 §10.1 trigger: "called when orchestration needs to surface prior knowledge"). Driving from `recall` outward forces discovery of the storage seam first — the highest-risk dependency.
+3. **AC-1.3 is appropriately ambitious for a first test.** It demands real collaborator behavior (keyword-matching content returned by FactStore) but remains a single, focused assertion (≥80% precision, not exact scoring). It's harder to green with a hardcoded stub than AC-2.5 (cold-start empty result), which means each cycle is meaningful.
+
+---
+
+## Activity Under Test
+
+**`recall`** (§10 §10.1)
+
+Signature driven by the test:
+```typescript
+recall(
+  options: { query: string; sessionId: SessionId; k: number },
+  deps: { factStore: { search: (...) => Promise<...> } }
+): Promise<Fact[]>
+```
+
+The second argument (`deps`) is the London-school injection point. It was not shown in §55 §2.1's first example, but §55 §2.5 introduces it when fan-out testing forces multi-store injection. I added it in M1 because the task brief explicitly requires mocking collaborators from the first test.
+
+---
+
+## Mock Contracts Locked for M2 Cascade
+
+### FactStore.search() — §20 §7.4
+
+**Mock shape (M1):**
+```typescript
+{
+  search: vi.fn().mockResolvedValue([
+    { content: string; trust: number; attention_tier: string },
+    // ...
+  ])
+}
+```
+
+**Contract requirement (§55 §3.3):** Every vi.fn() mock must have a corresponding contract test. M2 must include `packages/eureka/src/persistence/fact-store.contract.test.ts` validating:
+- Session isolation: `search({ session_id })` returns only matching facts
+- Trust floor: `search({ min_trust: 0.6 })` excludes facts below threshold  
+- Tier filtering: results respect `tier` constraint
+- BM25 normalization: `bm25_score` ∈ [0, 1]
+
+**Interface to be formalised in M2** (per §20 §7.4):
+```typescript
+interface FactStore {
+  search(query: RecallQuery): Promise<RecallResult[]>;
+  traverse(query: TraversalQuery): Promise<Fact[]>;
+  filter(query: FilterQuery): Promise<Fact[]>;
+}
+```
+
+---
+
+## SessionId Type
+
+`SessionId` branded primitive added to `@akubly/types/src/index.ts`:
+```typescript
+export type SessionId = string & { readonly __brand: 'SessionId' };
+```
+
+This was missing before M1. §20 §8.3 specifies its location. Now available to all packages. Crispin/Edgar: import from `@akubly/types` — do not redefine locally.
+
+---
+
+## Red Test Location
+
+```
+packages/eureka/src/activities/__tests__/recall.test.ts
+```
+
+Matches §55 §2.1 and §55 §5 table (`recall.test.ts` column).
+
+---
+
+## M2 Cascade Entry Points
+
+The RED test drives the GREEN phase. M2 implementers should:
+
+1. **Edgar / Crispin — create `packages/eureka/src/activities/recall.ts`**
+   - Signature: `recall(options: RecallOptions, deps: RecallDeps): Promise<Fact[]>`
+   - Minimal GREEN: delegate to `deps.factStore.search(...)`, slice to `k`, return content array
+   - Side effects to add per §55 §2.6 (will be forced by M2 tests): `accessCount++`, `lastAccessedAt` update, attention tier promotion
+
+2. **Crispin — create `packages/eureka/src/persistence/fact-store.ts`**
+   - Formalise `FactStore` interface per §20 §7.4
+   - Add contract test file validating the mock assumptions above
+
+3. **Roger — `packages/eureka/src/index.ts` exports**
+   - Wire `recall` to the package barrel when green
+
+---
+
+## Open Questions This Test Does NOT Answer
+
+- Exact `RecallResult` vs `Fact` return type — the mock returns `Fact`-shaped objects; §20 §7.1 has a `RecallResult` wrapper. M2 will resolve this when the GREEN implementation is shaped.
+- `factStore.search()` sync vs async — mock uses `mockResolvedValue` (async); §20 §7.4 shows sync signature. M2 contract test will lock this.
+- `ClockProvider` — not yet mocked. Will be forced in M2 when the `lastAccessedAt` side-effect test (§55 §2.6) is written.
+
+---
+
+## Package Scaffold Summary
+
+Files created for M1 scaffolding (no production logic):
+
+| File | Purpose |
+|------|---------|
+| `packages/eureka/package.json` | Workspace member `@akubly/eureka` |
+| `packages/eureka/tsconfig.json` | Project reference, excludes test dirs |
+| `packages/eureka/vitest.config.ts` | `src/**/*.test.ts` include pattern |
+| `packages/eureka/src/index.ts` | Empty barrel (satisfies tsc --build) |
+| `packages/eureka/src/activities/__tests__/recall.test.ts` | First red test |
+| `packages/types/src/index.ts` | Added `SessionId` brand |
+| `tsconfig.json` (root) | Added `packages/eureka` project reference |
+
