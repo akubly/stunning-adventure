@@ -4755,3 +4755,71 @@ export function curate(
 - User story drafting (persona-driven scenarios)
 - ADR for Harness/Cairn refactor boundary
 
+
+---
+
+### 2026-05-04: Design Decision D1 — CairnEvent Observability (Roger)
+
+**Status:** Γ£à Resolved ΓÇö Option 1 (additive CairnEvents) ratified by Aaron
+
+**Resolution:** New event types appended to existing `event_log` table:
+1. **hint_state_transition** ΓÇö Emitted on hint insert and status updates with `{skill_id, hint_id, from_state, to_state, timestamp}`
+2. **profile_bump** ΓÇö Emitted on profile create/update with `{skill_id, profile_id, bump_kind, granularity, timestamp}`
+
+**Events logged to:** `__system__` session via `ensureSystemSession()` helper
+
+**Rationale:**
+- Smallest delta, fully backward-compatible, preserves existing events, zero compatibility risk
+- Solves observability gap blocking Wave 5 re-prescribe triggers (on rejection, on profile bump, on staleness)
+- Richer alternatives (Option 2: dedicated channel; Option 3: unified refactor) deferred to Wave 5+
+
+**Test Coverage:** Γ£à 5/5 integration tests passing (Group B)
+- Hint state transition on insert
+- Hint state transition on status update
+- Profile bump on create/update
+- Forward-compat with unknown event types
+- Transactional integrity
+
+**Files Modified:**
+- `packages/cairn/src/db/optimizationHints.ts`
+- `packages/cairn/src/db/executionProfiles.ts`
+- `packages/cairn/src/db/sessions.ts` (ensureSystemSession helper)
+- `packages/cairn/src/__tests__/cairnEvents.test.ts` (5 new tests)
+
+---
+
+### 2026-05-04: Design Decision W4-1 — insertHintIfNew Atomicity (Roger)
+
+**Status:** Γ£à Implemented
+
+**Context:** Wave 3 deferred insertHintIfNew atomicity race. Current check-then-insert allows concurrent callers to both insert duplicates for same (skill_id, source, category).
+
+**Resolution:** Migration 013 with partial UNIQUE index + BEGIN IMMEDIATE transaction.
+
+**Index Schema:**
+`sql
+CREATE UNIQUE INDEX idx_optimization_hints_active_dedup
+  ON optimization_hints(skill_id, source, category)
+  WHERE status IN ('pending', 'accepted', 'deferred');
+`
+
+**Rationale:**
+- Partial index only enforces uniqueness for active statuses (pending, accepted, deferred)
+- Terminal statuses (applied, rejected, expired, suppressed, failed) excluded ΓåÆ historical hints coexist
+- Matches existing ACTIVE_HINT_STATUSES constant
+
+**Transaction Isolation:** `db.transaction().immediate()` acquires write lock upfront before reads, preventing concurrent duplicates.
+
+**Behavior on Conflict:** UNIQUE constraint violation treated as duplicate; fetch existing hint ID via `findActiveHintId()`.
+
+**Test Coverage:** Γ£à 3/3 integration tests passing (Group A)
+- Single insert succeeds normally
+- Duplicate insert returns existing hint ID
+- Concurrent inserts via immediate transactions ΓåÆ only one wins
+
+**Files Modified:**
+- `packages/cairn/src/db/migrations/013-hint-atomicity.ts` (new)
+- `packages/cairn/src/db/schema.ts` (registered migration)
+- `packages/cairn/src/db/optimizationHints.ts` (transaction wrapper)
+- `packages/cairn/src/__tests__/optimizationHints.test.ts` (3 new tests)
+

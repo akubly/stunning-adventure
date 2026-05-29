@@ -205,6 +205,16 @@
 **Task:** Write `docs/eureka/sections/10-activities-and-tiers.md` specifying activity semantics (7 v1 + 2 v1.5 verbs) and tier boundary system (agent/user/project) per locked PRD v5-final.
 
 **Key Decisions:**
+
+---
+
+## 2026-05-29: M4 GREEN + M5 Anchor (Cross-Agent Update)
+
+**Context:** Laura (M4 RED) + Edgar (M4 GREEN) completed ClockProvider seam for recency decay. Edgar's 2-line change in `recall()` wires injected clock (§55 §1.2 discipline). All tests GREEN.
+
+**M5 Anchor:** Trust score updates from feedback events (§30 §2.3). Events drive mutations: corroboration +0.10, contradiction -0.10, user correction ±0.30. **Laura owns M5 RED.**
+
+**Your attention:** M4 seals the time-dependent recency seam. M5 will introduce event-driven trust mutations. This extends the seam discipline to observability layer. No blocker to your substrate integration work; M5 timing allows parallel progress.
 1. **Activity discrepancy resolution** — Task brief mentioned 9 activities (explore, ideate, dream, pray, re-evaluate) not in PRD v5-final. Decision: document only locked vocabulary (7+2) per FR-4; note discrepancy for posterity but do not invent semantics for undefined verbs. Rationale: avoid speculation; if alternate activities required, propose formal PRD amendment.
 
 2. **Open questions flagged for Edgar** — 10 semantic ambiguities identified that PRD leaves unspecified (e.g., "Does `integrate()` deduplicate before insert?", "Can `commit()` lower trust or only upgrade?"). Decision: document ambiguities explicitly as implementation decision points rather than inventing answers. Rationale: Edgar owns implementation judgment; forcing choices here would be scope creep. Better to surface precise questions.

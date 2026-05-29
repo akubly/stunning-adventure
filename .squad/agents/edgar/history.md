@@ -427,3 +427,68 @@ The cascade next demands: recency that **changes over time** rather than a stati
 
 Laura owns M4 RED.
 
+---
+
+## 2026-05-29: M4 — ClockProvider Injection Driven to GREEN
+
+**Event:** M4 London-school TDD beat — wire injected `ClockProvider` into `recall()` so recency decay responds to the test-controlled clock rather than `Date.now()`.
+
+**GREEN Status:** recall.test.ts ✅ — 3/3 tests passed. Full baseline preserved.
+
+**Verbatim GREEN output:**
+```
+ ✓ src/activities/__tests__/recall.test.ts (3 tests) 3ms
+   ✓ recall > surfaces keyword-overlapping entries at ≥80% precision 1ms
+   ✓ recall > ranks results by FR-2 composite formula descending (§30 §1.2) 1ms
+   ✓ recall > ranks recently-accessed fact above stale fact when clock is pinned (§30 §2.4) 0ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  00:24:16
+   Duration  363ms
+```
+
+**Baseline verification:**
+- Cairn 26/26 test files, 609 tests ✅
+- Forge 24/24 test files, 644 passed | 3 todo ✅
+- Eureka 1/1 test file, 3 tests ✅
+- `tsc --build` clean exit ✅
+
+---
+
+## Learnings
+
+### 2026-05-29: M4 ClockProvider Integration Shape Locked
+
+**The precise change (minimal diff):**
+
+1. `packages/eureka/src/activities/recall.ts`:
+   - `ClockProvider` interface and `clock: ClockProvider` in `RecallDeps` were already present (Laura added them in M4 RED).
+   - Changed `const { factStore } = deps` → `const { factStore, clock } = deps`
+   - Changed `const nowMs = Date.now()` → `const nowMs = clock.now()`
+   - Two lines changed; `compositeScore(fact, nowMs)` was already parameterised — no other change needed.
+
+2. `packages/eureka/src/index.ts`:
+   - Added `ClockProvider` to the barrel re-export so callers can construct typed clock objects.
+
+**ClockProvider location decision:**
+Colocated with `RecallDeps` in `recall.ts` per Laura's decision drop (laura-m4-clock-red.md). §30 §2.4 notes extraction to `packages/eureka/src/learning/properties/clock.ts` deferred until FR-12. §55 §1.2 governs placement discipline: interface belongs at the seam (recall.ts), not in a premature abstraction layer. No §-tension here — both §30 and §55 agree on deferral.
+
+**No-default-clock discipline:**
+`clock` is REQUIRED in `RecallDeps`. No `clock = systemClock` fallback. §55 §1.2 is explicit: defaults allow the production smell (`Date.now()`) to silently persist. Requiring injection at the call site means every caller is forced to declare its time source. This is enforced at compile time — TypeScript will reject any `recall()` call that omits `clock`.
+
+**Why M4 RED was hard to see before:**
+With real `Date.now()`, all facts with `last_accessed = 0` (Unix epoch, ~2026) produce `tDays ≈ 20,000+` → recency floor 0.1 for every fact. A FRESH fact (last_accessed = BASE_MS) with real clock would also be ~25 years old → also floor 0.1. FRESH and STALE become identical scores → stable sort → storage order → [STALE, FRESH]. The injected stub clock makes `tDays = 0` for FRESH, breaking the floor tie and producing the expected order.
+
+**§-tensions noted:**
+- §30 §2.4 says `ClockProvider.now()` returns seconds; implementation uses milliseconds (consistent with existing `86_400_000` divisor). Resolution: ms throughout. §30 pseudocode is illustrative, not normative.
+- §30 §2.4 says optional default to SystemClock; §55 §1.2 says required. §55 wins at seam discipline boundary. Documented in laura-m4-clock-red.md.
+
+**Named M5 next-red-beat (TARGET — Laura owns RED):**
+
+The cascade now demands: trust score updates from feedback (§30 §2.3). The current implementation uses static trust values provided by `FactStore.search()`. §30 §2.3 specifies event-driven trust mutation (corroboration = +0.1, contradiction = −0.1, user correction = ±0.3), with a trust floor of 0.15 and ceiling of 1.0. A red test would inject a feedback event and assert that the fact's trust is updated accordingly, driving the trust-mutation seam into existence.
+
+> **M5 TARGET: Trust score updates from feedback events** (§30 §2.3 trust dynamics beyond the static floor).
+
+Laura owns M5 RED.
+

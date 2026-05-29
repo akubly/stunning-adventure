@@ -654,3 +654,51 @@ Multipliers: hot=1.20, warm=1.00, cold=0.80
 - packages/eureka/src/index.ts (new — minimal scaffold)
 - packages/eureka/src/activities/__tests__/recall.test.ts (new — first red test)
 - tsconfig.json (root) — added eureka project reference
+
+## Learnings
+
+### M4 — ClockProvider RED (2026-05-29)
+
+**ClockProvider shape locked:**
+`interface ClockProvider { now(): number }  // ms epoch`
+Required in RecallDeps (no optional default). §55 §1.2 mandates mocking timestamps
+as non-deterministic inputs. §30 §2.4 provides the interface spec but uses seconds —
+impl stays ms to match existing code (§-tension flagged in decision drop).
+
+**M4 fixture pattern (recency-ordering with controlled clock):**
+Two facts, identical on all dims except `last_accessed`. BASE_MS = 1_000_000_000_000
+(Sep 2001) serves as the stub clock anchor. With stub nowMs=BASE_MS:
+  - FRESH (last_accessed=BASE_MS): tDays=0, recency=1.0, finalScore=1.068
+  - STALE (last_accessed=BASE_MS-100days): tDays=100, recency=0.1, finalScore=0.960
+With real Date.now() (~2026): both 8700+ days old → both hit recency floor → identical
+scores → stable sort → storage order [STALE, FRESH] → RED failure for right reason.
+
+**Max recency margin = 0.108** (weight=0.10 × Δrecency=0.90 × hot-mult=1.20). This is
+below the ≥0.18 threshold from my M3 skill. When the ONLY varying dimension is clock-
+controlled recency, 0.108 is fully unambiguous (no floating-point ambiguity between
+recency=1.0 and recency=0.1). The ≥0.18 rule is for multi-dimensional fixtures where
+small deltas could be masked by noise; it does not apply to recency-isolated tests.
+Skill updated to document this exception.
+
+**M2/M3 backwards compat handled by option (a):** Added `clock: fixedClock` to both
+existing recall() calls. FIXED_NOW_MS = 1_748_476_800_000 preserves M3 floor
+semantics (EPOCH_MS=0 → tDays≈20237 → recency=0.1) and M2 ordering (no
+last_accessed → tDays=0 fallback, clock value irrelevant). Both pass after update.
+
+**RED output (verbatim M4 failure):**
+  Expected: ['Freshly accessed fact', 'Stale accessed fact']
+  Received: ['Stale accessed fact', 'Freshly accessed fact']
+
+**Baseline after RED:** Cairn 26/26 ✅ Forge 24/24 ✅ Eureka 1 failed (M4) | 2 passed.
+Build (tsc --build): clean exit ✅.
+
+**Files modified:**
+- packages/eureka/src/activities/recall.ts (ClockProvider interface + RecallDeps.clock)
+- packages/eureka/src/activities/__tests__/recall.test.ts (M2/M3 clock injection + M4 test)
+
+**§-tensions uncovered:**
+1. §30 §2.4 now(): seconds vs impl: ms. Resolution: ms wins (impl consistency).
+2. §30 §2.4 "optional default to SystemClock" vs §55 §1.2 "mock non-deterministic inputs
+   → required". Resolution: required wins (§55 seam discipline, defaults hide bugs).
+3. ≥0.18 margin rule (unambiguous-ranking-fixtures skill) vs recency-only max 0.108.
+   Resolution: rule relaxed to ≥0.10 for recency-isolated tests; skill updated.

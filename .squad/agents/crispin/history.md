@@ -218,6 +218,16 @@
 
 **Team Update:** §20 seams, representation boundaries, and storage interface are now explicit in documentation. Future code should use §7.4 FactStore interface as the mock boundary for activity tests.
 
+---
+
+## 2026-05-29: M4 GREEN + M5 Anchor (Cross-Agent Update)
+
+**Context:** Laura (M4 RED) + Edgar (M4 GREEN) completed ClockProvider seam for recency decay. Edgar's 2-line change in `recall()` wires injected clock (§55 §1.2 discipline).
+
+**M5 Anchor:** Trust score updates from feedback events (§30 §2.3). Events drive mutations: corroboration +0.10, contradiction -0.10, user correction ±0.30. **Laura owns M5 RED.**
+
+**Your attention:** §20 FactStore interface is the seam boundary; M4 GREEN reinforces this by requiring explicit clock injection. M5 will likely extend the seam with feedback event channels. No blocker to §20 work; this is forward context.
+
 
 - **Type sketches belong in architecture docs.** The schema section (§2) includes TypeScript interfaces even though this is "just" a design doc. These sketches are normative — they constrain implementation choices and serve as shared vocabulary for the squad. They're not aspirational code; they're architectural contracts.
 

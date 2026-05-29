@@ -482,7 +482,13 @@ Aaron decided: Build Eureka in `packages/eureka/` (monorepo), not separate repo.
 **Team Update:** §40 DI wiring patterns are now explicitly documented for storage, time, RNG, model, and network boundaries. Future code should use these patterns for injectable test seams. Time injection is available now (v1); RNG/model/network are extraction-ready for v1.5.
 
 
-### Delegation Pattern
+### 2026-05-29: M4 GREEN + M5 Anchor (Cross-Agent Update)
+
+**Context:** Laura (M4 RED) + Edgar (M4 GREEN) completed ClockProvider seam for recency decay. Edgar's 2-line change in `recall()` wires injected clock (§55 §1.2 discipline). All tests GREEN: Eureka 3/3, Cairn 609, Forge 644+3todo.
+
+**M5 Anchor:** Trust score updates from feedback events (§30 §2.3). Events drive mutations: corroboration +0.10, contradiction -0.10, user correction ±0.30. **Laura owns M5 RED.**
+
+**Your attention:** ClockProvider is live in M4 GREEN. §40.5.4 time injection pattern validated in practice. M5 will add feedback event channels (observability seam). No blocker to parallel work; M5 allows 2-week planning cycle for event schema.
 
 **What Roger owns:** Storage layer, federation protocol, SQLite + Git infrastructure  
 **What specialists own:** Cognitive layers, ontology design, reasoning loops  
