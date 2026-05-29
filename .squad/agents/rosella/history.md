@@ -1,3 +1,5 @@
+📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
+
 📌 Team update (2026-05-22T14:07:59Z): **Phase 4.6 Wave 2 complete** — ChangeVectorProvider + ForgePrescriberOrchestrator + autoApplyEligible safety gate + hint dedup + forge-prescribe CLI all shipped. 1199 tests passing, 9 work items landed, 4 decisions merged. Wave 3 (Curator-driven orchestration + composition root) deferred behind ADR. — Scribe
 
 📌 Team update (2026-05-28T10:30:00Z): **Crucible CTD Phase 1 Close-out (2026-05-28)** — §7 (Generators L3) FINAL. `nonDominatedReason` field shape locked for Valanice §9 consumption: `'optimal' | 'incomparable'` + optional `incomparableWith[]`. Phase 2 coordination: Roger (R2-6 lockfile/snapshot handshake). Synthesis review: YELLOW, 1 finding routed to Gabriel+Rosella on `dependentPaths` type (Phase 2 §9/§10). — Scribe

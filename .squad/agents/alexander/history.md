@@ -1,3 +1,5 @@
+📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
+
 📌 Team update (2026-05-22T20:35:00Z): **Wave 2 W2-5 complete** — ForgePrescriberOrchestrator shipped. Attenuation + autoApplyEligible propagation live. ATTENUATION_FLOOR=0.1 exported from @akubly/types. Fail-open on provider errors. Forge tests 609 passing (+10), root build green. — Scribe
 
 📌 Team update (2026-05-28T10:30:00Z): **Crucible CTD Phase 1 Close-out (2026-05-28)** — §8 (Applier + DecisionGate) + §12 (Copilot SDK Integration) FINAL. **CRITICAL FINDING:** Copilot SDK does NOT expose attention metadata; v1 ships `commitmentMethod: 'fallback'` exclusively. Forward-compat door locked for future providers. Phase 2 coordination: Roger (appendFenced surface). Synthesis review: YELLOW, 2 findings routed (12b to Roger §10, 6b to Valanice §9). — Scribe

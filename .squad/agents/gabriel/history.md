@@ -1,3 +1,5 @@
+📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
+
 # Gabriel — History
 
 📌 Team update (2026-05-28T23:59:59Z): **Crucible CTD Phase 2 Close-out (2026-05-28)** — §9 + §13 shipped (Valanice). R2-3 sync (Gabriel ↔ Valanice) CLOSED — Aperture↔Router ack/resume handshake validated. Your Phase 3 work (§17 + §18) unblocked. Phase 2 synthesis GREEN. No blocking findings. — Scribe

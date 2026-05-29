@@ -314,6 +314,47 @@
 
 **Cross-Link:** Crucible-TDD-1 (Laura, parallel track) is firewalled from CTD to preserve test-design independence; TDD strategy is PRD-only, CTD is implementation-specific. Both feed Crucible delivery but remain architecturally separate.
 
+### Phase 4 Synthesis — CTD CLOSE GREEN-FINAL (2026-05-28)
+
+**Date:** 2026-05-28 (Synthesis Review completed 2026-05-29T072142Z)  
+**Author:** Graham Knight (Lead / Architect)  
+**Status:** FINAL — CTD v1 STRUCTURALLY COMPLETE  
+**Artifact:** Merged from `.squad/decisions/inbox/graham-ctd-phase4-synthesis.md`
+
+**Scope:** Final pre-close interface-coherence synthesis across the four Phase 4 authoring lanes (Graham framing §1/§6/§19; Roger CALL/RET + Scheduler WAL §3/§10; Gabriel L3.5 Scheduler §5/§5.A/§17; Laura reproducibility honesty §11.10 + §16.5/§16.7a). Two minor errata resolved inline during synthesis gate.
+
+**Verdict:** **GREEN-FINAL — CTD is complete.** Coherence matrix: 8 CLEAN / 0 MINOR / 0 STRUCTURAL / 2 APPLIED. Final inventory: 377,794 bytes across 21 files (19 numbered sections + Phase 1/Phase 2 synthesis reviews); 19 ADRs indexed and ready for post-CTD authoring.
+
+**Coherence Checks (All CLEAN):**
+- §1.2 L3.5 row aligns with §5.A spec aligns with §17 catalog aligns with §3.3.5 WAL acceptance
+- §3.3.4 CALL/RET body fields are read verbatim by §10.6.1 stack-frame reconstruction
+- Trace-vs-behavioral vocabulary (§11.10 ↔ §16.7a) is identical across both sections
+- Streaming `stream_open/delta/close` sub-kinds are additive per §6.5
+- §19 ADR-0019 + ADR-0024 index rows are accurate one-liners
+- (Two errata applied; see below)
+
+**Errata Applied (Graham Authority):**
+
+1. **InvocationId Canonical Lock** (§3.3.4)
+   - **Decision:** `invocationId = BLAKE3(sessionId || taskId || commitOffset)`, mandatory in L0
+   - **Rationale:** Hermetic-replay invariant (ADR-0008; §11.6 byte-equivalence) is non-negotiable. §10.6.1 reconstruction keys off `invocationId`. Structural-compute cost in L0 is one BLAKE3 over three small inputs at TaskStart-emit time. L0 flexibility on this field had no compelling driver against an invariant this load-bearing.
+   - **Ripple:** None — change strictly strengthens existing properties. No impact to §10, §11, or other sections.
+
+2. **§7.D Supersede Contract Amendment** (§7.D clause 6 + conformance check C-9)
+   - **Decision:** Replacement proposals that the Scheduler will cancel with `reason='superseded'` MUST set `envelope.parentId` to the EventId of the obsoleted proposal
+   - **Rationale:** Scheduler uses that lineage edge to populate `scheduler_cancelled.body.supersededBy` deterministically. Contract violation caught at generator boundary (§7.A C-9), not at Scheduler. Closes Gabriel's Phase 4 flag.
+   - **Ripple:** None — no change to §5.A.2 body shape; §6.4 `parentId` vocabulary unchanged; §3 and §17 unaffected.
+
+**Newly-Surfaced Ambiguity:** None — CTD is complete. One informational note (non-blocking): Laura's `stream_open` / `stream_delta` / `stream_close` Observation sub-kinds are correctly additive per §6.5 evolution rule, but the §6.3 enumeration table does not yet list them. This is the right boundary for post-CTD §6.3 housekeeping pass (Laura owns streaming sub-kind authoring in §16; table updates land at sync pass exactly per §6.5 rule).
+
+**Impact:** This is the final architecture-design gate. Post-CTD authoring is unblocked:
+- Nineteen ADR files under `docs/adr/`
+- §13 CLI implementation scaffolding
+- §16 test-strategy scaffolding
+- Greenfield package work under `@akubly/crucible-*`
+
+No Phase 5 spawn required. No new open question requires Aaron triage.
+
 ---
 
 ## Open Questions
