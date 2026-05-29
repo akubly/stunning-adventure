@@ -151,10 +151,18 @@ export function claimLegacyActiveSession(
 
   if (!candidate) return undefined;
 
-  // Step 2: CAS claim — atomically set workdir only if still NULL.
-  // result.changes === 0 means another concurrent caller won the race.
+  // Step 2: CAS claim — atomically set workdir only if the row is still an
+  // active user session with NULL workdir. The extra predicates on the outer
+  // UPDATE make the CAS self-contained: a race that changes status or kind
+  // between the SELECT and the UPDATE will produce result.changes === 0.
   const result = db
-    .prepare(`UPDATE sessions SET workdir = ? WHERE id = ? AND workdir IS NULL`)
+    .prepare(
+      `UPDATE sessions SET workdir = ?
+       WHERE id = ?
+         AND workdir IS NULL
+         AND status = 'active'
+         AND session_kind = 'user'`,
+    )
     .run(workdir, candidate.id);
 
   if (result.changes !== 1) return undefined;

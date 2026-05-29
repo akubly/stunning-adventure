@@ -16,7 +16,6 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { getDb, closeDb } from '../db/index.js';
 import {
@@ -401,6 +400,29 @@ describe('legacy session claiming — claimLegacyActiveSession', () => {
     expect(first).toBeDefined();
     expect(first!.workdir).toBe(WORKDIR_A);
     expect(second).toBeUndefined();
+  });
+
+  // J2: CAS UPDATE includes AND status = 'active' AND session_kind = 'user'.
+  // If the session is mutated (e.g. completed) between the SELECT and the UPDATE,
+  // the CAS returns undefined without modifying the row.
+  it('returns undefined and leaves row unchanged when session is completed between select and update', () => {
+    const id = createSession(db, REPO_KEY, 'main'); // NULL workdir, active
+
+    // Simulate a race: mark the session completed before the UPDATE runs
+    db.prepare("UPDATE sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?")
+      .run(id);
+
+    const claimed = claimLegacyActiveSession(db, REPO_KEY, WORKDIR_A);
+
+    expect(claimed).toBeUndefined();
+
+    // The row must still be completed and workdir must remain NULL
+    const row = db.prepare("SELECT status, workdir FROM sessions WHERE id = ?").get(id) as {
+      status: string;
+      workdir: string | null;
+    };
+    expect(row.status).toBe('completed');
+    expect(row.workdir).toBeNull();
   });
 });
 
