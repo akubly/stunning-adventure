@@ -297,6 +297,22 @@ Re-states §7.1 with the Router-pause contract:
    ack state).
 5. Structural proposals land at Aperture `attention` tier — never
    `urgent` (Q3 lock; no blocking modal).
+6. **Supersede contract (Phase 4 synthesis amendment, Graham).** A generator
+   MAY emit a replacement proposal that obsoletes an in-flight one
+   (typically because newer L2 state invalidates the prior recommendation).
+   When it does, the replacement's `envelope.parentId` MUST be set to the
+   `EventId` of the obsoleted proposal. The L3.5 Scheduler then emits
+   `Decision{subKind: 'scheduler_cancelled', body: { reason:
+   'superseded', supersededBy: <replacement EventId> }}` against the
+   obsoleted proposal (§5.A.2), keying off the `parentId` lineage edge to
+   resolve `supersededBy` deterministically. An emission with
+   `reason='superseded'` and no resolvable `parentId` on the replacement is
+   a contract violation; the §7.A conformance suite rejects it (new check
+   C-9 on `StructuralProposalGenerator`; equivalent additive check applies
+   to `DataProposalGenerator` replacements when generators choose to
+   supersede). Replacement chains compose (`parentId` walks back through
+   the supersede graph); the v1 Scheduler does not collapse them — each
+   `scheduler_cancelled{superseded}` row stands.
 
 ## §7.E (Reserved — see §7.5 + §8 + §9)
 

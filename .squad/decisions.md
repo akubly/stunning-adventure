@@ -2117,3 +2117,244 @@ Pre-fan-out reconciliation of Laura's FINAL TDD strategy against CTD plan. No ir
 **No new open questions emerged from Phase 1 authoring.**
 
 ---
+
+---
+
+## Crucible CTD Phase 4 — UIS Framing Lock + Final Amendments (2026-05-28)
+
+**Date:** 2026-05-28  
+**Decided by:** Aaron Kubly (interactive Decision-Point gate via coordinator)  
+**Participants:** 8 team weigh-in agents (parallel independent jury) + 4 Phase 4 amendment authors  
+**Status:** COMPLETE — CTD now structurally complete pending Graham's final synthesis review
+
+### Summary
+
+All 8 team members endorsed the UIS framing with 8/8 STRENGTHENS verdicts. Three agents independently flagged missing concepts; rubber-duck delivered precision reframing ("minimal typed trace algebra for replayable, accountable agentic computation," NOT "universal instruction set"). Aaron locked three coupled decisions: (1) adopt rubber-duck's reframing as canonical, (2) adopt BOTH missing concepts (CALL/RET + Scheduler tier), (3) proceed to Phase 4 amendments immediately. All 4 amendment drops SHIPPED on schedule. CTD structural inventory now complete; final synthesis review (Graham) in flight.
+
+### Decision 1: UIS Framing Reframed (ADR-0019)
+
+**Aaron's Claim (Original):**
+> "The 5 primitives are the universal instruction set of agentic computation."
+
+**Rubber-Duck's Precision Reframing (8/8 STRENGTHENS Endorsed):**
+> "Crucible's five primitives are the base replay/audit algebra for accountable agentic computation, with actual 'instructions' defined by sub-kinds, schemas, effects, causal edges, and runtime semantics."
+
+**Rationale:**
+- Avoids overreach (not claiming universality across all conceivable agentic computation)
+- Stays bounded and defensible (Crucible-class runtimes with determinism-conformance requirements)
+- Preserves architectural ambition (structural hardware parallels remain valid; demoted to Mental Models subsection)
+- Enables extensibility (semantic fidelity and queryability prioritized over rhetorical universality)
+
+**Sections Updated:**
+- §1 identity claim (new lead language)
+- §1.6 new subsection "Mental Models (Hardware Scaffolding, Not Load-Bearing)"
+- §6 framing intro paragraph + governance principle
+- §6.7 new subsection "Mental Models (Hardware Scaffolding)"
+- ADR-0019 index row (Graham author)
+
+**Team Consensus:**
+- **Laura:** Framing strengthens PBT + hermetic replay for deterministic substrate; doesn't overstate I/O subsystem guarantees. Concern acknowledged: LLM is the memory-mapped peripheral, must be named explicitly.
+- **Roger:** WAL already UIS-aligned (closed enum, content-addressed, hash-chained, monotonic timestamps, typed causal-read sets). Variable-size payloads create uniformity gap; Roger's prior work mitigates.
+- **Graham:** Five primitives = universal ISA of **Crucible-class runtimes**. Strong bounded claim; hardware analogy not aesthetic (determinism discharge surface). Framing restatement sharpens without weakening.
+- **Gabriel:** Framing enables PMU-inspired telemetry (per-primitive emission rate, statistical sampling, performance counters). Operationally cheap inheritance from decades of CPU architecture prior art.
+- **Rosella, Alexander, Valanice:** Strengthen identity without breaking extensibility contracts or UX onboarding.
+- **Rubber-Duck:** Recommended reframing avoids falsifiability trap; preserves architectural insight while staying humble about scope.
+
+### Decision 2: ADOPT CALL/RET Semantics (§3.3.4, §10.6)
+
+**Missing Concept Identified By:** Laura (testing lens) + Roger (platform lens) + Rubber-Duck (synthesis)
+
+**Lock:**
+- TaskStart / TaskEnd sub-kinds enriched with explicit invocation-frame fields:
+  - invocationId: InvocationId — session-unique CALL/RET pair identifier (recommend BLAKE3(sessionId || taskId || commitOffset))
+  - parentInvocationId: InvocationId | null — lexically-enclosing open frame's invocationId at emission time; null iff top-level
+  - eturnTo: EventId (TaskEnd only) — content-addressed BLAKE3 EventId of matching TaskStart; zero-walk RET link for projection + replay
+  - callDepth: number (optional on TaskStart) — derivable from chain; recorded for UX single-row read
+  - parentInvocationId also on TaskEnd for index locality
+
+**Semantics Pinned:**
+- Re-entered taskId (fork-resume, retry) gets fresh invocationId per CALL; taskId is scope label, invocationId is frame identity
+- Mis-nesting (returnTo mismatch or top-of-stack invocationId mismatch) → durable monotonic_violation projection alert (row still commits)
+- parentInvocationId (lexical-stack parent) is **distinct edge** from envelope.causalParentId (causal-spawn parent, §6.4); both coexist
+
+**Rationale:**
+- **Testing:** Unlocks nested-task invariants (Laura's PBT property tests on well-bracketed call stacks)
+- **Debugging:** Enables stack reconstruction + bisect targeting (Sonny's debugger use cases)
+- **Replay:** Preservation law — re-fed dispatch stream includes invocation structure; callstack divergence is an explicit replay disagreement, not an implicit assumption
+- **WAL Discipline:** No new row schema column (additive body fields under §6.5 additive-evolution contract); append-only discipline preserved
+
+**Sections Amended:**
+- §3.3.4 new: "CALL/RET sub-kind fields on TaskStart / TaskEnd (LOCK)"
+- §3.3.5 new: "Scheduler-emitted Decision rows (substrate-readiness declaration)"
+- §10.6 new: "openInvocationStack projection + reconstruction"
+- §10.6.1 new: "Call-stack reconstruction algorithm"
+- §10.6.2 new: "Sub-task vs sub-session distinction table"
+
+**Author:** Roger Wilco (Platform/WAL)
+
+### Decision 3: ADOPT Scheduler Tier Promotion (L3.5)
+
+**Missing Concept Identified By:** Gabriel (ops lens) + Erasmus (US-E-13 Scheduler advisory) + Rubber-Duck (synthesis)
+
+**Lock:**
+- Explicit L3.5 Scheduler tier between L3 (Generators) and L4 (Router)
+- **Named responsibilities:** dispatch ordering, fairness scheduling, RAW/WAR/WAW hazard analysis, back-pressure signals, replay-deterministic re-feed contract
+- **Dispatch stream:** L3 → L3.5 Scheduler → L4 Router (distinct decision nodes)
+- **Scheduler = CPU dispatch unit analog** (OoO execution, fairness, hazard stalls, backpressure)
+- **Router = application policy** (accept/reject/pause per policy)
+
+**Scheduler Tier Subsections:**
+- §5.A new subsection "L3.5 Scheduler Tier" — responsibility, dispatch sub-kinds, budget policy, back-pressure, Hook Bus interaction, replay determinism, acceptance signals A-Sched-1/2/3
+- §5.2 amendment — dispatched_pending precursor state in proposal lifecycle
+- §17.1 amendment — four new scheduler event catalog rows: scheduler_dispatched, scheduler_deferred, scheduler_cancelled, scheduler_quanta_exhausted
+- §17.1 scheduler perf-counter table (read-path only; zero new primitives; counters = L2 projections over catalog rows)
+
+**Rationale:**
+- **Telemetry:** Unlocks per-primitive emission-rate profiling, sampling, tracing, branch-prediction stats, all from existing WAL index (Gabriel's PMU analogy)
+- **Testing:** TRAPC (assert-and-trap) primitive — invariant violations (monotonic timestamp, trust-tier monotonicity, replay equivalence) unified under one shape; single bisect target
+- **Determinism:** Scheduler-emitted dispatch rows are first-class L1 WAL rows, preserved in replay (dispatch sequence never re-derived, always replayed verbatim)
+- **Concurrency:** Explicit ordering + fairness layer between independent proposal generators (enables multi-agent work, fork/merge coordination)
+
+**Scheduler ↔ Router Boundary (One Line):**
+> "Scheduler decides WHICH proposal advances and IN WHAT ORDER (L3.5); Router decides WHETHER — apply/reject/pause (L4)."
+
+**Author:** Gabriel (Infrastructure/Router/Observability)
+
+### Phase 4 Amendment Delivery (4/4 SHIPPED)
+
+All four amendments delivered on schedule; depth budgets respected; sections FINAL.
+
+#### Amendment 1: Graham — CTD Framing Amendments (§1, §6, §19)
+
+**Scope:** §1 Architectural Overview, §6 Primitive Taxonomy, §19 ADR Set Index — surgical amendments only
+
+**§1 Amendments:**
+- Identity claim reframed in lead language
+- §1.1 stack: L3.5 Scheduler inset block added between L3 → L4 with ADR-0024 + §5 cross-refs
+- §1.2 responsibility table: new L3.5 Scheduler row (owns dispatch ordering, fairness, hazard analysis; authors no policy, writes no ledger; package @akubly/crucible-scheduler)
+- §1.6 new subsection "Mental Models (Hardware Scaffolding, Not Load-Bearing)" — cross-refs ADR-0019, §6.7, ADR-0024
+
+**§6 Amendments:**
+- Framing intro paragraph extended to include L3.5; reframed claim adopted verbatim
+- New "Framing (locked, ADR-0019)" paragraph explicitly rejects "universal instruction set of agentic computation" as overreach
+- New "Governance principle" paragraph names **semantic bucket inflation** as risk; **sub-kind registration with declared schema + effects + causal-edge contract + runtime semantics** as four-axis discipline
+- §6.7 new subsection "Mental Models (Hardware Scaffolding)" — canonical Decision↔branch / Observation↔load / Question↔trap / Artifact↔store / Request↔args analogy table; notes "removable without touching algebra" stance; ADR-0024 as the one place hardware analogy motivated structural change
+
+**§19 Amendments:**
+- Status line updated from "17 design choices" → "19 rows (Phase 4 amendments)"
+- ADR-0019 row added — "Primitives as Minimal Typed Trace Algebra (not Universal ISA)"
+- ADR-0024 row added — "Explicit L3.5 Scheduler Tier"
+- Closing cross-references updated
+
+**Status:** SHIPPED (depth budgets respected: §1 ≤3pp, §6 ≤1.5pp, §19 ≤2pp)
+
+#### Amendment 2: Roger — CTD WAL Substrate CALL/RET (§3, §10)
+
+**Scope:** §3 L1 WAL Substrate, §10 Session Model/Branching — CALL/RET semantics + Scheduler WAL readiness
+
+**§3 Amendments:**
+- §3.3.4 new: CALL/RET sub-kind fields on TaskStart/TaskEnd (invocationId, parentInvocationId, returnTo, callDepth)
+- §3.3.5 new: Scheduler-emitted Decision rows (substrate-readiness declaration; scheduler_* sub-kinds as additive Decision payload fields; no new row schema column; L1's published guarantee: substrate accepts Decision row provided §3.3 schema + §3.7 context-window-commitment contract satisfied)
+
+**§10 Amendments:**
+- §10.6 new: openInvocationStack projection + reconstruction semantics
+- §10.6.1 new: Call-stack reconstruction algorithm
+- §10.6.2 new: Sub-task-vs-sub-session distinction table
+
+**Status:** SHIPPED (depth budgets respected: §3 ≤10pp, §10 ≤3pp)
+
+#### Amendment 3: Gabriel — CTD L3.5 Scheduler Tier (§5, §17)
+
+**Scope:** §5 Router, §17 Observability — new L3.5 Scheduler tier, dispatch events, perf counters
+
+**§5 Amendments:**
+- §5.A new subsection "L3.5 Scheduler Tier" (~1.3pp; ≤1.5pp ceiling)
+- §5.2 amendment: dispatched_pending precursor state in proposal lifecycle state machine
+
+**§17 Amendments:**
+- §17.1 amendment: four new catalog rows for scheduler_dispatched / scheduler_deferred / scheduler_cancelled / scheduler_quanta_exhausted with body fields + severities
+- §17.1 scheduler perf-counter table (read-path only; counters = L2 projections over catalog rows)
+
+**Status:** SHIPPED (depth budgets respected; L3.5 tier fully specified; Router ↔ Scheduler boundary locked)
+
+#### Amendment 4: Laura — CTD Reproducibility Honesty + Streaming (§11, §16)
+
+**Scope:** §11 Hermetic Replay, §16 Test Strategy/Invariants — honesty discipline + streaming policy
+
+**§11 Amendments:**
+- §11.10 new: "Reproducibility Honesty: Trace vs. Behavioral"
+  - **LLM IS the I/O subsystem** (first-class architectural statement; rr/Pernosco named as structural analog)
+  - **Trace reproducibility** (what Crucible guarantees) — byte-equivalent replay ledger under §11.6 oracle, given captured CAS
+  - **Behavioral reproducibility** (what Crucible does NOT guarantee) — enumerated drivers: model weights, sampling stochasticity, decoding-stack differences, tool/policy/prompt changes, external state drift, context construction non-determinism
+  - **Replay invariant limitations** — proves audit, blame, causal-slice, bisect, harness debugging; does NOT prove model correctness, safety under perturbation, cross-version compatibility, or I/O subsystem behavior
+  - **Mandatory discipline:** never quote passing replay as evidence of agent correctness; never quote A2/A9 as evidence of model behavior; never weaken §11.6 to "tolerate" behavioral drift
+
+**§16 Amendments:**
+- §16.5 new: streaming-token capture policy
+  - WAL-explosion math justifies bounded triple capture, not per-token rows
+  - Triple: Observation{stream_open} → Observation{stream_delta} at checkpoint boundaries (256 tokens OR 500ms) → Observation{stream_close} with finalContentRef matching non-streaming llm_response digest
+  - Replay re-feeds captured delta sequence; does NOT regenerate
+  - Invariant: concatenated deltas equal non-streaming digest
+- §16.7a new: test tier layering (aligned with §6 governance principle for streaming sub-kinds)
+
+**Status:** SHIPPED (depth budgets respected; honesty doctrine locked; streaming policy enables test tier layering)
+
+### Aaron's Decision-Point Gate Outcome (2026-05-28T19-52-00Z)
+
+**Three Coupled Decisions — ALL LOCKED:**
+
+1. **ADOPT rubber-duck's reframing as canonical claim**
+   - New §1 identity language
+   - Locks: §1 lead, §6 framing intro, ADR-0019
+
+2. **ADOPT BOTH convergent missing concepts**
+   - CALL/RET semantics (Laura + Roger + rubber-duck convergence) → §3.3.4, §10.6
+   - Scheduler tier promotion (Erasmus US-E-13 + rubber-duck convergence) → §1.1, §5.A, §17.1
+   - Locks: Graham §1/§6/§19, Roger §3/§10, Gabriel §5/§17, Laura §11/§16
+
+3. **Phase 4 NOW** (authoring COMPLETE)
+   - All 4 amendment drops SHIPPED; CTD structurally complete pending synthesis
+   - Merge → git commit → cross-agent context update
+
+### Team Weigh-In Verdicts (8/8 STRENGTHENS)
+
+| Agent | Lens | Verdict | Key Concern / Gap | Output Drop |
+|---|---|---|---|---|
+| **Laura** | Tester | STRENGTHENS + FUNDAMENTAL CONCERN | LLM-as-I/O scope (named in §11.10); missing CALL/RET (locked); missing VOLATILE (live-read primitive) | laura-uis-weigh-in.md |
+| **Roger** | Platform/Substrate | STRENGTHENS + CONCERN | Variable-size payload uniformity; suggests row=fixed-width instruction, payload externalized | roger-uis-weigh-in.md |
+| **Alexander** | SDK/Runtime | STRENGTHENS + ADD | Missing provider-meta primitive (launder today via Observation sub-kinds) | alexander-uis-weigh-in.md |
+| **Rosella** | Plugin/Extension | STRENGTHENS | Privilege ring model is load-bearing (Decision: Applier-only; Observation: broadly emittable; structural: Aperture-only) | rosella-uis-weigh-in.md |
+| **Gabriel** | Infrastructure/Ops | STRENGTHENS + GAP | Missing TRAPC (assert-and-trap on invariant violation; unifies four Observation sub-kinds) | gabriel-uis-weigh-in.md |
+| **Valanice** | UX/Human Factors | STRENGTHENS | ISA vocabulary internal-only (contributor docs, not user-facing); keep two doors (ambient @inbox vs debugger why/bisect) | valanice-uis-weigh-in.md |
+| **Graham** | Lead/Architect | STRENGTHENS | Five primitives = UIS of **Crucible-class runtimes** (not all agentic computation); three genuinely concern: CALL/RET (locks invocation stack from replay), provider-meta (launder today), TRAPC (unify invariants) | graham-uis-weigh-in.md |
+| **Rubber-Duck** | Synthesis/Precision | STRENGTHENS REFRAME | Reframing weakens "universal ISA" → "minimal trace algebra"; preserves ambition without false universality claim | rubber-duck-uis-claim.md |
+
+### CTD Structural Inventory
+
+**Total Files:** 19 sections + 2 synthesis reviews = 21 files (pending Graham's Phase 4 synthesis → 22)
+
+**Modified This Batch:**
+- 01-architectural-overview.md — framing, L3.5 identity, Mental Models
+- 03-l1-wal-substrate.md — CALL/RET fields, scheduler WAL readiness
+- 05-router-design.md — new L3.5 Scheduler tier subsection
+- 06-primitive-taxonomy.md — reframed claim, governance principle, Mental Models
+- 10-session-branching.md — openInvocationStack, reconstruction, sub-task-vs-sub-session
+- 11-hermetic-replay.md — §11.10 reproducibility honesty
+- 16-test-strategy-invariants.md — §16.5 streaming policy, §16.7a test tiering
+- 17-observability-telemetry.md — scheduler event catalog, perf counters
+- 19-adr-set.md — ADR-0019, ADR-0024 index rows
+
+**Total Size:** 376KB + Phase 4 amendments ≈ 395KB
+
+---
+
+### Next Cycle (Out-of-Scope)
+
+1. **Graham's Phase 4 Synthesis Review** (in flight) — final pass + potential §20 synthesis document
+2. **Phase 4.5 Kickoff** — Roger, Gabriel, Laura deliver implementation details (batch acceptance criteria, validator hooks, streaming checkpointing)
+3. **v1 CTD Release** — lock all sections; archive Phase 0–4 open questions; publish
+
+---
+
+**Status:** Crucible CTD Phase 4 COMPLETE ✓
+

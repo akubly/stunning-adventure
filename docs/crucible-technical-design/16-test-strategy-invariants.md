@@ -172,6 +172,43 @@ as the read view; new entries are authored as predicate registrations, not
 as a separate registry data structure. Test tier: component for registry
 projection; integration for the CLI verbs.
 
+**Streaming-token capture policy (LLM I/O subsystem).** Streaming LLM
+responses do **not** emit one `Observation` per token. WAL volume would
+explode (a single 4k-token response × 500 LLM calls ≈ 2M rows / session,
+killing both append throughput and the §11 replay budget), and per-token
+re-feed would interleave pathologically with the hook bus. The captured
+shape is a bounded triple, all three rows being `Observation` primitives
+(§6.2) causally chained via `causalReadSet`:
+
+- `Observation{subKind: 'stream_open'}` — body carries `{ model, requestHash,
+  decodingParams }` where `decodingParams` includes `temperature`, `top_k`,
+  `top_p`, `seed` (if any), `maxTokens`, and provider/version. Hashed into
+  the CAS like any other Observation body.
+- `Observation{subKind: 'stream_delta'}` — emitted at **checkpoint
+  boundaries**, configurable per `(every N tokens) OR (every M ms)`, default
+  `(N=256 tokens) OR (M=500 ms)` whichever fires first. Each delta carries
+  the cumulative-text CAS digest and the delta-text CAS digest; both are
+  `causalRead`-bound to the originating `stream_open` row.
+- `Observation{subKind: 'stream_close'}` — body carries `{ finalContentRef,
+  finishReason, usage: { promptTokens, completionTokens, totalTokens } }`.
+  `finalContentRef` is the CAS digest of the complete response bytes; this
+  is the same digest a non-streaming `llm_response` would carry, so the
+  re-feed key (§11.4) remains uniform.
+
+Replay (§11.4) re-feeds the **captured delta sequence** in original order
+from the CAS; it does **not** regenerate from the model and does not collapse
+the deltas into the `stream_close` payload. The corresponding invariant
+(tested at `ci:invariants`): for every streamed `llm_response` row group,
+the concatenation of `stream_delta` payloads in offset order equals the
+`stream_close.finalContentRef` bytes, byte-for-byte. Failure is an oracle
+divergence with `divergenceKind: 'commitment'` (the delta chain is part of
+the row's structural projection per §11.6).
+
+This policy is the operational consequence of treating the LLM as the I/O
+subsystem (§11.10): we sample the stream at checkpoints sufficient to
+reconstruct it on replay, exactly as `rr` records syscalls without recording
+every CPU cycle inside the kernel.
+
 ## 16.6 Generic L3 Adapter Conformance Suite
 
 **Spec authority:** TDD §3.4 `GenericL3AdapterContract` + §5.2 Tier 3 ("Generic
@@ -208,6 +245,32 @@ constructs collaborators by hand-rolling shape literals.
 
 Pyramid ratios and per-tier counts are **owned by TDD §5.1**. The §16
 category matrix names runners and CI stages; it does not re-author counts.
+
+## 16.7a Trace-Reproducibility vs. Behavioral-Reproducibility Test Layering
+
+The replay-equivalence oracle (§11.6) and the §11.10 reproducibility-honesty
+clause partition agent-testing surfaces into three disjoint, non-substitutable
+layers. **No test in any layer may be quoted as evidence for a property
+belonging to a different layer.** This is the §11.10 honesty discipline
+re-stated in test-strategy terms; the matrix below is the contract.
+
+| Layer | What it asserts | What it does NOT assert | CTD home | v1 scope |
+|---|---|---|---|---|
+| **Trace-replay tests** (A1–A4, A9) | Byte-equivalence of the replay ledger under the §11.6 oracle, given the captured CAS. The agent saw, ran, and committed the recorded primitive stream identically on re-feed. | Anything about model behavior, decision correctness, or stability under perturbation. | §11.6 oracle, §11.8 assertion specs, §16.1 `ci:conformance`. | **In v1.** Always-on, golden corpus parameterized. |
+| **Mutation-testing on primitives** | Downstream Decisions stay stable under **approved** perturbations (timestamp jitter, informational-field rewrites) and **change** under disallowed ones (sub-kind swap, causal-edge rewrite, payload byte flip). Direct fitness function for §11.6 completeness. | Behavior of the underlying model; only the substrate's response to substrate-level mutation. | §16.1 `ci:invariants` (nightly + on-change of §3/§4/§11), generator scaffolding in TDD §6 / §7.2. | **In v1.** Nightly. |
+| **Behavioral-reproducibility tests** (NEW) | Across model versions, providers, sampler seeds, decoding stacks, and prompt revisions: the **shape** of Decisions (sub-kind, gross structure, policy-relevant fields) conforms; the **bytes** are explicitly not expected to match. Differential testing of the I/O subsystem itself. | Trace equivalence — these tests intentionally violate trace reproducibility and must NEVER be run against the §11.6 oracle. | Not yet authored; **v1.5+ scope**, future-work entry in §14 roadmap. New `ci:differential` stage with its own runner. | **NOT in v1.** Documented as gap; explicitly outside the v1 conformance suite. |
+
+The third row is the load-bearing one. Conflating it with trace-replay tests
+is the failure mode §11.10 names. v1 ships the first two layers as
+zero-tolerance gates (§16.5/§16.8) and ships the third layer as a **named
+absence** — present in the roadmap, absent from the green-build bar, never
+silently substituted for trace replay. When v1.5 lands behavioral
+reproducibility tests, they arrive as a new CI stage and a new conformance
+contract, not as an extension of `ci:conformance:replay`.
+
+Cross-ref: §11.10 (the honesty clause this layering operationalizes); §14
+(roadmap; v1.5+ behavioral-reproducibility entry to be added when scoped);
+TDD §6 (invariant + mutation generators).
 
 ## 16.8 Agentic-Cost Framing — Zero-Tolerance Mock-Drift Gate (Q7)
 

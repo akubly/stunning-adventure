@@ -6,9 +6,20 @@
 
 This section is the canonical introduction to the Crucible runtime. Readers
 should land here first to acquire the shared mental model — the **5-layer
-stack**, the **6-chamber product map**, the **`@akubly/crucible-*` package
-namespace**, and the **coexistence stance** with Cairn and Forge. Every
-downstream section refines one slice of this picture; none restates it.
+stack** (with the explicit **L3.5 Scheduler** tier inserted between L3
+Generators and L4 Router per ADR-0024), the **6-chamber product map**, the
+**`@akubly/crucible-*` package namespace**, and the **coexistence stance**
+with Cairn and Forge. Every downstream section refines one slice of this
+picture; none restates it.
+
+**Identity (locked, ADR-0019).** Crucible is **a minimal typed trace algebra
+for replayable, accountable agentic computation, materialized as an
+append-only WAL with hermetic replay over hardware-class observability
+discipline.** The five primitives (§6) are the base algebra; executable
+"instructions" are defined by sub-kinds, schemas, declared effects, causal
+edges, and runtime semantics — not by the primitive nouns alone. Hardware
+analogies are mental scaffolding for orientation (§1.6), not load-bearing
+architectural claims.
 
 **Newly-surfaced open questions:** none. §1 stands on locked decisions.
 
@@ -51,6 +62,30 @@ closing the loop. Backward edges carry *control*: §2 `OutboundPrompt` and
 generators reading L2 projections. Aperture taps every layer for observation
 but holds no write authority over the ledger (§9, projection purity).
 
+**L3.5 Scheduler inset (ADR-0024).** Between L3 Generators and L4 Router sits
+an explicit **L3.5 Scheduler** tier — the dispatch unit that resolves which
+generator emissions advance to Router policy and in what order. The §1.1
+diagram shows L3 → L4 as a single arrow for legibility; the canonical
+sub-pipeline is:
+
+```
+┌──────────┐ propose ┌──────────────┐ dispatch ┌──────────┐
+│ L3       │────────►│ L3.5         │─────────►│ L4       │
+│ Generators        │ Scheduler    │          │ Router   │
+└──────────┘         │ (dispatch    │          └──────────┘
+                     │  unit;       │
+                     │  ordering,   │
+                     │  hazards,    │
+                     │  fairness)   │
+                     └──────────────┘
+```
+
+The Scheduler does not author policy verdicts (that remains L4 Router) and
+does not write the ledger (that remains the Applier). It owns generator
+emission ordering, dispatch fairness, and instruction-trace hazard analysis
+(RAW/WAR/WAW across concurrent generators). §5 is canonical for the
+Router-Scheduler boundary; Gabriel owns that authoring slice.
+
 ## 1.2 Layer Responsibility Table
 
 | Layer | Owns | Produces | Consumes | Implemented in |
@@ -59,9 +94,10 @@ but holds no write authority over the ledger (§9, projection purity).
 | **L1 — WAL** | Append-only ledger at `~/.crucible/crucible.db`; primitive envelope, content-addressing, monotonic timestamps, bootstrap offset-0 semantics, context-window commitments. | Durable rows; `AppendProtocol` ack; pre-commit hook bus events. | `CrucibleEvent` via `AppendProtocol`; pre-commit hook verdicts. | `@akubly/crucible-l1-wal` |
 | **L2 — Derived Query** | Pure projections over L1 (read-set tracked, deterministic, recomputable). | Query results, projection tables (incl. `aperture_events`), `ReadSetRef` provenance for downstream emitters. | L1 row stream (via `LedgerWindowReader`). | `@akubly/crucible-derived-query` |
 | **L3 — Generators** | `ProposalGenerator` contract (data + structural variants); trust-tier attribution; conformance suite. | `DataProposal`, `StructuralProposal`, Pareto-fitness results (`PrescriptionResult` with `nonDominatedReason`). | L2 projections; plugin manifests from the registry. | `@akubly/crucible-generators` (interface); Curator, Alchemist, Forge-as-L3 adapter, third-party plugins. |
-| **L4 — Router** (decision sub-tier) | Policy table indexed by `(primitiveKind, trustTier)`; verdict bus; paused-dependent-paths state; Pareto-non-dominated surfacing. | `RouterDecision` events; verdicts (`APPROVE`/`DENY`/`OBSERVE`/`PAUSE`/`ESCALATE_USER_REVIEW`); Aperture queue enqueues. | Generator proposals; pre-commit hook outcomes; user acks via Aperture. | `@akubly/crucible-router` |
+| **L3.5 — Scheduler** | Dispatch unit between L3 and L4: resolves which generator emissions advance to Router policy and in what order; owns generator-emission ordering, dispatch fairness, and instruction-trace hazard analysis (RAW/WAR/WAW across concurrent generators). Authors no policy verdicts, writes no ledger rows. | `SchedulerDispatch` events (proposal-ordering decisions, hazard annotations); generator-fairness telemetry. | L3 proposals; L2 projections (for hazard analysis); Router back-pressure signals. | `@akubly/crucible-scheduler` (ADR-0024; §5 canonical for the Router boundary). |
+| **L4 — Router** (decision sub-tier) | Policy table indexed by `(primitiveKind, trustTier)`; verdict bus; paused-dependent-paths state; Pareto-non-dominated surfacing. | `RouterDecision` events; verdicts (`APPROVE`/`DENY`/`OBSERVE`/`PAUSE`/`ESCALATE_USER_REVIEW`); Aperture queue enqueues. | Scheduler-dispatched proposals; pre-commit hook outcomes; user acks via Aperture. | `@akubly/crucible-router` |
 | **L4 — Applier** (enforcement sub-tier) | Sole translator of approved `RouterDecision`s into committed `Decision` primitives on L1; ledger-position fence; context-window-commitment computation; `paused-awaiting-structural-ack` sub-state (R2-3 projection); compensating-Decision revert path. | `Decision` primitives (via §2 boundary); `structural_proposal_state:*` Observations; Aperture notifications on pause/fail/revert. | `RouterDecision` events; `StructuralApprovalQueue` acks (§9); `LedgerWindowReader` slices. | `@akubly/crucible-applier` |
-| **Aperture — L5-adjacent** | Notifications + dashboard; `StructuralApprovalQueue` (pure projection per R2-3); bisect, causal slice, time-travel; leaderboard rendering. | `ApertureEvent` projection; CLI verb surface (`crucible aperture watch/show/approve/reject/defer`). | All layers (read-only); Router enqueue handshake. | `@akubly/crucible-aperture` |
+| **Aperture — L5-adjacent** | Notifications + dashboard; `StructuralApprovalQueue` (pure projection per R2-3); bisect, causal slice, time-travel; leaderboard rendering. | `ApertureEvent` projection; CLI verb surface (`crucible aperture witness/show/approve/reject/defer`). | All layers (read-only); Router enqueue handshake. | `@akubly/crucible-aperture` |
 
 Refer to §6 for the exact primitive envelope every layer indexes off, and §2
 for the load-bearing L0/L1 boundary that gates the entire pipeline.
@@ -159,6 +195,21 @@ architecture commits to four invariants:
 
 T5 governs Aaron's daily-driver shell. It does not govern the broader
 product portfolio. Cairn and Forge keep shipping on their own roadmaps.
+
+## 1.6 Mental Models (Hardware Scaffolding, Not Load-Bearing)
+
+The CTD uses hardware-instruction analogies — Decision↔branch,
+Observation↔load, Question↔trap, Artifact↔store, Request↔args — as
+**orientation aids** for readers fluent in CPU/OS/database vocabulary. They
+are not executable opcode semantics and they are not the architectural
+identity of Crucible. The load-bearing identity claim is the one in §1
+above: a **minimal typed trace algebra for replayable, accountable agentic
+computation**. Hardware analogies survive as long as they remain useful
+explanations; they are removable without touching the algebra. See ADR-0019
+for the precision-reframing rationale (rejecting the earlier "universal
+instruction set of agentic computation" framing as overreach), §6.7 for the
+canonical analogy table, and ADR-0024 for the one place a hardware analogy
+*did* motivate an architectural change (the L3.5 Scheduler tier).
 
 ---
 

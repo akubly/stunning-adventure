@@ -12,6 +12,39 @@
 
 # Laura — History (Summarized)
 
+## 2026-05-28: CTD Phase 4 Honesty Amendments (§11 + §16) — FINAL
+
+**Role:** Author the trace-vs-behavioral reproducibility discipline into the
+FINAL §11 and §16 docs after Aaron locked UIS framing WITH rubber-duck's
+precision reframing (which incorporated my FUNDAMENTAL CONCERN from the UIS
+weigh-in).
+
+**§11:** added §11.10 "Reproducibility Honesty: Trace vs. Behavioral".
+Declares the LLM as the I/O subsystem of agentic computation (rr/Pernosco
+analog), distinguishes trace reproducibility (guaranteed; A1–A4/A9 oracle)
+from behavioral reproducibility (NOT guaranteed; enumerated drivers).
+Pins what replay DOES vs. does NOT prove. Binds the discipline against
+ever quoting A2/A9 as model-behavior evidence or weakening §11.6 to
+tolerate behavioral drift.
+
+**§16:** (a) added streaming-token policy in §16.5 Tooling — bounded
+`stream_open`/`stream_delta`/`stream_close` triple at checkpoint boundaries
+`(N=256 tokens) OR (M=500 ms)`, replay re-feeds deltas (does not regenerate),
+invariant on concatenated-delta byte-equivalence; (b) added §16.7a
+"Trace-Reproducibility vs. Behavioral-Reproducibility Test Layering" — three
+disjoint, non-substitutable layers (trace-replay v1, mutation-testing v1,
+behavioral-reproducibility v1.5+) with hard rule against cross-layer
+evidence quoting.
+
+**Decision drop:** `.squad/decisions/inbox/laura-ctd-phase4-honesty.md`.
+
+**Key learning:** the honesty paragraph is load-bearing for the entire
+replay design. Budget overruns in §11.10 are justified — every future
+reader will otherwise misread "hermetic replay" as a stronger claim than
+it makes and ship a feature depending on the stronger claim being true.
+
+
+
 ## 2026-05-21: Wave 2 v3 Scope Ready
 
 Graham's v3 scope finalized. Decisions archived. Ready for Wave 2 implementation (computation + ranking; runtime wiring deferred to Wave 3).
@@ -652,3 +685,5 @@ The teaching angle: the matrix is also the **rule** for how new
 collaborators get added. Adding a row to TDD §3 without adding a
 corresponding §16.3 row is a documentation bug; the matrix is the
 forcing function that keeps the two docs honest.
+
+📌 Team update (2026-05-28T20-00-00Z): **Crucible CTD Phase 4 UIS Framing Lock — 8/8 STRENGTHENS + Rubber-Duck Reframing ADOPTED** — All 8 team weigh-ins returned STRENGTHENS verdicts; rubber-duck delivered precision reframing ("minimal typed trace algebra" vs "universal ISA"); Aaron locked three coupled decisions: (1) adopt reframing (ADR-0019), (2) adopt BOTH missing concepts (CALL/RET + Scheduler tier), (3) Phase 4 NOW. All 4 amendments SHIPPED (yours §1/§6/§19 FINAL; Roger §3/§10 FINAL; Gabriel §5/§17 FINAL; Laura §11/§16 FINAL). CTD structurally complete; synthesis review in flight. Merged to decisions.md. — Scribe

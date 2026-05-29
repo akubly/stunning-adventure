@@ -4,6 +4,59 @@
 
 📌 Team update (2026-05-28T10:30:00Z): **Crucible CTD Phase 1 Close-out (2026-05-28)** — §5 (Router Design) FINAL. 4 Aperture↔Router event shapes locked for Valanice §9 sync: `router.paused`, `router.decision`, `aperture.structural-ack-prompt`, `aperture.structural-ack`. Synthesis review: YELLOW, 1 finding routed (5: `dependentPaths` type mismatch with Rosella §7, Phase 2 §9/§10). Phase 2 coordination: Valanice (R2-3 queue mechanics sync pair). — Scribe
 
+## 2026-05-29: Crucible CTD Phase 4 — L3.5 Scheduler Tier Promotion
+
+**Task:** Author the L3.5 Scheduler tier promoted from `B-revisit-deferred` to
+v1 (Aaron lock; Erasmus US-E-13 + rubber-duck convergence on the OoO-execution
+/ dispatch-unit analog). Owner of §5 + §17; Roger owns §3 WAL acceptance of
+the new `scheduler_*` sub-kinds; Graham owns §1 layer-stack diagram update.
+
+**Deliverables:**
+1. `docs/crucible-technical-design/05-router-design.md` — new §5.A subsection
+   (~1.3pp, under the 1.5pp ceiling) covering responsibility, the four v1
+   sub-kinds (`scheduler_dispatched` / `_deferred` / `_cancelled` /
+   `_quanta_exhausted`), round-robin-with-quanta budget policy, back-pressure
+   threshold protocol, Hook Bus L1Subscriber interaction, replay determinism
+   (dispatch stream recorded, not recomputed), and three acceptance signals.
+   §5.2 state machine amended with `dispatched_pending` precursor state and a
+   paragraph documenting L3 → L3.5 → L4 flow.
+2. `docs/crucible-technical-design/17-observability-telemetry.md` — four new
+   catalog rows; `scheduler_dispatched` on builtin tier is silent (same
+   posture as `router.decision` apply); read-path perf-counter table for
+   quanta consumed, queue depth, dispatch latency, defer rate.
+3. `.squad/decisions/inbox/gabriel-ctd-phase4-scheduler.md` — decision drop.
+
+**Learning — boundary articulation as load-bearing.** The single sentence
+"Scheduler decides WHICH and IN WHAT ORDER; Router decides WHETHER" did more
+work than any other paragraph in the spec. Once that line existed, every
+sub-decision (does the Scheduler re-evaluate on replay? does it interact with
+hook verdicts? what sub-kinds does it emit?) collapsed to "if it's a
+which/order question, it's mine; if it's a whether question, it's the
+Router's." Boundary articulation pays for itself — the cost is one sentence,
+the benefit is the rest of the section writing itself.
+
+**Learning — replay-determinism discipline generalises.** §5.5 ("no live
+policy reload") and §5.A.6 ("dispatch order recorded, not recomputed") are
+the same doctrine applied to two different control-plane surfaces. Both
+flow from §6.5 Hook Verdict Consistency: any decision whose re-derivation
+would depend on wall-clock or non-deterministic ordering MUST be captured
+as an L1 Decision and replayed verbatim. This is a reusable test for any
+new control-plane tier — apply it before specifying any "scheduler /
+arbiter / coordinator" component in future revisions.
+
+**Learning — additive-sub-kind contract keeps cross-section work cheap.**
+The four `scheduler_*` sub-kinds slot into Roger's existing §3.3.1
+`(primitiveKind, subKind)` index without a new primitive kind. The whole
+tier ships as Decision sub-kind extensions plus a read-path projection
+(perf counters). This is the same pattern §17 itself uses — "harvest, don't
+define." When a new tier reuses the existing primitive/sub-kind contract,
+the cross-section coordination cost is one row in Roger's append validator
+and one diagram update in Graham's §1.
+
+**Files:** `docs/crucible-technical-design/05-router-design.md`,
+`docs/crucible-technical-design/17-observability-telemetry.md`. Decision drop:
+`.squad/decisions/inbox/gabriel-ctd-phase4-scheduler.md`.
+
 ## 2026-05-28: Crucible CTD Rev. 3 — R2 Locks for Gabriel
 
 **Locked decisions** impact your execution model and bisect infra. Your tasks:
@@ -616,3 +669,5 @@ proof obligation (§6.7) because the proof relies on the tier value being
 carried unmodified through the row's causal lineage. The principle:
 classification fields that participate in invariants must be *carried*,
 never *inferred at consumption*.
+
+📌 Team update (2026-05-28T20-00-00Z): **Crucible CTD Phase 4 UIS Framing Lock — 8/8 STRENGTHENS + Rubber-Duck Reframing ADOPTED** — All 8 team weigh-ins returned STRENGTHENS verdicts; rubber-duck delivered precision reframing ("minimal typed trace algebra" vs "universal ISA"); Aaron locked three coupled decisions: (1) adopt reframing (ADR-0019), (2) adopt BOTH missing concepts (CALL/RET + Scheduler tier), (3) Phase 4 NOW. All 4 amendments SHIPPED (yours §1/§6/§19 FINAL; Roger §3/§10 FINAL; Gabriel §5/§17 FINAL; Laura §11/§16 FINAL). CTD structurally complete; synthesis review in flight. Merged to decisions.md. — Scribe

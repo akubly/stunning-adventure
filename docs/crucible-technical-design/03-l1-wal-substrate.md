@@ -194,6 +194,117 @@ invoking `Request{subKind: 'tool_call'}` by `toolCallId`. The WAL row's
 `flags.syntheticOutput` bit is set; downstream projectors use it to filter
 M3 artifacts from real tool outputs without re-walking the sub-kind enum.
 
+### 3.3.4 CALL/RET Sub-Kind Fields on `TaskStart` / `TaskEnd` (Phase 4 LOCK)
+
+Per Phase 4 UIS framing (decision: "ADOPT CALL/RET semantics" — Laura +
+Roger partial + rubber-duck flagged), the existing
+`Request{subKind: 'TaskStart'}` and `Observation{subKind: 'TaskEnd'}` rows
+carry explicit invocation-frame metadata so stack-frame reconstruction is
+structural (queryable from a single row scan) rather than reconstructed by
+walking `taskId` + `causalParentId` heuristics. The taxonomy in §6.3 is
+unchanged — these are **additive sub-kind body fields** under the §6.5
+evolution rule (additive only; no breaking change to v1 readers).
+
+The bodies of the bracketing rows carry:
+
+```ts
+interface TaskStartBody {                  // Request.primitivePayload extension
+  taskId:              TaskId;             // existing — envelope.taskId tag
+  label:               string;             // existing — human-readable scope name
+  invocationId:        InvocationId;       // NEW — unique CALL identifier within session
+  parentInvocationId:  InvocationId | null;// NEW — caller's invocationId; null at top level
+  callDepth:           number;             // NEW (optional convenience) — derivable; 0 at top level
+}
+
+interface TaskEndBody {                    // Observation.primitivePayload extension
+  taskId:              TaskId;             // existing
+  outcome:             'success' | 'failure' | 'cancelled' | string;  // existing
+  invocationId:        InvocationId;       // NEW — MUST equal the matching TaskStart.invocationId
+  returnTo:            EventId;            // NEW — EventId of the matching TaskStart row (RET link)
+  parentInvocationId:  InvocationId | null;// NEW — copied from TaskStart for index locality
+}
+
+type InvocationId = string;                // session-unique; CANONICAL derivation BLAKE3(sessionId||taskId||commitOffset) — see lock note below
+```
+
+Semantics (LOCK):
+
+- `invocationId` uniquely names a CALL/RET pair within a session. A
+  re-entered scope (same `taskId` opened twice via fork-resume or retry) gets
+  a fresh `invocationId` per CALL — `taskId` is the scope label,
+  `invocationId` is the frame identity.
+- **InvocationId derivation is canonical (Phase 4 synthesis LOCK,
+  Graham).** L0 MUST compute `invocationId = BLAKE3(sessionId || taskId ||
+  commitOffset)` where `commitOffset` is the `TaskStart` row's L1 commit
+  offset (the offset assigned by §3.4 `append` at the moment of durable
+  commit). Replay determinism requires zero L0 degree of freedom on this
+  field: §11.6 byte-equivalence over CALL/RET fields is a hard property
+  (the stack-frame reconstruction in §10.6.1 keys off `invocationId`), and a
+  non-canonical L0 implementation would defeat it. The structural-compute
+  cost in L0 is one BLAKE3 over three small inputs at TaskStart-emit time —
+  cheap, deterministic, and replay-safe. Mis-derivation (an `invocationId`
+  that does not match the canonical hash) is a `monotonic_violation`-class
+  durable failure surfaced to Aperture; the row still commits per §3.10
+  append-only discipline.
+- `parentInvocationId` is the lexically-enclosing open frame's
+  `invocationId` at the moment `TaskStart` was emitted. It is `null` iff
+  the frame is opened at top level (no open ancestor on the session's
+  invocation stack — see §10.6).
+- `returnTo` on `TaskEnd` is the **EventId** (content-addressed BLAKE3) of
+  the paired `TaskStart` row. Combined with §3.13's hash chain it gives
+  the L2 projector and §11 replay a zero-walk RET link — the projector
+  validates `returnTo` resolves to a row whose `body.invocationId` equals
+  this `TaskEnd.body.invocationId`; mismatch is a `monotonic_violation`-
+  class durable failure (durable row, surfaced to Aperture, append still
+  succeeds — §3.10 discipline).
+- `callDepth` is derivable from the `parentInvocationId` chain; it is
+  recorded for projection-time index locality (Sonny's `bt` backtrace UX,
+  §13, gets a single-row read instead of a chain walk).
+
+Stack-frame reconstruction (the derived view computed from these fields) is
+specified in §10.6; this subsection pins only the row-level field shape.
+
+Composition with existing envelope fields:
+
+- `envelope.taskId` continues to tag every row emitted *within* a CALL/RET
+  scope (§3.3 `flags.taskBoundary = true` is unchanged).
+- `envelope.causalParentId` on `TaskStart` continues to point at the
+  `Request` that triggered the fan-out (§6.4); `parentInvocationId` is a
+  *different* edge — the lexical-stack parent, which need not equal the
+  causal-spawn parent (e.g., a deferred sub-task spawned earlier but
+  entered now). Both edges coexist and answer different replay queries.
+- No new WAL row schema columns are introduced — the CALL/RET fields live
+  inside the existing `primitive.primitivePayload` CBOR body and are
+  reachable via `payloadHash` like any other body field.
+
+### 3.3.5 Scheduler-Emitted `Decision` Rows (Phase 4 LOCK)
+
+Per Phase 4 UIS framing (decision: "ADOPT Scheduler tier promotion" — see
+Gabriel's §5 Router-Scheduler boundary spec for the actual sub-kind
+enumeration), the new L3.5 Scheduler tier emits scheduler-decision rows to
+L1 for replay determinism. **Scheduler-emitted Decisions are first-class
+WAL rows, indistinguishable in storage from any other Decision**; they
+route through the same `AppendProtocol.append` path, carry the same
+`contextWindowCommitment` + `commitmentMethod` fields (§3.3.2), participate
+in the same hash chain (§3.13), and incur the same group-commit cost
+(§3.5). The scheduler distinguishes its own rows by **sub-kind body
+metadata only** — a `scheduler_*` sub-kind family inside the Decision
+payload (enumerated by Gabriel in §5 / §17; this section neither names
+the values nor reserves them).
+
+The WAL row schema requires no change: the §6.3 table notes Decision is
+"differentiated by `commitmentMethod` + `nonDominatedReason`," and any
+scheduler-family discriminator is an additive optional body field under
+§6.5's evolution rule. Storage, indexing, replay, fsck, and projection all
+treat scheduler Decisions identically to model-emitted Decisions. The
+guarantee L1 publishes is: **the substrate will accept a Decision row
+regardless of who emitted it**, provided the row satisfies the §3.3
+schema and §3.7 context-window-commitment contract.
+
+This is a declaration of substrate readiness, not a scheduler spec. See §5
+(Gabriel) for the Router-Scheduler boundary and the `scheduler_*` sub-kind
+enumeration; see §17 for the scheduler-event taxonomy itself.
+
 ## 3.4 Append Protocol (Pseudocode)
 
 `AppendProtocol` is the only public entrypoint into the WAL (Laura §3.2 seam).
@@ -649,7 +760,12 @@ The following commitments propagate from this section:
   the paused row, not via §4 directly. Router state is replayable from
   recorded verdict rows + policy version (per Gabriel's signoff §6).
 - **§10 (Session Model)** — bootstrap sequencing materializes offset-0 from
-  §3.8; fork creation invokes §3.13's cross-session chain rule.
+  §3.8; fork creation invokes §3.13's cross-session chain rule; the CALL/RET
+  fields pinned in §3.3.4 are projected by §10.6 into the per-session
+  invocation-stack derived view.
+- **§5 (Router / Scheduler boundary)** — scheduler-emitted `Decision` rows
+  (§3.3.5) traverse `AppendProtocol` indistinguishably from any other
+  Decision; the L3.5 Scheduler tier is a first-class L1 row producer.
 - **§11 (Hermetic Replay)** — replay reads `commitmentMethod` per Decision
   row and reconstructs via §3.7's two paths; refuses to advance past
   offset 0 on bootstrap-manifest mismatch.

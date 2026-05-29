@@ -8,8 +8,35 @@ The Crucible vocabulary is exactly **five primitives**: `Request`, `Artifact`,
 `Observation`, `Decision`, `Question`. They are the only payload kinds that
 ever appear on an L1 WAL row and the only payload kinds that ever cross the
 L0/L1 boundary as a `CrucibleEvent` (§2). Every upper layer (L2 derived
-queries, L3 generators, L4 router, L5 investigation, Aperture projections)
-indexes off these five kinds.
+queries, L3 generators, L3.5 scheduler, L4 router, L5 investigation,
+Aperture projections) indexes off these five kinds.
+
+**Framing (locked, ADR-0019).** These five primitives are the **minimal
+typed trace algebra for replayable, accountable agentic computation**. The
+actual "instructions" are defined by **sub-kinds, schemas, declared effects,
+causal edges, and runtime semantics** — not by the primitive nouns alone.
+The earlier framing of the five as a "universal instruction set of agentic
+computation" was rejected as overreach: an ISA is an executable
+producer/consumer contract with defined pre/post state semantics, and
+Crucible's primitives are instead the base replay/audit algebra over which
+that semantics is built. Hardware-instruction analogies (§6.7) remain useful
+mental scaffolding for orientation; they are not load-bearing architectural
+claims.
+
+**Governance principle: sub-kinds are where instructions live.** The named
+risk under this framing is **semantic bucket inflation** — the five nouns
+survive while important invariants leak into ad-hoc payload metadata. The
+discipline that prevents it is **explicit sub-kind registration with
+declared effects, schemas, and causal-edge contracts**. New sub-kinds enter
+the enum via §6.5 additive evolution; each carries (a) a payload schema,
+(b) declared effects (read-set / write-set / external-interaction class),
+(c) the causal-edge shape it produces or consumes, and (d) runtime
+semantics — what L3/L3.5/L4/Applier do when they see it. A sub-kind that
+cannot be specified along these four axes is not yet ready to enter the
+enum. Sub-kind proliferation is healthy when each addition pays the
+specification cost; it becomes inflation when sub-kinds are added without
+the four-axis discipline. See ADR-0019 for the precision-reframing
+rationale.
 
 ## 6.1 Common Envelope
 
@@ -177,3 +204,27 @@ field `null`. The §2 per-tool-call signaling rule maps directly to the
 Artifact `synthetic_output` sub-kind (M3) and the
 `Request.subKind = 'tool_call'` / `Artifact.subKind = 'tool_output'` pair
 for normal tool calls.
+
+## 6.7 Mental Models (Hardware Scaffolding)
+
+The CTD uses CPU/OS/database analogies to give readers a fast on-ramp into
+the primitive vocabulary. These analogies are **orientation aids, not
+executable opcode semantics** and not the architectural identity of
+Crucible (ADR-0019; §1.6). They are removable without touching the
+algebra.
+
+| Primitive    | Hardware scaffolding analogy                  | What it actually is                                                                  |
+|--------------|-----------------------------------------------|--------------------------------------------------------------------------------------|
+| Request      | call args / dispatch operand                  | Typed emission of an intent (tool call, LLM call, sub-task spawn, user input).       |
+| Observation  | load (memory/MMIO/peripheral read)            | Typed ingestion of state into the ledger (bootstrap, tool output, external input).   |
+| Question     | trap / breakpoint / continuation              | Typed suspension awaiting an external answer (user, router, curator).                |
+| Artifact     | store (memory write)                          | Typed materialization of a produced work-product linked to the Request that made it. |
+| Decision     | conditional branch / commit                   | Typed commitment of control, with declared causal-context-window provenance.         |
+
+The analogies were the *route in* for Aaron's original framing; the precision
+reframing (ADR-0019) keeps them as scaffolding while moving the load-bearing
+claim to **typed trace algebra**. One hardware analogy *did* motivate an
+architectural change — the L3.5 Scheduler tier as the dispatch unit between
+generator emission and router policy (ADR-0024; §1.1 inset). The remaining
+analogies have not earned that promotion and should not be allowed to do so
+without going through the §6.5 + governance-principle discipline.

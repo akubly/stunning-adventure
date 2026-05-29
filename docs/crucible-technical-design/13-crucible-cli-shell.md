@@ -23,7 +23,7 @@ can do the right thing without ceremony.
 | `crucible session list`                    | `[--all]`                                           | List sessions from the on-disk session catalog. |
 | `crucible session show <sid>`              |                                                     | Render session header + last N inbox events. |
 | `crucible fork <sid> --at <offset>`        | `[--label <text>]`                                  | §10 fork; pins lockfile + bootstrap manifest verbatim. |
-| `crucible aperture watch`                  |                                                     | Tail unresolved `attention` rows (§9.3). |
+| `crucible aperture witness`                |                                                     | Stream unresolved `attention` rows (§9.3). "Bear witness" — `watch` reserved for future debugger watchpoints (per Sonny advisory; ADR-0019). |
 | `crucible aperture show`                   | `[<eventId>]`                                       | Open `@inbox` or a single event with one-hop causal slice. |
 | `crucible aperture approve <proposalId>`   | `[--note <text>]`                                   | §9.5: write `structural_proposal_acked` Observation. |
 | `crucible aperture reject <proposalId>`    | `[--reason <text>]`                                 | §9.5: write `structural_proposal_rejected` Observation. |
@@ -52,7 +52,7 @@ the REPL log; turns are not collapsed across renders so scrollback is
 auditable.
 
 ```
-crucible › aperture watch
+crucible › aperture witness
 ⊙2 attention · ◆0 notice
 ─────────────────────────────────────────────────────────────────────
 [attn] structural-proposal-pending  prop_01HQB...  trust:external

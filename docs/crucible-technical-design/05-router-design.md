@@ -53,9 +53,21 @@ an explicit revocation Decision.
 
 ## 5.2 Proposal Lifecycle State Machine
 
+The Router no longer pulls proposals directly from L3 (§7). The L3.5 Scheduler
+(§5.A) owns dispatch order; the Router consumes proposals only after the
+Scheduler has emitted a `scheduler_dispatched` Decision naming the proposal.
+The `dispatched_pending` state is the precursor: a generator-emitted proposal
+sits in the Scheduler's queue until dispatched, at which point it enters
+`submitted` on the Router's machine. L3 → L3.5 → L4 is the canonical flow.
+
 ```
+                ┌──────────────────────┐
+                │  dispatched_pending  │  (in Scheduler queue; awaits scheduler_dispatched)
+                └──────────┬───────────┘
+                           │ scheduler_dispatched Decision (§5.A)
+                           ▼
                 ┌──────────────┐
-                │  submitted   │  (proposal from §7 generator or pause verdict from §4)
+                │  submitted   │  (proposal handed to Router, or pause verdict from §4)
                 └──────┬───────┘
                        │ PolicyEngine.evaluate()
                        ▼
@@ -261,6 +273,109 @@ On structural classification:
 The Router's `PolicyEngine` collaborator is the same interface Laura tests
 with stubs/spies. `EscalationQueue` is owned by Aperture (§9); the Router
 only writes the source-of-truth Decision rows.
+
+## 5.A L3.5 Scheduler Tier
+
+The Scheduler is L3.5 — a thin tier between L3 generators (§7) and L4 Router
+policy. It exists because L3 proposal emission is asynchronous, potentially
+parallel across generators, and budget-bound, while the Router is a stateless
+policy choke-point that must see one proposal at a time in a deterministic
+order. Hardware analog: L3 generators are independent execution units emitting
+micro-ops; the Scheduler is the dispatch / reservation-station tier; the
+Router is the retire / commit stage. **Scheduler decides WHICH proposal
+advances and IN WHAT ORDER; Router decides WHETHER (apply / reject / pause).**
+The two concerns never collapse into one stage — that would re-introduce the
+L3-as-junk-drawer risk Erasmus flagged (US-E-13).
+
+### 5.A.1 Responsibility
+
+The Scheduler consumes the generator proposal queue (the union of all L3
+`propose()` emissions per §7.1), and per dispatch tick selects zero or more
+proposals to advance to the Router. For each selection it appends one
+`Decision` row to L1 (§3 accepts the `scheduler_*` sub-kinds enumerated
+below); the Router subscribes to that dispatch stream by
+`(primitiveKind === 'decision', subKind ∈ scheduler_*)` and processes
+proposals in `scheduler_dispatched` arrival order. Generators NEVER hand
+proposals to the Router directly in v1.
+
+### 5.A.2 `scheduler_*` Decision Sub-Kinds (v1 minimal set)
+
+| sub-kind                      | body fields                                                                                              | meaning                                                                                |
+|-------------------------------|----------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------|
+| `scheduler_dispatched`        | `proposalId: EventId`, `generatorId: string`, `priority: number`, `quantaConsumed: number`, `queueDepthAtDispatch: number` | Proposal moved to Router queue at the given priority. Router state machine §5.2 enters `submitted` on consumption. |
+| `scheduler_deferred`          | `proposalId: EventId`, `generatorId: string`, `reason: 'backpressure' \| 'quanta_exceeded' \| 'priority_starved'`, `routerQueueDepth: number` | Proposal held in the Scheduler queue; will be reconsidered on a later tick.            |
+| `scheduler_cancelled`         | `proposalId: EventId`, `generatorId: string`, `reason: 'budget_exhausted' \| 'stale' \| 'superseded'`, `supersededBy: EventId \| null` | Proposal dropped without reaching the Router. `superseded` carries the EventId of the replacing proposal (e.g., a newer generator emission obsoletes an in-flight one). |
+| `scheduler_quanta_exhausted`  | `generatorId: string`, `windowStart: Timestamp`, `windowEnd: Timestamp`, `quantaBudget: number`, `quantaConsumed: number` | Budget window closed for a generator; future emissions from that generator are deferred until the next window. |
+
+These four cover the v1 dispatch lifecycle. Roger's §3 WAL accepts them as
+new `Decision` sub-kinds; no new primitive kind is introduced. Body shapes
+are owned here, validated at append per §3.3.1.
+
+### 5.A.3 Budget Allocation Policy (v1)
+
+Round-robin across registered generators with per-generator quanta. A
+quantum is one dispatch slot per scheduling tick; the per-generator budget
+is `floor(totalQuantaPerTick * generatorWeight / sumWeights)`, with weights
+sourced from session-scoped policy rows (one Decision row per weight
+install, replayable per §5.5). Tier acts as a tiebreaker: at equal weight,
+`builtin > adopted > community > external`. When a generator exhausts its
+quanta in a tick, the Scheduler emits `scheduler_quanta_exhausted` once
+and defers further proposals from that generator until the next window.
+v1 is fixed-window; learning-based scheduling (predictive priority from
+prior `RouterDecision` outcomes) is a v1.5+ extension and slots into the
+same dispatch interface — no schema change required.
+
+### 5.A.4 Back-Pressure Protocol
+
+The Scheduler tracks Router queue depth via the L2 projection of
+unconsumed `scheduler_dispatched` rows minus terminal `router.decision`
+rows. When depth exceeds threshold `N` (default 16; configurable per
+session via policy row), every new proposal arriving at the Scheduler is
+emitted as `scheduler_deferred{reason: 'backpressure'}` rather than
+`scheduler_dispatched` until depth drops below the low-water mark `N/2`.
+This is the dispatch-side dual of §4.5 observe-queue sampling: bounded
+queue, explicit drop reason, no silent loss. Deferred proposals remain in
+the Scheduler queue; they are reconsidered on the next tick.
+
+### 5.A.5 Hook Bus Interaction (§4)
+
+The Scheduler is an L1Subscriber on the Hook Bus verdict stream. A `pause`
+verdict (§4.4) from any predicate increments a per-generator back-pressure
+counter for the implicated generator; while the counter is non-zero, that
+generator's proposals are deferred with `reason: 'backpressure'`. The
+counter decrements when the paused row is restaged (§3.5 seal-and-split
+completion). This keeps Scheduler dispatch decisions consistent with hook
+verdicts without coupling the Scheduler to Hook Bus internals — it
+consumes verdict events via the same `(primitiveKind, subKind)` projection
+pattern §17.1 documents.
+
+### 5.A.6 Replay Determinism
+
+Scheduler dispatch order is **recorded, not recomputed**. The
+`scheduler_dispatched` Decision stream IS the dispatch log: on replay, the
+Router re-feeds from that stream in EventId order; the Scheduler does NOT
+re-evaluate weights, quanta, or back-pressure during replay. This is the
+same discipline §5.5 applies to policy: any control-plane decision whose
+re-derivation would depend on wall-clock or non-deterministic generator
+arrival order is captured as an L1 Decision and replayed verbatim.
+Property: for any ledger prefix, the sequence of proposals reaching the
+Router under replay equals the sequence under the original run, modulo
+EventId reads. §11 oracle treats Scheduler divergence as a
+`scheduler_dispatch` divergence kind (additive to the §11.6 enum; flagged
+to Roger and §11 owner at synthesis).
+
+### 5.A.7 Acceptance Signals
+
+This subsection is sufficient for Laura to write:
+- **A-Sched-1** (dispatch ordering preserved across replay) — round-trip
+  a session through §11 replay; assert the sequence of
+  `scheduler_dispatched.proposalId` values matches.
+- **A-Sched-2** (back-pressure asserts under load) — saturate the Router
+  queue with synthetic proposals; assert `scheduler_deferred` rows appear
+  with `reason: 'backpressure'` once depth exceeds `N`.
+- **A-Sched-3** (quanta exhaustion fires per generator per window) —
+  drive one generator past its budget; assert exactly one
+  `scheduler_quanta_exhausted` per window per generator.
 
 ## 5.10 Acceptance Signals
 

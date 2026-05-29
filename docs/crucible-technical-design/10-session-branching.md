@@ -5,9 +5,12 @@
 (branching architecture), **Rosella** (R2-6 lockfile-format ↔
 `SessionMetadata.pluginVersions` snapshot-field handshake).
 **Cross-refs:** §2 (L0/L1 Boundary — `BootstrapPayload`), §3 (WAL — bootstrap-
-batch, monotonic-timestamp floor, fork hash-chain inheritance), §6 (Primitive
+batch, monotonic-timestamp floor, fork hash-chain inheritance, §3.3.4
+CALL/RET sub-kind fields), §5 (Router / Scheduler boundary — sub-session
+vs sub-task distinction surfaces here), §6 (Primitive
 Taxonomy — `Timestamp` vs `TimestampNs` split per Phase 2 finding 2a), §7
 (Generator-side Plugin Registry contract — R2-6), §11 (Hermetic Replay),
+§13 (CLI `bt` / backtrace UX consumes §10.6.1 reconstruction),
 §15 (Shared Types — `SessionMetadata`, `PluginVersionLock`).
 **Depth budget:** ≤3 pages.
 
@@ -209,25 +212,124 @@ proposal's `schemaChange` carrying the lockfile diff; the Applier
 re-stamps `sessions.plugin_versions` on acceptance. v1 sessions hold
 their installed-at-fork lockfile for life.
 
-## 10.6 Sub-Task Model (TaskStart / TaskEnd)
+## 10.6 Sub-Task Model (TaskStart / TaskEnd) — CALL/RET Semantics
 
-Per §6 sub-task tagging, tasks are bracketed by paired Observation rows:
+Per §6 sub-task tagging and the Phase 4 CALL/RET lock (§3.3.4), tasks are
+bracketed by paired rows that carry explicit invocation-frame metadata.
+The bracketing rows are Observation-class for `task_end` and Request-class
+for `task_start` (sub-kinds on existing primitive kinds; no new primitive).
 
-| Sub-kind         | Body                              | Effect                                                  |
-|------------------|-----------------------------------|---------------------------------------------------------|
-| `task_start`     | `{ taskId, parentTaskId, label }` | Opens a sub-task scope; subsequent rows carry `envelope.taskId = taskId` and `flags.taskBoundary = true` (§3.3). |
-| `task_end`       | `{ taskId, outcome }`             | Closes the scope; later rows revert to outer `parentTaskId` (or `null` at top level). |
+| Sub-kind         | Body                                                                                       | Effect                                                  |
+|------------------|--------------------------------------------------------------------------------------------|---------------------------------------------------------|
+| `task_start`     | `{ taskId, label, invocationId, parentInvocationId, callDepth }` (§3.3.4)                  | Opens a sub-task scope; pushes `invocationId` onto the session's invocation stack; subsequent rows carry `envelope.taskId = taskId` and `flags.taskBoundary = true` (§3.3). |
+| `task_end`       | `{ taskId, outcome, invocationId, returnTo, parentInvocationId }` (§3.3.4)                 | Closes the scope; pops `invocationId` from the invocation stack; `returnTo` is the EventId of the matching `task_start` (RET link). |
 
-Nesting is unbounded but stack-disciplined: `task_end` rows MUST close
-the innermost open `taskId`. The L2 projector validates the bracket
-discipline on every commit; a mis-nested `task_end` is surfaced as an
-Aperture attention-tier event (the row still commits — append-only — but
-the violation is durable for investigation).
+Nesting is unbounded but stack-disciplined: a `task_end` MUST close the
+innermost open `invocationId`. The L2 projector validates the bracket
+discipline on every commit; a mis-nested `task_end` (top-of-stack
+`invocationId` ≠ row's `invocationId`, or `returnTo` does not resolve to a
+row whose body `invocationId` matches) is surfaced as an Aperture
+attention-tier event (§3.3.4 rule: the row still commits — append-only —
+but the violation is durable for investigation).
 
 Forks may begin mid-task: the child's `fork_origin` Observation captures
-the parent's open task stack in `body.openTaskStack: TaskId[]` so the
-child can either resume the stack or explicitly close it via a synthetic
-`task_end` at offset 1.
+the parent's open invocation stack in
+`body.openInvocationStack: Array<{ taskId, invocationId, parentInvocationId, callDepth }>`
+so the child can either resume the stack (subsequent rows reference the
+top frame's `invocationId` as `parentInvocationId` on any new
+`task_start`) or explicitly close it via synthetic `task_end` rows at
+offset 1+. (The legacy `body.openTaskStack: TaskId[]` shape from Phase 2
+is superseded by `openInvocationStack` under the §6.5 additive-evolution
+rule; readers MUST treat the richer shape as authoritative when present.)
+
+### 10.6.1 Stack-Frame Reconstruction (Derived View)
+
+The invocation stack at any session offset `N` is a derived projection
+over the row range `[0, N]`, computed by a single linear scan over rows
+whose primitive sub-kind is `task_start` or `task_end`:
+
+```pseudo
+ReconstructInvocationStack(sessionId, N) -> Frame[]:
+  stack := []
+  # Seed with fork ancestry if this session is a fork:
+  origin := readRow(sessionId, 0)
+  if origin.primitive.subKind == 'fork_origin':
+    stack := origin.body.openInvocationStack  # inherited from parent at fork point
+
+  for row in scanRange(sessionId, 1, N):
+    sk := row.primitive.subKind
+    if sk == 'task_start':
+      stack.push({
+        invocationId:       row.body.invocationId,
+        parentInvocationId: row.body.parentInvocationId,
+        taskId:             row.body.taskId,
+        label:              row.body.label,
+        callDepth:          row.body.callDepth,
+        startedAtOffset:    row.commitOffset,
+        startEventId:       row.selfRoot,
+      })
+    elif sk == 'task_end':
+      top := stack.peek()
+      if top.invocationId != row.body.invocationId:
+        emitProjectionAlert('invocation-stack-misnesting',
+                            sessionId, row.commitOffset)
+        # do not pop; preserve durable mis-nest signal in the view
+      else:
+        stack.pop()
+  return stack
+```
+
+Properties (Laura testability hooks):
+
+- **Well-bracketed-nesting property.** For all complete (non-truncated)
+  session prefixes, every `task_start` row at offset `i` is matched by
+  exactly one `task_end` row at offset `j > i` with the same
+  `invocationId`, and on the scan `[i, j]` no other `task_end` pops the
+  frame opened at `i`. This is now expressible as a PBT over the WAL
+  trace (Laura Q2 — CALL/RET gap closed).
+- **Backtrace UX (§13).** Sonny's `bt` / backtrace command projects
+  `ReconstructInvocationStack(sid, head)` and renders one line per frame:
+  `#<callDepth>  <label>  [invocation=<id>  startedAt=offset<N>]`.
+- **Fork resume / cancel.** A fork that resumes inherits the parent's
+  `openInvocationStack` via `fork_origin.body`; a fork that abandons the
+  parent's stack writes synthetic `task_end` rows for each inherited
+  frame at offsets 1..k before any new work.
+
+This view is **derived only** — it is never written to the WAL, and the
+WAL itself remains the source of truth for any frame's existence,
+ordering, and outcome. Replay (§11) reconstructs the same view by the
+same scan; equality of the reconstructed stack at any offset is part of
+the §11.6 structural-equivalence oracle.
+
+### 10.6.2 Sub-Task vs Sub-Session (Distinction)
+
+A `task_start` / `task_end` pair is a **sub-task** running **within a
+single session**. A **fork** creates a **sub-session** — a separate
+session with its own `sessionId`, its own segment directory, and its own
+WAL prefix linked to the parent via the hash chain. The two mechanisms
+serve different purposes and MUST NOT be confused by generator authors,
+plugin developers, or downstream readers.
+
+| Aspect                          | Sub-task (`task_start`/`task_end`)              | Sub-session (fork — §10.4)                                |
+|---------------------------------|-------------------------------------------------|-----------------------------------------------------------|
+| Identity                        | `invocationId` (within session)                 | `sessionId` (new session entirely)                        |
+| Storage                         | Same WAL prefix as caller                       | New `wal/sessions/<childSid>/` directory                  |
+| Lineage edge                    | `parentInvocationId` (invocation-stack)         | `parent_session_id` + `fork_point_event_id` (§10.1)       |
+| Concurrent with parent?         | No — caller is blocked until `task_end`         | Yes — child runs independently of parent's continuation   |
+| Plugin / lockfile snapshot      | Inherited (same session)                        | COW-snapshot at fork (§10.4; lockfile verbatim copy)      |
+| Bootstrap manifest              | Same (same session)                             | Inherited by-reference at fork (§10.4)                    |
+| Hash chain                      | Same chain, sequential                          | Child's `prevRoot[1]` links to parent's fork-point row    |
+| Backtrace primitive             | Pushes/pops a frame on the session's stack      | Does not affect parent's invocation stack                 |
+| Use case                        | "Call this sub-routine and wait"                | "Branch off and explore an alternative"                   |
+| Replay containment              | Replays within the parent session's run         | Replays as a separate session with stitched parent prefix |
+
+**Rule of thumb for authors.** If the caller will block on the result and
+the work belongs to the same epistemic line of inquiry, use a sub-task
+(emit `task_start` / `task_end`). If the work is an alternative trajectory
+that should be independently inspectable, replayable, and disposable, use
+a fork (§10.4). The two compose: a fork may itself open sub-tasks, and a
+sub-task may itself open forks — but the mechanisms remain distinct rows
+on distinct WAL surfaces.
 
 ## 10.7 Forked-Timestamp Monotonicity (TDD §6.9, R2 Q6 LOCK)
 
@@ -283,3 +385,7 @@ This section is sufficient for:
   Replay's bootstrap-set comparison against the manifest is unchanged
   by forking.
 - **TDD §6.9 Monotonic-Timestamps across fork:** §10.7 floor rule.
+- **Laura CALL/RET well-bracketed-nesting (Phase 4 UIS testability):** §10.6
+  CALL/RET fields + §10.6.1 stack-frame reconstruction make the
+  "every `task_start` is matched by a `task_end` in a well-bracketed
+  stack" property expressible as a single-scan PBT over the WAL trace.
