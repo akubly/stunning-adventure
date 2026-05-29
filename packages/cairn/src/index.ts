@@ -49,7 +49,6 @@ export {
   getMostRecentUserSession,
   ensureSystemSession,
   listActiveSessionsForRepo,
-  claimLegacyActiveSession,
   SYSTEM_SESSION_REPO_KEY,
 } from './db/sessions.js';
 export { logEvent, getUnprocessedEvents } from './db/events.js';

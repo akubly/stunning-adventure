@@ -37,12 +37,23 @@ export const migration016: Migration = {
       completeOlderStmt.run(repo_key, workdir, repo_key, workdir);
     }
 
-    // UNIQUE partial index: prevents future duplicate active user sessions for
-    // the same (repo_key, workdir) pair at the database level.
+    // UNIQUE partial indexes: prevent future duplicate active user sessions.
+    //
+    // Two indexes are required because SQLite treats each NULL as distinct in a
+    // UNIQUE index — a single index on (repo_key, workdir) would allow multiple
+    // NULL-workdir rows for the same repo_key to coexist.
+    //
+    // Index 1: non-NULL workdir — unique per (repo_key, workdir) pair.
     db.exec(`
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_active_user_workdir
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_active_user_workdir_nonnull
         ON sessions (repo_key, workdir)
-        WHERE status = 'active' AND session_kind = 'user';
+        WHERE status = 'active' AND session_kind = 'user' AND workdir IS NOT NULL;
+    `);
+    // Index 2: NULL workdir — at most one legacy active session per repo_key.
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_active_user_workdir_null
+        ON sessions (repo_key)
+        WHERE status = 'active' AND session_kind = 'user' AND workdir IS NULL;
     `);
   },
 };

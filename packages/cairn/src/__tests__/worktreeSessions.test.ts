@@ -17,6 +17,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import Database from 'better-sqlite3';
 import { getDb, closeDb } from '../db/index.js';
 import {
   createSession,
@@ -29,6 +30,7 @@ import { getWorkdir } from '../hooks/gitContext.js';
 import { normalizeWorkdir } from '../utils/workdir.js';
 import { logEvent } from '../db/events.js';
 import { runSessionStart } from '../hooks/sessionStart.js';
+import { applyMigrations } from '../db/schema.js';
 
 let db: ReturnType<typeof getDb>;
 
@@ -400,63 +402,6 @@ describe('legacy session claiming — claimLegacyActiveSession', () => {
     expect(first!.workdir).toBe(WORKDIR_A);
     expect(second).toBeUndefined();
   });
-
-  it('with two NULL-workdir sessions the most-recent is claimed; older orphan is completed (N5 cleanup)', () => {
-    // claimLegacyActiveSession picks the most-recent NULL-workdir session
-    // (ORDER BY started_at DESC LIMIT 1). The older NULL-workdir session is an
-    // orphan from an abnormal exit — it is completed as a side-effect of the
-    // claim so it does not accumulate and trigger a future false-positive claim.
-    // The orphan must be outside the 5-minute grace window to be eligible for cleanup.
-    const olderTime = "datetime('now', '-10 minutes')";
-    const olderId = randomUUID();
-    const newerId = randomUUID();
-    db.prepare(
-      `INSERT INTO sessions (id, repo_key, branch, session_kind, workdir, started_at) VALUES (?, ?, ?, ?, ?, ${olderTime})`,
-    ).run(olderId, REPO_KEY, 'main', 'user', null);
-    db.prepare(
-      "INSERT INTO sessions (id, repo_key, branch, session_kind, workdir, started_at) VALUES (?, ?, ?, ?, ?, datetime('now'))",
-    ).run(newerId, REPO_KEY, 'main', 'user', null);
-
-    const claimed = claimLegacyActiveSession(db, REPO_KEY, WORKDIR_A);
-
-    // Most-recent session is claimed
-    expect(claimed).toBeDefined();
-    expect(claimed!.id).toBe(newerId);
-    expect(claimed!.workdir).toBe(WORKDIR_A);
-
-    // Older NULL-workdir session is completed as orphan cleanup (N5)
-    const olderRow = db
-      .prepare('SELECT status FROM sessions WHERE id = ?')
-      .get(olderId) as { status: string };
-    expect(olderRow.status).toBe('completed');
-
-    // NULL-workdir lookup now finds nothing (orphan was cleaned up)
-    const remaining = getActiveSession(db, REPO_KEY); // NULL-workdir lookup
-    expect(remaining).toBeUndefined();
-  });
-
-  it('orphan within the 5-minute grace window is not completed (Item 2 safety)', () => {
-    // An orphan that was active recently (e.g. 2 seconds ago) is left alone by
-    // the cleanup step. It may belong to a concurrent archivist that hasn't had a
-    // chance to claim yet — completing it would be data loss.
-    const recentTime = "datetime('now', '-2 seconds')";
-    const recentId = randomUUID();
-    const newerId = randomUUID();
-    db.prepare(
-      `INSERT INTO sessions (id, repo_key, branch, session_kind, workdir, started_at) VALUES (?, ?, ?, ?, ?, ${recentTime})`,
-    ).run(recentId, REPO_KEY, 'main', 'user', null);
-    db.prepare(
-      "INSERT INTO sessions (id, repo_key, branch, session_kind, workdir, started_at) VALUES (?, ?, ?, ?, ?, datetime('now'))",
-    ).run(newerId, REPO_KEY, 'main', 'user', null);
-
-    claimLegacyActiveSession(db, REPO_KEY, WORKDIR_A);
-
-    // The recently-started orphan must not have been completed
-    const recentRow = db
-      .prepare('SELECT status FROM sessions WHERE id = ?')
-      .get(recentId) as { status: string };
-    expect(recentRow.status).toBe('active');
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -587,6 +532,14 @@ describe('startSession race regression — unique active session per (repo_key, 
     expect(() => createSession(db, REPO_KEY, 'main', WORKDIR_A)).toThrow();
   });
 
+  it('UNIQUE index rejects duplicate active NULL-workdir sessions for the same repo_key', () => {
+    // SQLite allows multiple NULLs in a UNIQUE index on (repo_key, workdir), so
+    // migration 016 adds a separate index covering only workdir IS NULL rows.
+    // This test verifies that index is in effect.
+    createSession(db, REPO_KEY, 'main', undefined);
+    expect(() => createSession(db, REPO_KEY, 'main', undefined)).toThrow();
+  });
+
   it('completed session allows a new active session for the same (repo_key, workdir)', () => {
     const id1 = createSession(db, REPO_KEY, 'main', WORKDIR_A);
     db.prepare("UPDATE sessions SET status = 'completed' WHERE id = ?").run(id1);
@@ -599,5 +552,60 @@ describe('startSession race regression — unique active session per (repo_key, 
     const actives = listActiveSessionsForRepo(db, REPO_KEY);
     expect(actives.filter((s) => s.workdir === WORKDIR_A)).toHaveLength(1);
     expect(actives[0].id).toBe(id2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Area 10b: Migration 016 dedup pass — NULL-workdir handling
+// ---------------------------------------------------------------------------
+
+describe('migration 016 dedup pass — NULL-workdir duplicates', () => {
+  it('keeps the most-recent NULL-workdir session and completes older duplicates', () => {
+    // This scenario (multiple active NULL-workdir sessions for the same repo)
+    // can exist in databases created before migration 016. The dedup pass in
+    // migration 016 must handle NULL workdirs: GROUP BY treats NULLs as equal,
+    // so all but the most-recent row are completed.
+    const rawDb = new Database(':memory:');
+    try {
+      // Build a v015 schema manually (no UNIQUE index yet)
+      rawDb.exec(`
+        CREATE TABLE schema_version (
+          version INTEGER PRIMARY KEY,
+          applied_at TEXT NOT NULL DEFAULT (datetime('now')),
+          description TEXT
+        );
+        INSERT INTO schema_version (version, description) VALUES (15, 'pre-016 test schema');
+        CREATE TABLE sessions (
+          id TEXT PRIMARY KEY,
+          repo_key TEXT NOT NULL,
+          branch TEXT,
+          started_at TEXT NOT NULL DEFAULT (datetime('now')),
+          ended_at TEXT,
+          status TEXT NOT NULL DEFAULT 'active',
+          session_kind TEXT NOT NULL DEFAULT 'user',
+          workdir TEXT
+        );
+        INSERT INTO sessions (id, repo_key, branch, session_kind, workdir, started_at)
+          VALUES ('old-null-1', 'test/repo', 'main', 'user', NULL, datetime('now', '-30 minutes'));
+        INSERT INTO sessions (id, repo_key, branch, session_kind, workdir, started_at)
+          VALUES ('old-null-2', 'test/repo', 'main', 'user', NULL, datetime('now', '-10 minutes'));
+        INSERT INTO sessions (id, repo_key, branch, session_kind, workdir, started_at)
+          VALUES ('newest-null', 'test/repo', 'main', 'user', NULL, datetime('now'));
+      `);
+
+      // Applying migrations 016+ deduplicates before creating the UNIQUE index.
+      applyMigrations(rawDb);
+
+      const rows = rawDb
+        .prepare("SELECT id, status FROM sessions WHERE repo_key = 'test/repo' ORDER BY started_at")
+        .all() as Array<{ id: string; status: string }>;
+
+      expect(rows).toHaveLength(3);
+      expect(rows.find((r) => r.id === 'old-null-1')!.status).toBe('completed');
+      expect(rows.find((r) => r.id === 'old-null-2')!.status).toBe('completed');
+      expect(rows.find((r) => r.id === 'newest-null')!.status).toBe('active');
+    } finally {
+      rawDb.close();
+    }
   });
 });
