@@ -1,3 +1,5 @@
+📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Rosella (7/7 items: C-8→C-9 conformance + trust-tier persistence + Pareto budget + `alternatives[]` bounding + invocation-stack cache + 2 options docs PA-B4/childSid awaiting Aaron). Coordinate with Laura on C-9 + Gabriel on PA-B4 Option B router protocol. — Scribe
+
 📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
 
 📌 Team update (2026-05-22T14:07:59Z): **Phase 4.6 Wave 2 complete** — ChangeVectorProvider + ForgePrescriberOrchestrator + autoApplyEligible safety gate + hint dedup + forge-prescribe CLI all shipped. 1199 tests passing, 9 work items landed, 4 decisions merged. Wave 3 (Curator-driven orchestration + composition root) deferred behind ADR. — Scribe
@@ -270,3 +272,72 @@ confirmation, Sonny per-row lineage decision.
 **Disposition:** Graham fully executed, Valanice triaged (pending filesystem edits), Rosella/Gabriel/Roger/Laura silent (pending next session)
 
 See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-review.md for full context.
+
+---
+
+## Learnings — Pass A Execution (2026-05-30)
+
+**Context:** Pass A triage went silent last session after long-lived background agent context limits. Picked back up this session per Aaron's ruling: OPTIONS DOCS FIRST on the two blockers (PA-B4 ancestry/replay, childSid collision) before he decides paths. Completed all 7 assigned Pass A items.
+
+### Phase 1: Options Docs (BLOCKERS)
+
+**Artifact paths:**
+- `docs/crucible-technical-design/decisions/pa-b4-ancestry-replay-options.md` (8.7 KB)
+- `docs/crucible-technical-design/decisions/childsid-collision-options.md` (11.4 KB)
+
+**PA-B4 ancestry/replay divergence:**  
+Identified divergence between §7 generator reads and §10/§11 replay semantics. Two options: (A) unify ancestry-aware reads under one API (`ReadSetBuilder.ancestry()` mirrors `readAncestry()`); (B) split APIs cleanly with documented divergence (`ancestry-dependent` proposal category + Router escalation). Recommended **Option A** — uniform capture in `causalReadSet` is more robust for replay correctness; lower v1 implementation cost (no Router escalation protocol); acceptable ergonomic friction (95% of generators never need parent history).
+
+**childSid collision:**  
+Identified deterministic collision risk when forking the same `(parentSid, offset)` twice (retry after abort). Three options: (A) add counter/timestamp to preimage (preserves determinism within session, different childSid per attempt); (B) protocol-error semantics (user resolves collision manually); (C) resume-aborted-session semantics (idempotent fork, same childSid resumes same ledger). Recommended **Option A (timestamp variant)** — `created_at_ns` already exists in `sessions` table, nanosecond resolution makes collision practically impossible, transparent to user, orphaned directories are GC-able.
+
+**Tradeoff analysis:**  
+Both docs include detailed tradeoff matrices (replay correctness, ergonomics, implementation cost, alignment with append-only philosophy). Both flag cross-team coordination points: PA-B4 touches Laura (conformance C-6b), Gabriel (Router escalation if Option B); childSid touches Roger (fork protocol implementation), Laura (if C-9 acceptance signals reference fork semantics).
+
+### Phase 2: Execute 5 Non-Blocked Items (§7/§10)
+
+**3. Trust-tier promotion persistence (§7.4.1):**  
+Added derived `plugin_trust_history` table keyed on `manifestSha256`. Captures promotion clock (30-day + 10-invocation + 0-violation), promotion events as Decision primitives, violation tracking as Observation rows. Rebuildable from L1 audit trail. Promotion logic triggers on every generator emission; violations reset the 30-day clock. Schema: 7 columns (manifest_sha256 PK, plugin_id, current_tier, first_seen_at_ns, promoted_to_community_at_ns, invocation_count, violation_count, last_invocation_at_ns).
+
+**4. Conformance suite C-8 → C-9 drift (§7.A):**  
+Extended conformance contract from eight to nine property classes. Added C-9 (structural-proposal supersede contract): generators emitting `supersede` replacements MUST set `envelope.parentId` to the obsoleted proposal's EventId (§7.D item 6). Observable signal: §5.A.2 Scheduler resolves `supersededBy` deterministically via `parentId`. Applies to both `StructuralProposalGenerator` and `DataProposalGenerator` when they supersede in-flight proposals. Updated §7.A table + prose to reflect C-1…C-9.
+
+**5. Pareto eval perf budget (§7.5.1):**  
+Specified concrete budget constraints: ≤5ms p99 for up to 50 concurrent proposals (O(N²) worst case, O(N log N) typical with sparse axis sets), ≤10 MiB heap allocation ceiling, 20ms timeout with fail-open (emit all as `incomparable` + log `perf_budget_exceeded` Observation). Laura's §16 perf conformance suite (`ci:conformance:perf`) includes dedicated `pareto-eval-latency` test (1000 runs, synthetic 50-proposal fixture, parameterized by axis-set sparsity 10%/50%/90% overlap). v1 baseline: Forge + Curator emit ≤5 proposals per turn, well below ceiling; budget is forward-looking for v1.5 Eureka (20–30 proposals/turn) and v2 marketplace plugins.
+
+**6. `alternatives[]` unbounded (§7.5.2):**  
+Bounded `PrescriptionResult.incomparableWith[]` to top-K=10 inline + CAS spill. Pathological case (50 proposals all incomparable) = 50 × 49 = 2,450 comparisons → unbounded arrays bloat Decision payloads. Mitigation: evaluator inlines first 10 (sorted lexicographically by `prescriptionId` for determinism), spills full array to CAS as JSON when `|incomparableWith| > 10`, sets `incomparableWithRef` CAS digest. Decision payload size ceiling: 10 × 64-byte IDs + 32-byte CAS ref = 672 bytes max. Aperture/CLI render "...and N more" suffix; full list via `crucible decision show <id> --full`. Replay does NOT compare `incomparableWith[]` (informational metadata, not structural per §11.6 oracle).
+
+**7. Invocation-stack O(N) reconstruction (§10.6.1.1):**  
+Proposed incremental stack cache mitigation for O(N) linear scan. `ReconstructInvocationStack(sessionId, N)` scans all `task_start`/`task_end` rows from offset 0 to N — for 10K-row session at offset 9,999, scans 9,999 rows. Acceptable for replay (one-time) and CLI `bt` (user-initiated), but bottleneck if reconstructed on every commit for Aperture rendering. Added optional L2 cache table `invocation_stack_cache` (session_id, checkpoint_offset, stack_json PK) checkpointing at 100-row intervals. Cost: O(100) scan per reconstruction (99 rows worst case between checkpoints), ~1 KiB per checkpoint × (session length / 100) = 100 KiB for 10K-row session. Cache is **derived only** (rebuildable from L1, cache miss falls back to full scan). **v1 optional** — cache not required for correctness, only performance; mandatory in v1.5 when Sonny's debugger queries stack on every breakpoint or Aperture renders live stack depth. Alternative considered (event-sourced stack delta log) rejected — doubles storage, duplicates WAL rows.
+
+### Cross-Team Coordination Points
+
+**PA-B4 (awaiting Aaron ruling):**
+- If Option A: coordinate with Laura on C-6b conformance test extension (ancestry-read completeness), document ancestry semantics in §7.F (Eureka v1.5).
+- If Option B: coordinate with Gabriel on Router escalation protocol (§5.8 new subsection), upgrade C-6 to C-6-strict in §7.A.
+
+**childSid (awaiting Aaron ruling):**
+- If Option A (timestamp): coordinate with Roger on fork protocol implementation timeline, document collision-prevention guarantee in §10.4.
+- If Option C (resume): add `fork_resume` Observation sub-kind to §6.3, update `sessions.status` state machine in §10.1, coordinate with Roger on resume protocol.
+
+**C-9 conformance drift:**
+- Coordinate with Laura on threading C-9 (structural-proposal supersede) through §16 acceptance signals (she's already working on this per now.md Pass A leftovers).
+
+**Pareto perf budget:**
+- Laura owns §16 perf conformance suite; she'll implement `pareto-eval-latency` test runner.
+
+**Invocation-stack cache:**
+- Coordinate with Roger on L2 projector pattern (same pattern as EventLogProjector from Round 6); coordinate with Sonny on v1.5 debugger requirements (determines if cache becomes mandatory).
+
+### Key Learnings
+
+- **Options docs discipline:** Aaron's "OPTIONS DOCS FIRST" ruling is the right forcing function — writing out the tradeoffs surface-areas the decision cleanly. PA-B4 and childSid both had 2-3 plausible paths; documenting them explicitly with cost/benefit matrices makes the ruling defensible and auditable.
+
+- **Conformance suite evolution:** C-8 → C-9 drift was a real gap — §7.D item 6 (supersede contract) specified the behavior but §7.A conformance suite hadn't been updated to test it. The C-9 addition closes the gap; conformance suite now aligns with §7.D structural obligations.
+
+- **Top-K + CAS spill pattern:** The `incomparableWith[]` bounded-array + CAS-reference mitigation is the first use of this pattern in the CTD. Same pattern applies to any array field that can grow unbounded in pathological cases (e.g., `alternatives[]` in DecisionPayload, `citations[]` in Evidence). Document as reusable pattern for v1.5 when other unbounded arrays surface.
+
+- **Incremental derived-view caching:** The invocation-stack checkpoint cache is the first incremental L2 projection (EventLogProjector and Mirror Projector are full-scan per-commit). The checkpoint-interval pattern (cache every Nth row) generalizes to other expensive derived views (e.g., Pareto frontier history over time, trust-tier promotion timeline). Document as L2 optimization pattern.
+
+- **Pass A triage lessons:** Going silent mid-triage (stale context after long-lived background agents) was avoidable — should have surfaced "context limit approaching" signal earlier. Next time: proactively report partial progress + remaining items before context degrades.

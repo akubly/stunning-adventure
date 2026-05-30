@@ -26,15 +26,19 @@ Catalog enumerates every observability-bearing emission in the v1 system. **Laye
 | Capability denied (external-tier veto) | L4    | attention           | `decision` body `eventType='router.decision'` w/ `outcome='reject'` and `sourceTier='external'` | `policyId`, `predicateRef`, `reason`                          | §5.1 default-deny |
 | Leaderboard update (multi-candidate)   | L4    | notice              | same `router.decision` row where `prescriptionCandidates.length>1` | `candidates[].nonDominatedReason ∈ {optimal, incomparable}`             | §5.7, §9.7     |
 | Applier state transition `applying→failed` | L4 | attention           | `decision` w/ `applierState.kind='failed'`                      | `payload`, `error`, `fenceStart`                                          | §8.1, §8.8     |
+| Applier fence violation retry (PA-B6)   | L4 | notice              | `observation` / `fence_violation_retry`                         | `sessionId`, `retries`, `fenceStart`, `actualHead`                        | §8.3           |
+| Applier fence exhausted (PA-B6)         | L4 | attention           | `observation` / `fence_exhausted`                               | `sessionId`, `maxRetries`, `fenceStart`, `actualHead`                     | §8.3           |
 | Applier compensating revert            | L4    | notice              | `decision` w/ `eventType='applier.revert'`                      | `revertsDecisionId`, `reason`                                             | §8.7           |
 | Adapter lifecycle error (L3 generator) | L3    | attention           | `observation` / `external_input` w/ `body={adapter,phase,err}`  | `adapter`, `phase ∈ {register,start,propose,stop}`, `error`               | §7.2           |
 | Replay-equivalence divergence          | tooling | attention         | `observation` / `replay_divergence` (replayer-emitted, side channel) | `divergenceAtOffset`, `divergenceKind ∈ {oracle,bootstrap,commitment,plugin,cas-miss}` | §11.4, §11.6 |
 | CI gate failure (mock-drift, invariant) | CI   | attention           | external (CI run) → recorded as `observation` / `ci_gate_failure` on the merge-target session | `gate`, `runId`, `prNumber`, `prBlocked: true`            | §16, TDD-Q7    |
 | Subscriber drop (observe queue overflow) | L1  | notice              | `observation` / `subscriber_drop` (periodic)                    | `subscriptionId`, `droppedCount`, `windowOffsets`                         | §4.5           |
 | Scheduler dispatched                   | L3.5  | (silent\*\* / notice) | `decision` / `scheduler_dispatched`                            | `proposalId`, `generatorId`, `priority`, `quantaConsumed`, `queueDepthAtDispatch` | §5.A.2     |
-| Scheduler deferred (back-pressure)     | L3.5  | notice              | `decision` / `scheduler_deferred`                              | `proposalId`, `generatorId`, `reason ∈ {backpressure, quanta_exceeded, priority_starved}`, `routerQueueDepth` | §5.A.2, §5.A.4 |
+| Scheduler deferred (back-pressure)     | L3.5  | notice              | `decision` / `scheduler_deferred`                              | `proposalId`, `generatorId`, `reason ∈ {backpressure, quanta_exceeded, priority_starved, projection_stale}`, `routerQueueDepth` | §5.A.2, §5.A.4 |
 | Scheduler cancelled                    | L3.5  | attention           | `decision` / `scheduler_cancelled`                             | `proposalId`, `generatorId`, `reason ∈ {budget_exhausted, stale, superseded}`, `supersededBy` | §5.A.2     |
 | Scheduler quanta exhausted             | L3.5  | notice              | `decision` / `scheduler_quanta_exhausted`                      | `generatorId`, `windowStart`, `windowEnd`, `quantaBudget`, `quantaConsumed` | §5.A.2, §5.A.3 |
+| Back-pressure projection stale (PA)    | L3.5  | attention           | `observation` / `projection_stale`                             | `projectorName:'back_pressure'`, `lagOffsets`, `lagMs`, `projectionLastSeenOffset`, `ledgerHead` | §5.A.4     |
+| Back-pressure projection recovered (PA) | L3.5 | notice              | `observation` / `projection_recovered`                         | `projectorName:'back_pressure'`, `lagOffsets:0`, `recoveryTimeMs`         | §5.A.4     |
 
 \* `router.decision` with `outcome='apply'` on `builtin` tier is **silent** in Aperture per §8.8 row 4 (high-volume, visible in causal slice on demand). All other rows surface at the indicated severity.
 
@@ -116,6 +120,17 @@ runaway growth. `crucible gc` is zero-risk: it only touches closed sessions and
 CAS blobs with zero live references (§3.2.1 safety). Automatic GC (on idle,
 age-based policy, storage pressure) is v1.5+ when operator personas and
 multi-user workloads justify the complexity.
+
+## 17.3.2 Threat Model (PA)
+
+**Observability telemetry security implications reference ADR-0018 (Pareto-Incomparable Prescriptions Both Non-Dominated) for multi-candidate decision visibility.** See `docs/adr/0018-pareto-incomparable.md` for design rationale. Key points:
+
+- **Leaderboard multi-candidate row (§17.1):** When Router emits `prescriptionCandidates[]` with multiple non-dominated prescriptions, all are visible in the L1 ledger and Aperture. No information hiding at the telemetry layer.
+- **`[incomparable-axes]` badge in Aperture (§9.7):** Users see when prescriptions are Pareto-incomparable. This transparency is intentional — policy decisions (tiebreak/escalate) happen at Router tier (§5), not in the observability layer.
+- **Trust-tier routing:** Router policy table (§18.2) can apply different rules for incomparable builtin vs community prescriptions. Telemetry surfaces the full frontier; policy decides visibility/escalation downstream.
+- **No secret-leakage amplification:** Observability emits what's already in L1 primitives (§6). Same PII/secret exposure model as §18.4.1 (captured Observations contain verbatim tool outputs). No telemetry-layer expansion of sensitive data.
+
+**Cross-references:** ADR-0018 (Pareto-incomparable prescriptions), §9.7 (Aperture leaderboard), §18.2 (Router policy defaults), §18.4.1 (PII/secret handling).
 
 ## 17.4 Acceptance Signals
 

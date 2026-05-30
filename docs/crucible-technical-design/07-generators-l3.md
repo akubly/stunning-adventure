@@ -167,6 +167,53 @@ emit a primitive with a tier higher than their registered tier are
 rejected by L4 (Router policy violation; counted toward the 30-day
 zero-violations clock).
 
+### §7.4.1 Trust-Tier Promotion Persistence (Pass A Item 3)
+
+Promotion from `external` → `community` (30-day + 10-invocation + 0-violation
+clock) is persisted in a derived `plugin_trust_history` table keyed on
+`manifestSha256`. The table lives in `~/.crucible/crucible.db` alongside
+`sessions` and is **rebuildable** from L1 audit trail + Router policy
+violation log.
+
+```sql
+CREATE TABLE plugin_trust_history (
+  manifest_sha256       TEXT PRIMARY KEY,       -- SHA-256 of PluginManifest JSON (§7.2)
+  plugin_id             TEXT NOT NULL,          -- user-facing identifier
+  current_tier          TEXT NOT NULL,          -- 'builtin' | 'adopted' | 'community' | 'external'
+  first_seen_at_ns      INTEGER NOT NULL,       -- TimestampNs when first registered
+  promoted_to_community_at_ns INTEGER NULL,     -- NULL if never promoted; set on first community promotion
+  invocation_count      INTEGER DEFAULT 0,      -- cumulative across all sessions
+  violation_count       INTEGER DEFAULT 0,      -- Router policy violations
+  last_invocation_at_ns INTEGER NULL            -- most recent propose() emission timestamp
+);
+
+CREATE INDEX plugin_trust_by_tier ON plugin_trust_history(current_tier);
+CREATE INDEX plugin_trust_by_last_invocation ON plugin_trust_history(last_invocation_at_ns);
+```
+
+**Promotion logic:**  
+On every generator emission, the `PluginRegistry` (§7.2 lifecycle host)
+updates `invocation_count` and checks: if `current_tier = 'external'` AND
+`(now_ns() - first_seen_at_ns) >= 30 days` AND `invocation_count >= 10`
+AND `violation_count = 0`, promote to `community` by writing
+`promoted_to_community_at_ns` and updating `current_tier`. The promotion
+itself is recorded as a Decision primitive (`kind:'plugin-promotion'`,
+`evidence.tier='internal'`) for audit replay.
+
+**Violation tracking:**  
+Router policy rejections (§5.8, trust-tier mismatch / empty `dependentPaths`
+/ invalid `causalReadSet`) increment `violation_count` and reset the
+30-day clock (`first_seen_at_ns := now_ns()`). Violations are also
+logged as Observation rows (`sub-kind:'policy_violation'`) for L2 projector
+consumption.
+
+**Rebuild invariant:**  
+The L2 projector can reconstruct `plugin_trust_history` from L1 by
+scanning all `plugin-promotion` Decision rows + `policy_violation`
+Observations + per-session generator emission counts. If the table
+diverges from L1, L1 wins and the projection is rebuilt (same rule as
+`sessions` table, §10.1).
+
 ## §7.5 Pareto Fitness Emission Rules and `PrescriptionResult`
 
 Generators emit a `fitnessContract` whose `axes` map is **sparse by
@@ -204,6 +251,87 @@ the chosen-prescription's `nonDominatedReason` on the resulting Decision
 primitive (§6.2 `DecisionPayload.nonDominatedReason`, already present in
 §6) for replay-time audit.
 
+### §7.5.1 Pareto Evaluation Performance Budget (Pass A Item 5)
+
+The `ParetoFitnessEvaluator` runs at proposal-emission time in the hot
+path before Router handoff. To prevent Pareto comparison from becoming a
+latency bottleneck, the evaluator is subject to a strict **performance
+budget**:
+
+**Budget constraints:**
+- **Latency ceiling:** ≤5ms p99 for up to 50 concurrent proposals (typical
+  multi-generator session). Scales O(N²) in worst case (all proposals
+  share all axes), but typical case is O(N log N) with sparse axis sets.
+- **Memory ceiling:** ≤10 MiB heap allocation per evaluation round. Fitness
+  contract maps are lightweight (5–10 entries per proposal × 50 proposals
+  = 250–500 entries total), but unbounded `incomparableWith[]` arrays
+  (see §7.5.2) must be top-K bounded.
+- **Timeout handling:** If evaluation exceeds 20ms (4× p99 ceiling),
+  evaluator **fails open** — emits all proposals with `nonDominatedReason
+  = 'incomparable'` and logs an Observation row
+  (`sub-kind:'perf_budget_exceeded'`) for telemetry aggregation. The
+  session continues; no proposals are dropped.
+
+**Measurement surface:**  
+Laura's §16 perf conformance suite (`ci:conformance:perf`, §16.1) includes
+a dedicated test: `pareto-eval-latency` that generates a synthetic fixture
+of 50 proposals with randomized sparse axis sets and asserts p99 ≤ 5ms over
+1000 runs. The fixture is parameterized by axis-set sparsity (10%, 50%,
+90% overlap) to cover typical vs worst-case O(N²) behavior.
+
+**v1 baseline:**  
+Forge + Curator (the only two v1 generators) emit ≤5 proposals per session
+turn, well below the 50-proposal ceiling. The budget is forward-looking for
+v1.5 Eureka adapter (which may emit 20–30 proposals per turn) and v2
+marketplace plugins.
+
+### §7.5.2 `incomparableWith[]` Top-K Bound + CAS Spill (Pass A Item 6)
+
+The `PrescriptionResult.incomparableWith[]` field (§7.5) lists sibling
+`prescriptionId` values for audit — it enables Aperture (§9) to render
+"why this prescription wasn't dominated" context. However, in pathological
+cases (50 proposals, all incomparable → 50 × 49 = 2,450 comparisons), the
+array can grow unbounded and bloat Decision payloads.
+
+**Mitigation: top-K + CAS reference**
+
+The `ParetoFitnessEvaluator` bounds `incomparableWith[]` to **K=10** entries
+inline and spills the full set to CAS when `|incomparableWith| > K`:
+
+```ts
+interface PrescriptionResult {
+  prescriptionId: string;
+  proposal: DataProposalGenerator | StructuralProposalGenerator;
+  fitness: FitnessContract;
+  nonDominatedReason: 'optimal' | 'incomparable';
+  incomparableWith?: string[];          // top-K=10 prescriptionIds
+  incomparableWithRef?: CasDigest;      // OPTIONAL; CAS digest of full array (JSON) when |incomparableWith| > 10
+}
+```
+
+**Emission logic:**
+- If `|incomparableWith| ≤ 10`: inline the full array, `incomparableWithRef`
+  is unset.
+- If `|incomparableWith| > 10`: inline the first 10 (sorted lexicographically
+  by `prescriptionId` for determinism), write the full array to CAS as
+  JSON, set `incomparableWithRef` to the CAS digest.
+
+**Consumer contract:**
+- Aperture (§9) and CLI (§13) render "...and N more" suffix when
+  `incomparableWithRef` is set; full list is available via
+  `crucible decision show <id> --full` (fetches from CAS).
+- Replay (§11) does NOT compare `incomparableWith[]` — it's informational
+  metadata, not structural (§11.6 oracle). Only `nonDominatedReason` is
+  replay-critical.
+
+**Benefit:**
+- Decision payload size ceiling: 10 × 64-byte IDs = 640 bytes inline + 1
+  32-byte CAS ref = **672 bytes max** per Decision, even in 50-proposal
+  pathological case.
+- CAS dedup: if multiple Decisions share the same `incomparableWith` set
+  (common when evaluating the same Pareto frontier across turns), CAS
+  deduplicates the spill automatically.
+
 ---
 
 ## §7.A Generic L3 Adapter Conformance Contract (Q2 LOCK)
@@ -222,7 +350,7 @@ function runGenericL3AdapterConformance(
 ): ConformanceReport;
 ```
 
-It asserts **eight property classes** (C-1 … C-8). All eight MUST pass for
+It asserts **nine property classes** (C-1 … C-9). All nine MUST pass for
 an adapter to be eligible for any tier above `external`.
 
 | Id | Property class | Pass condition |
@@ -235,6 +363,7 @@ an adapter to be eligible for any tier above `external`.
 | C-6 | **`causalReadSet` completeness** | For every emitted proposal, every EventId / projection key / external input the adapter touched between `start` and emission appears in `causalReadSet`. Property test: stub the `LedgerWindowReader` and `Salsa` cache to record reads; assert read-set superset. (Laura A4 assertion mirrors this.) |
 | C-7 | **`dependentPaths` non-empty on structural** | Any `kind:'structural'` proposal with empty `dependentPaths[]` is rejected at the adapter boundary, not at Router. |
 | C-8 | **No Pareto axis zero-fill** | Adapter MAY emit a fitness map with a strict subset of declared axes; conformance fails if the adapter emits `0` (or any sentinel) for axes its `measurementSource` did not actually measure. |
+| C-9 | **Structural-proposal supersede contract** | Replacement proposals that trigger `scheduler_cancelled{reason:'superseded'}` MUST set `envelope.parentId` to the obsoleted proposal's EventId (§7.D item 6). The conformance suite rejects generators that emit supersede-replacement proposals without valid `parentId` lineage. Observable signal: the §5.A.2 Scheduler resolves `supersededBy` deterministically via `parentId`. Applies to both `StructuralProposalGenerator` and `DataProposalGenerator` when they supersede in-flight proposals. |
 
 The conformance report is itself an L1 Decision primitive (one per adapter
 per run) with `evidence.tier='internal'` and `alternatives[]` listing the

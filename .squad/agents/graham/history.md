@@ -1,3 +1,5 @@
+📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Graham (L3.5 Scheduler Phase 0.5 stub: Aaron ruled YES, FifoScheduler acceptable. Updated Phase 0.5 walking skeleton scope, acceptance signals, SchedulerDispatcher collaborator row). Coordinate with Laura on ADR template Acceptance Signals subsection adoption. — Scribe
+
 📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
 
 📌 Team update (2026-05-28T23:59:59Z): **Crucible CTD Phase 4 Close-out / CTD COMPLETE (2026-05-28)** — Phase 4 synthesis GREEN-FINAL (8 CLEAN / 0 MINOR / 0 STRUCTURAL / 2 APPLIED — cleanest of the three synthesis gates). Two errata applied inline: (A) §3.3.4 InvocationId derivation locked CANONICAL BLAKE3(sessionId||taskId||commitOffset); (B) §7.D clause 6 + conformance C-9 require envelope.parentId on supersede-replacement proposals. CTD totals 377,794 bytes / 21 files / 19 ADRs indexed. No Phase 5 spawn. No Aaron triage required. Post-CTD authoring (ADR bodies, §13 CLI, §16 test scaffolding, @akubly/crucible-* packages) UNBLOCKED. — Scribe
@@ -913,3 +915,32 @@ Authored surgical amendments to docs/crucible-technical-design/01-architectural-
 **Disposition:** Graham fully executed, Valanice triaged (pending filesystem edits), Rosella/Gabriel/Roger/Laura silent (pending next session)
 
 See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-review.md for full context.
+
+## L3.5 Phase 0.5 FifoScheduler Stub — Staged Implementation (2026-05-30)
+
+**Context:** Pass A triage included an item queued for Graham: the L3.5 Scheduler Phase 0.5 FifoScheduler stub. Aaron ruled **"Yes — staged FifoScheduler stub in Phase 0.5 is fine"** on 2026-05-30.
+
+**Status:** Partially complete when session started. §5.A already documented the PA-FifoScheduler staging approach (lines 288-295) and §16.3 already had the SchedulerDispatcher row with ADR-0024 reference. Missing: explicit FifoScheduler item in the Phase 0.5 skeleton scope + graduation acceptance signals.
+
+**Execution:**
+1. ✅ Added FifoScheduler stub as item #6 in Phase 0.5 skeleton scope (`docs/crucible-technical-design-plan.md` lines 649-658)
+2. ✅ Updated Phase 0.5 gate rule from "5 skeleton checks" to "6 skeleton checks" to include Scheduler tier boundary
+3. ✅ Updated Phase 0.5 owner line to include Gabriel (FifoScheduler stub owner)
+4. ✅ Enhanced §5.A.7 acceptance signals with explicit graduation criteria:
+   - A-Sched-1: satisfied by FifoScheduler stub (Phase 0.5)
+   - A-Sched-2 + A-Sched-3: graduation criteria for full WeightedRoundRobinScheduler (Phase 1)
+5. ✅ Enhanced §16.3 SchedulerDispatcher row to note Phase 0.5 stub vs Phase 1 full impl
+6. ✅ Updated `.squad/identity/now.md` — removed L3.5 item from "Likely escalations" list, added Aaron's ruling to "Key rulings" section
+
+**Files touched:**
+- `docs/crucible-technical-design-plan.md` — Phase 0.5 skeleton scope item #6, owner line
+- `docs/crucible-technical-design/05-router-design.md` — §5.A.7 acceptance signals graduation criteria
+- `docs/crucible-technical-design/16-test-strategy-invariants.md` — §16.3 SchedulerDispatcher row
+- `.squad/identity/now.md` — escalation closed, ruling recorded
+
+**Acceptance signal for FifoScheduler stub graduation:** The Phase 0.5 FifoScheduler stub graduates to full `WeightedRoundRobinScheduler` in Phase 1 when **A-Sched-2** (back-pressure asserts under load) and **A-Sched-3** (quanta exhaustion fires per generator per window) acceptance scenarios pass. The stub satisfies **A-Sched-1** (dispatch ordering preserved across replay), which is the Phase 0.5 gate criterion.
+
+**Learnings:**
+- Staged implementation questions benefit from explicit acceptance signals that define **what the stub must prove** (A-Sched-1 for FifoScheduler) vs **what gates graduation** (A-Sched-2/A-Sched-3 for full scheduler).
+- Phase 0.5 walking skeleton is a **tier-boundary validation gate**, not a full-feature gate — the FifoScheduler stub proves the L3.5 tier exists without requiring the complexity of fair dispatch, back-pressure, or quanta budgeting.
+- Cross-referencing ADR-0024 (even before the body exists) establishes the architectural rationale anchor — the decision that the L3.5 tier should exist is Aaron-ruled and locked; the body will explain why.

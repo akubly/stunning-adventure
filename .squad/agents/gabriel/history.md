@@ -1,3 +1,5 @@
+📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Gabriel (PA-B6 fence-violation retry counter + staleness detection + threat-model stubs). Concrete params: max 5 retries, jittered backoff 2^N, 100-event staleness threshold, 50ms catch-up budget. All Pass A agents complete. — Scribe
+
 📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
 
 # Gabriel — History
@@ -681,3 +683,29 @@ never *inferred at consumption*.
 **Disposition:** Graham fully executed, Valanice triaged (pending filesystem edits), Rosella/Gabriel/Roger/Laura silent (pending next session)
 
 See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-review.md for full context.
+
+## 2026-05-30: Pass A Execution — Three Applier/Infrastructure CTD Edits
+
+**Task:** Execute three Pass A findings from the Crucible CTD design panel (Original Pass + Pass A) that were assigned to Gabriel but went silent during triage (likely stale background agent context).
+
+**Deliverables:**
+1. **PA-B6 fence-violation retry counter (BLOCKING)** — Added explicit etriesRemaining parameter, jittered exponential backoff, and telemetry to the Applier fence-violation flow in §8.3. Max retries = 5 (permits up to 5 concurrent hook emissions racing the append). Backoff jitter = `baseDelayMs * (1 + random() * 0.3)` where `baseDelayMs = 2^retryAttempt` (exponential: 2ms, 4ms, 8ms, 16ms, 32ms). Telemetry signals: `crucible.applier.fence_violation{retries, sessionId}` on every retry; `crucible.applier.fence_exhausted{sessionId}` on 5-retry failure. Added two new catalog rows to §17.1 (`fence_violation_retry` and `fence_exhausted`).
+
+2. **Back-pressure projection staleness** — Defined staleness detection and recovery semantics in §5.A.4. Staleness threshold = `projectionLastSeenOffset < ledgerHead - 100` events (approximately 1 group-commit batch at p99 ≤1ms). On staleness detection, Scheduler emits `observation{subKind:'projection_stale'}` and triggers synchronous catch-up (blocks dispatch for at most 50ms), then defers all proposals with `reason:'projection_stale'` until projector confirms caught-up via `observation{subKind:'projection_recovered'}`. Added two new catalog rows to §17.1.
+
+3. **Subsystem-specific threat-model stubs** — Coordinated with Graham's four landed ADR bodies (0002-l1-wal-substrate, 0006-router-policy-chokepoint, 0011-observation-commitment, 0018-pareto-incomparable). Added threat-model subsections to §3.15.1 (L1 WAL / ADR-0002), §5.9 (Router / ADR-0006), §11.10.2 (Hermetic Replay / ADR-0011), and §17.3.2 (Observability / ADR-0018). Each stub cites the authoritative ADR, highlights key security implications (local-disk exposure, tamper-evidence, policy-bypass mitigation, multi-candidate visibility), and cross-references §18.1 (single-user threat model) and §18.4.1 (PII/secret handling).
+
+**Learning — spec precision as implementation contract.** The PA-B6 blocker required concrete numbers (max retries, backoff formula, telemetry signal names) precise enough that Roger could implement from the spec alone. "Bounded retries" is not enough — "max retries = 5" + exponential jitter formula + signal name is. The Pass A review flagged this gap; the fix demonstrates the discipline: specs that don't name their constants and signals aren't implementation-ready.
+
+**Learning — staleness recovery needs active detection, not passive drift.** The original §5.A.4 described the back-pressure projection query but didn't specify what happens when the projector lags. PA finding: without staleness detection + recovery semantics, the Scheduler silently operates on stale data until divergence surfaces as a bug. The fix: offset comparison threshold (100 events), synchronous catch-up gate (50ms budget), fallback defer behavior (`projection_stale` reason), and recovery signal (`projection_recovered`). The spec now has testable assertions for Laura.
+
+**Learning — threat-model stubs as ADR cross-reference anchors.** Rather than duplicating ADR security analysis in each subsection, the stubs cite the ADR as authoritative (`governed by ADR-NNNN`) and extract 3-5 key points (exposure, mitigation, boundary). This keeps subsection threat models lightweight (≤1pp) while preserving full traceability. The pattern: subsection = what, ADR = why + full analysis + alternatives rejected. Threat-model stubs are pointers, not duplicates.
+
+**Files Modified:**
+- `docs/crucible-technical-design/08-applier-decision-gate.md` (§8.3 fence retry semantics)
+- `docs/crucible-technical-design/05-router-design.md` (§5.A.4 staleness recovery + §5.9 threat-model stub)
+- `docs/crucible-technical-design/17-observability-telemetry.md` (§17.1 four new catalog rows + §17.3.2 threat-model stub)
+- `docs/crucible-technical-design/03-l1-wal-substrate.md` (§3.15.1 threat-model stub)
+- `docs/crucible-technical-design/11-hermetic-replay.md` (§11.10.2 threat-model stub)
+
+**Decision drop:** `.squad/decisions/inbox/gabriel-pass-a-applier-infra.md`

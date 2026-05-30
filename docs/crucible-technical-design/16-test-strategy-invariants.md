@@ -92,7 +92,7 @@ double-check per the zero-tolerance gate (§16.5).
 | `GenericL3AdapterContract` (§3.4) | §7.A conformance suite | **Contract** (the suite IS the contract tier) | Self-referential — see §16.6 |
 | `ChangeVectorProvider` (§3.4) | §7 (Generators) | Component | Yes — fail-open returns `[]` |
 | `ParetoFitnessEvaluator` (§3.4) | §7 / §8.5 (`nonDominatedReason` propagation per R2-5) | Component | Yes — dominance correctness |
-| `SchedulerDispatcher` (§3.5) | §5.A L3.5 Scheduler tier (ADR-0024); dispatch ordering + hazard analysis | Component | Yes — dispatch fairness + serialization of WAW hazards |
+| `SchedulerDispatcher` (§3.5) | §5.A L3.5 Scheduler tier (ADR-0024); Phase 0.5 uses FifoScheduler stub (A-Sched-1), Phase 1 upgrades to WeightedRoundRobinScheduler (A-Sched-2/A-Sched-3); dispatch ordering + hazard analysis | Component | Yes — dispatch fairness + serialization of WAW hazards |
 | `PolicyEngine` (§3.5) | §5 Router (policy lookup) + §8 DecisionGate (enforcement) | Component | Yes — verdict shape per trust tier |
 | `EscalationQueue` (§3.5) | §5 Router; §9 Aperture `StructuralApprovalQueue` (Q3) | Component | Yes — priority + timeout |
 | `CausalSliceEngine` (§3.6) | L5 Investigation section (Phase 2/3); §11 ledger reader is the substrate | Component | Yes — slice = recomputed commitment (§11.8 A4) |
@@ -356,6 +356,14 @@ any TDD strategy content:
   corpus; A2 is the per-session unit, A9 is the corpus parameterization.
 - **§7.A Generic L3 Adapter Conformance:** runnable against
   `ci:conformance` via `crucible conformance l3-adapter <id>` per §16.6.
+  Includes **C-9 (structural-proposal supersede contract)**: replacement
+  proposals that trigger `scheduler_cancelled{reason:'superseded'}` MUST set
+  `envelope.parentId` to the obsoleted proposal's EventId. Observable signal:
+  conformance suite rejects generators that emit supersede-replacement proposals
+  without valid `parentId` lineage. NOTE: the §7.A conformance-test specification
+  may shift as Rosella executes PA-B4 (ancestry/replay API unification), but the
+  C-9 contract requirement is stable — it validates the supersede-lineage edge,
+  not the broader ancestry-read mechanism.
 - **Productivity-loop bar:** runnable on every PR per §16.4.
 
 No open question is surfaced by this section. The CTD-side hooks for

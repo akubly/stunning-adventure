@@ -28,12 +28,12 @@ can do the right thing without ceremony.
 | `crucible aperture show`                   | `[<eventId>]`                                       | Open `@inbox` or a single event with one-hop causal slice. |
 | `crucible aperture approve <proposalId>`   | `[--note <text>]`                                   | §9.5: write `structural_proposal_acked` Observation. |
 | `crucible aperture reject <proposalId>`    | `[--reason <text>]`                                 | §9.5: write `structural_proposal_rejected` Observation. |
-| `crucible aperture defer <proposalId>`     |                                                     | Local snooze; no L1 write (§9.9). |
+| `crucible aperture defer <proposalId>`     |                                                     | Local snooze; no L1 write. Re-renders entry with `deferred` annotation. |
 | `crucible aperture why <eventId>`          | `[--hops N=1]`                                      | Backward causal slice (§9.8). |
 | `crucible aperture bisect`                 | `--good <offset> --bad <offset> --probe <cmd>`      | §9.6; env-snapshot captured at start. |
 | `crucible decide approve <proposalId>`     |                                                     | Wraps `Applier.onRouterDecision` for data-tier proposals needing manual gate (§8). |
 | `crucible decide reject <proposalId>`      | `--reason <text>`                                   | Wraps `Applier` reject path. |
-| `crucible decide defer <proposalId>`       |                                                     | Local-only (parallel to aperture defer). |
+| `crucible decide defer <proposalId>`       |                                                     | **⚠️ Local-only snooze — no L1 write, no resolution.** Parallel to `aperture defer` for data-tier proposals. The row remains unresolved on L1 and will reappear on next boot unless you take a durable action (approve/reject). |
 | `crucible revert <decisionId>`             | `--reason <text>`                                   | Wraps `Applier.revert` — compensating Decision (§8.7). |
 | `crucible query <view>`                    | `[--json]`                                          | Run a saved query (§13.4) and render. |
 | `crucible query save <name>`               | `--from <view>`                                     | Persist a saved query into the session catalog. |
@@ -41,6 +41,7 @@ can do the right thing without ceremony.
 | `crucible fsck [<sessionId>]`              |                                                     | Verify hash-chain continuity, CAS-body completeness, bootstrap-manifest consistency, and monotonic-timestamp invariant. Output: per-check pass/fail + first failure offset on error. (§3.13–3.17.) |
 | `crucible gc [--dry-run]`                  |                                                     | Garbage-collect unreferenced CAS blobs and archive old sessions. Mark-and-sweep on closed sessions only (§3.2.1); active sessions excluded. `--dry-run` reports reclaimable bytes without deleting. Unblocks session creation when §17.3.1 hard-limit hit. |
 | `crucible status`                          |                                                     | Status-line one-liner: `⊙N  ◆M  ⌚session-uptime`. |
+| `crucible perf [top]`                      | `[--json]`                                          | Scheduler performance counters (§17.1 catalog). `top` variant sorts by dispatch latency. |
 | `crucible config`                          |                                                     | Edit `~/.copilot/preferences.json` (Crucible + Eureka shared). |
 
 Conventions: `--json` is universally supported on read verbs (§13.6). All
@@ -172,7 +173,10 @@ panels in `~/.copilot/knowledge/technologies/persona-review-panels.md`.
    in `--help` (e.g., `aperture approve` documents "writes
    `Observation{subKind: 'structural_proposal_acked'}`"). This is the
    contract that lets a user reason about what their keystroke will do
-   to the ledger before they press enter.
+   to the ledger before they press enter. Defer verbs (`aperture defer`,
+   `decide defer`) explicitly document their local-only behavior in
+   `--help` and render deferred rows with a `⚠ local-only` badge in
+   `@inbox` (§9.9).
 
 ## 13.6 JSON Output Schemas (Machine Consumers)
 

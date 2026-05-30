@@ -355,6 +355,8 @@ This is the dispatch-side dual of §4.5 observe-queue sampling: bounded
 queue, explicit drop reason, no silent loss. Deferred proposals remain in
 the Scheduler queue; they are reconsidered on the next tick.
 
+**Projection staleness detection and recovery (PA):** The back-pressure projection query (`SELECT COUNT(*) FROM scheduler_dispatched WHERE NOT EXISTS (SELECT 1 FROM router_decision WHERE proposalId = scheduler_dispatched.proposalId)`) reads from L2 derived tables updated by the L2 projector. Staleness occurs if the projector lags L1 append by >100ms (threshold chosen to allow 1 group-commit round-trip at p99 ≤1ms plus buffer). Staleness is detected via ledger head offset comparison: `projectionLastSeenOffset < ledgerHead - STALENESS_THRESHOLD_OFFSET` where `STALENESS_THRESHOLD_OFFSET = 100` events (approximately 1 group-commit batch). On staleness detection, the Scheduler emits `observation{subKind:'projection_stale', body:{projectorName:'back_pressure', lagOffsets, lagMs}}` and triggers synchronous projection catch-up: blocks dispatch for at most 50ms to allow the projector to drain its queue, then proceeds with fallback behavior (defer all proposals with `reason:'projection_stale'` until projector confirms caught-up). Recovery: projector emits `observation{subKind:'projection_recovered', body:{projectorName, lagOffsets:0}}` when `projectionLastSeenOffset == ledgerHead`. §17.1 catalog rows added for both signals.
+
 ### 5.A.5 Hook Bus Interaction (§4)
 
 The Scheduler is an L1Subscriber on the Hook Bus verdict stream. A `pause`
@@ -387,13 +389,29 @@ to Roger and §11 owner at synthesis).
 This subsection is sufficient for Laura to write:
 - **A-Sched-1** (dispatch ordering preserved across replay) — round-trip
   a session through §11 replay; assert the sequence of
-  `scheduler_dispatched.proposalId` values matches.
+  `scheduler_dispatched.proposalId` values matches. **Phase 0.5
+  FifoScheduler stub satisfies this signal** (FIFO order is
+  deterministic and replay-preserving).
 - **A-Sched-2** (back-pressure asserts under load) — saturate the Router
   queue with synthetic proposals; assert `scheduler_deferred` rows appear
-  with `reason: 'backpressure'` once depth exceeds `N`.
+  with `reason: 'backpressure'` once depth exceeds `N`. **Phase 1
+  graduation criterion** — FifoScheduler stub replaced with
+  `WeightedRoundRobinScheduler` when this passes.
 - **A-Sched-3** (quanta exhaustion fires per generator per window) —
   drive one generator past its budget; assert exactly one
-  `scheduler_quanta_exhausted` per window per generator.
+  `scheduler_quanta_exhausted` per window per generator. **Phase 1
+  graduation criterion** — requires full scheduler with quanta budgeting.
+
+## 5.9 Threat Model (PA)
+
+**Router policy enforcement security implications are governed by ADR-0006 (Router as Single Policy Choke-Point).** See `docs/adr/0006-router-policy-chokepoint.md` for full threat analysis. Key points:
+
+- **Policy-bypass mitigation:** Router is the sole policy evaluation point; bypassing requires compromising the Router itself, not downstream components (Applier, Generators). Primary mitigation for T1-class threats (§18.1).
+- **Session-pinned policy:** Policy table rows recorded as L1 Decisions; no mid-session reload. Prevents TOCTOU policy-bypass attacks (§5.5).
+- **Audit trail:** Single choke-point means `crucible why <decision>` traces through one RouterDecision, not distributed evaluation chain.
+- **Trust-tier monotonicity:** §6.7 invariant enforced at policy-install time (§5.1). No mid-session downgrades.
+
+**Cross-references:** §18.1 threat T1 (policy-bypass), ADR-0006 §Security Implications, §5.5 (no live policy reload), §6.7 (Trust-Tier Monotonicity invariant).
 
 ## 5.10 Acceptance Signals
 

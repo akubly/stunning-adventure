@@ -301,6 +301,91 @@ ordering, and outcome. Replay (§11) reconstructs the same view by the
 same scan; equality of the reconstructed stack at any offset is part of
 the §11.6 structural-equivalence oracle.
 
+### 10.6.1.1 Incremental Stack Reconstruction (Pass A Item 7 — O(N) Mitigation)
+
+The `ReconstructInvocationStack(sessionId, N)` pseudocode above is a
+**linear scan** O(N) in session length. For a 10,000-row session,
+reconstructing the stack at offset 9,999 scans all 9,999 prior rows that
+are `task_start` or `task_end`. This is acceptable for replay (one-time
+scan) and CLI `bt` (user-initiated), but becomes a bottleneck if the stack
+is reconstructed **on every commit** for Aperture rendering (§9) or
+debugger backtrace (§13 `bt`).
+
+**Proposed mitigation: incremental stack cache (L2 derived table)**
+
+Add an **optional** L2 cache table `invocation_stack_cache` that stores
+the reconstructed stack at session offsets that are multiples of 100
+(configurable checkpoint interval):
+
+```sql
+CREATE TABLE invocation_stack_cache (
+  session_id       TEXT NOT NULL,
+  checkpoint_offset INTEGER NOT NULL,          -- session offset (multiple of 100)
+  stack_json       TEXT NOT NULL,              -- JSON array of Frame[] at this offset
+  PRIMARY KEY (session_id, checkpoint_offset)
+);
+
+CREATE INDEX inv_stack_by_session ON invocation_stack_cache(session_id);
+```
+
+**Reconstruction algorithm with cache:**
+```pseudo
+ReconstructInvocationStackCached(sessionId, targetOffset) -> Frame[]:
+  lastCheckpoint := floor(targetOffset / 100) * 100
+  cached := SELECT stack_json FROM invocation_stack_cache
+            WHERE session_id = sessionId AND checkpoint_offset = lastCheckpoint
+  
+  if cached exists:
+    stack := parseJSON(cached.stack_json)
+    scanStart := lastCheckpoint + 1
+  else:
+    # Cold start — scan from offset 0 (full O(N) scan once)
+    origin := readRow(sessionId, 0)
+    if origin.primitive.subKind == 'fork_origin':
+      stack := origin.body.openInvocationStack
+    else:
+      stack := []
+    scanStart := 1
+  
+  # Incremental scan from checkpoint (or 0) to target
+  for row in scanRange(sessionId, scanStart, targetOffset):
+    # ...same push/pop logic as §10.6.1...
+  
+  # Optionally: write new checkpoint if targetOffset is a multiple of 100
+  if targetOffset % 100 == 0 AND !cached:
+    INSERT INTO invocation_stack_cache (session_id, checkpoint_offset, stack_json)
+    VALUES (sessionId, targetOffset, toJSON(stack))
+  
+  return stack
+```
+
+**Cost analysis:**
+- **Without cache:** O(N) scan every time. For offset 9,999, scan 9,999 rows.
+- **With cache (checkpoint interval 100):** O(100) scan per reconstruction
+  (99 rows worst case between checkpoints). For offset 9,999, scan from
+  checkpoint 9,900 → 99 rows only.
+- **Cache overhead:** ~1 KiB per checkpoint × (session length / 100). For
+  10,000-row session = 100 checkpoints × 1 KiB = 100 KiB total. Acceptable.
+
+**Rebuild invariant:**  
+The cache is **derived only** — if it diverges from L1 (corrupt write,
+schema migration), delete the cache and rebuild from L1 via full O(N) scan.
+Cache misses fall back to full scan; cache presence is an optimization, not
+a correctness requirement.
+
+**Phase gate:**  
+This is **v1 optional** — the cache is not required for correctness, only
+performance. If v1 sessions stay <1,000 rows (likely), O(N) scan is
+acceptable. The cache becomes mandatory in v1.5 when Sonny's debugger (§13
+`bt`) queries the stack on every breakpoint, or when Aperture (§9) renders
+live stack depth in the leaderboard header.
+
+**Alternative considered: event-sourced stack delta log**  
+Store a `stack_deltas` log (one row per `task_start`/`task_end`) and
+replay deltas instead of scanning WAL rows. Rejected — doubles storage
+(WAL already contains `task_start`/`task_end` rows; deltas would duplicate
+them). Checkpoint cache reuses existing WAL rows without duplication.
+
 ### 10.6.2 Sub-Task vs Sub-Session (Distinction)
 
 A `task_start` / `task_end` pair is a **sub-task** running **within a

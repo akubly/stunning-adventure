@@ -1,6 +1,6 @@
 ---
-updated_at: 2026-05-30T07:11:00Z
-focus_area: Crucible CTD design review (Original Pass + Pass A) — 46 findings across 2 reviews, most addressed; Pass A leftovers pending Rosella/Gabriel/Roger/Laura execution next session
+updated_at: 2026-05-30T07:36:38Z
+focus_area: Crucible CTD design review (Original Pass + Pass A) — 46 findings across 2 reviews, most addressed; Pass A COMPLETE, 2 options docs pending Aaron ruling
 previous_focus: Phase 4.6 Wave 2 ✅ COMPLETE — Change Vector Learning + Runtime Wiring (1199 tests, 9 work items, forge-prescribe CLI, negative-impact attenuation, hint dedup)
 active_issues:
   - "Phase 1: Monorepo restructuring ✅ COMPLETE"
@@ -26,6 +26,7 @@ Aaron requested a Design Panel review of the Crucible test strategy + technical 
 
 ## Key rulings Aaron made this session
 - **L3.5 Scheduler tier:** KEEP in v1 (strong original rationale)
+- **L3.5 Phase 0.5 FifoScheduler stub:** YES — staged stub OK (Aaron ruling 2026-05-30); Phase 0.5 uses FifoScheduler (satisfies A-Sched-1), Phase 1 upgrades to WeightedRoundRobinScheduler (A-Sched-2/A-Sched-3 graduation criteria)
 - **L1 substrate (ADR-0002):** Accept custom WAL as-is — architectural coupling drives the decision, no SQLite benchmark needed
 - **B3 hermetic replay:** Honest "boundary-faithful vs prompt-faithful" framing in §11.10.1 + §12.7
 - **E3 secrets/PII:** v1 = honest §18 known-limits doc + `crucible session delete` + retention ceiling; NO redaction subsystem; redaction is v1.5+ OPEN
@@ -41,43 +42,64 @@ Aaron requested a Design Panel review of the Crucible test strategy + technical 
 - Perf conformance suite (`ci:conformance:perf`) added to §16.1
 - Scheduler row + A13 acceptance scenario added to §16.3 (Laura, pre-silent-success)
 
-## ⚠️ Pass A execution gaps — to address next session
+## ⚠️ Pass A execution gaps — CLOSED
+
+All 6 agents executed cleanly:
+
+- ✅ Valanice — §9 Aperture edits (4/4 DONE)
+- ✅ Gabriel — Applier/infrastructure edits (3/3 DONE)
+- ✅ Roger — CLI verb edits (2/2 DONE)
+- ✅ Laura — Test strategy + ADR template (2/2 DONE)
+- ✅ Rosella — Generators + branching (7/7 DONE) + 2 options docs PA-B4/childSid awaiting Aaron ruling
+- ✅ Graham — L3.5 Phase 0.5 stub (Aaron ruling implemented)
+
+**Blockers resolved:**
+- PA-B6 fence-violation retry → concrete numbers, backoff formula, telemetry signals
+- Staleness detection → offset threshold, catch-up budget, recovery semantics
+- L3.5 Phase 0.5 → Aaron ruling implemented (FifoScheduler stub OK)
+
+**Options docs awaiting Aaron ruling (non-inbox):**
+- PA-B4 ancestry/replay divergence: `docs/crucible-technical-design/decisions/pa-b4-ancestry-replay-options.md`
+- childSid collision: `docs/crucible-technical-design/decisions/childsid-collision-options.md`
+
+**Next session:** When Aaron rules, merge options docs to decisions.md and implement chosen options.
+
+## ⚠️ PREVIOUS Session Pass A execution gaps — to address next session
 Pass A triage went out to 6 agents. **Graham executed end-to-end** (3 ADR bodies created, chapters edited). **Valanice triaged cleanly** (4 ACCEPT, no escalations) but did NOT execute her §9 edits — they're queued in her response, not in the filesystem. **Rosella, Gabriel, Roger, Laura went silent** on the Pass A triage (likely stale context after long-lived background agents).
 
 **Next session: pick up these Pass A items.** Findings stored in DB table `persona_findings` review_id=2. The work owed:
 
-### Valanice (queued, not done) — §9 Aperture edits
-- PA-B5 Defer paradox: remove `defer` from §9.4 apply-failed resolution list (or add `aperture_deferred` Observation sub-kind)
-- Cache invalidation: rewrite §9.2 cache-validity rule to prefix-compatible model
-- Defer volatility disclosure: add `--help` text + `@inbox` render hint per §9.9
-- ApertureNotifier Phase 0.5 stub: add Phase 0.5 row to §9.11 + mirror in §8.1
+### COMPLETED — Valanice (queued, not done) — §9 Aperture edits
+- ✅ PA-B5 Defer paradox: remove `defer` from §9.4 apply-failed resolution list (or add `aperture_deferred` Observation sub-kind)
+- ✅ Cache invalidation: rewrite §9.2 cache-validity rule to prefix-compatible model
+- ✅ Defer volatility disclosure: add `--help` text + `@inbox` render hint per §9.9
+- ✅ ApertureNotifier Phase 0.5 stub: add Phase 0.5 row to §9.11 + mirror in §8.1
 
-### Rosella (silent) — §7 Generators + §10 Branching cluster (7 items)
-- **PA-B4 ancestry/replay divergence (BLOCKING)** — define ancestry-aware reads uniformly OR split APIs. **Aaron may want to rule on this.**
-- Trust-tier promotion persistence: add derived `plugin_trust_history` table keyed on `manifestSha256`
-- **Deterministic childSid collision** — pick (a) counter/timestamp in preimage, (b) protocol-error semantics, or (c) "resume aborted session". **Aaron pick.**
-- Conformance suite C-8→C-9 drift in §7.A
-- Pareto eval perf budget
-- `alternatives[]` unbounded — top-K + CAS reference
-- Invocation-stack O(N) reconstruction
+### COMPLETED — Rosella (silent) — §7 Generators + §10 Branching cluster (7 items)
+- ✅ **PA-B4 ancestry/replay divergence (BLOCKING)** — define ancestry-aware reads uniformly OR split APIs. **Aaron may want to rule on this.** OPTIONS DOC CREATED
+- ✅ Trust-tier promotion persistence: add derived `plugin_trust_history` table keyed on `manifestSha256`
+- ✅ **Deterministic childSid collision** — pick (a) counter/timestamp in preimage, (b) protocol-error semantics, or (c) "resume aborted session". **Aaron pick.** OPTIONS DOC CREATED
+- ✅ Conformance suite C-8→C-9 drift in §7.A
+- ✅ Pareto eval perf budget
+- ✅ `alternatives[]` unbounded — top-K + CAS reference
+- ✅ Invocation-stack O(N) reconstruction
 
-### Gabriel (silent) — Applier/infra cluster (3 items)
-- **PA-B6 fence-violation retry counter (BLOCKING)** — explicit retriesRemaining + jittered backoff + telemetry
-- Back-pressure projection staleness in §5.A.4
-- Subsystem-specific threat-model stubs (coordinate with Graham's ADR bodies)
+### COMPLETED — Gabriel (silent) — Applier/infra cluster (3 items)
+- ✅ **PA-B6 fence-violation retry counter (BLOCKING)** — explicit retriesRemaining + jittered backoff + telemetry
+- ✅ Back-pressure projection staleness in §5.A.4
+- ✅ Subsystem-specific threat-model stubs (coordinate with Graham's ADR bodies)
 
-### Roger (silent) — CLI (2 items)
-- Add `crucible perf [top] [--json]` to §13.1 verb table (or replace §17 citation with `crucible query`)
-- Defer `--help` UX text (coordinate with Valanice)
+### COMPLETED — Roger (silent) — CLI (2 items)
+- ✅ Add `crucible perf [top] [--json]` to §13.1 verb table (or replace §17 citation with `crucible query`)
+- ✅ Defer `--help` UX text (coordinate with Valanice)
 
-### Laura (silent) — Test strategy (2 items)
-- Thread C-9 (structural-proposal supersede) through §16 acceptance signals (coordinate with Rosella on §7.A)
-- Propose "Acceptance Signals" subsection requirement for ADR body template (coordinate with Graham)
+### COMPLETED — Laura (silent) — Test strategy (2 items)
+- ✅ Thread C-9 (structural-proposal supersede) through §16 acceptance signals (coordinate with Rosella on §7.A)
+- ✅ Propose "Acceptance Signals" subsection requirement for ADR body template (coordinate with Graham)
 
 ## Likely escalations for Aaron (next session)
 1. **PA-B4 ancestry/replay divergence** (Rosella's blocker) — strategic fork: unify ancestry-aware reads vs. split APIs
 2. **childSid collision** (Rosella) — three concrete options to pick from
-3. **L3.5 stub Phase 0.5 — FifoScheduler** (Graham triage item, may be queued in his work) — confirm staged implementation OK
 
 ## Open v1.5+ doors captured (do not address in v1)
 - Tiered recording fidelity (call-only / call+result / call+full-output)

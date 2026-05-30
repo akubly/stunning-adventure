@@ -645,13 +645,21 @@ section authoring against it.
    session ID, row count, and last commit offset (§13 — minimal verb).
 5. **`crucible replay`** passes the A2 conformance assertion (§11.8) —
    byte-equivalent replay ledger from the captured session.
+6. **`FifoScheduler` stub** — L3.5 Scheduler tier boundary (§5.A) exists
+   with a minimal FIFO implementation (no quanta budgeting, no
+   back-pressure). Emits `scheduler_dispatched` immediately for every
+   arriving proposal, satisfying A-Sched-1 replay-ordering.
+   **Graduates to full `WeightedRoundRobinScheduler` in Phase 1** when
+   A-Sched-2 (back-pressure) and A-Sched-3 (fair dispatch under load)
+   acceptance scenarios pass.
 
-**Gate rule:** Phase 1 fan-out is blocked until all 5 skeleton checks
+**Gate rule:** Phase 1 fan-out is blocked until all 6 skeleton checks
 pass in CI on a single green run. The skeleton is intentionally minimal —
-no hook bus, no Router, no generators, no Aperture. It validates only the
-L0→L1→replay vertical.
+no hook bus, no full Router policy, no full Scheduler, no generators,
+no Aperture. It validates the L0→L1→replay vertical plus the L3.5
+Scheduler tier boundary existence (per ADR-0024 rationale).
 
-**Owner:** Graham (orchestration) + Roger (WAL) + Alexander (SDK provider).
+**Owner:** Graham (orchestration) + Roger (WAL) + Alexander (SDK provider) + Gabriel (FifoScheduler stub).
 **Estimated effort:** 2–3 days.
 
 ### Phase 1 — Core Stack (parallel fan-out, depends on Phase 0.5)

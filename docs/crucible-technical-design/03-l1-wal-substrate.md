@@ -798,6 +798,17 @@ integration tests.
 No failure mode silently advances the chain. Every recoverable failure
 either re-runs from the last good `commitOffset` or emits an observable row.
 
+## 3.15.1 Threat Model (PA)
+
+**L1 WAL substrate security implications are governed by ADR-0002 (L1 WAL Substrate Selection).** See `docs/adr/0002-l1-wal-substrate.md` for full threat analysis. Key points:
+
+- **Local-disk exposure:** WAL segments contain verbatim Observation payloads (LLM responses, tool outputs). Single-user threat model (§18.1); no adversarial multi-user in v1.
+- **Hash-chain tamper-evidence:** Per-row BLAKE3 chain (`prevRoot` → `selfRoot`) provides self-audit capability via `cairn fsck`. Detects corruption or intentional tampering; does not prevent it (no encryption at rest in v1).
+- **CAS content unencrypted:** Content-addressed blobs stored plaintext. Encryption-at-rest deferred to v1.5+ (§18.4).
+- **Retention control:** `crucible session delete --purge` is the remediation primitive (§18.4.1). Soft-warn 500 MiB, hard-limit 2 GiB / 90-day ceiling (§17.3.1).
+
+**Cross-references:** §18.1 (single-user threat model), ADR-0002 §Security Implications, §18.4.1 (Known Limits — PII/secret handling).
+
 ## 3.16 Acceptance Signal for Laura
 
 The shape and contracts above are sufficient for the following test

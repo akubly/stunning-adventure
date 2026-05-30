@@ -50,6 +50,14 @@ constructor-injected collaborators: `AppendProtocol` (Roger §3),
 (Valanice §9), `StructuralApprovalQueue` (also §9). No singletons; one
 Applier per session.
 
+**Phase 0.5 (Walking Skeleton):**
+- **ApertureNotifier stub** — `ApertureNotifier` is a single-method interface:
+  `notify(level, kind, body)`. Applier calls it on
+  `paused-awaiting-structural-ack` entry and `applying → failed` transitions
+  (§8.8). Implementation logs to console; no projection, no queue persistence.
+  This unblocks Applier integration tests without requiring §9's full
+  projection layer.
+
 ## 8.2 State Machine (R2-3 LOCK)
 
 ```
@@ -138,8 +146,15 @@ subsequent reads see it. AppendProtocol's group-commit gives p99 ≤1ms
 (Roger §3); the fence is the optimistic concurrency check that no other
 writer slipped a row in between window-read and Decision-append.
 
+**PA-B6 retry semantics (BLOCKING):** Bounded-retry with jittered backoff + telemetry. Max retries = 5 (chosen to allow up to 5 concurrent hook emissions between read and write while still failing fast on systematic contention). Backoff jitter = `baseDelayMs * (1 + random() * 0.3)` where `baseDelayMs = 2^retryAttempt` (exponential: 1ms, 2ms, 4ms, 8ms, 16ms). Telemetry signal: `crucible.applier.fence_violation{retries, sessionId}` on every retry; `crucible.applier.fence_exhausted{sessionId}` on 5-retry failure. §17.1 catalog row added below.
+
 ```ts
-async function applyWithFence(rd: RouterDecision): Promise<ApplyOutcome> {
+const MAX_FENCE_RETRIES = 5;  // PA-B6: permits up to 5 hook emissions racing the append
+
+async function applyWithFence(
+  rd: RouterDecision,
+  retriesRemaining: number = MAX_FENCE_RETRIES
+): Promise<ApplyOutcome> {
   // (1) Snapshot the head offset BEFORE reading the window.
   const fenceStart = await ledger.head(rd.sessionId);
 
@@ -175,9 +190,24 @@ async function applyWithFence(rd: RouterDecision): Promise<ApplyOutcome> {
   });
 
   if (result.kind === 'fence-violation') {
-    // Another writer raced us. Retry: re-snapshot head, re-read window,
-    // re-hash, re-append. Bounded retries (3); then surface as 'failed'.
-    return applyWithFence(rd);
+    // PA-B6: Another writer raced us (typically hook emission). Retry with jittered backoff.
+    if (retriesRemaining <= 0) {
+      // Exhausted retries — emit telemetry and fail.
+      telemetry.emit('crucible.applier.fence_exhausted', { sessionId: rd.sessionId });
+      return {
+        kind: 'failed',
+        error: { code: 'FENCE_EXHAUSTED', message: `Fence violation after ${MAX_FENCE_RETRIES} retries`, fenceStart, actualHead: result.actualHead }
+      };
+    }
+
+    // Emit retry telemetry + jittered backoff before retry.
+    const retryAttempt = MAX_FENCE_RETRIES - retriesRemaining + 1;
+    telemetry.emit('crucible.applier.fence_violation', { retries: retryAttempt, sessionId: rd.sessionId });
+    const baseDelayMs = 2 ** retryAttempt;  // exponential: 2ms, 4ms, 8ms, 16ms, 32ms
+    const jitteredDelayMs = baseDelayMs * (1 + Math.random() * 0.3);
+    await sleep(jitteredDelayMs);
+
+    return applyWithFence(rd, retriesRemaining - 1);
   }
   return { kind: 'applied', decisionId: result.eventId, commitOffset: result.offset };
 }

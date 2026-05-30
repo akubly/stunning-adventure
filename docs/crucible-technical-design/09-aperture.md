@@ -90,8 +90,11 @@ CREATE INDEX ix_aperture_kind       ON aperture_events(session_id, kind, emitted
 bit-for-bit. Validation: A property test re-projects the same prefix in two
 fresh in-memory DBs and asserts row-set equality; any divergence is a
 projector bug, not a user-visible state. The on-disk cache is a read-through
-optimization with a content-addressed manifest that Aperture refuses to load
-if the L1 head hash diverges from the cache header.
+optimization with a **prefix-stable cache manifest**: the cache is valid iff
+its recorded L1 head hash is a prefix of the current L1 (not necessarily
+bit-equal). This allows the cache to survive append-only L1 growth without
+invalidation — the projector incrementally projects new rows from
+`cacheHead+1` to `currentHead` rather than re-projecting from offset 0.
 
 ## 9.3 Notification Policy (Four Levels)
 
@@ -124,11 +127,17 @@ whose `parentId` or `causedBy` references the source row. Examples:
   resolved by `structural_proposal_acked|rejected|expired` Observation with
   matching `proposalId`.
 - `apply-failed` → resolved by a subsequent `applied` Decision on the same
-  `proposalId`, or by an explicit `crucible aperture defer` Decision.
+  `proposalId`.
 - `hook-pause` → resolved by Router `outcome: 'resume' | 'reject'`.
 
 Resolution is **derived, not stored.** The `resolved` column is recomputed
 during `LedgerProjector.onCommit`. This keeps the queue a pure view.
+
+**PA-B5 resolution:** `crucible aperture defer` does NOT write to L1 (§9.9)
+and therefore does NOT resolve the event. Defer is a local-only snooze that
+leaves the row in the queue but clears it from immediate attention. This is
+intentional: deferred rows remain unresolved until the user takes a durable
+action (approve/reject).
 
 ## 9.5 StructuralApprovalQueue (R2-3 LOCK)
 
@@ -315,7 +324,7 @@ debugger affordances.
 | `crucible aperture show [<id>]`     | Without id: open `@inbox`. With id: show full event body + causal slice one-hop.   |
 | `crucible aperture approve <id>`    | Write `structural_proposal_acked` Observation; queue entry resolves immediately.   |
 | `crucible aperture reject <id> [--reason <text>]` | Write `structural_proposal_rejected` with optional user note.            |
-| `crucible aperture defer <id>`      | No L1 write; re-renders the entry with a `deferred` annotation in the local view.  |
+| `crucible aperture defer <id>`      | **⚠️ Local-only snooze — no L1 write, no resolution.** Re-renders the entry with a `deferred` annotation in the local `@inbox` view. The row remains unresolved on L1 and will reappear in the queue on next boot unless you take a durable action (approve/reject). Use this when you need to clear attention without committing to a verdict. |
 | `crucible aperture bisect ...`      | Delegates to §9.6 / §13.6 with env-snapshot header.                                |
 | `crucible aperture why <pid>`       | One-hop backward causal slice (Sonny's T1 cut).                                    |
 
@@ -324,6 +333,12 @@ a "snooze" affordance that surfaces in the local CLI view only, so the user
 can clear their attention without committing to a verdict. This is the
 empathy lever: the queue must support "I see this and I'm not ready
 yet" without forcing a binary.
+
+**Defer volatility disclosure:** Because `defer` is local-only, deferred rows
+reappear in `@inbox` on next boot (they remain unresolved on L1). The
+`--help` text explicitly warns of this; the CLI renders deferred rows with a
+`⚠ local-only` badge so the user sees the volatility at a glance. This is
+honest UX: we don't pretend local state is durable.
 
 ## 9.10 Collaborator Name Alias Map
 
@@ -336,6 +351,13 @@ yet" without forcing a binary.
 | `aperture_events`       | (formerly `mirror_events`)         | Renamed per Round 2.1 Aperture rename. |
 
 ## 9.11 Acceptance Signals
+
+**Phase 0.5 (Walking Skeleton):**
+- **ApertureNotifier stub** — `ApertureNotifier` interface defined with one
+  method: `notify(level: NotificationLevel, kind: ApertureEventKind, body:
+  unknown)`. Applier calls it on structural-proposal transitions (§8.8).
+  Implementation logs to console; no projection, no queue. This unblocks
+  Applier integration tests without requiring the full projection layer.
 
 This spec is sufficient for Laura to write:
 

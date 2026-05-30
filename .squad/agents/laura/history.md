@@ -1,3 +1,5 @@
+📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Laura (C-9 conformance threading in §16.9 + ADR template with Acceptance Signals subsection). Coordinate with Rosella on C-9 forward-compatibility note; coordinate with Graham on ADR template socialization. All Pass A agents complete. — Scribe
+
 📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
 
 📌 Team update (2026-05-28T23:59:59Z): **Crucible CTD Phase 2 Close-out (2026-05-28)** — §16 shipped. All 17 collaborator roles mapped (none unmapped). Cross-ref matrix complete. 3-page budget honored. No open questions. Phase 3 synthesis will re-verify deferred-section bindings. Ready for triage. — Scribe
@@ -697,3 +699,21 @@ forcing function that keeps the two docs honest.
 **Disposition:** Graham fully executed, Valanice triaged (pending filesystem edits), Rosella/Gabriel/Roger/Laura silent (pending next session)
 
 See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-review.md for full context.
+
+## Learnings (2026-05-30: Pass A Execution — C-9 Threading + ADR Acceptance Signals Template)
+
+**Task:** Execute two Pass A test-strategy items left from prior session: (1) thread C-9 conformance check through §16.9 acceptance signals, (2) propose Acceptance Signals subsection requirement for ADR body template.
+
+**What shipped:**
+- §16.9 edit: Added explicit C-9 acceptance signal to §7.A Generic L3 Adapter Conformance entry with observable signal ("conformance suite rejects generators that emit supersede-replacement proposals without valid parentId lineage") + coordination note for Rosella (PA-B4 may shift §7.A test harness, but C-9 contract is stable).
+- docs/adr/adr-template.md: New template file with mandatory "Acceptance Signals" subsection using five-tier taxonomy (contract/component/acceptance/invariant/countersignal).
+- Decision drop: .squad/decisions/inbox/laura-pass-a-test-strategy.md for Graham (ADR template review + backfill coordination) and Rosella (FYI on C-9 coordination note).
+
+**Key learning — ADRs define WHAT but not HOW WE KNOW it worked:**
+- Examined ADRs 0001/0002/0006/0011/0018. All have strong "What Changes" (implementation surface) and "Consequences" (impact), but none explicitly define acceptance signals — the observable test-strategy-level evidence that the ADR is correctly implemented.
+- Problem: as a test-strategy owner, I have to infer from "What Changes" prose what the testable contract properties are. ADR-0002 lists file paths but doesn't say "the acceptance signal is: AppendProtocol conformance test rejects post-fsync writes." ADR-0006 argues bypass prevention but doesn't name the countersignal: "if Applier approves without Router, the ADR is violated."
+- Solution: explicit "Acceptance Signals" subsection bridges ADR decisions to test strategy. This is the test-centric counterpart to "What Changes" (implementation-centric) and "Consequences" (impact-centric).
+- Five-tier taxonomy (contract/component/acceptance/invariant/countersignal) maps directly to §16.1 test category matrix, making ADR acceptance signals mechanically translatable into test-plan entries.
+
+**Investigative note for future ADR authoring:**
+When spawning test-authoring agents, point to the ADR's Acceptance Signals subsection instead of inferring test requirements from "What Changes" prose. The five-tier taxonomy is the test-strategy authority — it tells me what to test at which tier.

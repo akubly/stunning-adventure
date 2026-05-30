@@ -1,3 +1,5 @@
+📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Roger (§13.1 CLI verbs: `crucible perf [top]` + `defer` help alignment). Coordinate with Valanice on §9.9 disclosure. All Pass A agents complete. Options docs PA-B4/childSid awaiting Aaron ruling. — Scribe
+
 📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
 
 📌 Team update (2026-05-28T23:59:59Z): **Crucible CTD Phase 2 Close-out (2026-05-28)** — §10 + §15 shipped. All Phase 1 errata closed (2a/2b/12b/5). Cross-section R2-6 sync (Rosella ↔ Roger) CLOSED. PluginVersionLock format finalized. Phase 3 unblocked. — Scribe
@@ -751,3 +753,28 @@ Phase 2:
 **Disposition:** Graham fully executed, Valanice triaged (pending filesystem edits), Rosella/Gabriel/Roger/Laura silent (pending next session)
 
 See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-review.md for full context.
+
+## 2026-05-30: Pass A CLI Edits — §13.1 verb registration + §9.9 coordination
+
+**Context:** Picked up two owed Pass A triage items after session silence. Aaron requested CLI documentation edits: (1) register crucible perf [top] [--json] in §13.1 verb table, (2) coordinate crucible defer --help text with Valanice's parallel §9.9 edit.
+
+**Decision 1: crucible perf Registration**
+- **Choice:** Added as standalone verb (like status, sck), NOT as saved query
+- **Rationale:** §17 explicitly documents [top] sub-variant (dispatch-latency sort) which is verb-specific, not query-driven. Consistency with diagnostic-verb family. Verb placement: between status and config in §13.1
+- **Placement:** §13.1 line 44 (new row between diagnostic verbs and config)
+
+**Decision 2: defer Help Text Coordination**
+- **Original:** "Local snooze; no L1 write (§9.9)."
+- **Updated:** "Local snooze; no L1 write. Re-renders entry with \deferred\ annotation."
+- **Rationale:** Embedded Valanice's expected substring from §9.9 line 318 ("no L1 write; re-renders entry with deferred annotation"). Removes redundant cross-ref; text is now self-contained for CLI --help stability.
+- **Coordination:** Valanice now has locked help text to reference in §9.9 edits; no ping-pong on text consistency.
+
+**Files modified:** docs/crucible-technical-design/13-crucible-cli-shell.md (§13.1 two rows edited)
+
+### Learnings
+
+**"Minor" edits often require multi-surface coordination.** The defer help text appears in three places: (1) §9.9 semantics table, (2) §13.1 verb table, (3) CLI binary --help output. If you change one without thinking about the others, you create an async update problem. The right pattern: lock help text at the "closest to implementation" site (§13.1 in this case) and use that as the reference for cross-document consistency. Valanice's parallel edit on §9.9 can now cite §13.1 as the stable source.
+
+**Standalone verb vs saved query — heuristic:** If the affordance has a **sub-variant with different semantics** (perf vs perf top), it's a verb. If it's purely a **named SELECT**, it's a saved query. The [top] sort policy couldn't live in a saved query without embedding sort hints in the query name (e.g. @perf-top-dispatch-latency), which doesn't scale. Diagnostics with complex filtering belong in verbs, not queries.
+
+**Documentation ownership boundary:** CLI descriptions should be stable w.r.t. what the CLI actually does. If a section's description references the CLI, treat the CLI text as the authoritative surface and work backward to the design doc, not the other way around. §17 references crucible perf; the CLI text in §13.1 is now the contract both §17 and the binary promise to fulfill.

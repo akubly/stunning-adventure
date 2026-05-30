@@ -245,3 +245,15 @@ A stronger property — **prompt-faithful replay** — would require that the ca
 3. Surface the diff in Aperture as a `boundary_prompt_gap` metric, enabling operators to assess how much invisible context the SDK added.
 
 Until that surface exists, any claim of "hermetic replay" must be qualified as **boundary-faithful** — faithful to the L0/L1 contract, not to the model's actual input. Alexander (§12 owner) authors the corresponding §12.7 paragraph documenting the SDK-side validation hook; this subsection is the replay-side complement. Operators relying on long-term replay should preserve plugin artifacts externally — tarball archives indexed by lockId, integrity verification via CAS digest, and resilience to registry churn.
+
+## 11.10.2 Threat Model (PA)
+
+**Hermetic replay security implications are governed by ADR-0011 (Observation as First-Class L1 Primitive + Declared Context-Window Commitment).** See `docs/adr/0011-observation-commitment.md` for full threat analysis. Key points:
+
+- **Observation rows contain sensitive payloads:** Verbatim LLM responses and tool outputs. Same retention/exposure considerations as ADR-0002 (local-disk, single-user, `crucible session delete --purge` control primitive).
+- **Context-window commitment as tamper-evidence:** `contextWindowCommitment` BLAKE3 hash proves what was committed, not who committed it. Detects divergence at replay time; does not prevent it. Multi-user attestation deferred to v1.5+.
+- **Fallback path over-commits:** When `commitmentMethod: 'fallback'`, the hash covers the full ledger prefix (conservative). Weaker precision, but does not weaken correctness (§11.10.1).
+- **Boundary-faithful vs prompt-faithful:** v1 replay guarantees trace reproducibility at the L0/L1 boundary; does NOT guarantee the model saw identical prompts (SDK may inject hidden content). Degradation acknowledged in §11.10.1.
+
+**Cross-references:** §18.1 (single-user threat model), ADR-0011 §Security Implications, §11.10.1 (boundary-faithful honesty), §18.4.1 (Known Limits — PII/secret handling).
+

@@ -1,8 +1,29 @@
+📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Valanice (§9 Aperture edits ×4), Gabriel (Applier/infra ×3), Roger (CLI verbs ×2), Laura (test strategy + ADR template ×2), Rosella (Generators/branching ×7 + 2 options docs), Graham (L3.5 Phase 0.5 stub). Options docs PA-B4 + childSid awaiting Aaron ruling. Orchestration logs + session log + decisions merged. — Scribe
+
 📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
 
 # Valanice — History
 
 📌 Team update (2026-05-28T23:59:59Z): **Crucible CTD Phase 2 Close-out (2026-05-28)** — §9 + §13 shipped. Finding 6b closed (R2-3 sync CLOSED). Sonny debugger-UX advisory delivered (watch→tail collision + 16 user stories US-S-10..25 + predicate spec elaboration). Both sections final on disk; advisory non-blocking. Aaron triage pending. — Scribe
+
+## 2026-05-30: Pass A Execution — §9 Aperture Edits
+
+Executed four previously-triaged edits to §9 and §8:
+
+1. **PA-B5 Defer paradox resolved** — Removed `defer` from §9.4 resolution examples (defer doesn't write to L1, so it can't resolve events). Added explicit disclosure that deferred rows remain unresolved until durable action taken.
+
+2. **Cache invalidation model updated (§9.2)** — Changed from strict content-addressed manifest to prefix-compatible model: cache valid iff recorded L1 head is a prefix of current head. Allows incremental projection from `cacheHead+1` to `currentHead` without full re-projection on append-only growth.
+
+3. **Defer volatility disclosure added (§9.9, §13.1, §13.5)** — Added warning to CLI verb table: "⚠️ Local-only snooze — no L1 write, no resolution." Added `@inbox` render hint: deferred rows show `⚠ local-only` badge. Added `--help` cross-ref in §13.5 UX principles.
+
+4. **ApertureNotifier Phase 0.5 stub (§9.11, §8.1)** — Added Phase 0.5 section describing console-only `ApertureNotifier` stub with single `notify(level, kind, body)` method. Unblocks Applier integration tests without requiring full projection layer.
+
+**Pattern decision:** Chose to remove `defer` from resolution lifecycle rather than add `aperture_deferred` sub-kind. Rationale: defer is intentionally stateless and volatile (local-only); adding a sub-kind would falsely suggest L1 durability. The honest design is to admit defer doesn't resolve — it defers the decision, not the row.
+
+**Files edited:**
+- `docs/crucible-technical-design/09-aperture.md` (§9.2, §9.4, §9.9, §9.11)
+- `docs/crucible-technical-design/08-applier-decision-gate.md` (§8.1)
+- `docs/crucible-technical-design/13-crucible-cli-shell.md` (§13.1, §13.5)
 
 ## 2026-05-28: Crucible CTD Rev. 3 — R2 Locks for Valanice
 

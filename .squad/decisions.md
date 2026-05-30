@@ -5726,3 +5726,141 @@ risk isn't scoping investigation too tightly; it's letting the
 agentic-debugger vision metastasize gdb vocabulary into the surface before
 US-V-NEW-3's fence lands. Ship the fence in week one or pay forever.
 
+---
+
+## Pass A Execution Complete — Crucible CTD Design Review (2026-05-30)
+
+### PA-V1: Valanice §9 Aperture Edits (4/4 Complete)
+
+**Date:** 2026-05-30  
+**Author:** Valanice  
+**Status:** DONE
+
+Executed all four Pass A items from CTD Aperture chapter:
+
+1. **PA-B5 Defer Paradox (§9.4):** Removed `defer` from resolution lifecycle examples. Added explicit disclosure: `defer` is local-only (no L1 write), therefore does NOT resolve events. Path chosen: explicit disclosure rather than adding `aperture_deferred` sub-kind (which would falsely suggest L1 durability).
+
+2. **Cache Invalidation Model (§9.2):** Rewrote cache-validity rule from strict content-addressed manifest to **prefix-compatible model**. Allows cache to survive append-only L1 growth without invalidation — projector incrementally projects new rows from `cacheHead+1` to `currentHead`.
+
+3. **Defer Volatility Disclosure (§9.9, §13.1, §13.5):** Added explicit warnings about `defer`'s local-only behavior in three locations. Includes `⚠️ local-only` badge UX guidance and cross-ref to §13.5 UX principles.
+
+4. **ApertureNotifier Phase 0.5 Stub (§9.11, §8.1):** Added Phase 0.5 section describing console-only `ApertureNotifier` stub (logs to console, no projection/queue). Unblocks Applier integration tests without requiring full §9 projection layer.
+
+**Files:** `09-aperture.md`, `08-applier-decision-gate.md`, `13-crucible-cli-shell.md`
+
+---
+
+### PA-G1: Gabriel Applier/Infrastructure Edits (3/3 Complete)
+
+**Date:** 2026-05-30  
+**Author:** Gabriel  
+**Status:** DONE
+
+Executed all three Pass A items from Applier/Infrastructure cluster:
+
+1. **PA-B6 Fence-Violation Retry Counter (§8.3) [BLOCKER RESOLVED]:** Added explicit `retriesRemaining` parameter to `applyWithFence()`. Implemented jittered exponential backoff: `2^retryAttempt ms × (1 + 0.3 * random)`, max 5 retries. Added two telemetry signals: `crucible.applier.fence_violation` (notice) and `crucible.applier.fence_exhausted` (attention). Roger now has all concrete parameters for implementation.
+
+2. **Back-Pressure Projection Staleness (§5.A.4):** Specified staleness detection threshold (`projectionLastSeenOffset < ledgerHead - 100` events), synchronous catch-up budget (50ms max blocking), and recovery semantics. Defers all proposals with reason `projection_stale` until `observation{subKind:'projection_recovered'}` emitted.
+
+3. **Subsystem-Specific Threat-Model Stubs (4 chapters):** Added lightweight threat-model subsections to §3.15.1 (L1 WAL), §5.9 (Router policy), §11.10.2 (Observation commitment), §17.3.2 (Pareto-incomparable). Each cites authoritative ADR (ADR-0002, ADR-0006, ADR-0011, ADR-0018) and extracts 3-5 key security implications.
+
+**Files:** `08-applier-decision-gate.md`, `05-router-design.md`, `03-l1-wal-substrate.md`, `11-hermetic-replay.md`, `17-observability-telemetry.md`
+
+---
+
+### PA-R1: Roger CLI Verb Edits (2/2 Complete)
+
+**Date:** 2026-05-30  
+**Author:** Roger  
+**Status:** DONE
+
+Executed both Pass A items from CLI surface:
+
+1. **`crucible perf [top]` Registration (§13.1):** Added as standalone verb in §13.1 verb table with `[--json]` option. Sorted by dispatch latency when `[top]` variant invoked. Rationale: §17 explicitly references both `crucible perf` and `crucible perf top` as separate affordances; verb-specific sorting places it alongside diagnostic verbs (`status`, `fsck`, `gc`), not query-driven reads.
+
+2. **`defer` Help Text Alignment (§13.1 ↔ §9.9):** Updated §13.1 entry for `crucible aperture defer` to embed Valanice's expected substring: "Local snooze; no L1 write. Re-renders entry with `deferred` annotation." Coordinates with Valanice's §9.9 full disclosure.
+
+**Files:** `13-crucible-cli-shell.md`
+
+---
+
+### PA-L1: Laura Test Strategy + ADR Template (2/2 Complete)
+
+**Date:** 2026-05-30  
+**Author:** Laura  
+**Status:** DONE
+
+Executed both Pass A items:
+
+1. **C-9 Conformance Threading in §16.9:** Added explicit C-9 acceptance signal to §7.A Generic L3 Adapter Conformance entry: "Conformance suite rejects generators that emit supersede-replacement proposals without valid `parentId` lineage." Forward-compatible with Rosella's PA-B4 execution; C-9 contract itself is stable even if ancestry-read API shifts.
+
+2. **ADR Body Template with Acceptance Signals Subsection:** Created `docs/adr/adr-template.md` with mandatory "Acceptance Signals" subsection. Five-tier signal taxonomy: contract-tier (property tests), component-tier (boundary tests), acceptance-tier (E2E scenarios), invariant-tier (math properties), countersignals (failure modes if violated). Bridges ADR "What Changes" (implementation) → test strategy (verification).
+
+**Files:** `16-test-strategy-invariants.md`, `docs/adr/adr-template.md` (new)
+
+---
+
+### PA-R2: Rosella Generators + Branching Cluster (7/7 Complete + 2 Options Docs)
+
+**Date:** 2026-05-30  
+**Author:** Rosella  
+**Status:** DONE
+
+Executed all seven Pass A items; two escalated as options docs pending Aaron ruling:
+
+**Phase 1 — Blockers escalated to Aaron:**
+
+1. **PA-B4 Ancestry/Replay Divergence:** Options doc at `docs/crucible-technical-design/decisions/pa-b4-ancestry-replay-options.md`. Question: unify ancestry-aware read APIs (Option A recommended) or split APIs with Router escalation (Option B)? Rosella recommends Option A (replay correctness + low v1 cost + acceptable ergonomics).
+
+2. **childSid Collision:** Options doc at `docs/crucible-technical-design/decisions/childsid-collision-options.md`. Question: timestamp in preimage (Option A recommended), protocol-error semantics (Option B), or resume-aborted-session idempotent retry (Option C)? Rosella recommends Option A (lowest cost, transparent UX, collision-free).
+
+**Phase 2 — Landed in §7/§10 chapters:**
+
+3. **Trust-Tier Promotion Persistence (§7.4.1):** Derived `plugin_trust_history` table keyed on `manifestSha256`. Tracks 30-day + 10-invocation + 0-violation promotion clock, rebuildable from L1 audit trail.
+
+4. **Conformance Suite C-8 → C-9 (§7.A):** Extended from 8 to 9 property classes. C-9 = supersede-replacement contract: generators emitting replacements MUST set `envelope.parentId` to obsoleted proposal's EventId. Applies to both `StructuralProposalGenerator` and `DataProposalGenerator`.
+
+5. **Pareto Eval Perf Budget (§7.5.1):** Concrete budget: ≤5ms p99 latency for 50 concurrent proposals, ≤10 MiB heap, 20ms timeout with fail-open. Laura owns §16 perf conformance suite (`pareto-eval-latency` test runner).
+
+6. **`alternatives[]` Unbounded (§7.5.2):** Bounded `incomparableWith[]` to top-K=10 inline + CAS spill for pathological case (50 proposals). Payload ceiling: 672 bytes max per Decision even in worst case.
+
+7. **Invocation-Stack O(N) Reconstruction (§10.6.1.1):** Optional L2 cache table `invocation_stack_cache` (session_id, checkpoint_offset, stack_json). Cache at 100-row intervals (~1 KiB per checkpoint). v1 optional, mandatory in v1.5 for debugger. Rejected event-sourced stack delta (too much duplication).
+
+**Files:** `07-generators-l3.md`, `10-session-branching.md`, plus 2 options docs (non-inbox)
+
+---
+
+### PA-G2: Graham L3.5 Scheduler Phase 0.5 Stub (4/4 Complete)
+
+**Date:** 2026-05-30  
+**Author:** Graham  
+**Ruling:** Aaron Kubly (2026-05-30)  
+**Status:** DONE
+
+Implemented Aaron's ruling on L3.5 Scheduler Phase 0.5:
+
+**Decision:** YES — FifoScheduler stub in Phase 0.5 is acceptable. Validates L3.5 tier boundary and satisfies A-Sched-1 (dispatch ordering) without complexity. Phase 1 upgrades to WeightedRoundRobinScheduler for A-Sched-2 (back-pressure) + A-Sched-3 (quanta exhaustion).
+
+**Implementation:**
+1. Updated `docs/crucible-technical-design-plan.md` to include FifoScheduler stub in Phase 0.5 walking skeleton (6 items, was 5)
+2. Updated §5.A.7 acceptance signals: A-Sched-1 satisfied by Phase 0.5 stub; A-Sched-2/A-Sched-3 are Phase 1 graduation criteria
+3. Updated §16.3 SchedulerDispatcher collaborator row with Phase 0.5 stub vs Phase 1 full impl note
+4. Gabriel added as Phase 0.5 FifoScheduler stub owner
+
+**Rationale:** Stub proves tier boundary exists and satisfies core replay-ordering invariant before Phase 1 invests in fair dispatch, back-pressure, and quanta budgeting. Validates ADR-0024 architecture early.
+
+**Files:** `docs/crucible-technical-design-plan.md`, `05-router-design.md`, `16-test-strategy-invariants.md`
+
+---
+
+## Next Session Pass A Pickup
+
+**Options docs awaiting Aaron ruling:**
+- PA-B4 ancestry/replay divergence: `docs/crucible-technical-design/decisions/pa-b4-ancestry-replay-options.md`
+- childSid collision: `docs/crucible-technical-design/decisions/childsid-collision-options.md`
+
+**When Aaron rules:**
+1. Rosella implements chosen option for PA-B4 (Option A: add `ReadSetBuilder.ancestry()`; Option B: add `ancestry-dependent` category + Router escalation)
+2. Rosella implements chosen option for childSid (Option A: timestamp in preimage; Option B: protocol-error semantics; Option C: idempotent resume)
+3. Merge options docs to decisions.md as closed decisions
+
