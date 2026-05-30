@@ -2,7 +2,7 @@
 
 **Role:** Tester (Contract-first patterns, integration testing, test architecture)
 **Status:** M3 baseline preserved. Eureka M2 GREEN landed 2026-05-28. Cycle 2 composite-ranker + F6 resolution verified.
-**Last update:** 2026-05-29
+**Last update:** 2026-05-30
 
 **Key milestones:**
 - Phase 2-4.6 test architecture (contract-first, metamorphic testing)
@@ -10,10 +10,25 @@
 - M3 composite-ranker baseline (FR-2 formula validation)
 - Issue #17 async-sweep: 0 required fixes, 12 tests added
 - Cycle 2 findings: 8 addressed in combo pass
+- M5+M6 review wave: 8 new tests, 29→37 total
 
 **See history-archive.md for detailed entries.**
 
 ## Learnings
+
+### 2026-05-30: M5+M6 Review Wave — boundary, closeTo, regression locks
+
+**8 tests added across 6 findings:**
+
+**F8 — Idempotent boundary:** The overshoot clamp tests (0.95→1.0, 0.05→0.0) only covered "approaching" the boundary. Adding "already at boundary" tests (currentTrust=1.0 corroboration → 1.0; currentTrust=0.0 contradiction → 0.0) is a distinct regression lock — a future refactor could leave the clamp off and these exact cases would slip through the overshoot tests.
+
+**F9 — closeTo precision choice:** Used `expect.closeTo(value, 5)` rather than the panel-suggested 10. Rule of thumb: pick precision where test failure = wrong business logic, not float jitter. For trust deltas (+0.10, -0.10, ±0.30), IEEE-754 jitter is at 1e-16 level; 1e-5 tolerance catches any real math error while leaving noise-immunity headroom. 10 digits is generous to the point of masking subtle precision bugs in hypothetical future implementations.
+
+**F-NEW-EXHAUSTIVE:** Casting an invalid string `as FeedbackEvent` to test exhaustiveness guards is the correct pattern for "defensive guard for unsafe casts" — it exercises exactly the runtime scenario the guard is meant to protect against (TypeScript union bypass via untrusted source). Don't shy away from `as` casts in tests that explicitly target this path.
+
+**F-NEW-PROPAGATION (applyFeedbackById missing-delta):** When testing error propagation through an orchestrator, use `rejects.toThrow()` (untyped) at the orchestrator boundary rather than asserting the exact error class. The orchestrator's contract is "surfaces the error"; the exact type is an implementation detail of the delegate (`applyFeedback`). If the delegate's error type changes, the orchestrator contract test should not need to change.
+
+**Clock dep coordination pattern:** When a cross-agent change (Edgar removing `clock` dep) affects your tests, document the delta explicitly in the decision drop with the exact call sites to update. Don't pre-drop the dep if the implementation hasn't landed yet — it would break the TypeScript type check at the test boundary. Wait for the impl commit, then make the coordinated update.
 
 ### 2026-05-30: M6 RED — user_correction contract lock + read-seam (FactReader)
 
