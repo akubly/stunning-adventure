@@ -101,6 +101,12 @@ export interface DBOMArtifact {
 // Session identity — minimal cross-package session reference
 // ---------------------------------------------------------------------------
 
+/**
+ * Branded SessionId primitive — shared identity across Cairn + Eureka (FR-13).
+ * See §20 §8.3 for design rationale ("shared identifiers > shared schemas").
+ */
+export type SessionId = string & { readonly __brand: 'SessionId' };
+
 /** Minimal session identity for cross-package use. */
 export interface SessionIdentity {
   sessionId: string;
