@@ -386,22 +386,23 @@ describe('recall', () => {
       expect.objectContaining({
         query: 'trust floor test',
         sessionId,
-        limit: 5,
+        limit: 15, // k=5 × RANKER_OVERFETCH_FACTOR=3 (C3)
         minTrust: 0.15,
       }),
     );
   });
 
   // ---------------------------------------------------------------------------
-  // C6 — Ranker-path guard: no-op ranker must produce same ordering as inline
+  // C6 — Ranker-path guard: no-op ranker (with sort) produces same ordering as inline
   // ---------------------------------------------------------------------------
   //
   // Prevents silent behavioral drift from custom rankers. A Ranker that calls
-  // compositeScore inline (no-op equivalent) must produce the same ordered results
-  // as the inline-scoring path for identical input. If recallWithScores mutates
-  // the ranker path (e.g., skips re-sort), this test catches it.
+  // compositeScore inline AND sorts descending (a true no-op equivalent) must produce
+  // the same ordered results as the inline-scoring path for identical input.
+  // After C2, recallWithScores trusts the Ranker's order and does NOT re-sort;
+  // the Ranker must sort internally to express score-monotonic output.
 
-  it('no-op ranker (compositeScore inline) produces same ordering as inline scoring path (C6 — ranker guard)', async () => {
+  it('no-op ranker (compositeScore inline + sort) produces same ordering as inline scoring path (C6 — ranker guard)', async () => {
     const EPOCH_MS = 0;
 
     const fixture: RecallResult[] = [
@@ -413,10 +414,12 @@ describe('recall', () => {
 
     const makeStore = () => ({ search: vi.fn().mockResolvedValue([...fixture]) });
 
-    // No-op ranker: calls compositeScore inline — semantically identical to the
-    // inline path, but exercises the ranker code branch.
+    // No-op ranker: calls compositeScore inline AND sorts descending — semantically
+    // identical to the inline path, but exercises the ranker code branch.
+    // After C2, recallWithScores does not re-sort; the ranker must own ordering.
     const noOpRanker = (facts: RecallResult[], { nowMs }: { nowMs: number }) =>
-      facts.map(f => ({ fact: f, score: compositeScore(f, nowMs) }));
+      facts.map(f => ({ fact: f, score: compositeScore(f, nowMs) }))
+           .sort((a, b) => b.score - a.score);
 
     const [withRanker, withoutRanker] = await Promise.all([
       recall({ query: 'ranker guard', sessionId, k: 4 }, { factStore: makeStore(), clock: fixedClock, ranker: noOpRanker }),
@@ -427,7 +430,49 @@ describe('recall', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // F7 — runtime attentionTier guard: unknown tier → finite score + stderr warn
+  // C2 — Ranker order trust: recallWithScores must not re-sort ranker output
+  // ---------------------------------------------------------------------------
+  //
+  // A Ranker that intentionally returns facts in non-score-monotonic order
+  // (e.g., diversity reranking, MMR, reverse-score for testing) must have its
+  // order respected. recallWithScores must NOT re-sort to composite-score descending
+  // after the Ranker runs.
+
+  it('respects Ranker-provided order — does NOT re-sort to composite-score-descending (C2 — ranker order trust)', async () => {
+    const EPOCH_MS = 0;
+
+    const fixture: RecallResult[] = [
+      { content: 'Hot high-relevance fact',         relevance: 0.9, importance: 0.8, trust: 0.9, attentionTier: 'hot',  lastAccessed: EPOCH_MS },
+      { content: 'Warm medium-high-relevance fact', relevance: 0.7, importance: 0.6, trust: 0.7, attentionTier: 'warm', lastAccessed: EPOCH_MS },
+      { content: 'Warm medium-relevance fact',      relevance: 0.5, importance: 0.4, trust: 0.5, attentionTier: 'warm', lastAccessed: EPOCH_MS },
+      { content: 'Cold low-relevance fact',         relevance: 0.2, importance: 0.2, trust: 0.3, attentionTier: 'cold', lastAccessed: EPOCH_MS },
+    ];
+
+    // Reverse ranker: returns facts in ASCENDING composite-score order (lowest first).
+    // Composite scores (all recency-floored at 0.1): hot=0.960, warm-hi=0.620, warm-med=0.440, cold=0.168
+    const reverseRanker = (facts: RecallResult[], { nowMs }: { nowMs: number }) =>
+      facts.map(f => ({ fact: f, score: compositeScore(f, nowMs) }))
+           .sort((a, b) => a.score - b.score); // ascending = reverse of natural descending
+
+    const factStore = { search: vi.fn().mockResolvedValue([...fixture]) };
+
+    const results = await recall(
+      { query: 'ranker order test', sessionId, k: 4 },
+      { factStore, clock: fixedClock, ranker: reverseRanker },
+    );
+
+    // recallWithScores must trust the ranker's ascending order; if it re-sorted
+    // to descending the result would be [hot, warm-hi, warm-med, cold].
+    expect(results.map(r => r.content)).toEqual([
+      'Cold low-relevance fact',          // ascending: lowest score first (0.168)
+      'Warm medium-relevance fact',       // 0.440
+      'Warm medium-high-relevance fact',  // 0.620
+      'Hot high-relevance fact',          // highest score last (0.960)
+    ]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // F7 — runtime attentionTier guard: unknown tier → finite score, deduped recall-level warn
   // ---------------------------------------------------------------------------
   //
   // RecallResult.attentionTier is typed 'hot'|'warm'|'cold', but values arrive
@@ -436,9 +481,9 @@ describe('recall', () => {
   // ATTENTION_MULTIPLIERS[unknown] === undefined → rawScore * undefined → NaN
   // → sort corruption (same failure mode as F1 negative-tDays guard).
   //
-  // Fix (option a): default unknown tier to 1.0 multiplier + stderr warn.
+  // Fix: compositeScore defaults unknown tiers to 1.0 silently. recallWithScores
+  // collects unknowns in a per-call Set and emits ONE deduped stderr warn (C1).
   // MCP stdio compatibility: warn goes to stderr, not stdout.
-  // Option (b) — boundary validation at FactStore — deferred to Crispin's impl.
 
   describe('runtime attentionTier guard (F7)', () => {
     let warnSpy: ReturnType<typeof vi.spyOn>;
@@ -447,9 +492,9 @@ describe('recall', () => {
       warnSpy?.mockRestore();
     });
 
-    it('compositeScore returns finite value and emits stderr warn for unknown tier (F7)', () => {
-      warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
+    it('compositeScore returns finite value for unknown tier without emitting warn (F7 — silent default, C1 moves warn to recallWithScores)', () => {
+      // After C1, compositeScore silently defaults unknown tiers to 1.0.
+      // The warn is emitted once per recallWithScores call, not per compositeScore call.
       const score = compositeScore(
         // 'Hot' (title-case) is not in the union — cast via `as any` to simulate a
         // runtime row that bypasses TypeScript narrowing at the storage seam.
@@ -461,15 +506,9 @@ describe('recall', () => {
       // raw = 0.50×0 + 0.20×0 + 0.20×0.7 + 0.10×0.1 = 0.15  → finalScore = 0.15 × 1.0 = 0.15
       expect(Number.isFinite(score)).toBe(true);
       expect(score).toBeGreaterThan(0);
-
-      // Stderr warning must be emitted with tier name and guidance
-      expect(warnSpy).toHaveBeenCalledOnce();
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('[eureka.recall] Unknown attention_tier \'Hot\''),
-      );
     });
 
-    it('recall() with unknown-tier fact returns sane result, not NaN-corrupted ordering (F7)', async () => {
+    it('recall() with unknown-tier fact returns sane result and emits ONE deduped warn (F7 + C1)', async () => {
       warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       const BASE_MS = 1_000_000_000_000;
@@ -495,8 +534,86 @@ describe('recall', () => {
       // Higher-trust known-tier fact ranks first (both have tDays=0, so recency=1.0 for both)
       expect(results[0].content).toBe('Known-tier fact');
 
-      // Warn fired once (for the unknown-tier fact)
+      // C1: warn fired ONCE per recallWithScores call (deduped via Set), not once per bad fact.
+      // Message includes the unrecognised tier value.
       expect(warnSpy).toHaveBeenCalledOnce();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Hot'),
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // C3 — overfetch factor: factStore.search receives limit: k * 3
+  // ---------------------------------------------------------------------------
+  //
+  // Without overfetch, the composite ranker can only reorder within the BM25-
+  // truncated top-k. RANKER_OVERFETCH_FACTOR=3 gives the ranker 3× the candidate
+  // set, making tier/trust components of FR-2 meaningful relative to BM25. The
+  // final slice(0, k) ensures the caller still receives exactly k results.
+
+  it('passes limit: k * 3 (RANKER_OVERFETCH_FACTOR) to factStore.search so ranker sees more candidates (C3 — overfetch)', async () => {
+    const factStore = {
+      search: vi.fn().mockResolvedValue([]),
+    };
+
+    await recall(
+      { query: 'overfetch test', sessionId, k: 5 },
+      { factStore, clock: fixedClock },
+    );
+
+    expect(factStore.search).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 15, minTrust: 0.15 }),
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // C4 — k input validation
+  // ---------------------------------------------------------------------------
+  //
+  // k must be a positive integer. Invalid values are caught at the entry point
+  // so neither factStore.search nor SQLite ever sees them.
+  // k === 0 is the exception: valid, returns [] immediately, no factStore call.
+
+  describe('k input validation (C4)', () => {
+    it('k = 0 returns [] without calling factStore.search', async () => {
+      const factStore = { search: vi.fn() };
+
+      const result = await recall(
+        { query: 'zero-k test', sessionId, k: 0 },
+        { factStore, clock: fixedClock },
+      );
+
+      expect(result).toEqual([]);
+      expect(factStore.search).not.toHaveBeenCalled();
+    });
+
+    it('k = -1 throws TypeError', async () => {
+      const factStore = { search: vi.fn() };
+      await expect(
+        recall({ query: 'neg-k test', sessionId, k: -1 }, { factStore, clock: fixedClock }),
+      ).rejects.toThrow(TypeError);
+    });
+
+    it('k = 1.5 throws TypeError', async () => {
+      const factStore = { search: vi.fn() };
+      await expect(
+        recall({ query: 'float-k test', sessionId, k: 1.5 }, { factStore, clock: fixedClock }),
+      ).rejects.toThrow(TypeError);
+    });
+
+    it('k = NaN throws TypeError', async () => {
+      const factStore = { search: vi.fn() };
+      await expect(
+        recall({ query: 'nan-k test', sessionId, k: NaN }, { factStore, clock: fixedClock }),
+      ).rejects.toThrow(TypeError);
+    });
+
+    it('k = Infinity throws TypeError', async () => {
+      const factStore = { search: vi.fn() };
+      await expect(
+        recall({ query: 'inf-k test', sessionId, k: Infinity }, { factStore, clock: fixedClock }),
+      ).rejects.toThrow(TypeError);
     });
   });
 });

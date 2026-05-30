@@ -59,17 +59,13 @@ export interface ClockProvider {
 
 /**
  * Optional custom ranker seam — replaces inline compositeScore when provided.
- * Receives trust-filtered candidates and nowMs; sorting and slicing to k remain
- * in recall/recallWithScores.
+ * Receives the trust-filtered candidate set (up to k × RANKER_OVERFETCH_FACTOR
+ * candidates from FactStore.search()) and nowMs; returns the final ordered
+ * ScoredResult[] for slicing. recallWithScores does NOT re-sort — the Ranker's
+ * returned order is the order results are delivered to the caller.
  *
- * Note: recallWithScores always re-sorts; ordering produced by Ranker is ignored.
- * Return scored pairs; sorting is the caller's responsibility.
- *
- * ⚠️ Ranker receives a BM25-pre-truncated candidate set of at most `k` facts from
- * FactStore.search(). It reorders within this set but cannot surface candidates the
- * storage layer ranked at positions k+1..k+m. If a future Ranker needs broader
- * candidate visibility, recall.ts should overfetch (e.g., `limit: k * overfetchFactor`)
- * when a ranker is injected. Tracked as future work.
+ * If a Ranker wants score-monotonic order, it must sort internally.
+ * The Ranker is responsible for final ordering; recallWithScores only slices to k.
  */
 export type Ranker = (facts: RecallResult[], deps: { nowMs: number }) => ScoredResult[];
 
@@ -93,6 +89,16 @@ export interface RecallDeps {
 const TRUST_FLOOR = 0.15;
 
 /**
+ * How many extra candidates we fetch beyond k so the post-BM25 ranker has
+ * meaningful reordering surface. Without overfetch, the composite ranker (or any
+ * custom Ranker) can only reorder within the BM25-truncated top-k; tier and trust
+ * components of FR-2 are largely cosmetic relative to BM25. This resolves the
+ * F6-class "ranker can only see what BM25 surfaced" concern (F6 arc closed; see
+ * edgar-pr30-cycle3-c1-c4 decision drop).
+ */
+const RANKER_OVERFETCH_FACTOR = 3;
+
+/**
  * Attention multipliers per §30 §1.2 (FR-2 canonical ranker formula).
  * Authoritative source: §30 §1.2.
  */
@@ -112,6 +118,8 @@ const ATTENTION_MULTIPLIERS: Record<'hot' | 'warm' | 'cold', number> = {
  * negative tDays → NaN in Math.pow (F1 guard).
  * Never-accessed facts use tDays=Infinity → recency floors to 0.1 (treated as
  * very stale, not just-accessed — F3 semantics).
+ * Unknown attentionTier defaults silently to 1.0 (warm-tier identity);
+ * recallWithScores emits a single deduped stderr warn per call (C1).
  */
 export function compositeScore(fact: RecallResult, nowMs: number): number {
   const relevance  = fact.relevance  ?? 0;
@@ -128,13 +136,9 @@ export function compositeScore(fact: RecallResult, nowMs: number): number {
 
   // Runtime guard: TypeScript union narrows compile-time callers, but RecallResult values
   // arrive from SQLite at runtime and may carry unrecognized tier strings (legacy casing,
-  // future migration, malformed row). Unknown tier → NaN-poisoned sort (F1 analogue).
-  // Stderr warn preserves MCP stdio compatibility; default 1.0 matches warm-tier identity.
-  let multiplier = ATTENTION_MULTIPLIERS[fact.attentionTier];
-  if (multiplier === undefined) {
-    console.warn(`[eureka.recall] Unknown attention_tier '${fact.attentionTier}' — defaulting to 1.0 multiplier. Validate at FactStore boundary.`);
-    multiplier = 1.0;
-  }
+  // future migration, malformed row). Unknown tier → default 1.0 (warm-tier identity).
+  // recallWithScores collects unknown tiers in a per-call Set and emits ONE warn (C1).
+  const multiplier = ATTENTION_MULTIPLIERS[fact.attentionTier] ?? 1.0;
 
   return rawScore * multiplier;
 }
@@ -158,20 +162,46 @@ export async function recallWithScores(
   const { query, sessionId, k } = options;
   const { factStore, clock, ranker } = deps;
 
-  const candidates = await factStore.search({ query, sessionId, limit: k, minTrust: TRUST_FLOOR });
+  // C4: Validate k at the entry point.
+  // k === 0: valid — return [] without touching factStore (avoids SQLite limit:0 edge cases).
+  // Non-finite (NaN, ±Infinity), non-integer (1.5), or negative: programming error.
+  if (k === 0) return [];
+  if (!Number.isFinite(k) || !Number.isInteger(k) || k < 0) {
+    throw new TypeError(`recall: k must be a positive integer, got ${k}`);
+  }
+
+  // C3: Overfetch so the post-BM25 ranker has a meaningful candidate set to reorder.
+  const candidates = await factStore.search({ query, sessionId, limit: k * RANKER_OVERFETCH_FACTOR, minTrust: TRUST_FLOOR });
   const nowMs = clock.now();
 
   // Belt-and-suspenders: FactStore.search() now receives minTrust and filters at the data
   // layer per §20 §7.4 (F6). This post-filter remains as defense-in-depth — if a FactStore
   // mock or future implementation does not honor minTrust, no below-floor facts reach the ranker.
   const trusted = candidates.filter(f => f.trust >= TRUST_FLOOR);
+
+  // C1: Collect unknown tier values across all trusted candidates for a single deduped warn.
+  const unknownTiers = new Set<string>();
+  for (const f of trusted) {
+    if (ATTENTION_MULTIPLIERS[f.attentionTier] === undefined) {
+      unknownTiers.add(String(f.attentionTier));
+    }
+  }
+
+  // C2: Trust the Ranker's returned order — do NOT re-sort. The Ranker owns final ordering.
+  // Inline path: sort descending by composite score as before.
   const scored = ranker
     ? ranker(trusted, { nowMs })
-    : trusted.map(f => ({ fact: f, score: compositeScore(f, nowMs) }));
+    : trusted.map(f => ({ fact: f, score: compositeScore(f, nowMs) }))
+             .sort((a, b) => b.score - a.score);
 
-  return scored
-    .sort((a, b) => b.score - a.score)
-    .slice(0, k);
+  // C1: Emit ONE warn per recallWithScores call for all unrecognised tier values found.
+  if (unknownTiers.size > 0) {
+    console.warn(
+      `[eureka.recall] Unknown attention_tier values encountered: ${[...unknownTiers].join(', ')}. Defaulted to 1.0 multiplier. Validate at FactStore boundary.`,
+    );
+  }
+
+  return scored.slice(0, k);
 }
 
 /**
