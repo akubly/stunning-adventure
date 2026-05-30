@@ -15,6 +15,17 @@ import type {
   SkillMetricsConfidence,
 } from './types.js';
 
+const VALID_PROFILE_SOURCES: ReadonlySet<string> = new Set<LoadedProfileSource>([
+  'per-skill', 'per-model', 'per-user', 'global',
+]);
+
+/** @internal Exported for testing only. */
+export function normalizeProfileSource(value: unknown): LoadedProfileSource | null {
+  return typeof value === 'string' && VALID_PROFILE_SOURCES.has(value)
+    ? (value as LoadedProfileSource)
+    : null;
+}
+
 export interface LoadMetricsOptions {
   skillId: string;
   repoKey?: string;
@@ -85,23 +96,23 @@ function queryPrescriberRuns(
   for (const row of rows) {
     try {
       const payload = JSON.parse(row.payload) as {
-        triggeredBy?: string;
-        profileSource?: LoadedProfileSource | null;
+        triggeredBy?: unknown;
+        profileSource?: unknown;
         result?: {
-          inserted?: number;
-          skipped?: number;
-          errored?: number;
-          totalHints?: number;
+          inserted?: unknown;
+          skipped?: unknown;
+          errored?: unknown;
+          totalHints?: unknown;
         };
       };
 
       validRows.push({
-        triggeredBy: payload.triggeredBy ?? 'unknown',
-        profileSource: payload.profileSource ?? null,
-        inserted: payload.result?.inserted ?? 0,
-        skipped: payload.result?.skipped ?? 0,
-        errored: payload.result?.errored ?? 0,
-        totalHints: payload.result?.totalHints ?? 0,
+        triggeredBy: typeof payload.triggeredBy === 'string' ? payload.triggeredBy : 'unknown',
+        profileSource: normalizeProfileSource(payload.profileSource),
+        inserted: typeof payload.result?.inserted === 'number' ? payload.result.inserted : 0,
+        skipped: typeof payload.result?.skipped === 'number' ? payload.result.skipped : 0,
+        errored: typeof payload.result?.errored === 'number' ? payload.result.errored : 0,
+        totalHints: typeof payload.result?.totalHints === 'number' ? payload.result.totalHints : 0,
         occurredAt: row.created_at,
       });
     } catch {
