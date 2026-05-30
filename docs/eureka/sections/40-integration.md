@@ -391,8 +391,6 @@ Eureka exposes three primary dependency-injection seams for test-time substituti
 
 ```typescript
 // packages/eureka/src/activities/recall.ts
-import type { ClockProvider } from './recall';
-
 export interface RecallDeps {
   factStore: FactStore;
   /**
@@ -415,11 +413,12 @@ export async function recall(
 
 ```typescript
 import type { ClockProvider } from '../recall';
+import type { SessionId } from '@akubly/types';
 
 it('ranks recently-accessed fact above stale fact (clock provided)', async () => {
   const mockClock: ClockProvider = { now: () => 1_000_000_000_000 };
   const results = await recall(
-    { query: 'test', sessionId: 'session-123', k: 5 },
+    { query: 'test', sessionId: 'session-123' as SessionId, k: 5 },
     { factStore: mockFactStore, clock: mockClock }
   );
   expect(results[0].content).toBe('Fresh fact');
