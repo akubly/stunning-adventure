@@ -282,3 +282,5 @@
 
 **Architectural Principle:** When a design document describes future behavior (v1.5 fan-out) alongside present behavior (v1 agent-only), the v1 section must be **implementation-unambiguous**: "no fan-out logic is executed" is clearer than "user/project tiers return `[]`" because the former says "don't build this", the latter says "build this stub". The Skeptic finding was correct: describing v1 via v1.5 stubs risks building unnecessary surface. Fix: describe each version's behavior positively (what it does), not negatively (what it doesn't do).
 
+
+📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
