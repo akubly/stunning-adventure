@@ -8,7 +8,6 @@
 import { slugifyRepoKey } from '../config/repo.js';
 import { execSync } from 'node:child_process';
 import { normalizeWorkdir } from '../utils/workdir.js';
-export { normalizeWorkdir };
 
 /** Resolve the slugified repo key from a git working directory. */
 export function getRepoKey(cwd?: string): string {

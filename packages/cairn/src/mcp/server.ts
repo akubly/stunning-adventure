@@ -136,7 +136,7 @@ server.registerTool(
           if (nwd === undefined) {
             return {
               isError: true,
-              content: [{ type: 'text' as const, text: 'Invalid workdir: empty or whitespace-only string. Omit workdir to list all sessions, or provide a non-empty path.' }],
+              content: [{ type: 'text' as const,               text: JSON.stringify({ error: 'Invalid workdir: empty or whitespace-only string. Omit workdir to list all sessions, or provide a non-empty path.' }) }],
             };
           }
           // Filter to a specific worktree session; still returned as an array
