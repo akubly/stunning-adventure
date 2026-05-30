@@ -6,6 +6,7 @@ import {
   getSessionsSinceInstall,
 } from '@akubly/cairn';
 import { loadExecutionProfile } from '@akubly/skillsmith-runtime';
+import type { LoadedProfileSource } from '@akubly/skillsmith-runtime';
 import { ATTENUATION_FLOOR } from '@akubly/types';
 import type {
   SkillMetrics,
@@ -85,7 +86,7 @@ function queryPrescriberRuns(
     try {
       const payload = JSON.parse(row.payload) as {
         triggeredBy?: string;
-        profileSource?: string | null;
+        profileSource?: LoadedProfileSource | null;
         result?: {
           inserted?: number;
           skipped?: number;

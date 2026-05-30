@@ -373,11 +373,16 @@ describe('forgePrescribeHandler → loadMetrics round-trip (I4)', () => {
       { skill_id: 'skill-round-trip', repo_key: 'org/round-trip-repo' },
       async () => ({
         ok: true as const,
+        exitCode: 0 as const,
+        skillId: 'skill-round-trip',
+        dbPath: ':memory:',
         profileSource: 'per-skill' as const,
+        hints: [],
         inserted: 3,
         skipped: 0,
         errored: 0,
         totalHints: 3,
+        totalPersisted: 3,
       }),
     );
     expect(handlerResult.isError).toBeFalsy();
