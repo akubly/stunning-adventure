@@ -1692,6 +1692,7 @@ Observation: Laura's TDD strategy locks may inform Graham's CTD (Crucible Techni
 - Primary: L0 declares an explicit `causalContextWindow` slice per Decision listing which prior ledger row IDs the LLM had in context.
 - Fallback: if L0 doesn't declare, L1 uses the full ledger prefix up to (excluding) the Decision row's offset.
 - Decision row metadata includes `commitmentMethod: 'declared' | 'fallback'` so investigation can trace which path was taken.
+- **Guidance (updated §3.7 per I1):** L0 providers SHOULD declare `causalContextWindow` when attention metadata is available; MAY omit only if attention metadata is unavailable. Fallback exists for graceful degradation, not as the preferred path.
 
 **Why hybrid:**
 - Pure A (full prefix) lies once LLM has pruned older content from its attended context.
@@ -2398,4 +2399,67 @@ All four amendments delivered on schedule; depth budgets respected; sections FIN
 ---
 
 **Status:** Crucible CTD Phase 4 COMPLETE ✓
+
+---
+
+## Crucible Design Panel Review — Phase 1–3 Consolidation (2026-05-30)
+
+### 2026-05-29T23:40:38Z: User directive — D1 (tool capture scope)
+
+**By:** Aaron Kubly (via Copilot)
+
+**What:** Crucible captures only `tool_result` (LLM-visible content), not raw `tool_output`. "(a) is really all we need for replay." This resolves the §11.2/§11.3/§12.6 ambiguity Alexander flagged — the L0 capture boundary sits AFTER any SDK truncation/filtering, not before. Pre-filter content is out of scope for v1 replay.
+
+**Why:** Replay fidelity does not require raw pre-filter content; the LLM only acted on the filtered result. Capturing pre-filter material would create a data-controller obligation for content the LLM never saw.
+
+**Implication for §11:** Alexander to update §11.2/§11.3/§12.6 to make `tool_result` (post-filter) explicit; remove `tool_output` (pre-filter) language where ambiguous.
+
+**Status:** RESOLVED. Alexander's doc edits incorporated into Phase 4 work.
+
+---
+
+### 2026-05-29T23:40:38Z: User directive — Tiered recording fidelity (future consideration)
+
+**By:** Aaron Kubly (via Copilot)
+
+**What:** Different Crucible scenarios target different parts of the agentic flow and likely have different recording-fidelity requirements. Possible tiers: (1) capture call only → replay live (introduces tool/env dependency for replay), (2) capture call + result (D1=(a), current direction), (3) capture call + full output (maximum fidelity). Not a v1 commitment — capture for v1.5+ design consideration.
+
+**Why:** Different use cases (audit vs investigation vs reproduction) imply different acceptable fidelity/cost tradeoffs.
+
+**Status:** Future consideration. Do NOT implement in v1. Revisit when post-v1 scenarios are defined.
+
+---
+
+### 2026-05-29T23:42:23Z: E3 resolution — PII/secret handling in WAL
+
+**By:** Aaron Kubly (via Copilot) — after deliberation with Graham/Gabriel/Alexander
+
+**What:** v1 stance on secrets/PII potentially appearing in captured `tool_result` content:
+
+1. **D1=(a) reduces surface** — Crucible captures LLM-visible content only, not raw pre-filter `tool_output`. Everything captured was already round-tripped to the cloud LLM provider.
+2. **No redaction subsystem in v1.** Aaron explicitly: "(b) [regex redaction] feels like a tall order, and overkill."
+3. **Mitigation toolkit (v1):** `crucible session delete --purge` (the remediation primitive) + retention ceiling per Gabriel's I7 work (soft-warn 500MiB, hard-limit 2GiB / 90-day) + honest §18 documentation of the data-controller posture.
+4. **OPEN — v1.5+ question:** Aaron's devil's advocate stands: Crucible-as-storage is a distinct data controller with retention/exposure obligations independent of upstream cloud egress. The v1 stance acknowledges this gap honestly rather than papering over it. Revisit in v1.5+, likely alongside tiered recording fidelity (separate directive).
+
+**Implication for §18:** Gabriel authors a "Known limits — v1" subsection naming the gap explicitly: captured content reflects boundary already crossed to cloud LLM; Crucible adds local-disk retention surface; v1 mitigation is `crucible session delete` + retention ceiling + operator hygiene; redaction at capture/projection is deferred to v1.5+.
+
+**Status:** v1 = ship with (c) posture. v1.5+ = OPEN.
+
+---
+
+### Phase 2–3 Summary: Team Triage & Escalation Resolution
+
+**Participants:** 6 specialist triage agents (Graham, Gabriel, Alexander, Laura, Roger, Rosella) + Aaron
+
+**Consolidated Findings:** 21 findings from 5-persona design panel consolidated and triaged
+
+**Escalations to Aaron:** 4 findings escalated and resolved:
+- **E1 (B1 Scheduler):** KEEP in v1 — Laura adds §16.3 row + A13 + ci:components; ADR-0024 added to Phase 1 gate
+- **E2 (B2 substrate):** Accept ADR-0002 as-is — Graham writes "Why not SQLite WAL-mode" body section  
+- **E3 (I4 secrets):** v1=(c) honest doc + `crucible session delete` + retention ceiling; NO redaction; v1.5+ OPEN
+- **E4 (I5 plugin artifacts):** (b) doc honesty caveat in §11.10 + §15.5
+
+**Work Dispatch:** All 21 findings resolved with specific doc edits across 14 files (plan + ADR + 02/03/04/10/11/12/13/15/16/17/18/19). One new ADR authored: ADR-0018 (Pareto-incomparable observability classification, Rosella).
+
+**Status:** All findings addressed. Phase 4 work complete. Ready for Phase 5 implementation sprint.
 

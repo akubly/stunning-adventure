@@ -125,6 +125,8 @@ price of not breaking either audience.
 §15.5 owns the *algorithm* package (`@akubly/crucible-plugin-registry`)
 and the *format* (`PluginVersionLock`).
 
+**⚠️ Artifact Availability Invariant:** Plugin-version pinning (via `PluginVersionLock` and `lockId`) is version-deterministic but not artifact-availability-deterministic. The lockfile captures `(name, version)` pairs and CAS digests, but cannot prevent upstream artifact unpublishes, registry outages, or local cache eviction. Determinism guarantees degrade if referenced plugins become unavailable in their original locations. See §11.10 for the replay impact; operators requiring long-term artifact stability should archive plugin tarballs indexed by `lockId` and verify integrity via CAS digest.
+
 ### 15.5.1 Algorithm Package: `@akubly/crucible-plugin-registry`
 
 Co-owned by Rosella (algorithm) and Roger (lockfile format). Lives at
@@ -191,7 +193,54 @@ This section is sufficient for:
   which is the single shared type for the `{commitment, method, slice}`
   triple that §3.3.2 / §8.4 / §11.6 all reference.
 
-## 15.7 Cross-Section Sync-Pair Status
+## 15.7 `@akubly/types` Governance Protocol
+
+Three independently-roadmapped product lines (Cairn, Forge, Crucible) share
+`@akubly/types` as their sole coordination surface. Without explicit governance,
+breaking changes become a coordination tax that scales with the product count.
+This subsection pins the protocol.
+
+### 15.7.1 SemVer Policy
+
+| Change class | SemVer bump | Example |
+|---|---|---|
+| **Additive** — new exported type, new optional field on existing type, new union member | **Minor** | Adding `TimestampNs` (Phase 2 finding 2a) |
+| **Breaking** — removed export, renamed type, changed required field shape, narrowed union | **Major** | Changing `SessionId` from `string` brand to `bigint` brand |
+| **Patch** — JSDoc edits, internal refactors with no public-surface change | **Patch** | Fixing a typo in a type-level comment |
+
+The monorepo uses `"*"` internal dependency specifiers (W3-Impl-1), so
+SemVer bumps are informational for external consumers and changelog
+discipline — the monorepo itself always resolves to the workspace copy.
+
+### 15.7.2 Breaking-Change Process
+
+1. **Proposal PR** with the `types-breaking` label. PR description MUST
+   include: (a) what breaks, (b) which downstream packages are affected,
+   (c) migration path for each affected package.
+2. **48-hour cross-package review window.** At least one reviewer from each
+   affected product line (Cairn, Forge, Crucible) must approve or request
+   changes. Silence after 48 hours is not consent — the proposer must
+   obtain explicit approval.
+3. **Compatibility matrix update** (§15.7.3) in the same PR.
+4. **Coordinated merge.** The `types-breaking` PR merges together with the
+   downstream adaptation PRs (stacked PRs or merge queue) so `main` never
+   has a broken consumer.
+
+### 15.7.3 Compatibility Matrix
+
+Maintained as a living table in this section. Updated on every minor or
+major bump to `@akubly/types`.
+
+| `@akubly/types` version | `@akubly/cairn` | `@akubly/forge` | `@akubly/crucible-*` | Notes |
+|---|---|---|---|---|
+| current (pre-Crucible) | ✅ | ✅ | n/a | Baseline — Cairn + Forge only |
+| +Phase 2 additions (§15.2) | ✅ (no change) | ✅ (no change) | ✅ (new consumer) | All additions are net-new symbols; no existing exports modified |
+
+**Invariant:** every row in this matrix is tested by CI. The `ci:contracts`
+gate (§16.5) runs cross-package type-checking; a red cell in this matrix
+means a failing CI gate, not an editorial oversight.
+
+## 15.8 Cross-Section Sync-Pair Status
 
 | Pair                                                    | Status                                              |
 |---------------------------------------------------------|-----------------------------------------------------|

@@ -30,7 +30,10 @@ The WAL substrate provides:
    ledger prefix, tagged accordingly).
 5. **L1Subscriber broadcast** on every successful commit, exposing
    `(offset, rows[])` to L2 projectors and §4 observers.
-6. **Self-audit** via the hash chain and per-session `cairn fsck` walk.
+6. **Self-audit** via the hash chain and per-session `crucible fsck` walk.
+7. **Single-writer enforcement** via advisory file lock on
+   `~/.crucible/wal/sessions/<sessionId>/write.lock` (§3.4.1); prevents silent
+   hash-chain corruption from concurrent appends.
 
 What L1 does *not* do: derive projections (L2), select prescriptions (L3),
 apply policy (L4), or render investigation surfaces (L5). The substrate's
@@ -102,6 +105,55 @@ session directory whose segment 0 starts with a synthetic
 session ID and fork-point root hash. The fork inherits the parent's hash chain
 (parent's `selfRoot` at `forkOffset - 1` becomes the new session's `prevRoot`
 at offset 1). Parent segments are not copied; cross-session reads are explicit.
+
+### 3.2.1 CAS Garbage Collection
+
+**Cross-session deduplication and unreclaimable growth.** The content-addressed
+store (CAS) deduplicates identical payloads across sessions: multiple WAL rows
+with the same `payloadHash` reference one CAS blob. Without reference tracking,
+deleting a session leaves orphaned CAS blobs — hundreds of MiB of unreclaimable
+storage. Ad-hoc manual cleanup risks `cas-miss` refusals on surviving sessions
+that still reference the deleted blob.
+
+**v1 GC strategy: mark-and-sweep on session archive.** CAS GC runs as an
+explicit user-invoked `crucible gc` command (§13; see §17.3 for retention floor
+trigger). The algorithm:
+
+1. **Mark phase:** Walk all **closed or archived** session directories under
+   `~/.crucible/wal/sessions/`. For each session, scan its segments and harvest
+   every hash (`payloadHash`, `readSetHash`, `hookVerdictWitness`,
+   `contextWindowCommitment`) into a live-reference set. Active sessions
+   (currently open for append) are excluded from the scan.
+2. **Sweep phase:** Enumerate all blobs in `~/.crucible/wal/cas/`. Any blob
+   whose BLAKE3 filename is not in the live-reference set is an orphan;
+   delete it.
+3. **Session-scoped manifest (optional v1 optimization):** On session close,
+   write a `~/.crucible/wal/sessions/<sessionId>/.cas-refs` file listing all
+   CAS hashes referenced by that session. The mark phase reads these manifests
+   instead of scanning segments. Manifest generation is append-only: each
+   group-commit appends new hashes to the manifest tail; on close, deduplicate
+   and fsync. Missing or corrupt manifest forces segment rescan (slower but
+   correct).
+
+**Concurrent-append safety.** CAS GC **never** touches active session
+directories or their referenced CAS blobs. A session is eligible for GC iff
+(a) its directory contains no `.lock` file (see §3.4.1), AND (b) its
+`manifest.json` marks it `closed` or `archived`. The two-phase mark-and-sweep
+ensures no CAS blob is deleted while any closed session still references it.
+
+**cas-miss mitigation.** If a WAL row references a missing CAS blob (detected
+during read, replay, or fsck), the substrate surfaces a `CAS_MISS` error to
+Aperture with the missing hash. The session remains readable for metadata
+queries (offsets, envelope fields) but payload reconstruction fails. §11.3
+replay refuses to advance past a cas-miss row. The user remediates by restoring
+the CAS blob from backup or accepting data loss. GC never creates this
+condition if all active sessions are excluded from the sweep.
+
+**GC timing and trigger policy.** GC is manual in v1; no automatic background
+sweep. §17.3 retention floor (500 MiB soft-warn, 2 GiB hard-limit) prompts the
+user to run `crucible gc` when storage grows beyond threshold. Future versions
+may add automatic GC on idle (v1.5+), but v1 prioritizes simplicity and
+explicit user control over daemon complexity.
 
 ## 3.3 WAL Row Schema (TypeScript)
 
@@ -391,6 +443,21 @@ insertions between the Applier's window read and its decision append
 (e.g., an audit hook in §4 emits an Observation row in the gap). It is
 **not** a multi-writer primitive; callers must not use it as such.
 
+**Write lock enforcement.** The single-writer assumption is enforced via an
+**advisory file lock** on `~/.crucible/wal/sessions/<sessionId>/write.lock`.
+`AppendProtocol` acquires an exclusive lock on this file in its constructor
+(via `flock(LOCK_EX | LOCK_NB)` on Unix, `LockFileEx` with `LOCKFILE_FAIL_IMMEDIATELY`
+on Windows). If the lock acquisition fails (another process holds it), the
+constructor raises `SESSION_WRITE_LOCKED` synchronously. The lock is released
+on `AppendProtocol.close()` or process termination. This prevents silent
+hash-chain corruption when two CLI tabs attempt concurrent appends to the same
+session — the second tab fails-fast with an actionable error instead of
+silently interleaving records and breaking the `prevRoot` chain. The lock file
+is created on first append and persists until session close; its content is
+ignored (presence of the lock, not file content, is the signal). §3.1 substrate
+charter amended: L1 guarantees "one writer per session at a time, enforced by
+write.lock."
+
 **When to use `appendFenced` vs `append(batch)`.** Callers use
 `appendFenced` iff (a) the row is a `Decision` whose
 `contextWindowCommitment` was hashed against a prefix `[0, expectedHead)`,
@@ -493,6 +560,22 @@ component tests inject a stub hasher that returns `0x00…01`.
 
 A declared window referencing rows outside the ledger prefix is routed to the
 Bootstrap-Capture-Completeness test (TDD §6.8), not silently absorbed.
+
+**Prefix-commitment caching (O(N²)→O(N) fallback optimization).** When L0
+omits `causalContextWindow` (the v1 Copilot SDK path per §12.7), every
+Decision hashes the full ledger prefix from offset 0. Naive implementation:
+N Decisions × average D/2 prefix length = O(N×D); for sessions where D≈N
+(typical), this is O(N²). The optimization: cache `cumulativeHash` at each
+committed Decision offset, keyed by `(sessionId, commitOffset)`. Next
+Decision computes by hashing only the delta rows since the last cached
+entry, then updates the cache. Hash chain is incremental; cost becomes O(N).
+Cache eviction on session close or after 1 hr idle (whichever first).
+Cached hash is a pure function of the ledger prefix; cache miss simply
+recomputes from scratch (no correctness impact, only latency). Spec'd as
+`PrefixCommitmentCache` collaborator in the `ContextWindowResolver`
+construction; tested via component tier by comparing cached vs non-cached
+paths on the same 100-row prefix. The SLO (§16.5): replay throughput
+≥500 rows/sec on reference hardware (M2 MacBook Air).
 
 ## 3.8 Bootstrap-Batch Protocol (R2-2 LOCK)
 

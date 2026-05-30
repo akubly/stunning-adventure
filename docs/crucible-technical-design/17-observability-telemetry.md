@@ -78,6 +78,45 @@ The §9 `ApertureEvent` schema is the **only** rendered observability surface in
 
 **v1.5+ expansion (deferred, non-blocking):** OTLP exporter behind a §7 adapter (so external infra inherits trust-tier discipline); per-session retention policy when ledger size becomes an operator concern; multi-user means an "operator inbox" distinct from the user inbox. None of these change the v1 contract — they are additive.
 
+### 17.3.1 v1 Retention Floor and Manual GC
+
+**Unbounded growth is operationally unacceptable.** Without a retention floor,
+fork proliferation and long-lived sessions will drive `~/.crucible/` to
+gigabytes within weeks. First support ticket: "Crucible filled my SSD." The v1
+answer is not automatic GC (deferred to v1.5) but a **soft-warn + hard-limit
+floor** that prompts explicit user action.
+
+**Retention policy:**
+
+- **Soft-warn at 500 MiB total `~/.crucible/` disk usage.** On every session
+  create, the runtime checks total directory size. If ≥ 500 MiB, emit an
+  `attention`-level `ApertureEvent{kind: 'storage_soft_warn'}` visible in the
+  next `crucible status`. Message: "Storage usage 523 MiB / 500 MiB soft limit.
+  Run `crucible gc` to reclaim space." Session creation proceeds normally.
+- **Hard-limit at 2 GiB or 90-day rolling age, whichever is hit first.** If
+  usage ≥ 2 GiB OR any session is older than 90 days, session creation
+  **blocks** with error `STORAGE_HARD_LIMIT`. User must run `crucible gc` to
+  archive closed sessions and sweep CAS before new sessions are allowed.
+  Existing sessions remain readable.
+
+**Manual GC via `crucible gc` command (§13).** The v1 GC path is:
+
+1. `crucible gc [--dry-run]` — user-invoked command (no daemon, no automatic sweep).
+2. Scan closed sessions (no `.lock` file, `manifest.json` marks `closed` or
+   `archived`), build CAS live-reference set (§3.2.1 mark-and-sweep).
+3. Delete unreferenced CAS blobs. Archive session directories older than 90 days
+   by moving them to `~/.crucible/archive/` (optional; user can delete archived
+   sessions manually).
+4. Report reclaimed bytes and session count.
+
+**Why this shape for v1?** Explicit user control over retention keeps v1 simple
+(no daemon, no policy UI, no background threads). The 500 MiB / 2 GiB / 90-day
+thresholds are generous for single-user workloads but tight enough to avoid
+runaway growth. `crucible gc` is zero-risk: it only touches closed sessions and
+CAS blobs with zero live references (§3.2.1 safety). Automatic GC (on idle,
+age-based policy, storage pressure) is v1.5+ when operator personas and
+multi-user workloads justify the complexity.
+
 ## 17.4 Acceptance Signals
 
 - **A5** (Aperture push-notification path) — §17.1 catalog row "Structural proposal pending" + §17.2 correlation key are sufficient for Laura's push-trace assertion.

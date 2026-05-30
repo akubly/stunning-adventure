@@ -206,6 +206,21 @@ the provider with the same inputs the production runtime feeds it.
 9. Loop continues until the Applier (§8) writes a Decision row or the user
    issues `/quit` (control signal: `disconnect`).
 
+**Tool result capture boundary (D1 ruling).** The SDK may perform
+truncation/filtering/sanitization on tool outputs before handing results
+back to the LLM context (e.g., truncating a 50 MB file to the first 100 KB
+for token budget). The `SdkProvider` captures what the SDK hands across the
+L0 boundary, which is the **post-filter LLM-visible result**, not the
+raw pre-filter source bytes. This means:
+- `Artifact{tool_output}` at offset 3 carries the truncated/filtered content
+  that will appear in the next LLM prompt, not the full file the tool read.
+- Hermetic replay (§11.4) re-feeds this LLM-visible result, proving
+  boundary-faithfulness at L0↔L1. Pre-filter content never crossed the
+  boundary and is out of scope for v1 replay.
+- Rationale (Aaron D1 ruling): "(a) is really all we need for replay" — the
+  LLM context is the authoritative input for Decision reconstruction; raw
+  tool source bytes add data-controller burden (Frame 2) without replay value.
+
 ## 12.7 Optional `causalContextWindow` — Copilot SDK Reality (R2-1)
 
 **Reality check on the SDK surface:** `@github/copilot-sdk` does NOT expose
@@ -238,6 +253,20 @@ EventId[]` on Decision-bearing `CrucibleEvent`s, (c) ensure every listed
 EventId resolves to a row already committed in the session ledger prefix
 (L1 enforces this — out-of-prefix references are a Bootstrap-Capture
 violation per §2.6).
+
+**Hermetic replay fidelity (coordination with §11.10).** v1 hermetic replay is
+**boundary-faithful** (proves L0↔L1 capture completeness — that every input
+crossing the §2 boundary is in the ledger or CAS) but not **prompt-faithful**
+(cannot prove the SDK didn't inject hidden system context, safety constraints,
+retrieval augmentation, or tool-schema rewrites that never surfaced to L0).
+This distinction matters for replay interpretation: a passing A2/A9 replay
+proves the ledger is structurally complete at the captured boundary, but does
+not prove the LLM saw only the literal text captured in `system_prompt` and
+`tool_definitions`. Future providers with full attention metadata (including
+SDK-internal prompt augmentation) may upgrade to prompt-faithful replay by
+declaring complete prompt provenance at bootstrap. Coordinate with Graham
+(§11.10.1 hermetic-boundary definition) on architectural claim language; the
+SDK reality here is authoritative for what L0 can observe.
 
 ## 12.8 Multiple-Provider Support (Forward Compat)
 

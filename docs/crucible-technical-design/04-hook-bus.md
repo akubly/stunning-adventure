@@ -166,6 +166,61 @@ hook bus signoff R3:
   the bus exposes a `sampleRate` knob per subscription to keep sampling
   deterministic and replay-reproducible.
 
+### 4.5.1 Capacity Model and Throughput Budget
+
+**Per-row 80 µs bound is not a throughput model.** The §4.3 budget constrains
+single-row evaluation latency but leaves CPU saturation, queue overload, and
+aggregate throughput unspecified. Without a capacity model and CI regression
+gates, the bus will degrade unpredictably under load.
+
+**Throughput equation (v1 analytical model):**
+
+Let:
+- `N_p` = predicate count per kind
+- `m` = match rate (fraction of rows matching at least one predicate; 0.0–1.0)
+- `t_eval` = average per-predicate evaluation time (µs)
+- `q_depth` = subscription queue depth (rows pending subscriber processing)
+
+**Single-threaded dispatch throughput (rows/sec):**
+
+```
+T_max ≈ 1,000,000 / (m × N_p × t_eval + (1 - m) × t_index)
+```
+
+where `t_index` is kind-index lookup cost (~2 µs for hash table lookup). For
+`N_p = 10`, `m = 0.5`, `t_eval = 30 µs`:
+
+```
+T_max ≈ 1,000,000 / (0.5 × 10 × 30 + 0.5 × 2) ≈ 6,600 rows/sec
+```
+
+**Queue saturation threshold:** When subscriber processing falls behind
+dispatch rate, `q_depth` grows unbounded. The bus enters drop mode (§4.5
+observe-drop policy) when `q_depth > q_max` (default 1000 rows). Drop rate:
+
+```
+drop_rate ≈ max(0, dispatch_rate - subscriber_rate)
+```
+
+**Benchmark suite (CI gate requirements):**
+
+1. **Predicate-count scaling:** Vary `N_p = 1, 10, 50, 100`. Measure P50/P95/P99
+   dispatch latency. Regression threshold: P95 ≤ 120 µs for `N_p ≤ 50`.
+2. **Match-rate scaling:** Fix `N_p = 10`, vary `m = 0.1, 0.5, 0.9`. Measure
+   throughput (rows/sec). Regression threshold: `T_max ≥ 5,000 rows/sec` at
+   `m = 0.5`.
+3. **Queue-pressure test:** Fix dispatch at 10k rows/sec, subscriber at 8k
+   rows/sec. Measure time-to-drop and drop count. Regression threshold: first
+   drop within 200ms, drop rate converges to 2k rows/sec ± 10%.
+4. **Predicate-complexity scaling:** Vary `t_eval = 10µs, 30µs, 60µs, 80µs` by
+   injecting synthetic work in predicate body. Measure dispatch throughput.
+   Regression threshold: throughput inversely proportional to `t_eval` within 20%.
+
+**When to revisit model:** (a) New predicate types land (e.g., regex-body scan,
+cross-row correlation), (b) kind-index becomes a bottleneck (P95 t_index > 5µs),
+(c) parallel dispatch (multi-threaded bus) ships in v1.5+. Rerun benchmark suite
+on every CTD revision gate and on quarterly perf-review cycles.
+
 ## 4.6 WAL Field Cross-Reference
 
 The §3.3 WAL row schema carries the bus's output:

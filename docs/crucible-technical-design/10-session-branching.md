@@ -365,6 +365,59 @@ Two sibling forks of the same parent share the parent's prefix +
 post-fork tail). Two forks across different parents diverge at the
 `fork_origin` rows themselves and share only what their MRCA shares.
 
+### 10.8.1 Branching Cost Model and Depth Limits
+
+**"Copy no L1 bytes" hides read costs.** §10.4 fork creation is O(1) metadata
+write with zero L1 segment copying, but ancestry walks (MRCA computation,
+`fork compare`, bisect tooling in §13) read the full `parent_session_id` chain.
+Deep fork trees (fork-of-fork-of-fork) make ancestry operations pathological
+without depth limits, caching, or indexing budgets.
+
+**Cost model (v1 analytical budget):**
+
+| Operation                | Complexity          | Dominant cost                                        | v1 mitigation                                  |
+|--------------------------|---------------------|------------------------------------------------------|------------------------------------------------|
+| **Fork create**          | O(1)                | Metadata write to `sessions` table + `fork_origin` row append. No L1 segment read/copy. | None needed; cheap.                            |
+| **Ancestry read (MRCA)** | O(depth_A + depth_B) | Walk `parent_session_id` chains to find common ancestor. Each hop = one SQLite row read. | Soft-warn at depth 20, hard-limit at depth 50. |
+| **Compare (divergence scan)** | O(shared_prefix_len + divergent_tail_len) | Read shared prefix WAL rows once, then per-fork divergent tails. Hash-chain walk on cold reads. | Memoize MRCA per session-pair; cache shared prefix hashes. |
+| **Bisect (Phase 2 tooling)** | O(depth × log(span)) | Binary search over ancestry; each probe walks full chain from bisect point to bootstrap. | Ancestry cache (see below); bisect depth-budget same as MRCA. |
+
+**Depth limits (v1 floor):**
+
+- **Soft-warn at 20 ancestors:** On fork create, compute `depth = 1 +
+  parent_depth` from `sessions` table. If depth ≥ 20, emit
+  `attention`-level `ApertureEvent{kind: 'fork_depth_soft_warn'}` with
+  guidance: "Fork depth 23 exceeds soft limit (20). Deep fork trees may
+  degrade `fork compare` and bisect performance. Consider archiving old
+  branches." Fork creation proceeds.
+- **Hard-limit at 50 ancestors:** If depth ≥ 50, fork creation **blocks**
+  with error `FORK_DEPTH_EXCEEDED`. User must archive intermediate sessions
+  or re-root from a shallower ancestor before creating new forks.
+
+**Ancestry cache (§17 for bisect tooling Phase 2 dependency):**
+
+When bisect tooling lands, add a derived `session_ancestry` table:
+
+```sql
+CREATE TABLE session_ancestry (
+  session_id        TEXT NOT NULL,
+  ancestor_id       TEXT NOT NULL,
+  hop_count         INTEGER NOT NULL,   -- distance; 0 = self, 1 = parent, 2 = grandparent
+  PRIMARY KEY (session_id, ancestor_id)
+);
+```
+
+Populated on fork create (O(parent_depth) inserts). MRCA query becomes a
+two-way index join instead of a chain walk. Cached ancestry is **advisory** —
+rebuildable from `sessions.parent_session_id` on corruption.
+
+**Indexing budget:** v1 MRCA and compare operations have no SLO tighter than
+"completes within 5 seconds for depth ≤ 20." Bisect tooling (Phase 2) inherits
+this budget; if bisect probes exceed 5s, surface `BISECT_TIMEOUT` and prompt
+user to narrow the offset range. Phase 3+ may add incremental indexing (e.g.,
+per-session hash-chain checkpoints every 1000 offsets) if depth-50 trees become
+common.
+
 ## 10.9 Acceptance Signals
 
 This section is sufficient for:

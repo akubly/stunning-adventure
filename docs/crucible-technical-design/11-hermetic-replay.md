@@ -24,13 +24,14 @@ Capture is exhaustive over the L0/L1 boundary (§2). Every L0-mediated input bec
 | Tool definitions (L0-injected) | `Observation` | `tool_definitions` | **Yes (offset 0)** | inline |
 | Memory fragments literally injected at bootstrap | `Observation` | `injected_memory` | **Yes (offset 0)** | CAS, `sourceManifestId` set |
 | LLM call response | paired `Request{llm_call}` + `Artifact{llm_output}` + `Observation{llm_response}` | — / — / `llm_response` | No | response bytes in CAS; request hash in Observation body |
-| MCP / tool call result | paired `Request{tool_call}` + `Artifact{tool_output}` + `Observation{tool_output}` | — / — / `tool_output` | No | output bytes in CAS |
+| Streaming LLM delta (M2) | `Observation{stream_delta}` | `stream_delta` | No | **CAS, UTF-8 NFC text** (decoded, not raw bytes) |
+| MCP / tool call **result** (D1) | paired `Request{tool_call}` + `Artifact{tool_output}` + `Observation{tool_output}` | — / — / `tool_output` | No | **LLM-visible result bytes in CAS** (post-SDK-truncation; see §2.3 D1 note) |
 | Side-effect-only tool call (M3) | `Request{tool_call}` + `Artifact{synthetic_output}` + `Observation{tool_output}` | — / synthetic / `tool_output` | No | inline marker |
 | Cross-session memory query result | `Observation` | `cross_session_memory` | No | CAS |
 | Ambient external input not modeled as Request (user paste, env var) | `Observation` | `external_input` | No | CAS, hashed source identifier |
 | L0 context-manager pruning event | `Observation` | `context_truncation` | No | inline |
 
-`Observation.body` for any `llm_response` / `tool_output` / `cross_session_memory` carries `{ requestHash, responseRef }`, where `requestHash` is the BLAKE3 of the CBOR-canonical request (LLM messages array, tool arguments, etc.) and `responseRef` is the CAS digest of the response bytes. This pair is the replay re-feed key (§11.4).
+`Observation.body` for any `llm_response` / `tool_output` / `cross_session_memory` carries `{ requestHash, responseRef }`, where `requestHash` is the BLAKE3 of the CBOR-canonical request (LLM messages array, tool arguments, etc.) and `responseRef` is the CAS digest of the response bytes. This pair is the replay re-feed key (§11.4). **D1 clarification:** For `tool_output` sub-kind, `responseRef` points to the **LLM-visible tool result** (post-SDK-truncation/filtering), not the raw pre-filter tool source bytes. The capture boundary (§2.3) sits after SDK-side content filtering; pre-filter bytes never cross L0→L1 and are out of scope for v1 replay.
 
 Bootstrap rows (offset 0) materialize directly from `BootstrapPayload` (R2-2 lock, §2): `literalContext.systemPrompt` → `system_prompt`, `literalContext.toolDefinitions` → `tool_definitions`, `literalContext.injectedMemoryFragments[*]` → `injected_memory` rows, and `memoryManifest` is recorded as a SessionMetadata side-table (queryable later but not bootstrap rows). They commit as a single atomic group-commit batch per §3.
 
@@ -76,7 +77,7 @@ interface ReplayReport {
 1. **Preflight** (§11.7). Refuse-to-start checks run before any row is re-fed.
 2. **Bootstrap rehydration.** Load offset-0 row set via `LedgerWindowReader.read(sessionId, 0, 0)`. Reconstruct an in-memory replay session pinned to the source ledger's `schemaVersion` and `SessionMetadata.pluginVersions`.
 3. **Re-feed loop.** For each subsequent row at offset `n`, in canonical order:
-   - If it is a `Request{llm_call}` or `Request{tool_call}`, do **not** dispatch to the live L0 adapter. Compute `requestHash` from the row's canonical CBOR and look up the matching `Observation{llm_response | tool_output}` later in the ledger (cross-indexed by `producedBy` ⇄ Artifact ⇄ paired Observation). Re-feed the captured `responseRef` payload as if the adapter had just returned it.
+   - If it is a `Request{llm_call}` or `Request{tool_call}`, do **not** dispatch to the live L0 adapter. Compute `requestHash` from the row's canonical CBOR and look up the matching `Observation{llm_response | tool_output}` later in the ledger (cross-indexed by `producedBy` ⇄ Artifact ⇄ paired Observation). Re-feed the captured `responseRef` payload as if the adapter had just returned it. **D1 note:** For tool calls, the re-fed payload is the LLM-visible result (post-SDK-filter), not the raw tool source output; replay proves boundary-faithfulness at the L0↔L1 interface (§11.2).
    - If it is a `Decision`, reconstruct its causal context window per §11.5, recompute the commitment, and assert equality with the stored `contextWindowCommitment`. Mismatch → `divergenceKind: 'commitment'`, fail.
    - For every row, append into the replay ledger via the normal `AppendProtocol` (§3) with `replayMode: true` so timestamps are assigned but excluded from the oracle.
 4. **Oracle comparison** (§11.6). After re-feed completes, compare original ledger vs. replay ledger under `normalizeTimestamps()`; any structural-field divergence → fail.
@@ -211,7 +212,7 @@ Replay guarantees one specific, narrow, falsifiable property. It does **not** gu
 
 Two distinct properties follow, and conflating them is a category error:
 
-- **Trace reproducibility — what Crucible guarantees.** Given the same source ledger prefix and the same captured oracle results in the CAS, replay produces a **byte-equivalent** replay ledger under the §11.6 oracle. The A1–A4 / A9 conformance assertions (§11.8) assert exactly this and nothing more. The proposition is: *the agent saw exactly this input, ran exactly these instructions (primitives in trace order), and committed exactly these Decisions, again.*
+- **Trace reproducibility — what Crucible guarantees.** Given the same source ledger prefix and the same captured oracle results in the CAS, replay produces a **byte-equivalent** replay ledger under the §11.6 oracle. The A1–A4 / A9 conformance assertions (§11.8) assert exactly this and nothing more. The proposition is: *the agent saw exactly this input, ran exactly these instructions (primitives in trace order), and committed exactly these Decisions, again.* **Prerequisite: plugin artifacts must remain available** in their original locations. If referenced artifacts are unpublished, evicted from cache, or accessible registries become unreachable, replay cannot complete the re-feed loop. The determinism guarantees degrade from hermetic to "works only while this machine still has the artifacts in its current configuration."
 
 - **Behavioral reproducibility — what Crucible does NOT guarantee.** The same LLM, given the same context, may make a different choice on a fresh run because of: model weight updates (provider-side silent rollouts), sampling stochasticity (temperature, top-k, top-p, seed handling), decoding-stack differences (server version, batching, speculative decoding), tool / policy / prompt changes upstream of the call, external state drift (filesystem, network, time, repository), and context construction non-determinism (cache hits, truncation heuristics, retrieval order). None of these are observable from the replay ledger, and none of them invalidate trace reproducibility — they invalidate the assumption that re-prompting would produce the same Decision.
 
@@ -220,3 +221,27 @@ Two distinct properties follow, and conflating them is a category error:
 **What the replay invariant does NOT prove:** that the model would make the same Decision if re-prompted from scratch; that the Decision was correct; that the agent is safe under perturbed inputs; that a different model version, provider, sampler seed, or context-construction strategy would produce a compatible Decision; or that any property of the I/O subsystem (the LLM itself) holds. Those are separate test surfaces — behavioral-reproducibility tests, differential testing across providers, mutation testing on Observations, and fuzzing of context construction — and they live in §16 (Test Strategy), explicitly **not** in the replay-equivalence oracle of §11.6.
 
 The discipline this section binds: never report a passing replay as evidence of agent correctness; never quote A2/A9 conformance as evidence of model behavior; never weaken the §11.6 oracle to "tolerate" behavioral drift, because tolerance at this seam is exactly the silent corruption §11.7 preflight exists to prevent. If a test wants to assert something about model behavior, it must live in the surfaces named in §16 and must not borrow the word "replay."
+
+**Sister honesty doctrine: §18.4.1 known limits on PII/secret handling.** Replay completeness (capturing full boundary trace) and redaction (removing secrets from captured content) are in tension. v1 prioritizes replay fidelity; §18.4.1 documents the data-controller obligations this creates and the v1 mitigation toolkit (`crucible session delete --purge`, retention ceiling, operator hygiene). Both §11.10 and §18.4.1 are honesty disciplines — they name what the system does NOT guarantee and prevent over-claiming.
+
+### 11.10.1 Boundary-Faithful vs. Prompt-Faithful Replay
+
+Sections §11.10 and §11.2–§11.4 establish that replay captures and re-feeds Observation rows at the `SdkProvider` boundary — the L0/L1 contract surface (§2). This is **boundary-faithful replay**: the replay ledger reproduces exactly what crossed the `SdkProvider` interface, byte-for-byte, in causal order.
+
+A stronger property — **prompt-faithful replay** — would require that the captured Observation also reflect the exact byte sequence the SDK transmitted to the upstream model endpoint. Crucible v1 does **not** guarantee prompt-faithful replay because the SDK may silently inject content between the L0 boundary and the model API call:
+
+- **Hidden system prompts** — safety preambles, behavioral directives, or provider-injected role messages that the SDK prepends to the conversation before sending to the model.
+- **Tool-schema rewrites** — the SDK may transform, filter, or augment tool definitions between what L0 declared via `BootstrapPayload.literalContext.toolDefinitions` and what the model receives.
+- **Retrieval context injection** — provider-side RAG or grounding content that the SDK injects into the context window without surfacing it to the consumer.
+- **Safety / content-filtering context** — classifier outputs, content-policy metadata, or guardrail annotations that travel with the request but are invisible at the boundary.
+
+**What this means for the hermetic claim:** v1 replay proves that the agent's L1+ logic (WAL, hook bus, projectors, Router, Applier, generators) executed deterministically over the captured boundary trace. It does **not** prove that the model saw the same prompt on the original run as what the boundary trace implies — because the SDK is opaque below L0. The A2/A9 conformance assertions remain valid (they assert trace reproducibility over boundary data); they do not assert prompt reproducibility.
+
+**Degradation statement:** if a future investigation requires prompt-faithful replay — e.g., to determine whether a Decision was influenced by an SDK-injected safety preamble — Crucible cannot provide it from boundary data alone. The investigation must obtain raw SDK request traces (API-level logs) and diff them against the captured Observation stream to measure the boundary-to-prompt gap.
+
+**Validation plan (forward-compat, §12.7):** when the Copilot SDK or a future provider exposes raw request traces (outbound HTTP payloads, token-level prompt construction), Crucible should:
+1. Capture the raw request trace as an additional CAS artifact alongside the boundary Observation.
+2. Diff the boundary Observation against the raw trace to quantify injected content (hidden system tokens, rewritten tool schemas, retrieval context).
+3. Surface the diff in Aperture as a `boundary_prompt_gap` metric, enabling operators to assess how much invisible context the SDK added.
+
+Until that surface exists, any claim of "hermetic replay" must be qualified as **boundary-faithful** — faithful to the L0/L1 contract, not to the model's actual input. Alexander (§12 owner) authors the corresponding §12.7 paragraph documenting the SDK-side validation hook; this subsection is the replay-side complement. Operators relying on long-term replay should preserve plugin artifacts externally — tarball archives indexed by lockId, integrity verification via CAS digest, and resilience to registry churn.

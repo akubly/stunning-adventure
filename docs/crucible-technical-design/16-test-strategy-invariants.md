@@ -29,13 +29,26 @@ are spelled out.
 | Invariant / property | §6.1–§6.9 propositions over `fast-check` generators | `vitest run -- --project=invariants` | `ci:invariants` (nightly + on-change of §3/§4/§11) | TDD §6 |
 | Conformance — Replay (A2/A9) | Golden corpus replay-equivalence against §11.6 oracle | `crucible conformance replay` | `ci:conformance` (nightly) | §11.8, TDD §5.3 |
 | Conformance — Generic L3 Adapter | New adapter passes §7.A `GenericL3AdapterContract` (§16.6) | `crucible conformance l3-adapter <adapter-id>` | `ci:conformance` (per-adapter opt-in) | TDD §3.4, §16.6 |
+| Conformance — Performance | Fixed thresholds for WAL append latency (p50/p99), fsync amortization ratio, hook timeout rate, replay throughput | `crucible conformance perf` | `ci:conformance:perf` (pre-merge, ≤3 min) | TDD §8.4 (latency targets) |
 | Smoke — productivity loop | One-week-loop bar test (§16.4) | `crucible smoke productivity-loop` | `ci:smoke` (every PR, ≤2 min) | §16.4 |
 
 Mapping rule: every PR runs `ci:unit + ci:contracts + ci:components +
-ci:integration + ci:acceptance:fast + ci:smoke`. Nightly extends with
-`ci:invariants + ci:conformance + ci:acceptance:full`. Tier ratios, per-layer
-counts, and per-tier latency targets are owned by **TDD §5.1 and §8.4** — see
-those sections for numbers; do not duplicate here.
+ci:integration + ci:acceptance:fast + ci:conformance:perf + ci:smoke`. Nightly
+extends with `ci:invariants + ci:conformance + ci:acceptance:full`. Tier
+ratios, per-layer counts, and per-tier latency targets are owned by **TDD §5.1
+and §8.4** — see those sections for numbers; do not duplicate here.
+
+**Performance conformance thresholds** (for `ci:conformance:perf`):
+<!-- TBD: thresholds defined by Graham/Gabriel during L1 substrate implementation -->
+- WAL append latency: p50 ≤ X µs, p99 ≤ Y µs
+- fsync amortization ratio: ≥ Z (fsync per N appends)
+- Hook timeout rate: ≤ W% (predicates exceeding 80 µs budget)
+- Replay throughput: ≥ N rows/s (on golden corpus)
+
+Parameterized placeholders (X/Y/Z/W/N) will be populated with fixed thresholds
+during §3 (WAL) and §4 (Hook Bus) implementation; the gate becomes blocking
+when thresholds land. Pre-merge blocking prevents silent perf regressions from
+shipping before nightly catches them.
 
 ## 16.2 Invariant Surfaces (Cross-Reference)
 
@@ -71,7 +84,7 @@ double-check per the zero-tolerance gate (§16.5).
 | `SessionBootstrapper` (§3.1) | §2 L0/L1 boundary; §12 SDK integration | Component | Yes — bootstrap-payload shape |
 | `LedgerWindowReader` (§3.1) | §3.3/§3.4 WAL; consumed by §11.4/§11.5 | Component | Yes — prefix-query shape |
 | `AppendProtocol` (§3.2) | §3.4 (incl. `appendFenced` per §0 Finding 12b) | Contract | n/a (already contract-tier) |
-| `PreCommitHookBus` (§3.2) | §4.2–§4.4 | Component | Yes — verdict-array shape + 80 µs budget |
+| `PreCommitHookBus` (§3.2) | §4.2–§4.4 | Component | Yes — verdict-array shape + 80 µs budget (verified by component-tier perf test per §4.3) |
 | `ReadSetHasher` (§3.2) | §3 (CBOR-dcbor + BLAKE3); fixture in §11.5 | Unit + Contract | Yes — determinism across machines |
 | `LedgerProjector` (§3.3) | §9 Aperture (Phase 2); generalized in §1.2 L2 | Component | Yes — projection-purity contract |
 | `QueryExecutor` (§3.3) | §1.2 L2 row; Salsa-style implementation deferred to L2 detail section | Component | Yes (when L2 section lands) |
@@ -79,6 +92,7 @@ double-check per the zero-tolerance gate (§16.5).
 | `GenericL3AdapterContract` (§3.4) | §7.A conformance suite | **Contract** (the suite IS the contract tier) | Self-referential — see §16.6 |
 | `ChangeVectorProvider` (§3.4) | §7 (Generators) | Component | Yes — fail-open returns `[]` |
 | `ParetoFitnessEvaluator` (§3.4) | §7 / §8.5 (`nonDominatedReason` propagation per R2-5) | Component | Yes — dominance correctness |
+| `SchedulerDispatcher` (§3.5) | §5.A L3.5 Scheduler tier (ADR-0024); dispatch ordering + hazard analysis | Component | Yes — dispatch fairness + serialization of WAW hazards |
 | `PolicyEngine` (§3.5) | §5 Router (policy lookup) + §8 DecisionGate (enforcement) | Component | Yes — verdict shape per trust tier |
 | `EscalationQueue` (§3.5) | §5 Router; §9 Aperture `StructuralApprovalQueue` (Q3) | Component | Yes — priority + timeout |
 | `CausalSliceEngine` (§3.6) | L5 Investigation section (Phase 2/3); §11 ledger reader is the substrate | Component | Yes — slice = recomputed commitment (§11.8 A4) |
@@ -86,11 +100,12 @@ double-check per the zero-tolerance gate (§16.5).
 | `PluginRegistry` (§3.7) | §15 (`@akubly/crucible-plugin-registry`); R2-6 lockfile | Component | Yes — pinning + deny-list |
 | `CLIRenderer` (§3.7) | §13 CLI | Component | Yes — badge-on-attention |
 
-**Completeness check:** every collaborator in TDD §3.1–§3.7 has a row.
-`QueryExecutor` and `CausalSliceEngine` reference CTD sections that are
-Phase 2/3 deliverables not yet authored as standalone files; their primary
-tier is fixed regardless of which section ultimately owns them, and Phase 3
-synthesis re-verifies the binding when those sections land.
+**Completeness check:** every collaborator in TDD §3.1–§3.7 has a row, including
+L3.5 Scheduler tier (ADR-0024, §5.A). `QueryExecutor` and `CausalSliceEngine`
+reference CTD sections that are Phase 2/3 deliverables not yet authored as
+standalone files; their primary tier is fixed regardless of which section
+ultimately owns them, and Phase 3 synthesis re-verifies the binding when those
+sections land.
 
 ## 16.4 One-Week Productivity-Loop Smoke Test
 
@@ -160,7 +175,12 @@ shell-out, real env-snapshot capture, real fork+replay).
 the §11.4 `ReplayDriver` contract. Output is a `ReplayReport`; non-zero exit
 on `status: 'fail'`. The CLI is the user-facing handle on the §11.6 oracle
 and §11.7 preflight refusals — both surface as `divergenceKind`. Test tier:
-acceptance (A2, A9) against the golden corpus.
+acceptance (A2, A9) against the golden corpus. **SLO (per I1):** Replay
+throughput ≥500 rows/sec on reference hardware (M2 MacBook Air, 8GB). Budget
+rationale: fallback-path O(N²) hashing dominated v1 sessions; prefix-commitment
+caching (§3.7) reduces to O(N) and guarantees this SLO for typical sessions
+(≤1000 rows). A2 test must complete full replay in <10% of original session
+wall-clock time.
 
 **Why command + watchpoint/breakpoint/logpoint registry.** `crucible why <id>`
 walks the §11/§3 `causalReadSet` backward via `CausalSliceEngine` (L5 section,
@@ -171,6 +191,20 @@ substrate already exists. §13 CLI exposes `crucible debug list-predicates`
 as the read view; new entries are authored as predicate registrations, not
 as a separate registry data structure. Test tier: component for registry
 projection; integration for the CLI verbs.
+
+**Hook bus 80 µs predicate-budget validation (per §4.3).** The §4.2 claim that
+~50 compiled predicates per kind stay inside the 80 µs row-stage budget is
+load-bearing for commit latency (§3.11) and must be validated by a
+component-tier perf test. Test shape: 50 representative predicates (each
+inspecting `primitiveKind` + `subKind` + 1 payload field check), 1000 appends
+across mixed kinds, assert p99 dispatch latency ≤80 µs per row. Predicates
+should reflect realistic production patterns (CBOR body inspection, hash
+lookups, causal-edge traversal). If test fails: fallback strategies include
+(a) reduce predicate cap from 50 to lower ceiling, or (b) implement two-phase
+dispatch (fast kind+subKind filter → slow witness-body materialization only
+for matched predicates). Test authority: TDD §5.2 component tier. CI stage:
+`ci:components` (pre-merge). Cross-ref to §16.3 `PreCommitHookBus` row which
+notes "80 µs budget verified by component-tier perf test per §4.3."
 
 **Streaming-token capture policy (LLM I/O subsystem).** Streaming LLM
 responses do **not** emit one `Observation` per token. WAL volume would
@@ -186,23 +220,27 @@ shape is a bounded triple, all three rows being `Observation` primitives
   the CAS like any other Observation body.
 - `Observation{subKind: 'stream_delta'}` — emitted at **checkpoint
   boundaries**, configurable per `(every N tokens) OR (every M ms)`, default
-  `(N=256 tokens) OR (M=500 ms)` whichever fires first. Each delta carries
-  the cumulative-text CAS digest and the delta-text CAS digest; both are
-  `causalRead`-bound to the originating `stream_open` row.
+  `(N=256 tokens) OR (M=500 ms)` whichever fires first. **Semantics (M2
+  clarification):** Each delta carries **decoded UTF-8 text** (not raw bytes),
+  NFC-normalized. The cumulative-text CAS digest and the delta-text CAS digest
+  are stored; both are `causalRead`-bound to the originating `stream_open` row.
+  L0 adapter must buffer partial multi-byte UTF-8 sequences across token
+  boundaries; deltas emit only complete codepoints.
 - `Observation{subKind: 'stream_close'}` — body carries `{ finalContentRef,
   finishReason, usage: { promptTokens, completionTokens, totalTokens } }`.
-  `finalContentRef` is the CAS digest of the complete response bytes; this
-  is the same digest a non-streaming `llm_response` would carry, so the
-  re-feed key (§11.4) remains uniform.
+  `finalContentRef` is the CAS digest of the complete response **text**
+  (UTF-8 NFC-normalized bytes); this is the same digest a non-streaming
+  `llm_response` would carry, so the re-feed key (§11.4) remains uniform.
 
 Replay (§11.4) re-feeds the **captured delta sequence** in original order
 from the CAS; it does **not** regenerate from the model and does not collapse
 the deltas into the `stream_close` payload. The corresponding invariant
 (tested at `ci:invariants`): for every streamed `llm_response` row group,
-the concatenation of `stream_delta` payloads in offset order equals the
-`stream_close.finalContentRef` bytes, byte-for-byte. Failure is an oracle
-divergence with `divergenceKind: 'commitment'` (the delta chain is part of
-the row's structural projection per §11.6).
+the **text concatenation** of `stream_delta` payloads in offset order equals
+the `stream_close.finalContentRef` text (both UTF-8 NFC-normalized),
+character-for-character. Failure is an oracle divergence with
+`divergenceKind: 'commitment'` (the delta chain is part of the row's
+structural projection per §11.6).
 
 This policy is the operational consequence of treating the LLM as the I/O
 subsystem (§11.10): we sample the stream at checkpoints sufficient to
@@ -306,6 +344,11 @@ any TDD strategy content:
 
 - **A1–A12 acceptance scenarios:** runnable against `ci:acceptance` per
   the category matrix (§16.1); per-scenario fixture lives in TDD §2 and §9.
+- **A13 Scheduler dispatch ordering + hazard serialization:** two concurrent
+  generators with a WAW (write-after-write) hazard on the same skill →
+  Scheduler serializes correctly → Router receives proposals in hazard-safe
+  order. Validates L3.5 tier (§5.A, ADR-0024) prevents race conditions between
+  generators. Runnable against `ci:acceptance` per §16.1.
 - **§6.1–§6.9 invariants:** runnable against `ci:invariants` per §16.2's
   surface bindings; proposition text stays in TDD §6.
 - **A9 determinism conformance:** runnable against `ci:conformance` via

@@ -22,6 +22,7 @@ can do the right thing without ceremony.
 | `crucible session start`                   | `[--provider <id>] [--skill <name>]`                | Bootstrap a new session via `runtime.startSession()` (§12.4). |
 | `crucible session list`                    | `[--all]`                                           | List sessions from the on-disk session catalog. |
 | `crucible session show <sid>`              |                                                     | Render session header + last N inbox events. |
+| `crucible session delete <sid> [--purge]`  |                                                     | Delete a session's WAL segments + CAS blobs. Default tombstones for 7-day retention-window grace (allows accidental-delete recovery); `--purge` removes immediately. Remediation primitive when secrets leak (§18.4.1). |
 | `crucible fork <sid> --at <offset>`        | `[--label <text>]`                                  | §10 fork; pins lockfile + bootstrap manifest verbatim. |
 | `crucible aperture witness`                |                                                     | Stream unresolved `attention` rows (§9.3). "Bear witness" — `watch` reserved for future debugger watchpoints (per Sonny advisory; ADR-0019). |
 | `crucible aperture show`                   | `[<eventId>]`                                       | Open `@inbox` or a single event with one-hop causal slice. |
@@ -37,6 +38,8 @@ can do the right thing without ceremony.
 | `crucible query <view>`                    | `[--json]`                                          | Run a saved query (§13.4) and render. |
 | `crucible query save <name>`               | `--from <view>`                                     | Persist a saved query into the session catalog. |
 | `crucible replay <sid>`                    | `[--until <offset>] [--strict]`                     | §11 hermetic replay. |
+| `crucible fsck [<sessionId>]`              |                                                     | Verify hash-chain continuity, CAS-body completeness, bootstrap-manifest consistency, and monotonic-timestamp invariant. Output: per-check pass/fail + first failure offset on error. (§3.13–3.17.) |
+| `crucible gc [--dry-run]`                  |                                                     | Garbage-collect unreferenced CAS blobs and archive old sessions. Mark-and-sweep on closed sessions only (§3.2.1); active sessions excluded. `--dry-run` reports reclaimable bytes without deleting. Unblocks session creation when §17.3.1 hard-limit hit. |
 | `crucible status`                          |                                                     | Status-line one-liner: `⊙N  ◆M  ⌚session-uptime`. |
 | `crucible config`                          |                                                     | Edit `~/.copilot/preferences.json` (Crucible + Eureka shared). |
 

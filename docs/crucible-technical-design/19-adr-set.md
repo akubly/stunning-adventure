@@ -19,6 +19,18 @@ All nineteen rows below carry status **Accepted (CTD-locked) — pending authori
 | # | Title | Decision (one line) | CTD anchor | Author | Status |
 |---|-------|--------------------|------------|--------|--------|
 | **ADR-0002** | L1 WAL Substrate Selection | Adopt Roger's A.3 hybrid — SQLite-WAL append log + per-record CBOR payload + BLAKE3 chain — as the single L1 substrate. | §3 | Roger | Accepted (CTD-locked) — pending authoring |
+
+> **ADR-0002 Required Section: Why Not SQLite WAL-Mode as L1 Substrate**
+>
+> The ADR body (authored by Roger, `docs/adr/0002-l1-wal-substrate.md`) MUST include a "Rejected Alternatives" section addressing SQLite WAL-mode as an L1 substrate candidate. The rejection is architectural, not performance-driven (Aaron ruling: no benchmark required). Three load-bearing architectural couplings rule it out:
+>
+> 1. **Hash-chain integrity.** Crucible's L1 requires a per-row chained BLAKE3 root (`prevRoot` → `selfRoot`) that forms a Merkle chain over the entire session. SQLite WAL-mode operates at the page level — its WAL records are database pages, not application-level rows. There is no stable hook to inject per-row hash chaining into SQLite's page-level WAL without wrapping every write in application-level chain maintenance *on top of* SQLite's own WAL, which eliminates the benefit of using SQLite as the substrate.
+>
+> 2. **Segment-level CAS alignment.** The custom WAL's 64 MiB segment files (§3.2) are content-addressed units whose boundaries align with the CAS sharding scheme. CAS digests reference byte ranges within segments; segment rotation is coordinated with group-commit boundaries. SQLite's WAL segments are B-tree pages managed by SQLite's pager — their boundaries are opaque to the application and do not align with CAS content addressing. Forcing alignment would require a CAS layer *above* SQLite that duplicates the storage, negating the "use SQLite instead" simplification.
+>
+> 3. **Replay-oracle coupling.** Hermetic replay (§11) requires byte-exact reconstruction of the WAL segment stream to verify hash-chain integrity (A2 conformance). The replay oracle reads segments sequentially and re-derives `selfRoot` from the binary record layout. SQLite WAL-mode checkpoints compact the WAL back into the main database file — the WAL is transient by design. Preserving the full WAL history for replay would require disabling checkpointing entirely (unbounded WAL growth) or maintaining a separate append-only copy (again duplicating storage).
+>
+> **Summary:** SQLite WAL-mode is the wrong abstraction layer. It solves ACID page-level crash recovery; Crucible needs application-level append-only hash-chained event storage with content-addressed segment boundaries. The A.3 hybrid uses SQLite (via `better-sqlite3`) for **derived tables only** (`crucible.db`, §3.2) — the right tool for L2 projections, the wrong tool for L1 substrate.
 | **ADR-0003** | L0/L1 Boundary Hermetic Contract | The L0 SDK boundary emits exactly one `BootstrapPayload` + a totally-ordered append-only event stream; no out-of-band state crosses the boundary. | §2 | Graham | Accepted (CTD-locked) — pending authoring |
 | **ADR-0004** | Canonical Serialization (CBOR + BLAKE3) | All L1 records use deterministic CBOR for bytes and BLAKE3 for content hashes and Merkle chains; SHA-* and JSON are forbidden on the hermetic path. | §3, §11 | Roger | Accepted (CTD-locked) — pending authoring |
 | **ADR-0005** | Hook Bus Verdict Model | Pre-commit hooks return exactly one of `continue` / `observe` / `pause`; no veto, no rewrite, no async verdict. | §4 | Roger | Accepted (CTD-locked) — pending authoring |

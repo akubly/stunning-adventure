@@ -88,6 +88,16 @@ Note that the *stream wrapper* `CrucibleEventStream` is the **only** non-pure-
 data shape at the boundary, and even it is consumed by L1's `AppendProtocol`
 adapter rather than passed onward. Downstream layers never see the iterator.
 
+**Capture-boundary rule (D1 ruling).** The L0/L1 boundary sits **after** any
+SDK-side content filtering, truncation, or sanitization. L0 emits what the
+SDK hands back to the harness for inclusion in the next LLM prompt
+(post-filter), not the raw pre-filter tool source bytes. This is the
+authoritative capture boundary for v1: tool outputs are captured as
+**LLM-visible results**, which satisfies hermetic replay without taking on
+data-controller obligations for pre-filter content that never influenced LLM
+Decisions. See §11.2 and §12.6 for implications on replay fidelity and
+SDK-adapter behavior.
+
 ## 2.4 `OutboundPrompt` and Control Signals (L1 → L0)
 
 ```ts

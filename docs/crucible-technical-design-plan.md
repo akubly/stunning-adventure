@@ -627,7 +627,34 @@ The Crucible Technical Design (CTD) is organized into 19 sections. Each section 
 
 **Rationale:** Every other section references the L0/L1 boundary and the primitive vocabulary. These two sections are Graham-authored and can be drafted in rapid sequence (~1 day).
 
-### Phase 1 — Core Stack (parallel fan-out, depends on Phase 0)
+### Phase 0.5 — Walking Skeleton (gates Phase 1 fan-out)
+
+Before Phase 1 fan-out, a minimal end-to-end walking skeleton MUST pass.
+This proves the substrate is alive before the team invests in parallel
+section authoring against it.
+
+**Skeleton scope (minimum viable vertical slice):**
+
+1. **One LLM call** through the `SdkProvider` boundary (§12) — a single
+   user prompt → model response round-trip.
+2. **L0 bootstrap** — `BootstrapPayload` materialized as offset-0
+   Observation rows in the WAL (§2, §3).
+3. **WAL append** — the LLM response committed as at least one
+   Observation + one Decision row with hash-chain linking (§3.2).
+4. **`crucible status`** reads back the session from the WAL and reports
+   session ID, row count, and last commit offset (§13 — minimal verb).
+5. **`crucible replay`** passes the A2 conformance assertion (§11.8) —
+   byte-equivalent replay ledger from the captured session.
+
+**Gate rule:** Phase 1 fan-out is blocked until all 5 skeleton checks
+pass in CI on a single green run. The skeleton is intentionally minimal —
+no hook bus, no Router, no generators, no Aperture. It validates only the
+L0→L1→replay vertical.
+
+**Owner:** Graham (orchestration) + Roger (WAL) + Alexander (SDK provider).
+**Estimated effort:** 2–3 days.
+
+### Phase 1 — Core Stack (parallel fan-out, depends on Phase 0.5)
 
 ```
 ┌─ §3 L1 WAL Substrate (Roger)
@@ -679,14 +706,15 @@ The Crucible Technical Design (CTD) is organized into 19 sections. Each section 
 ### Dependency Summary
 
 ```
-Phase 0 (1 day)  →  Phase 1 (3 days parallel)  →  Phase 2 (2 days parallel)  →  Phase 3 (1 day)
-                                                                                        ↓
-                                                                              Review Round (2 days)
+Phase 0 (1 day)  →  Phase 0.5 (2-3 days)  →  Phase 1 (3 days parallel)  →  Phase 2 (2 days parallel)  →  Phase 3 (1 day)
+                          ↑                         ↑                                                           ↓
+                    walking skeleton          Gate 1.5: ADR bodies                                    Review Round (2 days)
+                    gates fan-out             (0002, 0011, 0024)
 ```
 
-**Critical path:** §2 → §3 → §10 → §15 → §19 (Roger's chain is the longest serial dependency).
+**Critical path:** §2 → §6 → skeleton → ADR-0002 body → §3 → §10 → §15 → §19 (Roger's chain remains the longest serial dependency; skeleton + ADR gate add ~3–4 days up front but de-risk Phase 1).
 
-**Total elapsed time:** ~7 working days (1 authoring round of ~5 days + 1 review round of ~2 days).
+**Total elapsed time:** ~10 working days (1 day Phase 0 + 2–3 days skeleton + 5 days Phases 1–3 + 2 days review). Net addition of ~3 days vs. rev. 3 estimate; amortized by reduced rework risk.
 
 ---
 
@@ -723,6 +751,29 @@ Phase 0 (1 day)  →  Phase 1 (3 days parallel)  →  Phase 2 (2 days parallel) 
 **What:** §2 (L0/L1 Boundary) + §6 (5 Primitives) reviewed by Roger + Alexander.
 **Trigger for rejection:** Interface signature incompatible with locked Phase A decisions.
 **Turnaround:** Same day.
+
+### Gate 1.5 — ADR-Body Gate (before Phase 1 implementation begins)
+
+**What:** Authored ADR bodies for the three load-bearing substrate decisions
+must land in `docs/adr/` before any Phase 1 implementation code is written.
+
+| ADR | Title | Author | Why gated |
+|---|---|---|---|
+| ADR-0002 | L1 WAL Substrate Selection | Roger | Substrate choice is non-reversible once WAL code exists; ADR body must include "Why not SQLite WAL-mode" section (§19.2 guidance). |
+| ADR-0011 | Observation as First-Class Primitive + Context-Window Commitment | Graham | Replay doctrine shapes every L1 row; implementation without the argued rationale risks silent scope drift. |
+| ADR-0024 | Explicit L3.5 Scheduler Tier | Gabriel | Scheduler is retained in v1 (Aaron ruling); dispatch contract must be argued before Router + Scheduler code begins. |
+
+**Trigger for rejection:** ADR body missing any of: Context, Options Considered,
+Decision, Rationale, Consequences (per §19.3 body shape). "Why not" sections
+for rejected alternatives are mandatory — the panel (I13) specifically flagged
+that reviewers need to see rejected options, not just outcomes.
+
+**Remaining ADRs (ADR-0003–ADR-0019 excluding 0002/0011/0024):** may be authored
+in parallel with Phase 1 implementation. They are not gated because their
+decisions are either downstream of Phase 1 outputs or have sufficient rationale
+already visible in the CTD section body.
+
+**Turnaround:** ≤2 days per ADR body.
 
 ### Gate 2 — Phase 1 Section Reviews (cross-review)
 
