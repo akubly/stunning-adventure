@@ -1,9 +1,7 @@
 # WI-A Implementation Log — Issue #11: Worktree-aware sessions
 
 **Author:** Roger (Platform Dev)  
-**Branch:** `squad/11-worktree-aware-sessions`  
-**Worktree:** `D:\git\stunning-adventure-11`  
-**Status:** Cloud review cycle 5 applied — ready for push
+**Status:** Cloud review cycle 7 applied — all findings resolved, merge-ready
 
 ---
 
@@ -251,3 +249,50 @@ Cosmetic fix only.
 Added `@remarks` tag to the JSDoc: "Returns ONLY user sessions
 (`session_kind = 'user'`). System sessions are excluded. For system-session
 lookup, use a dedicated helper."
+
+---
+
+## Cloud Review Cycle 6 Fixes (commit ee69053)
+
+### K1 — `resolve_prescription` missing invalid-workdir guard
+
+Added `normalizeWorkdir` guard to `resolve_prescription` handler: when
+`workdir !== undefined` but normalizes to `undefined`, return `isError` with
+`JSON.stringify({ error: 'workdir is invalid (empty or whitespace).' })`.
+Also tagged `source: 'explicit'` on the `getUserSessionForMcpFallback` call
+to suppress the multi-session ambiguity warning in that path.
+
+### K2 — OS-neutral test comment
+
+Replaced Windows-specific path example in `worktreeSessions.test.ts` comments
+with a platform-neutral description.
+
+---
+
+## Cloud Review Cycle 7 Fixes (commit 60ad99d)
+
+### L1 — `get_status` error response not JSON-shaped
+
+The invalid-workdir guard in `get_status` returned `text: 'Invalid workdir: ...'`
+(plain string) while every other MCP error response uses
+`text: JSON.stringify({ error: '...' })`. Wrapped the text in `JSON.stringify`.
+
+No test changes needed: the Area 5f guard test checks `toContain('Invalid workdir')`
+which still passes with the JSON-wrapped string.
+
+### L2 — `getActiveSession` JSDoc misleading helper reference
+
+The `@remarks` said "use a dedicated helper (e.g. `getActiveUserSession` with
+kind override)" — but `getActiveUserSession` does not exist and `getActiveSession`
+has no kind-override parameter. Replaced with "use a dedicated helper with an
+explicit kind filter."
+
+### L3 — Dead `normalizeWorkdir` re-export in `gitContext.ts`
+
+`gitContext.ts` had `export { normalizeWorkdir } from '../utils/workdir.js'`
+added during an earlier cycle. All callers import directly from `utils/workdir`;
+zero callers use the gitContext re-export path. The import itself is retained
+(used internally by `getWorkdir`), only the re-export statement is removed.
+
+**Status:** Cloud review cycle 7 applied — all findings resolved. Branch is
+merge-ready pending final Copilot re-review sign-off.
