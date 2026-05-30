@@ -29,6 +29,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { recall, compositeScore } from '../recall.js';
+import type { RecallResult } from '../recall.js';
 import type { SessionId } from '@akubly/types';
 
 /**
@@ -360,5 +361,63 @@ describe('recall', () => {
       'Recently accessed fact', // recency 1.0 → finalScore higher
       'Never-accessed fact',    // recency 0.1 (floor) → finalScore lower
     ]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // F6 — min_trust regression: FactStore.search() must receive minTrust: 0.15
+  // ---------------------------------------------------------------------------
+  //
+  // Closes the spec-impl gap: §20 §7.4 specifies min_trust as a first-class
+  // FactStore.search() predicate. The call site now passes minTrust: TRUST_FLOOR
+  // so the store filters at the data layer (not just activity-layer post-filter).
+  // This test asserts the mock receives the correct argument shape.
+
+  it('passes minTrust: 0.15 to factStore.search so trust filtering happens at the data layer (F6)', async () => {
+    const factStore = {
+      search: vi.fn().mockResolvedValue([]),
+    };
+
+    await recall(
+      { query: 'trust floor test', sessionId, k: 5 },
+      { factStore, clock: fixedClock },
+    );
+
+    expect(factStore.search).toHaveBeenCalledWith(
+      expect.objectContaining({ minTrust: 0.15 }),
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // C6 — Ranker-path guard: no-op ranker must produce same ordering as inline
+  // ---------------------------------------------------------------------------
+  //
+  // Prevents silent behavioral drift from custom rankers. A Ranker that calls
+  // compositeScore inline (no-op equivalent) must produce the same ordered results
+  // as the inline-scoring path for identical input. If recallWithScores mutates
+  // the ranker path (e.g., skips re-sort), this test catches it.
+
+  it('no-op ranker (compositeScore inline) produces same ordering as inline scoring path (C6 — ranker guard)', async () => {
+    const EPOCH_MS = 0;
+
+    const fixture: RecallResult[] = [
+      { content: 'Cold low-relevance fact',        relevance: 0.2, importance: 0.2, trust: 0.3, attention_tier: 'cold', last_accessed: EPOCH_MS },
+      { content: 'Hot high-relevance fact',         relevance: 0.9, importance: 0.8, trust: 0.9, attention_tier: 'hot',  last_accessed: EPOCH_MS },
+      { content: 'Warm medium-high-relevance fact', relevance: 0.7, importance: 0.6, trust: 0.7, attention_tier: 'warm', last_accessed: EPOCH_MS },
+      { content: 'Warm medium-relevance fact',      relevance: 0.5, importance: 0.4, trust: 0.5, attention_tier: 'warm', last_accessed: EPOCH_MS },
+    ];
+
+    const makeStore = () => ({ search: vi.fn().mockResolvedValue([...fixture]) });
+
+    // No-op ranker: calls compositeScore inline — semantically identical to the
+    // inline path, but exercises the ranker code branch.
+    const noOpRanker = (facts: RecallResult[], { nowMs }: { nowMs: number }) =>
+      facts.map(f => ({ fact: f, score: compositeScore(f, nowMs) }));
+
+    const [withRanker, withoutRanker] = await Promise.all([
+      recall({ query: 'ranker guard', sessionId, k: 4 }, { factStore: makeStore(), clock: fixedClock, ranker: noOpRanker }),
+      recall({ query: 'ranker guard', sessionId, k: 4 }, { factStore: makeStore(), clock: fixedClock }),
+    ]);
+
+    expect(withRanker.map(r => r.content)).toEqual(withoutRanker.map(r => r.content));
   });
 });

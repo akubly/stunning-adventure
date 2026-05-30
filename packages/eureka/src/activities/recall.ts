@@ -30,7 +30,13 @@ export interface ScoredResult {
 
 /** FactStore seam — injected, never instantiated here (§55 §2.1 London form). */
 export interface FactStore {
-  search(args: { query: string; sessionId: SessionId; limit: number }): Promise<RecallResult[]>;
+  search(args: {
+    query: string;
+    sessionId: SessionId;
+    limit: number;
+    /** Trust floor predicate per §20 §7.4 — store applies WHERE trust >= minTrust. Default 0.15. */
+    minTrust?: number;
+  }): Promise<RecallResult[]>;
 }
 
 export interface RecallOptions {
@@ -55,6 +61,9 @@ export interface ClockProvider {
  * Optional custom ranker seam — replaces inline compositeScore when provided.
  * Receives trust-filtered candidates and nowMs; sorting and slicing to k remain
  * in recall/recallWithScores.
+ *
+ * Note: recallWithScores always re-sorts; ordering produced by Ranker is ignored.
+ * Return scored pairs; sorting is the caller's responsibility.
  */
 export type Ranker = (facts: RecallResult[], deps: { nowMs: number }) => ScoredResult[];
 
@@ -70,7 +79,10 @@ export interface RecallDeps {
   ranker?: Ranker;
 }
 
-// TODO(M5+): configurable per-call trustFloor via RecallOptions. See decision drop edgar-recall-undersupply-escalation if filed.
+// TODO(M5+): per-call trustFloor override via RecallOptions — needs §-decision;
+// tracked in cassima-crispin-recall-undersupply-resolution. min_trust IS now
+// configurable at the FactStore boundary (F6); the remaining work is wiring an
+// optional RecallOptions.trustFloor through as minTrust: options.trustFloor ?? TRUST_FLOOR.
 /** Trust floor per §30 §2.3 — exclude facts below this threshold. */
 const TRUST_FLOOR = 0.15;
 
@@ -131,9 +143,12 @@ export async function recallWithScores(
   const { query, sessionId, k } = options;
   const { factStore, clock, ranker } = deps;
 
-  const candidates = await factStore.search({ query, sessionId, limit: k });
+  const candidates = await factStore.search({ query, sessionId, limit: k, minTrust: TRUST_FLOOR });
   const nowMs = clock.now();
 
+  // Belt-and-suspenders: FactStore.search() now receives minTrust and filters at the data
+  // layer per §20 §7.4 (F6). This post-filter remains as defense-in-depth — if a FactStore
+  // mock or future implementation does not honor minTrust, no below-floor facts reach the ranker.
   const trusted = candidates.filter(f => f.trust >= TRUST_FLOOR);
   const scored = ranker
     ? ranker(trusted, { nowMs })
