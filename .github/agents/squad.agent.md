@@ -673,9 +673,10 @@ When worktree mode is enabled, the coordinator creates dedicated worktrees for i
 
 **Dependency management:**
 - After creating a worktree, link `node_modules` from the main repo to avoid reinstalling
-- Windows: `cmd /c "mklink /J `"{worktree}\node_modules`" `"{main-repo}\node_modules`""`
+- Windows: Use `cmd /c mklink /J` to create the junction, quoting both the link
+  path and target path. If `mklink` fails (permissions, cross-device), fall back
+  to `npm install` in the worktree.
 - Unix: `ln -s "{main-repo}/node_modules" "{worktree}/node_modules"`
-- If linking fails (permissions, cross-device), fall back to `npm install` in the worktree
 
 **Reusing worktrees:**
 - Before creating a new worktree, check if one exists for the same issue
@@ -683,15 +684,28 @@ When worktree mode is enabled, the coordinator creates dedicated worktrees for i
 - If found, reuse it (cd to the path, verify branch is correct, `git pull` to sync)
 - Multiple agents can work in the same worktree concurrently if they modify different files
 
-**Cleanup:**
-- After a PR is merged, the worktree MUST be removed in this exact order:
-  1. Remove the `node_modules` junction FIRST (before `git worktree remove`):
-     - Windows: `cmd /c "rmdir `"{worktree}\node_modules`""` (removes the junction only, NOT the target)
-     - Unix: `rm -f "{worktree}/node_modules"` (removes the symlink only, NOT the target)
-     - ⚠️ Do NOT use `rmdir /s` on Windows — that recursively deletes the real `node_modules` in the main repo
-     - ⚠️ Skipping step 1 on Windows will cause `git worktree remove` to delete the main repo's `node_modules`
-  2. Remove the worktree: `git worktree remove "{worktree}"`
-  3. Delete the branch: `git branch -d {branch}` (resolve `{branch}` via `git -C "{worktree}" rev-parse --abbrev-ref HEAD` if not already known)
+**Cleanup (ORDERING IS SAFETY-CRITICAL):**
+
+After a PR is merged, remove the worktree in this exact order. Reordering
+steps 1-3 can destroy the main repo's `node_modules` — see SKILL.md for why.
+
+  1. **Resolve the branch name** (while the worktree still exists):
+     `git -C "{worktree}" rev-parse --abbrev-ref HEAD` → save as `{branch}`.
+     If the branch is already known from setup, skip this step.
+
+  2. **Remove the `node_modules` junction/symlink** (before `git worktree remove`):
+     - Windows: Use `cmd /c rmdir` on `{worktree}\node_modules` — no `/s` flag.
+       Plain `rmdir` removes the junction pointer only, not the target.
+     - Unix: `rm -f "{worktree}/node_modules"` — removes symlink only.
+     - ⚠️ Do NOT use `rmdir /s` — that recursively deletes the real `node_modules`.
+     - ⚠️ Do NOT skip this step — `git worktree remove` traverses junctions on Windows.
+
+  3. **Remove the worktree:**
+     `git worktree remove "{worktree}"`
+
+  4. **Delete the branch:**
+     `git branch -d {branch}`
+
 - Ralph heartbeat can trigger cleanup checks for merged branches
 
 ### Orchestration Logging
@@ -727,7 +741,12 @@ b. **Check if worktree already exists (MUST run before creating):**
        - `git pull` to sync latest changes
        - Verify `node_modules` exists in the worktree; if missing, run step (d) to re-link before continuing
        - Skip to step (e) — do NOT run `git worktree add`
-     - If branch does NOT match → log `[worktree-setup] stale worktree at {worktree} on wrong branch — removing` to history.md, run `git worktree remove "{worktree}"`, then proceed to step (c)
+     - If branch does NOT match → the worktree is stale. Remove it safely:
+         1. Log `[worktree-setup] stale worktree at {worktree} on wrong branch — removing` to history.md
+         2. Run Cleanup steps 1-2 (resolve branch, unlink junction) for the stale worktree
+         3. Run `git worktree remove "{worktree}"`
+         4. Delete the stale branch: `git branch -d {stale-branch}`
+         5. Proceed to step (c) to create a fresh worktree
    - If not found → proceed to step (c)
 
 c. **Create the worktree:**
@@ -742,7 +761,9 @@ c. **Create the worktree:**
 
 d. **Set up dependencies:**
    - Link `node_modules` from main repo to avoid reinstalling:
-     - Windows: `cmd /c "mklink /J `"{worktree}\node_modules`" `"{main-repo}\node_modules`""`
+     - Windows: Use `cmd /c mklink /J` to create the junction, quoting both the link
+       path and target path. If `mklink` fails (permissions, cross-device), fall back
+       to `npm install` in the worktree.
      - Unix: `ln -s "{main-repo}/node_modules" "{worktree}/node_modules"`
    - **Error handling:** If linking fails (permissions, cross-device, or any error):
      - Fall back: `cd "{worktree}" && npm install`

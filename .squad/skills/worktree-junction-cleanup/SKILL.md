@@ -16,26 +16,32 @@ When a git worktree has a `node_modules` junction (Windows) or symlink (Unix) li
 
 ---
 
-## The Recipe
+## The Rule
 
-Before calling `git worktree remove`, always remove the `node_modules` junction/symlink first:
+Unlink the junction before removing the worktree, and never use the recursive flag on the junction.
 
-```
-# Step 1: Remove node_modules junction/symlink ONLY
-# Windows — removes junction, does NOT touch main repo's node_modules:
-cmd /c "rmdir `"{worktree}\node_modules`""
+---
 
-# Unix — removes symlink, does NOT touch main repo's node_modules:
-rm -f "{worktree}/node_modules"
+## Step-by-Step Recipe
 
-# Step 2: Remove the worktree (safe now — no junction in the way)
-git worktree remove "{worktree}"
+Remove the worktree in this exact order (ORDERING IS SAFETY-CRITICAL):
 
-# Step 3: Delete the branch
-git branch -d {branch}
-# If {branch} is not already known, resolve it first:
-git -C "{worktree}" rev-parse --abbrev-ref HEAD
-```
+1. **Resolve the branch name** (while the worktree still exists):
+   Run `git -C "{worktree}" rev-parse --abbrev-ref HEAD` and save the result as `{branch}`.
+   If the branch is already known from setup, skip this step.
+
+2. **Remove the `node_modules` junction/symlink** (before `git worktree remove`):
+   - Windows: Use `cmd /c rmdir` on `{worktree}\node_modules` — no `/s` flag.
+     Plain `rmdir` removes the junction pointer only, not the target.
+   - Unix: `rm -f "{worktree}/node_modules"` — removes symlink only.
+   - ⚠️ Do NOT use `rmdir /s` — that recursively deletes the real `node_modules`.
+   - ⚠️ Do NOT skip this step — `git worktree remove` traverses junctions on Windows.
+
+3. **Remove the worktree:**
+   `git worktree remove "{worktree}"`
+
+4. **Delete the branch:**
+   `git branch -d {branch}`
 
 ---
 
