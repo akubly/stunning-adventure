@@ -583,8 +583,19 @@ interface FactReader {
 - Clamped symmetrically to `[0.0, 1.0]` domain invariant
 
 **Guard Contracts:**
+- `applyFeedback`: throws `RangeError` if `currentTrust` is non-finite or outside `[0, 1]` — corrupt/buggy callers fail loudly before any side effects
 - `applyFeedback`: throws if `event='user_correction'` and `correctionDelta` is `undefined` — a silent `?? 0` fallback would be a misleading no-op write
-- `applyFeedbackById`: throws if `FactReader.read()` returns `null` — `TrustUpdater` is NOT called for a missing fact
+- `applyFeedbackById`: throws if `FactReader.read()` returns `null` or `undefined` — `TrustUpdater` is NOT called for a missing fact
+- `applyFeedbackById`: throws `RangeError` if the stored `fact.trust` is non-finite (corrupted storage row)
+
+**Named Interface Types (M1–M4 pattern):**
+```typescript
+interface ApplyFeedbackOptions    { factId: string; sessionId: SessionId; event: FeedbackEvent; currentTrust: number; correctionDelta?: number; }
+interface ApplyFeedbackDeps       { trustUpdater: TrustUpdater; }
+interface ApplyFeedbackByIdOptions { factId: string; sessionId: SessionId; event: FeedbackEvent; correctionDelta?: number; }
+interface ApplyFeedbackByIdDeps   { factReader: FactReader; trustUpdater: TrustUpdater; }
+```
+No `clock` field in either deps type — clock is not consumed by the feedback path. Time injection is a concern of the recency scoring path (§2.4).
 
 **Measurable Invariants:**
 - Trust never exceeds `1.0` after any mutation

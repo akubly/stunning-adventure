@@ -19,6 +19,18 @@
 
 ## Learnings
 
+**2026-05-30 — M5+M6 Code Panel review wave (exports, named types, exhaustiveness, validation)**
+
+- **Required-but-unused dep is inverse anti-pattern:** §55 §1.2 says "no optional default — defaults hide non-determinism." A *required-but-unused* dep is the mirror problem: it signals a dependency the activity doesn't actually need, polluting call sites and obscuring what the function truly depends on. Remove unused deps from both the type and the call sites simultaneously.
+
+- **Exhaustive `switch` over `if/else` for union dispatch:** TypeScript's `never` branch in `default:` makes union extension a compile error. The `if/else if/else` chain silently routes any unrecognized event to the last branch. The `switch` + `_exhaustive: never` pattern is the correct idiom whenever branching on a discriminated union — apply it universally.
+
+- **Input validation before side effects is a contract invariant:** Validating `currentTrust` before the `TrustUpdater.update()` call ensures no partial side-effects occur on bad input. The rule: all input validation must fire before the first `await` that touches external state.
+
+- **Named types pay for themselves at the barrel boundary:** Inline anonymous types in function signatures force callers to inline the shape or `typeof` the function parameters. Extracting to named interfaces (`ApplyFeedbackOptions` etc.) costs one definition but enables type annotations, IDE autocomplete, and `export type` barrel re-export. M1–M4 precedent (`RecallOptions`, `RecallDeps`) makes this a team norm.
+
+- **TOCTOU documentation is a legitimate deliverable:** When actual atomicity fix is deferred to a storage layer, the interim obligation is clear documentation: `@concurrency` JSDoc + a decision drop item. Undocumented TOCTOU is a future debugging trap; documented TOCTOU is a known deferred obligation.
+
 **2026-05-29 — PR #30 Copilot cloud review (T2/T3/T4)**
 
 - **camelCase-at-activity-layer norm:** Activity-layer types (`RecallResult`, `ScoredResult`) use camelCase (`attentionTier`, `lastAccessed`). The FactStore storage seam is responsible for snake↔camel mapping at the data boundary. Snake_case fields in TypeScript activity types were a smell — they belonged one layer down.

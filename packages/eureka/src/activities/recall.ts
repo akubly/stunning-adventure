@@ -153,7 +153,6 @@ export function compositeScore(fact: RecallResult, nowMs: number): number {
  *
  * Not yet implemented (future red beats):
  *   - lastAccessedAt / accessCount side effects (§10 §10.1)
- *   - Trust score updates from feedback (§30 §2.1)
  */
 export async function recallWithScores(
   options: RecallOptions,
@@ -239,6 +238,34 @@ export interface FactReader {
   read(args: { factId: string; sessionId: SessionId }): Promise<{ trust: number } | null>;
 }
 
+/** Named options type for applyFeedback (M1–M4 named-type pattern). */
+export interface ApplyFeedbackOptions {
+  factId: string;
+  sessionId: SessionId;
+  event: FeedbackEvent;
+  currentTrust: number;
+  correctionDelta?: number;
+}
+
+/** Named deps type for applyFeedback (clock removed — unused dep, non-determinism is a read concern). */
+export interface ApplyFeedbackDeps {
+  trustUpdater: TrustUpdater;
+}
+
+/** Named options type for applyFeedbackById (M1–M4 named-type pattern). */
+export interface ApplyFeedbackByIdOptions {
+  factId: string;
+  sessionId: SessionId;
+  event: FeedbackEvent;
+  correctionDelta?: number;
+}
+
+/** Named deps type for applyFeedbackById (clock removed — unused dep). */
+export interface ApplyFeedbackByIdDeps {
+  factReader: FactReader;
+  trustUpdater: TrustUpdater;
+}
+
 /**
  * Apply a feedback event to a fact, mutating trust by the event-driven delta (§30 §2.3):
  *   Corroboration:   trust = min(1.0, trust + 0.10)
@@ -249,36 +276,44 @@ export interface FactReader {
  * delegates the write to the injected `TrustUpdater` seam. This function does NOT
  * read from storage — use `applyFeedbackById` when the caller doesn't know currentTrust.
  *
- * @throws if event='user_correction' and correctionDelta is omitted (programming error —
+ * @throws {RangeError} if currentTrust is non-finite or outside [0, 1] (corrupt/buggy caller)
+ * @throws {Error} if event='user_correction' and correctionDelta is omitted (programming error —
  *         a 0-delta silent fallback would call TrustUpdater for no reason and mislead callers)
  */
 export async function applyFeedback(
-  options: {
-    factId: string;
-    sessionId: SessionId;
-    event: FeedbackEvent;
-    currentTrust: number;
-    correctionDelta?: number;
-  },
-  deps: { trustUpdater: TrustUpdater; clock: ClockProvider },
+  options: ApplyFeedbackOptions,
+  deps: ApplyFeedbackDeps,
 ): Promise<void> {
   const { factId, sessionId, event, currentTrust, correctionDelta } = options;
   const { trustUpdater } = deps;
 
+  if (!Number.isFinite(currentTrust) || currentTrust < 0 || currentTrust > 1) {
+    throw new RangeError(
+      `applyFeedback: currentTrust must be a finite number in [0, 1]; received ${currentTrust}`,
+    );
+  }
+
   let newTrust: number;
 
-  if (event === 'corroboration') {
-    newTrust = Math.min(1.0, currentTrust + 0.10);
-  } else if (event === 'contradiction') {
-    newTrust = Math.max(0.0, currentTrust - 0.10);
-  } else {
-    // user_correction — correctionDelta is required
-    if (correctionDelta === undefined) {
-      throw new Error(
-        'applyFeedback: correctionDelta is required when event is "user_correction"',
-      );
+  switch (event) {
+    case 'corroboration':
+      newTrust = Math.min(1.0, currentTrust + 0.10);
+      break;
+    case 'contradiction':
+      newTrust = Math.max(0.0, currentTrust - 0.10);
+      break;
+    case 'user_correction':
+      if (correctionDelta === undefined) {
+        throw new Error(
+          'applyFeedback: correctionDelta is required when event is "user_correction"',
+        );
+      }
+      newTrust = Math.min(1.0, Math.max(0.0, currentTrust + correctionDelta));
+      break;
+    default: {
+      const _exhaustive: never = event;
+      throw new TypeError(`applyFeedback: unhandled FeedbackEvent variant "${_exhaustive}"`);
     }
-    newTrust = Math.min(1.0, Math.max(0.0, currentTrust + correctionDelta));
   }
 
   await trustUpdater.update({ factId, sessionId, trust: newTrust });
@@ -288,27 +323,35 @@ export async function applyFeedback(
  * Higher-level orchestrator: reads currentTrust from storage via the `FactReader` seam,
  * then delegates to `applyFeedback`. Callers do not need to supply currentTrust.
  *
- * @throws if FactReader returns null (fact not found — TrustUpdater is NOT called)
+ * @concurrency Non-atomic read-then-write — callers MUST serialize concurrent feedback on the
+ *   same factId (e.g., row-level lock in TrustUpdater, or serializable transaction wrapping
+ *   read+write). The activity is intentionally not atomic at this layer; atomicity is a
+ *   storage-backend responsibility. Tracked as M7-C: "atomic feedback contract —
+ *   storage-layer responsibility" (deferred RED beat for Crispin's real backend).
+ *
+ * @throws {Error} if FactReader returns null or undefined (fact not found — TrustUpdater is NOT called)
+ * @throws {RangeError} if the stored fact.trust is non-finite (corrupted storage row)
+ * @throws {Error} propagated from applyFeedback if event='user_correction' and correctionDelta is omitted
  */
 export async function applyFeedbackById(
-  options: {
-    factId: string;
-    sessionId: SessionId;
-    event: FeedbackEvent;
-    correctionDelta?: number;
-  },
-  deps: { factReader: FactReader; trustUpdater: TrustUpdater; clock: ClockProvider },
+  options: ApplyFeedbackByIdOptions,
+  deps: ApplyFeedbackByIdDeps,
 ): Promise<void> {
   const { factId, sessionId, event, correctionDelta } = options;
-  const { factReader, trustUpdater, clock } = deps;
+  const { factReader, trustUpdater } = deps;
 
   const fact = await factReader.read({ factId, sessionId });
-  if (fact === null) {
+  if (fact == null) {
     throw new Error(`applyFeedbackById: fact not found — factId="${factId}"`);
+  }
+  if (!Number.isFinite(fact.trust)) {
+    throw new RangeError(
+      `applyFeedbackById: stored trust is non-finite — factId="${factId}", trust=${fact.trust}`,
+    );
   }
 
   await applyFeedback(
     { factId, sessionId, event, currentTrust: fact.trust, correctionDelta },
-    { trustUpdater, clock },
+    { trustUpdater },
   );
 }
