@@ -656,9 +656,7 @@ When worktree mode is enabled, the coordinator creates dedicated worktrees for i
 
 **Dependency management:**
 - After creating a worktree, link `node_modules` from the main repo to avoid reinstalling
-- Windows: Use `cmd /c mklink /J` to create the junction, quoting both the link
-  path and target path. If `mklink` fails (permissions, cross-device), fall back
-  to `npm install` in the worktree.
+- Windows: Create a directory junction from the worktree's `node_modules` to the main repo's `node_modules` (use the `mklink /J` shell command; quote paths if they contain spaces). If `mklink` fails (permissions, cross-device), fall back to `npm install` in the worktree.
 - Unix: `ln -s "{main-repo}/node_modules" "{worktree}/node_modules"`
 
 **Reusing worktrees:**
@@ -677,8 +675,7 @@ steps 1-3 can destroy the main repo's `node_modules` — see SKILL.md for why.
      If the branch is already known from setup, skip this step.
 
   2. **Remove the `node_modules` junction/symlink** (before `git worktree remove`):
-     - Windows: Use `cmd /c rmdir` on `{worktree}\node_modules` — no `/s` flag.
-       Plain `rmdir` removes the junction pointer only, not the target.
+     - Windows: Remove the junction entry from `{worktree}\node_modules` (use the `rmdir` command without the `/s` flag, which removes only the junction pointer, not the target directory).
      - Unix: `rm -f "{worktree}/node_modules"` — removes symlink only.
      - ⚠️ Do NOT use `rmdir /s` — that recursively deletes the real `node_modules`.
      - ⚠️ Do NOT skip this step — `git worktree remove` traverses junctions on Windows.
@@ -728,7 +725,9 @@ b. **Check if worktree already exists (MUST run before creating):**
          1. Log `[worktree-setup] stale worktree at {worktree} on wrong branch — removing` to history.md
          2. Run Cleanup steps 1-2 (resolve branch, unlink junction) for the stale worktree
          3. Run `git worktree remove "{worktree}"`
-         4. Delete the stale branch: `git branch -d {branch}`
+         4. Delete the stale branch IF it matches the squad convention:
+            - If `{branch}` matches the pattern `squad/*`: run `git branch -d {branch}` to delete it.
+            - If `{branch}` does NOT match `squad/*`: leave it. Log that the branch was preserved because it isn't a squad-owned branch.
          5. Proceed to step (c) to create a fresh worktree
    - If not found → proceed to step (c)
 
@@ -738,15 +737,13 @@ c. **Create the worktree:**
    - Run: `git worktree add "{worktree}" -b {branch} {baseBranch}`
    - Example: `git worktree add "C:\src\squad-42" -b squad/42-fix-login main`
    - **Error handling:**
-     - Lock file error (`fatal: ... is locked`) → wait 5s, retry once; if still failing, log to `.squad/orchestration-log/{timestamp}-worktree-failed.md`, set `WORKTREE_MODE` to `false`, fall back to main repo
-     - Permissions error → log to `.squad/orchestration-log/{timestamp}-worktree-failed.md`, set `WORKTREE_MODE` to `false`, fall back to main repo
-     - Any other error → log to `.squad/orchestration-log/{timestamp}-worktree-failed.md`, set `WORKTREE_MODE` to `false`, fall back to main repo
+     - Lock file error (`fatal: ... is locked`) → wait 5s, retry once; if still failing, log to `.squad/orchestration-log/{timestamp}-worktree-failed.md`, set `WORKTREE_MODE` to `false` and `WORKTREE_PATH` to `"n/a"`, fall back to main repo
+     - Permissions error → log to `.squad/orchestration-log/{timestamp}-worktree-failed.md`, set `WORKTREE_MODE` to `false` and `WORKTREE_PATH` to `"n/a"`, fall back to main repo
+     - Any other error → log to `.squad/orchestration-log/{timestamp}-worktree-failed.md`, set `WORKTREE_MODE` to `false` and `WORKTREE_PATH` to `"n/a"`, fall back to main repo
 
 d. **Set up dependencies:**
    - Link `node_modules` from main repo to avoid reinstalling:
-     - Windows: Use `cmd /c mklink /J` to create the junction, quoting both the link
-       path and target path. If `mklink` fails (permissions, cross-device), fall back
-       to `npm install` in the worktree.
+     - Windows: Create a directory junction from the worktree's `node_modules` to the main repo's `node_modules` (use the `mklink /J` shell command; quote paths if they contain spaces). If `mklink` fails (permissions, cross-device), fall back to `npm install` in the worktree.
      - Unix: `ln -s "{main-repo}/node_modules" "{worktree}/node_modules"`
    - **Error handling:** If linking fails (permissions, cross-device, or any error):
      - Fall back: `cd "{worktree}" && npm install`
