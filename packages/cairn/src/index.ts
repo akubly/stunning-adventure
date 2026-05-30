@@ -36,7 +36,7 @@ export {
 
 // Hooks
 export { runSessionStart, runSessionStartHook } from './hooks/sessionStart.js';
-export type { SessionStartOrchestrationFactory } from './hooks/sessionStart.js';
+export type { SessionStartOrchestrationFactory, RunSessionStartOptions } from './hooks/sessionStart.js';
 
 // Database (low-level — prefer agent APIs above)
 export { getDb, closeDb } from './db/index.js';
@@ -48,6 +48,7 @@ export {
   getMostRecentActiveSession,
   getMostRecentUserSession,
   ensureSystemSession,
+  listActiveSessionsForRepo,
   SYSTEM_SESSION_REPO_KEY,
 } from './db/sessions.js';
 export { logEvent, getUnprocessedEvents } from './db/events.js';

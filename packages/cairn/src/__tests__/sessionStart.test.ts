@@ -311,7 +311,7 @@ describe('prescriber wiring on slow path', () => {
     const prescriberOrchestrationConfig: PrescriberOrchestrationConfig = { runForSkill };
     const curateSpy = vi.spyOn(curator, 'curate');
 
-    await expect(runSessionStart('org_repo', prescriberOrchestrationConfig)).resolves.toEqual({
+    await expect(runSessionStart('org_repo', { prescriberOrchestrationConfig })).resolves.toEqual({
       fastPath: false,
     });
 

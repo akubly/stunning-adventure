@@ -18,6 +18,7 @@ import path from 'node:path';
 
 import type Database from 'better-sqlite3';
 import { getDb } from '../db/index.js';
+import { getActiveSession } from '../db/sessions.js';
 import { getInsights } from '../db/insights.js';
 import { logEvent } from '../db/events.js';
 import { getPreference } from '../db/preferences.js';
@@ -230,10 +231,15 @@ function computeTargetPath(
 
 /**
  * Try to find an active session for event logging.
+ * When repoKey is provided, scopes to the (repo_key, workdir) identity so
+ * prescriber events are attributed to the correct worktree session.
  * Returns undefined if no active session exists (prescribe() is fail-soft
  * on logging — it runs before the new session is created in sessionStart).
  */
-function findActiveSessionId(db: Database.Database): string | undefined {
+function findActiveSessionId(db: Database.Database, repoKey?: string, workdir?: string): string | undefined {
+  if (repoKey) {
+    return getActiveSession(db, repoKey, workdir)?.id;
+  }
   const row = db
     .prepare(
       `SELECT id FROM sessions WHERE status = 'active'
@@ -279,7 +285,7 @@ function hasActivePrescription(db: Database.Database, insightId: number): boolea
  * 3. For each active insight without an active prescription:
  *    generate, score, persist, and log
  */
-export function prescribe(): PrescribeResult {
+export function prescribe(options?: { repoKey?: string; workdir?: string }): PrescribeResult {
   const db = getDb();
 
   // Read configurable values — validate prefix to avoid generating
@@ -300,7 +306,7 @@ export function prescribe(): PrescribeResult {
   const topology = getTopology(db);
 
   let generated = 0;
-  const sessionId = findActiveSessionId(db);
+  const sessionId = findActiveSessionId(db, options?.repoKey, options?.workdir);
 
   for (const rx of deferred) {
     if (!shouldResurface(rx, currentSession)) continue;

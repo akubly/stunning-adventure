@@ -78,7 +78,7 @@ describe('database initialization', () => {
     const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
       version: number;
     };
-    expect(row.version).toBe(14);
+    expect(row.version).toBe(16);
   });
 });
 
@@ -176,7 +176,7 @@ describe('sessions', () => {
     db.prepare("UPDATE sessions SET started_at = '2026-05-25 10:00:00' WHERE id = ?").run(userId);
     db.prepare("UPDATE sessions SET started_at = '2026-05-25 11:00:00' WHERE id = ?").run(systemId);
 
-    expect(getActiveSession(db, 'org_scoped_repo')!.id).toBe(systemId);
+    expect(getActiveSession(db, 'org_scoped_repo')!.id).toBe(userId);
     const userSession = getActiveUserSession(db, 'org_scoped_repo');
     expect(userSession!.id).toBe(userId);
     expect(userSession!.kind).toBe('user');
@@ -423,14 +423,14 @@ describe('schema migration', () => {
     const before = db.prepare('SELECT COUNT(*) as count FROM schema_version').get() as {
       count: number;
     };
-    expect(before.count).toBe(14);
+    expect(before.count).toBe(16);
     // Re-run should be a no-op
     applyMigrations(db);
 
     const after = db.prepare('SELECT COUNT(*) as count FROM schema_version').get() as {
       count: number;
     };
-    expect(after.count).toBe(14);
+    expect(after.count).toBe(16);
   });
 
   it('migration 014 should backfill __system__ sessions as system kind', () => {

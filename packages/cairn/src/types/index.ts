@@ -47,6 +47,7 @@ export interface Session {
   endedAt?: string;
   status: string;
   kind: SessionKind;
+  workdir?: string;
 }
 
 /** Preference with cascade scope. */
