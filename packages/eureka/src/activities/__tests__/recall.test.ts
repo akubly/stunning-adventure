@@ -36,8 +36,8 @@ import type { SessionId } from '@akubly/types';
  * M4 clock injection note:
  * ALL recall() calls now include a clock dep (ClockProvider — ms epoch).
  * FIXED_NOW_MS is used for M2/M3 stubs — a large fixed value chosen so that:
- *   - M2 facts (no last_accessed → tDays=Infinity → recency=0.1 floor) are unaffected by clock value.
- *   - M3 facts (last_accessed=0, EPOCH_MS) yield tDays≈20237 → recency=0.1 (floor)
+ *   - M2 facts (no lastAccessed → tDays=Infinity → recency=0.1 floor) are unaffected by clock value.
+ *   - M3 facts (lastAccessed=0, EPOCH_MS) yield tDays≈20237 → recency=0.1 (floor)
  *     for any nowMs this large. Scores unchanged from M3 fixture rationale.
  * §55 §1.2 — non-deterministic inputs (timestamps) must be mocked at seam.
  * §30 §2.4 — ClockProvider seam; no optional default per §55 §1.2.
@@ -62,11 +62,11 @@ describe('recall', () => {
     // Inline structural mock — FactStore interface will be formalised in M2.
     const factStore = {
       search: vi.fn().mockResolvedValue([
-        { content: 'User authenticated with JWT token',         trust: 0.8, attention_tier: 'warm' },
-        { content: 'Login endpoint validates credentials',      trust: 0.9, attention_tier: 'hot'  },
-        { content: 'OAuth2 flow requires client ID',            trust: 0.7, attention_tier: 'warm' },
-        { content: 'Authentication middleware checks bearer',   trust: 0.8, attention_tier: 'warm' },
-        { content: 'Session expired after 1 hour of inactivity', trust: 0.6, attention_tier: 'cold' },
+        { content: 'User authenticated with JWT token',         trust: 0.8, attentionTier: 'warm' },
+        { content: 'Login endpoint validates credentials',      trust: 0.9, attentionTier: 'hot'  },
+        { content: 'OAuth2 flow requires client ID',            trust: 0.7, attentionTier: 'warm' },
+        { content: 'Authentication middleware checks bearer',   trust: 0.8, attentionTier: 'warm' },
+        { content: 'Session expired after 1 hour of inactivity', trust: 0.6, attentionTier: 'cold' },
       ]),
     };
 
@@ -95,13 +95,13 @@ describe('recall', () => {
     //   rawScore    = 0.50·relevance + 0.20·importance + 0.20·trust + 0.10·recency
     //   finalScore  = rawScore × attentionMultiplier
     //   multipliers : hot=1.20, warm=1.00, cold=0.80  (§30 §1.2)
-    //   recency     = max(0.1, (1 + t)^−0.5), t = days since last_accessed (§20 §3.3)
+    //   recency     = max(0.1, (1 + t)^−0.5), t = days since lastAccessed (§20 §3.3)
     //
     // Ranker seam: option (b) — scoring inline in recall(); real ranker, mocked
     // storage only. §55 §1.2 + §55 §2.3 Key Lesson #3.
     //
     // Fixture rationale:
-    //   last_accessed = 0 (Unix epoch) → t ≈ 20,440 days → recency = 0.1 (floor)
+    //   lastAccessed = 0 (Unix epoch) → t ≈ 20,440 days → recency = 0.1 (floor)
     //   for ALL facts, making ordering depend only on relevance/importance/trust/tier.
     //   All facts have trust ≥ 0.15 (clear the M2 trust floor).
     //   Storage order: A, B, C, D.
@@ -109,7 +109,7 @@ describe('recall', () => {
     //   M2 impl returns storage order → test FAILS for ordering reason.
     //   Score margins: B-C=0.340, C-D=0.180, D-A=0.272 — unambiguous.
 
-    const EPOCH_MS = 0; // last_accessed far in past → recency floor 0.1 for all
+    const EPOCH_MS = 0; // lastAccessed far in past → recency floor 0.1 for all
 
     const factStore = {
       search: vi.fn().mockResolvedValue([
@@ -117,45 +117,45 @@ describe('recall', () => {
         // rawScore = 0.50×0.2 + 0.20×0.2 + 0.20×0.3 + 0.10×0.1 = 0.21
         // finalScore = 0.21 × 0.80 (cold) = 0.168
         {
-          content:        'Cold low-relevance fact',
-          relevance:      0.2,
-          importance:     0.2,
-          trust:          0.3,
-          attention_tier: 'cold',
-          last_accessed:  EPOCH_MS,
+          content:      'Cold low-relevance fact',
+          relevance:    0.2,
+          importance:   0.2,
+          trust:        0.3,
+          attentionTier: 'cold',
+          lastAccessed: EPOCH_MS,
         },
         // Fact B — stored 2nd, should rank 1st
         // rawScore = 0.50×0.9 + 0.20×0.8 + 0.20×0.9 + 0.10×0.1 = 0.80
         // finalScore = 0.80 × 1.20 (hot) = 0.960
         {
-          content:        'Hot high-relevance fact',
-          relevance:      0.9,
-          importance:     0.8,
-          trust:          0.9,
-          attention_tier: 'hot',
-          last_accessed:  EPOCH_MS,
+          content:      'Hot high-relevance fact',
+          relevance:    0.9,
+          importance:   0.8,
+          trust:        0.9,
+          attentionTier: 'hot',
+          lastAccessed: EPOCH_MS,
         },
         // Fact C — stored 3rd, should rank 2nd
         // rawScore = 0.50×0.7 + 0.20×0.6 + 0.20×0.7 + 0.10×0.1 = 0.62
         // finalScore = 0.62 × 1.00 (warm) = 0.620
         {
-          content:        'Warm medium-high-relevance fact',
-          relevance:      0.7,
-          importance:     0.6,
-          trust:          0.7,
-          attention_tier: 'warm',
-          last_accessed:  EPOCH_MS,
+          content:      'Warm medium-high-relevance fact',
+          relevance:    0.7,
+          importance:   0.6,
+          trust:        0.7,
+          attentionTier: 'warm',
+          lastAccessed: EPOCH_MS,
         },
         // Fact D — stored 4th, should rank 3rd
         // rawScore = 0.50×0.5 + 0.20×0.4 + 0.20×0.5 + 0.10×0.1 = 0.44
         // finalScore = 0.44 × 1.00 (warm) = 0.440
         {
-          content:        'Warm medium-relevance fact',
-          relevance:      0.5,
-          importance:     0.4,
-          trust:          0.5,
-          attention_tier: 'warm',
-          last_accessed:  EPOCH_MS,
+          content:      'Warm medium-relevance fact',
+          relevance:    0.5,
+          importance:   0.4,
+          trust:        0.5,
+          attentionTier: 'warm',
+          lastAccessed: EPOCH_MS,
         },
       ]),
     };
@@ -189,12 +189,12 @@ describe('recall', () => {
   //   → [STALE, FRESH]. But the test expects [FRESH, STALE] → RED for the right reason.
   //
   //   With stub clock (nowMs = BASE_MS):
-  //     FRESH: last_accessed = BASE_MS, tDays = 0
+  //     FRESH: lastAccessed = BASE_MS, tDays = 0
   //            recency = max(0.1, (1+0)^−0.5) = 1.0
   //            raw  = 0.50×0.9 + 0.20×0.8 + 0.20×0.9 + 0.10×1.0 = 0.89
   //            final = 0.89 × 1.20 (hot) = 1.068
   //
-  //     STALE: last_accessed = BASE_MS − DAYS_100_MS, tDays = 100
+  //     STALE: lastAccessed = BASE_MS − DAYS_100_MS, tDays = 100
   //            recency = max(0.1, (101)^−0.5) = max(0.1, 0.0995) = 0.1
   //            raw  = 0.50×0.9 + 0.20×0.8 + 0.20×0.9 + 0.10×0.1 = 0.80
   //            final = 0.80 × 1.20 (hot) = 0.960
@@ -222,24 +222,24 @@ describe('recall', () => {
         // raw   = 0.50×0.9 + 0.20×0.8 + 0.20×0.9 + 0.10×0.1 = 0.800
         // final = 0.800 × 1.20 (hot) = 0.960
         {
-          content:        'Stale accessed fact',
-          relevance:      0.9,
-          importance:     0.8,
-          trust:          0.9,
-          attention_tier: 'hot',
-          last_accessed:  BASE_MS - DAYS_100_MS,
+          content:       'Stale accessed fact',
+          relevance:     0.9,
+          importance:    0.8,
+          trust:         0.9,
+          attentionTier: 'hot',
+          lastAccessed:  BASE_MS - DAYS_100_MS,
         },
         // FRESH — stored 2nd, should rank 1st with stub clock
         // tDays = 0 → recency = max(0.1, (1)^−0.5) = 1.0
         // raw   = 0.50×0.9 + 0.20×0.8 + 0.20×0.9 + 0.10×1.0 = 0.890
         // final = 0.890 × 1.20 (hot) = 1.068
         {
-          content:        'Freshly accessed fact',
-          relevance:      0.9,
-          importance:     0.8,
-          trust:          0.9,
-          attention_tier: 'hot',
-          last_accessed:  BASE_MS,
+          content:       'Freshly accessed fact',
+          relevance:     0.9,
+          importance:    0.8,
+          trust:         0.9,
+          attentionTier: 'hot',
+          lastAccessed:  BASE_MS,
         },
       ]),
     };
@@ -260,21 +260,21 @@ describe('recall', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // F1 — NaN guard: future last_accessed must not corrupt sort
+  // F1 — NaN guard: future lastAccessed must not corrupt sort
   // ---------------------------------------------------------------------------
   //
-  // Before fix: (nowMs - last_accessed) could be negative → tDays < 0 →
+  // Before fix: (nowMs - lastAccessed) could be negative → tDays < 0 →
   //   Math.pow(1 + negativeValue, -0.5) = NaN → sort corruption.
   // After fix: Math.max(0, tDays) clamps negative values → tDays = 0 →
   //   recency = 1.0 → finite score, no NaN.
 
-  it('compositeScore returns finite value when last_accessed is in the future (F1 — NaN guard)', () => {
+  it('compositeScore returns finite value when lastAccessed is in the future (F1 — NaN guard)', () => {
     const BASE_MS   = 1_000_000_000_000;
     const FUTURE_MS = BASE_MS + 7 * 86_400_000; // 7 days ahead of nowMs
 
     const score = compositeScore(
-      { content: 'future fact', trust: 0.8, attention_tier: 'warm', last_accessed: FUTURE_MS },
-      BASE_MS, // clock is behind last_accessed
+      { content: 'future fact', trust: 0.8, attentionTier: 'warm', lastAccessed: FUTURE_MS },
+      BASE_MS, // clock is behind lastAccessed
     );
 
     // FR-2: tDays clamped to 0 → recency=1.0; 0.50·0 + 0.20·0 + 0.20·0.8 + 0.10·1.0 = 0.26; 0.26 × 1.00 (warm) = 0.26
@@ -289,9 +289,9 @@ describe('recall', () => {
     const factStore = {
       search: vi.fn().mockResolvedValue([
         // Future fact: tDays clamped to 0 → recency=1.0, but lower trust → ranks second
-        { content: 'Future-dated fact',  trust: 0.3, attention_tier: 'warm' as const, last_accessed: FUTURE_MS },
+        { content: 'Future-dated fact',  trust: 0.3, attentionTier: 'warm' as const, lastAccessed: FUTURE_MS },
         // Present fact: tDays=0 → recency=1.0, higher trust → ranks first
-        { content: 'Present-dated fact', trust: 0.8, attention_tier: 'warm' as const, last_accessed: BASE_MS  },
+        { content: 'Present-dated fact', trust: 0.8, attentionTier: 'warm' as const, lastAccessed: BASE_MS  },
       ]),
     };
 
@@ -307,22 +307,22 @@ describe('recall', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // F2 — attention_tier union exhaustiveness check
+  // F2 — attentionTier union exhaustiveness check
   // ---------------------------------------------------------------------------
   //
-  // RecallResult.attention_tier is 'hot'|'warm'|'cold' (union, not string).
+  // RecallResult.attentionTier is 'hot'|'warm'|'cold' (union, not string).
   // ATTENTION_MULTIPLIERS is Record<'hot'|'warm'|'cold', number> — no ?? 1.00 fallback.
   // This runtime test verifies all three tiers produce a finite, positive score.
-  // TypeScript compile-time enforcement: a fact with attention_tier='Hot' (wrong case)
+  // TypeScript compile-time enforcement: a fact with attentionTier='Hot' (wrong case)
   // or 'unknown' will fail to compile under the union constraint.
 
-  it('compositeScore produces finite positive scores for all attention_tier values (F2 exhaustiveness)', () => {
+  it('compositeScore produces finite positive scores for all attentionTier values (F2 exhaustiveness)', () => {
     const nowMs = 1_000_000_000_000;
     const tiers = ['hot', 'warm', 'cold'] as const;
 
     for (const tier of tiers) {
       const score = compositeScore(
-        { content: 'test', trust: 0.5, attention_tier: tier },
+        { content: 'test', trust: 0.5, attentionTier: tier },
         nowMs,
       );
       expect(Number.isFinite(score)).toBe(true);
@@ -331,23 +331,23 @@ describe('recall', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // F3 — no last_accessed → treated as very stale (Infinity), not just-accessed (0)
+  // F3 — no lastAccessed → treated as very stale (Infinity), not just-accessed (0)
   // ---------------------------------------------------------------------------
   //
-  // Before fix: absent last_accessed → tDays=0 → recency=1.0 (max, same as just-accessed).
-  // After fix:  absent last_accessed → tDays=Infinity → recency=0.1 (floor, very stale).
-  // A fact with no last_accessed must rank below an identical fact with recent access.
+  // Before fix: absent lastAccessed → tDays=0 → recency=1.0 (max, same as just-accessed).
+  // After fix:  absent lastAccessed → tDays=Infinity → recency=0.1 (floor, very stale).
+  // A fact with no lastAccessed must rank below an identical fact with recent access.
 
-  it('fact with no last_accessed ranks below identical fact with recent last_accessed (F3)', async () => {
+  it('fact with no lastAccessed ranks below identical fact with recent lastAccessed (F3)', async () => {
     const BASE_MS   = 1_000_000_000_000;
     const stubClock = { now: () => BASE_MS };
 
     const factStore = {
       search: vi.fn().mockResolvedValue([
-        // Never-accessed: absent last_accessed → tDays=Infinity → recency=0.1 (floor)
-        { content: 'Never-accessed fact',   trust: 0.8, attention_tier: 'warm' as const },
-        // Recently accessed: last_accessed=BASE_MS → tDays=0 → recency=1.0
-        { content: 'Recently accessed fact', trust: 0.8, attention_tier: 'warm' as const, last_accessed: BASE_MS },
+        // Never-accessed: absent lastAccessed → tDays=Infinity → recency=0.1 (floor)
+        { content: 'Never-accessed fact',   trust: 0.8, attentionTier: 'warm' as const },
+        // Recently accessed: lastAccessed=BASE_MS → tDays=0 → recency=1.0
+        { content: 'Recently accessed fact', trust: 0.8, attentionTier: 'warm' as const, lastAccessed: BASE_MS },
       ]),
     };
 
@@ -405,10 +405,10 @@ describe('recall', () => {
     const EPOCH_MS = 0;
 
     const fixture: RecallResult[] = [
-      { content: 'Cold low-relevance fact',        relevance: 0.2, importance: 0.2, trust: 0.3, attention_tier: 'cold', last_accessed: EPOCH_MS },
-      { content: 'Hot high-relevance fact',         relevance: 0.9, importance: 0.8, trust: 0.9, attention_tier: 'hot',  last_accessed: EPOCH_MS },
-      { content: 'Warm medium-high-relevance fact', relevance: 0.7, importance: 0.6, trust: 0.7, attention_tier: 'warm', last_accessed: EPOCH_MS },
-      { content: 'Warm medium-relevance fact',      relevance: 0.5, importance: 0.4, trust: 0.5, attention_tier: 'warm', last_accessed: EPOCH_MS },
+      { content: 'Cold low-relevance fact',        relevance: 0.2, importance: 0.2, trust: 0.3, attentionTier: 'cold', lastAccessed: EPOCH_MS },
+      { content: 'Hot high-relevance fact',         relevance: 0.9, importance: 0.8, trust: 0.9, attentionTier: 'hot',  lastAccessed: EPOCH_MS },
+      { content: 'Warm medium-high-relevance fact', relevance: 0.7, importance: 0.6, trust: 0.7, attentionTier: 'warm', lastAccessed: EPOCH_MS },
+      { content: 'Warm medium-relevance fact',      relevance: 0.5, importance: 0.4, trust: 0.5, attentionTier: 'warm', lastAccessed: EPOCH_MS },
     ];
 
     const makeStore = () => ({ search: vi.fn().mockResolvedValue([...fixture]) });

@@ -13,13 +13,13 @@ import type { SessionId } from '@akubly/types';
 export interface RecallResult {
   content: string;
   trust: number;
-  attention_tier: 'hot' | 'warm' | 'cold';
+  attentionTier: 'hot' | 'warm' | 'cold';
   /** Normalized BM25 relevance score ∈ [0,1] returned by FactStore.search(). */
   relevance?: number;
   /** Importance signal ∈ [0,1]. */
   importance?: number;
   /** Unix epoch ms — used to compute query-time recency (§30 §1.2). */
-  last_accessed?: number;
+  lastAccessed?: number;
 }
 
 /** Fact paired with its FR-2 composite score. */
@@ -64,6 +64,12 @@ export interface ClockProvider {
  *
  * Note: recallWithScores always re-sorts; ordering produced by Ranker is ignored.
  * Return scored pairs; sorting is the caller's responsibility.
+ *
+ * ⚠️ Ranker receives a BM25-pre-truncated candidate set of at most `k` facts from
+ * FactStore.search(). It reorders within this set but cannot surface candidates the
+ * storage layer ranked at positions k+1..k+m. If a future Ranker needs broader
+ * candidate visibility, recall.ts should overfetch (e.g., `limit: k * overfetchFactor`)
+ * when a ranker is injected. Tracked as future work.
  */
 export type Ranker = (facts: RecallResult[], deps: { nowMs: number }) => ScoredResult[];
 
@@ -88,8 +94,7 @@ const TRUST_FLOOR = 0.15;
 
 /**
  * Attention multipliers per §30 §1.2 (FR-2 canonical ranker formula).
- * §50 line 211 contains incorrect values (hot=1.0/warm=0.5/cold=0.1) —
- * §30 §1.2 is the authoritative source; §50 cleanup is Crispin/Genesta's call.
+ * Authoritative source: §30 §1.2.
  */
 const ATTENTION_MULTIPLIERS: Record<'hot' | 'warm' | 'cold', number> = {
   hot:  1.20,
@@ -101,9 +106,9 @@ const ATTENTION_MULTIPLIERS: Record<'hot' | 'warm' | 'cold', number> = {
  * FR-2 composite score (§30 §1.2):
  *   rawScore   = 0.50·relevance + 0.20·importance + 0.20·trust + 0.10·recency
  *   finalScore = rawScore × attentionMultiplier
- *   recency    = max(0.1, (1 + t)^−0.5),  t = days since last_accessed
+ *   recency    = max(0.1, (1 + t)^−0.5),  t = days since lastAccessed
  *
- * Defensive: tDays clamped to ≥0 so future last_accessed values cannot produce
+ * Defensive: tDays clamped to ≥0 so future lastAccessed values cannot produce
  * negative tDays → NaN in Math.pow (F1 guard).
  * Never-accessed facts use tDays=Infinity → recency floors to 0.1 (treated as
  * very stale, not just-accessed — F3 semantics).
@@ -112,15 +117,15 @@ export function compositeScore(fact: RecallResult, nowMs: number): number {
   const relevance  = fact.relevance  ?? 0;
   const importance = fact.importance ?? 0;
 
-  // F1: clamp to ≥0 — future last_accessed values yield negative tDays → NaN without this guard.
-  // F3: absent last_accessed → Infinity → recency floors to 0.1 (never-accessed treated as very stale, not just-accessed).
-  const tDays = typeof fact.last_accessed === 'number'
-    ? Math.max(0, (nowMs - fact.last_accessed) / 86_400_000)
+  // F1: clamp to ≥0 — future lastAccessed values yield negative tDays → NaN without this guard.
+  // F3: absent lastAccessed → Infinity → recency floors to 0.1 (never-accessed treated as very stale, not just-accessed).
+  const tDays = typeof fact.lastAccessed === 'number'
+    ? Math.max(0, (nowMs - fact.lastAccessed) / 86_400_000)
     : Infinity;
   const recency = Math.max(0.1, Math.pow(1 + tDays, -0.5));
 
   const rawScore = 0.50 * relevance + 0.20 * importance + 0.20 * fact.trust + 0.10 * recency;
-  const multiplier = ATTENTION_MULTIPLIERS[fact.attention_tier];
+  const multiplier = ATTENTION_MULTIPLIERS[fact.attentionTier];
   return rawScore * multiplier;
 }
 
