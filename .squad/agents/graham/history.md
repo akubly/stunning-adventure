@@ -228,19 +228,3 @@
 
 **Next:** Coordinate WI-B launch after WI-A merge.
 
-### 2026-05-29: WI-B Scoping — Worktree Wiring Discovery
-
-**Event:** Scoped WI-B (coordinator dispatch-policy) now that WI-A is merged (PR #27).
-
-**Key discovery: Pre-Spawn section is documentation-only.**
-- `squad.agent.md` lines 656–742 describe worktree lifecycle management and pre-spawn setup in detail — activation gates, `git worktree add` commands, junction linking, reuse checks, cleanup.
-- None of this is enforced. `SQUAD_WORKTREES` appears only in documentation (lines 662, 702). `WORKTREE_PATH` / `WORKTREE_MODE` are template placeholders (lines 335–340, 791–799) that the coordinator never resolves.
-- No `squad.config.ts` exists anywhere in the repo despite being referenced in the docs.
-- The `.copilot/skills/git-workflow/SKILL.md` covers worktree mechanics as reference knowledge but isn't wired into the spawn flow.
-
-**Implication:** WI-B is not "add worktree support" — it's "make existing worktree documentation real." The design is already written; Gabriel needs to make the coordinator execute it.
-
-**Decision:** Recommended opt-in (`SQUAD_WORKTREES=1`) for v1, with Gabriel empowered to choose default-on if he prefers. Filed as new issue (not reopening #11). Scoping doc at `.squad/decisions/inbox/graham-wi-b-scope.md`.
-
-**Template drift risk:** Three copies of `squad.agent.md` exist (`squad.agent.md`, `.squad/templates/squad.agent.md.template`, `.squad/templates/squad.agent.md`). All must stay in sync — WI-A already showed template sync is error-prone.
-
