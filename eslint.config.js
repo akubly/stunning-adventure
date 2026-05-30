@@ -13,23 +13,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['packages/cairn/src/**/*.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['@akubly/eureka', '@akubly/eureka/*'],
-              message: 'Layering violation: @akubly/eureka depends on @akubly/types; cairn/forge must not depend on eureka. See docs/eureka/sections/40-integration.md.',
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    files: ['packages/forge/src/**/*.ts'],
+    files: ['packages/cairn/src/**/*.ts', 'packages/forge/src/**/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
