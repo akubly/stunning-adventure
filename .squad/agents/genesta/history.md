@@ -14,3 +14,5 @@
 **See history-archive.md for detailed entries.**
 
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
+
+**Scribe note (2026-05-30T12:30:54Z):** M5 cascade complete. Trust feedback mutation landed: `applyFeedback` activity + `TrustUpdater` seam interface. All 22 tests GREEN. §30 §2.3 ("Trust Dynamics Beyond the Static Floor") added to learning-systems spec. Next focus: M6 RED (user_correction tests + read-seam decision). Architecture remains extraction-ready; no changes to kernel boundary.

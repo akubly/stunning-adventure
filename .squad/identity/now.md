@@ -1,9 +1,10 @@
 ---
-updated_at: 2026-05-27T23:59:00Z
-focus_area: Eureka v1 implementation runway clear; M1 first red test next; OQ-1 monorepo accepted; §55 London-TDD spine canonical
+updated_at: 2026-05-30T12:30:54Z
+focus_area: Eureka v1 M5 COMPLETE (22/22 tests); M6 RED in flight (Laura — user_correction tests + read-seam design)
 active_issues:
+  - "**Eureka M5 COMPLETE** ✅ — Trust feedback mutation (applyFeedback + TrustUpdater); 22/22 tests GREEN; §30 §2.3 spec gap filled"
+  - "Eureka M6 RED in flight (Laura) — user_correction tests + read-seam decision (FactReader interface)"
   - "Eureka v0.1 Technical Design — ✅ ASSEMBLED & LOCKED (§00–§70, 198KB, 3 ADRs; OQ-1 resolved via ADR-0002)"
-  - "§55 TDD Re-Pass — ✅ COMPLETE (§20/§30/§40/§50 all aligned with London-school mock contracts; zero blockers)"
   - "Phase 1: Monorepo restructuring ✅ COMPLETE"
   - "Phase 2: Live runtime verification ✅ COMPLETE (5/5 modules)"
   - "Phase 3: CopilotClient Integration ✅ COMPLETE (7 modules, 289 tests, 9-persona review)"
@@ -19,17 +20,17 @@ active_issues:
 
 # What We're Focused On
 
-**Eureka v1 implementation runway — M1 first red test next.**
+**Eureka v1 M5 COMPLETE — M6 RED in flight.**
 
-Branch: `eureka/v1-design-package` (this PR), then back to `main` for M0/M1 work.
+Branch: `eureka/v1-m1-m4` (M5 complete), next: M6 RED design + green beats.
 
 **Current state:**
-- ✅ Eureka v0.1 technical design **ASSEMBLED & LOCKED** — `docs/eureka/technical-design.md` (§00–§70, ~198KB, 3 ADRs, 100% PRD acceptance criteria traced, 37/41 ACs testable in v1).
-- ✅ **OQ-1 RESOLVED** — Aaron accepted Option A (Monorepo). See `docs/eureka/adrs/0002-shared-substrate-ownership.md` and merged entries in `.squad/decisions.md`. M0 scaffolding unblocked.
-- ✅ §55 London-TDD spine canonical — §20/§30/§40/§50 aligned with London-school mock contracts; zero blockers.
-- ⏳ Remaining open decisions: OQ-2 (event schema topology), OQ-3 (Decision/SessionId schema), OQ-4 (dogfood sequencing) — tracked in §00 ADR index.
+- ✅ **M5 COMPLETE** — Trust feedback mutation. `applyFeedback` activity + `TrustUpdater` seam interface landed. All 22 tests GREEN (4 M5 + 18 M1–M4). Build clean.
+- ✅ **§30 §2.3 spec gap filled** — Edgar wrote "Trust Dynamics Beyond the Static Floor" section covering event-delta table, domain invariants, interface contract, user-correction sign convention.
+- ⏳ **M6 RED in flight (Laura)** — user_correction tests (ceiling/floor clamp) + read-seam design decision (FactReader interface for production currentTrust retrieval).
+- 📋 **Decisions merged** — 6 inbox files processed: Laura M5 RED, Edgar M5 GREEN, 3 PR#30 cycles (Edgar), Issue #11 (Roger).
 
-**Next action:** M1 first red test (Laura — London-school outside-in TDD per §55).
+**Next action:** M6 GREEN when Laura's RED tests land.
 
 ---
 
