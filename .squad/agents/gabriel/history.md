@@ -174,3 +174,30 @@
 
 **Next:** Start WI-B after WI-A is merged to main.
 
+### 2026-05-29 — WI-B Implementation: Coordinator Worktree Dispatch
+
+**Delivered:** Made the Pre-Spawn: Worktree Setup section in squad.agent.md (+ 2 template mirrors) enforced rather than aspirational.
+
+**Was the Pre-Spawn section really aspirational?**
+Yes — it used "should" language, omitted error handling entirely, and had no status marker. A coordinator following it literally would have done the right thing on the happy path but had no guidance for failure modes (lock files, permission errors, wrong-branch reuse, junction failures). The v0 state was documentation-only in practice.
+
+**Key implementation decisions:**
+- Activation: opt-in via `SQUAD_WORKTREES=1` (env-var only, v1). Config-based activation (`worktrees: true`) was removed from Pre-Spawn step 1 to match v1 scope, with a v2 note added to Worktree Lifecycle Management.
+- Fallback on error: errors fall back to main repo rather than aborting. Skeptic persona raised "fail-closed" as an option; rejected because a broken worktree setup should not block legitimate work in v1. Documented trade-off in decision inbox.
+- Parallel dispatch: warning-only with `list_agents` as the detection hint. Full state-tracking mechanism is v2.
+
+**Surprises in template structure:**
+- The two template mirrors (`.squad/templates/squad.agent.md.template` and `.squad/templates/squad.agent.md`) differ in 38 lines pre-existing (no `name:` field, no `CURRENT_DATETIME` in lightweight template in the plain version). The changed sections landed byte-identical as required.
+- The only difference between primary and `.template` is 2 version-stamp lines — expected.
+
+**Persona review findings (Code Panel, 4 personas):**
+- 12 findings captured; 11 accepted, 1 rejected (fail-closed activation)
+- Key fixes applied: {worktree}/{path} variable inconsistency, branch-mismatch dead end in step 2b, {branch} derivation in Cleanup, rmdir /s hazard warning, rm -f for Unix, activation section v1 note, YAML-style notation fix, {% if %} manual handling clarification, lightweight pre-render note substance
+
+**Files modified:**
+- `.github/agents/squad.agent.md`
+- `.squad/templates/squad.agent.md.template`
+- `.squad/templates/squad.agent.md`
+
+**Pattern extracted:** Worktree-junction cleanup recipe (rmdir before git worktree remove) documented as `.squad/skills/worktree-junction-cleanup/SKILL.md`
+

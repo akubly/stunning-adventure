@@ -310,6 +310,8 @@ After routing determines WHO handles work, select the response MODE based on tas
 
 **Lightweight Spawn Template** (skip charter, history, and decisions reads — just the task):
 
+**⚡ Pre-render: Resolve worktree variables first.** Run Pre-Spawn: Worktree Setup before substituting `WORKTREE_PATH` and `WORKTREE_MODE`. If `SQUAD_WORKTREES=1`, substitute the resolved path and `true`. If not set, substitute `n/a` and `false`, and manually remove the `{% if WORKTREE_MODE %}...{% endif %}` block from the prompt.
+
 ```
 agent_type: "general-purpose"
 model: "{resolved_model}"
@@ -641,8 +643,8 @@ Squad and all spawned agents may be running inside a **git worktree** rather tha
 When worktree mode is enabled, the coordinator creates dedicated worktrees for issue-based work. This gives each issue its own isolated branch checkout without disrupting the main repo.
 
 **Worktree mode activation:**
-- Explicit: `worktrees: true` in project config (squad.config.ts or package.json `squad` section)
-- Environment: `SQUAD_WORKTREES=1` set in environment variables
+- Environment: `SQUAD_WORKTREES=1` set in environment variables *(v1 — the only supported activation method)*
+- Config: `worktrees: true` in project config (squad.config.ts or package.json `squad` section) *(planned for v2 — not yet active)*
 - Default: `false` (backward compatibility — agents work in the main repo)
 
 **Creating worktrees:**
@@ -665,8 +667,14 @@ When worktree mode is enabled, the coordinator creates dedicated worktrees for i
 - Multiple agents can work in the same worktree concurrently if they modify different files
 
 **Cleanup:**
-- After a PR is merged, the worktree should be removed
-- `git worktree remove {path}` + `git branch -d {branch}`
+- After a PR is merged, the worktree MUST be removed in this exact order:
+  1. Remove the `node_modules` junction FIRST (before `git worktree remove`):
+     - Windows: `cmd /c "rmdir {worktree}\node_modules"` (removes the junction only, NOT the target)
+     - Unix: `rm -f {worktree}/node_modules` (removes the symlink only, NOT the target)
+     - ⚠️ Do NOT use `rmdir /s` on Windows — that recursively deletes the real `node_modules` in the main repo
+     - ⚠️ Skipping step 1 on Windows will cause `git worktree remove` to delete the main repo's `node_modules`
+  2. Remove the worktree: `git worktree remove {worktree}`
+  3. Delete the branch: `git branch -d {branch}` (resolve `{branch}` via `git -C {worktree} rev-parse --abbrev-ref HEAD` if not already known)
 - Ralph heartbeat can trigger cleanup checks for merged branches
 
 ### Orchestration Logging
@@ -679,50 +687,63 @@ Each entry records: agent routed, why chosen, mode (background/sync), files auth
 
 ### Pre-Spawn: Worktree Setup
 
-When spawning an agent for issue-based work (user request references an issue number, or agent is working on a GitHub issue):
+**Status: ACTIVE (opt-in via `SQUAD_WORKTREES=1`)**
+
+When spawning an agent for issue-based work (user request references an issue number, or agent is working on a GitHub issue), the coordinator MUST execute this flow before rendering the spawn template.
 
 **1. Check worktree mode:**
 - Is `SQUAD_WORKTREES=1` set in the environment?
-- Or does the project config have `worktrees: true`?
-- If neither: skip worktree setup → agent works in the main repo (existing behavior)
+- If not: skip to step 3 → agent works in the main repo (existing behavior)
 
-**2. If worktrees enabled:**
+**2. If `SQUAD_WORKTREES=1`:**
 
 a. **Determine the worktree path:**
    - Parse issue number from context (e.g., `#42`, `issue 42`, GitHub issue assignment)
    - Calculate path: `{repo-parent}/{repo-name}-{issue-number}`
    - Example: Main repo at `C:\src\squad`, issue #42 → `C:\src\squad-42`
 
-b. **Check if worktree already exists:**
-   - Run `git worktree list` to see all active worktrees
-   - If the worktree path already exists → **reuse it**:
-     - Verify the branch is correct (should be `squad/{issue-number}-*`)
-     - `cd` to the worktree path
-     - `git pull` to sync latest changes
-     - Skip to step (e)
+b. **Check if worktree already exists (MUST run before creating):**
+   - Run `git worktree list` and scan for a path matching `{repo-parent}/{repo-name}-{issue-number}`
+   - If found → verify the branch before reusing:
+     - If branch matches `squad/{issue-number}-*` → **reuse it** (decision: reuse avoids duplicate branch state):
+       - `cd` to the worktree path
+       - `git pull` to sync latest changes
+       - Verify `node_modules` exists in the worktree; if missing, run step (d) to re-link before continuing
+       - Skip to step (e) — do NOT run `git worktree add`
+     - If branch does NOT match → log `[worktree-setup] stale worktree at {path} on wrong branch — removing` to history.md, run `git worktree remove {path}`, then proceed to step (c)
+   - If not found → proceed to step (c)
 
 c. **Create the worktree:**
    - Determine branch name: `squad/{issue-number}-{kebab-case-slug}` (derive slug from issue title if available)
    - Determine base branch (typically `main`, check default branch if needed)
    - Run: `git worktree add {path} -b {branch} {baseBranch}`
    - Example: `git worktree add C:\src\squad-42 -b squad/42-fix-login main`
+   - **Error handling:**
+     - Lock file error (`fatal: ... is locked`) → wait 5s, retry once; if still failing, log to history.md and abort spawn
+     - Permissions error → log to history.md, set `WORKTREE_MODE` to `false`, fall back to main repo
+     - Any other error → log to history.md, set `WORKTREE_MODE` to `false`, fall back to main repo
 
 d. **Set up dependencies:**
    - Link `node_modules` from main repo to avoid reinstalling:
      - Windows: `cmd /c "mklink /J {worktree}\node_modules {main-repo}\node_modules"`
      - Unix: `ln -s {main-repo}/node_modules {worktree}/node_modules`
-   - If linking fails (error), fall back: `cd {worktree} && npm install`
-   - Verify the worktree is ready: check build tools are accessible
+   - **Error handling:** If linking fails (permissions, cross-device, or any error):
+     - Fall back: `cd {worktree} && npm install`
+     - Log the fallback to history.md: `[worktree-setup] junction link failed — fell back to npm install in {worktree}`
 
 e. **Include worktree context in spawn:**
    - Set `WORKTREE_PATH` to the resolved worktree path
    - Set `WORKTREE_MODE` to `true`
-   - Add worktree instructions to the spawn prompt (see template below)
+   - Substitute both values into the spawn template before sending (see template below)
 
-**3. If worktrees disabled:**
+**3. If `SQUAD_WORKTREES` is not set:**
 - Set `WORKTREE_PATH` to `"n/a"`
 - Set `WORKTREE_MODE` to `false`
-- Use existing `git checkout -b` flow (no changes to current behavior)
+- The spawn template variables resolve to their disabled defaults (no worktree instructions rendered)
+
+**⚠️ Parallel dispatch warning:** When `SQUAD_WORKTREES` is not set AND the coordinator is about to spawn a 2nd agent into the same checkout while a 1st agent is still running (check via `list_agents` for active spawns), emit:
+> `⚠️ Parallel dispatch into shared checkout — set SQUAD_WORKTREES=1 to isolate per-issue work`
+> Warning only — does not block spawn.
 
 ### How to Spawn an Agent
 
@@ -742,6 +763,8 @@ e. **Include worktree context in spawn:**
 > **VS Code equivalent:** Use `runSubagent` with the prompt content below. Drop `agent_type`, `mode`, `model`, and `description` parameters. Multiple subagents in one turn run concurrently. Sync is the default on VS Code.
 
 **Template for any agent** (substitute `{Name}`, `{Role}`, `{name}`, and inline the charter):
+
+**⚡ Pre-render: Resolve worktree variables first.** Before substituting `WORKTREE_PATH` and `WORKTREE_MODE`, the coordinator MUST run the Pre-Spawn: Worktree Setup flow above. If `SQUAD_WORKTREES=1`, substitute the resolved path and `true`. If not set, substitute `n/a` and `false`, and manually remove the `{% if WORKTREE_MODE %}...{% endif %}` block from the prompt — these are pseudo-template markers, not processed by an engine.
 
 ```
 agent_type: "general-purpose"
