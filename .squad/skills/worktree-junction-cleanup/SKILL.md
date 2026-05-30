@@ -46,7 +46,7 @@ git -C {worktree} rev-parse --abbrev-ref HEAD
 | `rmdir {worktree}\node_modules` (no /s) | ✅ Removes junction only | N/A |
 | `rmdir /s {worktree}\node_modules` | ❌ **Destroys real node_modules in main repo** | N/A |
 | `rm -f {worktree}/node_modules` | N/A | ✅ Removes symlink only |
-| `rm -rf {worktree}/node_modules` | N/A | ❌ **Follows symlink and destroys real node_modules** |
+| `rm -rf {worktree}/node_modules` | N/A | ❌ **Destroys real `node_modules` if the symlink was already removed or never created — prefer `rm -f` which fails gracefully on real directories** |
 | `git worktree remove {worktree}` (junction present) | ❌ **Destroys real node_modules in main repo** | ✅ Safe (git doesn't follow symlinks) |
 | `git worktree remove {worktree}` (junction removed) | ✅ Safe | ✅ Safe |
 
@@ -56,4 +56,4 @@ git -C {worktree} rev-parse --abbrev-ref HEAD
 
 This skill was extracted from the Worktree Lifecycle Management → Cleanup section added in WI-B. The hazard was identified by the Correctness reviewer during Code Panel review of the first-pass implementation, which had `rmdir /s` in the original draft.
 
-The rule is simple: **unlink before remove, and never use the recursive flag on the junction**.
+The rule is simple: **unlink before remove, and never use the recursive flag on the junction**. On Unix, prefer `rm -f` over `rm -rf` — `rm -f` fails gracefully if the path is a real directory (prompting investigation), whereas `rm -rf` silently deletes a real directory if the symlink was already removed or never created.

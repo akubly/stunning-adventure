@@ -710,16 +710,16 @@ b. **Check if worktree already exists (MUST run before creating):**
        - `git pull` to sync latest changes
        - Verify `node_modules` exists in the worktree; if missing, run step (d) to re-link before continuing
        - Skip to step (e) — do NOT run `git worktree add`
-     - If branch does NOT match → log `[worktree-setup] stale worktree at {path} on wrong branch — removing` to history.md, run `git worktree remove {path}`, then proceed to step (c)
+     - If branch does NOT match → log `[worktree-setup] stale worktree at {worktree} on wrong branch — removing` to history.md, run `git worktree remove {worktree}`, then proceed to step (c)
    - If not found → proceed to step (c)
 
 c. **Create the worktree:**
    - Determine branch name: `squad/{issue-number}-{kebab-case-slug}` (derive slug from issue title if available)
    - Determine base branch (typically `main`, check default branch if needed)
-   - Run: `git worktree add {path} -b {branch} {baseBranch}`
+   - Run: `git worktree add {worktree} -b {branch} {baseBranch}`
    - Example: `git worktree add C:\src\squad-42 -b squad/42-fix-login main`
    - **Error handling:**
-     - Lock file error (`fatal: ... is locked`) → wait 5s, retry once; if still failing, log to history.md and abort spawn
+     - Lock file error (`fatal: ... is locked`) → wait 5s, retry once; if still failing, log to history.md, set `WORKTREE_MODE` to `false`, fall back to main repo
      - Permissions error → log to history.md, set `WORKTREE_MODE` to `false`, fall back to main repo
      - Any other error → log to history.md, set `WORKTREE_MODE` to `false`, fall back to main repo
 
