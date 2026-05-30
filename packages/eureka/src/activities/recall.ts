@@ -13,14 +13,19 @@ import type { SessionId } from '@akubly/types';
 export interface RecallResult {
   content: string;
   trust: number;
-  attention_tier: string;
+  attention_tier: 'hot' | 'warm' | 'cold';
   /** Normalized BM25 relevance score ∈ [0,1] returned by FactStore.search(). */
   relevance?: number;
   /** Importance signal ∈ [0,1]. */
   importance?: number;
   /** Unix epoch ms — used to compute query-time recency (§30 §1.2). */
   last_accessed?: number;
-  [key: string]: unknown;
+}
+
+/** Fact paired with its FR-2 composite score. */
+export interface ScoredResult {
+  fact: RecallResult;
+  score: number;
 }
 
 /** FactStore seam — injected, never instantiated here (§55 §2.1 London form). */
@@ -46,6 +51,13 @@ export interface ClockProvider {
   now(): number;
 }
 
+/**
+ * Optional custom ranker seam — replaces inline compositeScore when provided.
+ * Receives trust-filtered candidates and nowMs; sorting and slicing to k remain
+ * in recall/recallWithScores.
+ */
+export type Ranker = (facts: RecallResult[], deps: { nowMs: number }) => ScoredResult[];
+
 export interface RecallDeps {
   factStore: FactStore;
   /**
@@ -54,8 +66,11 @@ export interface RecallDeps {
    * §-tension: §30 §2.4 suggests optional default to SystemClock; §55 §1.2 prohibits.
    */
   clock: ClockProvider;
+  /** Optional custom ranker — when provided, replaces inline compositeScore. */
+  ranker?: Ranker;
 }
 
+// TODO(M5+): configurable per-call trustFloor via RecallOptions. See decision drop edgar-recall-undersupply-escalation if filed.
 /** Trust floor per §30 §2.3 — exclude facts below this threshold. */
 const TRUST_FLOOR = 0.15;
 
@@ -64,7 +79,7 @@ const TRUST_FLOOR = 0.15;
  * §50 line 211 contains incorrect values (hot=1.0/warm=0.5/cold=0.1) —
  * §30 §1.2 is the authoritative source; §50 cleanup is Crispin/Genesta's call.
  */
-const ATTENTION_MULTIPLIERS: Record<string, number> = {
+const ATTENTION_MULTIPLIERS: Record<'hot' | 'warm' | 'cold', number> = {
   hot:  1.20,
   warm: 1.00,
   cold: 0.80,
@@ -75,44 +90,67 @@ const ATTENTION_MULTIPLIERS: Record<string, number> = {
  *   rawScore   = 0.50·relevance + 0.20·importance + 0.20·trust + 0.10·recency
  *   finalScore = rawScore × attentionMultiplier
  *   recency    = max(0.1, (1 + t)^−0.5),  t = days since last_accessed
+ *
+ * Defensive: tDays clamped to ≥0 so future last_accessed values cannot produce
+ * negative tDays → NaN in Math.pow (F1 guard).
+ * Never-accessed facts use tDays=Infinity → recency floors to 0.1 (treated as
+ * very stale, not just-accessed — F3 semantics).
  */
-function compositeScore(fact: RecallResult, nowMs: number): number {
+export function compositeScore(fact: RecallResult, nowMs: number): number {
   const relevance  = fact.relevance  ?? 0;
   const importance = fact.importance ?? 0;
 
+  // F1: clamp to ≥0 — future last_accessed values yield negative tDays → NaN without this guard.
+  // F3: absent last_accessed → Infinity → recency floors to 0.1 (never-accessed treated as very stale, not just-accessed).
   const tDays = typeof fact.last_accessed === 'number'
-    ? (nowMs - fact.last_accessed) / 86_400_000
-    : 0;
+    ? Math.max(0, (nowMs - fact.last_accessed) / 86_400_000)
+    : Infinity;
   const recency = Math.max(0.1, Math.pow(1 + tDays, -0.5));
 
   const rawScore = 0.50 * relevance + 0.20 * importance + 0.20 * fact.trust + 0.10 * recency;
-  const multiplier = ATTENTION_MULTIPLIERS[fact.attention_tier] ?? 1.00;
+  const multiplier = ATTENTION_MULTIPLIERS[fact.attention_tier];
   return rawScore * multiplier;
 }
 
 /**
  * Retrieve the top k memory entries matching `query`, filtered by trust floor
- * and ranked by FR-2 composite formula descending (§30 §1.2).
+ * and ranked by FR-2 composite formula descending (§30 §1.2). Returns each
+ * fact paired with its composite score.
+ *
+ * Use this when score transparency or downstream re-ranking is needed.
+ * `recall` is the convenience wrapper that strips scores.
  *
  * Not yet implemented (future red beats):
- *   - Recency-gradient decay over time (ClockProvider seam — §30 §2.4)
  *   - lastAccessedAt / accessCount side effects (§10 §10.1)
  *   - Trust score updates from feedback (§30 §2.1)
+ */
+export async function recallWithScores(
+  options: RecallOptions,
+  deps: RecallDeps,
+): Promise<ScoredResult[]> {
+  const { query, sessionId, k } = options;
+  const { factStore, clock, ranker } = deps;
+
+  const candidates = await factStore.search({ query, sessionId, limit: k });
+  const nowMs = clock.now();
+
+  const trusted = candidates.filter(f => f.trust >= TRUST_FLOOR);
+  const scored = ranker
+    ? ranker(trusted, { nowMs })
+    : trusted.map(f => ({ fact: f, score: compositeScore(f, nowMs) }));
+
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, k);
+}
+
+/**
+ * Convenience wrapper around `recallWithScores` — strips scores and returns facts only.
+ * Use `recallWithScores` when score values are needed (debugging, reranking pipelines).
  */
 export async function recall(
   options: RecallOptions,
   deps: RecallDeps,
 ): Promise<RecallResult[]> {
-  const { query, sessionId, k } = options;
-  const { factStore, clock } = deps;
-
-  const candidates = await factStore.search({ query, sessionId, limit: k });
-  const nowMs = clock.now();
-
-  return candidates
-    .filter(f => f.trust >= TRUST_FLOOR)
-    .map(f => ({ fact: f, score: compositeScore(f, nowMs) }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, k)
-    .map(s => s.fact);
+  return (await recallWithScores(options, deps)).map(s => s.fact);
 }

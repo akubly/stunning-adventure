@@ -28,7 +28,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { recall } from '../recall.js';
+import { recall, compositeScore } from '../recall.js';
 import type { SessionId } from '@akubly/types';
 
 /**
@@ -107,10 +107,6 @@ describe('recall', () => {
     //   Desired FR-2 order: B (0.960) > C (0.620) > D (0.440) > A (0.168).
     //   M2 impl returns storage order → test FAILS for ordering reason.
     //   Score margins: B-C=0.340, C-D=0.180, D-A=0.272 — unambiguous.
-    //
-    // Schema note (§-tension): RecallResult currently lacks explicit `relevance`,
-    // `importance`, and `last_accessed` fields. The [key: string]: unknown
-    // catch-all passes them through; Edgar must extend RecallResult in M3 GREEN.
 
     const EPOCH_MS = 0; // last_accessed far in past → recency floor 0.1 for all
 
@@ -259,6 +255,110 @@ describe('recall', () => {
     expect(results.map(r => r.content)).toEqual([
       'Freshly accessed fact', // rank 1: finalScore 1.068 (recency = 1.0)
       'Stale accessed fact',   // rank 2: finalScore 0.960 (recency = 0.1, floor)
+    ]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // F1 — NaN guard: future last_accessed must not corrupt sort
+  // ---------------------------------------------------------------------------
+  //
+  // Before fix: (nowMs - last_accessed) could be negative → tDays < 0 →
+  //   Math.pow(1 + negativeValue, -0.5) = NaN → sort corruption.
+  // After fix: Math.max(0, tDays) clamps negative values → tDays = 0 →
+  //   recency = 1.0 → finite score, no NaN.
+
+  it('compositeScore returns finite value when last_accessed is in the future (F1 — NaN guard)', () => {
+    const BASE_MS   = 1_000_000_000_000;
+    const FUTURE_MS = BASE_MS + 7 * 86_400_000; // 7 days ahead of nowMs
+
+    const score = compositeScore(
+      { content: 'future fact', trust: 0.8, attention_tier: 'warm', last_accessed: FUTURE_MS },
+      BASE_MS, // clock is behind last_accessed
+    );
+
+    expect(Number.isFinite(score)).toBe(true);
+    expect(score).toBeGreaterThan(0);
+  });
+
+  it('recall with a future-dated fact produces sane ordering, not NaN-corrupted (F1)', async () => {
+    const BASE_MS   = 1_000_000_000_000;
+    const FUTURE_MS = BASE_MS + 7 * 86_400_000;
+    const stubClock = { now: () => BASE_MS };
+
+    const factStore = {
+      search: vi.fn().mockResolvedValue([
+        // Future fact: tDays clamped to 0 → recency=1.0, but lower trust → ranks second
+        { content: 'Future-dated fact',  trust: 0.3, attention_tier: 'warm' as const, last_accessed: FUTURE_MS },
+        // Present fact: tDays=0 → recency=1.0, higher trust → ranks first
+        { content: 'Present-dated fact', trust: 0.8, attention_tier: 'warm' as const, last_accessed: BASE_MS  },
+      ]),
+    };
+
+    const results = await recall(
+      { query: 'future test', sessionId, k: 2 },
+      { factStore, clock: stubClock },
+    );
+
+    // No NaN corruption: both appear, ordered by trust (since recency is equal after clamping)
+    expect(results).toHaveLength(2);
+    expect(results[0].content).toBe('Present-dated fact');
+    expect(results[1].content).toBe('Future-dated fact');
+  });
+
+  // ---------------------------------------------------------------------------
+  // F2 — attention_tier union exhaustiveness check
+  // ---------------------------------------------------------------------------
+  //
+  // RecallResult.attention_tier is 'hot'|'warm'|'cold' (union, not string).
+  // ATTENTION_MULTIPLIERS is Record<'hot'|'warm'|'cold', number> — no ?? 1.00 fallback.
+  // This runtime test verifies all three tiers produce a finite, positive score.
+  // TypeScript compile-time enforcement: a fact with attention_tier='Hot' (wrong case)
+  // or 'unknown' will fail to compile under the union constraint.
+
+  it('compositeScore produces finite positive scores for all attention_tier values (F2 exhaustiveness)', () => {
+    const nowMs = 1_000_000_000_000;
+    const tiers = ['hot', 'warm', 'cold'] as const;
+
+    for (const tier of tiers) {
+      const score = compositeScore(
+        { content: 'test', trust: 0.5, attention_tier: tier },
+        nowMs,
+      );
+      expect(Number.isFinite(score)).toBe(true);
+      expect(score).toBeGreaterThan(0);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // F3 — no last_accessed → treated as very stale (Infinity), not just-accessed (0)
+  // ---------------------------------------------------------------------------
+  //
+  // Before fix: absent last_accessed → tDays=0 → recency=1.0 (max, same as just-accessed).
+  // After fix:  absent last_accessed → tDays=Infinity → recency=0.1 (floor, very stale).
+  // A fact with no last_accessed must rank below an identical fact with recent access.
+
+  it('fact with no last_accessed ranks below identical fact with recent last_accessed (F3)', async () => {
+    const BASE_MS   = 1_000_000_000_000;
+    const stubClock = { now: () => BASE_MS };
+
+    const factStore = {
+      search: vi.fn().mockResolvedValue([
+        // Never-accessed: absent last_accessed → tDays=Infinity → recency=0.1 (floor)
+        { content: 'Never-accessed fact',   trust: 0.8, attention_tier: 'warm' as const },
+        // Recently accessed: last_accessed=BASE_MS → tDays=0 → recency=1.0
+        { content: 'Recently accessed fact', trust: 0.8, attention_tier: 'warm' as const, last_accessed: BASE_MS },
+      ]),
+    };
+
+    const results = await recall(
+      { query: 'recency fallback test', sessionId, k: 2 },
+      { factStore, clock: stubClock },
+    );
+
+    // Recently accessed ranks first (recency=1.0 > 0.1); never-accessed is very stale
+    expect(results.map(r => r.content)).toEqual([
+      'Recently accessed fact', // recency 1.0 → finalScore higher
+      'Never-accessed fact',    // recency 0.1 (floor) → finalScore lower
     ]);
   });
 });
