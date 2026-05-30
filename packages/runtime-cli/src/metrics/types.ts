@@ -1,8 +1,10 @@
+import type { LoadedProfileSource } from '@akubly/skillsmith-runtime';
+
 /** Profile info when a profile was found for the skill. */
 export interface SkillMetricsProfileInfo {
   found: true;
   /** Which tier matched the fallback chain: per-skill, per-model, per-user, or global. */
-  tier: string;
+  tier: LoadedProfileSource;
   /** session_count stored in the profile row at last update. */
   sessionCount: number;
   /** ISO-8601 timestamp of last profile update. */
@@ -21,7 +23,7 @@ export type SkillMetricsProfile = SkillMetricsProfileInfo | SkillMetricsProfileM
 export interface SkillMetricsStaleness {
   stale: boolean;
   /** Why the profile is stale: 'count', 'age', 'count+age', or null (fresh). */
-  reason: string | null;
+  reason: 'count' | 'age' | 'count+age' | null;
   /** Sessions logged since the profile was last updated (count proxy). */
   sessionsSinceUpdate: number;
 }
@@ -39,7 +41,7 @@ export interface SkillMetricsConfidence {
 /** One entry from the prescriber_run event log (W5-5 — may not be present). */
 export interface SkillMetricsPrescriberRun {
   triggeredBy: string;
-  profileSource: string | null;
+  profileSource: LoadedProfileSource | null;
   inserted: number;
   skipped: number;
   errored: number;
