@@ -3,7 +3,8 @@
 **Category:** Test Design  
 **Author:** Laura (Tester)  
 **Extracted from:** Eureka M3 RED — composite-ranker ordering test (2026-05-28)  
-**Refined by:** Eureka M4 RED — ClockProvider recency fixture (2026-05-29)
+**Refined by:** Eureka M4 RED — ClockProvider recency fixture (2026-05-29)  
+**Confidence:** MEDIUM — applied cleanly across M2, M3, M4; reviewed by 5 personas with Craft endorsement
 
 ---
 
@@ -95,6 +96,7 @@ NOT a type error, import error, or missing field error. If you see those, fix th
 ```typescript
 it('ranks results by [FORMULA] descending', async () => {
   const EPOCH_MS = 0; // last_accessed = epoch → recency = 0.1 (floor) for all
+  const FIXED_NOW_MS = 1_000_000_000_000; // M4+: pinned clock for deterministic recency calculations
 
   const factStore = {
     search: vi.fn().mockResolvedValue([
@@ -108,7 +110,8 @@ it('ranks results by [FORMULA] descending', async () => {
     ]),
   };
 
-  const results = await recall({ query: 'test', sessionId, k: N }, { factStore });
+  const stubClock = { now: () => FIXED_NOW_MS };
+  const results = await recall({ query: 'test', sessionId, k: N }, { factStore, clock: stubClock });
 
   expect(results.map(r => r.content)).toEqual([
     'Top scorer',     // rank 1: finalScore N.NNN
@@ -117,6 +120,8 @@ it('ranks results by [FORMULA] descending', async () => {
   ]);
 });
 ```
+
+> **M4+ Note:** `clock` is a required field in `RecallDeps` per §55 §1.2 — use a pinned stub clock for fixture determinism. See `recall.test.ts` M4 block for the canonical pattern.
 
 ---
 
