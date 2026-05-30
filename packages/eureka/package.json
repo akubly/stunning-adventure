@@ -1,0 +1,33 @@
+{
+  "name": "@akubly/eureka",
+  "version": "0.1.0",
+  "description": "Eureka — cognitive memory layer for the Cairn agentic stack.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist coverage"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT",
+  "author": "akubly",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akubly/stunning-adventure.git"
+  },
+  "dependencies": {
+    "@akubly/types": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "vitest": "^3"
+  }
+}

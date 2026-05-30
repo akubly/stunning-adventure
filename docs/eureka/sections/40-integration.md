@@ -81,6 +81,14 @@ cairn → types       (CairnBridgeEvent, SessionIdentity)
 }
 ```
 
+### §40.1.1 — Integration Test Placement (C8 Resolution)
+
+**Integration test placement:** Cross-package integration tests for Eureka behavior live in `packages/eureka/src/__tests__/`. Eureka may add `@akubly/cairn` and `@akubly/forge` as devDependencies and import them for integration verification. Cairn and Forge **MUST NOT** import `@akubly/eureka` — in production code **OR in tests**. This consumer-tests-upstream pattern preserves the kernel boundary and the independently-deployable promise of Eureka. Enforced by the `no-restricted-imports` eslint rule in `eslint.config.js`.
+
+**Rationale:** Eureka is a standalone kernel component (§1 PRD, §40 Overview). Allowing downstream packages (Cairn, Forge) to write cross-package integration tests importing Eureka would erode this boundary and create a subtle coupling anti-pattern: engineers might normalize "just a quick integration test in Cairn" and gradually weaken the architectural separation. Instead, Eureka owns its own integration tests, adding Cairn/Forge as devDependencies to exercise real-world integration scenarios (London-school "sociable tests" per §55 §1.2). This preserves the architectural lens: Eureka is a consumer of substrate (types), and substrate layers (Cairn, Forge) never import from the consumer.
+
+**Authority:** Cycle 2 C8 resolution (Aaron Kubly directive, 2026-05-29). Graham (Lead) recommended test-dir exemption for boundary validation; Genesta (Eureka Architect) and Aaron sided with strict enforcement. This section documents the decision to prevent future erosion of the kernel boundary.
+
 ---
 
 ## §40.2 — Cairn Integration
@@ -377,33 +385,47 @@ Eureka exposes three primary dependency-injection seams for test-time substituti
 
 **Interface definition:** See **§30 §2.4 "Time Injection for Testability"** for complete `ClockProvider` interface and `MockClock` implementation.
 
-**Wiring pattern:** All time-dependent functions (`computeRecency`, `recall`, `rerank`, `sweep`) accept an optional `ClockProvider` parameter with default-value injection:
+**Wiring pattern:** Time-dependent activities require `ClockProvider` as a **REQUIRED** dependency (no optional default) per §55 §1.2 seam discipline.
+
+**Canonical call shape (recall activity):**
 
 ```typescript
-// packages/eureka/src/learning/recency.ts
-import { ClockProvider, SystemClock } from './properties/clock';
+// packages/eureka/src/activities/recall.ts
+export interface RecallDeps {
+  factStore: FactStore;
+  /**
+   * Clock provider for query-time recency (§30 §2.4).
+   * REQUIRED — no optional default; defaults hide non-determinism per §55 §1.2.
+   */
+  clock: ClockProvider;
+}
 
-export function computeRecency(
-  lastAccessed: number,
-  clock: ClockProvider = SystemClock
-): number {
-  const age = (clock.now() - lastAccessed) / 86400;  // days
-  return Math.max(0.1, Math.pow(1 + age, -0.7));
+export async function recall(
+  options: RecallOptions,
+  deps: RecallDeps  // caller must provide clock
+): Promise<RecallResult[]> {
+  const nowMs = deps.clock.now();
+  // ... use nowMs in compositeScore
 }
 ```
 
 **Test usage:**
-```typescript
-import { MockClock } from '@akubly/eureka/learning/properties/clock';
 
-it('applies 7-day recency decay', () => {
-  const mockClock = new MockClock(1000000);
-  const score = computeRecency(1000000 - (7 * 86400), mockClock);
-  expect(score).toBeCloseTo(0.27);
+```typescript
+import type { ClockProvider } from '../recall';
+import type { SessionId } from '@akubly/types';
+
+it('ranks recently-accessed fact above stale fact (clock provided)', async () => {
+  const mockClock: ClockProvider = { now: () => 1_000_000_000_000 };
+  const results = await recall(
+    { query: 'test', sessionId: 'session-123' as SessionId, k: 5 },
+    { factStore: mockFactStore, clock: mockClock }
+  );
+  expect(results[0].content).toBe('Fresh fact');
 });
 ```
 
-**Design rationale:** Default parameters (`clock: ClockProvider = SystemClock`) eliminate ceremony for production code while exposing the seam for tests. This is §55 §2.5's tier fan-out pattern: optional last parameter, production-ready default.
+**Design rationale:** Per §55 §1.2, non-deterministic inputs (timestamps) must be mocked at seams. Default parameters hide non-determinism — a `SystemClock` default would allow callers to forget to inject a clock, leaving `Date.now()` smells in production paths. Requiring injection ensures every caller explicitly declares its time source, enabling TypeScript compile-time enforcement. Decision documented in `.squad/decisions.md` M4 GREEN and M4 RED entries (2026-05-29).
 
 ### §40.6.2 — Random Source Injection (v1.5 Prep)
 
@@ -463,33 +485,34 @@ it('meditate samples k clusters deterministically', () => {
 
 ### §40.6.3 — Default-Parameter Injection Pattern
 
-**Canonical form:** §55 §2.5 demonstrates the default-parameter injection pattern for tier fan-out:
+**Canonical form:** §55 demonstrates dependency injection for seams. For **storage only** (database, vector index), default-parameter injection reduces production ceremony:
 
 ```typescript
-// From §55 §2.5 worked example
+// Example: storage uses optional default, clock does NOT
 export async function recall(
-  { query, sessionId, k }: RecallOptions,
-  { agentStore, userStore }: StoreCollaborators = defaultStores
+  options: RecallOptions,
+  { factStore = getDefaultStore(), clock }: RecallDeps  // storage optional, clock REQUIRED
 ): Promise<Memory[]> {
-  // Test injects mocks; production uses defaults
+  // Test injects both; production uses default store but must provide clock
 }
 ```
 
-**Eureka adopts this for all collaborators:**
+**Eureka seam dependency policy:**
 
-| Seam | Production Default | Test Injection |
-|------|-------------------|----------------|
-| **Storage** | `getEurekaDb(tier)` | `:memory:` DB |
-| **Time** | `SystemClock` | `MockClock` |
-| **Random** | `SystemRandom` (v1.5) | `DeterministicRandom` |
-| **Model** | `OpenAIProvider` (v1.5) | `vi.fn()` mock |
+| Seam | Status | Rationale |
+|------|--------|-----------|
+| **Storage** | Optional (default provided) | I/O seam; production can use default DB path (§40.7) |
+| **Time** | REQUIRED (no default) | Non-deterministic input; §55 §1.2 disallows defaults that hide smells |
+| **Random** | REQUIRED (no default, v1.5) | Non-deterministic input; must be explicitly injected for deterministic tests |
+| **Model** | REQUIRED (no default, v1.5) | Network I/O seam; must be explicitly injected |
 
-**Benefits:**
-1. **Zero ceremony for production** — Activities call `recall(query)` with no DI wiring.
-2. **Explicit for tests** — Tests inject mocks as last parameter, clear at call site.
-3. **Refactor-safe** — Default values live at function signature, not scattered across call sites.
+**Benefits of required injection for non-deterministic seams:**
 
-**Cross-reference:** §55 §3.1 "Mock Contract Style" provides full guidance on when to use default-parameter injection vs constructor injection.
+1. **Smell prevention** — No way to accidentally use `Date.now()` or `Math.random()` in production paths that should be testable.
+2. **Explicit declarations** — Every call site declares whether it uses deterministic or real time/randomness.
+3. **Compile-time enforcement** — TypeScript requires all REQUIRED deps, catching forgotten injections at build time.
+
+**Cross-reference:** §55 §1.2 "Mock Seams vs Sociable Tests" establishes that non-deterministic inputs (timestamps, random IDs) must be mocked at seams with no optional defaults.
 
 ---
 

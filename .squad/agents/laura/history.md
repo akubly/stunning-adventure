@@ -1,24 +1,19 @@
-📌 Team update (2026-05-26T22:27:00Z): **Issue #17 async-sweep complete, W5-5 tests integrated** — 0 required fixes (8 areas swept, guards verified, 12 tests added). Laura's async-test plan integrated into W5-5 (4 new tests). All Cairn async-io tests passing. — Scribe
-📌 **Wave 6 integrated onto phase-4.6/wave-6 (2026-05-26)** — #17 async-IO sweep preserved as commit 2b4026a. Integration complete with W5-5 (Rosella) + W5-6 (Roger). MCP stdio transport proven serial, no async conversion needed. Awaiting Aaron's /review-cycle. — Scribe
-📌 Team update (2026-05-23T21:30:00Z): **Wave 4 W4-4 integration tests created** — 14 tests covering all three work items. Groups: A atomicity (3/3 ✅), B observability (5/5 ✅), C forceRegenerate (1/4, 3 = test infra), D E2E (0/2, test infra). Implementation quality validated; test infrastructure gaps identified (file-backed SQLite DB seeding issues). 639 Forge tests passing (+9). — Scribe
-📌 Team update (2026-05-22T14:07:59Z): **Phase 4.6 Wave 2 complete** — ChangeVectorProvider + ForgePrescriberOrchestrator + autoApplyEligible safety gate + hint dedup + forge-prescribe CLI all shipped. 1199 tests passing, 9 work items landed, 4 decisions merged. Wave 3 (Curator-driven orchestration + composition root) deferred behind ADR. — Scribe
-📌 Team update (2026-05-22T20:35:00Z): **Wave 2 W2-5 complete** — ForgePrescriberOrchestrator shipped. Attenuation + autoApplyEligible propagation live. ATTENUATION_FLOOR=0.1 exported from @akubly/types. Fail-open on provider errors. Forge tests 609 passing (+10), root build green. — Scribe
-📌 Team update (2026-05-22T20:29:36Z): **Wave 1 complete** — canonical type adopted across packages, SqliteChangeVectorProvider live, zero-vector summaries filtered. Alexander (W2-2) + Rosella (W2-3/W2-7) complete. Forge 599 + Cairn 564 tests green. — Scribe
-📌 Team update (2026-05-22T20:16:40Z): **Wave 0 complete** — canonical types in @akubly/types, getAllCategories helper in Cairn. category field reconciled to OptimizationCategory union. — Scribe
-📌 Team update (2026-05-22T20:03:56Z): Wave 2 v3.1 scope final — autoApplyEligible propagates through OptimizationHint; constants NEGATIVE_IMPACT_AUTO_APPLY_GATE=-0.2 and ATTENUATION_FLOOR=0.1; CLI surface only — no MCP in Wave 2. — Graham Knight
+# Laura — History
 
-## Summary
+**Role:** Tester (Contract-first patterns, integration testing, test architecture)
+**Status:** M3 baseline preserved. Eureka M2 GREEN landed 2026-05-28. Cycle 2 composite-ranker + F6 resolution verified.
+**Last update:** 2026-05-29
 
-**Total entries:** 5 major contributions spanning Phase 2-4.6 testing + Round 2 brain system consulting + Round 2 roster proposal
+**Key milestones:**
+- Phase 2-4.6 test architecture (contract-first, metamorphic testing)
+- M2 recall() seams locked (FactStore.search injection, SessionId brand)
+- M3 composite-ranker baseline (FR-2 formula validation)
+- Issue #17 async-sweep: 0 required fixes, 12 tests added
+- Cycle 2 findings: 8 addressed in combo pass
 
-| Date | Event | Status |
-|------|-------|--------|
-| 2026-04-28 | Phase 2 Runtime Verification | ✅ Completed |
-| 2026-04-29 | Phase 3 Cross-Module Integration | ✅ Completed |
-| 2026-05-02–2026-05-04 | Phase 4.5–4.6 Review Cycle (Feedback Loop + Change Vectors) | ✅ Completed |
-| 2026-05-22 | Brain System Consulting (Test Architecture Lens) | ✅ Completed |
-| 2026-05-22 | Brain Project Roster Proposal (Test Advisor Role) | 🟡 Proposal pending Aaron |
+**See history-archive.md for detailed entries.**
 
+**Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
 **Key themes:**
 - Contract-first testing: Inline implementations before real modules, switch imports with zero test changes
 - Phase 4.6 lifecycle: 15 findings consolidated, 3-cycle review with Lockout-compliant cross-assignment

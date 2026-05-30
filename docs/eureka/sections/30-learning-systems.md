@@ -605,7 +605,7 @@ it('applies 7-day recency decay', () => {
 
 **Design Notes:**
 - ClockProvider lives in `packages/eureka/src/learning/properties/clock.ts` (extraction-ready per FR-12).
-- All time-dependent algorithms (`recall`, `rerank`, `sweep`) accept optional `ClockProvider` parameter (defaults to `SystemClock`).
+- All time-dependent algorithms (`recall`, `rerank`, `sweep`) REQUIRE `ClockProvider` as a dependency injection parameter — no `SystemClock` default. Per §55 §1.2 and `.squad/decisions.md` M4 GREEN (2026-05-29), explicit injection prevents accidental non-determinism in production code.
 - This seam is testability hygiene, not business logic. Production code never instantiates `MockClock`.
 
 ---

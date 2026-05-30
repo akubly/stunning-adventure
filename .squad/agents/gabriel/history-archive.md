@@ -1,17 +1,13 @@
 # Gabriel — History
 
-**Role:** Build / Infrastructure (ESLint rules, cross-package guardrails, lint gates)
-**Status:** Cycle 2 C8 resolution: eslint no-restricted-imports stays strict (no test-dir exemption).
-**Last update:** 2026-05-29
+## Core Context
 
-**Key contributions:**
-- M1 acceptance criteria: Cross-package import guard (ESLint rule, auto-check)
-- Cycle 2: Supported Genesta's strict layering stance; no exemptions added
-- Infrastructure load-bearing: Dependency direction lint prevents kernel erosion
+- **Project:** A Copilot plugin marketplace for iterating on personal agentic engineering infrastructure
+- **Role:** Infrastructure
+- **Joined:** 2026-03-28T06:21:47.381Z
 
-**See history-archive.md for detailed entries.**
+## Learnings
 
-**Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
 <!-- Append learnings below -->
 
 ### 2026-03-28 — Recon: Prior Infrastructure & Community Practices
@@ -165,43 +161,11 @@
 **For you:** If your work depends on Eureka design decisions, those are now stable. Cross-refs and canonical values are in .squad/decisions.md (Cycle 1 + Cycle 3 sections).
 
 **Commits:** f68873d (cycle 2 fix wave) + 37370f9 (cycle 3 cleanup).
-## Session: 2026-05-28 Wave 6 Tail — WI-B Scope Locked (Deferred)
 
-**Status:** Queued — awaiting WI-A merge
+---
 
-- Issue #11 scope split approved: WI-A (Cairn code), WI-B (coordinator dispatch policy change)
-- WI-B assigned to Gabriel (Infrastructure/Coordinator)
-- WI-B is intentionally deferred until WI-A merges (correctness dependency)
-- WI-B scope: Coordinator uses \git worktree add\ per-issue instead of shared checkout
+📌 **2026-05-29: Eureka Cycle 1 Review — F7 (eslint guardrail) completed** — Code panel finding F7 (import encapsulation guardrail). Added eslint no-restricted-imports rule to packages/eureka/ to prevent accidental imports of internal functions and test utilities. Rule blocks non-exported compositeScore (pre-fix regression guard), private fixtures, and non-public ClockProvider implementations. All packages pass eslint. Commit 27ff2af. — Scribe
 
-**Blocked on:** WI-A merge (Roger's implementation + Laura's tests)
+---
 
-**Next:** Start WI-B after WI-A is merged to main.
-
-### 2026-05-29 — WI-B Implementation: Coordinator Worktree Dispatch
-
-**Delivered:** Made the Pre-Spawn: Worktree Setup section in squad.agent.md (+ 2 template mirrors) enforced rather than aspirational.
-
-**Was the Pre-Spawn section really aspirational?**
-Yes — it used "should" language, omitted error handling entirely, and had no status marker. A coordinator following it literally would have done the right thing on the happy path but had no guidance for failure modes (lock files, permission errors, wrong-branch reuse, junction failures). The v0 state was documentation-only in practice.
-
-**Key implementation decisions:**
-- Activation: opt-in via `SQUAD_WORKTREES=1` (env-var only, v1). Config-based activation (`worktrees: true`) was removed from Pre-Spawn step 1 to match v1 scope, with a v2 note added to Worktree Lifecycle Management.
-- Fallback on error: errors fall back to main repo rather than aborting. Skeptic persona raised "fail-closed" as an option; rejected because a broken worktree setup should not block legitimate work in v1. Documented trade-off in decision inbox.
-- Parallel dispatch: warning-only with `list_agents` as the detection hint. Full state-tracking mechanism is v2.
-
-**Surprises in template structure:**
-- The two template mirrors (`.squad/templates/squad.agent.md.template` and `.squad/templates/squad.agent.md`) differ in 38 lines pre-existing (no `name:` field, no `CURRENT_DATETIME` in lightweight template in the plain version). The changed sections landed byte-identical as required.
-- The only difference between primary and `.template` is 2 version-stamp lines — expected.
-
-**Persona review findings (Code Panel, 4 personas):**
-- 12 findings captured; 11 accepted, 1 rejected (fail-closed activation)
-- Key fixes applied: {worktree}/{path} variable inconsistency, branch-mismatch dead end in step 2b, {branch} derivation in Cleanup, rmdir /s hazard warning, rm -f for Unix, activation section v1 note, YAML-style notation fix, {% if %} manual handling clarification, lightweight pre-render note substance
-
-**Files modified:**
-- `.github/agents/squad.agent.md`
-- `.squad/templates/squad.agent.md.template`
-- `.squad/templates/squad.agent.md`
-
-**Pattern extracted:** Worktree-junction cleanup recipe (rmdir before git worktree remove) documented as `.squad/skills/worktree-junction-cleanup/SKILL.md`
-
+**Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
