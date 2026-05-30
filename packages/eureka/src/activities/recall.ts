@@ -125,7 +125,17 @@ export function compositeScore(fact: RecallResult, nowMs: number): number {
   const recency = Math.max(0.1, Math.pow(1 + tDays, -0.5));
 
   const rawScore = 0.50 * relevance + 0.20 * importance + 0.20 * fact.trust + 0.10 * recency;
-  const multiplier = ATTENTION_MULTIPLIERS[fact.attentionTier];
+
+  // Runtime guard: TypeScript union narrows compile-time callers, but RecallResult values
+  // arrive from SQLite at runtime and may carry unrecognized tier strings (legacy casing,
+  // future migration, malformed row). Unknown tier → NaN-poisoned sort (F1 analogue).
+  // Stderr warn preserves MCP stdio compatibility; default 1.0 matches warm-tier identity.
+  let multiplier = ATTENTION_MULTIPLIERS[fact.attentionTier];
+  if (multiplier === undefined) {
+    console.warn(`[eureka.recall] Unknown attention_tier '${fact.attentionTier}' — defaulting to 1.0 multiplier. Validate at FactStore boundary.`);
+    multiplier = 1.0;
+  }
+
   return rawScore * multiplier;
 }
 

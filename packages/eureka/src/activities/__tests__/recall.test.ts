@@ -27,7 +27,7 @@
  * fact-store.contract.test.ts (to be written in M2).
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { recall, compositeScore } from '../recall.js';
 import type { RecallResult } from '../recall.js';
 import type { SessionId } from '@akubly/types';
@@ -424,5 +424,79 @@ describe('recall', () => {
     ]);
 
     expect(withRanker.map(r => r.content)).toEqual(withoutRanker.map(r => r.content));
+  });
+
+  // ---------------------------------------------------------------------------
+  // F7 — runtime attentionTier guard: unknown tier → finite score + stderr warn
+  // ---------------------------------------------------------------------------
+  //
+  // RecallResult.attentionTier is typed 'hot'|'warm'|'cold', but values arrive
+  // from SQLite at runtime and bypass TypeScript narrowing. An unrecognized tier
+  // (e.g., legacy 'Hot', future migration value, malformed row) produces
+  // ATTENTION_MULTIPLIERS[unknown] === undefined → rawScore * undefined → NaN
+  // → sort corruption (same failure mode as F1 negative-tDays guard).
+  //
+  // Fix (option a): default unknown tier to 1.0 multiplier + stderr warn.
+  // MCP stdio compatibility: warn goes to stderr, not stdout.
+  // Option (b) — boundary validation at FactStore — deferred to Crispin's impl.
+
+  describe('runtime attentionTier guard (F7)', () => {
+    let warnSpy: ReturnType<typeof vi.spyOn>;
+
+    afterEach(() => {
+      warnSpy?.mockRestore();
+    });
+
+    it('compositeScore returns finite value and emits stderr warn for unknown tier (F7)', () => {
+      warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const score = compositeScore(
+        // 'Hot' (title-case) is not in the union — cast via `as any` to simulate a
+        // runtime row that bypasses TypeScript narrowing at the storage seam.
+        { content: 'legacy fact', trust: 0.7, attentionTier: 'Hot' as any },
+        1_000_000_000_000,
+      );
+
+      // Score must be finite and non-NaN (warm-tier fallback: multiplier 1.0)
+      // raw = 0.50×0 + 0.20×0 + 0.20×0.7 + 0.10×0.1 = 0.15  → finalScore = 0.15 × 1.0 = 0.15
+      expect(Number.isFinite(score)).toBe(true);
+      expect(score).toBeGreaterThan(0);
+
+      // Stderr warning must be emitted with tier name and guidance
+      expect(warnSpy).toHaveBeenCalledOnce();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[eureka.recall] Unknown attention_tier \'Hot\''),
+      );
+    });
+
+    it('recall() with unknown-tier fact returns sane result, not NaN-corrupted ordering (F7)', async () => {
+      warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const BASE_MS = 1_000_000_000_000;
+      const stubClock = { now: () => BASE_MS };
+
+      const factStore = {
+        search: vi.fn().mockResolvedValue([
+          // Known tier — ranks normally
+          { content: 'Known-tier fact',   trust: 0.9, attentionTier: 'hot'  as any, lastAccessed: BASE_MS },
+          // Unknown tier 'Hot' (legacy casing) — must not NaN-corrupt the sort
+          { content: 'Unknown-tier fact', trust: 0.3, attentionTier: 'Hot'  as any, lastAccessed: BASE_MS },
+        ]),
+      };
+
+      const results = await recall(
+        { query: 'unknown tier test', sessionId, k: 2 },
+        { factStore, clock: stubClock },
+      );
+
+      // Both facts must appear; no NaN corruption (NaN-poisoned sort yields non-deterministic length or order)
+      expect(results).toHaveLength(2);
+      expect(results.every(r => !Number.isNaN(r.trust))).toBe(true);
+      // Higher-trust known-tier fact ranks first (both have tDays=0, so recency=1.0 for both)
+      expect(results[0].content).toBe('Known-tier fact');
+
+      // Warn fired once (for the unknown-tier fact)
+      expect(warnSpy).toHaveBeenCalledOnce();
+    });
   });
 });
