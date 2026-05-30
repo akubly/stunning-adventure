@@ -210,6 +210,46 @@
 
 ---
 
+### 2026-05-29: Cycle 1 Code Panel Review — F1/F2/F3/F4/F5/F9/F10/F12 Implementation
+
+**Event:** 5-persona Code Panel reviewed commit ea05e62 (M4 GREEN). Findings triaged and implemented in one commit (0f83dcf) on eureka/v1-m1-m4.
+
+**Status:** ✅ COMPLETE — 7 findings accepted, 1 escalated (F6), 1 deferred with comment (F12). All tests pass.
+
+---
+
+## Learnings
+
+### 2026-05-29: Cycle 1 Review — Key Design Decisions
+
+**F4: Sibling function vs debug flag (design choice rationale)**
+
+Chose option (a) — `recallWithScores()` as a sibling function; `recall()` as a thin wrapper that strips scores.
+
+Option (b) (debug flag: `RecallOptions.debug?: boolean`) would create a union return type that callers must narrow at runtime. The sibling function pattern gives each concern its own stable, non-overloaded type signature. `recallWithScores` is the computational truth; `recall` is the convenience alias for callers that only need facts. This separation also makes the future `Ranker` injection seam cleaner — both `recall` and `recallWithScores` go through the same underlying function.
+
+Lesson: When a function's return type depends on a runtime flag, prefer two named functions over an overloaded/flagged signature. Type clarity is worth the minor duplication.
+
+**F9: Ranker seam shape locked**
+
+`Ranker = (facts: RecallResult[], deps: { nowMs: number }) => ScoredResult[]`
+
+Receives trust-filtered candidates (not raw candidates — trust filtering is a recall invariant, not a ranker concern). Returns scored results in any order (sorting and slicing to k remain in `recallWithScores`). This is the natural factoring from `compositeScore`'s shape: it maps one fact to a score, so a Ranker maps many facts to many scored results.
+
+Lesson: Ranker seams should operate on *already-filtered* candidates. Trust/tier filtering is a retrieval policy, not a ranking policy. Keeping these concerns separate makes custom rankers simpler and prevents them from accidentally bypassing trust floors.
+
+**F1/F3: Defensive math hardening pattern**
+
+Two related guards in `compositeScore`:
+1. **F1 (NaN guard):** `Math.max(0, tDays)` — clamps negative tDays from future `last_accessed` values. Without this, `Math.pow(1 + negativeValue, -0.5)` returns NaN, silently corrupting sort order.
+2. **F3 (stale-not-fresh semantics):** `tDays = Infinity` for absent `last_accessed` → `recency = 0.1` (floor). Previous code used `tDays = 0` (recency = 1.0), treating never-accessed facts as just-accessed — wrong direction.
+
+Together these define a hardened recency boundary: `tDays ∈ [0, Infinity)` regardless of input. Pattern: when a formula has a domain constraint (here: non-negative age), enforce it with a clamp at the input, not a special case inside the formula.
+
+Lesson: Document why `Infinity` is the correct sentinel for absent data (very stale, not just-accessed). The comment "never-accessed treated as very stale, not just-accessed" is load-bearing — future reviewers won't understand the `Infinity` choice without it.
+
+---
+
 ### 2026-05-28: Cycle 2 Fix Wave — §30 Canonical Resolutions Applied
 
 **Context:** Persona-review cycle 1 surfaced 19 findings (all accepted by Aaron). Edgar assigned 6 findings for §30 (heaviest load in fix wave). All fixes sourced from `squad-cycle1-canon.md`.
