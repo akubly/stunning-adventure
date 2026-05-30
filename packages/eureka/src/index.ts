@@ -5,5 +5,17 @@
  * First red test: recall (§55 §2.1, AC-1.3).
  */
 
-export { recall, recallWithScores, compositeScore } from './activities/recall.js';
-export type { RecallOptions, RecallDeps, RecallResult, FactStore, ClockProvider, ScoredResult, Ranker } from './activities/recall.js';
+export {
+  recall,
+  recallWithScores,
+  compositeScore,
+} from './activities/recall.js';
+export type {
+  RecallOptions,
+  RecallDeps,
+  RecallResult,
+  FactStore,
+  ClockProvider,
+  ScoredResult,
+  Ranker,
+} from './activities/recall.js';
