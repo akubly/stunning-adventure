@@ -1,3 +1,7 @@
+📌 **ADR-0019 CONTRIBUTION** (2026-05-30T194147Z): Wall-clock replay-determinism bug finding (independent convergence with Laura) elevated heuristic drop from "nice-to-have" to "non-negotiable." Architectural finding: offsets are load-bearing primitives; wall-clock time is informational metadata. This discovery directly led to Aaron's decision to implement always-prompt UX without automatic nudges. Capture for future: Protocol design with replay/determinism requirements must ground heuristics in logical time, not wall-clock.
+
+📌 Team update (2026-05-30T122215Z): **childSid Collision Hybrid Review COMPLETE** — Graham architectural review of Rosella's hybrid fork-or-resume protocol (Round 2). Verdict: APPROVE-WITH-CONDITIONS (3 conditions: parent-ledger ADR, replay test coverage, scheduler invariant check). Findings: parent append-only not violated (RFC+Decision is idiomatic), replay is unambiguous, scheduler unaffected, time-aware nudge needs principled basis (offset-based, not wall-clock). Decision inbox: graham-review-childsid-hybrid.md. — Scribe
+
 📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Graham (L3.5 Scheduler Phase 0.5 stub: Aaron ruled YES, FifoScheduler acceptable. Updated Phase 0.5 walking skeleton scope, acceptance signals, SchedulerDispatcher collaborator row). Coordinate with Laura on ADR template Acceptance Signals subsection adoption. — Scribe
 
 📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
@@ -18,6 +22,33 @@
 📌 Team update (2026-05-22T20:03:56Z): Wave 2 v3.1 scope final — autoApplyEligible propagates through OptimizationHint; constants NEGATIVE_IMPACT_AUTO_APPLY_GATE=-0.2 and ATTENUATION_FLOOR=0.1; CLI surface only — no MCP in Wave 2. — Graham Knight
 
 # Graham — History (Summarized)
+
+## Learnings
+
+### 2026-05-30: childSid Collision Hybrid Review
+
+**Context:** Rosella drafted a hybrid childSid collision design (user chooses fresh-vs-resume at fork time) as a follow-up to Pass A. Aaron requested architectural review focused on four areas: parent-ledger mutation, replay correctness, scheduler interaction, and time-aware nudge validity.
+
+**Key architectural insights:**
+
+1. **Parent-ledger mutation is idiomatic, not a violation.** Recording a Decision row in the parent's ledger when forking is structurally identical to the existing Question/Decision pattern (Question → user interaction → Decision). The fork-collision prompt is a Question emitted by the fork protocol; the user's fresh-vs-resume choice is a Decision. Both are user-driven commitments captured on the parent ledger. The parent doesn't need to be "active" for this append — "closed" means "no more work sessions," not "WAL is sealed." Forks are metadata operations, not work sessions. **No ADR needed if framed as RFC (Request for Choice) + Decision.** If Aaron wants explicit coverage, an ADR should clarify the "closed ≠ immutable for metadata appends" distinction.
+
+2. **Replay correctness is clean.** The Decision row at fork time records `chosenOption: 'fresh' | 'resume'` plus `existingChildSid` (if resume). Replay re-reads this Decision and follows the same path: if fresh, uses the recorded `childSid` (includes timestamp in preimage, so deterministic); if resume, appends to the existing child ledger starting at the resume offset. No ambiguity. Edge case: if user resumes A→50 twice (crash → resume → crash → resume again), the second resume is another Decision row on the parent ledger. Replay replays both resumes in order. **No hidden complexity.**
+
+3. **Scheduler is unaffected.** The L3.5 Scheduler (§5.A) operates on proposals within a session, not on fork metadata. Fork creation is an L1 protocol operation (§10.4) that happens before any session starts emitting proposals. The FifoScheduler stub (Phase 0.5) and WeightedRoundRobinScheduler (Phase 1) both assume proposals arrive from active generators; neither has fork-protocol awareness. The fork Decision row lives on the *parent* ledger, not the *child* ledger the scheduler will eventually see. **Zero scheduler coupling.**
+
+4. **Time-aware nudge needs principled basis.** Rosella's heuristic: "default to Resume if <1 hour, Fresh if >1 hour" uses wall-clock comparison (`now() - child.created_at_ns`). This is inappropriate in a system where replay is offset-based and timestamps are informational (§11.6 oracle masks them). Wall-clock time is not a load-bearing architectural primitive. **Better heuristic basis:** child's last-write offset + parent's growth since fork point. Example: if `(parent.currentOffset - child.forkPointOffset) < 10` and `child.turnCount < 5`, default to Resume (active work session). If `parent.currentOffset - child.forkPointOffset > 100`, default to Fresh (distant experiment). This is replay-stable and offset-grounded. Alternatively, drop the heuristic entirely and always prompt with neutral default (`F` or `R` depending on Aaron's UX preference).
+
+**Verdict:** APPROVE-WITH-CONDITIONS.
+
+**Three conditions:**
+1. **Parent-ledger append ADR (if Aaron wants it).** If the "closed parent can still receive fork Decisions" pattern feels like a hidden door, write ADR-00XX clarifying the "closed ≠ sealed for metadata" rule. Cite §10.4 fork protocol as the precedent (fork creates `fork_origin` on child, not Decision on parent — but hybrid adds the Decision-on-parent pattern). Alternative: frame as RFC+Decision (Question emitted by fork protocol, Decision captures user choice), which needs no ADR because it's idiomatic.
+
+2. **Replay test coverage.** Laura adds A-Fork-Collision test to §16 acceptance suite: (a) fork A at 50, choose fresh, close; (b) fork A at 50 again, choose resume on prior aborted child; (c) replay parent session; assert Decision rows replay deterministically and child sessions replay in correct order. This proves the Decision-recording mechanism doesn't introduce replay ambiguity.
+
+3. **Heuristic change or drop.** Replace wall-clock-based recency nudge with offset-based heuristic (parent growth + child turn count) OR drop it entirely and always prompt with neutral default. Wall-clock is not replay-stable. Document the chosen heuristic (or lack thereof) in §10.4.
+
+**Anti-anchoring check:** Considered rejecting the hybrid entirely (Option A timestamp-only is simpler). Rejected because Aaron's explicit request for user stories + "maybe give the user the option" signals he values the crash-recovery use case (US-2) enough to pay the hybrid cost. The three conditions above make the hybrid architecturally sound without adding hidden complexity.
 
 ## CTD Phase 4 Synthesis — FINAL Architecture-Design Gate (2026-05-28)
 

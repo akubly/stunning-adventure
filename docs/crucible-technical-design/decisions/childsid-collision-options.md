@@ -1,3 +1,7 @@
+**SUPERSEDED by ADR-0019 (2026-05-30)** — Aaron ruled in favor of the hybrid always-prompt design. See `docs/adr/0019-childsid-collision-hybrid.md`.
+
+---
+
 # childSid Collision — Determinism Options Analysis
 
 **Status:** DRAFT — awaiting Aaron ruling  

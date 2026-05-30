@@ -39,7 +39,7 @@ CREATE TABLE sessions (
   created_at_ns           INTEGER NOT NULL,           -- TimestampNs (bigint stored as INTEGER) at session creation
   bootstrap_manifest      TEXT NOT NULL,              -- JSON; R2-2 LOCK shape (see §10.2)
   plugin_versions         TEXT NOT NULL,              -- JSON; R2-6 LOCK lockfile verbatim (see §10.5)
-  status                  TEXT NOT NULL               -- 'active' | 'closed' | 'aborted'
+  status                  TEXT NOT NULL               -- 'active' | 'closed' | 'aborted' | 'resumed'
 );
 
 CREATE INDEX sessions_by_parent ON sessions(parent_session_id);
@@ -53,6 +53,20 @@ projects the R2-6 lockfile that was either resolved at install (root
 sessions) or inherited verbatim at fork (forked sessions). The L2 row is
 the cached lookup; if it diverges from L1, L1 wins and the projection is
 rebuilt.
+
+**Session state transitions (ADR-0019):**
+
+- `active` → `closed`: session exits cleanly via `runtime.closeSession()`
+- `active` → `aborted`: session terminates abnormally (crash, Ctrl-C, uncaught error)
+- `aborted` → `resumed`: fork protocol resumes an aborted session via `--resume` flag or user prompt choice
+
+**Closed sessions accept metadata appends (ADR-0019):** A session in
+`status='closed'` refuses **work-session appends** (new tool calls, LLM
+responses, generator proposals — any row that affects replay outcome) but
+accepts **metadata appends** (fork Decision rows, GC records, retention
+updates — audit-trail updates that do not affect session work content).
+This clarifies "closed ≠ sealed for metadata." The parent's ledger can
+receive a fork-collision Decision row even after the parent session closes.
 
 ## 10.2 `bootstrap_manifest` Shape (R2-2 LOCK)
 
@@ -120,10 +134,94 @@ A fork is created at `(parentSessionId, forkPointOffset)`. The protocol
 hash chain via the child's `prevRoot[1]` linkage (§3.2 "Forks") and the
 `fork_origin` synthetic Observation at child offset 0.
 
+**Collision handling (ADR-0019):** If a child session already exists at
+`(parentSid, forkPointOffset)` with `status='aborted'`, the protocol
+prompts the user to choose New (fresh session with timestamp-variant
+preimage) or Resume (continue the existing aborted session). The user's
+choice is recorded as a Decision row on the **parent's ledger** for
+replay determinism. Non-interactive contexts (CI, scripts) require
+explicit `--new` or `--resume` flags.
+
 ```pseudo
-SessionLedger.fork(parentSid: SessionId, forkPointOffset: CommitOffset) -> SessionId:
+SessionLedger.fork(parentSid: SessionId, forkPointOffset: CommitOffset, 
+                   options: {mode?: 'new'|'resume', interactive?: boolean}) -> SessionId:
   parentRow := readByOffset(parentSid, forkPointOffset - 1)   # row at fork-point - 1
-  childSid := blake3('crucible:session:' || parentSid || ':' || forkPointOffset)
+  
+  # Collision detection (ADR-0019):
+  existingChild := sessions.query({parent_session_id: parentSid,
+                                   fork_point_offset: forkPointOffset,
+                                   status: 'aborted'})
+  
+  if existingChild != NULL:
+    # Collision detected — determine user choice
+    if options.mode == NULL:
+      # No explicit flag provided
+      if options.interactive && stdin.isTTY:
+        # Interactive prompt (TTY detected)
+        relativeTime := formatRelative(now_ns() - existingChild.created_at_ns)  # "3 days ago"
+        choice := promptUser({
+          message: "Session fork collision detected.",
+          details: {
+            parent: parentSid,
+            forkPoint: forkPointOffset,
+            existingChild: existingChild.session_id,
+            status: existingChild.status,
+            turns: countTurns(existingChild.session_id),
+            createdAt: existingChild.created_at_ns,
+            relativeTime: relativeTime,
+          },
+          options: ['[N] New (clean slate)', '[R] Resume (continue from abort)', '[C] Cancel']
+        })
+        if choice == 'C': exit(130)  # SIGINT convention
+        chosenMode := (choice == 'N') ? 'new' : 'resume'
+      else:
+        # Non-TTY or --no-interactive specified
+        error("Interactive prompt unavailable (TTY not detected). Use --new or --resume flag.", exitCode=2)
+    else:
+      # Explicit flag provided
+      chosenMode := options.mode
+    
+    # Record Decision row on PARENT ledger (ADR-0019)
+    decision := Decision{
+      kind: 'decision',
+      payload: {
+        question: 'Fork session at offset ' || forkPointOffset || '?',
+        chosenOption: chosenMode,
+        alternatives: ['new', 'resume'],
+        evidence: {
+          rationale: (options.mode != NULL) ? '--' || chosenMode || ' flag provided' : 'user selected ' || chosenMode || ' at prompt',
+          existingChildSid: existingChild.session_id,
+          collisionDetected: true,
+          collisionDetectedAt: now_ns(),
+        }
+      }
+    }
+    AppendProtocol.append(parentSid, [decision])  # write to PARENT ledger
+    
+    if chosenMode == 'resume':
+      # Resume existing aborted session
+      resumeRow := Observation{
+        subKind: 'fork_resume',
+        body: {
+          parentSessionId: parentSid,
+          forkPointOffset: forkPointOffset,
+          resumedAt: now_ns(),
+          abortedAt: existingChild.updated_at_ns,
+          turnCountAtAbort: countTurns(existingChild.session_id),
+        },
+        flags: { ... },
+      }
+      AppendProtocol.append(existingChild.session_id, [resumeRow])  # append to CHILD ledger
+      sessions.update(existingChild.session_id, {status: 'resumed'})
+      return existingChild.session_id
+  else:
+    # No collision — default to fresh fork
+    chosenMode := 'new'
+  
+  # Fresh fork (new session)
+  # Preimage includes timestamp for collision avoidance (ADR-0019)
+  created_at := max(now_ns(), parentRow.timestampNs + 1)
+  childSid := blake3('crucible:session:' || parentSid || ':' || forkPointOffset || ':' || created_at)
   segment := createSegment(childSid, segment0=true)
 
   # Child offset 0 = synthetic fork-origin Observation (§3.2):
@@ -144,10 +242,18 @@ SessionLedger.fork(parentSid: SessionId, forkPointOffset: CommitOffset) -> Sessi
                    fork_point_event_id: parentRow.selfRoot,
                    fork_point_offset: forkPointOffset,
                    schema_version: parent.schema_version,
-                   created_at_ns: max(now_ns(), parent.timestampNs_at(forkPointOffset - 1) + 1),
+                   created_at_ns: created_at,
                    bootstrap_manifest: parent.bootstrap_manifest,   # by-reference COW (R2-2)
                    plugin_versions:    parent.plugin_versions,      # verbatim copy (R2-6)
                    status: 'active'})
+  
+  # Record Decision row on PARENT ledger if collision was checked (ADR-0019)
+  if existingChild != NULL:  # collision path, already recorded above
+    # (decision row already written in collision branch)
+  else:
+    # No collision — optional: record "fork created, no collision" Decision for audit trail
+    # (Implementation choice: may omit Decision row if no collision; replay follows childSid in sessions table)
+  
   return childSid
 ```
 

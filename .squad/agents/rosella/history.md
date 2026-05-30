@@ -1,4 +1,8 @@
+📌 **ADR-0019 LANDED** (2026-05-30T194147Z): End-to-end execution of Aaron's childSid collision hybrid ruling. All 10 design points incorporated (no deviations): dropped wall-clock heuristic, always-prompt UX, "New" naming, non-TTY exit code 2, flags (--new/--resume/--no-interactive/--label), Decision row in parent ledger, preimage rules, fork_resume Observation, both flag+verb, closed-session metadata append clarification. 7 CTD files edited (§10.4/§10.1/§6.3/§13.1/§16.9 + 2 options docs marked SUPERSEDED). 8 A-Fork-* acceptance scenarios added. Artifact: docs/adr/0019-childsid-collision-hybrid.md (14.8 KB, 315 lines, comprehensive). Skill captured: cross-persona-review yields replay-bug catch (multi-lens design surfaces correctness violations).
+
 📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Rosella (7/7 items: C-8→C-9 conformance + trust-tier persistence + Pareto budget + `alternatives[]` bounding + invocation-stack cache + 2 options docs PA-B4/childSid awaiting Aaron). Coordinate with Laura on C-9 + Gabriel on PA-B4 Option B router protocol. — Scribe
+
+📌 Team update (2026-05-30T12:05:19Z): **PA-B4 Option A Landed + childSid Round 2 User Stories** — Aaron accepted PA-B4 Option A (ancestry-aware reads). 5 CTD edits: §7.3 ReadSetBuilder.ancestry(), §6.1 ReadSetRef.ancestryRefs[], §11.4 replay stitched-view logic, §7.A C-6b conformance, §7.F Eureka forward ref. Aaron requested childSid user stories; hybrid proposal created with 4 UX scenarios, CLI surface (`--fresh`/`--resume` flags + interactive prompt), determinism via Decision row. Recommendation: Hybrid lean, fresh-by-default. Awaiting Aaron ruling. — Scribe
 
 📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
 
@@ -277,6 +281,46 @@ See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-rev
 
 ## Learnings — Pass A Execution (2026-05-30)
 
+### PA-B4 Ancestry/Replay Divergence (Resolved)
+
+Aaron accepted **Option A: Unify ancestry-aware reads under one API**. Key insights:
+
+- **Replay correctness over ergonomics:** Option A's uniform capture in `causalReadSet.ancestryRefs[]` is more robust than Option B's discipline-based contract. Generators that cite parent EventIds MUST declare the read via `ReadSetBuilder.ancestry()`, or C-6b conformance test fails.
+- **§7.3 scoping rule:** `primitive(id)` and `projection(key)` are child-session-scoped by default. Forked sessions see only child ledger unless `.ancestry(ancestorSid, includeTransitiveParents)` is explicitly called.
+- **§11.4 replay semantics:** Replay re-feeds the same stitched view (parent + child) that live generators saw, keyed by read-set hash. Generators that omit `.ancestry()` replay with child-only context, matching their live emission. No divergence hazard.
+- **C-6b conformance test:** Property test resolves `evidence.citations[]` to session IDs and asserts parent sessions appear in `causalReadSet.ancestryRefs[]`. Coordinates with Laura's §16.9 C-9 acceptance signals (structural-proposal supersede).
+- **Eureka v1.5 forward ref (§7.F):** If Eureka analyzes multi-fork experiments, the adapter MUST call `.ancestry()`. Failure causes C-6b test failures and replay divergence. If Eureka only analyzes single-session data, no ancestry reads required.
+- **Migration cost low:** Forge v1 is `kind:'data'` only and doesn't fork. Curator doesn't fork. Eureka v1.5 is future scope, so v1 has no migration burden.
+
+### childSid Collision User Stories (Round 2)
+
+Aaron requested UX clarification after seeing original Options A/C doc, leaning toward **"give the user the option to start fresh or resume."** Generated 4 user stories:
+
+- **US-1 (Quick experiment, abort, retry):** Most common case — Aaron experiments, aborts, tries again. Option A (fresh) is seamless; Option C (resume) silently continues old session (surprising). Hybrid surfaces collision, lets Aaron choose.
+- **US-2 (Long-running fork, crash mid-session):** Strongest argument for Option C — automatic salvage of 200 decisions after crash. But crashes are rare if sessions close cleanly. Hybrid makes recovery explicit via `--resume` flag or prompt.
+- **US-3 (Side-by-side comparison):** Design-time workflow — fork at offset 50, run strategy X, fork at 50 again to run strategy Y. Option A enables naturally. Option C blocks (closed sessions immutable). Hybrid works if `--fresh` flag used.
+- **US-4 (Accidental resume):** Aaron aborted a fork 3 days ago, forgets, forks at 50 again expecting fresh. Option C silently resumes 3-day-old session (high surprise). Option A and Hybrid avoid this.
+
+**Dominant pattern:** US-1 and US-3 dominate frequency (experiments + comparisons). US-2 is valuable but rare. Fresh-by-default optimizes for common case; resume is opt-in.
+
+**Hybrid proposal:** CLI surface with `--fresh` / `--resume` flags + interactive prompt on collision. Default = `F` (Fresh) if aborted session >1 hour old, `R` (Resume) if <1 hour. Determinism preserved via Decision row in parent ledger recording user choice. Preimage = timestamp-variant for fresh, reuse existing `childSid` for resume.
+
+**Recommendation:** **Hybrid lean, fresh-by-default.** US-1/US-3 dominate; US-2 crash recovery preserved via explicit opt-in; US-4 accidental resume prevented; collision surfacing gives full visibility; Decision row preserves determinism for replay.
+
+### CTD Chapter Cross-References Learned
+
+- **§6.1 ReadSetRef schema:** Lives in `06-primitive-taxonomy.md`. Common envelope for all primitives. Adding fields here touches every generator.
+- **§7.3 ReadSetBuilder:** Lives in `07-generators-l3.md`. Helper class generators use to declare read edges. Fluent builder API.
+- **§7.A Conformance suite:** Property-based test suite (C-1 through C-9) that runs against any L3 adapter. Laura owns the runner (§5.3), Rosella owns the spec.
+- **§11.4 Replay protocol:** Lives in `11-hermetic-replay.md`. Re-feed loop procedure with oracle comparison. Bootstrap rehydration → re-feed → oracle comparison.
+- **§7.F Eureka forward ref:** v1.5 scope. Eureka is external library consumed via optional adapter. Must pass §7.A conformance suite.
+
+### Coordination Notes for Next Session
+
+- **Laura:** C-6b (ancestry-read completeness) sits alongside C-9 (structural-proposal supersede) in §7.A. Both are property tests that coordinate with §16 acceptance signals.
+- **Roger:** When Aaron rules on childSid hybrid, check §13.1 CLI verb consistency for `--fresh` / `--resume` flags. Also `crucible session resume <childSid>` verb.
+- **Gabriel:** No Router coordination needed for PA-B4. Ancestry reads are ReadSetBuilder-level (L3), not Router-level (L4). If Aaron had picked Option B, would need Router escalation protocol for `kind:'ancestry-dependent'` proposals.
+
 **Context:** Pass A triage went silent last session after long-lived background agent context limits. Picked back up this session per Aaron's ruling: OPTIONS DOCS FIRST on the two blockers (PA-B4 ancestry/replay, childSid collision) before he decides paths. Completed all 7 assigned Pass A items.
 
 ### Phase 1: Options Docs (BLOCKERS)
@@ -341,3 +385,55 @@ Proposed incremental stack cache mitigation for O(N) linear scan. `ReconstructIn
 - **Incremental derived-view caching:** The invocation-stack checkpoint cache is the first incremental L2 projection (EventLogProjector and Mirror Projector are full-scan per-commit). The checkpoint-interval pattern (cache every Nth row) generalizes to other expensive derived views (e.g., Pareto frontier history over time, trust-tier promotion timeline). Document as L2 optimization pattern.
 
 - **Pass A triage lessons:** Going silent mid-triage (stale context after long-lived background agents) was avoidable — should have surfaced "context limit approaching" signal earlier. Next time: proactively report partial progress + remaining items before context degrades.
+
+---
+
+## 2026-05-30: childSid Collision Hybrid Design — ADR-0019 Landed
+
+**Context:** Aaron ruled on the childSid collision hybrid design after 4-persona review (Graham/Valanice/Laura/Roger). All 4 reviews: APPROVE-WITH-CONDITIONS. Strong cross-persona convergence — Graham + Laura independently caught the same replay-determinism blocker (wall-clock heuristic violates hermetic replay).
+
+**Aaron's ruling:** Land the hybrid design. Drop wall-clock heuristic entirely. Always prompt on collision (TTY); never auto-default by age.
+
+**Work completed:**
+1. **ADR-0019 created** (docs/adr/0019-childsid-collision-hybrid.md) — comprehensive ADR documenting the always-prompt hybrid design with 10 design points, acceptance signals, security implications, resolved questions.
+2. **§10.4 fork protocol updated** — rewrote fork pseudocode with collision detection, interactive prompt UX, Decision row recording on PARENT ledger, preimage rules (timestamp variant for --new, reuse existing childSid for --resume), ork_resume Observation append.
+3. **§10.1 session state machine updated** — added borted → resumed transition; added status value 'resumed' to schema; added "closed ≠ sealed for metadata" clarification (closed sessions accept metadata appends, refuse work-session appends).
+4. **§6.3 Observation taxonomy updated** — added ork_resume sub-kind to Observation enum.
+5. **§13.1 CLI verb table updated** — updated crucible fork row with [--new | --resume] [--no-interactive] flags + collision handling description; added crucible session resume <sid> verb row (alternative path for resuming discovered aborted sessions).
+6. **§16.9 acceptance signals updated** — added 8 new acceptance scenarios (A-Fork-1 through A-Fork-8) covering all 4 user stories (US-1 quick retry, US-2 crash recovery, US-3 side-by-side, US-4 accidental resume prevention) plus replay determinism, non-TTY behavior, --no-interactive flag, direct resume verb.
+7. **Options docs marked as superseded** — prepended "SUPERSEDED by ADR-0019 (2026-05-30)" banner to both docs/crucible-technical-design/decisions/childsid-collision-options.md and docs/crucible-technical-design/decisions/childsid-collision-round2-user-stories.md.
+
+**10 design points landed (all incorporated per Aaron's synthesis):**
+1. ✅ Dropped wall-clock 1-hour heuristic entirely (Graham + Laura finding: replay-determinism violation)
+2. ✅ Always-prompt UX: TTY shows [N]ew / [R]esume / [C]ancel with relative time ("3 days ago") + ISO timestamp
+3. ✅ Naming: "New" instead of "Fresh" (Valanice finding: parallel structure with "Resume")
+4. ✅ Non-TTY behavior: exit code 2, error message "Interactive prompt unavailable. Use --new or --resume."
+5. ✅ Flags: --new | --resume mutually exclusive, --no-interactive, --label kept
+6. ✅ Determinism: Decision row in PARENT ledger with {chosenOption, existingChildSid, collisionDetectedAt}
+7. ✅ Preimage: timestamp variant for --new, reuse existing childSid for --resume
+8. ✅ Observation row: ork_resume sub-kind added to §6.3
+9. ✅ Keep both --resume flag AND crucible session resume verb (Roger finding: orthogonal workflows)
+10. ✅ Closed-session metadata appends: clarification added to §10.1 ("closed ≠ sealed for metadata")
+
+**Reviewer findings incorporated:**
+- **Graham (Architect):** Parent-ledger Decision row is idiomatic (RFC+Decision pattern); wall-clock heuristic inappropriate (replay-instability); L3.5 Scheduler has no coupling to fork protocol; recommend offset-based heuristic or drop entirely. **Outcome:** Dropped heuristic entirely per Aaron ruling.
+- **Valanice (UX):** "New" instead of "Fresh" (natural language + parallel structure); relative time ("3 days ago") critical for attention capture (US-4); 1-hour threshold is cognitive boundary but turn-count heuristic would strengthen it. **Outcome:** "New" naming adopted; relative time added to prompt spec; heuristic dropped per Aaron ruling (always-prompt with neutral presentation).
+- **Laura (Tester):** All 4 user stories are testable; replay determinism requires Decision row recording (covered); time-aware nudge requires logical-time injection (hermetic replay); ork_resume sub-kind required for ledger trace. **Outcome:** All findings incorporated; 8 acceptance scenarios added to §16.9; ork_resume added to §6.3.
+- **Roger (CLI):** --new/--resume flags consistent with CLI taxonomy; --disambiguator flag redundant (timestamp variant handles collision); TTY detection + exit codes required; keep both flag and verb (orthogonal use cases). **Outcome:** All findings incorporated; --disambiguator rejected; TTY/exit-code spec added to §10.4 pseudocode; both flag and verb documented in §13.1.
+
+### Key Learnings
+
+**Cross-persona review yields replay-bug catch:** Graham (Architect) and Laura (Tester) independently caught the same blocker — wall-clock heuristic (
+ow() - created_at_ns > 1 hour) violates hermetic replay because replay executes weeks/years after original run, causing threshold logic to flip. This is a **genuine correctness bug** that neither Rosella's original design nor Aaron's initial "maybe give the user the option" framing surfaced. The 4-persona review panel caught it via domain expertise convergence (Graham: "offsets are structural, wall-clock is informational"; Laura: "logical-time injection required for hermetic replay"). **Skill extraction candidate:** "cross-persona-review-yields-replay-bug-catch" — disciplined multi-lens review surfaces hidden determinism violations in protocol design.
+
+**"New" vs "Fresh" naming precision:** Valanice's "Fresh" → "New" critique is an example of CLI vocabulary precision work. "Fresh" is adjective modifying implicit noun; "New" is noun or verb (parallel with "Resume"). Both read as 3-letter words in prompt, so UX real estate unchanged. But "New session" / "Resume session" reads cleaner than "Fresh session" / "Resume session". Small precision wins compound in tired-engineer usability.
+
+**Idiomatic Decision-row pattern recognized:** Graham's finding that parent-ledger Decision row is **idiomatic** (not a violation of append-only or closed-session invariants) is a load-bearing architectural insight. The fork-collision Question/Decision pattern is structurally identical to existing RFC (Request for Choice) patterns in Crucible. This framing makes the hybrid design cheaper — no new ADR for "closed ≠ sealed" (just a one-line clarification), no new primitive or envelope field. Reuse existing Question/Decision primitives.
+
+**Always-prompt as training wheels:** Valanice's "interactive prompt is training wheels that teach the fork model" framing is the UX justification for dropping the heuristic. After 2-3 collisions, Aaron learns the pattern and graduates to explicit flags (--new/--resume). The prompt never blocks power users (flags bypass it) but prevents silent data loss for default case (US-2 crash recovery without prior awareness). This is the **safety-by-default** design Aaron values.
+
+**Orthogonal flag vs verb workflows:** Roger's finding that crucible fork --resume and crucible session resume serve **orthogonal workflows** is a clean separation. Flag = "I know at fork time I want to resume"; verb = "I discovered an aborted session via crucible session list, resume it directly without forking". Both are first-class; neither is deprecated. This is better than forcing one canonical path.
+
+**Acceptance-signal vocabulary coordination:** Laura's 8 A-Fork-* scenarios use the same acceptance-signal vocabulary as §16.9's existing A1–A13 + C-9. This is disciplined test-strategy coordination — new scenarios extend the existing acceptance tier, not create a parallel vocabulary. Conformance-tier (C-*) vs acceptance-tier (A-*) distinction is preserved.
+
+**Options-docs-first discipline validated again:** PA-B4 (ancestry/replay) and childSid collision both used options-docs-first. Aaron's ruling on childSid came after 4-persona review of the hybrid proposal (Round 2 user stories doc). Options docs surface tradeoffs cleanly; reviews catch hidden bugs; ruling is defensible and auditable. This is the right forcing function for non-trivial design choices.

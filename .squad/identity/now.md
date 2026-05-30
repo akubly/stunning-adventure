@@ -1,7 +1,141 @@
 ---
-updated_at: 2026-05-30T07:36:38Z
-focus_area: Crucible CTD design review (Original Pass + Pass A) — 46 findings across 2 reviews, most addressed; Pass A COMPLETE, 2 options docs pending Aaron ruling
-previous_focus: Phase 4.6 Wave 2 ✅ COMPLETE — Change Vector Learning + Runtime Wiring (1199 tests, 9 work items, forge-prescribe CLI, negative-impact attenuation, hint dedup)
+updated_at: 2026-05-30T19:41:47Z
+focus_area: Implementation phase ready — Crucible CTD design review COMPLETE; ADR-0019 (childSid hybrid) landed; next: CLI + tests for fork protocol
+previous_focus: Crucible CTD design review (Original Pass 21 findings + Pass A 25 findings + childSid Round 2 4-persona convergence → ADR-0019)
+active_issues:
+  - "Phase 1: Monorepo restructuring ✅ COMPLETE"
+  - "Phase 2: Live runtime verification ✅ COMPLETE (5/5 modules)"
+  - "Phase 3: CopilotClient Integration ✅ COMPLETE (7 modules, 289 tests, 9-persona review)"
+  - "Phase 4: Export Pipeline ✅ COMPLETE (export/, DBOM persistence, 826 tests)"
+  - "Phase 4.5: Local Feedback Loop ✅ COMPLETE (990 tests, telemetry + DB + prescribers + applier + integration)"
+  - "Phase 4.6: Change Vector Learning ✅ COMPLETE (1153 tests, migration 012, CRUD, Curator, prescriber ranking, 3 ADRs, 39 commits, primitives-only model, compliance approved)"
+  - "Phase 4.6 Wave 2: Wire Curator change vectors to prescriber historicalVectors at runtime ✅ COMPLETE (1199 tests, ChangeVectorProvider, ForgePrescriberOrchestrator, autoApplyEligible gate, hint dedup, forge-prescribe CLI)"
+  - "Phase 4.6 Wave 3: Curator-driven prescriber orchestration (deferred, requires composition root ADR)"
+  - "DB Convention Standardization: explicit injection vs internal getDb() (deferred, repo-wide question)"
+  - "Phase 5: Cloud PGO + Full Graph — ROADMAP (docs/forge-phase5-roadmap.md, Azure budget prerequisite)"
+  - "#11 — Worktree-aware sessions (deferred)"
+  - "awesome-copilot submission (deferred)"
+---
+
+# What We're Focused On
+
+**🎯 Crucible CTD Design Review — COMPLETE (2026-05-30)**
+
+Original Pass + Pass A + childSid Round 2 all closed. ADR-0019 capstone artifact landed. Ready for implementation phase.
+
+## Session 2026-05-30 Summary
+
+Design review closed across three phases:
+- **Original Pass (2026-05-30 09:00 UTC):** 5-persona design panel yielded 21 findings
+- **Pass A (2026-05-30 11:00 UTC):** Fresh panel on chapters 5/7/8/9/10 yielded 25 findings
+- **childSid Round 2 (2026-05-30 19:41 UTC):** 4-persona review (Graham/Valanice/Laura/Roger) + Aaron synthesis → ADR-0019 landed + Rosella full execution
+
+## Key Cross-Persona Convergence
+
+**Wall-clock replay-determinism bug:** Graham (Architect) + Laura (Tester) independently caught the same blocker — time-aware heuristics must ground in logical time (offsets), not wall-clock. This finding elevated from "nice-to-have" to "non-negotiable drop." Protocol design principle captured for future: Hermetic replay requires deterministic basis; wall-clock time is informational metadata, not load-bearing.
+
+## ADR-0019: childSid Collision Hybrid
+
+**Status:** ✅ LANDED (comprehensive, 315 lines)
+
+**Capstone decision:** Always-prompt UX without automatic heuristics. User chooses Fresh vs. Resume via TTY prompt; explicit flags for CI/automation. Decision row recorded in parent ledger for deterministic replay.
+
+**10 design points incorporated (no deviations):**
+1. ✅ Dropped wall-clock heuristic entirely
+2. ✅ Always-prompt UX (no auto-timeout)
+3. ✅ "New" naming (parallel with "Resume")
+4. ✅ Non-TTY exit code 2 (protect automation)
+5. ✅ Flags: --new, --resume, --no-interactive, --label
+6. ✅ Decision row in parent ledger
+7. ✅ Preimage rules (timestamp for new, reuse for resume)
+8. ✅ `fork_resume` Observation sub-kind
+9. ✅ Keep both flag + `crucible session resume` verb
+10. ✅ Closed-session metadata append clarification
+
+**7 CTD files edited:**
+- ADR-0019 created (capstone)
+- §10.4 (fork protocol rewritten)
+- §10.1 (session state machine + metadata append)
+- §6.3 (observation taxonomy + fork_resume)
+- §13.1 (CLI verbs + flags)
+- §16.9 (8 A-Fork-* acceptance scenarios)
+- 2 options docs marked SUPERSEDED
+
+## Also Landed This Session
+
+**PA-B4: Ancestry-Aware Reads** — Option A (ReadSetBuilder.ancestry() API) landed in §7.3, §6.1, §11.4, §7.A. Replay protocol clarified; C-6b conformance property added; Eureka v1.5 forward reference documented.
+
+## Reviewer Findings Synthesized
+
+- **Graham:** Wall-clock bug (architectural), parent-ledger append pattern (idiomatic RFC+Decision), scheduler isolation
+- **Valanice:** Naming ("Fresh" → "New"), relative-time disclosure (UX salience), cognitive boundaries (1-hour threshold)
+- **Laura:** Wall-clock bug (replay determinism), 8 A-Fork-* acceptance scenarios, all user stories testable
+- **Roger:** TTY detection + exit codes (automation safety), dropped --disambiguator (redundancy), orthogonal workflows (flag+verb)
+
+All four reviewers: APPROVE-WITH-CONDITIONS. All conditions met in ADR-0019.
+
+## Skill Captured
+
+**cross-persona-review-yields-replay-bug-catch:** Multi-persona design review with distinct lenses (Architect, Tester, UX, CLI) independently surfaced replay-determinism correctness violation that single-reviewer design or unit tests alone would miss. Domain expertise + cross-lens convergence = high-confidence signal.
+
+---
+
+**Previous focus (Phase 4.5)** retained below for historical context.
+
+---
+
+**Phase 4.5: Local Feedback Loop** — SPECIFIED, ready for implementation
+
+Branch: TBD (branch from `main` after Phase 4 merge)
+
+Graham distilled the 2-round Phase 4.5 brainstorm (10 agents) into two spec documents:
+- `docs/forge-phase4.5-spec.md` — Full implementation spec for the local PGO engine
+- `docs/forge-phase5-roadmap.md` — Roadmap for Phase 4.6 (change vector learning), Phase 5 (cloud PGO), and wild cards
+
+**Phase 4.5 delivers:**
+- 3 new modules: `telemetry/` (5 files), `prescribers/` (4 files), `applier/` (3 files)
+- DB migration 011: `signal_samples`, `execution_profiles`, `optimization_hints` tables
+- Drift score computation (5 weighted signals, GREEN/YELLOW/RED classification)
+- 2 new prescribers: prompt optimizer + token optimizer
+- Optimization applier with SKILL.md v2 frontmatter extensions
+- Self-tuning strategy parameters
+- ~1200 LOC production, ~600-800 LOC tests, 61-80 estimated tests
+
+**Key design decisions:**
+- Determinism > Token Cost (Aaron's constraint — pervades all weights and priorities)
+- Collectors as HookObservers (no separate event bus)
+- Manual loop trigger in Forge, Curator-driven in Cairn
+- TelemetrySink abstraction bridges Phase 4.5 (LocalDBOMSink) → Phase 5 (AppInsightsSink)
+- FeedbackSource as new shared type in @akubly/types (first new shared type since Phase 2)
+- Canary bootstrap for cold start (gradual ramp from 0 → 3 → 5 → 10 sessions)
+
+**Work decomposition:** 4 streams. Alexander owns DB (6 items), Roger owns telemetry (7 items), Rosella owns prescribers + applier (8 items), Laura owns integration tests (5 items). 5 waves of parallelism.
+
+Branch: `main`
+
+Graham restructured Cairn into an npm workspaces monorepo with three packages:
+- `@akubly/types` — shared contract types
+- `@akubly/cairn` — observability + MCP tools + plugin infra
+- `@akubly/forge` — empty scaffold ready for SDK integration
+
+**Verification:**
+- ✅ All 427 tests pass
+- ✅ Clean build
+- ✅ Zero business logic changes
+- ✅ Shared types extracted and re-exported
+- ✅ Build order enforced via `tsc --build` project references
+
+---
+
+**Phase 2: Live Runtime Verification** — ✅ COMPLETE (5/5 modules, 608 tests)
+
+**Delivered Modules:**
+- ✅ Event bridge adapter (`packages/forge/src/bridge/`) — 22 SDK events → CairnBridgeEvent, provenance classification, payload extractors (22 tests)
+- ✅ Hook composer (`packages/forge/src/hooks/`) — HookComposer class with live observer set, error isolation (try/catch per observer) (20 tests)
+- ✅ Test infrastructure — vitest config, mock SDK factory, event factory, type assertion helpers (25 infra tests)
+- ✅ Decisions module (`packages/forge/src/decisions/`) — createDecisionGate, createDecisionRecorder, makeDecisionRecord (18 tests)
+- ✅ DBOM module (`packages/forge/src/dbom/`) — generateDBOM, computeDecisionHash, classifyDecisionSource, summarizeDecision, rootHash (33 tests)
+- ✅ Session module (`packages/forge/src/session/`) — ModelSnapshot, toModelSnapshot, ModelChangeRecord, ReasoningEffort (10 tests)
 active_issues:
   - "Phase 1: Monorepo restructuring ✅ COMPLETE"
   - "Phase 2: Live runtime verification ✅ COMPLETE (5/5 modules)"

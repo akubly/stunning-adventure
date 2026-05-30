@@ -71,6 +71,10 @@ interface ReadSetRef {
   primitiveIds: EventId[];
   projectionKeys: string[];
   externalInputs: string[];       // hashed identifiers of out-of-ledger inputs
+  ancestryRefs: Array<{           // PA-B4: ancestry-aware reads (§7.3, §10.4)
+    ancestorSid: SessionId;
+    transitiveDepth: number;      // 1 = direct parent only; -1 = full ancestry chain
+  }>;
 }
 
 interface HookOutcome { verdict: 'continue' | 'observe' | 'pause'; witness: string | null; }
@@ -148,7 +152,7 @@ interface QuestionPayload {
 |-------------|-----------|
 | Request     | `tool_call`, `llm_call`, `TaskStart`, `user_input` |
 | Artifact    | `tool_output`, `llm_output`, `synthetic_output` (M3) |
-| Observation | `system_prompt`, `tool_definitions`, `injected_memory`, `tool_output`, `llm_response`, `cross_session_memory`, `context_truncation`, `external_input`, `TaskEnd`, `monotonic_violation`, `structural_proposal_emitted`, `structural_proposal_acked`, `structural_proposal_rejected`, `structural_proposal_expired` |
+| Observation | `system_prompt`, `tool_definitions`, `injected_memory`, `tool_output`, `llm_response`, `cross_session_memory`, `context_truncation`, `external_input`, `TaskEnd`, `monotonic_violation`, `structural_proposal_emitted`, `structural_proposal_acked`, `structural_proposal_rejected`, `structural_proposal_expired`, `fork_origin`, `fork_resume` |
 | Decision    | (no sub-kind; differentiated by `commitmentMethod` + `nonDominatedReason`) |
 | Question    | (differentiated by `audience` + `expectedAnswerShape`) |
 

@@ -137,9 +137,20 @@ interface ReadSetBuilder {
   primitive(id: EventId): this;          // direct L1 read
   projection(key: string): this;          // L2 Salsa-mediated read
   externalInput(handleHash: string): this;// hashed identifier only
+  ancestry(ancestorSid: SessionId, includeTransitiveParents: boolean): this; // PA-B4: ancestor-session reads
   build(): ReadSetRef;
 }
 ```
+
+**Scoping rule (PA-B4):** `primitive(id)` and `projection(key)` are
+**child-session-scoped** unless ancestry is explicitly requested via
+`ancestry(ancestorSid, includeTransitiveParents)`. Generators invoked in
+forked sessions that need parent history MUST call `.ancestry()` to declare
+the read; §10.4 `LedgerWindowReader.readAncestry()` is the L1 primitive.
+During replay (§11.4), the stitched view is re-fed only for reads captured
+in `ReadSetRef.ancestryRefs[]` — generators that omit `.ancestry()` will
+produce incomplete proposals in forked sessions, but the failure mode is
+visible (missing citations, not silent replay divergence).
 
 Direct L1 reads are billed at full cost; projection reads through the L2
 Salsa cache are the cheap A3-replay path (Laura signoff: "L2↔L3
@@ -361,6 +372,7 @@ an adapter to be eligible for any tier above `external`.
 | C-4 | **Lifecycle ordering** | Spy asserts: `register` precedes `discover` precedes `start` precedes any `propose()`; `stop` precedes `teardown`; `stop` is idempotent. |
 | C-5 | **Registration / discovery** | Manifest is discoverable by `PluginRegistry.list()` after `register`; un-registers cleanly after `teardown`. Manifest SHA-256 is stable across reboots. |
 | C-6 | **`causalReadSet` completeness** | For every emitted proposal, every EventId / projection key / external input the adapter touched between `start` and emission appears in `causalReadSet`. Property test: stub the `LedgerWindowReader` and `Salsa` cache to record reads; assert read-set superset. (Laura A4 assertion mirrors this.) |
+| C-6b | **Ancestry-read completeness (PA-B4)** | For any generator invoked in a forked session that emits a proposal citing an `EventId` from a parent session in `evidence.citations[]`, that parent session MUST appear in `causalReadSet.ancestryRefs[]`. Property test: resolve citations to session IDs; assert parent sessions are captured. Coordinate with Laura (§16.9 C-9 acceptance signals). |
 | C-7 | **`dependentPaths` non-empty on structural** | Any `kind:'structural'` proposal with empty `dependentPaths[]` is rejected at the adapter boundary, not at Router. |
 | C-8 | **No Pareto axis zero-fill** | Adapter MAY emit a fitness map with a strict subset of declared axes; conformance fails if the adapter emits `0` (or any sentinel) for axes its `measurementSource` did not actually measure. |
 | C-9 | **Structural-proposal supersede contract** | Replacement proposals that trigger `scheduler_cancelled{reason:'superseded'}` MUST set `envelope.parentId` to the obsoleted proposal's EventId (§7.D item 6). The conformance suite rejects generators that emit supersede-replacement proposals without valid `parentId` lineage. Observable signal: the §5.A.2 Scheduler resolves `supersededBy` deterministically via `parentId`. Applies to both `StructuralProposalGenerator` and `DataProposalGenerator` when they supersede in-flight proposals. |
@@ -457,6 +469,14 @@ Crucible chamber (Aaron lock, 2026-05-27). The v1.5 Eureka adapter is a
 standard proposals; it MUST pass the §7.A conformance suite without any
 Eureka-specific test infrastructure (Q2 LOCK). Detailed adapter design is
 out of v1 scope — see **Appendix 7-E** below.
+
+**PA-B4 ancestry requirement:** If Eureka v1.5 analyzes multi-fork
+experiments and emits proposals citing parent-session data, the adapter MUST
+call `ReadSetBuilder.ancestry(ancestorSid, includeTransitiveParents)` to
+declare the read. Failure to capture ancestry reads will cause C-6b
+conformance test failures (§7.A) and produce replay divergence (§11.4).
+If Eureka v1.5 only analyzes single-session data, no ancestry reads are
+required.
 
 ## §7.6 Collaborator Name Alias Map (CTD ↔ Laura §3.4)
 

@@ -349,6 +349,15 @@ any TDD strategy content:
   Scheduler serializes correctly → Router receives proposals in hazard-safe
   order. Validates L3.5 tier (§5.A, ADR-0024) prevents race conditions between
   generators. Runnable against `ci:acceptance` per §16.1.
+- **A-Fork-1 through A-Fork-8 (ADR-0019 childSid collision hybrid):**
+  - **A-Fork-1 (Quick retry):** `crucible fork --at 50` + abort + `crucible fork --at 50 --new` → two distinct `childSid`s, both active/closed. Parent ledger records two Decision rows (one per fork attempt). Validates US-1 (quick experiment retry).
+  - **A-Fork-2 (Crash recovery):** `crucible fork --at 50` + crash + `crucible fork --at 50 --resume` → same `childSid`, `fork_resume` Observation row appended at resume point, `status='resumed'`. Validates US-2 (crash salvage).
+  - **A-Fork-3 (Closed session collision):** closed session + `crucible fork --at 10` → error unless `--new` flag provided. Validates that closed sessions don't auto-resume.
+  - **A-Fork-4 (Collision surfacing):** aborted session created 3 days ago + `crucible fork --at 50` (interactive TTY) → prompt shows "3 days ago" relative time + turn count. User presses 'N' or 'R'. Validates collision surfacing (US-4 prevention).
+  - **A-Fork-5 (Replay determinism):** replay parent session → Decision rows replayed in order → child sessions replay deterministically (new vs resume paths followed via recorded `chosenOption`). Validates §11 hermetic replay + Decision row commitment.
+  - **A-Fork-6 (Non-TTY behavior):** `echo "..." | crucible fork --at 50` (non-TTY stdin) → exit code 2, stderr: "Interactive prompt unavailable. Use --new or --resume." Validates script/CI safety.
+  - **A-Fork-7 (--no-interactive flag):** `crucible fork --at 50 --no-interactive` without `--new`/`--resume` → exit code 2. With flag: succeeds. Validates explicit opt-out of interactive prompt.
+  - **A-Fork-8 (Direct resume by session ID):** `crucible session resume <childSid>` (where `childSid` has `status='aborted'`) → resumes session, appends `fork_resume` row, updates `status='resumed'`. Idempotent. Validates alternative path for discovered aborted sessions.
 - **§6.1–§6.9 invariants:** runnable against `ci:invariants` per §16.2's
   surface bindings; proposition text stays in TDD §6.
 - **A9 determinism conformance:** runnable against `ci:conformance` via

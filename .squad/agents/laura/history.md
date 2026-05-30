@@ -1,3 +1,7 @@
+📌 **ADR-0019 CONTRIBUTION** (2026-05-30T194147Z): Wall-clock replay-determinism bug finding (independent convergence with Graham) + 8 A-Fork-* acceptance scenarios added to §16.9. Key insight: hermetic replay requires logical-time (offset), not wall-clock time. Multi-persona convergence on this correctness violation made the blocker non-negotiable. Test tier coverage: contract (A-Fork-1/2/3), component (A-Fork-4/6/7), acceptance (A-Fork-5/8). Capture for future: Cross-persona review with distinct lenses (Architect + Tester) surfaces correctness bugs that unit tests or single-reviewer design alone would miss.
+
+📌 Team update (2026-05-30T122214Z): **childSid collision hybrid review DONE** — Laura testability review complete. Verdict: APPROVE-WITH-CONDITIONS. Two required fixes: (1) time-aware default MUST use logical session time (replay-determinism landmine if wall-clock-dependent), (2) fork_resume Observation sub-kind needed in §6.3. Test coverage: 8 new acceptance scenarios (A-Fork-1 through A-Fork-8), all 4 user stories testable, replay determinism via Decision row recording. Review doc: `.squad/decisions/inbox/laura-review-childsid-hybrid.md`. Awaiting Aaron ruling on time-threshold vs. always-default-to-Fresh. — Laura
+
 📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Laura (C-9 conformance threading in §16.9 + ADR template with Acceptance Signals subsection). Coordinate with Rosella on C-9 forward-compatibility note; coordinate with Graham on ADR template socialization. All Pass A agents complete. — Scribe
 
 📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
@@ -15,6 +19,30 @@
 📌 Team update (2026-05-22T20:03:56Z): Wave 2 v3.1 scope final — autoApplyEligible propagates through OptimizationHint; constants NEGATIVE_IMPACT_AUTO_APPLY_GATE=-0.2 and ATTENUATION_FLOOR=0.1; CLI surface only — no MCP in Wave 2. — Graham Knight
 
 # Laura — History (Summarized)
+
+## 2026-05-30: childSid Collision Hybrid Review — Testability Focus
+
+**Role:** Testability review of Rosella's hybrid childSid collision design. Aaron requested team review before ruling; my focus: conformance test coverage + replay determinism.
+
+**Key findings:**
+
+1. **All 4 user stories are testable** (US-1 quick retry, US-2 crash recovery, US-3 side-by-side comparison, US-4 accidental resume). Each maps to clean acceptance scenarios (A-Fork-1 through A-Fork-8). No UX-only untestable stories.
+
+2. **Replay determinism via Decision row recording** — hybrid records fresh-vs-resume choice as Decision row in parent ledger. Load-bearing mechanism: replay reads `chosenOption` field and follows recorded path. Not ambiguous. Test outline: verify Decision row exists, contains correct `chosenOption`, and replay recreates/resumes same childSid.
+
+3. **Time-aware default is a replay-determinism landmine** — Rosella's design proposes 1-hour threshold (<1hr→Resume, >1hr→Fresh). If implemented naively (wall-clock `Date.now()`), replay diverges when executed days/weeks later. **CRITICAL FIX REQUIRED:** threshold calculation MUST use logical session time (`decisionTimestampNs` in Decision row), NOT wall clock. Cross-refs §6.9 Monotonic-Timestamps invariant and §11.6 replay oracle. Without this, replay breaks the §11.6 oracle — zero-tolerance concern.
+
+4. **Aborted-fork lifecycle tests** — two paths required: (a) abort→resume→complete (single contiguous ledger, `fork_resume` Observation marker at resume point), (b) abort→fresh-fork→both-coexist (distinct childSids, orphaned WAL directory, replay ignores orphan). Invariants: ledger continuity, status transitions (`active→aborted→resumed→closed`), parent linkage unchanged, offset sequence contiguous.
+
+5. **Acceptance Signals subsection draft** — minimal gate: 8 acceptance scenarios pass (`ci:acceptance`), Fork Lineage Transitivity invariant extended to aborted/resumed sessions, Decision row recording on every fork, CLI verb contracts (`--fresh`, `--resume`, no-flag-prompt), A9 determinism extended to fork-collision Decision rows. Observable signals: collision rate, user choice distribution, time-threshold effectiveness, orphaned session accumulation. Phase gate: Phase 0.5 collision detection + protocol-error (simplest), Phase 1 full hybrid CLI.
+
+**Verdict:** APPROVE-WITH-CONDITIONS. Two fixes required: (1) time-aware default MUST use logical session time (replay-determinism landmine if wall-clock-dependent — escalate priority), (2) `fork_resume` Observation sub-kind needed in §6.3 taxonomy (coordinate with Gabriel).
+
+**Next steps:** Rosella adds logical-time injection requirement to hybrid proposal; Gabriel adds `fork_resume` to §6.3 taxonomy; Roger ensures CLI uses session logical time, not `Date.now()`; Aaron rules on 1-hour threshold vs. always-default-to-Fresh (I lean toward always-Fresh, simpler mental model).
+
+**Key learning:** Time-aware defaults in interactive workflows are subtle replay-determinism hazards. Any decision that depends on "how long ago was X?" must inject logical time from session context, not read wall clock. The same pattern applies anywhere §11.6 replay oracle must reproduce user-facing prompts: if the prompt text changes based on computed recency ("3 days ago"), the recency calculation must be session-scoped logical time. Wall-clock dependency is replay divergence. This is the same class of hazard as §6.9 Monotonic-Timestamps invariant, but at the user-visible-prompt layer rather than the row-emission layer.
+
+**Decision drop:** `.squad/decisions/inbox/laura-review-childsid-hybrid.md`.
 
 ## 2026-05-28: CTD Phase 4 Honesty Amendments (§11 + §16) — FINAL
 

@@ -1,3 +1,5 @@
+📌 **ADR-0019 CONTRIBUTION** (2026-05-30T194147Z): UX findings incorporated: "Fresh" → "New" naming (non-negotiable for parallel structure with "Resume"), relative time disclosure ("3 days ago") as primary recency signal for tired-engineer persona (US-4 accidental resume prevention), turn-count heuristic consideration (evaluated and documented in Resolved Questions section). Naming change + relative-time disclosure became design requirements. Skill: Cognitive boundaries (1-hour threshold = Baddeley working memory model).
+
 📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Valanice (§9 Aperture edits ×4), Gabriel (Applier/infra ×3), Roger (CLI verbs ×2), Laura (test strategy + ADR template ×2), Rosella (Generators/branching ×7 + 2 options docs), Graham (L3.5 Phase 0.5 stub). Options docs PA-B4 + childSid awaiting Aaron ruling. Orchestration logs + session log + decisions merged. — Scribe
 
 📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
@@ -51,6 +53,34 @@ Phase 2 fan-out now unblocked. Full r2 locks in `.squad/decisions.md`.
 - Aaron's directive: "create the best output" as first principle, don't arbitrarily cap features
 
 ## Learnings
+
+### 2026-05-30: childSid Collision UX Review — Cognitive Boundaries and Disclosure Strength
+
+**Context:** Reviewed Rosella's hybrid childSid collision design (user-choice fork with fresh-by-default) for Aaron's ruling. Focus: user story coverage, 1-hour recency threshold, interactive prompt vs. flag, accidental resume prevention, naming.
+
+**Key Findings:**
+
+1. **User story coverage is accurate for Aaron's workflow.** US-1 (quick retry) and US-3 (side-by-side comparison) dominate frequency based on history.md evidence (iterative CTD review cycles, multi-persona panels, architecture comparisons). US-2 (crash recovery) is valuable but rarer. US-4 (accidental resume 3 days later) is edge case but high-consequence for "tired engineer" persona.
+
+2. **1-hour threshold is a real cognitive boundary, not magic number.** Aligns with working memory context window (~45-90 min). <1 hour = same work session (crash recovery). >1 hour = mental context switch (prevents accidental resume). Proposed strengthening: add turn-count heuristic (>=10 turns + recent = substantive work to salvage; <10 turns + recent = quick experiment to abandon).
+
+3. **Interactive prompt + flags is the right duality for Aaron's workflow.** Prompt is training wheels that prevent silent data loss (US-2 crash without awareness). Flags are power-user graduation for explicit intent (US-3 comparison, US-2 known recovery). "Tired engineer at midnight" persona *requires* prompt — showing state in-context (turn count, age) is safer than requiring flag memory.
+
+4. **Collision prompt needs stronger disclosure for US-4 prevention.** Current ISO timestamp (`created 2026-05-27T14:22:00Z`) requires mental arithmetic. Proposed: relative time as primary signal ("3 days ago"), absolute timestamp as secondary audit trail. Pre-computed salience prevents tired-user overlooking of stale session age.
+
+5. **"Fresh" naming is weak — recommend "New" / "Resume".** "Fresh" is adjective (lacks parallel structure with "Resume" verb). "New" is clear noun/verb, natural language ("new session" vs "resume session"), Crucible vocabulary-consistent. CLI flags: `--new` / `--resume`. Prompt shortcuts: `[N]` / `[R]` / `[C]`.
+
+**Pattern Learned:** Time-since-event disclosure is most effective in **relative human terms** ("3 days ago"), not absolute timestamps. ISO format is audit-trail precision, not attention-capture salience. For UX decisions where recency matters (cache staleness, session age, last-modified), always compute and display relative time as primary signal.
+
+**Impact on future work:** This review reinforced "defer disclosure" UX principle from 2026-05-28 work (§9.9 defer volatility). Strong disclosure = pre-computed salience (relative time, turn count, status) + in-context decision prompt. Weak disclosure = raw data (ISO timestamp, offset count) requiring user to compute meaning when tired.
+
+**Verdict:** APPROVE-WITH-CONDITIONS (naming change Fresh→New, relative time in prompt, consider turn-count heuristic).
+
+**Files reviewed:**
+- `docs/crucible-technical-design/decisions/childsid-collision-round2-user-stories.md`
+- `docs/crucible-technical-design/decisions/childsid-collision-options.md`
+
+**Decision written:** `.squad/decisions/inbox/valanice-review-childsid-hybrid.md`
 
 ### 2026-04-02: Phase 5 Decision — MCP Tool Naming and Vocabulary Contracts
 

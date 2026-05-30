@@ -5853,14 +5853,75 @@ Implemented Aaron's ruling on L3.5 Scheduler Phase 0.5:
 
 ---
 
-## Next Session Pass A Pickup
+---
 
-**Options docs awaiting Aaron ruling:**
-- PA-B4 ancestry/replay divergence: `docs/crucible-technical-design/decisions/pa-b4-ancestry-replay-options.md`
-- childSid collision: `docs/crucible-technical-design/decisions/childsid-collision-options.md`
+## Closed Decisions (This Session)
 
-**When Aaron rules:**
-1. Rosella implements chosen option for PA-B4 (Option A: add `ReadSetBuilder.ancestry()`; Option B: add `ancestry-dependent` category + Router escalation)
-2. Rosella implements chosen option for childSid (Option A: timestamp in preimage; Option B: protocol-error semantics; Option C: idempotent resume)
-3. Merge options docs to decisions.md as closed decisions
+### PA-B4: Ancestry-Aware Reads (CLOSED 2026-05-30)
+
+**Date:** 2026-05-30  
+**Author:** Rosella  
+**Ruling:** Aaron Kubly  
+**Status:** LANDED
+
+**Decision:** Option A — Unify ancestry-aware reads under one API (`.ancestry()` method on ReadSetBuilder).
+
+**Rationale:** Single, explicit API eliminates fork-scoped vs. ancestry-scoped ambiguity. Failure mode (missing parent data) is visible, not silent. Replay protocol clarified to re-feed ancestry reads via stitched-view logic.
+
+**Implementation:**
+- Added `ancestry(ancestorSid, includeTransitiveParents)` method to §7.3 ReadSetBuilder
+- Extended §6.1 ReadSetRef schema with `ancestryRefs[]`
+- Clarified §11.4 replay protocol (LedgerWindowReader.readAncestry())
+- Added property **C-6b (ancestry-read completeness)** to §7.A conformance suite
+- Documented Eureka v1.5 forward reference (future adapters MUST call `.ancestry()` if analyzing multi-fork data)
+
+**Files:** §7.3, §6.1, §11.4, §7.A, §7.F
+
+**Impact:** Ancestry reads now captured and replayed deterministically. C-6b property test validates completeness.
+
+---
+
+### childSid Collision: Hybrid Always-Prompt Design (CLOSED 2026-05-30)
+
+**Date:** 2026-05-30  
+**Author:** Aaron Kubly (synthesis of 4-persona review)  
+**Status:** LANDED — ADR-0019 created
+
+**Decision:** Hybrid fork-or-resume design with always-prompt UX, no automatic heuristics. User chooses via TTY prompt; explicit flags (--new, --resume) available for CI/automation.
+
+**Key Rulings:**
+
+1. **Drop wall-clock heuristic entirely** — Replay-determinism violation discovered by Graham (Architect) + Laura (Tester) independent convergence. Offsets are architectural primitives; wall-clock time is informational only.
+
+2. **Naming: "Fresh" → "New"** — Parallel structure with "Resume" (Valanice UX finding). Clearer natural language.
+
+3. **Always-prompt UX** — TTY detection: show `[N]ew / [R]esume / [C]ancel`. No auto-timeout; require explicit key press. Relative time ("3 days ago") as primary recency signal (tired-engineer persona).
+
+4. **Non-TTY behavior** — Exit code 2 + error message requiring explicit flag (protects CI/automation from silent data loss).
+
+5. **Flags:** `--new` (force timestamp-variant preimage), `--resume` (continue aborted session), `--no-interactive` (suppress prompt), `--label` (optional annotation). Drop `--disambiguator` (redundant).
+
+6. **Determinism:** Decision row in PARENT ledger captures user choice (fresh vs. resume). Replay follows recorded choice, not re-prompting.
+
+7. **`fork_resume` Observation sub-kind** — Records resume point when session is resumed after abort.
+
+8. **Keep both flag + verb** — `crucible fork --resume` + separate `crucible session resume <childSid>` (orthogonal workflows).
+
+9. **Closed-session metadata append clarification** — Closed sessions refuse work-session appends (tool calls, LLM responses) but accept metadata appends (fork Decisions, GC records, retention updates). Clarifies "closed ≠ sealed."
+
+**ADR:** `docs/adr/0019-childsid-collision-hybrid.md` (14.8 KB, 315 lines)
+
+**Files edited:** §10.4 (fork protocol), §10.1 (session state machine), §6.3 (observation taxonomy), §13.1 (CLI verbs), §16.9 (acceptance signals + 8 A-Fork-* scenarios), 2 options docs marked SUPERSEDED
+
+**Cross-persona convergence:** Graham (Architect) + Valanice (UX) + Laura (Tester) + Roger (CLI) + Rosella (Plugin Dev) all APPROVE-WITH-CONDITIONS. Independent Graham/Laura convergence on wall-clock determinism bug elevated blocker from "nice-to-have" to "non-negotiable drop."
+
+**Skill captured:** "cross-persona-review-yields-replay-bug-catch" — Multi-persona review with distinct lenses surfaces correctness bugs (replay-determinism violation) that single-reviewer design or unit tests alone would miss.
+
+---
+
+## Next Session Pickup
+
+**Status:** Crucible CTD design review is COMPLETE. Original Pass (21 findings) + Pass A (25 findings) + childSid Round 2 (ADR-0019 landed) all closed.
+
+**Next phase:** Implement childSid collision hybrid (CLI + tests) and PA-B4 (ancestry reads). ADR-0019 is the capstone design artifact for v1 fork protocol.
 
