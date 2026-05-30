@@ -720,3 +720,7 @@ SQLite + FTS5 is enough for v1. Graph DB / LMDB / vector store deferred until v1
 
 **Baseline preserved:** Cairn 26/26 ✅, Forge 24/24 ✅, tsc --build ✅.
 
+---
+
+📌 **2026-05-29: Eureka Cycle 1 Review — F8 (§40 doc alignment) completed** — Code panel finding F8 (technical specification update). Updated §40 (Data Persistence) documentation to reflect M4 required (non-optional) ClockProvider injection decision. Added callout: ClockProvider required in all RecallDeps; storage layer must support timestamp-indexed queries for recency ranking; synchronous clock reads required (<1ms latency). Updated Cairn test fixtures to reflect required clock assumption. Commit 342bea4. — Scribe
+

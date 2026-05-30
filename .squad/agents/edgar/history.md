@@ -532,3 +532,7 @@ The cascade now demands: trust score updates from feedback (§30 §2.3). The cur
 
 Laura owns M5 RED.
 
+---
+
+📌 **2026-05-29: Eureka Cycle 1 Review — 8 findings completed; F6 escalated** — Code panel review of ea05e62 produced 9 important + 5 minor findings. Accepted 7 (F1 NaN guard, F2 type exhaustiveness, F3 fallback logic, F4 export design, F5 JSDoc, F9 ranker seam, F10 index sig) + deferred F12 (TRUST_FLOOR hardcoding) with TODO comment. Escalated F6 (trust-filter undersupply / spec gap) to Cassima (PM) + Crispin (Knowledge Rep). All 4 regression tests added (F1, F2, F3). Eureka 7/7 ✅. Commit 0f83dcf. F6 escalation requires PM decision on exact-k semantics and FactStore contract refinement before implementation. — Scribe
+

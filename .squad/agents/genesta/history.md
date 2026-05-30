@@ -315,3 +315,7 @@
 
 **Baseline preserved:** Cairn 26/26 ✅, Forge 24/24 ✅, tsc --build ✅.
 
+---
+
+📌 **2026-05-29: Eureka Cycle 1 Review — Code panel completed; F6 escalation pending** — 5-persona Code Panel (correctness, skeptic, craft, compliance, architect) reviewed ea05e62 (recall.ts M4 wired). Produced 14 findings (9 important, 5 minor). 7 findings accepted + 4 fixers completed (edgar, laura, gabriel, roger). 1 finding deferred (F12 TRUST_FLOOR TODO). 1 finding escalated (F6 trust-filter undersupply / spec gap to Cassima + Crispin). Eureka 7/7 ✅. Session log: .squad/log/2026-05-30T06-01-40-eureka-cycle1-review.md. Decision drop: .squad/decisions/F6-recall-undersupply-escalation.md (merged into decisions.md). — Scribe
+

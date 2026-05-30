@@ -2456,6 +2456,309 @@ candidates = searchBM25(query)
 if tier_filter is provided:
   candidates = candidates.filter(f => f.tier in tier_filter)
 ```
+
+## Cycle 1 Review Disposition — recall.ts (ea05e62)
+
+**Author:** Edgar (Learning Systems Specialist)  
+**Date:** 2026-05-29  
+**Review source:** 5-persona Code Panel, commit ea05e62  
+**Branch:** eureka/v1-m1-m4
+
+---
+
+### Summary
+
+7 of 9 findings accepted and implemented. 1 escalated (spec gap). 1 deferred with comment.
+All tests pass; build clean.
+
+---
+
+### Finding Dispositions
+
+#### F1 — NaN on future last_accessed · **ACCEPTED**
+
+- **Change:** `Math.max(0, (nowMs - fact.last_accessed) / 86_400_000)` — clamps negative
+  tDays to zero so future-dated `last_accessed` values cannot produce NaN in `Math.pow`.
+- **Location:** `recall.ts:compositeScore()` — tDays computation.
+- **Regression tests added:**
+  - `compositeScore returns finite value when last_accessed is in the future (F1 — NaN guard)` — direct unit test on `compositeScore`.
+  - `recall with a future-dated fact produces sane ordering, not NaN-corrupted (F1)` — end-to-end ordering test with future `last_accessed`.
+
+---
+
+#### F2 — attention_tier typed as `string` · **ACCEPTED**
+
+- **Change:** `attention_tier: 'hot' | 'warm' | 'cold'` in `RecallResult`. `ATTENTION_MULTIPLIERS`
+  keyed as `Record<'hot' | 'warm' | 'cold', number>`. Removed `?? 1.00` fallback (now unnecessary
+  since the union type makes the lookup exhaustive at compile time).
+- **Regression test added:**
+  - `compositeScore produces finite positive scores for all attention_tier values (F2 exhaustiveness)` — runtime exhaustiveness check confirming all three tier values produce finite, positive scores with no `?? 1.00` fallback path.
+
+---
+
+#### F3 — tDays=0 fallback gives unaccessed facts MAX recency · **ACCEPTED**
+
+- **Change:** `last_accessed` absent → `tDays = Infinity` → `recency = 0.1` (floor). Previously
+  used `tDays = 0` which gave `recency = 1.0`, treating never-accessed facts as just-accessed.
+- **Comment added:** Inline explanation: "never-accessed treated as very stale, not just-accessed".
+- **Regression test added:**
+  - `fact with no last_accessed ranks below identical fact with recent last_accessed (F3)` — verifies
+    a never-accessed fact ranks below an identical fact with `last_accessed = BASE_MS`.
+
+---
+
+#### F4 — compositeScore not exported + scores discarded · **ACCEPTED**
+
+- **Design choice: option (a) — sibling `recallWithScores` function.**
+  `recallWithScores(options, deps): Promise<ScoredResult[]>` is the underlying function that
+  returns facts paired with their FR-2 scores. `recall(options, deps): Promise<RecallResult[]>`
+  becomes a thin convenience wrapper that calls `recallWithScores` and strips scores.
+  
+  **Rationale for (a) over (b):**  
+  Option (b) (debug flag: `RecallOptions.debug?: boolean`) conflates the return type contract
+  with a runtime flag, creating a union return type `Fact[] | ScoredResult[]` that callers must
+  narrow. Option (a) gives each concern its own function with a clear, stable type signature.
+  Separation of concerns is stronger: `recallWithScores` is the computational truth; `recall`
+  is the convenience alias. Adding a debug flag later is still possible without breaking either.
+
+- **New exports:** `compositeScore` (named), `ScoredResult` (interface), `recallWithScores` (named).
+- **Barrel updated:** `packages/eureka/src/index.ts` exports `recallWithScores`, `compositeScore`,
+  `ScoredResult`, `Ranker`.
+- **Existing test contract preserved:** All three existing tests use `recall()` — interface unchanged.
+
+---
+
+#### F5 — Stale JSDoc bullet · **ACCEPTED**
+
+- **Change:** Removed `- Recency-gradient decay over time (ClockProvider seam — §30 §2.4)` from
+  the `recall()` JSDoc "Not yet implemented" list. M4 wired the ClockProvider seam; the bullet
+  was stale. The two remaining deferred bullets are preserved:
+  - `lastAccessedAt / accessCount side effects (§10 §10.1)`
+  - `Trust score updates from feedback (§30 §2.1)`
+- **Note:** JSDoc was moved to `recallWithScores` (the new underlying function). `recall` gets
+  a shorter doc pointing callers to `recallWithScores`.
+
+---
+
+#### F6 — Trust filter undersupply · **ESCALATED**
+
+- **Action:** Researched §30 §1.2, §30 §2.3, §40. Spec is silent on overfetch policy — genuine
+  spec gap, not a §-tension.
+- **Decision drop:** `.squad/decisions/F6-recall-undersupply-escalation.md` (see below)
+- **Recommendation in drop:** Option (b) or (d) — push `trustFloor` into `FactStore.search()`.
+  Filtering belongs at the storage seam, not post-retrieval.
+- **Awaiting:** Cassima (product semantics), Crispin (FactStore contract).
+
+---
+
+#### F9 — Reserve `ranker?: Ranker` placeholder · **ACCEPTED**
+
+- **New type:** `Ranker = (facts: RecallResult[], deps: { nowMs: number }) => ScoredResult[]`
+- **Added to `RecallDeps`:** `ranker?: Ranker` (optional).
+- **Wired conditional in `recallWithScores`:**
+  ```typescript
+  const scored = ranker
+    ? ranker(trusted, { nowMs })
+    : trusted.map(f => ({ fact: f, score: compositeScore(f, nowMs) }));
+  ```
+- **No test added** for the injection path (no consumer needs it yet — seam is non-breaking).
+- **Barrel updated:** `Ranker` exported from `packages/eureka/src/index.ts`.
+
+---
+
+#### F10 — Remove `[key: string]: unknown` from RecallResult · **ACCEPTED**
+
+- **Change:** Removed index signature from `RecallResult`. The interface now has explicit typed
+  fields only: `content`, `trust`, `attention_tier` (union), `relevance?`, `importance?`, `last_accessed?`.
+- **Verification:** All test fixtures use only these explicitly typed fields — no fixture relied
+  on the index signature for extra fields. The stale schema comment in M3 test (referencing the
+  old `[key: string]: unknown` as a pass-through mechanism) was also removed.
+
+---
+
+#### F12 — Trust floor hardcoded · **DEFERRED WITH COMMENT**
+
+- **Change:** Added inline TODO comment at `TRUST_FLOOR`:
+  ```typescript
+  // TODO(M5+): configurable per-call trustFloor via RecallOptions. See decision drop edgar-recall-undersupply-escalation if filed.
+  ```
+- **No value change.** Connected to F6's resolution path (if (b)/(d) chosen, trustFloor becomes
+  a pass-through from `RecallOptions` which also resolves this).
+
+---
+
+### Build + Test Results
+
+**Build:** `npm run build` (tsc --build) → exit 0 ✅
+
+**Eureka (7 tests):**
+```
+✓ src/activities/__tests__/recall.test.ts (7 tests) 5ms
+  ✓ recall > surfaces keyword-overlapping entries at ≥80% precision
+  ✓ recall > ranks results by FR-2 composite formula descending (§30 §1.2)
+  ✓ recall > ranks recently-accessed fact above stale fact when clock is pinned (§30 §2.4)
+  ✓ recall > compositeScore returns finite value when last_accessed is in the future (F1 — NaN guard)
+  ✓ recall > recall with a future-dated fact produces sane ordering, not NaN-corrupted (F1)
+  ✓ recall > compositeScore produces finite positive scores for all attention_tier values (F2 exhaustiveness)
+  ✓ recall > fact with no last_accessed ranks below identical fact with recent last_accessed (F3)
+Test Files  1 passed (1)
+     Tests  7 passed (7)
+```
+
+**Cairn (609 tests):** 609 passed ✅  
+**Forge (647 tests):** 644 passed | 3 todo ✅
+
+---
+
+### §-Tensions Discovered During F6 Research
+
+- §30 §1.2, §30 §2.3, §40 are uniformly silent on overfetch policy. Not a tension between
+  two spec clauses — a genuine gap. The spec assumed a healthy corpus where sub-floor facts
+  are rare. No existing guardrail.
+
+---
+
+### Commit
+
+All changes in one commit on `eureka/v1-m1-m4`.  
+Commit message: `Eureka review cycle 1 fixes: F1,F2,F3,F4,F5,F9,F10,F12`  
+SHA: 0f83dcf
+
+---
+
+## F6 Escalation — recall() Trust-Filter Undersupply
+
+**Author:** Edgar (Learning Systems Specialist)  
+**Date:** 2026-05-29  
+**Origin:** F6 — Trust filter undersupply (Correctness+Craft finding, cycle 1 review of ea05e62)  
+**Status:** ESCALATED — awaiting PM (Cassima) + Knowledge Rep (Crispin) input  
+**Reviewers needed:** Cassima (product semantics), Crispin (FactStore contract)
+
+---
+
+### Problem
+
+`recall()` fetches exactly `k` candidates from `FactStore.search({ limit: k })`, then applies
+a trust floor filter (`trust >= 0.15`). When multiple candidates fall below the floor, the
+returned set silently shrinks to fewer than `k` results.
+
+```typescript
+// packages/eureka/src/activities/recall.ts:109,113
+const candidates = await factStore.search({ query, sessionId, limit: k });
+// ...
+const trusted = candidates.filter(f => f.trust >= TRUST_FLOOR); // may yield < k
+```
+
+Neither §30 §1.2 (recall algorithm) nor §30 §2.3 (trust dynamics) nor §40 specifies
+an overfetch policy. The spec documents the trust floor predicate but is silent on what
+`recall()` must do when that predicate thins the candidate set below `k`.
+
+**Observed failure mode:** A caller requests `k=5` and receives 2 results without any
+signal that the shortfall occurred. No error, no partial-result flag, no retry. The caller
+cannot distinguish "only 2 relevant facts exist" from "3 more facts exist but fell below
+the trust floor."
+
+---
+
+### Options
+
+#### (a) Overfetch with buffer: `limit: k * 3`
+
+Pass `limit: k * 3` to `FactStore.search()`. After trust filtering, slice to `k`.
+
+**Pros:** Simple. Likely yields full `k` in practice (low-trust facts are rare at steady state).  
+**Cons:** Wastes storage I/O (fetches 3× what is needed in the happy path). The multiplier
+`3` is a magic number with no principled derivation. Brittle if the corpus is dominated by
+low-trust facts (post-contemplate penalties, Path 2 ingest). Over-fetching obscures the
+real semantics of `k`.
+
+#### (b) Push trust floor into `FactStore.search()` as a query parameter
+
+Extend the search interface: `search({ query, sessionId, limit, trustFloor? })`.
+The storage layer (SQLite BM25 index) applies `WHERE trust >= trustFloor` before
+ranking and returning `k` results. The filter happens where the data lives.
+
+**Pros:** Semantically cleanest — storage returns exactly `k` post-filter results.
+Enables future index optimization (partial index on `trust >= 0.15`). Eliminates the
+over-fetch problem at source. Aligns with London-school seam discipline: FactStore.search()
+owns its own filtering contract.  
+**Cons:** Requires a FactStore interface change → Crispin's domain (§20 storage contract).
+Requires a FactStore contract test update (§55 §3.3).
+
+#### (c) Document as caller contract: "recall may return < k"
+
+Add JSDoc: `@returns up to k results; may return fewer if trust floor filters candidates`.
+No code change.
+
+**Pros:** Minimal. Honest about current behavior.  
+**Cons:** Callers cannot tell how many results were suppressed. UX: if the agent asks for
+`k=5` and gets 2, it has no signal to retry with lower trust floor or fallback. Brittle
+for downstream pipelines that assume exactly-k semantics.
+
+#### (d) Widen FactStore search interface to accept `trustFloor`
+
+Same as (b) but as an optional parameter: `search({ ..., trustFloor?: number })`. The
+storage layer applies it as a `WHERE` predicate only when provided.
+
+**Pros:** Backwards compatible — existing calls without `trustFloor` continue to work.
+FactStore implementors can choose to filter at SQL level or fall back to application-level
+filter for implementations that don't support it.  
+**Cons:** Optional parameter creates two code paths; implementors may implement inconsistently.
+Less precise than (b)'s mandatory contract.
+
+---
+
+### Recommendation
+
+**Option (b) or (d) — push the filter to where the data lives.**
+
+Layering rationale: trust filtering is a storage-level predicate (`WHERE trust >= 0.15`),
+not a post-retrieval concern. Doing it after `search()` returns results means we always
+fetch more than we need and silently discard. The correct seam is at `FactStore.search()`.
+
+Between (b) and (d): prefer **(b)** if Crispin can update the FactStore contract in the
+same sprint (clean, mandatory, testable via contract test). Prefer **(d)** as a temporary
+bridge if FactStore interface is frozen and backwards compatibility is required.
+
+Option (c) is the minimum viable mitigation if the sprint gate prohibits interface changes —
+at least it documents the behavior honestly so callers can handle partial results.
+
+Option (a) is discouraged: the multiplier is arbitrary, and the over-fetch cost compounds
+for callers with large `k` values (e.g., sweep pipelines).
+
+---
+
+### Inputs Needed Before Implementation
+
+1. **Cassima (PM):** Is "recall may return < k" acceptable caller contract for v1, or does
+   the product require exact-k semantics? Does user-facing UX depend on a full result set?
+
+2. **Crispin (Knowledge Rep / FactStore contract):** Can `FactStore.search()` accept a
+   `trustFloor` parameter in the next sprint? Would the SQLite implementation apply it as
+   a `WHERE` predicate before returning results? Contract test surface?
+
+3. **Laura (TDD):** If we go with (b)/(d), a new M5-adjacent RED beat is needed:
+   `recallWithScores()` with trust-depleted corpus still returns exactly `k` results.
+
+---
+
+### §-Tensions Discovered
+
+None — §30 §1.2, §30 §2.3, and §40 are uniformly silent on overfetch policy. This is a
+genuine spec gap, not a tension between two existing spec clauses. The silence likely
+reflects v1 assuming a healthy corpus where low-trust facts are uncommon.
+
+---
+
+### Related
+
+- F12: `TRUST_FLOOR` is currently hardcoded at 0.15. If this decision resolves toward
+  option (b)/(d), `trustFloor` becomes a pass-through from `RecallOptions`, which
+  also resolves F12's per-call configurability TODO.
+- `recall.ts:60`: `// TODO(M5+): configurable per-call trustFloor via RecallOptions.`
+
+---
+
 ## Archived Decisions
 
 See decisions-archive.md for Wave 1, Wave 2, Wave 3, and earlier Cycle 1 decisions.

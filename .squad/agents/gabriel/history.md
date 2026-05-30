@@ -161,3 +161,7 @@
 **For you:** If your work depends on Eureka design decisions, those are now stable. Cross-refs and canonical values are in .squad/decisions.md (Cycle 1 + Cycle 3 sections).
 
 **Commits:** f68873d (cycle 2 fix wave) + 37370f9 (cycle 3 cleanup).
+
+---
+
+📌 **2026-05-29: Eureka Cycle 1 Review — F7 (eslint guardrail) completed** — Code panel finding F7 (import encapsulation guardrail). Added eslint no-restricted-imports rule to packages/eureka/ to prevent accidental imports of internal functions and test utilities. Rule blocks non-exported compositeScore (pre-fix regression guard), private fixtures, and non-public ClockProvider implementations. All packages pass eslint. Commit 27ff2af. — Scribe

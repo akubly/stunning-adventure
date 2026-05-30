@@ -337,3 +337,7 @@ Added "Pitfalls" section to `.squad/skills/doc-references-respect-gitignore/SKIL
 
 **Status:** All 7 threads addressed. Follow-up note in drop file: "For future doc-cleanup sweeps, grep the WHOLE repo (including tracked .squad/* files) for the failure pattern, not just Copilot-flagged lines."
 
+---
+
+📌 **2026-05-29: Eureka Cycle 1 Review — F6 Escalation (product semantics) requires your input** — Code panel review of ea05e62 escalated F6 (trust-filter undersupply / spec gap). Finding: `recall()` may silently return fewer than k results when trust floor filters candidates. Caller has no signal to distinguish "only k results exist" from "k+ results exist but fell below trust floor." Spec (§30 §1.2, §30 §2.3, §40) is uniformly silent on overfetch policy. Escalated to you + Crispin (Knowledge Rep). Inputs needed: (1) Is "recall may return <k" acceptable caller contract for v1, or does product require exact-k semantics? (2) Does user-facing UX depend on full result set? Decision drop with 4 options (a–d) and recommendation: .squad/decisions/F6-recall-undersupply-escalation.md (merged into decisions.md). Awaiting your input. — Scribe
+

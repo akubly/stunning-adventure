@@ -363,3 +363,7 @@ Using `updated_at` for recency computation conflates **modification time** with 
 
 **Baseline preserved:** Cairn 26/26 ✅, Forge 24/24 ✅, tsc --build ✅.
 
+---
+
+📌 **2026-05-29: Eureka Cycle 1 Review — F6 Escalation (FactStore contract) requires your input** — Code panel review of ea05e62 escalated F6 (trust-filter undersupply). Finding: `recall()` fetches exactly k candidates, applies trust floor filter, silently returns <k results when trust-filtered. No signal to caller. Spec (§30 §1.2, §30 §2.3, §40) is silent on overfetch policy. Escalated to you + Cassima (PM). Recommendation: Push filter to FactStore.search() layer (option b) or add optional trustFloor parameter (option d). Inputs needed: (1) Can FactStore interface accept trustFloor parameter in next sprint? (2) Would SQLite implementation apply WHERE predicate before returning results? (3) Contract test surface? Decision drop: .squad/decisions/F6-recall-undersupply-escalation.md. Awaiting your input. — Scribe
+
