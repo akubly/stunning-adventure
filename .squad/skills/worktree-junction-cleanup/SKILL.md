@@ -12,7 +12,7 @@ When a git worktree has a `node_modules` junction (Windows) or symlink (Unix) li
 
 **Why:** Windows `git worktree remove` internally deletes the worktree directory, which recursively traverses junctions as real directories. This deletes the real `node_modules` from the main repo.
 
-**`rmdir /s` is also fatal:** If you try `rmdir /s {worktree}\node_modules` to clean up first, that also recursively deletes the target. Only plain `rmdir` (no `/s`) removes the junction without touching its target.
+**`rmdir /s` is also fatal:** If you try `rmdir /s "{worktree}\node_modules"` to clean up first, that also recursively deletes the target. Only plain `rmdir` (no `/s`) removes the junction without touching its target.
 
 ---
 
@@ -23,18 +23,18 @@ Before calling `git worktree remove`, always remove the `node_modules` junction/
 ```
 # Step 1: Remove node_modules junction/symlink ONLY
 # Windows — removes junction, does NOT touch main repo's node_modules:
-cmd /c "rmdir {worktree}\node_modules"
+cmd /c "rmdir `"{worktree}\node_modules`""
 
 # Unix — removes symlink, does NOT touch main repo's node_modules:
-rm -f {worktree}/node_modules
+rm -f "{worktree}/node_modules"
 
 # Step 2: Remove the worktree (safe now — no junction in the way)
-git worktree remove {worktree}
+git worktree remove "{worktree}"
 
 # Step 3: Delete the branch
 git branch -d {branch}
 # If {branch} is not already known, resolve it first:
-git -C {worktree} rev-parse --abbrev-ref HEAD
+git -C "{worktree}" rev-parse --abbrev-ref HEAD
 ```
 
 ---
@@ -43,12 +43,12 @@ git -C {worktree} rev-parse --abbrev-ref HEAD
 
 | Action | Windows Result | Unix Result |
 |--------|---------------|-------------|
-| `rmdir {worktree}\node_modules` (no /s) | ✅ Removes junction only | N/A |
-| `rmdir /s {worktree}\node_modules` | ❌ **Destroys real node_modules in main repo** | N/A |
-| `rm -f {worktree}/node_modules` | N/A | ✅ Removes symlink only |
-| `rm -rf {worktree}/node_modules` | N/A | ❌ **Destroys real `node_modules` if the symlink was already removed or never created — prefer `rm -f` which fails gracefully on real directories** |
-| `git worktree remove {worktree}` (junction present) | ❌ **Destroys real node_modules in main repo** | ✅ Safe (git doesn't follow symlinks) |
-| `git worktree remove {worktree}` (junction removed) | ✅ Safe | ✅ Safe |
+| `rmdir "{worktree}\node_modules"` (no /s) | ✅ Removes junction only | N/A |
+| `rmdir /s "{worktree}\node_modules"` | ❌ **Destroys real node_modules in main repo** | N/A |
+| `rm -f "{worktree}/node_modules"` | N/A | ✅ Removes symlink only |
+| `rm -rf "{worktree}/node_modules"` | N/A | ❌ **Destroys real `node_modules` if the symlink was already removed or never created — prefer `rm -f` which fails gracefully on real directories** |
+| `git worktree remove "{worktree}"` (junction present) | ❌ **Destroys real node_modules in main repo** | ✅ Safe (git doesn't follow symlinks) |
+| `git worktree remove "{worktree}"` (junction removed) | ✅ Safe | ✅ Safe |
 
 ---
 

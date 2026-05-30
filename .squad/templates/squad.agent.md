@@ -656,8 +656,8 @@ When worktree mode is enabled, the coordinator creates dedicated worktrees for i
 
 **Dependency management:**
 - After creating a worktree, link `node_modules` from the main repo to avoid reinstalling
-- Windows: `cmd /c "mklink /J {worktree}\node_modules {main-repo}\node_modules"`
-- Unix: `ln -s {main-repo}/node_modules {worktree}/node_modules`
+- Windows: `cmd /c "mklink /J `"{worktree}\node_modules`" `"{main-repo}\node_modules`""`
+- Unix: `ln -s "{main-repo}/node_modules" "{worktree}/node_modules"`
 - If linking fails (permissions, cross-device), fall back to `npm install` in the worktree
 
 **Reusing worktrees:**
@@ -669,12 +669,12 @@ When worktree mode is enabled, the coordinator creates dedicated worktrees for i
 **Cleanup:**
 - After a PR is merged, the worktree MUST be removed in this exact order:
   1. Remove the `node_modules` junction FIRST (before `git worktree remove`):
-     - Windows: `cmd /c "rmdir {worktree}\node_modules"` (removes the junction only, NOT the target)
-     - Unix: `rm -f {worktree}/node_modules` (removes the symlink only, NOT the target)
+     - Windows: `cmd /c "rmdir `"{worktree}\node_modules`""` (removes the junction only, NOT the target)
+     - Unix: `rm -f "{worktree}/node_modules"` (removes the symlink only, NOT the target)
      - ⚠️ Do NOT use `rmdir /s` on Windows — that recursively deletes the real `node_modules` in the main repo
      - ⚠️ Skipping step 1 on Windows will cause `git worktree remove` to delete the main repo's `node_modules`
-  2. Remove the worktree: `git worktree remove {worktree}`
-  3. Delete the branch: `git branch -d {branch}` (resolve `{branch}` via `git -C {worktree} rev-parse --abbrev-ref HEAD` if not already known)
+  2. Remove the worktree: `git worktree remove "{worktree}"`
+  3. Delete the branch: `git branch -d {branch}` (resolve `{branch}` via `git -C "{worktree}" rev-parse --abbrev-ref HEAD` if not already known)
 - Ralph heartbeat can trigger cleanup checks for merged branches
 
 ### Orchestration Logging
@@ -710,13 +710,13 @@ b. **Check if worktree already exists (MUST run before creating):**
        - `git pull` to sync latest changes
        - Verify `node_modules` exists in the worktree; if missing, run step (d) to re-link before continuing
        - Skip to step (e) — do NOT run `git worktree add`
-     - If branch does NOT match → log `[worktree-setup] stale worktree at {worktree} on wrong branch — removing` to history.md, run `git worktree remove {worktree}`, then proceed to step (c)
+     - If branch does NOT match → log `[worktree-setup] stale worktree at {worktree} on wrong branch — removing` to history.md, run `git worktree remove "{worktree}"`, then proceed to step (c)
    - If not found → proceed to step (c)
 
 c. **Create the worktree:**
    - Determine branch name: `squad/{issue-number}-{kebab-case-slug}` (derive slug from issue title if available)
    - Determine base branch (typically `main`, check default branch if needed)
-   - Run: `git worktree add {worktree} -b {branch} {baseBranch}`
+   - Run: `git worktree add "{worktree}" -b {branch} {baseBranch}`
    - Example: `git worktree add C:\src\squad-42 -b squad/42-fix-login main`
    - **Error handling:**
      - Lock file error (`fatal: ... is locked`) → wait 5s, retry once; if still failing, log to `.squad/orchestration-log/{timestamp}-worktree-failed.md`, set `WORKTREE_MODE` to `false`, fall back to main repo
@@ -725,10 +725,10 @@ c. **Create the worktree:**
 
 d. **Set up dependencies:**
    - Link `node_modules` from main repo to avoid reinstalling:
-     - Windows: `cmd /c "mklink /J {worktree}\node_modules {main-repo}\node_modules"`
-     - Unix: `ln -s {main-repo}/node_modules {worktree}/node_modules`
+     - Windows: `cmd /c "mklink /J `"{worktree}\node_modules`" `"{main-repo}\node_modules`""`
+     - Unix: `ln -s "{main-repo}/node_modules" "{worktree}/node_modules"`
    - **Error handling:** If linking fails (permissions, cross-device, or any error):
-     - Fall back: `cd {worktree} && npm install`
+     - Fall back: `cd "{worktree}" && npm install`
      - Log the fallback to `.squad/orchestration-log/{timestamp}-worktree-fallback.md`: `[worktree-setup] junction link failed — fell back to npm install in {worktree}`
 
 e. **Include worktree context in spawn:**
