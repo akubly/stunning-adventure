@@ -8,7 +8,7 @@
  * §30 §2.3 specifies event-driven trust mutation:
  *   Corroboration:   trust = min(1.0, trust + 0.10)
  *   Contradiction:   trust = max(0.0, trust - 0.10)
- *   User correction: trust = min(1.0, trust ± 0.30)
+ *   User correction: trust = min(1.0, max(0.0, trust + correctionDelta))
  *
  * Contract under test:
  *   Given a feedback event (type + currentTrust) and an injected TrustUpdater,
@@ -43,7 +43,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // M5: applyFeedback — trust mutation from event (GREEN as of M5).
 // M6-B: applyFeedbackById — not yet exported from recall.ts; importing produces `undefined`
 //        at runtime → "TypeError: applyFeedbackById is not a function" (correct M6-B RED).
-import { applyFeedback, applyFeedbackById } from '../recall.js';
+import { applyFeedback, applyFeedbackById, type FeedbackEvent } from '../recall.js';
 import type { SessionId } from '@akubly/types';
 
 /**
@@ -89,7 +89,7 @@ describe('applyFeedback', () => {
     expect(trustUpdater.update).toHaveBeenCalledWith({
       factId:    'fact-abc-001',
       sessionId,
-      trust:     0.70,
+      trust:     expect.closeTo(0.70, 5),
     });
   });
 
@@ -117,7 +117,7 @@ describe('applyFeedback', () => {
 
     // min(1.0, 0.95 + 0.10) = 1.0
     expect(trustUpdater.update).toHaveBeenCalledWith(
-      expect.objectContaining({ trust: 1.0 }),
+      expect.objectContaining({ trust: expect.closeTo(1.0, 5) }),
     );
   });
 
@@ -148,7 +148,7 @@ describe('applyFeedback', () => {
     expect(trustUpdater.update).toHaveBeenCalledWith({
       factId:    'fact-xyz-001',
       sessionId,
-      trust:     0.40,
+      trust:     expect.closeTo(0.40, 5),
     });
   });
 
@@ -177,7 +177,52 @@ describe('applyFeedback', () => {
 
     // max(0.0, 0.05 - 0.10) = 0.0
     expect(trustUpdater.update).toHaveBeenCalledWith(
-      expect.objectContaining({ trust: 0.0 }),
+      expect.objectContaining({ trust: expect.closeTo(0.0, 5) }),
+    );
+  });
+
+  // ===========================================================================
+  // F8 — Boundary idempotent: already-at-boundary cases must not drift outside [0,1]
+  // ===========================================================================
+  //
+  // Regression lock: clamp logic refactors must not allow trust to escape [0,1]
+  // when the input is already exactly at the boundary.
+
+  it('is idempotent at ceiling: corroboration at currentTrust=1.0 stays 1.0 (§30 §2.1)', async () => {
+    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+
+    await applyFeedback(
+      {
+        factId:       'fact-idempotent-ceil',
+        sessionId,
+        event:        'corroboration' as const,
+        currentTrust:  1.0,
+      },
+      { trustUpdater, clock: fixedClock },
+    );
+
+    // min(1.0, 1.0 + 0.10) = 1.0 — must not exceed ceiling
+    expect(trustUpdater.update).toHaveBeenCalledWith(
+      expect.objectContaining({ trust: expect.closeTo(1.0, 5) }),
+    );
+  });
+
+  it('is idempotent at floor: contradiction at currentTrust=0.0 stays 0.0 (§30 §2.1)', async () => {
+    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+
+    await applyFeedback(
+      {
+        factId:       'fact-idempotent-floor',
+        sessionId,
+        event:        'contradiction' as const,
+        currentTrust:  0.0,
+      },
+      { trustUpdater, clock: fixedClock },
+    );
+
+    // max(0.0, 0.0 - 0.10) = 0.0 — must not go below floor
+    expect(trustUpdater.update).toHaveBeenCalledWith(
+      expect.objectContaining({ trust: expect.closeTo(0.0, 5) }),
     );
   });
 
@@ -223,7 +268,7 @@ describe('applyFeedback', () => {
     expect(trustUpdater.update).toHaveBeenCalledWith({
       factId:    'fact-ucorr-001',
       sessionId,
-      trust:     0.80,
+      trust:     expect.closeTo(0.80, 5),
     });
   });
 
@@ -250,7 +295,7 @@ describe('applyFeedback', () => {
 
     // min(1.0, 0.80 + 0.30) = 1.0
     expect(trustUpdater.update).toHaveBeenCalledWith(
-      expect.objectContaining({ trust: 1.0 }),
+      expect.objectContaining({ trust: expect.closeTo(1.0, 5) }),
     );
   });
 
@@ -280,7 +325,7 @@ describe('applyFeedback', () => {
     expect(trustUpdater.update).toHaveBeenCalledWith({
       factId:    'fact-ucorr-002',
       sessionId,
-      trust:     0.20,
+      trust:     expect.closeTo(0.20, 5),
     });
   });
 
@@ -307,7 +352,7 @@ describe('applyFeedback', () => {
 
     // max(0.0, 0.20 - 0.30) = 0.0
     expect(trustUpdater.update).toHaveBeenCalledWith(
-      expect.objectContaining({ trust: 0.0 }),
+      expect.objectContaining({ trust: expect.closeTo(0.0, 5) }),
     );
   });
 
@@ -343,6 +388,70 @@ describe('applyFeedback', () => {
     ).rejects.toThrow();
 
     // Guard: TrustUpdater must NOT be called when input is invalid
+    expect(trustUpdater.update).not.toHaveBeenCalled();
+  });
+
+  // ===========================================================================
+  // F-NEW-EXHAUSTIVE — Regression lock for Edgar's F4: exhaustiveness guard
+  // ===========================================================================
+  //
+  // Edgar is converting the event dispatch to a switch with an exhaustiveness
+  // check that throws TypeError on unrecognised event strings. This test locks
+  // that contract against future regressions (simulates a runtime cast from an
+  // untrusted source that bypasses the TypeScript union).
+  //
+  // RED until Edgar's F4 switch+TypeError lands.
+
+  it('throws TypeError for unknown event type (defensive guard, §30 §2.3+)', async () => {
+    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+
+    // Cast forces a value the union forbids — simulates runtime cast from untrusted source
+    await expect(applyFeedback(
+      { factId: 'fact-x', sessionId, event: 'meditated' as FeedbackEvent, currentTrust: 0.5 },
+      { trustUpdater, clock: fixedClock },
+    )).rejects.toThrow(TypeError);
+  });
+
+  // ===========================================================================
+  // F-NEW-RANGE — Regression locks for Edgar's F6: currentTrust input validation
+  // ===========================================================================
+  //
+  // Edgar is adding a RangeError guard: currentTrust must be a finite number in
+  // [0,1]. These tests lock that contract; TrustUpdater must never be called
+  // when the input is invalid.
+  //
+  // RED until Edgar's F6 validation lands.
+
+  it('throws RangeError when currentTrust is NaN (§30 §2.1 domain invariant)', async () => {
+    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+
+    await expect(applyFeedback(
+      { factId: 'fact-range-nan', sessionId, event: 'corroboration' as const, currentTrust: NaN },
+      { trustUpdater, clock: fixedClock },
+    )).rejects.toThrow(RangeError);
+
+    expect(trustUpdater.update).not.toHaveBeenCalled();
+  });
+
+  it('throws RangeError when currentTrust is below 0 (§30 §2.1 domain invariant)', async () => {
+    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+
+    await expect(applyFeedback(
+      { factId: 'fact-range-low', sessionId, event: 'corroboration' as const, currentTrust: -0.1 },
+      { trustUpdater, clock: fixedClock },
+    )).rejects.toThrow(RangeError);
+
+    expect(trustUpdater.update).not.toHaveBeenCalled();
+  });
+
+  it('throws RangeError when currentTrust is above 1 (§30 §2.1 domain invariant)', async () => {
+    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+
+    await expect(applyFeedback(
+      { factId: 'fact-range-high', sessionId, event: 'corroboration' as const, currentTrust: 1.5 },
+      { trustUpdater, clock: fixedClock },
+    )).rejects.toThrow(RangeError);
+
     expect(trustUpdater.update).not.toHaveBeenCalled();
   });
 });
@@ -421,7 +530,7 @@ describe('applyFeedbackById (read-seam)', () => {
     expect(trustUpdater.update).toHaveBeenCalledWith({
       factId:    'fact-readseam-001',
       sessionId,
-      trust:     0.70,
+      trust:     expect.closeTo(0.70, 5),
     });
   });
 
@@ -452,5 +561,49 @@ describe('applyFeedbackById (read-seam)', () => {
 
     // Guard: TrustUpdater must NOT be called for a missing fact
     expect(trustUpdater.update).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // F-NEW-RANGE — applyFeedbackById: strict reader-contract guard
+  // ---------------------------------------------------------------------------
+  //
+  // Regression lock for Edgar's F6: if FactReader returns a trust value that
+  // violates the domain invariant (e.g. NaN from a corrupt row), applyFeedbackById
+  // must throw RangeError rather than propagate a corrupt trust write.
+  //
+  // RED until Edgar's F6 validation lands in applyFeedback (which applyFeedbackById
+  // delegates to — the guard fires at that delegation point).
+
+  it('throws RangeError when FactReader returns trust: NaN (strict reader-contract guard)', async () => {
+    const factReader = { read: vi.fn().mockResolvedValue({ trust: NaN }) };
+    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+
+    await expect(
+      applyFeedbackById(
+        { factId: 'fact-range-reader', sessionId, event: 'corroboration' as const },
+        { factReader, trustUpdater, clock: fixedClock },
+      ),
+    ).rejects.toThrow(RangeError);
+
+    expect(trustUpdater.update).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // F-NEW-PROPAGATION — user_correction missing-delta propagates via applyFeedbackById
+  // ---------------------------------------------------------------------------
+  //
+  // Craft F11 test-side: exercise the path where applyFeedbackById is called with
+  // event='user_correction' but no correctionDelta. The error from applyFeedback
+  // must propagate out. Edgar is updating JSDoc to note this throw; this test locks
+  // the observable contract.
+
+  it('propagates missing-correctionDelta error from applyFeedback', async () => {
+    const factReader  = { read: vi.fn().mockResolvedValue({ trust: 0.5 }) };
+    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+
+    await expect(applyFeedbackById(
+      { factId: 'fact-y', sessionId, event: 'user_correction' as const /* no correctionDelta */ },
+      { factReader, trustUpdater, clock: fixedClock },
+    )).rejects.toThrow();  // Error message will mention correctionDelta
   });
 });
