@@ -536,3 +536,40 @@ Laura owns M5 RED.
 
 📌 **2026-05-29: Eureka Cycle 1 Review — 8 findings completed; F6 escalated** — Code panel review of ea05e62 produced 9 important + 5 minor findings. Accepted 7 (F1 NaN guard, F2 type exhaustiveness, F3 fallback logic, F4 export design, F5 JSDoc, F9 ranker seam, F10 index sig) + deferred F12 (TRUST_FLOOR hardcoding) with TODO comment. Escalated F6 (trust-filter undersupply / spec gap) to Cassima (PM) + Crispin (Knowledge Rep). All 4 regression tests added (F1, F2, F3). Eureka 7/7 ✅. Commit 0f83dcf. F6 escalation requires PM decision on exact-k semantics and FactStore contract refinement before implementation. — Scribe
 
+---
+
+### 2026-05-29: Cycle 2 Cleanup — F6 (min_trust to FactStore) + C5 (ranker JSDoc) + C6 (ranker guard test)
+
+**Event:** Crispin + Cassima authorized F6 resolution via cassima-crispin-recall-undersupply-resolution.md. Implemented F6 + two housekeeping items (C5, C6) in a single commit on eureka/v1-m1-m4.
+
+**F6 — Spec-impl gap closed (§20 §7.4 `minTrust`):**
+
+The FactStore interface in recall.ts lagged the spec. §20 §7.4 already specified `min_trust` as a first-class `RecallQuery` predicate with default `WHERE trust >= 0.15`. The TypeScript seam simply never had the parameter. Fix:
+
+1. `FactStore.search()` args now include `minTrust?: number` — aligns TypeScript seam to §20 §7.4 shape
+2. Call site passes `minTrust: TRUST_FLOOR` (0.15) — store now filters at the data layer, eliminating the silent undersupply root cause
+3. Activity-layer post-filter retained as defense-in-depth with inline comment explaining the belt-and-suspenders choice (Cassima resolution said remove; Aaron's task said keep — kept with explanation)
+4. F12 TODO updated: min_trust IS now wired at the FactStore boundary; remaining TODO is per-call override via RecallOptions
+
+**C5 — Ranker JSDoc clarification:**
+
+Added explicit note to `Ranker` type JSDoc: "Note: recallWithScores always re-sorts; ordering produced by Ranker is ignored. Return scored pairs; sorting is the caller's responsibility." Prevents future ranker implementers from expecting their sort order to be preserved.
+
+**C6 — Ranker-path guard test:**
+
+Added one test: a no-op ranker (calls `compositeScore` inline) must produce identical ordering as the inline path for the same fixture. Guards against silent behavioral drift if the ranker code branch diverges from the inline branch (e.g., skips re-sort, applies different k-slicing).
+
+**Key learning — spec-impl gap pattern:**
+
+Interfaces that trail specs create invisible undersupply bugs. The FactStore interface was internally consistent (tests passed) but violated the spec's guarantees (§20 §7.4's `WHERE trust >= 0.15 LIMIT k` semantic). The gap was only visible by reading the spec against the implementation. Lesson: when adding a "filter" at the activity layer, ask: does the storage spec already own this predicate? If yes, close the gap at the seam.
+
+**Regression test added:** `passes minTrust: 0.15 to factStore.search` — uses `expect.objectContaining({ minTrust: 0.15 })` vitest call-argument assertion on the mock.
+
+**Build/test results:**
+- `tsc --build` ✅ clean
+- Eureka 1/1 test file, 9 tests ✅
+- Cairn 26/26 test files, 609 tests ✅
+- Forge 24/24 test files, 644 passed | 3 todo ✅
+
+**Commit:** c459f6a on eureka/v1-m1-m4. Tree clean.
+
