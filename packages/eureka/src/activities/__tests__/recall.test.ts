@@ -35,7 +35,7 @@ import type { SessionId } from '@akubly/types';
  * M4 clock injection note:
  * ALL recall() calls now include a clock dep (ClockProvider — ms epoch).
  * FIXED_NOW_MS is used for M2/M3 stubs — a large fixed value chosen so that:
- *   - M2 facts (no last_accessed → tDays=0 fallback) are unaffected by clock value.
+ *   - M2 facts (no last_accessed → tDays=Infinity → recency=0.1 floor) are unaffected by clock value.
  *   - M3 facts (last_accessed=0, EPOCH_MS) yield tDays≈20237 → recency=0.1 (floor)
  *     for any nowMs this large. Scores unchanged from M3 fixture rationale.
  * §55 §1.2 — non-deterministic inputs (timestamps) must be mocked at seam.
@@ -276,8 +276,8 @@ describe('recall', () => {
       BASE_MS, // clock is behind last_accessed
     );
 
-    expect(Number.isFinite(score)).toBe(true);
-    expect(score).toBeGreaterThan(0);
+    // FR-2: tDays clamped to 0 → recency=1.0; 0.50·0 + 0.20·0 + 0.20·0.8 + 0.10·1.0 = 0.26; 0.26 × 1.00 (warm) = 0.26
+    expect(score).toBeCloseTo(0.26, 6);
   });
 
   it('recall with a future-dated fact produces sane ordering, not NaN-corrupted (F1)', async () => {

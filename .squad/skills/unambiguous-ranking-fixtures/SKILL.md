@@ -95,6 +95,7 @@ NOT a type error, import error, or missing field error. If you see those, fix th
 
 ```typescript
 it('ranks results by [FORMULA] descending', async () => {
+  // EPOCH_MS used for fact.last_accessed (test fixtures); FIXED_NOW_MS used for stub clock.now() (pins "current time"). Different timestamps make recency calculation deterministic.
   const EPOCH_MS = 0; // last_accessed = epoch → recency = 0.1 (floor) for all
   const FIXED_NOW_MS = 1_000_000_000_000; // M4+: pinned clock for deterministic recency calculations
 

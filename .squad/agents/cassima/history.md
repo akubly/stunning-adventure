@@ -341,3 +341,24 @@ Added "Pitfalls" section to `.squad/skills/doc-references-respect-gitignore/SKIL
 
 📌 **2026-05-29: Eureka Cycle 1 Review — F6 Escalation (product semantics) requires your input** — Code panel review of ea05e62 escalated F6 (trust-filter undersupply / spec gap). Finding: `recall()` may silently return fewer than k results when trust floor filters candidates. Caller has no signal to distinguish "only k results exist" from "k+ results exist but fell below trust floor." Spec (§30 §1.2, §30 §2.3, §40) is uniformly silent on overfetch policy. Escalated to you + Crispin (Knowledge Rep). Inputs needed: (1) Is "recall may return <k" acceptable caller contract for v1, or does product require exact-k semantics? (2) Does user-facing UX depend on full result set? Decision drop with 4 options (a–d) and recommendation: .squad/decisions/F6-recall-undersupply-escalation.md (merged into decisions.md). Awaiting your input. — Scribe
 
+---
+
+## 2026-05-29: F6 Resolution — Recall Undersupply (Joint with Crispin)
+
+**Event:** F6 escalation from Cycle 1 review. Joint decision drop authored with Crispin.
+
+**Decision:** Option (b) — Push `minTrust` into `FactStore.search()`.
+
+**Cassima's lens (PM scope):**
+The product requires exact-k semantics. AC-1.3 specifies ≥80% precision *at k=5* — the "at k=5" implies k results are expected, not "up to k." The silent undersupply bug was not a documented caller contract; it was a pipeline gap that users and callers would experience as inconsistent behavior with no diagnostic signal.
+
+From a scope perspective: this fix does NOT expand the FactStore implementation work. The concrete SQLite FactStore is on the M5+ critical path, but what changes here is the *TypeScript interface definition* (a type, not an implementation) and the *activity call site*. The mock in tests needs a one-line update. When the real FactStore ships in M5+, it inherits the correct contract and adds `WHERE trust >= ?` to its SQL — which was always the specified behavior per §20 §7.4. Net implementation scope: **zero additional work at M5+**. In fact, the post-filter loop is removed from the activity, which is a net subtraction.
+
+I explicitly evaluated option (a) overfetch from a v1 scope perspective: it introduces a magic constant with no principled basis, adds I/O waste in the common case (healthy trust distribution), and doesn't fix the root cause under adversarial distributions. Option (b) is cleaner, spec-aligned, and costs the same sprint time.
+
+**AC-1.3 confirmation:** With (b), `recall({ k: 5 })` returns 5 results when ≥5 qualifying facts exist. The residual failure mode (store holds <k qualifying facts → returns <k) is honest, not a bug.
+
+**Sequencing:** M4, current cycle. Unblocked. Edgar owns the call site + test mock updates; Crispin reviews interface shape.
+
+**Deliverable:** `.squad/decisions/inbox/cassima-crispin-recall-undersupply-resolution.md`
+
