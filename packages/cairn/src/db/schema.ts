@@ -13,6 +13,8 @@ import { migration011 } from './migrations/011-telemetry-feedback.js';
 import { migration012 } from './migrations/012-change-vectors.js';
 import { migration013 } from './migrations/013-hint-atomicity.js';
 import { migration014 } from './migrations/014-session-kind.js';
+import { migration015 } from './migrations/015-workdir-sessions.js';
+import { migration016 } from './migrations/016-active-session-unique.js';
 
 export interface Migration {
   version: number;
@@ -20,7 +22,7 @@ export interface Migration {
   up: (db: Database.Database) => void;
 }
 
-const migrations: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014];
+const migrations: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016];
 
 export function applyMigrations(db: Database.Database): void {
   db.exec(`
