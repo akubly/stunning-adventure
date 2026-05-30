@@ -49,6 +49,32 @@ All 6 accepted threads fixed in commit 10c2791 (new HEAD):
 - `npm test --workspace=@akubly/runtime-cli`: 24/24 passing
 - `npm test --workspace=@akubly/skillsmith-runtime`: 48/48 passing
 
+---
+
+## Issue #25 — Cycle-1 Persona Review Wave (2026-05-30, commit d2ef6d1)
+
+**Trigger:** Persona panel (4 personas: Correctness, Craft, Skeptic, Scope) ran on commits 45f8186 + 5571b3c.
+
+**F1 — JSON.parse boundary narrowing (IMPORTANT, ACCEPTED):**
+The `as { profileSource?: LoadedProfileSource | null }` cast on `JSON.parse(row.payload)` was a type lie — the TEXT column contains unchecked runtime data. Any legacy or hand-edited row with `profileSource: 'per-org'` would silently flow through as a typed value. Fixed by:
+1. Typing all JSON.parse fields as `unknown`.
+2. Adding `normalizeProfileSource(value: unknown): LoadedProfileSource | null` backed by a `ReadonlySet<string>` initialised from the 4 `LoadedProfileSource` members.
+3. Exporting the helper `@internal` for direct unit testing.
+4. Adding 4 unit tests (valid/unrecognised-string/non-string) + 1 integration test (bad value in DB → null in result).
+
+**Key lesson:** `JSON.parse` returns `any`. Casting the result directly to a typed interface is a type lie — the safety is imaginary. Always type parse output as `unknown` (or a record of `unknown` fields) and narrow each field before use. This is especially important for string enums that live in DB TEXT columns — the DB makes no enum contract.
+
+**F2 — ProfileStalenessReason deduplication (IMPORTANT, ACCEPTED):**
+`SkillMetricsStaleness.reason` had an inline literal union that was a hand-copy of `ProfileStalenessReason` from `@akubly/types`. Swapped to the canonical import. JSDoc updated to semantic-only form with `{@link}`.
+
+**Key lesson:** When a union is already defined as a named type in a shared package, always import it — inline copies are drift bombs.
+
+**F3 — history.md scope (REJECTED):** Persona panel Skeptic flagged history.md commits as out-of-scope for a type-tightening PR. Team convention explicitly accepts this (`merge=union` in `.gitattributes`, squad workflow policy). No change made.
+
+**F4 — squad:alexander label:** Label not present in repo; skipped per instructions.
+
+**Build + tests after cycle-1:** `npm run build` exit 0, `npm test --workspace=@akubly/runtime-cli` 28/28 (4 new tests).
+
 **Key takeaway:** The T2 lesson is foundational: when adding defensive guards (like `json_valid`), distinguish between **presence checks** (sentinel queries for feature deployment) and **quality checks** (row-level filters for parseability). Don't conflate them — the semantics diverge when all data is corrupt.
 
 ---
