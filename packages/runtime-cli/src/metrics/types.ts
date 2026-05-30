@@ -1,4 +1,5 @@
 import type { LoadedProfileSource } from '@akubly/skillsmith-runtime';
+import type { ProfileStalenessReason } from '@akubly/types';
 
 /** Profile info when a profile was found for the skill. */
 export interface SkillMetricsProfileInfo {
@@ -22,8 +23,8 @@ export type SkillMetricsProfile = SkillMetricsProfileInfo | SkillMetricsProfileM
 /** Staleness signal for the loaded profile (null when no profile found). */
 export interface SkillMetricsStaleness {
   stale: boolean;
-  /** Why the profile is stale: 'count', 'age', 'count+age', or null (fresh). */
-  reason: 'count' | 'age' | 'count+age' | null;
+  /** Why the profile is stale (null = fresh). See {@link ProfileStalenessReason}. */
+  reason: ProfileStalenessReason;
   /** Sessions logged since the profile was last updated (count proxy). */
   sessionsSinceUpdate: number;
 }
