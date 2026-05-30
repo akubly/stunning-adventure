@@ -383,7 +383,12 @@ describe('recall', () => {
     );
 
     expect(factStore.search).toHaveBeenCalledWith(
-      expect.objectContaining({ minTrust: 0.15 }),
+      expect.objectContaining({
+        query: 'trust floor test',
+        sessionId,
+        limit: 5,
+        minTrust: 0.15,
+      }),
     );
   });
 
