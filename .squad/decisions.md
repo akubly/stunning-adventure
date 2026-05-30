@@ -2759,6 +2759,307 @@ reflects v1 assuming a healthy corpus where low-trust facts are uncommon.
 
 ---
 
+---
+
+### 2026-05-29: F6 Resolution — Recall undersupply policy
+
+**Authors:** Crispin (Knowledge Rep, FactStore owner) + Cassima (PM)
+**Resolves:** Cycle 1 finding F6 (Correctness + Craft), Edgar's escalation drop
+**Context:** `recall()` asks FactStore for exactly `k` candidates, then applies a
+trust-floor filter in the activity layer, then slices to `k`. When any of the `k`
+raw candidates fail the 0.15 trust gate, the returned set silently shrinks —
+breaking the implicit AC-1.3 assumption that `recall({ k: 5 })` returns 5 facts
+when the store holds ≥5 qualifying facts.
+
+---
+
+**Decision: Option (b) — Push `minTrust` into `FactStore.search()`**
+
+This is not a new policy concern crossing a layer boundary. §20 §7.4 already
+specifies `min_trust` as a first-class `RecallQuery` predicate, with the default
+recall filter documented as `WHERE retired = false AND trust >= 0.15`. The
+contract tests listed in §7.4 explicitly exercise `search({ min_trust: 0.6 })`.
+The current TypeScript `FactStore` seam (recall.ts line 33) simply lags the
+spec. This fix closes that gap.
+
+---
+
+**What changes:**
+
+- **`FactStore` interface (recall.ts line 33):** add `minTrust?: number` to the
+  `search()` args. New shape:
+  ```typescript
+  search(args: {
+    query: string;
+    sessionId: SessionId;
+    limit: number;
+    minTrust?: number;   // default 0.15 per §20 §7.4
+  }): Promise<RecallResult[]>;
+  ```
+
+- **`recallWithScores()` call site (recall.ts line 134):** pass the floor:
+  ```typescript
+  const candidates = await factStore.search({
+    query,
+    sessionId,
+    limit: k,
+    minTrust: TRUST_FLOOR,
+  });
+  ```
+
+- **Remove activity-layer post-filter (recall.ts line 137):** delete the
+  `.filter(f => f.trust >= TRUST_FLOOR)` line. The store now owns this
+  predicate; applying it twice is redundant and masks test failures.
+
+- **Activity unit tests:** update FactStore mocks to honor `minTrust` in their
+  stub implementations, so tests exercise the correct contract.
+
+- **§20 §7.4 doc note (optional, low-priority):** add a one-line cross-ref
+  noting that the TypeScript seam in recall.ts now matches the `RecallQuery`
+  shape shown here. No structural doc change required — the spec was already
+  correct.
+
+- **Sequencing:** lands in **M4** (current cycle). Small surgical change;
+  no new implementation surface.
+
+---
+
+**Rationale:**
+
+**Layering (Crispin):** The trust floor is a *data quality predicate*, not an
+activity-level ranking policy. The distinction matters: `retired = false` and
+`trust >= 0.15` are both hard-gate filters that belong at the query layer — they
+define the valid working set, not how it is ranked. The FR-2 composite formula
+(relevance, importance, trust weighting, recency) is the activity's ranking
+policy and it correctly stays in `recallWithScores()`. Pushing `minTrust` into
+the store contract does not leak ranking policy; it moves a structural WHERE
+clause to where it executes most efficiently and is already specified (§20 §7.4).
+The concern about "FactStore knowing about trust semantics" is a non-issue:
+FactStore already stores `trust` as a first-class property — filtering on it is
+no different from filtering on `session_id`.
+
+**PM scope (Cassima):** The concrete FactStore SQLite implementation is on the
+M5+ critical path. That is not a blocker here. What changes in M4 is the
+*interface definition* (a TypeScript type, not an implementation) and the
+*activity call site*. Activity tests already mock FactStore — mocks need a
+one-line update to respect `minTrust`. The real SQLite implementation will
+inherit the correct contract when Crispin builds it in M5+; it simply
+translates `minTrust` to a `WHERE trust >= ?` clause, which was always the
+specified behavior. This fix adds zero scope to the FactStore implementation
+milestone. If anything, it removes scope: the activity no longer has to own a
+filter loop, which is a net subtraction of implementation surface.
+
+**AC-1.3 fidelity:** With this fix, `recall({ k: 5 })` will return 5 facts
+whenever the store holds ≥5 facts with `trust >= 0.15`. The `limit: k` cap is
+applied *after* the trust filter inside the store query (i.e., `WHERE trust >= 0.15 ... LIMIT k`), so the caller receives exactly k qualifying results.
+Residual failure mode: if the store holds fewer than k qualifying facts, recall
+correctly returns fewer than k — this is honest, not a pipeline bug. The silent
+undersupply bug (store had qualifying facts the activity never asked for) is
+eliminated.
+
+**Forward compat:**
+- *Ranker seam (F9, `ranker?: Ranker`):* The ranker receives already-filtered
+  candidates from FactStore. Moving trust filtering to the store means the ranker
+  gets a pre-qualified working set — strictly better input. No interface change
+  needed for F9.
+- *Per-call configurable trust floor (TODO comment, M5+):* When Aaron eventually
+  adds `trustFloor` to `RecallOptions`, the wiring is a clean one-liner:
+  `minTrust: options.trustFloor ?? TRUST_FLOOR`. No rework of this fix required.
+- *Trust-feedback updates (M5 target):* Trust updates modify stored `trust`
+  values. The `minTrust` filter evaluates whatever is currently in the store —
+  no coupling to update mechanics.
+
+---
+
+**Rejected alternatives (one line each):**
+
+- **(a) Overfetch (`limit: k * BUFFER_FACTOR`):** rejected — arbitrary multiplier
+  cannot guarantee k results under adversarial trust distributions; wastes I/O
+  on healthy stores; does not fix the root cause; introduces a magic constant
+  with no principled basis.
+
+- **(c) Document as caller contract (`recall may return < k`):** rejected —
+  punts the correctness problem to every consumer; directly undermines AC-1.3
+  which specifies ≥80% precision *at k=5*, implying k results are expected;
+  sets a brittle precedent for future activities.
+
+- **(d) Generic filter params (open-ended predicate map):** rejected — §20 §7.4
+  already chose *typed, named predicates* (`min_trust`, `include_retired`, `tier`,
+  `kind`) over a generic predicate bag. Option (d) would diverge from the
+  specified contract for no v1 benefit; reserve generic composition for v2+ if
+  a use case emerges.
+
+---
+
+**Implementation handoff:**
+
+- **Owner:** Edgar (call site + test updates), reviewed by Crispin (interface
+  shape ownership)
+- **Sequencing:** M4 — current cycle. Unblocked.
+- **Blockers:** None. FactStore SQLite implementation (M5+) is not required;
+  the mock boundary is sufficient.
+- **Contract test note:** The existing §20 §7.4 contract test requirement
+  (`search({ min_trust: 0.6 })` excludes facts below threshold) already covers
+  this. When the real FactStore ships, that contract test validates the SQL
+  predicate. Edgar's activity tests need mock updates only.
+
+---
+
+**Signed:** Crispin (Knowledge Rep), Cassima (PM), 2026-05-29
+
+
+---
+
+### 2026-05-29: Cycle 2 Combo Pass — F6 + C5 + C6
+
+**Author:** Edgar (Learning Systems Specialist)
+**Branch:** eureka/v1-m1-m4
+**Commit:** c459f6a
+
+---
+
+## F6 — `minTrust` wired into `FactStore.search()` per §20 §7.4
+
+### Interface change
+
+`FactStore.search()` in `packages/eureka/src/activities/recall.ts` (line ~32) gains a new optional parameter:
+
+```typescript
+export interface FactStore {
+  search(args: {
+    query: string;
+    sessionId: SessionId;
+    limit: number;
+    /** Trust floor predicate per §20 §7.4 — store applies WHERE trust >= minTrust. Default 0.15. */
+    minTrust?: number;
+  }): Promise<RecallResult[]>;
+}
+```
+
+TypeScript camelCase (`minTrust`) matches the §20 §7.4 SQL predicate `min_trust`. Optional (`?`) so existing mocks that don't assert the field compile without changes; contract tests will enforce it explicitly.
+
+### Call-site change
+
+`recallWithScores()` now passes the trust floor at the data layer:
+
+```typescript
+const candidates = await factStore.search({ query, sessionId, limit: k, minTrust: TRUST_FLOOR });
+```
+
+`TRUST_FLOOR = 0.15` (const, unchanged). The store now receives the predicate and applies `WHERE trust >= 0.15 LIMIT k`, which is the §20 §7.4-specified behavior. This closes the silent undersupply bug: when the store holds ≥k qualifying facts, it now returns exactly k qualifying facts, not k unchecked facts that may include below-floor entries.
+
+### Post-filter decision: KEPT (belt-and-suspenders)
+
+The activity-layer `candidates.filter(f => f.trust >= TRUST_FLOOR)` line is **retained** as defense-in-depth. Reasoning:
+
+- The Crispin/Cassima resolution recommended removal; Aaron's Cycle 2 brief recommended keeping it.
+- Keeping it means: if a FactStore mock or future implementation does not honor `minTrust`, no below-floor facts reach the ranker. The contract test (when written) will verify the mock honored `minTrust`; the post-filter is a safety net for implementations that diverge.
+- This is documented inline with a comment explaining the choice.
+- Cost of keeping: negligible. A no-op filter when FactStore honors `minTrust` correctly.
+
+If a future cycle decides to remove it (for simplicity), the change is one line deletion and the existing F6 regression test continues to validate the call-site argument.
+
+### TODO comment updated
+
+Old:
+```
+// TODO(M5+): configurable per-call trustFloor via RecallOptions. See decision drop edgar-recall-undersupply-escalation if filed.
+```
+
+New:
+```
+// TODO(M5+): per-call trustFloor override via RecallOptions — needs §-decision;
+// tracked in cassima-crispin-recall-undersupply-resolution. min_trust IS now
+// configurable at the FactStore boundary (F6); the remaining work is wiring an
+// optional RecallOptions.trustFloor through as minTrust: options.trustFloor ?? TRUST_FLOOR.
+```
+
+This is the F12 deferral — the spec already supports `minTrust` at the store boundary; the open question is whether `RecallOptions` should expose a per-call override. Deferred to M5+.
+
+### Regression test added
+
+```typescript
+it('passes minTrust: 0.15 to factStore.search so trust filtering happens at the data layer (F6)', async () => {
+  const factStore = { search: vi.fn().mockResolvedValue([]) };
+
+  await recall(
+    { query: 'trust floor test', sessionId, k: 5 },
+    { factStore, clock: fixedClock },
+  );
+
+  expect(factStore.search).toHaveBeenCalledWith(
+    expect.objectContaining({ minTrust: 0.15 }),
+  );
+});
+```
+
+Vitest call-argument assertion on the mock confirms the data-layer parameter is wired correctly.
+
+---
+
+## C5 — Ranker JSDoc clarification
+
+Added to the `Ranker` type JSDoc in recall.ts:
+
+> Note: recallWithScores always re-sorts; ordering produced by Ranker is ignored. Return scored pairs; sorting is the caller's responsibility.
+
+The implicit re-sort semantics were previously undocumented. A custom ranker returning pre-sorted `ScoredResult[]` would silently have its sort overridden by `recallWithScores`'s `.sort((a, b) => b.score - a.score)`. This note makes the contract explicit at the type definition.
+
+**Disposition:** Complete. No behavioral change — documentation only.
+
+---
+
+## C6 — Ranker-path guard test
+
+Added one test exercising the optional ranker code branch:
+
+```typescript
+it('no-op ranker (compositeScore inline) produces same ordering as inline scoring path (C6 — ranker guard)', async () => {
+  // fixture: same 4-fact set as FR-2 ordering test (EPOCH_MS, deterministic scores)
+  // noOpRanker: calls compositeScore directly — semantically identical to inline path
+  // asserts: withRanker ordering === withoutRanker ordering
+});
+```
+
+**Purpose:** If `recallWithScores` ever diverges in how it handles the ranker branch (e.g., skips the final re-sort, applies different slicing), this test catches it immediately. The test is load-bearing for ranker seam stability.
+
+**Disposition:** Complete. 1 new test; all 9 Eureka tests pass.
+
+---
+
+## Build / test results
+
+| Suite | Files | Tests | Result |
+|---|---|---|---|
+| @akubly/eureka | 1 | 9 | ✅ |
+| @akubly/cairn | 26 | 609 | ✅ |
+| @akubly/forge | 24 | 644 + 3 todo | ✅ |
+| `tsc --build` | — | — | ✅ |
+
+---
+
+**Signed:** Edgar, 2026-05-29
+
+
+---
+
+### 2026-05-29T23:24:24Z: User directive — Eureka layering rule (C8 resolution)
+
+**By:** Aaron Kubly (via Copilot, as team lead resolving Graham/Genesta split)
+**Context:** Cycle 2 finding C8 — should eslint test-dir exemption be added to allow cairn/forge integration tests importing @akubly/eureka?
+
+**What:**
+- Eureka is a standalone component built on shared substrate (@akubly/types). It tests its OWN integration with Cairn/Forge (consumer-tests-upstream pattern). Cairn and Forge MUST NOT import @akubly/eureka — in production code OR in tests.
+- The eslint `no-restricted-imports` guardrail (Gabriel's commit 27ff2af) stays strict — no test-dir exemption.
+- Cross-package integration tests for Eureka behavior live in `packages/eureka/src/__tests__/`. Eureka may add cairn/forge as devDependencies to exercise real integration.
+
+**Why:** Preserves the kernel boundary and the "independently deployable" promise of Eureka. Aligns with Genesta's architectural lens. Documented in §40 to prevent the foot-gun Graham warned about (engineers might otherwise normalize "just a quick cross-package test" in cairn/forge, eroding the layering).
+
+**Tiebreak:** Graham (Lead) recommended exempting test dirs for boundary validation; Genesta (Eureka architect) recommended strict. Aaron sided with Genesta and authorized the third-option documentation pass.
+
+
+---
+
 ## Archived Decisions
 
 See decisions-archive.md for Wave 1, Wave 2, Wave 3, and earlier Cycle 1 decisions.
