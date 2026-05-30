@@ -728,7 +728,7 @@ b. **Check if worktree already exists (MUST run before creating):**
          1. Log `[worktree-setup] stale worktree at {worktree} on wrong branch — removing` to history.md
          2. Run Cleanup steps 1-2 (resolve branch, unlink junction) for the stale worktree
          3. Run `git worktree remove "{worktree}"`
-         4. Delete the stale branch: `git branch -d {stale-branch}`
+         4. Delete the stale branch: `git branch -d {branch}`
          5. Proceed to step (c) to create a fresh worktree
    - If not found → proceed to step (c)
 
@@ -736,7 +736,7 @@ c. **Create the worktree:**
    - Determine branch name: `squad/{issue-number}-{kebab-case-slug}` (derive slug from issue title if available)
    - Determine base branch (typically `main`, check default branch if needed)
    - Run: `git worktree add "{worktree}" -b {branch} {baseBranch}`
-   - Example: `git worktree add C:\src\squad-42 -b squad/42-fix-login main`
+   - Example: `git worktree add "C:\src\squad-42" -b squad/42-fix-login main`
    - **Error handling:**
      - Lock file error (`fatal: ... is locked`) → wait 5s, retry once; if still failing, log to `.squad/orchestration-log/{timestamp}-worktree-failed.md`, set `WORKTREE_MODE` to `false`, fall back to main repo
      - Permissions error → log to `.squad/orchestration-log/{timestamp}-worktree-failed.md`, set `WORKTREE_MODE` to `false`, fall back to main repo

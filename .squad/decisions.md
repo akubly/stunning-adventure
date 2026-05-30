@@ -2427,6 +2427,8 @@ Based on Path D, PRD v3 stands with targeted patches. **No structural rework nee
 
 2. **Path D adoption:** Confirm Eureka ships standalone-but-kernel-shaped; Cairn adopts later if maintainer chooses. (Recommended: YES)
 
+3. **Decide adapter direction:** One-way Eureka→Forge adapter. Forge does not change. (Recommended: YES)
+
 ---
 
 ### 2026-05-29: WI-B Implementation Decisions — Coordinator Worktree Dispatch (#28)
@@ -2482,8 +2484,6 @@ Based on Path D, PRD v3 stands with targeted patches. **No structural rework nee
 - `rmdir /s` hazard warning (Correctness reviewer — agents add flags helpfully)
 - `{branch}` derivation instruction in Cleanup (Craft reviewer — undefined variable)
 - v1-only note in Worktree Lifecycle Management activation section (consistency with Pre-Spawn)
-
-3. **Decide adapter direction:** One-way Eureka→Forge adapter. Forge does not change. (Recommended: YES)
 
 ---
 
