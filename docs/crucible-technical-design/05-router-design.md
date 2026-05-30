@@ -43,7 +43,7 @@ interface PolicyRow {
 **Tier dimension (Round 2.3 lock):** every row carries `sourceTier`. The
 default-most-restrictive ordering is `external > community > adopted > builtin`;
 identical `(kind, predicate)` pairs MAY have different actions per tier. The
-Trust-Tier Monotonicity invariant (TDD §6.7) is enforced at policy-install
+Trust-Tier Monotonicity invariant (`docs/crucible-tdd-strategy.md` §6.7) is enforced at policy-install
 time: a policy that downgrades a tier's effective privilege MUST be paired with
 an explicit revocation Decision.
 
@@ -54,8 +54,8 @@ an explicit revocation Decision.
 ## 5.2 Proposal Lifecycle State Machine
 
 The Router no longer pulls proposals directly from L3 (§7). The L3.5 Scheduler
-(§5.A) owns dispatch order; the Router consumes proposals only after the
-Scheduler has emitted a `scheduler_dispatched` Decision naming the proposal.
+(§5.A, see below) owns dispatch order; the Router consumes proposals only after
+the Scheduler has emitted a `scheduler_dispatched` Decision naming the proposal.
 The `dispatched_pending` state is the precursor: a generator-emitted proposal
 sits in the Scheduler's queue until dispatched, at which point it enters
 `submitted` on the Router's machine. L3 → L3.5 → L4 is the canonical flow.
@@ -96,10 +96,15 @@ sits in the Scheduler's queue until dispatched, at which point it enters
 `paused-awaiting-structural-ack` is the R2-3 LOCK sub-state. It is **not**
 stored in a side table; it is materialised by the L2 `aperture_events`
 projection from the `RouterPaused` Decision row plus any subsequent
-`StructuralAck` / `StructuralReject` Question-answer rows (§9 emits the
-answers). The Router itself is stateless across restart with respect to paused
-work — on boot it scans L1 for `RouterPaused` rows without a corresponding ack
-and re-subscribes.
+`structural_proposal_acked|rejected|expired` Observation rows (§6.3
+canonical sub-kind family; §9 writes the resolution Observations on user
+action). The Router itself is stateless across restart with respect to
+paused work — on boot it scans L1 for `RouterPaused` rows without a
+corresponding `structural_proposal_acked` Observation and re-subscribes.
+
+**Terminology lock (PA-B1):** all structural-ack lifecycle state is carried
+by the §6.3 `structural_proposal_*` Observation sub-kind family. See §8.2
+for the canonical sub-kind enumeration.
 
 ## 5.3 Verdict Ack Protocol (Gabriel ↔ Valanice §9 Sync Pair)
 
@@ -253,15 +258,19 @@ internals and break the §6.7 Trust-Tier Monotonicity proof obligation (tier
 attribution must be carried, not inferred).
 
 On structural classification:
-1. PolicyEngine evaluates; if action ≠ `veto`, the Router writes a
-   `RouterPaused` Decision for each `dependentPaths[]` member as well as the
-   proposal itself (one row per dependent path so the projection can re-derive
-   per-path pause state).
+1. PolicyEngine evaluates; if action ≠ `veto`, the Router writes ONE
+   `RouterPaused` Decision per structural proposal carrying the full
+   `dependentPaths[]` array (matches §5.3 `RouterPausedPayload` shape and
+   §8.2 consumer contract). Per-path pause state is an L2 projection
+   concern: the projector derives which paths are still blocked by
+   cross-referencing the single `RouterPaused` row against subsequent
+   `router.decision{outcome:'resume'}` rows (PA-B2 alignment).
 2. Applier (§8) sees the `paused-awaiting-structural-ack` sub-state on its
    own state machine via the same projection and refuses to apply any
    primitive whose causal ancestry intersects a paused path.
-3. On `StructuralAck`, the Router emits one `router.decision` with
-   `outcome: 'resume'` per dependent path (idempotent re-emission tolerated).
+3. On `structural_proposal_acked` Observation (§6.3), the Router emits one
+   `router.decision` with `outcome: 'resume'` covering all `dependentPaths`
+   from the original `RouterPaused` row (idempotent re-emission tolerated).
 
 ## 5.9 Collaborator Name Alias Map
 
@@ -275,6 +284,15 @@ with stubs/spies. `EscalationQueue` is owned by Aperture (§9); the Router
 only writes the source-of-truth Decision rows.
 
 ## 5.A L3.5 Scheduler Tier
+
+> **Implementation staging (PA-FifoScheduler):** Phase 0.5 walking skeleton
+> uses a `FifoScheduler` stub — FIFO dispatch order, no quanta budgeting, no
+> back-pressure, emits `scheduler_dispatched` immediately for every arriving
+> proposal. This proves the L3.5 tier boundary exists without the complexity.
+> Phase 1 replaces the stub with the full `WeightedRoundRobinScheduler`
+> specified in §5.A.3–§5.A.4. The `FifoScheduler` is a valid Scheduler
+> implementation (it satisfies A-Sched-1 replay-ordering) and may serve as a
+> test-harness default permanently.
 
 The Scheduler is L3.5 — a thin tier between L3 generators (§7) and L4 Router
 policy. It exists because L3 proposal emission is asynchronous, potentially

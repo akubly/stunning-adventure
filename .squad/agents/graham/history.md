@@ -905,3 +905,11 @@ Authored surgical amendments to docs/crucible-technical-design/01-architectural-
 - **The 8/8 STRENGTHENS is data, not validation.** All eight weigh-ins endorsed the framing; that is genuinely a strong signal. But the more interesting data was the *content* of the dissents-within-endorsement: Laura's "I tested the bus, not the CPU" caveat, Gabriel's TRAPC missing-primitive, Alexander's provider-meta gap, Rosella's privilege-ring observation, Valanice's "keep ISA jargon internal" UX constraint. Adopting the reframing as load-bearing without those caveats would have produced a thinner amendment; the surgical edits land *with* them (the governance principle in §6 directly addresses sub-kind-sprawl worries; §6.7's "analogy table, not opcode semantics" addresses Valanice's user-facing-jargon risk; the L3.5 inset addresses Erasmus + rubber-duck's dispatch concern). Unanimous endorsement is not a license to skip the dissent-within-endorsement signal; it is a license to land a *thicker* amendment because the team is aligned on direction.
 
 📌 Team update (2026-05-28T20-00-00Z): **Crucible CTD Phase 4 UIS Framing Lock — 8/8 STRENGTHENS + Rubber-Duck Reframing ADOPTED** — All 8 team weigh-ins returned STRENGTHENS verdicts; rubber-duck delivered precision reframing ("minimal typed trace algebra" vs "universal ISA"); Aaron locked three coupled decisions: (1) adopt reframing (ADR-0019), (2) adopt BOTH missing concepts (CALL/RET + Scheduler tier), (3) Phase 4 NOW. All 4 amendments SHIPPED (yours §1/§6/§19 FINAL; Roger §3/§10 FINAL; Gabriel §5/§17 FINAL; Laura §11/§16 FINAL). CTD structurally complete; synthesis review in flight. Merged to decisions.md. — Scribe
+
+## Pass A Review Closure (2026-05-29)
+
+**Role:** Crucible CTD design panel + triage  
+**Status:** See .squad/orchestration-log for detailed execution status  
+**Disposition:** Graham fully executed, Valanice triaged (pending filesystem edits), Rosella/Gabriel/Roger/Laura silent (pending next session)
+
+See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-review.md for full context.

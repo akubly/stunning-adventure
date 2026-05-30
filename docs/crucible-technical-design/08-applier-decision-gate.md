@@ -99,14 +99,22 @@ Applier per session.
 
 **Sub-state semantics (R2-3):** `paused-awaiting-structural-ack` is NOT a
 durable storage state — it is a **projection** computed from L1
-`structural-proposal-state` Observation rows (R2-3 lock: queue is pure
-projection). The Applier emits a `structural-proposal-state:emitted`
-Observation when entering the sub-state and a `structural-proposal-state:
-acked|rejected|expired` Observation on resolution. Aperture's
-`StructuralApprovalQueue` (§9) recomputes from these rows on every boot;
-the Applier does not own queue storage. Restart safety: on runtime crash
-mid-pause, the next boot's queue projection still shows the proposal as
-`pending`; resume is idempotent on `proposalId`.
+`structural_proposal_*` Observation rows (§6.3 canonical sub-kind family;
+R2-3 lock: queue is pure projection). The Applier emits a
+`structural_proposal_emitted` Observation when entering the sub-state and
+a `structural_proposal_acked|rejected|expired` Observation on resolution.
+Aperture's `StructuralApprovalQueue` (§9) recomputes from these rows on
+every boot; the Applier does not own queue storage. Restart safety: on
+runtime crash mid-pause, the next boot's queue projection still shows the
+proposal as `pending`; resume is idempotent on `proposalId`.
+
+**Terminology lock (PA-B1):** All structural-proposal lifecycle state is
+carried exclusively by the §6.3 `structural_proposal_*` Observation
+sub-kind family (`structural_proposal_emitted`, `structural_proposal_acked`,
+`structural_proposal_rejected`, `structural_proposal_expired`). No other
+artifact family (`structural-proposal-state:*`, Question-answer rows, etc.)
+is canonical for this purpose. Projectors, Router resubscription, and
+restart-recovery all key off this single sub-kind set.
 
 **Handshake with §5 Router (Phase 2 contract surface — Gabriel will conform
 to this lock):**
@@ -114,10 +122,10 @@ to this lock):**
 1. Router classifies proposal as `structural` → emits `RouterDecision { kind:
    'pause-dependent-paths', dependentPaths, structuralProposalId }`.
 2. Applier transitions `proposed → paused-awaiting-structural-ack`, writes
-   the `structural-proposal-state:emitted` Observation, calls
+   a `structural_proposal_emitted` Observation (§6.3), calls
    `ApertureNotifier.notify({ level: 'attention', kind: 'structural-proposal-pending' })`.
 3. User runs `crucible aperture approve <proposalId>` (§9 / §13).
-4. Aperture writes `structural-proposal-state:acked` Observation, re-emits
+4. Aperture writes `structural_proposal_acked` Observation (§6.3), re-emits
    the `RouterDecision` (now `kind: 'apply'`).
 5. Router consumes the re-emit, calls `Applier.resume(proposalId, ack)`.
 6. Applier transitions `paused → applying → applied`; on success, Router

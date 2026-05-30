@@ -1,6 +1,7 @@
 ---
-updated_at: 2026-05-22T14:07:59Z
-focus_area: Phase 4.6 Wave 2 ✅ COMPLETE — Change Vector Learning + Runtime Wiring (1199 tests, 9 work items, forge-prescribe CLI, negative-impact attenuation, hint dedup)
+updated_at: 2026-05-30T07:11:00Z
+focus_area: Crucible CTD design review (Original Pass + Pass A) — 46 findings across 2 reviews, most addressed; Pass A leftovers pending Rosella/Gabriel/Roger/Laura execution next session
+previous_focus: Phase 4.6 Wave 2 ✅ COMPLETE — Change Vector Learning + Runtime Wiring (1199 tests, 9 work items, forge-prescribe CLI, negative-impact attenuation, hint dedup)
 active_issues:
   - "Phase 1: Monorepo restructuring ✅ COMPLETE"
   - "Phase 2: Live runtime verification ✅ COMPLETE (5/5 modules)"
@@ -17,6 +18,77 @@ active_issues:
 ---
 
 # What We're Focused On
+
+**Crucible CTD Design Review** — Original Pass + Pass A complete; some Pass A execution work pending for next session.
+
+## Session 2026-05-29 summary
+Aaron requested a Design Panel review of the Crucible test strategy + technical design plan + architectural overview. Spawned a 5-persona panel (Architect/Skeptic/Pragmatist/Compliance/Performance — Opus/GPT-5.4/Sonnet/Haiku/Codex). Produced **21 findings**, team-triaged, 4 escalated to Aaron, all closed. Aaron then approved **Pass A** — a fresh panel on §5/§7/§8/§9/§10 (chapters the original pass didn't deeply review). Pass A produced **25 more findings** with strong cross-persona convergence — 7 blockers and several genuine correctness bugs the meta-pass missed.
+
+## Key rulings Aaron made this session
+- **L3.5 Scheduler tier:** KEEP in v1 (strong original rationale)
+- **L1 substrate (ADR-0002):** Accept custom WAL as-is — architectural coupling drives the decision, no SQLite benchmark needed
+- **B3 hermetic replay:** Honest "boundary-faithful vs prompt-faithful" framing in §11.10.1 + §12.7
+- **E3 secrets/PII:** v1 = honest §18 known-limits doc + `crucible session delete` + retention ceiling; NO redaction subsystem; redaction is v1.5+ OPEN
+- **D1 tool capture scope:** Capture only LLM-visible `tool_result`, NOT raw `tool_output` (resolves §11/§12 ambiguity)
+- **Tiered recording fidelity:** Future v1.5+ consideration (captured as directive)
+- **E4 plugin artifacts:** Honesty caveat in §11.10/§15.5, NOT a retention subsystem
+
+## What landed this session (filesystem evidence)
+- 13 design chapters edited + 4 new ADR body files: `0002-l1-wal-substrate.md`, `0006-router-policy-chokepoint.md`, `0011-observation-commitment.md`, `0018-pareto-incomparable.md`
+- Walking-skeleton (Phase 0.5) milestone added to plan
+- v1 retention floor (500MiB soft / 2GiB hard / 90-day) added to §17
+- CAS GC, WAL write-lock, hook-bus capacity model, branching cost model all specified
+- Perf conformance suite (`ci:conformance:perf`) added to §16.1
+- Scheduler row + A13 acceptance scenario added to §16.3 (Laura, pre-silent-success)
+
+## ⚠️ Pass A execution gaps — to address next session
+Pass A triage went out to 6 agents. **Graham executed end-to-end** (3 ADR bodies created, chapters edited). **Valanice triaged cleanly** (4 ACCEPT, no escalations) but did NOT execute her §9 edits — they're queued in her response, not in the filesystem. **Rosella, Gabriel, Roger, Laura went silent** on the Pass A triage (likely stale context after long-lived background agents).
+
+**Next session: pick up these Pass A items.** Findings stored in DB table `persona_findings` review_id=2. The work owed:
+
+### Valanice (queued, not done) — §9 Aperture edits
+- PA-B5 Defer paradox: remove `defer` from §9.4 apply-failed resolution list (or add `aperture_deferred` Observation sub-kind)
+- Cache invalidation: rewrite §9.2 cache-validity rule to prefix-compatible model
+- Defer volatility disclosure: add `--help` text + `@inbox` render hint per §9.9
+- ApertureNotifier Phase 0.5 stub: add Phase 0.5 row to §9.11 + mirror in §8.1
+
+### Rosella (silent) — §7 Generators + §10 Branching cluster (7 items)
+- **PA-B4 ancestry/replay divergence (BLOCKING)** — define ancestry-aware reads uniformly OR split APIs. **Aaron may want to rule on this.**
+- Trust-tier promotion persistence: add derived `plugin_trust_history` table keyed on `manifestSha256`
+- **Deterministic childSid collision** — pick (a) counter/timestamp in preimage, (b) protocol-error semantics, or (c) "resume aborted session". **Aaron pick.**
+- Conformance suite C-8→C-9 drift in §7.A
+- Pareto eval perf budget
+- `alternatives[]` unbounded — top-K + CAS reference
+- Invocation-stack O(N) reconstruction
+
+### Gabriel (silent) — Applier/infra cluster (3 items)
+- **PA-B6 fence-violation retry counter (BLOCKING)** — explicit retriesRemaining + jittered backoff + telemetry
+- Back-pressure projection staleness in §5.A.4
+- Subsystem-specific threat-model stubs (coordinate with Graham's ADR bodies)
+
+### Roger (silent) — CLI (2 items)
+- Add `crucible perf [top] [--json]` to §13.1 verb table (or replace §17 citation with `crucible query`)
+- Defer `--help` UX text (coordinate with Valanice)
+
+### Laura (silent) — Test strategy (2 items)
+- Thread C-9 (structural-proposal supersede) through §16 acceptance signals (coordinate with Rosella on §7.A)
+- Propose "Acceptance Signals" subsection requirement for ADR body template (coordinate with Graham)
+
+## Likely escalations for Aaron (next session)
+1. **PA-B4 ancestry/replay divergence** (Rosella's blocker) — strategic fork: unify ancestry-aware reads vs. split APIs
+2. **childSid collision** (Rosella) — three concrete options to pick from
+3. **L3.5 stub Phase 0.5 — FifoScheduler** (Graham triage item, may be queued in his work) — confirm staged implementation OK
+
+## Open v1.5+ doors captured (do not address in v1)
+- Tiered recording fidelity (call-only / call+result / call+full-output)
+- PII/secret redaction beyond user-managed delete
+- Plugin artifact retention subsystem (if honest caveat ever proves insufficient)
+
+---
+
+**Previous focus (Phase 4.5)** retained below for historical context.
+
+---
 
 **Phase 4.5: Local Feedback Loop** — SPECIFIED, ready for implementation
 
