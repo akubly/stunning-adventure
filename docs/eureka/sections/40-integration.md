@@ -81,6 +81,14 @@ cairn → types       (CairnBridgeEvent, SessionIdentity)
 }
 ```
 
+### §40.1.1 — Integration Test Placement (C8 Resolution)
+
+**Integration test placement:** Cross-package integration tests for Eureka behavior live in `packages/eureka/src/__tests__/`. Eureka may add `@akubly/cairn` and `@akubly/forge` as devDependencies and import them for integration verification. Cairn and Forge **MUST NOT** import `@akubly/eureka` — in production code **OR in tests**. This consumer-tests-upstream pattern preserves the kernel boundary and the independently-deployable promise of Eureka. Enforced by the `no-restricted-imports` eslint rule in `eslint.config.js`.
+
+**Rationale:** Eureka is a standalone kernel component (§1 PRD, §40 Overview). Allowing downstream packages (Cairn, Forge) to write cross-package integration tests importing Eureka would erode this boundary and create a subtle coupling anti-pattern: engineers might normalize "just a quick integration test in Cairn" and gradually weaken the architectural separation. Instead, Eureka owns its own integration tests, adding Cairn/Forge as devDependencies to exercise real-world integration scenarios (London-school "sociable tests" per §55 §1.2). This preserves the architectural lens: Eureka is a consumer of substrate (types), and substrate layers (Cairn, Forge) never import from the consumer.
+
+**Authority:** Cycle 2 C8 resolution (Aaron Kubly directive, 2026-05-29). Graham (Lead) recommended test-dir exemption for boundary validation; Genesta (Eureka Architect) and Aaron sided with strict enforcement. This section documents the decision to prevent future erosion of the kernel boundary.
+
 ---
 
 ## §40.2 — Cairn Integration
