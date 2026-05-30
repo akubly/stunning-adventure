@@ -214,3 +214,101 @@ export async function recall(
 ): Promise<RecallResult[]> {
   return (await recallWithScores(options, deps)).map(s => s.fact);
 }
+
+// =============================================================================
+// M5/M6 — Trust-feedback mutation (§30 §2.3 "Trust Dynamics Beyond the Static Floor")
+// =============================================================================
+
+/** Feedback event types per §30 §2.3. */
+export type FeedbackEvent = 'corroboration' | 'contradiction' | 'user_correction';
+
+/**
+ * Write-seam for trust mutations (§55 §1.2 — storage I/O is always mocked in tests).
+ * Production implementation delegates to the FactStore persistence layer.
+ */
+export interface TrustUpdater {
+  update(args: { factId: string; sessionId: SessionId; trust: number }): Promise<void>;
+}
+
+/**
+ * Read-seam for current fact trust (M6-B — higher-level orchestrator seam).
+ * Separates the read responsibility from the write responsibility per London-school
+ * single-responsibility: applyFeedback owns delta computation; FactReader owns the read.
+ */
+export interface FactReader {
+  read(args: { factId: string; sessionId: SessionId }): Promise<{ trust: number } | null>;
+}
+
+/**
+ * Apply a feedback event to a fact, mutating trust by the event-driven delta (§30 §2.3):
+ *   Corroboration:   trust = min(1.0, trust + 0.10)
+ *   Contradiction:   trust = max(0.0, trust - 0.10)
+ *   User correction: trust = min(1.0, max(0.0, trust + correctionDelta))
+ *
+ * The caller supplies `currentTrust`; the activity computes the new value and
+ * delegates the write to the injected `TrustUpdater` seam. This function does NOT
+ * read from storage — use `applyFeedbackById` when the caller doesn't know currentTrust.
+ *
+ * @throws if event='user_correction' and correctionDelta is omitted (programming error —
+ *         a 0-delta silent fallback would call TrustUpdater for no reason and mislead callers)
+ */
+export async function applyFeedback(
+  options: {
+    factId: string;
+    sessionId: SessionId;
+    event: FeedbackEvent;
+    currentTrust: number;
+    correctionDelta?: number;
+  },
+  deps: { trustUpdater: TrustUpdater; clock: ClockProvider },
+): Promise<void> {
+  const { factId, sessionId, event, currentTrust, correctionDelta } = options;
+  const { trustUpdater } = deps;
+
+  let newTrust: number;
+
+  if (event === 'corroboration') {
+    newTrust = Math.min(1.0, currentTrust + 0.10);
+  } else if (event === 'contradiction') {
+    newTrust = Math.max(0.0, currentTrust - 0.10);
+  } else {
+    // user_correction — correctionDelta is required
+    if (correctionDelta === undefined) {
+      throw new Error(
+        'applyFeedback: correctionDelta is required when event is "user_correction"',
+      );
+    }
+    newTrust = Math.min(1.0, Math.max(0.0, currentTrust + correctionDelta));
+  }
+
+  await trustUpdater.update({ factId, sessionId, trust: newTrust });
+}
+
+/**
+ * Higher-level orchestrator: reads currentTrust from storage via the `FactReader` seam,
+ * then delegates to `applyFeedback`. Callers do not need to supply currentTrust.
+ *
+ * @throws if FactReader returns null (fact not found — TrustUpdater is NOT called)
+ */
+export async function applyFeedbackById(
+  options: {
+    factId: string;
+    sessionId: SessionId;
+    event: FeedbackEvent;
+    correctionDelta?: number;
+  },
+  deps: { factReader: FactReader; trustUpdater: TrustUpdater; clock: ClockProvider },
+): Promise<void> {
+  const { factId, sessionId, event, correctionDelta } = options;
+  const { factReader, trustUpdater, clock } = deps;
+
+  const fact = await factReader.read({ factId, sessionId });
+  if (fact === null) {
+    throw new Error(`applyFeedbackById: fact not found — factId="${factId}"`);
+  }
+
+  await applyFeedback(
+    { factId, sessionId, event, currentTrust: fact.trust, correctionDelta },
+    { trustUpdater, clock },
+  );
+}
