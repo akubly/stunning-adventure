@@ -43,6 +43,12 @@ import { lintSkill, formatLintSummary } from '../agents/skillLinter.js';
 import { validateSkill, formatValidationSummary } from '../agents/skillValidator.js';
 import { loadTestScenario, runTestScenario, formatTestReport } from '../agents/skillTestHarness.js';
 import { insertTestResults } from '../db/skillTestResults.js';
+import {
+  queryOptimizationHints,
+  resolveOptimizationHint,
+  ACTIVE_HINT_STATUSES,
+} from '../db/optimizationHints.js';
+import type { HintStatus, HintResolution } from '../db/optimizationHints.js';
 
 import type { GrowthSummary, InsightStatus, PrescriptionStatus, Session, ValidationResult } from '../types/index.js';
 import type { SkillTestResultInsert } from '../db/skillTestResults.js';
@@ -1387,6 +1393,188 @@ server.registerTool(
 
       return {
         content: [{ type: 'text' as const, text: summary }],
+      };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: list_optimization_hints
+// ---------------------------------------------------------------------------
+
+const HINT_RESOLUTION_STATUSES = ['resolved', 'dismissed'] as const;
+const VALID_HINT_STATUSES = [
+  'pending', 'accepted', 'applied', 'rejected',
+  'deferred', 'expired', 'suppressed', 'failed',
+] as const;
+
+server.registerTool(
+  'list_optimization_hints',
+  {
+    title: 'List Optimization Hints',
+    description:
+      'List optimization hints that Forge has generated for your skills. ' +
+      'Each hint includes a summary, category, impact score, confidence, and current status. ' +
+      'Defaults to showing active (pending/accepted/deferred) hints — the ones you can act on. ' +
+      'Filter by status or skill_id to narrow results. ' +
+      'Use resolve_optimization_hint to mark a hint as resolved or dismissed.',
+    inputSchema: {
+      status: z
+        .enum(VALID_HINT_STATUSES)
+        .optional()
+        .describe(
+          'Filter by hint status. Omit to return active hints (pending, accepted, deferred). ' +
+          'Pass a specific status to see hints in that lifecycle state.',
+        ),
+      skill_id: z
+        .string()
+        .optional()
+        .describe('Filter to hints for a specific skill ID. Omit to return hints for all skills.'),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .default(20)
+        .describe('Maximum number of hints to return (1–100, default 20).'),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ status, skill_id, limit }) => {
+    try {
+      ensureDb();
+
+      const effectiveStatuses: HintStatus[] | HintStatus | undefined = status
+        ? (status as HintStatus)
+        : ([...ACTIVE_HINT_STATUSES] as HintStatus[]);
+
+      const hints = queryOptimizationHints(db, {
+        status: effectiveStatuses,
+        skillId: skill_id,
+        limit,
+      });
+
+      const summaries = hints.map((h) => ({
+        id: h.id,
+        skill_id: h.skillId,
+        source: h.source,
+        category: h.category,
+        summary: h.description,
+        recommendation: h.recommendation,
+        impact_score: h.impactScore,
+        confidence_level: confidenceToWords(h.confidence),
+        status: h.status,
+        created_at: h.createdAt,
+        resolution_note: h.resolutionNote ?? undefined,
+      }));
+
+      const activeCount = hints.filter((h) =>
+        (ACTIVE_HINT_STATUSES as readonly string[]).includes(h.status),
+      ).length;
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify(
+              {
+                count: summaries.length,
+                active_count: activeCount,
+                hints: summaries,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: resolve_optimization_hint
+// ---------------------------------------------------------------------------
+
+server.registerTool(
+  'resolve_optimization_hint',
+  {
+    title: 'Resolve Optimization Hint',
+    description:
+      'Mark an optimization hint as resolved or dismissed. ' +
+      'Use "resolved" when you have addressed the hint manually. ' +
+      'Use "dismissed" when you have decided not to act on it. ' +
+      'Both actions are idempotent — safe to call even if the hint is already resolved. ' +
+      'Use list_optimization_hints to find hint IDs.',
+    inputSchema: {
+      hint_id: z
+        .string()
+        .describe('The ID of the hint to resolve. Get IDs from list_optimization_hints.'),
+      resolution: z
+        .enum(HINT_RESOLUTION_STATUSES)
+        .describe(
+          '"resolved" — you addressed the issue manually. ' +
+          '"dismissed" — you have decided not to act on this hint.',
+        ),
+      note: z
+        .string()
+        .optional()
+        .describe('Optional note explaining why you resolved or dismissed this hint.'),
+    },
+    annotations: { readOnlyHint: false },
+  },
+  async ({ hint_id, resolution, note }) => {
+    try {
+      ensureDb();
+
+      const result = resolveOptimizationHint(db, hint_id, resolution as HintResolution, note);
+
+      if (!result) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({ error: `Hint '${hint_id}' not found.` }),
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const message = result.alreadyResolved
+        ? `ℹ️ Hint was already in a terminal state (${result.status}).`
+        : resolution === 'resolved'
+          ? '✅ Hint marked as resolved.'
+          : '👍 Hint dismissed.';
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify(
+              {
+                hint_id: result.id,
+                resolution: result.resolution,
+                status: result.status,
+                resolution_note: result.resolutionNote ?? undefined,
+                already_resolved: result.alreadyResolved,
+                message,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
       };
     } catch (err: unknown) {
       return {

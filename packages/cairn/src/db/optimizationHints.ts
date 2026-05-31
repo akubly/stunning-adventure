@@ -53,6 +53,7 @@ export interface OptimizationHintRow {
   generatedAt: string;
   appliedAt: string | null;
   createdAt: string;
+  resolutionNote: string | null;
 }
 
 export interface OptimizationHintQuery {
@@ -74,6 +75,16 @@ export interface ReplaceActiveHintsAtomicallyResult {
   /** Hints not inserted because an active replacement already existed by insert time. Normally 0. */
   skipped: number;
   results: InsertHintIfNewResult[];
+}
+
+export type HintResolution = 'resolved' | 'dismissed';
+
+export interface ResolveHintResult {
+  id: string;
+  resolution: HintResolution;
+  status: HintStatus;
+  resolutionNote: string | null;
+  alreadyResolved: boolean;
 }
 
 // Keep in sync with migration 013's partial UNIQUE index predicate; Wave 5 should consider a generated column or migration-time template for I8.
@@ -119,6 +130,7 @@ function mapRow(row: Record<string, unknown>): OptimizationHintRow {
     generatedAt: row.generated_at as string,
     appliedAt: (row.applied_at as string | null) ?? null,
     createdAt: row.created_at as string,
+    resolutionNote: (row.resolution_note as string | null) ?? null,
   };
 }
 
@@ -445,3 +457,53 @@ export function deleteOptimizationHint(db: Database.Database, id: string): boole
   const res = db.prepare('DELETE FROM optimization_hints WHERE id = ?').run(id);
   return res.changes > 0;
 }
+
+/**
+ * Resolve or dismiss a hint from Copilot. Idempotent: if the hint is already
+ * in a terminal state, returns the current state without erroring.
+ *
+ * - `resolved`: hint addressed by the user — transitions to `rejected` with note.
+ * - `dismissed`: hint not wanted — transitions to `rejected` with note.
+ *
+ * Both dispositions map to `rejected` (the correct terminal state for
+ * user-directed closure); the `resolution` field in the return value
+ * preserves the user's intent.
+ *
+ * Returns null if the hint does not exist.
+ */
+export function resolveOptimizationHint(
+  db: Database.Database,
+  id: string,
+  resolution: HintResolution,
+  note?: string,
+): ResolveHintResult | null {
+  return db.transaction(() => {
+    const current = getOptimizationHintWithDb(db, id);
+    if (!current) return null;
+
+    const terminalStatuses: HintStatus[] = ['applied', 'rejected', 'expired', 'suppressed', 'failed'];
+    const alreadyResolved = terminalStatuses.includes(current.status);
+
+    if (!alreadyResolved) {
+      const resolvedNote = note ?? null;
+      db.prepare(
+        `UPDATE optimization_hints
+            SET status = 'rejected',
+                resolution_note = ?
+          WHERE id = ?`
+      ).run(resolvedNote, id);
+
+      emitHintTransitionEvent(db, current.skillId, id, current.status, 'rejected');
+    }
+
+    const updated = getOptimizationHintWithDb(db, id)!;
+    return {
+      id: updated.id,
+      resolution,
+      status: updated.status,
+      resolutionNote: updated.resolutionNote,
+      alreadyResolved,
+    };
+  }).immediate();
+}
+
