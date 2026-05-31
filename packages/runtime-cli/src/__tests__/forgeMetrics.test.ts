@@ -10,7 +10,7 @@ import {
 import type { ExecutionProfileUpsert } from '@akubly/cairn';
 import { forgePrescribeHandler } from '@akubly/skillsmith-runtime';
 import { formatJson, formatTable } from '../metrics/formatters.js';
-import { loadMetrics, normalizeProfileSource } from '../metrics/loadMetrics.js';
+import { loadMetrics } from '../metrics/loadMetrics.js';
 import type { SkillMetrics } from '../metrics/types.js';
 
 // ---------------------------------------------------------------------------
@@ -200,32 +200,6 @@ describe('formatTable', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Unit: normalizeProfileSource boundary validation
-// ---------------------------------------------------------------------------
-
-describe('normalizeProfileSource', () => {
-  it('returns valid LoadedProfileSource for each member of the allowed set', () => {
-    expect(normalizeProfileSource('per-skill')).toBe('per-skill');
-    expect(normalizeProfileSource('per-model')).toBe('per-model');
-    expect(normalizeProfileSource('per-user')).toBe('per-user');
-    expect(normalizeProfileSource('global')).toBe('global');
-  });
-
-  it('returns null for an unrecognised string (legacy / future value)', () => {
-    expect(normalizeProfileSource('per-org')).toBeNull();
-    expect(normalizeProfileSource('')).toBeNull();
-    expect(normalizeProfileSource('GLOBAL')).toBeNull();
-  });
-
-  it('returns null for non-string inputs', () => {
-    expect(normalizeProfileSource(null)).toBeNull();
-    expect(normalizeProfileSource(undefined)).toBeNull();
-    expect(normalizeProfileSource(42)).toBeNull();
-    expect(normalizeProfileSource({ source: 'per-skill' })).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Integration: loadMetrics
 // ---------------------------------------------------------------------------
 
@@ -362,6 +336,50 @@ describe('loadMetrics integration', () => {
     expect(metrics.recentPrescriberRuns!).toHaveLength(1);
     // Unknown profileSource must be coerced to null, not passed through as a lie.
     expect(metrics.recentPrescriberRuns![0]!.profileSource).toBeNull();
+  });
+
+  it('emits a stderr warning for unknown non-empty profileSource strings', () => {
+    const db = getDb();
+    const systemSessionId = ensureSystemSession(db);
+
+    const stderrMessages: string[] = [];
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
+      stderrMessages.push(String(chunk));
+      return true;
+    });
+
+    // Unknown non-empty string — must warn.
+    logEvent(db, systemSessionId, 'prescriber_run', {
+      skillId: 'skill-warn-source',
+      triggeredBy: 'mcp:forge_prescribe',
+      profileSource: 'per-org',
+      result: { inserted: 1, skipped: 0, errored: 0, totalHints: 1 },
+    });
+    loadMetrics({ skillId: 'skill-warn-source', now: NOW });
+
+    expect(stderrMessages.some(m => m.includes('per-org'))).toBe(true);
+    expect(stderrMessages.some(m => m.includes('[loadMetrics]'))).toBe(true);
+    stderrMessages.length = 0;
+
+    // null profileSource — must NOT warn.
+    logEvent(db, systemSessionId, 'prescriber_run', {
+      skillId: 'skill-null-source',
+      triggeredBy: 'mcp:forge_prescribe',
+      profileSource: null,
+      result: { inserted: 1, skipped: 0, errored: 0, totalHints: 1 },
+    });
+    loadMetrics({ skillId: 'skill-null-source', now: NOW });
+    expect(stderrMessages.length).toBe(0);
+
+    // undefined / missing profileSource — must NOT warn.
+    logEvent(db, systemSessionId, 'prescriber_run', {
+      skillId: 'skill-undef-source',
+      triggeredBy: 'mcp:forge_prescribe',
+      result: { inserted: 1, skipped: 0, errored: 0, totalHints: 1 },
+    });
+    loadMetrics({ skillId: 'skill-undef-source', now: NOW });
+    expect(stderrMessages.length).toBe(0);
   });
 
   // I3: malformed payload rows must be skipped; the function must never return null

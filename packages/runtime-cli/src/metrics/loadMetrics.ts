@@ -15,12 +15,25 @@ import type {
   SkillMetricsConfidence,
 } from './types.js';
 
-const VALID_PROFILE_SOURCES: ReadonlySet<string> = new Set<LoadedProfileSource>([
-  'per-skill', 'per-model', 'per-user', 'global',
-]);
+// Compile-time guard: this Record forces VALID_PROFILE_SOURCES to cover every
+// member of LoadedProfileSource. Adding a new member upstream breaks this build
+// with a missing-key error — far better than a silent runtime regression where
+// new valid values get normalized to null.
+const _PROFILE_SOURCE_EXHAUSTIVENESS = {
+  'per-skill': true,
+  'per-model': true,
+  'per-user':  true,
+  'global':    true,
+} as const satisfies Record<LoadedProfileSource, true>;
 
-/** @internal Exported for testing only. */
-export function normalizeProfileSource(value: unknown): LoadedProfileSource | null {
+// Widened to ReadonlySet<string> so .has(value) accepts arbitrary strings at the
+// validation site; the Set<LoadedProfileSource> initializer prevents typos in the
+// member list.
+const VALID_PROFILE_SOURCES: ReadonlySet<string> = new Set(
+  Object.keys(_PROFILE_SOURCE_EXHAUSTIVENESS),
+);
+
+function normalizeProfileSource(value: unknown): LoadedProfileSource | null {
   return typeof value === 'string' && VALID_PROFILE_SOURCES.has(value)
     ? (value as LoadedProfileSource)
     : null;
@@ -106,9 +119,17 @@ function queryPrescriberRuns(
         };
       };
 
+      const rawProfileSource = payload.profileSource;
+      const profileSource = normalizeProfileSource(rawProfileSource);
+      if (profileSource === null && typeof rawProfileSource === 'string' && rawProfileSource.length > 0) {
+        process.stderr.write(
+          `[loadMetrics] prescriber_run row has unknown profileSource ${JSON.stringify(rawProfileSource)} — coerced to null\n`,
+        );
+      }
+
       validRows.push({
         triggeredBy: typeof payload.triggeredBy === 'string' ? payload.triggeredBy : 'unknown',
-        profileSource: normalizeProfileSource(payload.profileSource),
+        profileSource,
         inserted: typeof payload.result?.inserted === 'number' ? payload.result.inserted : 0,
         skipped: typeof payload.result?.skipped === 'number' ? payload.result.skipped : 0,
         errored: typeof payload.result?.errored === 'number' ? payload.result.errored : 0,
