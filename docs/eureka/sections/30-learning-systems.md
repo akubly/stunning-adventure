@@ -547,6 +547,71 @@ Query-time computation avoids batch recomputation. Stored timestamps are immutab
 
 ---
 
+### 2.3 Trust Dynamics Beyond the Static Floor
+
+**Purpose:** Event-driven trust mutation on committed facts — the mechanism by which the system learns from feedback signals at runtime.
+
+**Activity:** `applyFeedback(options, deps)` — computes the correct clamped new trust value from an event and delegates the write to an injected `TrustUpdater` seam (§55 §1.2: storage I/O is always mocked in tests).
+
+**Higher-level orchestrator:** `applyFeedbackById(options, deps)` — reads `currentTrust` from storage via a `FactReader` seam before applying the delta. Callers do not need to know current trust; the activity owns the read.
+
+**Mutation Formula:**
+
+| Event | Formula | Clamp |
+|---|---|---|
+| `corroboration` | `trust + 0.10` | `min(1.0, result)` |
+| `contradiction` | `trust − 0.10` | `max(0.0, result)` |
+| `user_correction` | `trust + correctionDelta` | `min(1.0, max(0.0, result))` |
+
+**Seam Interfaces:**
+
+```typescript
+// Write seam — owns the storage write
+interface TrustUpdater {
+  update(args: { factId: string; sessionId: SessionId; trust: number }): Promise<void>;
+}
+
+// Read seam (applyFeedbackById only) — owns the storage read
+interface FactReader {
+  read(args: { factId: string; sessionId: SessionId }): Promise<{ trust: number } | null>;
+}
+```
+
+**Sign Convention for User Correction:**
+- `correctionDelta` is **required** for `user_correction` events — omitting it throws at runtime
+- Positive delta raises trust; negative delta lowers trust
+- Clamped symmetrically to `[0.0, 1.0]` domain invariant
+
+**Guard Contracts:**
+- `applyFeedback`: throws `RangeError` if `currentTrust` is non-finite or outside `[0, 1]` — corrupt/buggy callers fail loudly before any side effects
+- `applyFeedback`: throws if `event='user_correction'` and `correctionDelta` is `undefined` — a silent `?? 0` fallback would be a misleading no-op write
+- `applyFeedback`: throws `RangeError` if `event='user_correction'` and `correctionDelta` is non-finite (NaN, ±Infinity) — silently propagating a corrupt delta to TrustUpdater would compute `NaN` and poison storage
+- `applyFeedbackById`: throws if `FactReader.read()` returns `null` — `TrustUpdater` is NOT called for a missing fact
+- `applyFeedbackById`: throws `RangeError` if the stored `fact.trust` is non-finite (corrupted storage row)
+
+**Named Interface Types (M1–M4 pattern):**
+```typescript
+interface ApplyFeedbackOptions    { factId: string; sessionId: SessionId; event: FeedbackEvent; currentTrust: number; correctionDelta?: number; }
+interface ApplyFeedbackDeps       { trustUpdater: TrustUpdater; }
+interface ApplyFeedbackByIdOptions { factId: string; sessionId: SessionId; event: FeedbackEvent; correctionDelta?: number; }
+interface ApplyFeedbackByIdDeps   { factReader: FactReader; trustUpdater: TrustUpdater; }
+```
+No `clock` field in either deps type — clock is not consumed by the feedback path. Time injection is a concern of the recency scoring path (§2.4).
+
+**Measurable Invariants:**
+- Trust never exceeds `1.0` after any mutation
+- Trust never falls below `0.0` after any mutation
+- `TrustUpdater` is never called when input validation fails
+
+**Relationship to §2.1.1 Zombie-Fact semantics:**
+Repeated contradiction events can decay trust to `0.0`. The zombie-fact policy (§2.1.1) governs what happens at that floor: the fact remains in storage (`retired=false`) but is filtered by the recall `trust >= 0.15` predicate. Trust mutation and fact retirement are orthogonal dimensions.
+
+**Implementation location:** `packages/eureka/src/activities/recall.ts` — `applyFeedback`, `applyFeedbackById`
+
+**Test coverage:** `packages/eureka/src/activities/__tests__/recall-feedback.test.ts` — M5 (C1–C2 corroboration/contradiction) + M6-A (user-correction A1–A5 including required-delta guard) + M6-B (read-seam B1–B2)
+
+---
+
 ### 2.4 Time Injection for Testability
 
 **Purpose:** Enable deterministic recency tests by abstracting time source behind a mockable interface.
