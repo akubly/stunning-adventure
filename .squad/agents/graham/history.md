@@ -1,7 +1,7 @@
 # Graham — History
 
 **Role:** Lead / Architect (Overall vision, cross-system integration, tiebreak arbitration)
-**Status:** M0/M1/M2 dogfood scope drafted (priority reset from Aaron). Synthesis complete.
+**Status:** M0/M1 dogfood scope in flight. M0 shipped; M1 PR #40 open (not merged).
 **Last update:** 2026-05-31
 **Status:** M5+M6 branch prep complete. Feature branch `eureka/m5-m6-trust-feedback` ready for review-cycle.
 **Last update:** 2026-05-30
@@ -33,8 +33,10 @@
 - Aaron directive: "GP-tournament + Meta-optimization noted as compelling-but-deferred"
 - **Deliverable:** M0/M1/M2 plan:
   - **M0** (alexander): forge-mcp registration in plugin + copilot configs → PR #36 ✅ shipped b22c8e7
-  - **M1** (roger): hint consumption MCP tools (cairn MCP expand recall hints → decision hints)
+  - **M1** (roger): hint consumption MCP tools (cairn MCP expand recall hints → decision hints) → PR #40 ✅ open
   - **M2** (gabriel): bash hooks + README (install forge-mcp, shell init integration)
+
+**M1 Status (2026-05-31):** Roger dispatched M1 PR #40 (list_optimization_hints + resolve_optimization_hint). Migration 017 (resolution_note column). +15 tests → 708 total. Build clean. Orchestration log: 2026-05-31T19-19-47Z.
 
 ---
 
