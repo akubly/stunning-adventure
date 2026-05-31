@@ -175,7 +175,7 @@ This is deterministic **within a single execution timeline**, but creates a coll
 - **Prompt implementation complexity:** TTY detection, exit codes, relative time display, flag parsing
 
 ### Neutral
-- **Orphaned directories accumulate (new-fork path):** Aborted forks leave WAL directories until GC runs. CLI `crucible session list --status=aborted` surfaces them for manual cleanup; §17 retention floor reclaims disk space automatically after 90 days.
+- **Orphaned directories accumulate (new-fork path):** Aborted forks leave WAL directories until the user runs `crucible gc`. CLI `crucible session list --status=aborted` surfaces them for manual cleanup; §17.3.1's v1 retention floor blocks new session creation at the hard limit (2 GiB or any session older than 90 days) until explicit manual GC is run. Automatic sweep is deferred to v1.5+.
 - **Resume-fork ledger contains both experiments:** Aborted prefix + resumed suffix in same ledger. The `fork_resume` Observation row marks the transition; replay sees full contiguous history.
 
 ---
@@ -222,7 +222,7 @@ This is deterministic **within a single execution timeline**, but creates a coll
 - New generator proposals
 - Any work-session append that affects replay outcome
 
-Metadata appends (fork Decisions, GC records, retention updates) are **audit-trail updates** that do not affect session work content. Replay ignores metadata appends (they are L2 projector inputs, not L1 WAL replay inputs).
+Fork-choice Decision appends are replay-consumed: A-Fork-5 follows the recorded parent-ledger Decision to reconstruct whether the fork branch was created or resumed. GC and retention metadata appends remain replay-ignored because they are L2/projector inputs and do not affect work-session content.
 
 ---
 

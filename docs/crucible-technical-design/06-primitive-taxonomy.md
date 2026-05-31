@@ -123,12 +123,31 @@ interface ObservationPayload {
     | 'structural_proposal_emitted'   // Applier-written: entered paused-awaiting-structural-ack (§8.2)
     | 'structural_proposal_acked'     // Aperture-written: user approved structural proposal (§5.3, §8.2, §9)
     | 'structural_proposal_rejected'  // Aperture-written: user rejected structural proposal
-    | 'structural_proposal_expired';  // Applier/Aperture-written: queue deadline elapsed
+    | 'structural_proposal_expired'   // Applier/Aperture-written: queue deadline elapsed
+    | 'fork_origin'        // fork session anchor (§10.4, ADR-0019)
+    | 'fork_resume'        // resumed aborted fork marker (ADR-0019)
+    | 'predicate_timeout'  // Hook Bus fail-open timeout (§4.3, §17.1)
+    | 'fence_violation_retry' // Applier fence retry (§8.3, §17.1)
+    | 'fence_exhausted'    // Applier fence retries exhausted (§8.3, §17.1)
+    | 'replay_divergence'  // replay-equivalence failure marker (§11.6, §17.1)
+    | 'ci_gate_failure'    // PR-time CI gate failure surfaced in Aperture (§16, §17.1)
+    | 'subscriber_drop'    // observe queue overflow summary (§4.5, §17.1)
+    | 'projection_stale'   // L2 projection lag alert (§5.A.4, §17.1)
+    | 'projection_recovered' // L2 projection lag cleared (§5.A.4, §17.1)
+    | 'storage_soft_warn'; // retention soft-limit warning (§17.3.1)
   sourceManifestId: string | null;  // links injected_memory → memoryManifest entry (§2)
   body: unknown;
 }
 
 interface DecisionPayload {
+  eventType?:
+    | 'router.paused'
+    | 'router.decision'
+    | 'applier.revert'
+    | 'scheduler_dispatched'
+    | 'scheduler_deferred'
+    | 'scheduler_cancelled'
+    | 'scheduler_quanta_exhausted';
   rationale: string;
   alternatives: unknown[];          // structured per Trust-Tier badge requirements
   contextWindowCommitment: string;  // 32-byte BLAKE3 over CBOR-canonicalized window (R2-1 LOCK)
@@ -152,8 +171,8 @@ interface QuestionPayload {
 |-------------|-----------|
 | Request     | `tool_call`, `llm_call`, `TaskStart`, `user_input` |
 | Artifact    | `tool_output`, `llm_output`, `synthetic_output` (M3) |
-| Observation | `system_prompt`, `tool_definitions`, `injected_memory`, `tool_output`, `llm_response`, `cross_session_memory`, `context_truncation`, `external_input`, `TaskEnd`, `monotonic_violation`, `structural_proposal_emitted`, `structural_proposal_acked`, `structural_proposal_rejected`, `structural_proposal_expired`, `fork_origin`, `fork_resume` |
-| Decision    | (no sub-kind; differentiated by `commitmentMethod` + `nonDominatedReason`) |
+| Observation | `system_prompt`, `tool_definitions`, `injected_memory`, `tool_output`, `llm_response`, `cross_session_memory`, `context_truncation`, `external_input`, `TaskEnd`, `monotonic_violation`, `structural_proposal_emitted`, `structural_proposal_acked`, `structural_proposal_rejected`, `structural_proposal_expired`, `fork_origin`, `fork_resume`, `predicate_timeout`, `fence_violation_retry`, `fence_exhausted`, `replay_divergence`, `ci_gate_failure`, `subscriber_drop`, `projection_stale`, `projection_recovered`, `storage_soft_warn` |
+| Decision    | (no sub-kind; differentiated by `eventType`, `commitmentMethod`, and `nonDominatedReason`; v1 `eventType` values: `router.paused`, `router.decision`, `applier.revert`, `scheduler_dispatched`, `scheduler_deferred`, `scheduler_cancelled`, `scheduler_quanta_exhausted`) |
 | Question    | (differentiated by `audience` + `expectedAnswerShape`) |
 
 `TaskStart` and `TaskEnd` are **enum values on existing Request and Observation
@@ -201,8 +220,9 @@ pointer edges.
 The L0/L1 boundary types in §2 carry `CruciblePrimitive` (this section's
 union) as the canonical `CrucibleEvent` payload. The optional
 `causalContextWindow: EventId[]` field on the §2 Decision-emission contract
-(R2-1) is the field that L1 materializes into `DecisionPayload.causalContext\
-WindowSlice` and tags with `commitmentMethod: 'declared'`; when omitted at
+(R2-1) is the field that L1 materializes into
+`DecisionPayload.causalContextWindowSlice` and tags with
+`commitmentMethod: 'declared'`; when omitted at
 the boundary, L1 sets `commitmentMethod: 'fallback'` and leaves the slice
 field `null`. The §2 per-tool-call signaling rule maps directly to the
 Artifact `synthetic_output` sub-kind (M3) and the

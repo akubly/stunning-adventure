@@ -137,6 +137,22 @@ when the model API hides it (R2-1 hybrid).
 
 ---
 
+## Acceptance Signals
+
+- For providers that declare `causalContextWindow`, replay recomputes the exact
+  `contextWindowCommitment` from the declared `causalContextWindowSlice`.
+- For providers that do not declare attention data, L1 records
+  `commitmentMethod: 'fallback'`, sets the slice to `null`, and hashes the full
+  prefix without weakening replay equivalence.
+- Mutating any committed Observation in the declared or fallback context window
+  causes the replay oracle to fail at the dependent Decision.
+- SDK capability tests prove Copilot SDK v1 follows the fallback path until
+  `SdkProviderCapabilities.declaresCausalContextWindow` is true.
+- Aperture/CLI inspection exposes the commitment method and hash so users can
+  distinguish precise declared commitments from conservative fallback ones.
+
+---
+
 ## Security Implications
 
 - Observation rows contain verbatim LLM responses and tool outputs. Same

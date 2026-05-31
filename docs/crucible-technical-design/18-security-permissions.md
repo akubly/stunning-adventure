@@ -55,8 +55,8 @@ The Router (§5.1) ships with the following default `PolicyRow` set. Default-den
 
 **v1 isolation = process boundary + capability-passing through the boundary types.** Concretely:
 
-1. **L3 adapters run in the host process** in v1 (Rosella §7.2 lifecycle). They are not isolated by OS process. They ARE isolated by:
-   - **Capability scoping.** The `ProposalGeneratorBase.start(ctx)` context (§7.2) exposes only `ReadSetBuilder`, `LedgerWindowReader` (read-only), and `logger`. There is no filesystem, network, or process-spawn capability passed through `ctx`; adapters that need those must reach them via L0 (which captures every call).
+1. **L3 adapters run in the host process** in v1 (Rosella §7.2 lifecycle). They are not isolated by OS process; a malicious or careless adapter can still import Node built-ins such as `fs`, `net`, or `child_process` directly. v1 therefore treats the following as convention and audit discipline, not a hard sandbox:
+   - **Capability scoping by convention.** The `ProposalGeneratorBase.start(ctx)` context (§7.2) exposes only `ReadSetBuilder`, `LedgerWindowReader` (read-only), and `logger`. There is no filesystem, network, or process-spawn capability passed through `ctx`; well-behaved adapters that need those must reach them via L0 (which captures every call). Enforced sandboxing requires the v1.5+ process isolation below.
    - **Tier-stamped emission.** Every row an adapter emits carries `trustTier` set by the registry (§7.4). Router policy (§18.2) then applies.
    - **Fail-open on crash.** Adapter crashes do not crash the session; they emit `Observation{subKind:'external_input', body:{adapter, phase, error}}` and the host continues (§7.2 lifecycle row "start").
    - **Read-set discipline.** `causalReadSet` is built by the framework, not the adapter; an adapter cannot hide a read by omitting it (§7.3, conformance C-6).
@@ -73,7 +73,7 @@ The full plugin loader specification (resolution, manifest validation, capabilit
 
 **v1 stance (Aaron-vetted, decisions.md):** the user is responsible for not piping secrets through agents in v1. The single-user threat model (§18.1) makes this a tractable expectation. The architecture is shaped to accept the v1.5+ work as **additive**, not breaking:
 
-- A **redaction `DataProposalGenerator`** can sit between L0 capture and L1 commit, emitting compensating Observations that replace captured secrets with content-hashed placeholders. This is a new L3 generator + a new policy row in §18.2; no boundary change.
+- A **post-commit redaction `DataProposalGenerator`** can read captured Observations and emit compensating redaction Observations that replace projected secrets with content-hashed placeholders. This preserves the v1 L0/L1 boundary: L3 cannot sit before WAL commit without a v1.5+ L0/L1 boundary amendment or explicit pre-commit layer.
 - A **marketplace governance layer** can hang off the `external → community → adopted` promotion path (§7.4) by attaching publish/review/revocation Decisions to manifest installs. Trust tier is already the discrimination axis; the marketplace adds workflow on top.
 - A **replay-across-key-rotation policy** can pin the rotation event as a Decision and use the §11 oracle to require explicit user acknowledgment before replaying prefixes that cross the rotation. Replay refusal (§11.7) is the existing mechanism.
 
@@ -95,7 +95,7 @@ Until v1.5 lands, the v1 documentation surface (CLI help, README) MUST warn the 
 
 **Explicit non-goals for v1 (deferred to v1.5+):**
 
-- **Pre-capture redaction** — no regex-based secret scanner, no CAS quarantine on high-confidence patterns, no pre-commit hooks. Adding these mid-stream (v1.5) is additive: a redaction `DataProposalGenerator` (§7.3) sits between L0 capture and L1 commit, emitting compensating Observations that replace matched patterns with content-hashed placeholders. No boundary change.
+- **Pre-capture redaction** — no regex-based secret scanner, no CAS quarantine on high-confidence patterns, no pre-commit hooks. Adding a true pre-commit redaction layer in v1.5+ requires an explicit L0/L1 boundary amendment or a new pre-commit layer. A redaction `DataProposalGenerator` (§7.3) is post-commit only: it emits compensating Observations that replace projected matched patterns with content-hashed placeholders.
 - **At-projection redaction** — Aperture (§9) renders captured content verbatim in v1. A v1.5+ redaction layer could apply masking at projection-read time (when `crucible aperture show` renders rows), separate from the durable WAL. This is an Aperture UX change, not a ledger change.
 - **Tiered recording fidelity** — future work may add a `--capture-level` flag at session start: `metadata-only` (no tool results), `summary` (hashed digests only), `full` (current v1 behavior). This is a §2 boundary change and must wait for cross-layer coordination.
 

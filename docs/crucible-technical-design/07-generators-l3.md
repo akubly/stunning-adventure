@@ -443,7 +443,7 @@ Re-states §7.1 with the Router-pause contract:
    (typically because newer L2 state invalidates the prior recommendation).
    When it does, the replacement's `envelope.parentId` MUST be set to the
    `EventId` of the obsoleted proposal. The L3.5 Scheduler then emits
-   `Decision{subKind: 'scheduler_cancelled', body: { reason:
+   `Decision{body: { eventType: 'scheduler_cancelled', reason:
    'superseded', supersededBy: <replacement EventId> }}` against the
    obsoleted proposal (§5.A.2), keying off the `parentId` lineage edge to
    resolve `supersededBy` deterministically. An emission with

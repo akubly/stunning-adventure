@@ -121,6 +121,22 @@ envelope (§3), A.1 Rust port is the designated escalation path.
 
 ---
 
+## Acceptance Signals
+
+- L1 conformance suite proves append → seal → replay preserves EventId ordering
+  and hash-chain continuity across segment boundaries.
+- Crash-recovery property tests kill the process between WAL append, CAS write,
+  segment seal, and SQLite projection; recovery either completes the append or
+  rejects it without hash-chain ambiguity.
+- Append latency benchmark keeps p99 ≤ 1ms for v1 dogfood workloads; exceeding
+  that envelope triggers the reserved A.1 Rust-port escalation path.
+- A custom-WAL `cairn fsck` walk detects corrupted segment bytes, missing CAS
+  blobs, and broken parent links without consulting SQLite projections.
+- Swapping the `L1Substrate` implementation behind the abstract boundary leaves
+  Router, Applier, replay, and Aperture tests unchanged.
+
+---
+
 ## Consequences
 
 - **Positive:** Full control over hash-chain integrity, segment boundaries, and

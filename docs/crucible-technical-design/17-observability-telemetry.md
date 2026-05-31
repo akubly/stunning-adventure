@@ -20,6 +20,7 @@ Catalog enumerates every observability-bearing emission in the v1 system. **Laye
 | Hook verdict `pause`                   | L1    | attention           | any row with `hookVerdict='pause'`                              | same witness; subsequent rows restaged via §3.5 seal-and-split           | §4.4           |
 | Predicate timeout (fail-open observe)  | L1    | attention           | `observation` / `predicate_timeout`                             | `predicateId`, `commitOffset`, `elapsedMicros`                            | §4.3           |
 | Monotonic-timestamp violation          | L1    | attention           | `observation` / `monotonic_violation`                           | `expectedFloorNs`, `observedNs`, `cause: 'clock-skew' \| 'fork-floor'`    | §3.10 r4, §6.9 |
+| Storage soft warning                   | L1    | attention           | `observation` / `storage_soft_warn`                             | `usageBytes`, `softLimitBytes`, `message`                                 | §17.3.1        |
 | Structural proposal pending            | L4    | attention           | `decision` body `eventType='router.paused'`                     | `proposalId`, `dependentPaths[]`, `policyId`, `policyVersion`             | §5.3           |
 | Structural proposal acked / rejected / expired | L4 | notice          | `observation` / `structural_proposal_{acked,rejected,expired}`  | `pauseEventId`, `userVerdict`, `userNote`                                 | §5.3, §6.3     |
 | Router decision (apply / reject / resume) | L4 | (silent\* / notice) | `decision` body `eventType='router.decision'`                   | `proposalId`, `outcome`, `prescriptionCandidates[]` (with `nonDominatedReason`) | §5.4, §5.7  |
@@ -33,16 +34,16 @@ Catalog enumerates every observability-bearing emission in the v1 system. **Laye
 | Replay-equivalence divergence          | tooling | attention         | `observation` / `replay_divergence` (replayer-emitted, side channel) | `divergenceAtOffset`, `divergenceKind ∈ {oracle,bootstrap,commitment,plugin,cas-miss}` | §11.4, §11.6 |
 | CI gate failure (mock-drift, invariant) | CI   | attention           | external (CI run) → recorded as `observation` / `ci_gate_failure` on the merge-target session | `gate`, `runId`, `prNumber`, `prBlocked: true`            | §16, TDD-Q7    |
 | Subscriber drop (observe queue overflow) | L1  | notice              | `observation` / `subscriber_drop` (periodic)                    | `subscriptionId`, `droppedCount`, `windowOffsets`                         | §4.5           |
-| Scheduler dispatched                   | L3.5  | (silent\*\* / notice) | `decision` / `scheduler_dispatched`                            | `proposalId`, `generatorId`, `priority`, `quantaConsumed`, `queueDepthAtDispatch` | §5.A.2     |
-| Scheduler deferred (back-pressure)     | L3.5  | notice              | `decision` / `scheduler_deferred`                              | `proposalId`, `generatorId`, `reason ∈ {backpressure, quanta_exceeded, priority_starved, projection_stale}`, `routerQueueDepth` | §5.A.2, §5.A.4 |
-| Scheduler cancelled                    | L3.5  | attention           | `decision` / `scheduler_cancelled`                             | `proposalId`, `generatorId`, `reason ∈ {budget_exhausted, stale, superseded}`, `supersededBy` | §5.A.2     |
-| Scheduler quanta exhausted             | L3.5  | notice              | `decision` / `scheduler_quanta_exhausted`                      | `generatorId`, `windowStart`, `windowEnd`, `quantaBudget`, `quantaConsumed` | §5.A.2, §5.A.3 |
+| Scheduler dispatched                   | L3.5  | (silent\*\* / notice) | `decision` body `eventType='scheduler_dispatched'`             | `proposalId`, `generatorId`, `priority`, `quantaConsumed`, `queueDepthAtDispatch` | §5.A.2     |
+| Scheduler deferred (back-pressure)     | L3.5  | notice              | `decision` body `eventType='scheduler_deferred'`                | `proposalId`, `generatorId`, `reason ∈ {backpressure, quanta_exceeded, priority_starved, projection_stale}`, `routerQueueDepth` | §5.A.2, §5.A.4 |
+| Scheduler cancelled                    | L3.5  | attention           | `decision` body `eventType='scheduler_cancelled'`               | `proposalId`, `generatorId`, `reason ∈ {budget_exhausted, stale, superseded}`, `supersededBy` | §5.A.2     |
+| Scheduler quanta exhausted             | L3.5  | notice              | `decision` body `eventType='scheduler_quanta_exhausted'`        | `generatorId`, `windowStart`, `windowEnd`, `quantaBudget`, `quantaConsumed` | §5.A.2, §5.A.3 |
 | Back-pressure projection stale (PA)    | L3.5  | attention           | `observation` / `projection_stale`                             | `projectorName:'back_pressure'`, `lagOffsets`, `lagMs`, `projectionLastSeenOffset`, `ledgerHead` | §5.A.4     |
 | Back-pressure projection recovered (PA) | L3.5 | notice              | `observation` / `projection_recovered`                         | `projectorName:'back_pressure'`, `lagOffsets:0`, `recoveryTimeMs`         | §5.A.4     |
 
 \* `router.decision` with `outcome='apply'` on `builtin` tier is **silent** in Aperture per §8.8 row 4 (high-volume, visible in causal slice on demand). All other rows surface at the indicated severity.
 
-\*\* `scheduler_dispatched` for `builtin`-tier generators is **silent** in Aperture (high-volume; surfaces in `crucible perf` and causal slice). All other Scheduler rows surface at the indicated severity.
+\*\* `scheduler_dispatched` Decision `eventType` rows for `builtin`-tier generators are **silent** in Aperture (high-volume; surfaces in `crucible perf` and causal slice). All other Scheduler rows surface at the indicated severity.
 
 **Scheduler perf counters (read-path; no new primitives).** Derived from the catalog rows above via L2 projection:
 
@@ -139,4 +140,4 @@ multi-user workloads justify the complexity.
 - **TDD-Q7 mock-drift gate** — `ci_gate_failure` catalog row + Aperture `attention` severity composes with §16 to make the gate visible without external infra.
 - **Replay coherence** — §11.6 oracle uses the same `(sessionId, EventId)` correlation key; no separate trace store to keep in sync.
 
-No locked decisions are re-litigated. No new open question is surfaced. Cross-section dependencies (event shapes for §3, §4, §5, §7, §8, §9, §11) are consumed verbatim; this section adds no new vocabulary.
+No locked decisions are re-litigated. No new open question is surfaced. Cross-section dependencies (event shapes for §3, §4, §5, §7, §8, §9, §11) are consumed verbatim. §17 may catalog concrete observability event names, but any L1 `Observation.subKind` used here is registered in §6.3; Decision rows use §6.3 `eventType` payload values rather than Decision sub-kinds.

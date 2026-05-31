@@ -85,6 +85,21 @@ and SDK never decide policy.
 
 ---
 
+## Acceptance Signals
+
+- Conformance tests reject any Applier, Curator, generator, or adapter path that
+  reads or writes `PolicyRow` outside the Router package.
+- Every Router Decision records the policy row id/version, evaluated predicate,
+  and verdict so `crucible why <decision>` has a single audit path.
+- An attempted downstream override of a Router `reject` verdict fails at the
+  Applier `DecisionGate` and emits an audit-visible failure row.
+- Session-pinned policy tests show mid-session policy edits do not affect
+  already-started sessions until an explicit policy-switch Decision is recorded.
+- Policy-bypass threat tests demonstrate that compromising a generator cannot
+  produce an applied change without a Router-approved Decision row.
+
+---
+
 ## Consequences
 
 - **Positive:** Single audit trail. Bypass-free by construction.

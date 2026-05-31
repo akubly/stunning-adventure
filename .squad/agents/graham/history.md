@@ -38,6 +38,13 @@
 
 ## Learnings
 
+### 2026-05-31: PR #33 Cloud Review Cycle 2 Architecture Corrections
+
+- **§6 is the taxonomy registry; §17 is a catalog consumer.** When observability needs concrete event names, register L1 `Observation.subKind` values in §6.3 and keep Decision events as `DecisionPayload.eventType` values, not Decision sub-kinds. This keeps telemetry concrete without eroding the primitive taxonomy.
+- **Pareto frontier cardinality is input-bounded, not axis-bounded.** A frontier from `n` prescriptions can contain up to `n` non-dominated candidates; axis count affects pairwise comparison/search cost. v1 caps surfaced candidates by explicit Router policy, not by math derived from axis count.
+- **v1 sandboxing honesty matters.** In-process L3 adapters are convention- and audit-scoped, not enforceably sandboxed; real enforcement requires v1.5+ process isolation. L3 redaction generators are post-commit unless the L0/L1 boundary is amended.
+- **Fork metadata replay distinction.** Fork-choice Decisions are replay-consumed because they select the branch; GC/retention metadata remains replay-ignored projector input.
+
 ### ADR Status and Numbering Hygiene (2026-05-30)
 
 - **Accepted ADR files need concrete stamps.** Accepted — <date> by Aaron is not clerical polish; it is the lifecycle boundary between CTD-locked intent and durable ADR artifact.
@@ -992,7 +999,7 @@ Authored `docs/crucible-technical-design/19-adr-set.md` — 17 ADR index coverin
 
 ## CTD Phase 4 — UIS Framing Amendments (§1, §6, §19 FINAL)
 
-Authored surgical amendments to docs/crucible-technical-design/01-architectural-overview.md,  6-primitive-taxonomy.md, 19-adr-set.md after the 8/8 STRENGTHENS UIS weigh-in with rubber-duck precision reframing. Identity claim moved to "minimal typed trace algebra for replayable, accountable agentic computation"; hardware analogies demoted to documented mental scaffolding (§1.6, §6.7); L3.5 Scheduler tier inserted into §1.1 stack with responsibility-table row; §6 carries a new sub-kind governance principle naming semantic-bucket-inflation as the risk; §19 gained ADR-0019 (Graham, framing) and ADR-0024 (Gabriel, Scheduler tier) index rows. Decision drop at `.squad/decisions/inbox/graham-ctd-phase4-framing.md`.
+Authored surgical amendments to docs/crucible-technical-design/01-architectural-overview.md, 06-primitive-taxonomy.md, 19-adr-set.md after the 8/8 STRENGTHENS UIS weigh-in with rubber-duck precision reframing. Identity claim moved to "minimal typed trace algebra for replayable, accountable agentic computation"; hardware analogies demoted to documented mental scaffolding (§1.6, §6.7); L3.5 Scheduler tier inserted into §1.1 stack with responsibility-table row; §6 carries a new sub-kind governance principle naming semantic-bucket-inflation as the risk; §19 gained ADR-0019 (Graham, framing) and ADR-0024 (Gabriel, Scheduler tier) index rows. Decision drop at `.squad/decisions/inbox/graham-ctd-phase4-framing.md`.
 
 ### Learnings
 
@@ -1235,8 +1242,7 @@ See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-rev
 
 **Key risk flags codified:**
 - File-deletion mystery event: WI-B mitigates via isolation
-- 
-ode_modules re-install: cleanup flow handles junction removal before git worktree remove
+- node_modules re-install: cleanup flow handles junction removal before git worktree remove
 - Pre-Spawn documentation-only: add ACTIVE status + enforcement language
 - Parallel dispatch guard: warning-only for v1
 - Template drift: atomic updates across all three files

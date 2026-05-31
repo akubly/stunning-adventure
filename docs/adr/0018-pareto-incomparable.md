@@ -44,8 +44,8 @@ The Router's policy table (keyed by `(primitive_kind, source_tier, predicate, ac
 
 **Disadvantages:**
 - **User visible:** The incomparable-axes badge ([incomparable-axes]) appears in the UI, signaling a decision point that may confuse users who expect "best" to mean strictly optimal.
-- **Set size:** In rare cases, multiple axes collide and the non-dominated frontier grows (upper bound: ~O(n^k) in the worst case for k axes; in practice, v1 prescriptions cluster on 2–4 axes per kind).
-- **v1 cost:** The Router's policy table must handle ≥2 candidates per primitive kind in some cases (budget: handle ≤2 non-dominated candidates; if >2 appear, escalate/error).
+- **Set size:** In rare cases, multiple axes collide and the non-dominated frontier can include every input prescription (upper bound: `n` candidates from `n` inputs). Axis count affects comparison/search cost, not the maximum frontier size.
+- **v1 cost:** The Router's policy table must handle ≥2 candidates per primitive kind in some cases. v1 explicitly surfaces at most 10 Pareto-optimal candidates per decision; overflow escalates/errors by policy rather than pretending the bound follows from axis count.
 
 ### Option B: Apply Tiebreak Heuristic in the Evaluator
 
@@ -128,9 +128,9 @@ Option D (user escalation) is desirable long-term but requires synchronous user-
 The non-dominated frontier grows when multiple axes collide. For **v1 acceptance criteria**, the bounded guarantee is:
 
 - **≤2 non-dominated candidates** per prescription-generation call (typical case: one optimal, or one optimal + one incomparable pair)
-- **Scaling:** The frontier size is `O(k)` where `k` is the number of axes (v1: 10 axes → loose bound of ~10 frontier points in adversarial case; real-world typical: 2–4)
-- **Router policy budget:** `prescriptionCandidates[]` array ≤ 10 entries per Router decision
-- **Overflow:** If frontier size > 10, the evaluator logs a warning and the Router escalates to operator (not v1 on-path, but logged)
+- **Scaling:** The frontier size is bounded by `n`, the number of input prescriptions. Axis count affects dominance-comparison/search cost because each pairwise comparison evaluates the quality vector dimensions.
+- **Router policy cap:** v1 surfaces at most 10 Pareto-optimal candidates in `prescriptionCandidates[]` per Router decision.
+- **Overflow:** If frontier size > 10, the evaluator applies the deterministic v1 cap (stable generation order after canonical candidate id sort), logs a warning with the omitted ids, and the Router escalates to operator rather than silently choosing a winner.
 
 The user sees a `[incomparable-axes]` badge in Aperture (§9) when `nonDominatedReason === 'incomparable'`. Clicking the badge expands the multi-objective breakdown. The typical user experience: one prescription is shown as "best" (optimal), and the badge is rarely encountered unless dealing with structural proposals (where trade-offs are inherent).
 
@@ -226,6 +226,23 @@ The decision to enable refinement would be a policy-table row, not a code change
 - Incomparable candidates may include sensitive context in their rationale
   fields. Aperture and CLI views must apply the same local-only retention and
   redaction rules as other prescription projections (§18).
+
+---
+
+## Acceptance Signals
+
+- Pareto evaluator property tests generate adversarial quality vectors and
+  prove the emitted frontier is a subset of the `n` input prescriptions with no
+  dominated candidate included.
+- Comparison-cost benchmarks report pairwise comparisons and axis evaluations
+  separately, making clear that axes drive search cost, not frontier cardinality.
+- Router contract tests accept multiple `prescriptionCandidates[]` with
+  `nonDominatedReason: 'incomparable'` and route the tiebreak through policy,
+  never the evaluator.
+- A frontier with more than 10 non-dominated candidates triggers the deterministic
+  v1 cap, records omitted ids, and escalates according to Router policy.
+- Aperture and CLI display the `[incomparable-axes]` badge plus
+  `incomparableWith[]` for every surfaced incomparable candidate.
 
 ---
 

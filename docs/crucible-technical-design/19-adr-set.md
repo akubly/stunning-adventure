@@ -51,4 +51,4 @@ Rows without authored bodies carry status **Accepted (CTD-locked) — pending au
 
 ---
 
-**Cross-references:** All nineteen rows trace to a numbered CTD section; the CTD section is the durable argument, the ADR is the durable lock. The CTD itself is the source of truth until the ADR files land; thereafter the ADR governs and the CTD section becomes a pointer.
+**Cross-references:** All twenty rows trace to a numbered CTD section; the CTD section is the durable argument, the ADR is the durable lock. The CTD itself is the source of truth until the ADR files land; thereafter the ADR governs and the CTD section becomes a pointer.

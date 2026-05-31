@@ -244,8 +244,8 @@ against the interfaces above, without further design input:
   returns a fixed `BootstrapPayload`; assert L1 materializes the expected
   offset-0 Observation rows (sub-kinds `system_prompt`, `tool_definitions`,
   `injected_memory` ×N).
-- **A6 — Plugin Pinning at Fork (SessionMetadata flow):** `BootstrapPayload.\
-  memoryManifest[].versionHash` and `ToolDefinition.trustTier` provide the
+- **A6 — Plugin Pinning at Fork (SessionMetadata flow):**
+  `BootstrapPayload.memoryManifest[].versionHash` and `ToolDefinition.trustTier` provide the
   metadata that fork-time pinning hashes; A6 asserts a forked session's
   bootstrap payload is byte-equal to parent's at fork offset.
 - **TDD §6.8 Bootstrap-Capture-Completeness invariant:** the property test in
