@@ -1,17 +1,51 @@
-# Crispin — History
+# Crispin — History Archive (Summarized 2026-05-28)
 
-**Role:** Knowledge Representation Specialist (Graph schema, FactStore contract, kind taxonomies)
-**Status:** v5-final locked canonical. M2-M3: FactStore seams verified. Cycle 2 F6 resolution joint-authored.
-**Last update:** 2026-05-29
+## 2026-05-01 → 2026-05-27: Knowledge Representation & Eureka v5-Final
 
-**Key milestones:**
-- R1-R8: Schema design + 5 tension mitigations (confidence/trust brands, extraction-readiness)
-- M2-M3: FactStore.search() seam locked; SessionId brand in use; contract test flagged for M2 follow-up
-- Cycle 2 F6 (joint with Cassima): Resolved undersupply bug via minTrust predicate push
-- §50 line 211: Stale multiplier values flagged (§30 §1.2 canonical is authoritative)
-- Seven-mechanism defense-in-depth: Compiler + type system enforcement load-bearing
+**Role:** Knowledge Representation Specialist for Eureka. Owns graph schema, kind taxonomies, persistence formats.
 
-**See history-archive.md for detailed entries.**
+**Key Phases:**
+
+1. **First-Principles Design (R1–R5):** Advocated Path A (clean-slate) initially. Contributed v0/v1 graph schema: two-table graph (nodes + edges), multi-kind tagging, hybrid persistence. Identified 5 schema tensions.
+
+2. **Path D Adoption (R6):** After source-reading, adopted Path D. Recognized "closer in spirit" ≠ "same shape." Structures can differ while concepts converge. Supported Path D (standalone but kernel-shaped).
+
+3. **R7 Lock (2026-05-25):** v4-final locked as canonical. All 5 schema risks mitigated. Branded types enforcement mechanism load-bearing (prevents confidence/trust collapse). Seven-mechanism defense-in-depth verified correct.
+
+4. **R8 Session Identity (2026-05-26):** Contributed SessionId branded type specification: type SessionId = string & { readonly __brand: 'SessionId' }. UUID v4 validator + constructor. Branded primitive for serialization-friendliness. Kind=session fact schema: session_id is content/grouping field, NOT PK. Edge schema remains: (from_id, to_id) reference fact.id. Enables O(1) indexed filter ("all facts in session X").
+
+5. **R8 Lock-Review (2026-05-26):** v5-final canonical. All 6 spec items verified. SessionId brand mechanics correct. kind=session schema correct. Fact vs filter clarity preserved. Edge schema integrity maintained. Zero new KR-level concerns.
+
+**Current Status (2026-05-28):** Eureka v5-final locked and ship-ready. SessionId branded type now available in @akubly/types (added in M1 scaffold). Ready for M2 FactStore interface formalization and contract testing.
+
+**Load-bearing Schema Constraints:**
+1. Session identity via branded primitive (serialization-friendly, not opaque class)
+2. kind=session facts reference session_id as content field
+3. Edge schema: (from_id, to_id) reference fact.id
+4. Branded types prevent confidence/trust conflation at compile time
+
+---
+
+**Joined:** ~2026-05-01  
+**Tech:** TypeScript/Node.js, graph databases, schema design, type systems  
+**Specialization:** Knowledge representation, graph patterns, branded primitives, schema risk analysis
+# Crispin — History (Summarized)
+
+## Core Context
+
+**Project:** Eureka — agentic brain/memory/learning system. `packages/eureka/` in monorepo.
+**Role:** Knowledge Representation Specialist. Own graph schema, kind taxonomies, persistence formats.
+**Current status:** Eureka v5-final LOCKED. R8 design cycle CLOSED. M2 RED→GREEN: recall() landed, FactStore seams locked.
+
+---
+
+## Recent Team Activity
+
+📌 **2026-05-28: Eureka M3 composite-ranker GREEN landed** — Edgar implemented FR-2 formula inline: rawScore = 0.50·relevance + 0.20·importance + 0.20·trust + 0.10·recency; finalScore = rawScore × attention_multiplier (hot=1.20, warm=1.00, cold=0.80). **SCHEMA TENSION FLAGGED:** §50 testability doc line 211 records stale multipliers (hot=1.0, warm=0.5, cold=0.1; pre-v5 placeholders). §30 §1.2 canonical is authoritative. **ACTION REQUIRED:** Crispin should correct §50 line 211 to match §30 §1.2 values. Not a bug — spec inconsistency. — Scribe
+
+📌 **2026-05-28: Eureka M2 recall() GREEN landed** — London-school TDD beat complete. FactStore.search() seam locked (injection point, shape: `search(query, sessionId, k) → Promise<RecallResult[]>`). SessionId brand (from @akubly/types) in use. M3 anchor: composite-ranker (FR-2 formula). Crispin: FactStore contract test (fact-store.contract.test.ts) flagged for M2 follow-up (session isolation, trust floor, tier filtering validation). — Scribe
+
+---
 
 ## Design Ceremony Summary (R1–R8)
 
@@ -215,6 +249,16 @@
 
 **Team Update:** §20 seams, representation boundaries, and storage interface are now explicit in documentation. Future code should use §7.4 FactStore interface as the mock boundary for activity tests.
 
+---
+
+## 2026-05-29: M4 GREEN + M5 Anchor (Cross-Agent Update)
+
+**Context:** Laura (M4 RED) + Edgar (M4 GREEN) completed ClockProvider seam for recency decay. Edgar's 2-line change in `recall()` wires injected clock (§55 §1.2 discipline).
+
+**M5 Anchor:** Trust score updates from feedback events (§30 §2.3). Events drive mutations: corroboration +0.10, contradiction -0.10, user correction ±0.30. **Laura owns M5 RED.**
+
+**Your attention:** §20 FactStore interface is the seam boundary; M4 GREEN reinforces this by requiring explicit clock injection. M5 will likely extend the seam with feedback event channels. No blocker to §20 work; this is forward context.
+
 
 - **Type sketches belong in architecture docs.** The schema section (§2) includes TypeScript interfaces even though this is "just" a design doc. These sketches are normative — they constrain implementation choices and serve as shared vocabulary for the squad. They're not aspirational code; they're architectural contracts.
 
@@ -336,5 +380,51 @@ Using `updated_at` for recency computation conflates **modification time** with 
 **Deliverable:** Single-line fix in `docs/eureka/sections/20-knowledge-representation.md` (line 180).
 
 ---
-📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
+---
+
+## 2026-05-28: Eureka M1 First Red Test — Knowledge Graph Schema Cascade Entry
+
+**Event:** Laura (Tester) delivered M1 first red test per §55 London-school TDD. FactStore.search() seam locked.
+
+**RED Status:** AC-1.3 seed test established. Mock contracts finalized: FactStore.search() returns { content: string; trust: number; attention_tier: string } array.
+
+**Impact for Crispin:** M2 cascade: formalize FactStore interface per §20 §7.4. Add contract test validating session isolation, trust floor filtering, tier filtering, BM25 normalization. This test locks the persistence layer contract that your graph schema will depend on.
+
+**SessionId context:** Branded type now available in @akubly/types (added in M1 scaffold). Use for cross-package coordination.
+
+**Baseline preserved:** Cairn 26/26 ✅, Forge 24/24 ✅, tsc --build ✅.
+
+---
+
+📌 **2026-05-29: Eureka Cycle 1 Review — F6 Escalation (FactStore contract) requires your input** — Code panel review of ea05e62 escalated F6 (trust-filter undersupply). Finding: `recall()` fetches exactly k candidates, applies trust floor filter, silently returns <k results when trust-filtered. No signal to caller. Spec (§30 §1.2, §30 §2.3, §40) is silent on overfetch policy. Escalated to you + Cassima (PM). Recommendation: Push filter to FactStore.search() layer (option b) or add optional trustFloor parameter (option d). Inputs needed: (1) Can FactStore interface accept trustFloor parameter in next sprint? (2) Would SQLite implementation apply WHERE predicate before returning results? (3) Contract test surface? Decision drop: .squad/decisions/F6-recall-undersupply-escalation.md. Awaiting your input. — Scribe
+
+---
+
+## 2026-05-29: F6 Resolution — Recall Undersupply (Joint with Cassima)
+
+**Event:** F6 escalation from Cycle 1 review. Cassima + Crispin joint decision drop authored.
+
+**Decision:** Option (b) — Push `minTrust` into `FactStore.search()`.
+
+**Crispin's lens (layering):**
+The trust floor is a *data quality predicate*, not an activity-level ranking policy. The key finding: §20 §7.4 already specifies `min_trust` in the `RecallQuery` contract and the contract test list explicitly includes `search({ min_trust: 0.6 })`. The current TypeScript `FactStore` seam in recall.ts (line 33) is behind spec — it only has `{ query, sessionId, limit }`. This is a spec-implementation gap, not a policy question. Pushing `minTrust` to the store is not leaking activity policy into the data layer; it's aligning the implementation with the already-approved contract.
+
+The conceptual distinction I applied: `retired = false` and `trust >= 0.15` are **hard-gate structural predicates** — they define the valid working set. The FR-2 composite formula (relevance/importance/trust weighting/recency) is the **ranking policy** — it stays in the activity layer and correctly continues to do so. Filtering ≠ ranking. Both can reference `trust` without conflation.
+
+**What changes in my domain (FactStore seam):**
+1. `FactStore.search()` args in recall.ts line 33: add `minTrust?: number`
+2. Call site (line 134): pass `minTrust: TRUST_FLOOR`
+3. Remove post-filter line 137: `.filter(f => f.trust >= TRUST_FLOOR)` — store owns this now
+4. Activity test mocks: update stubs to respect `minTrust`
+5. Real SQLite implementation (M5+): `WHERE trust >= ?` — already specified in §7.4 contract tests
+
+**Forward compat:** The `ranker?: Ranker` seam (F9) receives pre-qualified candidates — strictly better input. Per-call configurable trustFloor (TODO M5+) becomes a clean one-liner passthrough. Trust-feedback updates (M5) only mutate stored trust values; filter logic unchanged.
+
+**Sequencing:** M4, current cycle. No FactStore SQLite implementation required — the interface contract changes, the mock updates, the activity is fixed.
+
+**Deliverable:** `.squad/decisions/inbox/cassima-crispin-recall-undersupply-resolution.md`
+
+
+---
+
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.

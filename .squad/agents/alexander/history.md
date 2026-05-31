@@ -1,13 +1,44 @@
-# Alexander — History (Summarized)
-📌 Team update (2026-05-26T22:27:00Z): **Wave 5-5 post-review complete** — W5-5 MCP forge_prescribe build break fixed (root: McpToolResult missing [key:string]:unknown index sig). +4 fail-open/structural tests from Laura's plan (5065082 + 4a4df6f). Tests 44→48 passing, root npm run build green ✅ — Scribe
+# Alexander — History
 
-# Alexander — History (Recent)
+**Role:** Implementation Specialist (Forge prescriber orchestration, change-vector platform)
+**Status:** W2-2 + W2-3 complete. Cycle 2 findings processed.
+**Last update:** 2026-05-29
 
-## Learnings (2026-05-27 — Wave 6 Cycle-1 Post-Review — Copilot Review T1-T6)
+**Key milestones:**
+- Wave 0-2: Canonical types in @akubly/types, SqliteChangeVectorProvider, Forge test growth
+- ForgePrescriberOrchestrator: Attenuation + autoApplyEligible propagation live
+- Phase 4.6: 1199+ tests passing, 9 work items landed
+## Issue #25 — Wave 6 R6 Type-Tightening Polish (2026-05-30, PR #32)
 
-### PR #24 Copilot Review Threads Addressed
-All 6 accepted threads fixed in commit 10c2791 (new HEAD):
+**Branch:** `squad/25-type-tightening-polish`
+**PR:** https://github.com/akubly/stunning-adventure/pull/32
+**Build:** green (`tsc --build` exit 0)
+**Tests:** 24/24 runtime-cli tests passing
 
+Four type-only changes, all carryover from PR #24 cloud-review:
+
+**R6-T1 — Test stub completeness (`forgeMetrics.test.ts:381`):**
+The I4 round-trip prescriber stub was returning a partial object missing `exitCode`, `skillId`, `dbPath`, `hints`, and `totalPersisted`. Tightened to the full `ForgePrescribeSuccessResult` contract.
+
+**R6-T2 — `SkillMetricsProfileInfo.tier` (`metrics/types.ts:5`):**
+Was `string`, now `LoadedProfileSource` (`'per-skill' | 'per-model' | 'per-user' | 'global'`).
+Source of truth: `packages/skillsmith-runtime/src/runtime.ts:21`.
+
+**R6-T3 — `SkillMetricsStaleness.reason` (`metrics/types.ts:25`):**
+Was `string | null`, now `'count' | 'age' | 'count+age' | null`.
+Source of truth: `ProfileStalenessReason` in `packages/types/src/index.ts:163`. The `annotateProfileStaleness` function in skillsmith-runtime produces exactly these 4 values.
+
+**R6-T4 — `SkillMetricsPrescriberRun.profileSource` (`metrics/types.ts:43`):**
+Was `string | null`, now `LoadedProfileSource | null`.
+Required a co-change to `loadMetrics.ts`'s JSON-parse annotation (also `string | null`) to remain type-safe without a cast. The event payload is written by `handler.ts` which already typed this as `LoadedProfileSource | null`, so the tightening is semantically correct.
+
+**Key lesson:** When tightening a type on a reader interface, always trace back to the JSON-parse cast in the reader and tighten the parse annotation simultaneously — otherwise TSC will reject the assignment.
+
+
+
+**See history-archive.md for detailed entries.**
+
+**Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
 **T1 (unused code):** Deleted `resolveRepoKey` function in loadMetrics.ts:28-34 — zero callers found. Only `resolveActiveRepoKey` is used.
 
 **T2 (semantic correctness — IMPORTANT LESSON):** Reverted cycle-2's `json_valid(payload)` guard from the sentinel query (loadMetrics.ts:77). **Lesson: presence-check semantics ≠ quality-check semantics.** The sentinel query answers "is the prescriber_run event type deployed in this database?" (feature-presence), NOT "are all rows parseable?" (data-quality). Adding `json_valid` to the sentinel made the function conflate the two: if all rows were malformed, the sentinel would return false (no rows found) and the function would signal "W5-5 not landed" (wrong!) instead of "W5-5 landed, skill has zero valid runs" (correct). Sentinel is now `WHERE event_type = 'prescriber_run'` only. The main query retains `json_valid()` to skip corrupt rows during json_extract. Test expectations unchanged — the I3 test already asserted the correct behavior (non-null on malformed-only dataset); updated test comment to clarify sentinel semantics.
@@ -22,6 +53,32 @@ All 6 accepted threads fixed in commit 10c2791 (new HEAD):
 - `npm run build` from root: exit 0
 - `npm test --workspace=@akubly/runtime-cli`: 24/24 passing
 - `npm test --workspace=@akubly/skillsmith-runtime`: 48/48 passing
+
+---
+
+## Issue #25 — Cycle-1 Persona Review Wave (2026-05-30, commit d2ef6d1)
+
+**Trigger:** Persona panel (4 personas: Correctness, Craft, Skeptic, Scope) ran on commits 45f8186 + 5571b3c.
+
+**F1 — JSON.parse boundary narrowing (IMPORTANT, ACCEPTED):**
+The `as { profileSource?: LoadedProfileSource | null }` cast on `JSON.parse(row.payload)` was a type lie — the TEXT column contains unchecked runtime data. Any legacy or hand-edited row with `profileSource: 'per-org'` would silently flow through as a typed value. Fixed by:
+1. Typing all JSON.parse fields as `unknown`.
+2. Adding `normalizeProfileSource(value: unknown): LoadedProfileSource | null` backed by a `ReadonlySet<string>` initialised from the 4 `LoadedProfileSource` members.
+3. Exporting the helper `@internal` for direct unit testing.
+4. Adding 4 unit tests (valid/unrecognised-string/non-string) + 1 integration test (bad value in DB → null in result).
+
+**Key lesson:** `JSON.parse` returns `any`. Casting the result directly to a typed interface is a type lie — the safety is imaginary. Always type parse output as `unknown` (or a record of `unknown` fields) and narrow each field before use. This is especially important for string enums that live in DB TEXT columns — the DB makes no enum contract.
+
+**F2 — ProfileStalenessReason deduplication (IMPORTANT, ACCEPTED):**
+`SkillMetricsStaleness.reason` had an inline literal union that was a hand-copy of `ProfileStalenessReason` from `@akubly/types`. Swapped to the canonical import. JSDoc updated to semantic-only form with `{@link}`.
+
+**Key lesson:** When a union is already defined as a named type in a shared package, always import it — inline copies are drift bombs.
+
+**F3 — history.md scope (REJECTED):** Persona panel Skeptic flagged history.md commits as out-of-scope for a type-tightening PR. Team convention explicitly accepts this (`merge=union` in `.gitattributes`, squad workflow policy). No change made.
+
+**F4 — squad:alexander label:** Label not present in repo; skipped per instructions.
+
+**Build + tests after cycle-1:** `npm run build` exit 0, `npm test --workspace=@akubly/runtime-cli` 28/28 (4 new tests).
 
 **Key takeaway:** The T2 lesson is foundational: when adding defensive guards (like `json_valid`), distinguish between **presence checks** (sentinel queries for feature deployment) and **quality checks** (row-level filters for parseability). Don't conflate them — the semantics diverge when all data is corrupt.
 
@@ -50,6 +107,31 @@ Schema contract drift between W5-5 writer (handler.ts, Rosella) and W5-6 reader 
 SQLite 3.47.x (bundled by better-sqlite3) throws `malformed JSON` from `json_extract()` when the payload column contains invalid JSON — even in the WHERE clause evaluation. The documented behavior (return NULL for invalid JSON) does not match actual behavior at this version. Added `json_valid(payload)` guard upstream of `json_extract()` to prevent the throw and skip invalid rows gracefully.
 
 
+
+## Issue #25 — Cycle-2 Polish Wave Closeout (2026-05-30, commit a51f504)
+
+**Branch:** `squad/25-type-tightening-polish`  
+**PR:** https://github.com/akubly/stunning-adventure/pull/32  
+**Trigger:** 5 cycle-2 findings accepted by Aaron from the Cycle-1 persona review panel.  
+**Build:** green (`tsc --build` exit 0)  
+**Tests:** 26/26 runtime-cli tests passing (28 → 26: removed 3 unit tests on unexported helper, added 1 stderr-warning integration test)
+
+### C2-1 — VALID_PROFILE_SOURCES drift guard
+Added `_PROFILE_SOURCE_EXHAUSTIVENESS as const satisfies Record<LoadedProfileSource, true>` and derived `VALID_PROFILE_SOURCES` via `Object.keys()`. If `LoadedProfileSource` gains a new member upstream, the build fails at the `satisfies` constraint before any silent runtime regression can occur.
+
+### C2-2 — stderr warning for unknown profileSource values
+Added warning at the `queryPrescriberRuns` call site: when `normalizeProfileSource` returns null for a non-empty string, emit `[loadMetrics] prescriber_run row has unknown profileSource "…" — coerced to null\n` to stderr. Mirrors the existing malformed-row warning. New integration test verifies warning fires on `'per-org'` and is silent for `null`/`undefined`/missing.
+
+### C2-3 — normalizeProfileSource unexported (Path A chosen)
+**Path A chosen: unexport the helper.** Removed `export` keyword and deleted the 3 unit tests that relied on direct access. Integration coverage (rejection path + round-trip) is adequate. Reasoning: Path A makes privacy real rather than aspirational — a `@internal` comment without enforcement is a lie. Path B (drop the comment) would leave the function on the public surface without a mechanism to enforce against downstream callers importing it via deep-path. Shrinking the test surface to what the public API actually guarantees is the cleaner outcome.
+
+### C2-4 — Comment explaining ReadonlySet<string> widening
+Added two-line comment above `VALID_PROFILE_SOURCES` explaining why the annotation is wider than the initializer: `.has(value)` must accept arbitrary strings at the validation site without requiring a cast on every call.
+
+### C2-5 — PR #32 body updated
+Updated via `gh pr edit 32 --body-file`. Added "Review cycles" section summarising cycle-1 (F1+F2) and cycle-2 (C2-1..C2-5). Test count updated to 26/26. Acceptance checks updated to reflect current state.
+
+---
 
 ## 2026-05-26: Wave 6 Kickoff Summary
 
@@ -400,3 +482,4 @@ PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end
 **Commits:** f68873d (cycle 2 fix wave) + 37370f9 (cycle 3 cleanup).
 
 📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
+**2026-05-30 rebase:** Rebased squad/25-type-tightening-polish onto origin/main (ef06238, Eureka v1 PR #30). Old base: 53cd645. New HEAD: 65a88de. Rebase was clean — merge=union driver auto-resolved all .squad/ history conflicts. Build required npm install to refresh node_modules junctions (worktree had stale junctions pointing to pre-Eureka main repo; ef06238 added SessionId to @akubly/types). 26/26 runtime-cli tests green. Force-with-lease pushed; PR #32 mergeStateStatus cleared to MERGEABLE.

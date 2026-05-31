@@ -1,15 +1,18 @@
-📌 Team update (2026-05-26T22:27:00Z): **Wave 5-6 kickoff underway** — W5-5 post-review fixes completed. Root cause documented (McpToolResult index signature). Integration branch ready. Phase 4.6 architecture stable at 597 Cairn + 644 Forge tests passing. — Scribe
-📌 Team update (2026-05-25): **Cycle 2 fixes shipped** (f096c20) — N1: package-lock resync + CHANGELOG; N2: `allowGlobalFallback` boolean → `FallbackPolicy` string-literal union (`'per-skill-only'` | `'full-chain'`); N3: telemetry now shows chain/skipped/selected. All 26 runtime tests green, 4 suites passing. — Graham Knight
-📌 Team update (2026-05-23): **Wave 3 decisions accepted** — R2 approved as `@akubly/skillsmith-runtime`; MCP dropped from Wave 3; always-on Curator hook; 7 work items, ~18 tests. Docs revised, ready to fan out. — Graham Knight
-
 # Graham — History
 
-**Role:** Architecture scoping (phase decomposition, composition patterns), Design review triage, Spec clarification
+**Role:** Lead / Architect (Overall vision, cross-system integration, tiebreak arbitration)
+**Status:** Cycle 2 C8: Recommended test-dir exemption for eslint (overridden by Aaron siding with Genesta).
+**Last update:** 2026-05-29
 
-**Key Leadership Pattern:** When option space is analyzed independently, reconcile labels early (R1–R5 mapping). Convergence signals from two independent analyses indicate strong design.
+**Key contributions:**
+- Phase 4.6 wave orchestration: 5 waves integrated (0-6)
+- Brain system: ADR-pending (Curator-driven orchestration, composition root)
+- Eureka C8: Recommended exemption for integration test validation (conservative layering concern)
+- Resolution: Aaron sided with Genesta; strict eslint enforced; §40 documentation compensates
 
-## R6 Ceremony — Source-Reading Rule Lifted (2026-05-24)
+**See history-archive.md for detailed entries.**
 
+**Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
 **Milestone:** R6 opened — Eureka source-reading unlocked; trio (Genesta/Crispin/Edgar) reconciled v3 PRD against Cairn/Forge substrate.
 
 **Key outcomes:**
