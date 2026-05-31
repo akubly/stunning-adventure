@@ -2,12 +2,30 @@
 
 **Role:** Implementation Specialist (Forge prescriber orchestration, change-vector platform)
 **Status:** W2-2 + W2-3 complete. Cycle 2 findings processed.
-**Last update:** 2026-05-29
+**Last update:** 2026-05-31
 
 **Key milestones:**
 - Wave 0-2: Canonical types in @akubly/types, SqliteChangeVectorProvider, Forge test growth
 - ForgePrescriberOrchestrator: Attenuation + autoApplyEligible propagation live
 - Phase 4.6: 1199+ tests passing, 9 work items landed
+## Rebase Cycle (2026-05-31 — PR #36 mergeability)
+
+**PR:** #36 | **Branch:** `squad/35-register-forge-mcp` | **Worktree:** D:\git\stunning-adventure-35
+
+**Situation:** PR #36 showed `mergeStateStatus: DIRTY, mergeable: CONFLICTING` after scribe commit (`d1a953f`) landed on main earlier this session. This was the same scenario as PR #32 cycle 1 — GitHub's 3-way merge check doesn't honor `.gitattributes merge=union` directive for `.squad/*` files, so union-file overlaps are incorrectly flagged as conflicts.
+
+**Action:** Rebased `squad/35-register-forge-mcp` onto latest `origin/main` (a5b89a2). Rebase auto-resolved all `.squad/*` conflicts via the `merge=union` driver:
+- `.squad/decisions.md`: auto-union merged ✓
+- `.squad/agents/alexander/history.md`: auto-union merged ✓
+
+**Commit dropped:** Fix for `runtime-cli` (85d49b8) was already upstream in main, so rebase dropped it.
+
+**Validation:** Build ✓, `npm test --workspace=@akubly/runtime-cli` (26/26 tests) ✓, pushed with `--force-with-lease`.
+
+**Result:** PR #36 now shows `mergeable: MERGEABLE` ✓. New HEAD: `2ac5b61` (was `d251e29`).
+
+---
+
 ## Learnings (2026-05-31 — Issue #35, PR #36: forge-mcp manifest registration)
 
 **Issue:** #35 | **PR:** https://github.com/akubly/stunning-adventure/pull/36 | **Branch:** `squad/35-register-forge-mcp`
