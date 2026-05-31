@@ -817,6 +817,18 @@ coordination notes). Maintain the table as living state across phases — each
 gate review starts by re-running last gate's MINOR findings to confirm Phase
 2 authors absorbed them, then runs the new matrix on Phase 2 outputs.
 
+### 2026-05-31T07:52Z: PR #33 Cycle 3 — Taxonomy Registry Sweep Extended (Commit 9fe203c)
+
+**Sweep scope:** §04/§16/§18 drift audit for taxonomy and lifecycle alignment
+
+**Five clusters addressed:**
+1. §6.3 sub-kind registration: `predicate_*` predicate events, `row_budget_exhausted`, `stream_created`, `stream_discarded`, `subscriber_drop` (renamed from ad-hoc naming)
+2. §19 lifecycle template pointer fixed to reference §6.3 ObservationPayload.subKind registry
+3. ADR-0001 retrofit: acceptance signals + security implications audit applied
+4. Decision boundary reinforced: §6.3 remains authoritative; §17 catalogs only registered vocabulary
+5. Decision home clarified: DecisionPayload.eventType for scheduler/router/applier events (not Decision sub-kinds)
+
+**Pattern extended:** Taxonomy-registration sweep pattern from cycle 2 (§6/§17 decision) extended to lifecycle docs. ADR-0001 retrofit applied during sweep to ensure acceptance signals + security audit closure. Push gate pending Scribe integration commit.
 
 ---
 
