@@ -108,6 +108,31 @@ SQLite 3.47.x (bundled by better-sqlite3) throws `malformed JSON` from `json_ext
 
 
 
+## Issue #25 — Cycle-2 Polish Wave Closeout (2026-05-30, commit a51f504)
+
+**Branch:** `squad/25-type-tightening-polish`  
+**PR:** https://github.com/akubly/stunning-adventure/pull/32  
+**Trigger:** 5 cycle-2 findings accepted by Aaron from the Cycle-1 persona review panel.  
+**Build:** green (`tsc --build` exit 0)  
+**Tests:** 26/26 runtime-cli tests passing (28 → 26: removed 3 unit tests on unexported helper, added 1 stderr-warning integration test)
+
+### C2-1 — VALID_PROFILE_SOURCES drift guard
+Added `_PROFILE_SOURCE_EXHAUSTIVENESS as const satisfies Record<LoadedProfileSource, true>` and derived `VALID_PROFILE_SOURCES` via `Object.keys()`. If `LoadedProfileSource` gains a new member upstream, the build fails at the `satisfies` constraint before any silent runtime regression can occur.
+
+### C2-2 — stderr warning for unknown profileSource values
+Added warning at the `queryPrescriberRuns` call site: when `normalizeProfileSource` returns null for a non-empty string, emit `[loadMetrics] prescriber_run row has unknown profileSource "…" — coerced to null\n` to stderr. Mirrors the existing malformed-row warning. New integration test verifies warning fires on `'per-org'` and is silent for `null`/`undefined`/missing.
+
+### C2-3 — normalizeProfileSource unexported (Path A chosen)
+**Path A chosen: unexport the helper.** Removed `export` keyword and deleted the 3 unit tests that relied on direct access. Integration coverage (rejection path + round-trip) is adequate. Reasoning: Path A makes privacy real rather than aspirational — a `@internal` comment without enforcement is a lie. Path B (drop the comment) would leave the function on the public surface without a mechanism to enforce against downstream callers importing it via deep-path. Shrinking the test surface to what the public API actually guarantees is the cleaner outcome.
+
+### C2-4 — Comment explaining ReadonlySet<string> widening
+Added two-line comment above `VALID_PROFILE_SOURCES` explaining why the annotation is wider than the initializer: `.has(value)` must accept arbitrary strings at the validation site without requiring a cast on every call.
+
+### C2-5 — PR #32 body updated
+Updated via `gh pr edit 32 --body-file`. Added "Review cycles" section summarising cycle-1 (F1+F2) and cycle-2 (C2-1..C2-5). Test count updated to 26/26. Acceptance checks updated to reflect current state.
+
+---
+
 ## 2026-05-26: Wave 6 Kickoff Summary
 
 Scribe orchestration complete: Graham's v3 scope finalized and merged to `.squad/decisions.md`. Key scope decisions:
