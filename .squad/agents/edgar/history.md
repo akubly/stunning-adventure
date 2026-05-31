@@ -35,7 +35,7 @@
 
 - **Test count delta: 0.** No new tests; no removed tests. Only assertion tightening in M7-B (follow-up PR). 40/40 → 40/40.
 
-- **Branch:** `eureka/m7-a-typed-errors` | PR: (see below after push)
+- **Branch:** `eureka/m7-a-typed-errors` | **PR:** #38 — https://github.com/akubly/stunning-adventure/pull/38
 - M6 GREEN: applyFeedbackById (FactReader read-seam) + user_correction required-delta guard
 - M5+M6 cycle 2: correctionDelta NaN/Infinity guard, @concurrency accuracy, FactReader strict-null contract
 - Build: 609 Cairn, 644 Forge, 37 Eureka tests green
