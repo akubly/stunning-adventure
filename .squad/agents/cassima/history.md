@@ -1,3 +1,5 @@
+📌 **Charter Manual Edit by Aaron** (2026-05-31T06:15:00Z): In PR #33 cloud-review-cycle round 1, Aaron manually edited cassima/charter.md as part of merge conflict resolution. Charter onboarding role finalized. — Scribe
+
 # Cassima — History
 
 Each round, append a 1-2 paragraph summary of what you contributed.

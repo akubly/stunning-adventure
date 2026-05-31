@@ -7332,6 +7332,83 @@ These are opposing philosophies. Knowledge representation, learning loops, agent
 - Cognitive science fundamentals (what does "meditation" mean neurologically?)
 - Knowledge ontology (are the five kinds exhaustive? mutually exclusive?)
 - Graph information architecture (traversal algorithms, semantic linking)
+
+---
+
+## Inbox Merge (2026-05-31)
+
+### ADR-STABILITY: ADR Number Stability After Landing (Graham)
+
+**Date:** 2026-05-30  
+**Owner:** Graham  
+**Status:** Merged from inbox
+
+**Decision:** Landed ADR files keep their assigned numbers. If a planned or pending ADR index row collides with a landed ADR file, renumber the planned row to the next free ADR number and update all live cross-references.
+
+**Rationale:** The landed file is the durable artifact already referenced by reviews, options docs, and implementation notes. Renumbering planned rows is cheaper and preserves external review continuity.
+
+**Trade-off:** This sacrifices perfect historical numbering continuity in the CTD index. The gain is artifact stability: file paths, review comments, and supersession banners remain valid.
+
+**Applied:** ADR-0020 renumbered from pending typed-trace-algebra ADR to avoid collision with finalized ADR-0019 (childSid hybrid).
+
+---
+
+### WI-A-IMPL: Issue #11 Worktree-Aware Sessions — Full Implementation Log (Roger)
+
+**Author:** Roger (Platform Dev)  
+**Branch:** `squad/11-worktree-aware-sessions`  
+**Worktree:** `D:\git\stunning-adventure-11`  
+**Status:** Cloud review cycle 5 applied — ready for push
+
+**Overview:** Makes Cairn's session resolution workdir-aware so concurrent worktrees on the same repo don't collide on a single active session. Core mechanism: `(repo_key, workdir)` session identity pair stored in new `workdir TEXT` column (migration 015). NULL workdir = legacy/pre-worktree sessions. `getActiveSession(db, repoKey, workdir?)` uses `AND workdir IS ?` (NULL-IS semantics) so NULL is a first-class identity value.
+
+**Cloud Review Cycles (Summary):**
+
+**Cycle 1 (commits 8537f48, 13080af):**
+- F1: `get_session` error message clarity (workdir required vs optional)
+- F2: Rejected (keep branch separation for distinct error scenarios)
+- F3a: Atomic `startSession` via `db.transaction(fn).immediate()` to prevent race on duplicate INSERTs
+- F3b: Migration 016 with dedup pass + UNIQUE partial index on `(repo_key, workdir)` for active user sessions
+
+**Cycle 2 (commit cd47409):**
+- G1: `normalizeWorkdir` now trims input before applying transforms; regression tests for edge cases (`' /'`, `'  D:/proj  '`, `'\t'`)
+
+**Cycle 3 (commit e4002c1):**
+- H1: Migration 016 UNIQUE index split into two partial indexes to handle NULL workdir correctly (SQLite UNIQUE treats each NULL as distinct)
+- H2: Removed `claimLegacyActiveSession` from public exports (was marked `@internal`)
+
+**Cycle 3 Skeptic Fixes (commit 19deef2):**
+- Item 1a: Centralized `getSkillToolWorkdir()` helper in `utils/workdir.ts`
+- Item 1b: `getUserSessionForMcpFallback` gains optional `source: 'env-var' | 'explicit'` to warn on multi-session ambiguity
+- Item 2: Safe orphan cleanup with 5-minute grace window (skip recent < 5min, complete idle ≥ 5min); UTC timestamp handling fix
+
+**Cycle 4 Fixes:**
+- I1: Added error guard for invalid (empty/whitespace-only) workdir after normalization
+- I2: Cosmetic fix (over-indented error payload in `get_session`)
+- I3: Added JSDoc note to `getActiveSession` (user-sessions-only)
+
+**Cycle 5 Fixes (commit 469b741):**
+- J1: Removed unused `randomUUID` import from test file
+- J2: Tightened `claimLegacyActiveSession` CAS UPDATE predicate with full guard conditions
+
+**Key Decisions Locked:**
+- `getActiveSession` no-arg matches `workdir IS NULL` only (legacy sessions, not most-recent)
+- Orphan grace window: 5 minutes (conservative for concurrent startup safety)
+- UTC parsing of SQLite timestamps: `.replace(' ', 'T') + 'Z'` (SQLite datetime is always UTC)
+- Skill-tool env-var source tag: `'env-var'` literal (distinguish orchestrator vs caller-supplied workdirs)
+- `fn.immediate()` call pattern: no extra `()` (calls fn and returns result directly)
+
+**Test Coverage:** 1405/1405 tests passing (60 test files); new Area 10 tests for race regression, UNIQUE enforcement, completed-session reuse
+
+**Validation:**
+- `npm run build --workspace=@akubly/cairn`: ✅ clean
+- `npm test --workspace=@akubly/cairn`: ✅ 647/647 passing
+- `@akubly/types` untouched; `Session.workdir?: string` cairn-internal only
+
+**API Shapes (BREAKING for MCP; Aaron-approved):**
+- `get_status` returns `{ sessions: Session[], curator: ... }` (flat array always; workdir-filtered if provided)
+- `get_session` accepts `{ session_id?: string, repo_key?: string, workdir?: string }` (one of two path required)
+- Both preserve `readOnlyHint: true`
 - Learning primitives semantics (recency decay, trustworthiness measurement)
 
 **Recommendation:** Lead interaction design. Bring cognitive scientist + information architect alongside.
