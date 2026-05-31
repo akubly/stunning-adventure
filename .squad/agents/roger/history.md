@@ -866,4 +866,30 @@ See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-rev
 
 **Next:** Branch ready for merge. WI-B (Gabriel) queued.
 
+
+### 2026-05-02: Phase 4.5 Telemetry Learnings & Persona Review Fixes
+
+**Event:** Telemetry module hardening post-persona review.
+
+**Key fixes:**
+- F1: Weighted mean aggregation (prevent overwrite of prior history)
+- F2: Convergence floor (fire on first success signal, not end-of-session)
+- F4: Event contract alignment (COLLECTOR_BRIDGE_EVENTS constant + contract test)
+- F5: Streaming percentile sketch (100-bucket histogram for [0,1] drift range)
+- F6a: Per-signal component means on ExecutionProfile.signals
+- F7: Silent error logging in sink
+- F11: typeof guards on payloads (toolName string, numeric guards)
+
+**Architecture patterns learned:**
+- Shared symbol enums for cross-module contracts (bridge ↔ collectors)
+- Streaming quantile sketches for bounded metrics
+- weightedMean() helper prevents deflation-toward-zero failure mode
+- Fail-open principle: telemetry must never block session execution
+
+**Files touched:** 7 core files + 3 test files. Tests: +24 new. Build: 1012 passing (cairn 478 + forge 534).
+
+**Key lesson:** When collector contract spans modules, enumerate shared symbols + enforce via contract test. Type-level coupling insufficient for JSON boundaries.
+
+
+📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.

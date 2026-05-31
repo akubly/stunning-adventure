@@ -10983,3 +10983,105 @@ Updated schema version assertions from 14 → 15 in:
 - WI-B (Gabriel, coordinator dispatch policy) holds until this branch merges
 
 
+
+---
+
+## WI-B Decisions Merge (2026-05-30T12:26:16Z)
+
+### 2026-05-30: WI-B PR #29 cycle 4 — prose redesign scope
+**By:** Graham (Lead)
+**Status:** Implemented in cycles 4-6
+
+From .squad/decisions/inbox/graham-wi-b-cycle4-redesign.md
+
+**Thread analysis:** 51 unresolved threads across 4 files represent 5 distinct findings:
+- F8a: Wrong-branch reuse calls git worktree remove without unlinking junction first
+- F9: Backtick escapes inside cmd /c "..." are PowerShell-only; cmd.exe treats them as literals
+- F10: {branch} resolved via git -C "{worktree}" AFTER worktree is removed — path doesn't exist
+
+**Decision:** Replace all literal cmd /c "..." strings with prose instructions (tool semantically + platform-intent table). Prose conveys intent; literal shell strings invite mechanical copying of wrong form.
+
+**Recommended form:**
+- Windows: Use cmd /c rmdir to remove junction. Do NOT pass /s.
+- Unix: m -f removes symlink only.
+
+**Junction-unlink ordering (SAFETY-CRITICAL):**
+1. Resolve the branch name: git -C "{worktree}" rev-parse --abbrev-ref HEAD → save as {branch}
+2. Remove the 
+ode_modules junction/symlink (before git worktree remove)
+3. Remove the worktree: git worktree remove "{worktree}"
+4. Delete the branch: git branch -d {branch}
+
+**Acceptance criteria:** 7 AC items verified — all backticks removed, F8/F9/F10 addressed, three-mirror sync locked.
+
+---
+
+### 2026-05-29: WI-B PR #29 review — APPROVE WITH NOTES
+**By:** Graham (Lead)
+**Status:** Reviewed and approved for merge
+
+From .squad/decisions/inbox/graham-wi-b-review-approve.md
+
+**Scope adherence:** ✅ Gabriel implemented exactly what was scoped. Six change areas all map directly to concrete changes. No omissions.
+
+**Activation semantics:** ✅ SQUAD_WORKTREES=1 correctly gated. Three-way branch (skip/worktree/disabled).
+
+**Enforcement language:** ✅ Pre-Spawn now reads as imperative: MUST-level imperatives and ACTIVE status badge.
+
+**Template sync:** ✅ Verified byte-identical across all three files (squad.agent.md + two templates).
+
+**Fallback safety - ARCHITECTURE CALL (APPROVE with note):** Silent fallback to main repo on git worktree add failure. For v1 (opt-in, dogfooding), fallback is right default. Differentiated: lock-file errors get retry-then-abort; permissions/other errors get fallback. Already logged to history.md.
+
+**Follow-up (not blocking):** Emit user-visible warning (e.g., "⚠️ Worktree creation failed — falling back to shared checkout") in addition to history.md log. File as follow-up issue.
+
+**Branch-mismatch handling:** ✅ Safe. git worktree remove fails with dirty-tree error; git protects against silent destruction.
+
+**Parallel dispatch warning:** ✅ Warning-only (detection via list_agents). Sufficient for v1.
+
+**Risk #1 mitigation (file-deletion):** ✅ Two mechanisms — isolation + junction directionality.
+
+---
+
+### 2026-05-29: WI-B scope — Coordinator dispatch-policy
+**By:** Graham (Lead)
+**Status:** Scoping complete, implemented
+
+From .squad/decisions/inbox/graham-wi-b-scope.md
+
+**Scope confirmation:** WI-B makes the coordinator CREATE worktrees per-issue instead of dispatching agents into shared main.
+
+**Pre-Spawn discovery:** "Pre-Spawn: Worktree Setup" section (lines 697–742) was documentation-only. Gabriel's job: make it real.
+
+**Concrete change list:**
+- Pre-Spawn: Worktree Setup (enforce language + error handling)
+- How to Spawn an Agent (resolve WORKTREE_PATH / WORKTREE_MODE placeholders)
+- Worktree Lifecycle Management (reference docs)
+- Template mirrors (must stay in sync)
+
+**Opt-in vs default-on (Recommendation: Option A — Opt-in for v1):**
+- Safety: Zero behavior change unless explicitly enabled
+- Adoption friction: Users must know env var exists
+- Complexity: Minimal — one if check
+- Risk: Low — worst case is feature not used
+
+**Dogfooding plan:**
+- Worktree path: D:\git\stunning-adventure-{N}
+- Branch: squad/{N}-coordinator-worktrees
+- Env var: SQUAD_WORKTREES=1
+
+**Risk flags:**
+1. File-deletion mystery event during session — WI-B mitigates via isolation
+2. 
+ode_modules re-install after worktree removal — cleanup flow handles junction removal BEFORE git worktree remove
+3. Pre-Spawn is documentation-only — Gabriel added ACTIVE status + enforcement language
+4. Parallel dispatch guard — warning-only recommended for v1
+5. Template drift — Gabriel updates all three files atomically
+
+---
+
+### 2026-05-30: WI-A Implementation Log — Issue #11 (Roger history restoration)
+
+From .squad/decisions/inbox/roger-issue-11-implementation.md (WI-A history, cross-referenced)
+
+**Cloud Review Cycles 1-5 completed** — Worktree-aware session resolution now in place. Schema version 16. Partial UNIQUE indexes for NULL-workdir case. All 1405 tests green. Ready for WI-B (coordinator dispatch).
+

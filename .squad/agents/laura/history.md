@@ -1299,3 +1299,5 @@ See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-rev
 
 **Investigative note for future ADR authoring:**
 When spawning test-authoring agents, point to the ADR's Acceptance Signals subsection instead of inferring test requirements from "What Changes" prose. The five-tier taxonomy is the test-strategy authority — it tells me what to test at which tier.
+
+📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
