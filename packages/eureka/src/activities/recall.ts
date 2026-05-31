@@ -223,7 +223,8 @@ export type FeedbackEvent = 'corroboration' | 'contradiction' | 'user_correction
 
 /**
  * Write-seam for trust mutations (§55 §1.2 — storage I/O is always mocked in tests).
- * Production implementation delegates to the FactStore persistence layer.
+ * Production implementation delegates to the persistence/storage layer (e.g., a future
+ * FactStore extension or dedicated writer interface — the FactStore interface here is read-only).
  */
 export interface TrustUpdater {
   update(args: { factId: string; sessionId: SessionId; trust: number }): Promise<void>;

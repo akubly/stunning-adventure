@@ -188,7 +188,7 @@ If the spec section cited in the RED beat does not exist in the spec doc:
 - [ ] Export mutation activity with correct function signature
 - [ ] Delta math: positive event = `Math.min(MAX, current + delta)`, negative = `Math.max(MIN, current - delta)`
 - [ ] `user_correction` / caller-delta: clamp BOTH ends — `Math.min(MAX, Math.max(MIN, current + callerDelta))`
-- [ ] `clock` in deps, REQUIRED, no default — even if not called yet
+- [ ] If the activity reads time, require `clock: ClockProvider` in deps (no default). If it doesn't, omit `clock` entirely — phantom deps are an anti-pattern.
 - [ ] Deferred ambiguities confirmed or pushed back in GREEN decision drop
 - [ ] Spec gap: write missing section if derivable; escalate only if non-trivial design decision needed
 - [ ] `npm test --workspace=@akubly/eureka`: all new tests GREEN + all prior tests GREEN

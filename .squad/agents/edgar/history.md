@@ -1,7 +1,7 @@
 # Edgar — History
 
 **Role:** Learning Systems Specialist (Plasticity, trust, recency, recall algorithms)
-**Status:** M5+M6 cycle 2 hardening complete. correctionDelta validation + FactReader contract + @concurrency accuracy landed. 37/37 tests green.
+**Status:** PR #34 cycle 2 complete. TrustUpdater JSDoc clarified (FactStore read-only caveat) + green-beat checklist clock item scoped to recency activities only. 40/40 tests green.
 **Last update:** 2026-05-30
 
 **Key milestones:**
@@ -13,6 +13,7 @@
 - M6 GREEN: applyFeedbackById (FactReader read-seam) + user_correction required-delta guard
 - M5+M6 cycle 2: correctionDelta NaN/Infinity guard, @concurrency accuracy, FactReader strict-null contract
 - Build: 609 Cairn, 644 Forge, 37 Eureka tests green
+- PR #34 cycle 2 (2026-05-30): TrustUpdater JSDoc — replaced "FactStore persistence layer" with generic storage language; green-beat checklist — scoped `clock` requirement to activities that read time only
 
 **See history-archive.md for detailed entries.**
 
