@@ -108,6 +108,17 @@ Aaron accepted the v1 PRD draft with six round-2 revisions. Five were clean exec
 
 **See history-archive.md for detailed entries.**
 
+**Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
+
+**Scribe note (2026-05-30T12:30:54Z):** M5 cascade complete. Trust feedback mutation landed: `applyFeedback` activity + `TrustUpdater` seam interface. All 22 tests GREEN. **§30 §2.3 ("Trust Dynamics Beyond the Static Floor") now exists** — added by Edgar; covers event-delta table, domain invariants, interface contract, user-correction sign convention, and measurable outcomes. Next focus: M6 RED. PRD v5-final remains canonical; no amendments required.
+
+**Scribe note (2026-05-30T22:31:16Z):** M5+M6 COMPLETE & REVIEW-CLEAN. Full review trail locked:
+- Cycle 1: 12 findings (1 blocking, 5 important, 6 minor) → 100% ACCEPT'ed
+- Cycle 2: 4 findings (0 blocking, 3 important, 1 minor) → 100% ACCEPT'ed
+- Cycle 3: 4 minor findings → 100% ACCEPT'ed
+- **Final: 40/40 tests, clean tsc, 11-commit branch, ship-ready**
+
+PRD v5-final + §30 §2.3 form complete contract. All seams defined (applyFeedback, applyFeedbackById, FactReader). No PRD amendments. Ready for Aaron's ship gate. M7 roadmap next: error type refinement, atomicity contract design, Crispin's real FactReader impl.
 
 📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.

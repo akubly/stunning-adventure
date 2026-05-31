@@ -1,11 +1,15 @@
 ---
-updated_at: 2026-05-30T19:41:47Z
+updated_at: 2026-05-31T07:30:00Z
 focus_area: Implementation phase ready — Crucible CTD design review COMPLETE; ADR-0019 (childSid hybrid) landed; next: CLI + tests for fork protocol
 previous_focus: Crucible CTD design review (Original Pass 21 findings + Pass A 25 findings + childSid Round 2 4-persona convergence → ADR-0019)
-parallel_track: Eureka v1 implementation runway clear; M1 first red test next (London-school outside-in TDD per §55); OQ-1 monorepo accepted
+parallel_track: Eureka v1 M5+M6 COMPLETE & REVIEW-CLEAN (40/40 tests, 11-commit branch, shipped); M1 runway clear; M7 roadmap next
 active_issues:
+  - "**Eureka M5+M6 COMPLETE & REVIEW-CLEAN** ✅ — Trust feedback mutation (applyFeedback + applyFeedbackById + FactReader seams); 40/40 tests GREEN; 3-cycle consensus (12→4→4 finding trajectory); tsc clean; ship-ready"
+  - "Branch: eureka/m5-m6-trust-feedback (11 commits from 9892415 to 112c966)"
+  - "Review cycle: 15 personas + 6 squad spawns; 20 findings total (1 blocking in C1, 0 in C2+C3); 100% ACCEPT'ed & implemented"
+  - "Deliverables: Implementation + 40 tests + §30 §2.3 spec + JSDoc complete + Decisions merged + Skills documented"
+  - "M7 ROADMAP NEXT: M7-A (error typing), M7-B (error narrowing), M7-C (atomicity contract), M7-D (regression locks) — Laura + Crispin ownership"
   - "Eureka v0.1 Technical Design — ✅ ASSEMBLED & LOCKED (§00–§70, 198KB, 3 ADRs; OQ-1 resolved via ADR-0002)"
-  - "§55 TDD Re-Pass — ✅ COMPLETE (§20/§30/§40/§50 all aligned with London-school mock contracts; zero blockers)"
   - "Phase 1: Monorepo restructuring ✅ COMPLETE"
   - "Phase 2: Live runtime verification ✅ COMPLETE (5/5 modules)"
   - "Phase 3: CopilotClient Integration ✅ COMPLETE (7 modules, 289 tests, 9-persona review)"
@@ -250,17 +254,23 @@ Pass A triage went out to 6 agents. **Graham executed end-to-end** (3 ADR bodies
 
 ## Parallel track — Eureka v1 (active on main)
 
-**Eureka v1 implementation runway — M1 first red test next.**
+**Eureka v1 M5+M6 COMPLETE & REVIEW-CLEAN — READY FOR AARON'S SHIP DECISION**
 
-Branch: `eureka/v1-design-package` was merged to `main` (PR #30); M0/M1 work proceeds on `main`.
+Branch: `eureka/m5-m6-trust-feedback` (11 commits, 40/40 tests GREEN, tsc clean, ship-ready). M0/M1 runway clear; PR #30 (v1-design-package) merged earlier.
 
 **Current state:**
-- ✅ Eureka v0.1 technical design **ASSEMBLED & LOCKED** — `docs/eureka/technical-design.md` (§00–§70, ~198KB, 3 ADRs, 100% PRD acceptance criteria traced, 37/41 ACs testable in v1).
-- ✅ **OQ-1 RESOLVED** — Aaron accepted Option A (Monorepo). See `docs/eureka/adrs/0002-shared-substrate-ownership.md` and merged entries in `.squad/decisions.md`. M0 scaffolding unblocked.
-- ✅ §55 London-TDD spine canonical — §20/§30/§40/§50 aligned with London-school mock contracts; zero blockers.
-- ⏳ Remaining open decisions: OQ-2 (event schema topology), OQ-3 (Decision/SessionId schema), OQ-4 (dogfood sequencing) — tracked in §00 ADR index.
+- ✅ **M5+M6 COMPLETE** — Trust feedback mutation. `applyFeedback` + `applyFeedbackById` + `FactReader` seams complete. 40/40 tests GREEN (18 baseline + 22 new). Build clean.
+- ✅ **3-CYCLE REVIEW CONSENSUS** — Finding trajectory 12→4→4 (1 blocking in C1, 0 in C2+C3). All 20 findings ACCEPT'ed & implemented.
+- ✅ **§30 §2.3 spec complete** — "Trust Dynamics Beyond the Static Floor" covers event-delta table, domain invariants, interface contracts, user-correction sign convention, measurable outcomes.
+- ✅ **DECISION TRAIL LOCKED** — 20 findings merged from inbox to decisions.md under "Eureka M5+M6 Review Cycle" section. Auditable history.
+- ✅ **ARCHITECTURE READY** — All seams finalized, error contracts defined, deferred decisions scoped (M7-A/B/C/D). London-school pattern consistent.
+- 📋 **NEXT ACTION**: Await Aaron's ship gate decision. M7 roadmap ready (error typing, atomicity contract, Crispin's real FactReader).
 
-**Next action:** M1 first red test (Laura — London-school outside-in TDD per §55).
+**Deferred to M7:**
+- M7-A: Typed error classes (FactNotFoundError, InvalidFeedbackOptionsError)
+- M7-B: Error narrowing tests
+- M7-C: **CRITICAL** — Atomicity contract (caller serialization v1 vs. backend CAS/mutate later)
+- M7-D: Regression locks for `applyFeedbackById` user_correction path
 
 ---
 

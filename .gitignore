@@ -55,3 +55,6 @@ temp/
 .squad-workstream
 # Squad: ignore runtime state (logs, inbox, sessions)
 .squad/.scratch/
+
+# Local test capture artifacts
+test_results.txt
