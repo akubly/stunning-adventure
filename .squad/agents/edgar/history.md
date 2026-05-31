@@ -1,7 +1,7 @@
 # Edgar — History
 
 **Role:** Learning Systems Specialist (Plasticity, trust, recency, recall algorithms)
-**Status:** M5+M6 GREEN complete. Trust-feedback mutation + read-seam landed. 29/29 tests green.
+**Status:** M5+M6 cycle 2 hardening complete. correctionDelta validation + FactReader contract + @concurrency accuracy landed. 37/37 tests green.
 **Last update:** 2026-05-30
 
 **Key milestones:**
@@ -11,15 +11,26 @@
 - Cycle 2 fixes: F6 minTrust interface, C5 Ranker JSDoc, C6 guard test
 - M5 GREEN: applyFeedback (TrustUpdater seam) — corroboration/contradiction/user_correction
 - M6 GREEN: applyFeedbackById (FactReader read-seam) + user_correction required-delta guard
-- Build: 609 Cairn, 644 Forge, 29 Eureka tests green
+- M5+M6 cycle 2: correctionDelta NaN/Infinity guard, @concurrency accuracy, FactReader strict-null contract
+- Build: 609 Cairn, 644 Forge, 37 Eureka tests green
 
 **See history-archive.md for detailed entries.**
 
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
 
+**Scribe note (2026-05-30T22:19:00Z):** M5+M6 review-cycle cycle 2 hardening complete. Three findings addressed: (1) correctionDelta non-finite guard added inside user_correction branch; (2) @concurrency JSDoc rewritten to accurately present caller-serialization vs. API-widening options with M7-C scope updated; (3) FactReader contract aligned to strict null across interface, impl (=== null), and §2.3 spec. 37/37 tests green.
+
 ## Learnings
 
-**2026-05-30 — M5+M6 Code Panel review wave (exports, named types, exhaustiveness, validation)**
+**2026-05-30 — M5+M6 cycle 2 hardening (correctionDelta, @concurrency, FactReader contract)**
+
+- **Validate ALL inputs in a math path, not just the first one:** Cycle 1 added a `currentTrust` guard but left `correctionDelta` unchecked. A NaN delta produces NaN trust, which propagates silently into TrustUpdater. The pattern: when a function takes multiple numeric inputs into a computation, each must be independently validated before the first side-effect-producing `await`.
+
+- **JSDoc concurrency notes must describe the mechanism, not just the obligation:** "atomicity is a storage-backend responsibility" was misleading because `TrustUpdater.update` only accepts an absolute value — the backend has no CAS surface without an API change. Accurate JSDoc names both v1 (caller serialization) and the future path (API widening: CAS token or mutate callback) so M7-C has a concrete scope.
+
+- **Interface is the source of truth for return type contracts:** When an interface says `Promise<T|null>` and impl logic uses `== null`, the loose equality is defending against a contract violation that the TypeScript type system already prevents. Align to `=== null` and update spec/JSDoc to match — three-layer disagreement silently erodes trust in the interface as authoritative.
+
+
 
 - **Required-but-unused dep is inverse anti-pattern:** §55 §1.2 says "no optional default — defaults hide non-determinism." A *required-but-unused* dep is the mirror problem: it signals a dependency the activity doesn't actually need, polluting call sites and obscuring what the function truly depends on. Remove unused deps from both the type and the call sites simultaneously.
 

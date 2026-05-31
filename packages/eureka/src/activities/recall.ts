@@ -279,6 +279,7 @@ export interface ApplyFeedbackByIdDeps {
  * @throws {RangeError} if currentTrust is non-finite or outside [0, 1] (corrupt/buggy caller)
  * @throws {Error} if event='user_correction' and correctionDelta is omitted (programming error —
  *         a 0-delta silent fallback would call TrustUpdater for no reason and mislead callers)
+ * @throws {RangeError} if event='user_correction' and correctionDelta is non-finite (NaN, ±Infinity)
  */
 export async function applyFeedback(
   options: ApplyFeedbackOptions,
@@ -308,6 +309,11 @@ export async function applyFeedback(
           'applyFeedback: correctionDelta is required when event is "user_correction"',
         );
       }
+      if (!Number.isFinite(correctionDelta)) {
+        throw new RangeError(
+          `applyFeedback: correctionDelta must be a finite number; received ${correctionDelta}`,
+        );
+      }
       newTrust = Math.min(1.0, Math.max(0.0, currentTrust + correctionDelta));
       break;
     default: {
@@ -323,13 +329,23 @@ export async function applyFeedback(
  * Higher-level orchestrator: reads currentTrust from storage via the `FactReader` seam,
  * then delegates to `applyFeedback`. Callers do not need to supply currentTrust.
  *
- * @concurrency Non-atomic read-then-write — callers MUST serialize concurrent feedback on the
- *   same factId (e.g., row-level lock in TrustUpdater, or serializable transaction wrapping
- *   read+write). The activity is intentionally not atomic at this layer; atomicity is a
- *   storage-backend responsibility. Tracked as M7-C: "atomic feedback contract —
- *   storage-layer responsibility" (deferred RED beat for Crispin's real backend).
+ * @concurrency Non-atomic read-then-write. Two paths forward:
  *
- * @throws {Error} if FactReader returns null or undefined (fact not found — TrustUpdater is NOT called)
+ *   **Caller-side serialization (recommended for v1):** serialize concurrent feedback events for
+ *   the same factId at the activity layer (e.g., a per-factId queue, mutex, or promise-chain in
+ *   the caller). No API changes required. This is the correct approach until M7-C is scheduled.
+ *
+ *   **Backend-side atomicity (requires API change, deferred to M7-C):** `TrustUpdater.update`
+ *   currently receives only an absolute trust value — the storage backend cannot enforce
+ *   compare-and-swap without an API change. Two options under consideration for M7-C:
+ *     (a) Widen `TrustUpdater.update` to accept an `expectedTrust` / version token for CAS.
+ *     (b) Change the API to `mutate(factId, fn: (trust: number) => number)` — a callback-style
+ *         mutation that moves the read-modify-write entirely into the storage layer.
+ *   Tracked as M7-C: "atomicity contract — caller serialization vs. API widening (CAS token or
+ *   mutate callback)" — the deferred RED beat is designing this contract, not just implementing
+ *   storage-layer locking.
+ *
+ * @throws {Error} if FactReader returns null (fact not found — TrustUpdater is NOT called)
  * @throws {RangeError} if the stored fact.trust is non-finite (corrupted storage row)
  * @throws {Error} propagated from applyFeedback if event='user_correction' and correctionDelta is omitted
  */
@@ -341,7 +357,7 @@ export async function applyFeedbackById(
   const { factReader, trustUpdater } = deps;
 
   const fact = await factReader.read({ factId, sessionId });
-  if (fact == null) {
+  if (fact === null) {
     throw new Error(`applyFeedbackById: fact not found — factId="${factId}"`);
   }
   if (!Number.isFinite(fact.trust)) {

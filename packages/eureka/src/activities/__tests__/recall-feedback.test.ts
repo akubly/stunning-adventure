@@ -46,13 +46,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { applyFeedback, applyFeedbackById, type FeedbackEvent } from '../recall.js';
 import type { SessionId } from '@akubly/types';
 
-/**
- * Fixed clock anchor — M5 uses same pattern as M2–M4 (non-deterministic inputs
- * must be mocked per §55 §1.2; ClockProvider is REQUIRED in all activity deps).
- */
-const FIXED_NOW_MS = 1_748_476_800_000; // 2026-05-29 00:00 UTC — M2/M3/M4 reference anchor
-const fixedClock = { now: () => FIXED_NOW_MS };
-
 describe('applyFeedback', () => {
   let sessionId: SessionId;
 
@@ -81,7 +74,7 @@ describe('applyFeedback', () => {
         event:        'corroboration' as const,
         currentTrust:  0.60,
       },
-      { trustUpdater, clock: fixedClock },
+      { trustUpdater },
     );
 
     // Corroboration: trust = min(1.0, 0.60 + 0.10) = 0.70
@@ -112,7 +105,7 @@ describe('applyFeedback', () => {
         event:        'corroboration' as const,
         currentTrust:  0.95,
       },
-      { trustUpdater, clock: fixedClock },
+      { trustUpdater },
     );
 
     // min(1.0, 0.95 + 0.10) = 1.0
@@ -140,7 +133,7 @@ describe('applyFeedback', () => {
         event:        'contradiction' as const,
         currentTrust:  0.50,
       },
-      { trustUpdater, clock: fixedClock },
+      { trustUpdater },
     );
 
     // Contradiction: trust = max(0.0, 0.50 - 0.10) = 0.40
@@ -172,7 +165,7 @@ describe('applyFeedback', () => {
         event:        'contradiction' as const,
         currentTrust:  0.05,
       },
-      { trustUpdater, clock: fixedClock },
+      { trustUpdater },
     );
 
     // max(0.0, 0.05 - 0.10) = 0.0
@@ -198,7 +191,7 @@ describe('applyFeedback', () => {
         event:        'corroboration' as const,
         currentTrust:  1.0,
       },
-      { trustUpdater, clock: fixedClock },
+      { trustUpdater },
     );
 
     // min(1.0, 1.0 + 0.10) = 1.0 — must not exceed ceiling
@@ -217,7 +210,7 @@ describe('applyFeedback', () => {
         event:        'contradiction' as const,
         currentTrust:  0.0,
       },
-      { trustUpdater, clock: fixedClock },
+      { trustUpdater },
     );
 
     // max(0.0, 0.0 - 0.10) = 0.0 — must not go below floor
@@ -260,7 +253,7 @@ describe('applyFeedback', () => {
         currentTrust:     0.50,
         correctionDelta:  +0.30,
       },
-      { trustUpdater, clock: fixedClock },
+      { trustUpdater },
     );
 
     // min(1.0, max(0.0, 0.50 + 0.30)) = 0.80
@@ -290,7 +283,7 @@ describe('applyFeedback', () => {
         currentTrust:     0.80,
         correctionDelta:  +0.30,
       },
-      { trustUpdater, clock: fixedClock },
+      { trustUpdater },
     );
 
     // min(1.0, 0.80 + 0.30) = 1.0
@@ -317,7 +310,7 @@ describe('applyFeedback', () => {
         currentTrust:     0.50,
         correctionDelta:  -0.30,
       },
-      { trustUpdater, clock: fixedClock },
+      { trustUpdater },
     );
 
     // max(0.0, 0.50 - 0.30) = 0.20
@@ -347,7 +340,7 @@ describe('applyFeedback', () => {
         currentTrust:     0.20,
         correctionDelta:  -0.30,
       },
-      { trustUpdater, clock: fixedClock },
+      { trustUpdater },
     );
 
     // max(0.0, 0.20 - 0.30) = 0.0
@@ -383,7 +376,7 @@ describe('applyFeedback', () => {
           currentTrust:  0.50,
           // correctionDelta intentionally omitted
         },
-        { trustUpdater, clock: fixedClock },
+        { trustUpdater },
       ),
     ).rejects.toThrow();
 
@@ -408,7 +401,7 @@ describe('applyFeedback', () => {
     // Cast forces a value the union forbids — simulates runtime cast from untrusted source
     await expect(applyFeedback(
       { factId: 'fact-x', sessionId, event: 'meditated' as FeedbackEvent, currentTrust: 0.5 },
-      { trustUpdater, clock: fixedClock },
+      { trustUpdater },
     )).rejects.toThrow(TypeError);
   });
 
@@ -427,7 +420,7 @@ describe('applyFeedback', () => {
 
     await expect(applyFeedback(
       { factId: 'fact-range-nan', sessionId, event: 'corroboration' as const, currentTrust: NaN },
-      { trustUpdater, clock: fixedClock },
+      { trustUpdater },
     )).rejects.toThrow(RangeError);
 
     expect(trustUpdater.update).not.toHaveBeenCalled();
@@ -438,7 +431,7 @@ describe('applyFeedback', () => {
 
     await expect(applyFeedback(
       { factId: 'fact-range-low', sessionId, event: 'corroboration' as const, currentTrust: -0.1 },
-      { trustUpdater, clock: fixedClock },
+      { trustUpdater },
     )).rejects.toThrow(RangeError);
 
     expect(trustUpdater.update).not.toHaveBeenCalled();
@@ -449,7 +442,7 @@ describe('applyFeedback', () => {
 
     await expect(applyFeedback(
       { factId: 'fact-range-high', sessionId, event: 'corroboration' as const, currentTrust: 1.5 },
-      { trustUpdater, clock: fixedClock },
+      { trustUpdater },
     )).rejects.toThrow(RangeError);
 
     expect(trustUpdater.update).not.toHaveBeenCalled();
@@ -482,7 +475,7 @@ describe('applyFeedback', () => {
 // Activity signature driven:
 //   async function applyFeedbackById(
 //     options: { factId: string; sessionId: SessionId; event: FeedbackEvent; correctionDelta?: number },
-//     deps: { factReader: FactReader; trustUpdater: TrustUpdater; clock: ClockProvider },
+//     deps: { factReader: FactReader; trustUpdater: TrustUpdater },
 //   ): Promise<void>
 //
 // RED failure expected: `applyFeedbackById` is not exported from recall.ts →
@@ -518,7 +511,7 @@ describe('applyFeedbackById (read-seam)', () => {
 
     await applyFeedbackById(
       { factId: 'fact-readseam-001', sessionId, event: 'corroboration' as const },
-      { factReader, trustUpdater, clock: fixedClock },
+      { factReader, trustUpdater },
     );
 
     // FactReader must have been consulted
@@ -555,7 +548,7 @@ describe('applyFeedbackById (read-seam)', () => {
     await expect(
       applyFeedbackById(
         { factId: 'fact-does-not-exist', sessionId, event: 'corroboration' as const },
-        { factReader, trustUpdater, clock: fixedClock },
+        { factReader, trustUpdater },
       ),
     ).rejects.toThrow();
 
@@ -581,7 +574,7 @@ describe('applyFeedbackById (read-seam)', () => {
     await expect(
       applyFeedbackById(
         { factId: 'fact-range-reader', sessionId, event: 'corroboration' as const },
-        { factReader, trustUpdater, clock: fixedClock },
+        { factReader, trustUpdater },
       ),
     ).rejects.toThrow(RangeError);
 
@@ -603,7 +596,7 @@ describe('applyFeedbackById (read-seam)', () => {
 
     await expect(applyFeedbackById(
       { factId: 'fact-y', sessionId, event: 'user_correction' as const /* no correctionDelta */ },
-      { factReader, trustUpdater, clock: fixedClock },
+      { factReader, trustUpdater },
     )).rejects.toThrow();  // Error message will mention correctionDelta
   });
 });

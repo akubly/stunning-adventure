@@ -16,6 +16,21 @@
 
 ## Learnings
 
+### 2026-05-30: M5+M6 Cycle 2 — Purge unused clock deps from feedback tests
+
+**Finding:** Cycle 2 review (Correctness C5 + Craft Cf8 + Compliance consensus) identified that `clock: fixedClock` was silently carried through all `applyFeedback`/`applyFeedbackById` call sites after Edgar removed `ClockProvider` from the feedback deps types in cycle 1. The `__tests__` dir is excluded from tsc, so excess property checking never fired.
+
+**Changes made (recall-feedback.test.ts only):**
+- Removed `clock: fixedClock` from 15 `applyFeedback(...)` call sites → deps shape is now `{ trustUpdater }`
+- Removed `clock: fixedClock` from 4 `applyFeedbackById(...)` call sites → deps shape is now `{ factReader, trustUpdater }`
+- Removed false "ClockProvider is REQUIRED in all activity deps" block comment; replaced with accurate scope note: clock is required for recall/recallWithScores, NOT for the feedback path
+- Fixed inline signature sketch in the M6-B section: dropped `clock: ClockProvider` from the `applyFeedbackById` deps shape
+- Removed `fixedClock` const and `FIXED_NOW_MS` — both fully unused after call-site cleanup (no ClockProvider import in this file either)
+
+**Validation:** 37/37 tests pass. No Edgar inbox drop present (`.squad/decisions/inbox/edgar-m5m6-cycle2.md` does not exist); no new regression-lock test added.
+
+**Pattern reinforced:** When an impl change removes a dep from a type, always grep the companion test file for the old field name — tsc exclusion of `__tests__` means excess-property checks won't catch stale injections.
+
 ### 2026-05-30: M5+M6 Review Wave — boundary, closeTo, regression locks
 
 **8 tests added across 6 findings:**

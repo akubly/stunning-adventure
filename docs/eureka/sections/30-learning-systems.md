@@ -585,7 +585,7 @@ interface FactReader {
 **Guard Contracts:**
 - `applyFeedback`: throws `RangeError` if `currentTrust` is non-finite or outside `[0, 1]` — corrupt/buggy callers fail loudly before any side effects
 - `applyFeedback`: throws if `event='user_correction'` and `correctionDelta` is `undefined` — a silent `?? 0` fallback would be a misleading no-op write
-- `applyFeedbackById`: throws if `FactReader.read()` returns `null` or `undefined` — `TrustUpdater` is NOT called for a missing fact
+- `applyFeedbackById`: throws if `FactReader.read()` returns `null` — `TrustUpdater` is NOT called for a missing fact
 - `applyFeedbackById`: throws `RangeError` if the stored `fact.trust` is non-finite (corrupted storage row)
 
 **Named Interface Types (M1–M4 pattern):**
