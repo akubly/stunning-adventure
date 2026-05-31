@@ -480,3 +480,5 @@ PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end
 **For you:** If your work depends on Eureka design decisions, those are now stable. Cross-refs and canonical values are in .squad/decisions.md (Cycle 1 + Cycle 3 sections).
 
 **Commits:** f68873d (cycle 2 fix wave) + 37370f9 (cycle 3 cleanup).
+
+**2026-05-30 rebase:** Rebased squad/25-type-tightening-polish onto origin/main (ef06238, Eureka v1 PR #30). Old base: 53cd645. New HEAD: 65a88de. Rebase was clean — merge=union driver auto-resolved all .squad/ history conflicts. Build required npm install to refresh node_modules junctions (worktree had stale junctions pointing to pre-Eureka main repo; ef06238 added SessionId to @akubly/types). 26/26 runtime-cli tests green. Force-with-lease pushed; PR #32 mergeStateStatus cleared to MERGEABLE.
