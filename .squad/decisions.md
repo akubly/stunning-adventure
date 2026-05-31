@@ -5849,6 +5849,45 @@ Implemented Aaron's ruling on L3.5 Scheduler Phase 0.5:
 
 **Rationale:** Stub proves tier boundary exists and satisfies core replay-ordering invariant before Phase 1 invests in fair dispatch, back-pressure, and quanta budgeting. Validates ADR-0024 architecture early.
 
+---
+
+## PR #33 Cloud-Review-Cycle Round 4 Fixes
+
+### graham-record-results-for-replay
+
+# Graham Decision Drop — Record Non-Recomputable Results for Replay
+
+**Date:** 2026-05-31T12:41:12Z  
+**Author:** Graham (Lead / Architect)  
+**Commit:** a0db370  
+**Scope:** Crucible replay determinism; parent-ledger fork Decisions  
+
+---
+
+## Decision
+
+When a recorded Decision chooses a path whose concrete result cannot be deterministically recomputed from ledger-stable inputs, the Decision payload MUST record the result itself.
+
+For ADR-0019 fork collisions, `chosenOption='new'` is insufficient because the resulting `childSid` includes `created_at_ns` in its preimage. The parent-ledger fork Decision therefore records `resultingChildSid`, and replay consumes that value directly instead of recomputing timestamp-derived preimages.
+
+## Rationale
+
+Choices are replayable only if the chosen branch's outputs are derivable from recorded structural inputs. Timestamp-derived IDs are not derivable on later replay unless the exact timestamp preimage or final ID is recorded. Recording the final ID is smaller, simpler, and avoids re-hashing a historical result.
+
+## Implication
+
+Future replay-affecting Decision schemas should be reviewed for "choice/result separation." If the result depends on wall-clock time, random IDs, external allocation, or environment state, record the resulting identifier/value in the ledger Decision.
+
+## Applied Fixes (Commit a0db370)
+
+1. **L1/L2 Storage References (§14, §01)** — Corrected L1 reference from `crucible.db` to `~/.crucible/wal/` custom WAL (ADR-0002); confirmed L2 = `crucible.db` SQLite
+2. **ADR-0006 Resolved Questions Section** — Added Router tiebreak ownership, inputs specification, DecisionGate scope definition
+3. **Fork Collision Decision Enhancement (§6/§10/§16/ADR-0019)** — Added `resultingChildSid` field to Decision payloads; replay consumes recorded result instead of recomputing
+
+## Status
+
+Pattern captured as decision; applied across §6/§10/§16/ADR-0019. All Copilot review threads from cycle 4 resolved.
+
 **Files:** `docs/crucible-technical-design-plan.md`, `05-router-design.md`, `16-test-strategy-invariants.md`
 
 ---

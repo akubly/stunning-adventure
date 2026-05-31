@@ -38,9 +38,14 @@
 
 ## Learnings
 
-### 2026-05-31: PR #33 Cloud Review Cycle 4 Replay Result Capture
+### 2026-05-31: PR #33 Cloud Review Cycle 4 Replay Result Capture — COMPLETE
+
+**Status:** 3 fixes applied in commit a0db370; decision merged to squad/decisions.md; Scribe session logged.
 
 - **Record results, not just choices, when results are not deterministically recoverable from recorded inputs.** ADR-0019's `--new` fork path recorded `chosenOption='new'` but not the timestamp-derived `childSid`; replay weeks later could not recompute the same `created_at_ns`. Fix pattern: parent-ledger Decisions for fork collisions now record `resultingChildSid`, and replay consumes that result directly.
+- **L1/L2 storage references corrected.** §14 and §01 now point to correct layers: L1 = `~/.crucible/wal/` custom WAL, L2 = `crucible.db` SQLite (per ADR-0002).
+- **ADR-0006 resolved questions added.** Router tiebreak ownership, decision inputs, DecisionGate scope now explicitly documented.
+- **Pattern:** When fork collisions produce results dependent on wall-clock time or random allocation, record the final identifier in the Decision payload. Replay consumes the recorded value; no recomputation needed. This pattern generalizes to any Decision whose result depends on environment-specific state.
 
 ### 2026-05-31: PR #33 Cloud Review Cycle 3 Taxonomy Sweep
 
