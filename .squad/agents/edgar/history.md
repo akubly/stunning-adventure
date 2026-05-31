@@ -11,7 +11,7 @@
 - Cycle 2 fixes: F6 minTrust interface, C5 Ranker JSDoc, C6 guard test
 - M7-A GREEN: typed error hierarchy (FactNotFoundError, InvalidFeedbackOptionsError, InvalidTrustValueError, FactReaderContractError, UnhandledFeedbackEventError)
 
-## Learnings
+## Current & Recent
 
 **2026-05-31 — M7-A Cycle 1: Code Panel review fixes (11 ACCEPT, 2 REJECT)**
 
@@ -35,48 +35,14 @@
 
 - **A fix can land backwards.** Cycle-1 F10 was documented as "swap @throws to match runtime check order." The commit landed with `FactReaderContractError` listed first — the *opposite* of runtime order (code checks `null` → `FactNotFoundError` first, `undefined` → `FactReaderContractError` second). Three of four cycle-2 personas independently caught it. The lesson: after making a swap, re-read the resulting state against the ground truth (the actual runtime code), not just against the before state. "I swapped it" is not the same as "it is now correct." Diff review must verify the final ordering, not just the presence of a change.
 
-
-- **Final error class inventory:**
-
-  | Class | Code | Extends | Throw site |
-  |---|---|---|---|
-  | `FactNotFoundError` | `FACT_NOT_FOUND` | `Error` | `applyFeedbackById`: factReader returns `null` |
-  | `InvalidFeedbackOptionsError` | `INVALID_FEEDBACK_OPTIONS` | `Error` | `applyFeedback`: `correctionDelta` undefined for `user_correction` |
-  | `InvalidTrustValueError` | `INVALID_TRUST_VALUE` | `RangeError` | `applyFeedback`: `currentTrust` non-finite/out-of-range; `correctionDelta` non-finite; `applyFeedbackById`: `fact.trust` non-finite |
-  | `FactReaderContractError` | `FACT_READER_CONTRACT` | `TypeError` | `applyFeedbackById`: factReader returns `undefined` |
-  | `UnhandledFeedbackEventError` | `UNHANDLED_FEEDBACK_EVENT` | `TypeError` | `applyFeedback`: exhaustive switch `never` branch |
-
 - **Inheritance discipline for zero test changes:** Existing M5+M6 tests assert `instanceof RangeError` (3 tests) and `instanceof TypeError` (2 tests). By making `InvalidTrustValueError extends RangeError` and `FactReaderContractError`/`UnhandledFeedbackEventError extends TypeError`, all existing assertions pass without any test edits. This is the correct green-beat discipline — typed error introduction is a refactor, not a behavior change.
 
 - **`correctionDelta` non-finite maps to `InvalidTrustValueError`:** The task spec scoped `InvalidTrustValueError` to "currentTrust or stored fact.trust", but the test asserts `RangeError` for non-finite `correctionDelta`. Using `InvalidTrustValueError(value, 'input', msg)` is the cleanest fit — it extends `RangeError`, preserves the assertion, and the `source: 'input'` is accurate. M7-B narrowing tests can document this mapping explicitly.
 
-- **`Object.setPrototypeOf` is mandatory:** When extending built-in Error subclasses (RangeError, TypeError) in TypeScript compiled to ES5 targets, `Object.setPrototypeOf(this, new.target.prototype)` is required to restore the prototype chain. Without it, `instanceof` checks fail in environments where classes are transpiled to functions. Even if the repo targets ES2022, the defensive call costs nothing and avoids environment-specific surprises.
-
-- **Discriminator `code` field enables realm-safe narrowing:** Cross-ESM-realm (e.g., vm.runInNewContext, dual CJS/ESM packages) `instanceof` checks can fail because each realm has its own Error prototype chain. The `readonly code: 'FACT_NOT_FOUND' | ...` pattern (string literal type) enables `if (err.code === 'FACT_NOT_FOUND')` narrowing that works regardless of realm. This is the M7-B contract test hook.
-
 - **Test count delta: 0.** No new tests; no removed tests. Only assertion tightening in M7-B (follow-up PR). 40/40 → 40/40.
 
-- **Branch:** `eureka/m7-a-typed-errors` | **PR:** #38 — https://github.com/akubly/stunning-adventure/pull/38
-- M6 GREEN: applyFeedbackById (FactReader read-seam) + user_correction required-delta guard
-- M5+M6 cycle 2: correctionDelta NaN/Infinity guard, @concurrency accuracy, FactReader strict-null contract
-- Build: 609 Cairn, 644 Forge, 37 Eureka tests green
-- PR #34 cycle 2 (2026-05-30): TrustUpdater JSDoc — replaced "FactStore persistence layer" with generic storage language; green-beat checklist — scoped `clock` requirement to activities that read time only
+**See history-archive.md for detailed entries from M5, M6, earlier reviews, and design ceremony.**
 
-**See history-archive.md for detailed entries.**
-
-**Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
-
-**Scribe note (2026-05-30T22:59:00-07:00):** PR #34 Copilot review addressed (4 threads). (1) Added missing `@throws {RangeError}` to `applyFeedbackById` for out-of-range stored trust propagated from `applyFeedback` (defense-in-depth). (2–4) Corrected green-beat skill §3a, §3 example signature, and §5: `clock` is required ONLY when the activity reads time; activities that don't read time (`applyFeedback`, `applyFeedbackById`) omit `clock` entirely — phantom deps are anti-pattern (§30 §2.3, §55 §1.2). 40/40 tests green, build clean.
-
-**Scribe note (2026-05-30T22:19:00Z):** M5+M6 review-cycle cycle 2 hardening complete. Three findings addressed: (1) correctionDelta non-finite guard added inside user_correction branch; (2) @concurrency JSDoc rewritten to accurately present caller-serialization vs. API-widening options with M7-C scope updated; (3) FactReader contract aligned to strict null across interface, impl (=== null), and §2.3 spec. 37/37 tests green.
-
-**Scribe note (2026-05-30T22:28:23Z):** Cycle 3 (final) polish wave closed. Edgar's 2 minor findings: (1) P1 — spec §2.3 Guard Contracts bullet added for correctionDelta non-finite guard (impl already has check, spec now documents it parallel to currentTrust); (2) P2 — friendlier undefined error in applyFeedbackById after null guard (converts opaque 'Cannot read properties' into explicit "FactReader contract violation" TypeError). Build + 40 tests green. Commit: polish(eureka): M5+M6 cycle 3 — spec bullet + friendly FactReader undefined error. Laura owns 2 parallel findings.
-
-## Learnings
-
-**2026-05-30 — M5+M6 cycle 2 hardening (correctionDelta, @concurrency, FactReader contract)**
-
-- **Validate ALL inputs in a math path, not just the first one:** Cycle 1 added a `currentTrust` guard but left `correctionDelta` unchecked. A NaN delta produces NaN trust, which propagates silently into TrustUpdater. The pattern: when a function takes multiple numeric inputs into a computation, each must be independently validated before the first side-effect-producing `await`.
 
 - **JSDoc concurrency notes must describe the mechanism, not just the obligation:** "atomicity is a storage-backend responsibility" was misleading because `TrustUpdater.update` only accepts an absolute value — the backend has no CAS surface without an API change. Accurate JSDoc names both v1 (caller serialization) and the future path (API widening: CAS token or mutate callback) so M7-C has a concrete scope.
 

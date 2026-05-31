@@ -1,8 +1,8 @@
 # Crispin — History
 
 **Role:** Knowledge Representation Specialist (Graph schema, FactStore contract, kind taxonomies)
-**Status:** v5-final locked canonical. M2-M3: FactStore seams verified. Cycle 2 F6 resolution joint-authored.
-**Last update:** 2026-05-29
+**Status:** v5-final locked canonical. M2-M3: FactStore seams verified. M7-A review-complete 2026-05-31. M7-C (real FactReader contract) queued next.
+**Last update:** 2026-05-31
 
 **Key milestones:**
 - R1-R8: Schema design + 5 tension mitigations (confidence/trust brands, extraction-readiness)
@@ -22,6 +22,16 @@
 **R7 Lock:** v4-final locked as canonical. All 5 schema risks mitigated. Branded types enforcement mechanism is load-bearing (prevents confidence/trust collapse). Seven-mechanism defense-in-depth correct.
 
 **R8 Amendment:** Session identity unification. SessionId branded type ships v1 (FR-12 #8). Kind=session facts reference SessionId as content field, not PK. No identity collision risk. Edge schema references fact.id (KR convention); session_id is a content/grouping field. Latency claim holds.
+
+---
+
+## Current & Next
+
+### 2026-05-31: M7-A Review Cycle — COMPLETE (Observed)
+
+**Summary:** M7-A (Typed Error Hierarchy, Edgar lead) completed 3-cycle review (Cycles 1–2 + fix wave). PR #38 review-complete, pending ship decision.
+
+**Next up:** M7-C — Real FactReader contract test and atomicity contract design. Crispin leads with Edgar on design spec. Scope: genuine FactReader integration (not mock) with multi-threaded access patterns and fact consistency guarantees.
 
 ---
 
