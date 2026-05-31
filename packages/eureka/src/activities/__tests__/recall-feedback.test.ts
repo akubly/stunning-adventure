@@ -41,8 +41,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 // M5: applyFeedback — trust mutation from event (GREEN as of M5).
-// M6-B: applyFeedbackById — not yet exported from recall.ts; importing produces `undefined`
-//        at runtime → "TypeError: applyFeedbackById is not a function" (correct M6-B RED).
+// M6-B: applyFeedbackById — GREEN as of M6-B. (Originally RED via "is not a function".)
 import { applyFeedback, applyFeedbackById, type FeedbackEvent } from '../recall.js';
 import type { SessionId } from '@akubly/types';
 
@@ -447,6 +446,36 @@ describe('applyFeedback', () => {
 
     expect(trustUpdater.update).not.toHaveBeenCalled();
   });
+
+  // ===========================================================================
+  // F-CYCLE3 — Regression lock for correctionDelta finite-guard (cycle 2 carry-forward)
+  // ===========================================================================
+  //
+  // Cycle 2 added a RangeError guard for non-finite correctionDelta. This test
+  // locks that contract — without it, a corrupt delta (NaN, ±Infinity) could
+  // silently poison storage via NaN trust.
+
+  it('throws RangeError when correctionDelta is NaN (§30 §2.3 finite guard)', async () => {
+    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+
+    await expect(applyFeedback(
+      { factId: 'fact-delta-nan', sessionId, event: 'user_correction' as const, currentTrust: 0.5, correctionDelta: NaN },
+      { trustUpdater },
+    )).rejects.toThrow(RangeError);
+
+    expect(trustUpdater.update).not.toHaveBeenCalled();
+  });
+
+  it('throws RangeError when correctionDelta is +Infinity (§30 §2.3 finite guard)', async () => {
+    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+
+    await expect(applyFeedback(
+      { factId: 'fact-delta-inf', sessionId, event: 'user_correction' as const, currentTrust: 0.5, correctionDelta: Infinity },
+      { trustUpdater },
+    )).rejects.toThrow(RangeError);
+
+    expect(trustUpdater.update).not.toHaveBeenCalled();
+  });
 });
 
 // =============================================================================
@@ -553,6 +582,18 @@ describe('applyFeedbackById (read-seam)', () => {
     ).rejects.toThrow();
 
     // Guard: TrustUpdater must NOT be called for a missing fact
+    expect(trustUpdater.update).not.toHaveBeenCalled();
+  });
+
+  it('throws TypeError when FactReader returns undefined (contract violation)', async () => {
+    const factReader = { read: vi.fn().mockResolvedValue(undefined) };
+    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+
+    await expect(applyFeedbackById(
+      { factId: 'fact-undef', sessionId, event: 'corroboration' as const },
+      { factReader, trustUpdater },
+    )).rejects.toThrow(TypeError);
+
     expect(trustUpdater.update).not.toHaveBeenCalled();
   });
 
