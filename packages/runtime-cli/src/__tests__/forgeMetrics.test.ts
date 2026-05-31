@@ -318,6 +318,70 @@ describe('loadMetrics integration', () => {
     expect(run.totalHints).toBe(4);
   });
 
+  it('normalises unknown profileSource string to null (rejection path)', () => {
+    const db = getDb();
+    const systemSessionId = ensureSystemSession(db);
+
+    // Insert an event with a profileSource value outside the allowed set.
+    logEvent(db, systemSessionId, 'prescriber_run', {
+      skillId: 'skill-bad-source',
+      triggeredBy: 'mcp:forge_prescribe',
+      profileSource: 'per-org',
+      result: { inserted: 1, skipped: 0, errored: 0, totalHints: 1 },
+    });
+
+    const metrics = loadMetrics({ skillId: 'skill-bad-source', now: NOW });
+
+    expect(metrics.recentPrescriberRuns).not.toBeNull();
+    expect(metrics.recentPrescriberRuns!).toHaveLength(1);
+    // Unknown profileSource must be coerced to null, not passed through as a lie.
+    expect(metrics.recentPrescriberRuns![0]!.profileSource).toBeNull();
+  });
+
+  it('emits a stderr warning for unknown non-empty profileSource strings', () => {
+    const db = getDb();
+    const systemSessionId = ensureSystemSession(db);
+
+    const stderrMessages: string[] = [];
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
+      stderrMessages.push(String(chunk));
+      return true;
+    });
+
+    // Unknown non-empty string — must warn.
+    logEvent(db, systemSessionId, 'prescriber_run', {
+      skillId: 'skill-warn-source',
+      triggeredBy: 'mcp:forge_prescribe',
+      profileSource: 'per-org',
+      result: { inserted: 1, skipped: 0, errored: 0, totalHints: 1 },
+    });
+    loadMetrics({ skillId: 'skill-warn-source', now: NOW });
+
+    expect(stderrMessages.some(m => m.includes('per-org'))).toBe(true);
+    expect(stderrMessages.some(m => m.includes('[loadMetrics]'))).toBe(true);
+    stderrMessages.length = 0;
+
+    // null profileSource — must NOT warn.
+    logEvent(db, systemSessionId, 'prescriber_run', {
+      skillId: 'skill-null-source',
+      triggeredBy: 'mcp:forge_prescribe',
+      profileSource: null,
+      result: { inserted: 1, skipped: 0, errored: 0, totalHints: 1 },
+    });
+    loadMetrics({ skillId: 'skill-null-source', now: NOW });
+    expect(stderrMessages.length).toBe(0);
+
+    // undefined / missing profileSource — must NOT warn.
+    logEvent(db, systemSessionId, 'prescriber_run', {
+      skillId: 'skill-undef-source',
+      triggeredBy: 'mcp:forge_prescribe',
+      result: { inserted: 1, skipped: 0, errored: 0, totalHints: 1 },
+    });
+    loadMetrics({ skillId: 'skill-undef-source', now: NOW });
+    expect(stderrMessages.length).toBe(0);
+  });
+
   // I3: malformed payload rows must be skipped; the function must never return null
   // when the event type genuinely exists but a single row is corrupt.
   it('skips malformed payload rows and returns valid rows (non-null) (I3)', () => {
@@ -373,11 +437,16 @@ describe('forgePrescribeHandler → loadMetrics round-trip (I4)', () => {
       { skill_id: 'skill-round-trip', repo_key: 'org/round-trip-repo' },
       async () => ({
         ok: true as const,
+        exitCode: 0 as const,
+        skillId: 'skill-round-trip',
+        dbPath: ':memory:',
         profileSource: 'per-skill' as const,
+        hints: [],
         inserted: 3,
         skipped: 0,
         errored: 0,
         totalHints: 3,
+        totalPersisted: 3,
       }),
     );
     expect(handlerResult.isError).toBeFalsy();
