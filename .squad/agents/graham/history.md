@@ -1,3 +1,14 @@
+---
+
+## 📋 SUMMARY (as of 2026-05-31)
+
+**Current Focus:** Crucible CTD final review + post-CTD ADR authoring  
+**Latest Major Work:** PR #33 cloud-review-cycle round 2 — 11 ADR review threads resolved; ADR numbering stability decision captured  
+**Key Architectural Contributions:** Replay-determinism bug finding (offset-based heuristics), childSid hybrid fork-or-resume protocol review, L3.5 Scheduler Phase 0.5 stub acceptance  
+**File Size Note:** 122KB (summarization recommended; see legacy entries below line 250)
+
+---
+
 📌 **PR #33 Cloud-Review-Cycle Round 2 COMPLETE** (2026-05-31T06:15:00Z): Graham addressed all 11 Copilot review threads on Crucible CTD ADRs. Fixes applied: ADR-0002 summary clarity, ADR-0006 PA-B3 ownership, ADR-0018 Security section, ADR-0011/0019 accepted-date stamps, ADR-0020 renumbering (typed-trace-algebra), superseded docs marked. Decision captured: graham-adr-number-stability.md (landed ADR numbers stable; planned rows renumber on collision). Build + tests passing. Branch re-requested. — Scribe
 
 📌 **ADR-0019 CONTRIBUTION** (2026-05-30T194147Z): Wall-clock replay-determinism bug finding (independent convergence with Laura) elevated heuristic drop from "nice-to-have" to "non-negotiable." Architectural finding: offsets are load-bearing primitives; wall-clock time is informational metadata. This discovery directly led to Aaron's decision to implement always-prompt UX without automatic nudges. Capture for future: Protocol design with replay/determinism requirements must ground heuristics in logical time, not wall-clock.
