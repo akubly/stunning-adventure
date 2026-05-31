@@ -2,6 +2,72 @@
 
 ## Open Decisions (Current Session)
 
+### 2026-05-31: M7-A — Typed Error Hierarchy for applyFeedback / applyFeedbackById (Edgar)
+
+**Author:** Edgar (Learning Systems Specialist)  
+**Date:** 2026-05-31  
+**Branch:** `eureka/m7-a-typed-errors`  
+**Status:** SHIPPED (PR #38 opened)
+
+**Decision:** Introduce a typed error class hierarchy in `packages/eureka/src/activities/errors.ts`, replacing all six generic `throw new Error/TypeError/RangeError(...)` sites in `applyFeedback` and `applyFeedbackById` with domain-specific typed subclasses.
+
+**Error classes introduced:**
+- `FactNotFoundError` (extends `Error`) — FactReader returns `null`
+- `InvalidFeedbackOptionsError` (extends `Error`) — `correctionDelta` undefined for `user_correction`
+- `InvalidTrustValueError` (extends `RangeError`) — value non-finite/out-of-range
+- `FactReaderContractError` (extends `TypeError`) — FactReader returns `undefined`
+- `UnhandledFeedbackEventError` (extends `TypeError`) — exhaustive `switch` `never` branch
+
+**Discriminator pattern:** Every class carries `readonly code: '<CODE>'` for narrowing without `instanceof`.
+
+**Rationale:** (1) Caller narrowing — generic throws are indistinguishable. (2) Zero behavior change — all 40 existing tests pass without modification. (3) M7-B prep — `code` discriminators are the primary hook for exhaustive narrowing. (4) Message preservation. (5) `Object.setPrototypeOf` defensive call in constructors.
+
+**Open Follow-ups:**
+- M7-B: Exhaustive instanceof + code narrowing tests (Laura)
+- M7-C: Real FactReader contract test; atomicity contract design (Crispin/Edgar)
+- M7-D: `applyFeedbackById` user_correction regression locks (Laura)
+
+**Files Changed:**
+- `packages/eureka/src/activities/errors.ts` — NEW (5 typed error classes)
+- `packages/eureka/src/activities/recall.ts` — updated imports, throw sites, JSDoc @throws
+- `packages/eureka/src/index.ts` — barrel exports for all 5 error classes
+
+---
+
+### 2026-05-30: Coordinator Spawn Prompt — Gitignore Path Policy (Graham)
+
+**Author:** Graham (Lead)  
+**Date:** 2026-05-30  
+**Trigger:** PR #34 Copilot review threads 8, 9, 10 — gitignore violations  
+**Status:** Resolved (commit daf5f28 + concurrent cleanup in 4d4378b)
+
+**Decision:** The Coordinator's spawn prompt to Scribe **must not** list `.squad/orchestration-log/`, `.squad/log/`, or any other gitignored runtime-state path as an allowed write path.
+
+**Allowed Scribe-write paths (exhaustive list):**
+- `.squad/decisions.md`
+- `.squad/decisions-archive.md`
+- `.squad/agents/{name}/history.md`
+- `.squad/agents/{name}/history-archive.md`
+- `.squad/identity/now.md`
+
+**Explicitly prohibited (gitignored runtime state):**
+- `.squad/orchestration-log/` — agent orchestration logs
+- `.squad/log/` — session summary logs
+- `.squad/decisions/inbox/` — transient decision queue (consumed by Scribe, not committed)
+- `.squad/sessions/` — session data
+- `.squad/.scratch/` — scratch space
+
+**Context:** In the M5+M6 review cycle (PR #34), spawn instructions to Scribe incorrectly listed `log/` and `orchestration-log/` as committed paths. Scribe committed 35 files across these directories, all covered by `.gitignore` lines 49-52. This is a coordinator error — Scribe followed instructions correctly.
+
+**Remediation Applied:**
+- `git rm -r --cached .squad/orchestration-log/ .squad/log/` — untracked 34 + 1 files
+- `git rm test_results.txt` — removed local junk artifact
+- `.gitignore` updated for `test_results.txt`
+
+**Action Required:** Coordinator (Graham) — Update Scribe spawn prompt template to enforce allowed-paths list and add note that runtime-state directories are never committed.
+
+---
+
 ## Eureka M5+M6 Review Cycle
 
 ### 2026-05-30: M5+M6 Branch Preparation (Graham)
