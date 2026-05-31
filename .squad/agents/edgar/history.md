@@ -18,6 +18,8 @@
 
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
 
+**Scribe note (2026-05-30T22:59:00-07:00):** PR #34 Copilot review addressed (4 threads). (1) Added missing `@throws {RangeError}` to `applyFeedbackById` for out-of-range stored trust propagated from `applyFeedback` (defense-in-depth). (2–4) Corrected green-beat skill §3a, §3 example signature, and §5: `clock` is required ONLY when the activity reads time; activities that don't read time (`applyFeedback`, `applyFeedbackById`) omit `clock` entirely — phantom deps are anti-pattern (§30 §2.3, §55 §1.2). 40/40 tests green, build clean.
+
 **Scribe note (2026-05-30T22:19:00Z):** M5+M6 review-cycle cycle 2 hardening complete. Three findings addressed: (1) correctionDelta non-finite guard added inside user_correction branch; (2) @concurrency JSDoc rewritten to accurately present caller-serialization vs. API-widening options with M7-C scope updated; (3) FactReader contract aligned to strict null across interface, impl (=== null), and §2.3 spec. 37/37 tests green.
 
 **Scribe note (2026-05-30T22:28:23Z):** Cycle 3 (final) polish wave closed. Edgar's 2 minor findings: (1) P1 — spec §2.3 Guard Contracts bullet added for correctionDelta non-finite guard (impl already has check, spec now documents it parallel to currentTrust); (2) P2 — friendlier undefined error in applyFeedbackById after null guard (converts opaque 'Cannot read properties' into explicit "FactReader contract violation" TypeError). Build + 40 tests green. Commit: polish(eureka): M5+M6 cycle 3 — spec bullet + friendly FactReader undefined error. Laura owns 2 parallel findings.
