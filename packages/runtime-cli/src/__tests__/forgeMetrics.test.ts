@@ -343,7 +343,6 @@ describe('loadMetrics integration', () => {
     const systemSessionId = ensureSystemSession(db);
 
     const stderrMessages: string[] = [];
-    const originalWrite = process.stderr.write.bind(process.stderr);
     vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
       stderrMessages.push(String(chunk));
       return true;

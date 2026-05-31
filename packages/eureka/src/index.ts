@@ -9,6 +9,8 @@ export {
   recall,
   recallWithScores,
   compositeScore,
+  applyFeedback,
+  applyFeedbackById,
 } from './activities/recall.js';
 export type {
   RecallOptions,
@@ -18,4 +20,11 @@ export type {
   ClockProvider,
   ScoredResult,
   Ranker,
+  FeedbackEvent,
+  TrustUpdater,
+  FactReader,
+  ApplyFeedbackOptions,
+  ApplyFeedbackDeps,
+  ApplyFeedbackByIdOptions,
+  ApplyFeedbackByIdDeps,
 } from './activities/recall.js';

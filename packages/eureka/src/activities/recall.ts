@@ -153,7 +153,6 @@ export function compositeScore(fact: RecallResult, nowMs: number): number {
  *
  * Not yet implemented (future red beats):
  *   - lastAccessedAt / accessCount side effects (§10 §10.1)
- *   - Trust score updates from feedback (§30 §2.1)
  */
 export async function recallWithScores(
   options: RecallOptions,
@@ -213,4 +212,169 @@ export async function recall(
   deps: RecallDeps,
 ): Promise<RecallResult[]> {
   return (await recallWithScores(options, deps)).map(s => s.fact);
+}
+
+// =============================================================================
+// M5/M6 — Trust-feedback mutation (§30 §2.3 "Trust Dynamics Beyond the Static Floor")
+// =============================================================================
+
+/** Feedback event types per §30 §2.3. */
+export type FeedbackEvent = 'corroboration' | 'contradiction' | 'user_correction';
+
+/**
+ * Write-seam for trust mutations (§55 §1.2 — storage I/O is always mocked in tests).
+ * Production implementation delegates to the persistence/storage layer (e.g., a future
+ * FactStore extension or dedicated writer interface — the FactStore interface here is read-only).
+ */
+export interface TrustUpdater {
+  update(args: { factId: string; sessionId: SessionId; trust: number }): Promise<void>;
+}
+
+/**
+ * Read-seam for current fact trust (M6-B — higher-level orchestrator seam).
+ * Separates the read responsibility from the write responsibility per London-school
+ * single-responsibility: applyFeedback owns delta computation; FactReader owns the read.
+ */
+export interface FactReader {
+  read(args: { factId: string; sessionId: SessionId }): Promise<{ trust: number } | null>;
+}
+
+/** Named options type for applyFeedback (M1–M4 named-type pattern). */
+export interface ApplyFeedbackOptions {
+  factId: string;
+  sessionId: SessionId;
+  event: FeedbackEvent;
+  currentTrust: number;
+  correctionDelta?: number;
+}
+
+/** Named deps type for applyFeedback (clock removed — unused dep, non-determinism is a read concern). */
+export interface ApplyFeedbackDeps {
+  trustUpdater: TrustUpdater;
+}
+
+/** Named options type for applyFeedbackById (M1–M4 named-type pattern). */
+export interface ApplyFeedbackByIdOptions {
+  factId: string;
+  sessionId: SessionId;
+  event: FeedbackEvent;
+  correctionDelta?: number;
+}
+
+/** Named deps type for applyFeedbackById (clock removed — unused dep). */
+export interface ApplyFeedbackByIdDeps {
+  factReader: FactReader;
+  trustUpdater: TrustUpdater;
+}
+
+/**
+ * Apply a feedback event to a fact, mutating trust by the event-driven delta (§30 §2.3):
+ *   Corroboration:   trust = min(1.0, trust + 0.10)
+ *   Contradiction:   trust = max(0.0, trust - 0.10)
+ *   User correction: trust = min(1.0, max(0.0, trust + correctionDelta))
+ *
+ * The caller supplies `currentTrust`; the activity computes the new value and
+ * delegates the write to the injected `TrustUpdater` seam. This function does NOT
+ * read from storage — use `applyFeedbackById` when the caller doesn't know currentTrust.
+ *
+ * @throws {RangeError} if currentTrust is non-finite or outside [0, 1] (corrupt/buggy caller)
+ * @throws {Error} if event='user_correction' and correctionDelta is omitted (programming error —
+ *         a 0-delta silent fallback would call TrustUpdater for no reason and mislead callers)
+ * @throws {RangeError} if event='user_correction' and correctionDelta is non-finite (NaN, ±Infinity)
+ */
+export async function applyFeedback(
+  options: ApplyFeedbackOptions,
+  deps: ApplyFeedbackDeps,
+): Promise<void> {
+  const { factId, sessionId, event, currentTrust, correctionDelta } = options;
+  const { trustUpdater } = deps;
+
+  if (!Number.isFinite(currentTrust) || currentTrust < 0 || currentTrust > 1) {
+    throw new RangeError(
+      `applyFeedback: currentTrust must be a finite number in [0, 1]; received ${currentTrust}`,
+    );
+  }
+
+  let newTrust: number;
+
+  switch (event) {
+    case 'corroboration':
+      newTrust = Math.min(1.0, currentTrust + 0.10);
+      break;
+    case 'contradiction':
+      newTrust = Math.max(0.0, currentTrust - 0.10);
+      break;
+    case 'user_correction':
+      if (correctionDelta === undefined) {
+        throw new Error(
+          'applyFeedback: correctionDelta is required when event is "user_correction"',
+        );
+      }
+      if (!Number.isFinite(correctionDelta)) {
+        throw new RangeError(
+          `applyFeedback: correctionDelta must be a finite number; received ${correctionDelta}`,
+        );
+      }
+      newTrust = Math.min(1.0, Math.max(0.0, currentTrust + correctionDelta));
+      break;
+    default: {
+      const _exhaustive: never = event;
+      throw new TypeError(`applyFeedback: unhandled FeedbackEvent variant "${_exhaustive}"`);
+    }
+  }
+
+  await trustUpdater.update({ factId, sessionId, trust: newTrust });
+}
+
+/**
+ * Higher-level orchestrator: reads currentTrust from storage via the `FactReader` seam,
+ * then delegates to `applyFeedback`. Callers do not need to supply currentTrust.
+ *
+ * @concurrency Non-atomic read-then-write. Two paths forward:
+ *
+ *   **Caller-side serialization (recommended for v1):** serialize concurrent feedback events for
+ *   the same factId at the activity layer (e.g., a per-factId queue, mutex, or promise-chain in
+ *   the caller). No API changes required. This is the correct approach until M7-C is scheduled.
+ *
+ *   **Backend-side atomicity (requires API change, deferred to M7-C):** `TrustUpdater.update`
+ *   currently receives only an absolute trust value — the storage backend cannot enforce
+ *   compare-and-swap without an API change. Two options under consideration for M7-C:
+ *     (a) Widen `TrustUpdater.update` to accept an `expectedTrust` / version token for CAS.
+ *     (b) Change the API to `mutate(factId, fn: (trust: number) => number)` — a callback-style
+ *         mutation that moves the read-modify-write entirely into the storage layer.
+ *   Tracked as M7-C: "atomicity contract — caller serialization vs. API widening (CAS token or
+ *   mutate callback)" — the deferred RED beat is designing this contract, not just implementing
+ *   storage-layer locking.
+ *
+ * @throws {Error} if FactReader returns null (fact not found — TrustUpdater is NOT called)
+ * @throws {RangeError} if the stored fact.trust is non-finite (corrupted storage row)
+ * @throws {RangeError} propagated from applyFeedback if the stored fact.trust is outside [0, 1] (corrupted storage row that survived the local non-finite check — defense in depth)
+ * @throws {Error} propagated from applyFeedback if event='user_correction' and correctionDelta is omitted
+ */
+export async function applyFeedbackById(
+  options: ApplyFeedbackByIdOptions,
+  deps: ApplyFeedbackByIdDeps,
+): Promise<void> {
+  const { factId, sessionId, event, correctionDelta } = options;
+  const { factReader, trustUpdater } = deps;
+
+  const fact = await factReader.read({ factId, sessionId });
+  if (fact === null) {
+    throw new Error(`applyFeedbackById: fact not found — factId="${factId}"`);
+  }
+  if (fact === undefined) {
+    throw new TypeError(
+      `applyFeedbackById: FactReader.read() returned undefined; the contract requires {trust:number} or null — check your FactReader implementation`,
+    );
+  }
+  if (!Number.isFinite(fact.trust)) {
+    throw new RangeError(
+      `applyFeedbackById: stored trust is non-finite — factId="${factId}", trust=${fact.trust}`,
+    );
+  }
+
+  await applyFeedback(
+    { factId, sessionId, event, currentTrust: fact.trust, correctionDelta },
+    { trustUpdater },
+  );
 }
