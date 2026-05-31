@@ -73,4 +73,16 @@
 
 **Next owner:** Edgar — M6 GREEN. See `.squad/decisions/inbox/laura-m6-red.md`.
 
+### 2026-05-30: PR #34 Review — RED-beat skill, scope clock dep to recency activities
+
+**Three Copilot threads resolved (all same theme — stale `clock` references in SKILL.md):**
+
+- **Activity signature example (~line 56):** Removed `clock: ClockProvider` from the deps block; replaced with a comment scoping it to recency activities only (`recall()` / `recallWithScores()`, per §55 §1.2 / §30 §2.3).
+- **Design decision bullet (~line 62):** Rewrote "clock is always in deps" bullet to state the actual rule: `clock` belongs in deps only when the activity reads time; feedback mutation omits it; required-but-unused deps are an anti-pattern that pollute tests with phantom injections.
+- **Checklist item (~line 135):** Updated to conditional — "only if the activity calls recall APIs" — aligns with shipped `ApplyFeedbackDeps` / `ApplyFeedbackByIdDeps` (no clock).
+
+**Validation:** 40/40 tests green. No code or test files touched — documentation only. Commit: `4d4378b`.
+
+**Pattern reinforced:** Skill documentation is a contract. When the shipped implementation deviates from a required-but-unused dep pattern, update the skill immediately so future RED beats aren't taught the wrong interface shape.
+
 ### 2026-05-30: M5 RED — Trust Feedback Mutation Contract
