@@ -347,6 +347,7 @@ export async function applyFeedback(
  *
  * @throws {Error} if FactReader returns null (fact not found — TrustUpdater is NOT called)
  * @throws {RangeError} if the stored fact.trust is non-finite (corrupted storage row)
+ * @throws {RangeError} propagated from applyFeedback if the stored fact.trust is outside [0, 1] (corrupted storage row that survived the local non-finite check — defense in depth)
  * @throws {Error} propagated from applyFeedback if event='user_correction' and correctionDelta is omitted
  */
 export async function applyFeedbackById(

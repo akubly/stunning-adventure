@@ -56,21 +56,21 @@ export interface PropertyUpdater {
 When a new beat adds a read-seam (reading current value before applying mutation), prefer a **new higher-level orchestrator function** over extending the existing mutation function with an optional read-dep.
 
 ```typescript
-// LOW-LEVEL: pure delta math + write — NO read seam
-export async function applyMutation(options: { ...; currentValue: number }, deps: { updater; clock }): Promise<void> { ... }
+// LOW-LEVEL: pure delta math + write — NO read seam, NO clock (activity does not read time)
+export async function applyMutation(options: { ...; currentValue: number }, deps: { updater }): Promise<void> { ... }
 
 // HIGH-LEVEL: reads currentValue, then delegates to applyMutation
-export async function applyMutationById(options: { entityId; sessionId; event; optionalDelta? }, deps: { reader; updater; clock }): Promise<void> {
+export async function applyMutationById(options: { entityId; sessionId; event; optionalDelta? }, deps: { reader; updater }): Promise<void> {
   const data = await deps.reader.read({ entityId, sessionId });
   if (data === null) throw new Error(`applyMutationById: entity not found — entityId=${entityId}`);
-  await applyMutation({ entityId, sessionId, event, currentValue: data.value, optionalDelta }, { updater: deps.updater, clock: deps.clock });
+  await applyMutation({ entityId, sessionId, event, currentValue: data.value, optionalDelta }, { updater: deps.updater });
 }
 ```
 
 **Rules:**
 - The low-level function stays independently unit-testable with no read-seam.
 - The high-level function composes both seams; it delegates entirely (no delta duplication).
-- `clock` flows through both levels (required at each deps object per §55 §1.2).
+- `clock` is required **only when the activity reads time** (recency-dependent activities like `recall()`, `recallWithScores()`). Activities that don't read time omit `clock` entirely — phantom deps mislead callers (§30 §2.3, §55 §1.2).
 - The reader returns an object (`{ value } | null`), not bare `value | null` — future fields cost nothing now.
 
 ### Export the read-seam interface
@@ -97,7 +97,8 @@ export async function applyMutation(
   },
   deps: {
     updater: PropertyUpdater;
-    clock:   ClockProvider;  // REQUIRED per §55 §1.2; no optional default
+    // clock is NOT included — this activity does not read time (§30 §2.3, §55 §1.2)
+    // Add clock only if/when the activity becomes recency-dependent
   },
 ): Promise<void> {
   let newValue: number;
@@ -124,12 +125,12 @@ For each deferred ambiguity in Laura's decision drop, document your decision:
 
 Write your decisions in the GREEN decision drop (`.squad/decisions/inbox/edgar-<beat>-green.md`), not inline in source.
 
-### 5. clock dep: REQUIRED, reserve even if unused
+### 5. clock dep: required ONLY when the activity reads time
 
-The `clock` dep slot must appear in every activity's `deps` even if not called in this beat. Reasons:
-- Consistent with M1–M4 pattern (§55 §1.2 discipline)
-- Production implementation will likely timestamp feedback events
-- Removing a dep later is a breaking change; adding one is additive
+Include `clock` in `deps` **if and only if** the activity reads the current time (recency-dependent activities like `recall()`, `recallWithScores()`). When the activity does not read time (`applyFeedback`, `applyFeedbackById`), omit `clock` entirely.
+
+- **If the activity reads time:** `clock` is required, no optional default (§55 §1.2 discipline).
+- **If it doesn't read time:** omit `clock` — required-but-unused deps mislead callers and violate the phantom-dep anti-pattern (cycle 1 finding; §30 §2.3).
 
 ### 6. Verify command
 
