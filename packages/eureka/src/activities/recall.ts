@@ -360,6 +360,11 @@ export async function applyFeedbackById(
   if (fact === null) {
     throw new Error(`applyFeedbackById: fact not found — factId="${factId}"`);
   }
+  if (fact === undefined) {
+    throw new TypeError(
+      `applyFeedbackById: FactReader.read() returned undefined; the contract requires {trust:number} or null — check your FactReader implementation`,
+    );
+  }
   if (!Number.isFinite(fact.trust)) {
     throw new RangeError(
       `applyFeedbackById: stored trust is non-finite — factId="${factId}", trust=${fact.trust}`,
