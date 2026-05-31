@@ -52,14 +52,15 @@ async function applyMutation(
   },
   deps: {
     updater: WriteSideSeam;
-    clock:   ClockProvider;     // REQUIRED per §55 §1.2; no optional default
+    // clock: ClockProvider — omit for mutation activities that do NOT read time
+    // Add clock ONLY if the activity calls recall() / recallWithScores() (§55 §1.2)
   },
 ): Promise<void>
 ```
 
 **Key design decisions:**
 - `currentValue` is caller-provided for the RED beat. The read seam (how to get currentValue from storage) is a separate concern; defer it.
-- `clock` is always in deps even if not immediately used — maintains consistency with M1–M4 pattern; production impl may timestamp the event.
+- `clock: ClockProvider` belongs in deps **only** when the activity reads time — i.e., it calls `recall()` or `recallWithScores()` (§55 §1.2, cross-ref §30 §2.3 for the type). Feedback-mutation activities do NOT read time; omit `clock` entirely. Required-but-unused deps are an anti-pattern: they pollute tests with phantom injections and obscure the real contract.
 
 ### 4. Write exactly 4 tests
 
@@ -132,7 +133,7 @@ When handing off to Edgar (GREEN), the decision drop must specify:
 
 - [ ] Spec confirms delta magnitudes unambiguously
 - [ ] Write-seam collaborator uses `vi.fn().mockResolvedValue(undefined)`
-- [ ] `clock: ClockProvider` in deps (required, no default)
+- [ ] `clock: ClockProvider` in deps **only if** the activity calls `recall()` / `recallWithScores()` — omit for pure mutation activities (§55 §1.2); do NOT inject phantom deps in tests
 - [ ] `sessionId` uses `as SessionId` brand cast
 - [ ] 4 tests: happy positive, ceiling clamp, happy negative, floor clamp
 - [ ] Assert on `.toHaveBeenCalledOnce()` + `.toHaveBeenCalledWith()` (not on return value)
