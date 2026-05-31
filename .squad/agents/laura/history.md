@@ -71,7 +71,7 @@
 
 **Read-seam shape decision:** New function (`applyFeedbackById`) over extending existing (`applyFeedback`) because: (a) `applyFeedback` has a stable M5 contract, (b) orchestration (read + compute + write) is a different responsibility from pure compute + write, (c) keeps `applyFeedback` unit-testable without storage deps.
 
-**Next owner:** Edgar — M6 GREEN. See `.squad/decisions/inbox/laura-m6-red.md`.
+**Next owner:** Edgar — M6 GREEN. See `.squad/decisions.md` for the merged decision trail.
 
 ### 2026-05-30: PR #34 Review — RED-beat skill, scope clock dep to recency activities
 

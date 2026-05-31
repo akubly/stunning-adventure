@@ -21,12 +21,10 @@
  *   not a function` at runtime. This is "missing collaborator / missing wiring",
  *   not a typo or config error.
  *
- * §-ambiguity documented:
- *   §30 §2.3 ("Trust Dynamics Beyond the Static Floor") is cited in decisions.md
- *   but does NOT exist as a heading in the current docs/eureka/sections/30-learning-systems.md
- *   (section numbering jumps 2.2 → 2.4). The deltas (+0.10, -0.10, ±0.30) are
- *   authoritative from decisions.md (Named M5 Target). See decision drop
- *   .squad/decisions/inbox/laura-m5-trust-feedback-red.md for full ambiguity log.
+ * §-ambiguity resolved:
+ *   §30 §2.3 ("Trust Dynamics Beyond the Static Floor") is the authoritative spec
+ *   for these deltas (+0.10, -0.10, ±0.30). See .squad/decisions.md for the merged
+ *   decision trail (M5 Named Target entry).
  *
  * User-correction deferred:
  *   The ± in "trust ± 0.30" is ambiguous — the sign must come from somewhere.
