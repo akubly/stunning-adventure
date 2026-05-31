@@ -322,6 +322,7 @@ export async function applyFeedback(
         );
       }
       if (!Number.isFinite(correctionDelta)) {
+        // TODO(M7-B): correctionDelta error should use a purpose-specific type (e.g. InvalidDeltaValueError)
         throw new InvalidTrustValueError(
           correctionDelta,
           'input',
@@ -359,11 +360,12 @@ export async function applyFeedback(
  *   mutate callback)" — the deferred RED beat is designing this contract, not just implementing
  *   storage-layer locking.
  *
- * @throws {FactNotFoundError} if FactReader returns null (fact not found — TrustUpdater is NOT called)
- * @throws {InvalidTrustValueError} if the stored fact.trust is non-finite (corrupted storage row)
- * @throws {InvalidTrustValueError} propagated from applyFeedback if the stored fact.trust is outside [0, 1] (corrupted storage row that survived the local non-finite check — defense in depth)
- * @throws {InvalidFeedbackOptionsError} propagated from applyFeedback if event='user_correction' and correctionDelta is omitted
  * @throws {FactReaderContractError} if FactReader.read() returns undefined (contract violation)
+ * @throws {FactNotFoundError} if FactReader returns null (fact not found — TrustUpdater is NOT called)
+ * @throws {InvalidTrustValueError} if the stored fact.trust is non-finite or outside [0, 1] (corrupted storage row)
+ * @throws {InvalidFeedbackOptionsError} propagated from applyFeedback if event='user_correction' and correctionDelta is omitted
+ * @throws {InvalidTrustValueError} propagated from applyFeedback if correctionDelta is non-finite
+ * @throws {UnhandledFeedbackEventError} propagated from applyFeedback if event is an unrecognized variant
  */
 export async function applyFeedbackById(
   options: ApplyFeedbackByIdOptions,

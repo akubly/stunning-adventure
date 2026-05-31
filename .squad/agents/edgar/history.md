@@ -13,7 +13,24 @@
 
 ## Learnings
 
-**2026-05-31 — M7-A: Typed error hierarchy for applyFeedback / applyFeedbackById**
+**2026-05-31 — M7-A Cycle 1: Code Panel review fixes (11 ACCEPT, 2 REJECT)**
+
+- **`err.code` is the canonical discriminator, not `instanceof`:** Declared explicitly in file header and decisions.md. `instanceof` works in a single realm but fails across ESM realms and after dual-pkg bundling. The `code` string literal is always realm-safe. This should be the stated policy in any typed error hierarchy — not just implied by the presence of a `code` field.
+
+- **Symmetry is a design invariant for error classes:** `UnhandledFeedbackEventError` was missing its `readonly event: string` field while all other 4 classes stored their key payload as a readonly property. Asymmetry forces callers to parse `.message` strings — a fragile contract. Rule: every error class must carry all discriminating payload as typed readonly fields.
+
+- **`readonly code: 'X' = 'X'` is idiomatic over `readonly code = 'X' as const`:** The explicit annotation form (`readonly code: 'FACT_NOT_FOUND' = 'FACT_NOT_FOUND'`) is the canonical TypeScript pattern. `as const` on a readonly literal initializer is redundant — TypeScript already narrows the type. Apply consistently.
+
+- **`.name` override is an intentional, observable behavior change that needs documentation:** Setting `this.name = 'InvalidTrustValueError'` diverges from the native base-class name (`'RangeError'`). This is the right thing — readable stack traces, domain-labelled logs — but it's a breaking change for any downstream code keying on `err.name`. Document it explicitly in the file header; don't let it slip through as a silent side-effect.
+
+- **`Object.setPrototypeOf` comment matters as much as the call:** The comment "required for extending built-in Error in ES5 targets" was misleading at ES2022 target. The correct justification is defensive: guards against downstream bundlers that re-transpile to ES5. A misleading comment is worse than no comment because it causes future engineers to remove the call for the wrong reason.
+
+- **@throws ordering should match runtime check order:** JSDoc @throws listed `FactNotFoundError` before `FactReaderContractError` but the runtime checks `undefined` before `null`. Reorder to match reality — JSDoc is documentation of behavior, not narrative summary.
+
+- **REJECT-defer with rationale is a valid and disciplined outcome:** F3 (EurekaError base class) was rejected not because it's a bad idea but because it's M7-B scope. M7-A's mandate was minimal: typed errors with zero test changes. A base class introduction requires designing a new hierarchy contract that M7-B narrowing tests will anchor. Scope discipline > completeness.
+
+- **Branch:** `eureka/m7-a-typed-errors` | **PR:** #38 — cycle 1 fixes committed post-review.
+
 
 - **Final error class inventory:**
 
