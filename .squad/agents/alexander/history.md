@@ -507,3 +507,23 @@ PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end
 **2026-05-30 cleanup:** PR #32 merged to main as commit aae18ae. Post-merge teardown completed per WI-B cleanup recipe: node_modules confirmed real (not junction), removed recursively; worktree D:\git\stunning-adventure-25 removed cleanly; local branch squad/25-type-tightening-polish deleted (forced after merge detection lag); remote branch deleted via `git push origin --delete`. Main's node_modules/@akubly survived intact. All verification checks passed. Recipe worked as documented; WI-B incident guard (strict cleanup ordering to prevent junction traversal during worktree remove) validated.
 
 📌 Team update (2026-05-30T23:05:00Z): **PR #32 / issue #25 shipped** as commit aae18ae. The runtime-cli metrics types are now backed by canonical unions (LoadedProfileSource, ProfileStalenessReason) with runtime-validated payload narrowing at the JSON.parse boundary. Lessons: (1) JSON.parse → unknown + boundary validation + stderr warning + drift-guard (2) @internal helpers prefer unexport (Path A) over convention promise (3) agent history.md commits in PRs are in-scope per merge=union pattern. — Scribe
+
+## Lint Error Fix (2026-05-31 — PR #36 CI Blocker)
+
+**Issue:** CI build #20 on PR #36 failed with @typescript-eslint/no-unused-vars on orgeMetrics.test.ts:346: originalWrite was captured but never used.
+
+**Root cause:** Latent bug from PR #32 cycle-2 stderr-warning test. The test captured process.stderr.write to restore it later, but the restoration never happened (dead code). Root 
+pm run lint (eslint packages/*/src/) fails silently on Windows, so this only surfaced in Linux CI.
+
+**Fix:** Option B (delete unused capture). The afterEach hook already calls i.restoreAllMocks(), so manual restoration was unnecessary. Commit 85d49b8, bundled into PR #36.
+
+**Validation:** ✅ 
+px eslint packages/runtime-cli/src/__tests__/forgeMetrics.test.ts (exit 0) ✅ 
+pm test --workspace=@akubly/runtime-cli (26/26 green) ✅ 
+pm run build --workspace=@akubly/runtime-cli (exit 0)
+
+**Lesson learned:** Windows agents must use workspace-scoped lint (
+pm run lint --workspace=<name>) rather than relying on root lint. The glob slint packages/*/src/ doesn't work in PowerShell; follow-up issue filed to fix root lint permanently.
+
+**Follow-up:** Opened issue #XX for root 
+pm run lint Windows failure (squad/gabriel tag).
