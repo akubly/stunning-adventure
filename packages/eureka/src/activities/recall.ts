@@ -360,8 +360,8 @@ export async function applyFeedback(
  *   mutate callback)" — the deferred RED beat is designing this contract, not just implementing
  *   storage-layer locking.
  *
- * @throws {FactReaderContractError} if FactReader.read() returns undefined (contract violation)
  * @throws {FactNotFoundError} if FactReader returns null (fact not found — TrustUpdater is NOT called)
+ * @throws {FactReaderContractError} if FactReader.read() returns undefined (contract violation)
  * @throws {InvalidTrustValueError} if the stored fact.trust is non-finite or outside [0, 1] (corrupted storage row)
  * @throws {InvalidFeedbackOptionsError} propagated from applyFeedback if event='user_correction' and correctionDelta is omitted
  * @throws {InvalidTrustValueError} propagated from applyFeedback if correctionDelta is non-finite

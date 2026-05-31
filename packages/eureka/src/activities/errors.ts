@@ -18,6 +18,8 @@
  *   - `code` — string literal discriminator for realm-safe narrowing (primary)
  *   - `name` — domain class name (see above)
  *   - preserved original message text from pre-M7-A throw sites
+ *   - `Object.setPrototypeOf(this, new.target.prototype)` — defensive guard against downstream
+ *     bundlers that re-transpile to ES5, where class-extends breaks prototype chains
  *
  * Inheritance:
  *   - InvalidTrustValueError extends RangeError — preserves existing `instanceof RangeError` assertions
@@ -44,7 +46,6 @@ export class FactNotFoundError extends Error {
     super(`applyFeedbackById: fact not found — factId="${factId}"`);
     this.name = 'FactNotFoundError';
     this.factId = factId;
-    // Defensive: guards against downstream bundlers that re-transpile to ES5, where class-extends breaks prototype chains.
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
@@ -63,7 +64,7 @@ export class InvalidFeedbackOptionsError extends Error {
   /** Name of the offending / missing option field. */
   readonly field: string;
 
-  // `message` is explicit rather than hard-coded — open signature reserved for future throw sites.
+  // message is caller-supplied rather than hard-coded — different throw sites can provide context-specific messages.
   constructor(field: string, message: string) {
     super(message);
     this.name = 'InvalidFeedbackOptionsError';
