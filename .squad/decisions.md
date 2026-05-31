@@ -2,6 +2,227 @@
 
 ## Open Decisions (Current Session)
 
+## Eureka M5+M6 Review Cycle
+
+### 2026-05-30: M5+M6 Branch Preparation (Graham)
+
+**Author:** Graham  
+**Date:** 2026-05-30  
+**Status:** Complete  
+**Branch:** `eureka/m5-m6-trust-feedback`
+
+After the M5+M6 RED→GREEN cascade, a working-tree loss incident occurred during branch creation. The sequence `git switch -c <feature>` → `git switch main` → `git reset --hard origin/main` wiped tracked modifications, leaving only untracked files. Recovery was performed via faithful reimplementation from test contracts (`recall-feedback.test.ts`).
+
+**Correct sequence going forward:** Commit implementation on feature branch BEFORE switching back to main to reset, or use `git stash`.
+
+**Final state:**
+- Branch created at commit ac8c845
+- 29/29 tests green, build clean
+- Two-commit structure: implementation+tests+spec (commit A) + team metadata (commit B)
+- main branch reset to origin/main at ef06238 (clean, no force-push)
+
+---
+
+### 2026-05-30: M6 RED — user_correction Contract Lock + Read-Seam (Laura)
+
+**Author:** Laura (Tester)  
+**Date:** 2026-05-30  
+**Beat:** M6 RED — two sub-beats: M6-A (user_correction contract) + M6-B (FactReader read-seam)
+
+**Test counts:** 22 existing → 26 GREEN + 3 RED (29 total)
+
+#### M6-A: user_correction Contract
+
+M6-A1–A4 are regression locks on arithmetic already implemented in M5 (mild §55 deviation — implementation preceded contract). M6-A5 is the true RED: missing `correctionDelta` when `event='user_correction'` must throw.
+
+**Fixtures verified:**
+- M6-A1: 0.50 + 0.30 → 0.80 (no clamp)
+- M6-A2: 0.80 + 0.30 → 1.00 (ceiling clamp)
+- M6-A3: 0.50 - 0.30 → 0.20 (no clamp)
+- M6-A4: 0.20 - 0.30 → 0.00 (floor clamp)
+
+**M6-A5 contract:** `correctionDelta` is REQUIRED when `event='user_correction'`. Omitting it is a programming error; activity must throw rather than silently apply 0-delta.
+
+#### M6-B: Read-Seam (FactReader)
+
+**Shape decision:** New `applyFeedbackById` function (higher-level orchestrator) rather than extending `applyFeedback`.
+
+**FactReader interface:**
+```typescript
+interface FactReader {
+  read(args: { factId: string; sessionId: SessionId }): Promise<{ trust: number } | null>;
+}
+```
+
+Rationale: Returns object (not bare number) to leave room for future fields without signature change. Null means fact not found.
+
+**applyFeedbackById tests:**
+- M6-B1 (happy path): FactReader returns `{ trust: 0.60 }`, corroboration → TrustUpdater called with 0.70
+- M6-B2 (null guard): FactReader returns `null` → activity throws, TrustUpdater NOT called
+
+**Edgar's implementation guidance (M6 GREEN):**
+1. Call `deps.factReader.read({ factId, sessionId })`
+2. If null, throw (fact not found)
+3. Call `applyFeedback` with current trust from result
+4. All 29 tests (26 existing + 3 RED) must pass
+
+---
+
+### 2026-05-30: M5+M6 Review Wave — Code Panel Findings (Edgar)
+
+**Author:** Edgar (Learning Systems Specialist)  
+**Date:** 2026-05-30  
+**Context:** 5-persona Code Panel review findings on M5+M6 (trust-feedback mutation)
+
+#### Finding Triage Summary
+
+| ID | Finding | Verdict | Key Details |
+|---|---------|---------|-------------|
+| F1 | Public API not exported | ACCEPT | Barrel-export `applyFeedback`, `applyFeedbackById`, `FeedbackEvent`, `TrustUpdater`, `FactReader` via `index.ts` |
+| F2 | TOCTOU in applyFeedbackById | ACCEPT (doc) | Non-atomic read-then-write. JSDoc `@concurrency` clause added. Deferred: M7-C (backend-side atomicity). |
+| F3 | Unused `clock` dep | ACCEPT | Removed `clock: ClockProvider` from `ApplyFeedbackDeps` and `ApplyFeedbackByIdDeps`. Clock stays in `recallWithScores`. |
+| F4 | No exhaustiveness check | ACCEPT | Converted `applyFeedback` `if/else if/else` to exhaustive `switch` with `never` branch. |
+| F5 | Inline types break pattern | ACCEPT | Extracted all 4 interfaces: `ApplyFeedbackOptions`, `ApplyFeedbackDeps`, `ApplyFeedbackByIdOptions`, `ApplyFeedbackByIdDeps`. |
+| F6 | No input validation on currentTrust | ACCEPT | Added `RangeError` guard: `currentTrust` must be in [0,1]. Fires before `TrustUpdater.update()`. |
+| F7 | Stale comment | ACCEPT | Removed "Trust score updates..." bullet from `recallWithScores` JSDoc (already implemented). |
+| F11 | Incomplete @throws JSDoc | ACCEPT | Added `@throws` clauses covering propagated errors from `applyFeedback` and new `RangeError` guards. |
+| F12 | Stricter null/undefined guard | ACCEPT (combined with F6) | Changed to strict null checks; expanded guard contracts in spec. |
+
+**Changes made:**
+- `packages/eureka/src/activities/recall.ts`: F1-exports, F2-TOCTOU JSDoc, F3-clock removed, F4-switch exhaustive, F5-named interfaces, F6-input validation, F7-stale comment, F11-@throws
+- `packages/eureka/src/index.ts`: F1+F5 barrel-export additions (9 new exports)
+- `docs/eureka/sections/30-learning-systems.md` §2.3: F3-clock scope, F5-interface shapes, F6-guard contracts
+
+**Build/Test Status:** ✅ clean build, 29/29 tests passing
+
+---
+
+### 2026-05-30: M5+M6 Review Wave — Code Panel Findings (Laura)
+
+**Author:** Laura (Tester)  
+**Date:** 2026-05-30  
+**Context:** Code Panel review findings on RED tests + implementation. Laura owns `recall-feedback.test.ts`.
+
+#### Finding Triage Summary
+
+| ID | Finding | Verdict | Action |
+|---|---------|---------|--------|
+| F8 | Idempotent boundary not pinned | ACCEPT | Added 2 tests: ceiling (currentTrust=1.0 → 1.0), floor (0.0 → 0.0) |
+| F9 | Float equality fragility | ACCEPT | Wrapped all 9 trust assertions in `expect.closeTo(value, 5)` |
+| F10 | Stale `±0.30` header comment | ACCEPT | Updated to actual formula: `min(1.0, max(0.0, trust + correctionDelta))` |
+| F-NEW-EXHAUSTIVE | Unknown event type TypeError | ACCEPT | Added regression lock for exhaustiveness guard |
+| F-NEW-RANGE | Input validation RangeError | ACCEPT | Added 4 regression locks (NaN, <0, >1 on currentTrust + delegation path) |
+| F-NEW-PROPAGATION | Missing correctionDelta via byId | ACCEPT | Added test: `applyFeedbackById` with missing delta propagates error |
+
+**Float precision decision (F9):** Chose `closeTo(value, 5)` over suggested 10. Reasoning:
+- 5 decimal digits (±0.000005) is strict enough to catch wrong delta calculations
+- IEEE-754 jitter for these operands is 1e-16 — well inside 1e-5 tolerance
+- 10 digits is overkill; 5 is defensible middle ground
+
+**Test count delta:** 29 → 37 (+8 tests). Target per brief: 36+. Achieved 37.
+
+**Clock coordination note (for Edgar):** All new tests retain `clock: fixedClock` pending Edgar's F3 commit (clock removal). Once F3 lands, drop clock from all 16 applyFeedback/applyFeedbackById call sites and remove `fixedClock` helper.
+
+**Validation:** `npm test --workspace=@akubly/eureka` → 37/37 passed
+
+---
+
+### 2026-05-30: M5+M6 Cycle 2 Review Findings (Edgar)
+
+**Author:** Edgar (Learning Systems Specialist)  
+**Date:** 2026-05-30  
+**Branch:** eureka/m5-m6-trust-feedback  
+**Triggered by:** Review-cycle cycle 2 (Skeptic + Architect panels)
+
+#### Cycle 2 Findings
+
+| ID | Finding | Triage | Summary |
+|---|---------|--------|---------|
+| F-C2-1 | correctionDelta unvalidated for NaN/Infinity | ACCEPT | Added `RangeError` guard after `undefined` check, before trust math. Guards consistency with M5 `currentTrust` validation. |
+| F-C2-2 | @concurrency JSDoc overpromises | ACCEPT | Rewrote to present both options: (1) caller-side serialization (v1), (2) backend-side atomicity (deferred M7-C). Clarified M7-C scope. |
+| F-C2-3 | FactReader contract drift | ACCEPT (Option A) | Three-layer misalignment (interface vs impl vs spec). Chose strict null: interface `Promise<{trust:number}\|null>`, guard `fact === null`, spec updated. |
+
+**Build/Test Status:** ✅ clean build, 37/37 tests passing
+
+**Coordination notes for Laura:**
+- Suggest adding `correctionDelta` NaN guard test (low priority, can land with current wave)
+- F-C2-3 impact on Laura's tests: zero — all existing null tests use `mockResolvedValue(null)`
+
+---
+
+### 2026-05-30: M5+M6 Cycle 2 Changes (Laura)
+
+**Author:** Laura (Tester)  
+**Date:** 2026-05-30  
+**Branch:** eureka/m5-m6-trust-feedback
+
+Cycle 2 review consensus identified stale `clock: fixedClock` injections carried through all feedback-path call sites after Edgar removed `ClockProvider` from `ApplyFeedbackDeps` / `ApplyFeedbackByIdDeps` in cycle 1. Test dir excluded from tsc, so excess-property checking never fired.
+
+**Changes (recall-feedback.test.ts only):**
+- `applyFeedback` call sites cleaned: 15
+- `applyFeedbackById` call sites cleaned: 4
+- `fixedClock` const removed: yes
+- `FIXED_NOW_MS` const removed: yes
+- Block comment updated: clock now scoped to recall/recallWithScores only, NOT feedback path
+
+**Validation:** `npm test --workspace=@akubly/eureka` → 37/37 passed
+
+---
+
+### 2026-05-30: M6 GREEN — correctionDelta Guard + FactReader (Edgar)
+
+**Author:** Edgar (Learning Systems Specialist)  
+**Date:** 2026-05-30  
+**Beat:** M6 GREEN  
+**Status:** LANDED — GREEN (29/29 tests pass, tsc clean, all 37/37 after Laura's wave)
+
+#### Test Count Delta
+
+| Suite | Before M6 | After M6 | Delta |
+|---|---|---|---|
+| `recall.test.ts` (M1–M4) | 18 | 18 | — |
+| `recall-feedback.test.ts` M5 (C1/C2) | 4 | 4 | — |
+| `recall-feedback.test.ts` M6-A1–A4 (regression locks) | 4 | 4 | — |
+| `recall-feedback.test.ts` M6-A5 (correctionDelta guard) | 0 RED | 1 GREEN | +1 |
+| `recall-feedback.test.ts` M6-B1–B2 (applyFeedbackById) | 0 RED | 2 GREEN | +2 |
+| **Total** | **26 (3 RED)** | **29 GREEN** | **+3** |
+
+#### Error Semantics Chosen
+
+**M6-A5 — Missing correctionDelta:**
+- Error: base `Error` (not typed)
+- Message: `'applyFeedback: correctionDelta is required when event is user_correction'`
+- Placement: top of function, before event-branch switch
+- Rationale: Input-validation concern; guards before any side effects
+
+**M6-B2 — FactReader returns null:**
+- Error: base `Error`
+- Message: `'applyFeedbackById: fact not found — factId=<factId>'`
+- Guarantee: `trustUpdater.update` NOT called
+- Future refinement (M7): typed error narrowing (e.g., `FactNotFoundError`)
+
+#### Implementation Pattern: Delegation Over Modification
+
+`applyFeedbackById` delegates to `applyFeedback` after reading:
+```typescript
+const factData = await factReader.read({ factId, sessionId });
+if (factData === null) throw new Error(...);
+await applyFeedback({ factId, sessionId, event, currentTrust: factData.trust, correctionDelta }, { trustUpdater });
+```
+
+Keeps `applyFeedback` purely unit-testable; orchestration stays in `applyFeedbackById`. Consistent with "orchestrator over modifier" pattern.
+
+#### Named Next RED Targets (M7)
+
+| Name | Description | Priority |
+|---|---|---|
+| M7-A | null-fact error contract | High |
+| M7-B | typed error narrowing (missing correctionDelta) | Medium |
+| M7-C | FactReader contract test (real Crispin impl) | Medium |
+| M7-D | applyFeedbackById user_correction path | Low |
+
+---
+
 ### 2026-05-29: M4 RED — ClockProvider Seam Contract (Laura)
 
 **Author:** Laura (Tester)  

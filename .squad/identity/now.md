@@ -1,9 +1,12 @@
 ---
-updated_at: 2026-05-30T12:30:54Z
-focus_area: Eureka v1 M5 COMPLETE (22/22 tests); M6 RED in flight (Laura — user_correction tests + read-seam design)
+updated_at: 2026-05-30T22:31:16Z
+focus_area: Eureka v1 M5+M6 COMPLETE & REVIEW-CLEAN (40/40 tests, 11-commit branch, ready for ship); M7 roadmap next
 active_issues:
-  - "**Eureka M5 COMPLETE** ✅ — Trust feedback mutation (applyFeedback + TrustUpdater); 22/22 tests GREEN; §30 §2.3 spec gap filled"
-  - "Eureka M6 RED in flight (Laura) — user_correction tests + read-seam decision (FactReader interface)"
+  - "**Eureka M5+M6 COMPLETE & REVIEW-CLEAN** ✅ — Trust feedback mutation (applyFeedback + applyFeedbackById + FactReader seams); 40/40 tests GREEN; 3-cycle consensus (12→4→4 finding trajectory); tsc clean; ship-ready"
+  - "Branch: eureka/m5-m6-trust-feedback (11 commits from 9892415 to 112c966)"
+  - "Review cycle: 15 personas + 6 squad spawns; 20 findings total (1 blocking in C1, 0 in C2+C3); 100% ACCEPT'ed & implemented"
+  - "Deliverables: Implementation + 40 tests + §30 §2.3 spec + JSDoc complete + Decisions merged + Skills documented"
+  - "M7 ROADMAP NEXT: M7-A (error typing), M7-B (error narrowing), M7-C (atomicity contract), M7-D (regression locks) — Laura + Crispin ownership"
   - "Eureka v0.1 Technical Design — ✅ ASSEMBLED & LOCKED (§00–§70, 198KB, 3 ADRs; OQ-1 resolved via ADR-0002)"
   - "Phase 1: Monorepo restructuring ✅ COMPLETE"
   - "Phase 2: Live runtime verification ✅ COMPLETE (5/5 modules)"
@@ -20,17 +23,23 @@ active_issues:
 
 # What We're Focused On
 
-**Eureka v1 M5 COMPLETE — M6 RED in flight.**
+**Eureka v1 M5+M6 COMPLETE & REVIEW-CLEAN — READY FOR AARON'S SHIP DECISION**
 
-Branch: `eureka/v1-m1-m4` (M5 complete), next: M6 RED design + green beats.
+Branch: `eureka/m5-m6-trust-feedback` (11 commits, 40/40 tests GREEN, tsc clean, ship-ready)
 
 **Current state:**
-- ✅ **M5 COMPLETE** — Trust feedback mutation. `applyFeedback` activity + `TrustUpdater` seam interface landed. All 22 tests GREEN (4 M5 + 18 M1–M4). Build clean.
-- ✅ **§30 §2.3 spec gap filled** — Edgar wrote "Trust Dynamics Beyond the Static Floor" section covering event-delta table, domain invariants, interface contract, user-correction sign convention.
-- ⏳ **M6 RED in flight (Laura)** — user_correction tests (ceiling/floor clamp) + read-seam design decision (FactReader interface for production currentTrust retrieval).
-- 📋 **Decisions merged** — 6 inbox files processed: Laura M5 RED, Edgar M5 GREEN, 3 PR#30 cycles (Edgar), Issue #11 (Roger).
+- ✅ **M5+M6 COMPLETE** — Trust feedback mutation. `applyFeedback` + `applyFeedbackById` + `FactReader` seams complete. 40/40 tests GREEN (18 baseline + 22 new). Build clean.
+- ✅ **3-CYCLE REVIEW CONSENSUS** — Finding trajectory 12→4→4 (1 blocking in C1, 0 in C2+C3). All 20 findings ACCEPT'ed & implemented.
+- ✅ **§30 §2.3 spec complete** — "Trust Dynamics Beyond the Static Floor" covers event-delta table, domain invariants, interface contracts, user-correction sign convention, measurable outcomes.
+- ✅ **DECISION TRAIL LOCKED** — 20 findings merged from inbox to decisions.md under "Eureka M5+M6 Review Cycle" section. Auditable history.
+- ✅ **ARCHITECTURE READY** — All seams finalized, error contracts defined, deferred decisions scoped (M7-A/B/C/D). London-school pattern consistent.
+- 📋 **NEXT ACTION**: Await Aaron's ship gate decision. M7 roadmap ready (error typing, atomicity contract, Crispin's real FactReader).
 
-**Next action:** M6 GREEN when Laura's RED tests land.
+**Deferred to M7:**
+- M7-A: Typed error classes (FactNotFoundError, InvalidFeedbackOptionsError)
+- M7-B: Error narrowing tests
+- M7-C: **CRITICAL** — Atomicity contract (caller serialization v1 vs. backend CAS/mutate later)
+- M7-D: Regression locks for `applyFeedbackById` user_correction path
 
 ---
 

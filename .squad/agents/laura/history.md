@@ -1,7 +1,7 @@
 # Laura — History
 
 **Role:** Tester (Contract-first patterns, integration testing, test architecture)
-**Status:** M3 baseline preserved. Eureka M2 GREEN landed 2026-05-28. Cycle 2 composite-ranker + F6 resolution verified.
+**Status:** M3 baseline preserved. Eureka M2 GREEN landed 2026-05-28. Cycle 2 composite-ranker + F6 resolution verified. Cycle 3 polish: 40/40 tests green.
 **Last update:** 2026-05-30
 
 **Key milestones:**
@@ -15,6 +15,12 @@
 **See history-archive.md for detailed entries.**
 
 ## Learnings
+
+### 2026-05-30: M5+M6 Cycle 3 — Polish: correctionDelta regression + comment cleanup
+
+**P3 & P4 complete (2/2):** Updated stale M6-B import comment to reflect GREEN status. Added correctionDelta finite-guard regression tests (NaN, +Infinity) to lock cycle 2 carryover guard. Added optional FactReader undefined→TypeError test for Edgar's P2 (fails until his commit lands; both green at HEAD by EOW).
+
+**All 40/40 tests pass.** Commit: `9d13389`.
 
 ### 2026-05-30: M5+M6 Cycle 2 — Purge unused clock deps from feedback tests
 

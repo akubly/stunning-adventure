@@ -16,3 +16,12 @@
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
 
 **Scribe note (2026-05-30T12:30:54Z):** M5 cascade complete. Trust feedback mutation landed: `applyFeedback` activity + `TrustUpdater` seam interface. All 22 tests GREEN. §30 §2.3 ("Trust Dynamics Beyond the Static Floor") added to learning-systems spec. Next focus: M6 RED (user_correction tests + read-seam decision). Architecture remains extraction-ready; no changes to kernel boundary.
+
+**Scribe note (2026-05-30T22:31:16Z):** M5+M6 COMPLETE & REVIEW-CLEAN. 3-cycle review consensus: 12→4→4 finding trajectory (0 blocking in C2+C3). Final: 40/40 tests GREEN, 11 commits on eureka/m5-m6-trust-feedback branch, tsc clean. Seams finalized:
+- `applyFeedback` (trust computation + write)
+- `applyFeedbackById` (read orchestration)
+- `FactReader` (read seam, null-safe)
+- Input validation guards + error contracts complete
+- Deferred: M7-C (atomicity—caller serialization v1, backend CAS later)
+
+Architecture remains kernel-extraction-ready. No substrate changes. Ready for Aaron's ship decision. Next: M7 roadmap (error typing, real FactReader, atomicity contract).
