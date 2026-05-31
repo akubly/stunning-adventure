@@ -8,6 +8,25 @@
 - Wave 0-2: Canonical types in @akubly/types, SqliteChangeVectorProvider, Forge test growth
 - ForgePrescriberOrchestrator: Attenuation + autoApplyEligible propagation live
 - Phase 4.6: 1199+ tests passing, 9 work items landed
+## Learnings (2026-05-31 — Issue #35, PR #36: forge-mcp manifest registration)
+
+**Issue:** #35 | **PR:** https://github.com/akubly/stunning-adventure/pull/36 | **Branch:** `squad/35-register-forge-mcp`
+
+**What was done:** Added `forge` entry to both MCP manifests (`.github/plugin/.mcp.json` and `.copilot/mcp-config.json`). No source changes — registration only.
+
+**Cairn manifest pattern observed:**
+- `.github/plugin/.mcp.json`: uses `npx -y --package @akubly/cairn cairn-mcp` (package install + bin invocation). Args are split — `--package` and `@akubly/cairn` are separate array elements, NOT `--package=@akubly/cairn`. Mirrored exactly for `forge`: `npx -y --package @akubly/skillsmith-runtime forge-mcp`.
+- `.copilot/mcp-config.json`: cairn uses bare `node dist/mcp/server.js` with no `cwd` field. This is the local-dev config. Since there's only one server entry per config and cairn's path is relative (presumably resolved from the cairn package dir), the forge entry uses a root-relative path `packages/skillsmith-runtime/dist/mcp/server.js` instead of mirroring bare `dist/mcp/server.js` (which would be ambiguous from the repo root).
+
+**Surprising observations:**
+1. `squad:alexander` label does not exist in the repo. The available squad labels are: graham, gabriel, roger, rosella, ralph, valanice. Used `squad` (base label) only.
+2. The `forge-mcp` server already had its `bin` field declared in `package.json` and the server was fully implemented (stdio transport, `forge_prescribe` registered, DB bootstrap via `cairn.getDb()`). This was purely a missing registration — zero source changes needed.
+3. Smoke test (stdio MCP server): exits 0 with empty stderr when stdin is closed immediately. This is correct behavior — the server initializes, connects the transport, and exits cleanly when the input stream closes. "Didn't crash" is confirmed.
+
+**Build/test:** `npm run build --workspace=@akubly/skillsmith-runtime` exit 0; 49/49 tests pass.
+
+---
+
 ## Issue #25 — Wave 6 R6 Type-Tightening Polish (2026-05-30, PR #32)
 
 **Branch:** `squad/25-type-tightening-polish`
