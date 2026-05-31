@@ -3,6 +3,7 @@
 **Status:** Accepted — 2026-05-23 by Aaron  
 **Author:** Graham Knight (Lead / Architect)  
 **Date:** 2026-05-23  
+**CTD Anchor:** N/A — pre-Crucible Wave 3 composition-root decision
 **Supersedes:** Wave 2 ad-hoc CLI composition (`packages/runtime-cli/`)
 
 ---
@@ -169,6 +170,24 @@ Aaron also decided to **drop MCP tool exposure from Wave 3 scope entirely**. No 
 - `runtime-cli` test suite shrinks (delegates to skillsmith-runtime library)
 - No schema migrations required
 - MCP tool exposure deferred — no `run_prescriber_optimization` in Wave 3; re-evaluate in later wave
+
+---
+
+## Acceptance Signals
+
+- `@akubly/skillsmith-runtime` exposes the composition API used by both automatic Curator orchestration and the thin runtime CLI wrapper.
+- Cairn and Forge remain independently buildable packages; neither package imports the other directly.
+- The existing `forge-prescribe` CLI surface continues to work while delegating orchestration to `@akubly/skillsmith-runtime`.
+- Curator integration tests can inject a `PrescriberOrchestrationConfig` and observe Forge prescribers run after vector sweeps.
+- Dependency graph checks show `@akubly/skillsmith-runtime` is a leaf composition package and does not introduce a Cairn↔Forge cycle.
+
+---
+
+## Security Implications
+
+- The composition root does not add new privilege by itself; it centralizes calls into Cairn and Forge behind an explicit package boundary.
+- Keeping MCP exposure out of Wave 3 avoids adding a new remote tool surface before an operator need and permission model are defined.
+- The main security risk is accidental expansion of the runtime package into a privileged grab bag; keeping CLI, library composition, and future MCP exposure separated preserves auditable boundaries.
 
 ---
 

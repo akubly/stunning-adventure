@@ -2,7 +2,7 @@
 
 **Owner:** Graham (Lead / Architect)
 **Status:** FINAL — index only; ADR bodies are post-CTD authoring work in `docs/adr/`.
-**Format reference:** [`docs/adr/0001-composition-root.md`](../adr/0001-composition-root.md).
+**Format reference:** [`docs/adr/adr-template.md`](../adr/adr-template.md).
 
 ---
 
@@ -46,7 +46,7 @@ Rows without authored bodies carry status **Accepted (CTD-locked) — pending au
 - **One ADR per file** under `docs/adr/`. ADR-0001 (Composition Root) predates Crucible and is left in place. Landed ADR numbers are stable; if a planned/pending row collides with a landed ADR, renumber the planned row to the next free number rather than renumbering the landed artifact. ADR numbering may retain gaps from earlier draft allocations (the Phase 4 framing amendments now slot in as ADR-0020 and ADR-0024).
 - **Section owner = ADR author.** The agent who carried the decision in the CTD body owns the ADR file. Reviewer is Aaron in every case; secondary review follows the §19 ownership map row for the originating CTD section.
 - **Status transitions:** `Pending` → `Accepted — <date> by Aaron` at file-landing. Future revisions use the standard `Superseded by ADR-XXXX` chain; no in-place edits to the decision once accepted.
-- **Body shape:** Follow ADR-0001 — Context, Options Considered, Decision, Rationale, What Changes, Consequences, Security Implications, Resolved Questions. CTD anchor cited in Context; one-line decision statement above appears verbatim in the Decision section. **Options Considered MUST include ≥1 rejected alternative with rejection rationale** (PA finding: reviewers need to see what was rejected, not just what was chosen). **Security Implications** subsection is mandatory (even one sentence per threat surface suffices; full threat modeling stays in §18).
+- **Body shape:** Follow `docs/adr/adr-template.md` — Context, Options Considered, Decision, Rationale, What Changes, Consequences, Acceptance Signals, Security Implications, Resolved Questions. CTD anchor cited in Context; one-line decision statement above appears verbatim in the Decision section. **Options Considered MUST include ≥1 rejected alternative with rejection rationale** (PA finding: reviewers need to see what was rejected, not just what was chosen). **Acceptance Signals** and **Security Implications** subsections are mandatory (even one sentence per threat surface suffices; full threat modeling stays in §18).
 - **No new ADRs are surfaced by §19 itself.** Any decision not in this table either (i) is already covered by ADR-0001, or (ii) is a refinement that lives in the CTD section without an ADR. Surfacing a new ADR after CTD acceptance requires a new decisions-inbox drop.
 
 ---

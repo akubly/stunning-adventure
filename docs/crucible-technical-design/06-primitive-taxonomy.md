@@ -115,6 +115,9 @@ interface ObservationPayload {
     | 'injected_memory'     // bootstrap (offset 0); fragments literally injected by L0
     | 'tool_output'         // post-bootstrap tool result captured for replay
     | 'llm_response'        // post-bootstrap LLM response captured for replay
+    | 'stream_open'         // streaming LLM capture start (§16.5)
+    | 'stream_delta'        // streaming LLM checkpoint delta (§16.5)
+    | 'stream_close'        // streaming LLM capture terminator (§16.5)
     | 'cross_session_memory'// later-queried memory; NOT a bootstrap row
     | 'context_truncation'  // pruning signal from L0's context manager
     | 'external_input'      // user/system input not modeled as Request
@@ -126,7 +129,10 @@ interface ObservationPayload {
     | 'structural_proposal_expired'   // Applier/Aperture-written: queue deadline elapsed
     | 'fork_origin'        // fork session anchor (§10.4, ADR-0019)
     | 'fork_resume'        // resumed aborted fork marker (ADR-0019)
+    | 'predicate_registered'   // Hook Bus predicate registration (§4.2)
+    | 'predicate_unregistered' // Hook Bus predicate unregistration (§4.2)
     | 'predicate_timeout'  // Hook Bus fail-open timeout (§4.3, §17.1)
+    | 'row_budget_exhausted' // Hook Bus per-row budget exhausted (§4.3, §17.1)
     | 'fence_violation_retry' // Applier fence retry (§8.3, §17.1)
     | 'fence_exhausted'    // Applier fence retries exhausted (§8.3, §17.1)
     | 'replay_divergence'  // replay-equivalence failure marker (§11.6, §17.1)
@@ -171,7 +177,7 @@ interface QuestionPayload {
 |-------------|-----------|
 | Request     | `tool_call`, `llm_call`, `TaskStart`, `user_input` |
 | Artifact    | `tool_output`, `llm_output`, `synthetic_output` (M3) |
-| Observation | `system_prompt`, `tool_definitions`, `injected_memory`, `tool_output`, `llm_response`, `cross_session_memory`, `context_truncation`, `external_input`, `TaskEnd`, `monotonic_violation`, `structural_proposal_emitted`, `structural_proposal_acked`, `structural_proposal_rejected`, `structural_proposal_expired`, `fork_origin`, `fork_resume`, `predicate_timeout`, `fence_violation_retry`, `fence_exhausted`, `replay_divergence`, `ci_gate_failure`, `subscriber_drop`, `projection_stale`, `projection_recovered`, `storage_soft_warn` |
+| Observation | `system_prompt`, `tool_definitions`, `injected_memory`, `tool_output`, `llm_response`, `stream_open`, `stream_delta`, `stream_close`, `cross_session_memory`, `context_truncation`, `external_input`, `TaskEnd`, `monotonic_violation`, `structural_proposal_emitted`, `structural_proposal_acked`, `structural_proposal_rejected`, `structural_proposal_expired`, `fork_origin`, `fork_resume`, `predicate_registered`, `predicate_unregistered`, `predicate_timeout`, `row_budget_exhausted`, `fence_violation_retry`, `fence_exhausted`, `replay_divergence`, `ci_gate_failure`, `subscriber_drop`, `projection_stale`, `projection_recovered`, `storage_soft_warn` |
 | Decision    | (no sub-kind; differentiated by `eventType`, `commitmentMethod`, and `nonDominatedReason`; v1 `eventType` values: `router.paused`, `router.decision`, `applier.revert`, `scheduler_dispatched`, `scheduler_deferred`, `scheduler_cancelled`, `scheduler_quanta_exhausted`) |
 | Question    | (differentiated by `audience` + `expectedAnswerShape`) |
 

@@ -38,6 +38,10 @@
 
 ## Learnings
 
+### 2026-05-31: PR #33 Cloud Review Cycle 3 Taxonomy Sweep
+
+- **Taxonomy registration sweeps must cover producer sections, not just §17.** When §6 is the canonical `Observation.subKind` registry, sweep §04 hook-bus, §16 test/streaming, and §18 security-permissions for event names in addition to §17 observability; otherwise taxonomy drift can survive outside the catalog.
+
 ### 2026-05-31: PR #33 Cloud Review Cycle 2 Architecture Corrections
 
 - **§6 is the taxonomy registry; §17 is a catalog consumer.** When observability needs concrete event names, register L1 `Observation.subKind` values in §6.3 and keep Decision events as `DecisionPayload.eventType` values, not Decision sub-kinds. This keeps telemetry concrete without eroding the primitive taxonomy.
