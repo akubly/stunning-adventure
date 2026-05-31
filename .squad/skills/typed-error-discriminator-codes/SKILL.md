@@ -25,7 +25,7 @@ Use this skill when:
 // packages/<pkg>/src/activities/errors.ts
 
 export class MyDomainError extends Error {
-  readonly code = 'MY_DOMAIN_ERROR' as const;
+  readonly code: 'MY_DOMAIN_ERROR' = 'MY_DOMAIN_ERROR';
   readonly field: string;
 
   constructor(field: string, message: string) {
@@ -37,6 +37,8 @@ export class MyDomainError extends Error {
   }
 }
 ```
+
+> **Canonical form:** Use the explicit-annotation style `readonly code: 'MY_DOMAIN_ERROR' = 'MY_DOMAIN_ERROR'`, not `readonly code = 'MY_DOMAIN_ERROR' as const`. The `as const` variant was reviewed and rejected in Cycle 1 (M7-A) as redundant — TypeScript already narrows the literal type from the explicit annotation, so `as const` adds noise without benefit. The reference implementation in `packages/eureka/src/activities/errors.ts` uses the explicit-annotation form throughout.
 
 ### 2. Inheritance strategy — preserve existing test assertions
 
@@ -51,11 +53,13 @@ base class to avoid breaking tests with zero modifications:
 
 ### 3. Discriminator `code` property
 
-Every typed error class MUST carry a `readonly code` with a string literal type:
+Every typed error class MUST carry a `readonly code` with a string literal type, using the **explicit-annotation form** (the canonical form from the reference implementation):
 
 ```typescript
-readonly code = 'FACT_NOT_FOUND' as const;
+readonly code: 'FACT_NOT_FOUND' = 'FACT_NOT_FOUND';
 ```
+
+> **Do not use `as const`:** `readonly code = 'FACT_NOT_FOUND' as const` was reviewed and rejected in M7-A Cycle 1 (F7) as redundant. TypeScript narrows the literal type correctly from the explicit annotation alone. The reference implementation in `packages/eureka/src/activities/errors.ts` uses the explicit-annotation form throughout — adopt that form in all new error classes.
 
 This enables realm-safe narrowing that survives `vm.runInNewContext` and dual-package
 esm/cjs builds where `instanceof` prototype chains may break:
@@ -159,4 +163,4 @@ This is a **refactor beat** — no behavior change, no test count change:
 - `packages/eureka/src/activities/errors.ts` — canonical example with 5 classes
 - `packages/eureka/src/activities/recall.ts` — how to import and use
 - `packages/eureka/src/index.ts` — barrel pattern
-- `.squad/decisions/inbox/edgar-m7-a-typed-errors.md` — rationale and follow-up table
+- `.squad/decisions.md` § "M7-A — Typed Error Hierarchy for applyFeedback / applyFeedbackById (Edgar)" (2026-05-31, lines 5-36) — rationale and follow-up table
