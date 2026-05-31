@@ -10,6 +10,9 @@
       "import": "./dist/index.js"
     }
   },
+  "bin": {
+    "forge-mcp": "dist/mcp/server.js"
+  },
   "files": [
     "dist/"
   ],
@@ -20,7 +23,9 @@
   "dependencies": {
     "@akubly/types": "*",
     "@akubly/cairn": "*",
-    "@akubly/forge": "*"
+    "@akubly/forge": "*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "vitest": "^3"

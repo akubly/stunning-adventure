@@ -852,3 +852,10 @@ Both §9 and §13 flag Sonny advisory consult per Appendix C consultant rows. Sp
 **Disposition:** Graham fully executed, Valanice triaged (pending filesystem edits), Rosella/Gabriel/Roger/Laura silent (pending next session)
 
 See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-review.md for full context.
+**Role:** [Specialist role — see archive for details]
+**Status:** Cycle 2 review included in re-review panel.
+**Last update:** 2026-05-29
+
+**See history-archive.md for detailed entries.**
+
+**Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.

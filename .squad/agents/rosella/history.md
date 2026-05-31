@@ -15,15 +15,16 @@
 📌 Team update (2026-05-22T20:03:56Z): Wave 2 v3.1 scope final — autoApplyEligible propagates through OptimizationHint; constants NEGATIVE_IMPACT_AUTO_APPLY_GATE=-0.2 and ATTENUATION_FLOOR=0.1; CLI surface only — no MCP in Wave 2. — Graham Knight
 # Rosella — History
 
-## 2026-05-21: Wave 2 v3 Scope Ready — Curator Wiring Deferred to Wave 3
+**Role:** Implementation Specialist (W5-5 MCP forge-prescribe handler, async-correctness)
+**Status:** Cycle 2 included in implementation/testing coordination.
+**Last update:** 2026-05-29
 
-Scribe orchestration complete: Graham's v3 scope finalized. Key scope decisions:
-- ChangeVectorProvider port with async return type for Phase 5 cloud readiness
-- Wave 2/3 split: Manual invocation in Wave 2; Curator-driven automatic orchestration deferred to Wave 3
-- Hint deduplication via (skillId, source, category) key with active-status filter
-- Two-layer negative-impact attenuation: Confidence scaling + eligibility flag (autoApplyEligible)
+**Key milestones:**
+- Wave 2-6 integration: MCP handlers, forge-prescribe, change vectors
+- W5-5 async-test plan: 4 new tests integrated when handler ships
+- Cairn test coordination: 609+ tests baseline maintained
 
-## Learnings — Wave 2 W2-3/W2-7 SqliteChangeVectorProvider (2026-05-22)
+**See history-archive.md for detailed entries.**
 
 - getAllCategories(db, skillId) lives in packages/cairn/src/db/changeVectors.ts. Reads distinct values from optimization_hints.category column for a given skill_id.
 - SqliteChangeVectorProvider now lives in packages/cairn/src/db/sqliteChangeVectorProvider.ts and is exported from Cairn's top-level src/index.ts barrel.
@@ -437,3 +438,4 @@ ow() - created_at_ns > 1 hour) violates hermetic replay because replay executes 
 **Acceptance-signal vocabulary coordination:** Laura's 8 A-Fork-* scenarios use the same acceptance-signal vocabulary as §16.9's existing A1–A13 + C-9. This is disciplined test-strategy coordination — new scenarios extend the existing acceptance tier, not create a parallel vocabulary. Conformance-tier (C-*) vs acceptance-tier (A-*) distinction is preserved.
 
 **Options-docs-first discipline validated again:** PA-B4 (ancestry/replay) and childSid collision both used options-docs-first. Aaron's ruling on childSid came after 4-persona review of the hybrid proposal (Round 2 user stories doc). Options docs surface tradeoffs cleanly; reviews catch hidden bugs; ruling is defensible and auditable. This is the right forcing function for non-trivial design choices.
+**Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.

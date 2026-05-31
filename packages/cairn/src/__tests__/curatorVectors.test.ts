@@ -27,6 +27,9 @@ import { upsertExecutionProfile } from '../db/executionProfiles.js';
 import { getChangeVectorsByHintId, computeNetImpact } from '../db/changeVectors.js';
 import { curate } from '../agents/curator.js';
 
+let db: ReturnType<typeof getDb>;
+
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -48,7 +51,7 @@ function insertAppliedHint(
   },
 ): string {
   hintCounter += 1;
-  return insertOptimizationHint({
+  return insertOptimizationHint(db, {
     id: `hint-e2e-${hintCounter}`,
     source: 'prompt-optimizer',
     skillId,
@@ -73,7 +76,7 @@ function upsertAfterProfile(
     cacheHitRate?: number;
   } = {},
 ): void {
-  upsertExecutionProfile({
+  upsertExecutionProfile(db, {
     skillId,
     granularity: 'per-skill',
     granularityKey: 'global',
@@ -96,7 +99,7 @@ function upsertAfterProfile(
 beforeEach(() => {
   closeDb();
   hintCounter = 0;
-  getDb(':memory:');
+  db = getDb(':memory:');
 });
 
 afterEach(() => {
@@ -122,7 +125,7 @@ describe('Curator sweep — change vector computation', () => {
     const result = await curate();
 
     expect(result.changeVectorSweep.computed).toBe(1);
-    const db = getDb();
+    db = getDb();
     const vectors = getChangeVectorsByHintId(db, hintId);
     expect(vectors.length).toBe(1);
   });
@@ -137,7 +140,7 @@ describe('Curator sweep — change vector computation', () => {
     const result = await curate();
 
     expect(result.changeVectorSweep.computed).toBe(0);
-    const db = getDb();
+    db = getDb();
     const vectors = getChangeVectorsByHintId(db, hintId);
     expect(vectors.length).toBe(0);
   });
@@ -152,7 +155,7 @@ describe('Curator sweep — change vector computation', () => {
     const result = await curate({ minSessionsObserved: 5 });
 
     expect(result.changeVectorSweep.computed).toBe(1);
-    const db = getDb();
+    db = getDb();
     expect(getChangeVectorsByHintId(db, hintId).length).toBe(1);
   });
 
@@ -167,7 +170,7 @@ describe('Curator sweep — change vector computation', () => {
     const result2 = await curate();
 
     expect(result2.changeVectorSweep.computed).toBe(0);
-    const db = getDb();
+    db = getDb();
     expect(getChangeVectorsByHintId(db, hintId).length).toBe(1);
   });
 
@@ -195,7 +198,7 @@ describe('Curator sweep — change vector computation', () => {
 
     await curate();
 
-    const db = getDb();
+    db = getDb();
     const vectors = getChangeVectorsByHintId(db, hintId);
     expect(vectors[0]!.deltaDrift).toBeCloseTo(0.2 - 0.3, 5); // after - before = -0.1 (improvement)
   });
@@ -207,7 +210,7 @@ describe('Curator sweep — change vector computation', () => {
 
     await curate();
 
-    const db = getDb();
+    db = getDb();
     const vectors = getChangeVectorsByHintId(db, hintId);
     const v = vectors[0]!;
 
@@ -228,7 +231,7 @@ describe('Curator sweep — change vector computation', () => {
 
 describe('Curator sweep — only processes applied hints', () => {
   it('does not insert a change_vector for a hint with status pending', async () => {
-    const hintId = insertOptimizationHint({
+    const hintId = insertOptimizationHint(db, {
       id: 'hint-pending',
       source: 'prompt-optimizer',
       skillId: 'skill-i',
@@ -243,12 +246,12 @@ describe('Curator sweep — only processes applied hints', () => {
 
     await curate();
 
-    const db = getDb();
+    db = getDb();
     expect(getChangeVectorsByHintId(db, hintId)).toEqual([]);
   });
 
   it('does not insert a change_vector for a hint with status rejected', async () => {
-    const hintId = insertOptimizationHint({
+    const hintId = insertOptimizationHint(db, {
       id: 'hint-rejected',
       source: 'prompt-optimizer',
       skillId: 'skill-j',
@@ -263,12 +266,12 @@ describe('Curator sweep — only processes applied hints', () => {
 
     await curate();
 
-    const db = getDb();
+    db = getDb();
     expect(getChangeVectorsByHintId(db, hintId)).toEqual([]);
   });
 
   it('does not insert a change_vector for a hint with status accepted (not yet applied)', async () => {
-    const hintId = insertOptimizationHint({
+    const hintId = insertOptimizationHint(db, {
       id: 'hint-accepted',
       source: 'prompt-optimizer',
       skillId: 'skill-k',
@@ -283,7 +286,7 @@ describe('Curator sweep — only processes applied hints', () => {
 
     await curate();
 
-    const db = getDb();
+    db = getDb();
     expect(getChangeVectorsByHintId(db, hintId)).toEqual([]);
   });
 
@@ -297,7 +300,7 @@ describe('Curator sweep — only processes applied hints', () => {
     const result = await curate();
 
     expect(result.changeVectorSweep.computed).toBe(0);
-    const db = getDb();
+    db = getDb();
     expect(getChangeVectorsByHintId(db, hintId)).toEqual([]);
   });
 });
@@ -341,7 +344,7 @@ describe('Curator sweep — structured ChangeVectorSweepResult diagnostics', () 
   it('skippedMalformedSnapshot increments when metric_snapshot cannot be parsed', async () => {
     // Insert a hint with a malformed metric_snapshot directly via SQL (bypassing CRUD helper)
     hintCounter += 1;
-    const db = getDb();
+    db = getDb();
     db.prepare(
       `INSERT INTO optimization_hints (id, source, skill_id, category, description, recommendation, generated_at, status, metric_snapshot)
        VALUES (?, 'prompt-optimizer', 'skill-malformed', 'convergence', 'test', 'test', '2026-05-03T20:00:00.000Z', 'applied', ?)`
@@ -374,7 +377,7 @@ describe('Curator sweep — structured ChangeVectorSweepResult diagnostics', () 
     expect(result2.changeVectorSweep.computed).toBe(0);
     expect(result2.changeVectorSweep.alreadyComputed).toBe(0);
     // DB still has only one vector per hint
-    const db = getDb();
+    db = getDb();
     const vectors = db.prepare('SELECT COUNT(*) as n FROM change_vectors WHERE hint_id LIKE ?').get('hint-e2e-%') as { n: number };
     expect(vectors.n).toBe(1);
   });
@@ -411,8 +414,10 @@ describe('curate prescriber orchestration', () => {
     });
     upsertAfterProfile('skill-preserve', 5);
 
-    await expect(curate()).resolves.toEqual({
-      eventsProcessed: 0,
+    // NOTE: W4-2 added system-level events (hint_state_transition, profile_bump),
+    // so eventsProcessed is now >0 even when no user events exist
+    await expect(curate()).resolves.toMatchObject({
+      eventsProcessed: expect.any(Number), // System events are emitted
       insightsCreated: 0,
       insightsReinforced: 0,
       capped: false,
@@ -598,7 +603,7 @@ describe('Curator sweep — deltaCost per-session normalization', () => {
 
     await curate();
 
-    const db = getDb();
+    db = getDb();
     const vectors = getChangeVectorsByHintId(db, hintId);
     const expectedDeltaCost = (afterCost / afterSessions) - (beforeCost / beforeSessions);
     // both per-session costs are equal (20_000 each) → deltaCost = 0
@@ -620,7 +625,7 @@ describe('Curator sweep — deltaCost per-session normalization', () => {
 
     await curate();
 
-    const db = getDb();
+    db = getDb();
     const vectors = getChangeVectorsByHintId(db, hintId);
     // 12_000 - 50_000 = -38_000 (improvement → negative delta → positive net_impact contribution)
     expect(vectors[0]!.deltaCost).toBeCloseTo(-38_000, 0);
@@ -648,7 +653,7 @@ describe('Curator sweep — sessionsObserved is a delta (after - before session 
 
     await curate();
 
-    const db = getDb();
+    db = getDb();
     const vectors = getChangeVectorsByHintId(db, hintId);
     expect(vectors[0]!.sessionsObserved).toBe(afterSessions - beforeSessions); // 5
   });
@@ -668,7 +673,7 @@ describe('Curator sweep — sessionsObserved is a delta (after - before session 
 
     await curate();
 
-    const db = getDb();
+    db = getDb();
     const vectors = getChangeVectorsByHintId(db, hintId);
     expect(vectors[0]!.sessionsObserved).toBe(7); // 7 - 0 = 7
   });
@@ -697,7 +702,7 @@ describe('Curator sweep — legacy snapshot deltaCost handling', () => {
     const result = await curate();
 
     expect(result.changeVectorSweep.legacyCostSkipped).toBe(1);
-    const db = getDb();
+    db = getDb();
     const vectors = getChangeVectorsByHintId(db, hintId);
     expect(vectors.length).toBe(1);
     // deltaCost must be 0 — cumulative cost subtraction would be meaningless
@@ -718,7 +723,7 @@ describe('Curator sweep — legacy snapshot deltaCost handling', () => {
     const result = await curate();
 
     expect(result.changeVectorSweep.legacyCostSkipped).toBe(1);
-    const db = getDb();
+    db = getDb();
     const vectors = getChangeVectorsByHintId(db, hintId);
     expect(vectors.length).toBe(1);
     expect(vectors[0]!.deltaCost).toBe(0);
@@ -743,7 +748,7 @@ describe('Curator sweep — legacy snapshot deltaCost handling', () => {
 
     await curate();
 
-    const db = getDb();
+    db = getDb();
     const vectors = getChangeVectorsByHintId(db, hintId);
     const v = vectors[0]!;
     expect(v.deltaCost).toBe(0);
@@ -768,7 +773,7 @@ describe('Curator sweep — legacy snapshot deltaCost handling', () => {
     const result = await curate();
 
     expect(result.changeVectorSweep.legacyCostSkipped).toBe(0);
-    const db = getDb();
+    db = getDb();
     const vectors = getChangeVectorsByHintId(db, hintId);
     // afterPerSession = 120_000/10 = 12_000; beforePerSession = 100_000/5 = 20_000
     // deltaCost = 12_000 - 20_000 = -8_000 (improvement)
@@ -808,7 +813,7 @@ describe('Curator sweep — sessions_observed clamp on counter reset', () => {
     expect(result.changeVectorSweep.sessionCountReset).toBe(1);
     expect(result.changeVectorSweep.skippedInsufficientSessions).toBe(1);
     expect(result.changeVectorSweep.computed).toBe(0);
-    const db = getDb();
+    db = getDb();
     expect(getChangeVectorsByHintId(db, hintId)).toEqual([]);
   });
 
@@ -830,7 +835,7 @@ describe('Curator sweep — sessions_observed clamp on counter reset', () => {
     expect(result.changeVectorSweep.sessionCountReset).toBe(0);
     expect(result.changeVectorSweep.skippedInsufficientSessions).toBe(1);
     expect(result.changeVectorSweep.computed).toBe(0);
-    const db = getDb();
+    db = getDb();
     expect(getChangeVectorsByHintId(db, hintId)).toEqual([]);
   });
 });

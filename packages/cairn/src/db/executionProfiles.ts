@@ -1,4 +1,6 @@
-import { getDb } from './index.js';
+import type Database from 'better-sqlite3';
+import { logEvent } from './events.js';
+import { ensureSystemSession } from './sessions.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -97,63 +99,76 @@ function mapRow(row: Record<string, unknown>): ExecutionProfileRow {
  * Upsert a profile keyed by (skill_id, granularity, granularity_key).
  * Returns the row id of the inserted/updated row.
  */
-export function upsertExecutionProfile(profile: ExecutionProfileUpsert): number {
-  const db = getDb();
+export function upsertExecutionProfile(db: Database.Database, profile: ExecutionProfileUpsert): number {
   const granularityKey = profile.granularityKey ?? 'global';
 
-  const sql = `
-    INSERT INTO execution_profiles
-      (skill_id, granularity, granularity_key, session_count,
-       drift_mean, drift_p50, drift_p95, drift_trend,
-       token_mean_input, token_mean_output, token_mean_cache_hit, token_total_cost,
-       outcome_success_rate, outcome_mean_convergence, outcome_tool_error_rate,
-       updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-    ON CONFLICT(skill_id, granularity, granularity_key) DO UPDATE SET
-      session_count = excluded.session_count,
-      drift_mean = excluded.drift_mean,
-      drift_p50 = excluded.drift_p50,
-      drift_p95 = excluded.drift_p95,
-      drift_trend = excluded.drift_trend,
-      token_mean_input = excluded.token_mean_input,
-      token_mean_output = excluded.token_mean_output,
-      token_mean_cache_hit = excluded.token_mean_cache_hit,
-      token_total_cost = excluded.token_total_cost,
-      outcome_success_rate = excluded.outcome_success_rate,
-      outcome_mean_convergence = excluded.outcome_mean_convergence,
-      outcome_tool_error_rate = excluded.outcome_tool_error_rate,
-      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-  `;
+  return db.transaction(() => {
+    const existingProfile = getExecutionProfile(db, profile.skillId, profile.granularity, granularityKey);
+    const isUpdate = existingProfile !== null;
 
-  db.prepare(sql).run(
-    profile.skillId,
-    profile.granularity,
-    granularityKey,
-    profile.sessionCount,
-    profile.drift.mean,
-    profile.drift.p50,
-    profile.drift.p95,
-    profile.drift.trend,
-    profile.token.meanInput,
-    profile.token.meanOutput,
-    profile.token.meanCacheHit,
-    profile.token.totalCost,
-    profile.outcome.successRate,
-    profile.outcome.meanConvergence,
-    profile.outcome.toolErrorRate,
-  );
+    const sql = `
+      INSERT INTO execution_profiles
+        (skill_id, granularity, granularity_key, session_count,
+         drift_mean, drift_p50, drift_p95, drift_trend,
+         token_mean_input, token_mean_output, token_mean_cache_hit, token_total_cost,
+         outcome_success_rate, outcome_mean_convergence, outcome_tool_error_rate,
+         updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      ON CONFLICT(skill_id, granularity, granularity_key) DO UPDATE SET
+        session_count = excluded.session_count,
+        drift_mean = excluded.drift_mean,
+        drift_p50 = excluded.drift_p50,
+        drift_p95 = excluded.drift_p95,
+        drift_trend = excluded.drift_trend,
+        token_mean_input = excluded.token_mean_input,
+        token_mean_output = excluded.token_mean_output,
+        token_mean_cache_hit = excluded.token_mean_cache_hit,
+        token_total_cost = excluded.token_total_cost,
+        outcome_success_rate = excluded.outcome_success_rate,
+        outcome_mean_convergence = excluded.outcome_mean_convergence,
+        outcome_tool_error_rate = excluded.outcome_tool_error_rate,
+        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      RETURNING id
+    `;
 
-  const row = db.prepare(
-    `SELECT id FROM execution_profiles
-       WHERE skill_id = ? AND granularity = ? AND granularity_key = ?`
-  ).get(profile.skillId, profile.granularity, granularityKey) as { id: number } | undefined;
+    const row = db.prepare(sql).get(
+      profile.skillId,
+      profile.granularity,
+      granularityKey,
+      profile.sessionCount,
+      profile.drift.mean,
+      profile.drift.p50,
+      profile.drift.p95,
+      profile.drift.trend,
+      profile.token.meanInput,
+      profile.token.meanOutput,
+      profile.token.meanCacheHit,
+      profile.token.totalCost,
+      profile.outcome.successRate,
+      profile.outcome.meanConvergence,
+      profile.outcome.toolErrorRate,
+    ) as { id: number } | undefined;
 
-  return row?.id ?? 0;
+    const profileId = row?.id ?? 0;
+
+    if (profileId > 0) {
+      const sessionId = ensureSystemSession(db);
+      logEvent(db, sessionId, 'profile_bump', {
+        skill_id: profile.skillId,
+        profile_id: profileId,
+        bump_kind: isUpdate ? 'updated' : 'created',
+        granularity: profile.granularity,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    return profileId;
+  }).immediate();
 }
 
 /** Get a single profile by composite key from a specific database handle. Returns null if none. */
-export function getExecutionProfileWithDb(
-  db: ReturnType<typeof getDb>,
+export function getExecutionProfile(
+  db: Database.Database,
   skillId: string,
   granularity: ProfileGranularity,
   granularityKey: string = 'global',
@@ -165,18 +180,9 @@ export function getExecutionProfileWithDb(
   return row ? mapRow(row) : null;
 }
 
-/** Get a single profile by composite key. Returns null if none. */
-export function getExecutionProfile(
-  skillId: string,
-  granularity: ProfileGranularity,
-  granularityKey: string = 'global',
-): ExecutionProfileRow | null {
-  return getExecutionProfileWithDb(getDb(), skillId, granularity, granularityKey);
-}
 
 /** List all profiles for a skill (across granularities). */
-export function listExecutionProfilesForSkill(skillId: string): ExecutionProfileRow[] {
-  const db = getDb();
+export function listExecutionProfilesForSkill(db: Database.Database, skillId: string): ExecutionProfileRow[] {
   const rows = db.prepare(
     `SELECT * FROM execution_profiles
        WHERE skill_id = ?
@@ -186,8 +192,7 @@ export function listExecutionProfilesForSkill(skillId: string): ExecutionProfile
 }
 
 /** List all execution profiles (most recently updated first). */
-export function listExecutionProfiles(limit?: number): ExecutionProfileRow[] {
-  const db = getDb();
+export function listExecutionProfiles(db: Database.Database, limit?: number): ExecutionProfileRow[] {
   const sql = limit
     ? 'SELECT * FROM execution_profiles ORDER BY updated_at DESC LIMIT ?'
     : 'SELECT * FROM execution_profiles ORDER BY updated_at DESC';
@@ -200,11 +205,11 @@ export function listExecutionProfiles(limit?: number): ExecutionProfileRow[] {
 
 /** Delete a profile by composite key. Returns true if a row was deleted. */
 export function deleteExecutionProfile(
+  db: Database.Database,
   skillId: string,
   granularity: ProfileGranularity,
   granularityKey: string = 'global',
 ): boolean {
-  const db = getDb();
   const res = db.prepare(
     `DELETE FROM execution_profiles
        WHERE skill_id = ? AND granularity = ? AND granularity_key = ?`

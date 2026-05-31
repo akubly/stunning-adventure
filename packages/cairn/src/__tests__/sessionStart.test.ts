@@ -8,11 +8,14 @@ import { insertOptimizationHint } from '../db/optimizationHints.js';
 import { upsertExecutionProfile } from '../db/executionProfiles.js';
 import { runSessionStart } from '../hooks/sessionStart.js';
 
+let db: ReturnType<typeof getDb>;
+
+
 let orchestrationHintCounter = 0;
 
 function seedQualifyingPrescriberSkill(skillId: string): void {
   orchestrationHintCounter += 1;
-  insertOptimizationHint({
+  insertOptimizationHint(db, {
     id: `session-start-hint-${orchestrationHintCounter}`,
     source: 'prompt-optimizer',
     skillId,
@@ -30,7 +33,7 @@ function seedQualifyingPrescriberSkill(skillId: string): void {
     },
   });
 
-  upsertExecutionProfile({
+  upsertExecutionProfile(db, {
     skillId,
     granularity: 'per-skill',
     granularityKey: 'global',
@@ -65,34 +68,34 @@ afterEach(() => {
 
 describe('runSessionStart', () => {
   beforeEach(() => {
-    getDb(':memory:');
+    db = getDb(':memory:');
   });
 
   it('should return fastPath true when a recent active session exists', async () => {
-    createSession('org_repo', 'main');
+    createSession(db, 'org_repo', 'main');
     // Log a recent event so the session is considered "fresh"
-    const session = getActiveSession('org_repo')!;
-    logEvent(session.id, 'session_start', { repoKey: 'org_repo' });
+    const session = getActiveSession(db, 'org_repo')!;
+    logEvent(db, session.id, 'session_start', { repoKey: 'org_repo' });
 
     const result = await runSessionStart('org_repo');
     expect(result.fastPath).toBe(true);
 
     // Active session should still be there, untouched
-    const after = getActiveSession('org_repo');
+    const after = getActiveSession(db, 'org_repo');
     expect(after).toBeDefined();
     expect(after!.status).toBe('active');
   });
 
   it('should not call catchUp or curate on fast path', async () => {
-    const sessionId = createSession('org_repo', 'main');
+    const sessionId = createSession(db, 'org_repo', 'main');
     // Log a recent event to keep session fresh
-    logEvent(sessionId, 'tool_use', { tool: 'grep' });
+    logEvent(db, sessionId, 'tool_use', { tool: 'grep' });
 
     const result = await runSessionStart('org_repo');
     expect(result.fastPath).toBe(true);
 
     // Curator cursor should not have advanced (curator didn't run)
-    const db = getDb();
+    db = getDb();
     const cursorRow = db
       .prepare('SELECT last_processed_event_id FROM curator_state WHERE id = 1')
       .get() as { last_processed_event_id: number } | undefined;
@@ -103,10 +106,10 @@ describe('runSessionStart', () => {
   it('should detect and recover a stale (orphaned) active session', async () => {
     // Create a session and backdate its start and last event to simulate an
     // orphan left behind by a crashed Copilot process.
-    const sessionId = createSession('org_repo', 'main');
-    logEvent(sessionId, 'session_start', { repoKey: 'org_repo' });
+    const sessionId = createSession(db, 'org_repo', 'main');
+    logEvent(db, sessionId, 'session_start', { repoKey: 'org_repo' });
 
-    const db = getDb();
+    db = getDb();
     const staleDate = new Date(Date.now() - 5 * 60 * 1000);
     const staleTime = staleDate.toISOString().slice(0, 19).replace('T', ' ');
     db.prepare("UPDATE sessions SET started_at = ? WHERE id = ?").run(staleTime, sessionId);
@@ -128,12 +131,12 @@ describe('runSessionStart', () => {
 
   it('should run curator when no active session exists', async () => {
     // Create events attached to a completed session
-    const sessionId = createSession('org_repo', 'main');
-    logEvent(sessionId, 'error', { category: 'build', message: 'fail 1' });
-    logEvent(sessionId, 'error', { category: 'build', message: 'fail 1' });
+    const sessionId = createSession(db, 'org_repo', 'main');
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'fail 1' });
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'fail 1' });
 
     // End the session so there's no active one
-    const db = getDb();
+    db = getDb();
     db.prepare("UPDATE sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?")
       .run(sessionId);
 
@@ -151,8 +154,8 @@ describe('runSessionStart', () => {
 
   it('should not affect sessions from other repos on slow path', async () => {
     // Active session on repo A (with recent event so it's not stale)
-    const repoAId = createSession('repo_a', 'main');
-    logEvent(repoAId, 'session_start', { repoKey: 'repo_a' });
+    const repoAId = createSession(db, 'repo_a', 'main');
+    logEvent(db, repoAId, 'session_start', { repoKey: 'repo_a' });
 
     // Hook fires for repo B (no active session for repo B)
     const result = await runSessionStart('repo_b');
@@ -160,7 +163,7 @@ describe('runSessionStart', () => {
 
     // repo_a's session should still be active (catchUp only operates on the
     // passed repoKey, not other repos)
-    const repoASession = getActiveSession('repo_a');
+    const repoASession = getActiveSession(db, 'repo_a');
     expect(repoASession).toBeDefined();
     expect(repoASession!.id).toBe(repoAId);
   });
@@ -170,7 +173,7 @@ describe('runSessionStart', () => {
     expect(result.fastPath).toBe(false);
 
     // No session should exist — sessionStart doesn't create sessions
-    expect(getActiveSession('org_repo')).toBeUndefined();
+    expect(getActiveSession(db, 'org_repo')).toBeUndefined();
   });
 
   it('should be safe to call repeatedly for the same repo', async () => {
@@ -183,8 +186,8 @@ describe('runSessionStart', () => {
     expect(r2.fastPath).toBe(false);
 
     // Now simulate postToolUse creating a session with a recent event
-    const sid = createSession('org_repo', 'main');
-    logEvent(sid, 'session_start', { repoKey: 'org_repo' });
+    const sid = createSession(db, 'org_repo', 'main');
+    logEvent(db, sid, 'session_start', { repoKey: 'org_repo' });
 
     // Third call: fast path (session is fresh)
     const r3 = await runSessionStart('org_repo');
@@ -198,7 +201,7 @@ describe('runSessionStart', () => {
 
 describe('prescriber wiring on slow path', () => {
   beforeEach(() => {
-    getDb(':memory:');
+    db = getDb(':memory:');
   });
 
   afterEach(() => {
@@ -207,12 +210,12 @@ describe('prescriber wiring on slow path', () => {
 
   it('should call prescribe() when curate produces new insights', async () => {
     // Create events that will generate insights (recurring errors)
-    const sessionId = createSession('org_repo', 'main');
-    logEvent(sessionId, 'error', { category: 'build', message: 'fail' });
-    logEvent(sessionId, 'error', { category: 'build', message: 'fail' });
+    const sessionId = createSession(db, 'org_repo', 'main');
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'fail' });
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'fail' });
 
     // End the session so there's no active one (force slow path)
-    const db = getDb();
+    db = getDb();
     db.prepare("UPDATE sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?")
       .run(sessionId);
 
@@ -246,11 +249,11 @@ describe('prescriber wiring on slow path', () => {
   it('should not throw when prescribe() fails (fail-open)', async () => {
     // We can't easily mock the import, but we verify fail-open by checking
     // runSessionStart completes even when insights are generated
-    const sessionId = createSession('org_repo', 'main');
-    logEvent(sessionId, 'error', { category: 'build', message: 'fail' });
-    logEvent(sessionId, 'error', { category: 'build', message: 'fail' });
+    const sessionId = createSession(db, 'org_repo', 'main');
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'fail' });
+    logEvent(db, sessionId, 'error', { category: 'build', message: 'fail' });
 
-    const db = getDb();
+    db = getDb();
     db.prepare("UPDATE sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?")
       .run(sessionId);
 
@@ -259,7 +262,7 @@ describe('prescriber wiring on slow path', () => {
   });
 
   it('should increment session counter on slow path', async () => {
-    const db = getDb();
+    db = getDb();
 
     // Ensure prescriber_state exists with initial counter
     const before = db
@@ -276,11 +279,11 @@ describe('prescriber wiring on slow path', () => {
   });
 
   it('should not increment session counter on fast path', async () => {
-    const db = getDb();
+    db = getDb();
 
     // Create an active session with a recent event
-    const sessionId = createSession('org_repo', 'main');
-    logEvent(sessionId, 'session_start', { repoKey: 'org_repo' });
+    const sessionId = createSession(db, 'org_repo', 'main');
+    logEvent(db, sessionId, 'session_start', { repoKey: 'org_repo' });
 
     const before = db
       .prepare('SELECT sessions_since_install FROM prescriber_state WHERE id = 1')
@@ -308,7 +311,7 @@ describe('prescriber wiring on slow path', () => {
     const prescriberOrchestrationConfig: PrescriberOrchestrationConfig = { runForSkill };
     const curateSpy = vi.spyOn(curator, 'curate');
 
-    await expect(runSessionStart('org_repo', prescriberOrchestrationConfig)).resolves.toEqual({
+    await expect(runSessionStart('org_repo', { prescriberOrchestrationConfig })).resolves.toEqual({
       fastPath: false,
     });
 

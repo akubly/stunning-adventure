@@ -10,6 +10,7 @@
  */
 
 import type { PrescriberOrchestrationConfig, PrescriberRunResult } from '@akubly/types';
+import type Database from 'better-sqlite3';
 import { getDb } from '../db/index.js';
 import { getUnprocessedEvents } from '../db/events.js';
 import { getLastProcessedEventId, advanceCursor } from '../db/curatorState.js';
@@ -161,6 +162,7 @@ export async function curate(
   let totalCreated = 0;
   let totalReinforced = 0;
   let capped = false;
+  const db = getDb();
 
   // Track the last event per session across batches so sequence detection
   // can find pairs that straddle batch boundaries.
@@ -169,30 +171,30 @@ export async function curate(
   // Process in batches to bound memory usage
   let hasMore = true;
   while (hasMore) {
-    const cursor = getLastProcessedEventId();
-    const events = getUnprocessedEvents(cursor, BATCH_SIZE);
+    const cursor = getLastProcessedEventId(db);
+    // TODO(cycle-1 I10): Wave 5 should decide whether Curator skips __system__ events; filtering here must still advance the raw-event cursor.
+    const events = getUnprocessedEvents(db, cursor, BATCH_SIZE);
 
     if (events.length === 0) break;
 
     let insightsCreated = 0;
     let insightsReinforced = 0;
 
-    const db = getDb();
     db.transaction(() => {
-      const errorResult = detectRecurringErrors(events);
+      const errorResult = detectRecurringErrors(db, events);
       insightsCreated += errorResult.created;
       insightsReinforced += errorResult.reinforced;
 
-      const sequenceResult = detectErrorSequences(events, lastEventPerSession);
+      const sequenceResult = detectErrorSequences(db, events, lastEventPerSession);
       insightsCreated += sequenceResult.created;
       insightsReinforced += sequenceResult.reinforced;
 
-      const skipResult = detectSkipFrequency(events);
+      const skipResult = detectSkipFrequency(db, events);
       insightsCreated += skipResult.created;
       insightsReinforced += skipResult.reinforced;
 
       const lastEvent = events[events.length - 1];
-      advanceCursor(lastEvent.id);
+      advanceCursor(db, lastEvent.id);
     })();
 
     // Update last-event-per-session for next batch's boundary detection
@@ -214,9 +216,9 @@ export async function curate(
     }
   }
 
-  updateLastRunTimestamp();
+  updateLastRunTimestamp(db);
 
-  const changeVectorSweep = sweepChangeVectors(changeVectorConfig);
+  const changeVectorSweep = sweepChangeVectors(db, changeVectorConfig);
   const prescribers = prescriberOrchestrationConfig
     ? await runPrescribersForComputedSkills(
         changeVectorSweep,
@@ -295,7 +297,7 @@ interface DetectionResult {
  * Detect recurring errors: group error events by category+message,
  * create/reinforce insights for groups that meet the threshold.
  */
-function detectRecurringErrors(events: CairnEvent[]): DetectionResult {
+function detectRecurringErrors(db: Database.Database, events: CairnEvent[]): DetectionResult {
   let created = 0;
   let reinforced = 0;
 
@@ -321,7 +323,7 @@ function detectRecurringErrors(events: CairnEvent[]): DetectionResult {
     const normMessage = message.replace(/\s+/g, ' ').trim();
     const title = `Recurring ${category}: ${truncateWithHash(normMessage, 120)}`;
 
-    const existing = getInsightByPattern('recurring_error', title);
+    const existing = getInsightByPattern(db, 'recurring_error', title);
     const totalOccurrences = (existing?.occurrenceCount ?? 0) + group.events.length;
 
     // Threshold applies to total occurrences across all batches, not just
@@ -336,10 +338,10 @@ function detectRecurringErrors(events: CairnEvent[]): DetectionResult {
     const confidence = Math.min(1.0, totalOccurrences / 5);
 
     if (existing) {
-      reinforceInsight(existing.id, evidence, Math.max(existing.confidence, confidence), group.events.length);
+      reinforceInsight(db, existing.id, evidence, Math.max(existing.confidence, confidence), group.events.length);
       reinforced++;
     } else {
-      createInsight('recurring_error', title, description, evidence, confidence, group.events.length, prescription);
+      createInsight(db, 'recurring_error', title, description, evidence, confidence, group.events.length, prescription);
       created++;
     }
   }
@@ -354,6 +356,7 @@ function detectRecurringErrors(events: CairnEvent[]): DetectionResult {
  * Accepts carryover events from the previous batch to detect boundary-straddling pairs.
  */
 function detectErrorSequences(
+  db: Database.Database,
   events: CairnEvent[],
   lastEventPerSession: Map<string, CairnEvent> = new Map(),
 ): DetectionResult {
@@ -421,7 +424,7 @@ function detectErrorSequences(
   for (const [seqKey, data] of sequenceCounts) {
     const title = `Sequence: ${seqKey}`;
 
-    const existingInsight = getInsightByPattern('error_sequence', title);
+    const existingInsight = getInsightByPattern(db, 'error_sequence', title);
     const totalCount = (existingInsight?.occurrenceCount ?? 0) + data.count;
 
     if (totalCount < SEQUENCE_THRESHOLD) continue;
@@ -431,7 +434,7 @@ function detectErrorSequences(
     const confidence = Math.min(1.0, totalCount / 4);
 
     if (existingInsight) {
-      reinforceInsight(
+      reinforceInsight(db,
         existingInsight.id,
         data.evidence,
         Math.max(existingInsight.confidence, confidence),
@@ -439,7 +442,7 @@ function detectErrorSequences(
       );
       reinforced++;
     } else {
-      createInsight('error_sequence', title, description, data.evidence, confidence, data.count, prescription);
+      createInsight(db, 'error_sequence', title, description, data.evidence, confidence, data.count, prescription);
       created++;
     }
   }
@@ -450,7 +453,7 @@ function detectErrorSequences(
 /**
  * Detect skip frequency: find guardrails that get skipped repeatedly.
  */
-function detectSkipFrequency(events: CairnEvent[]): DetectionResult {
+function detectSkipFrequency(db: Database.Database, events: CairnEvent[]): DetectionResult {
   let created = 0;
   let reinforced = 0;
 
@@ -473,7 +476,7 @@ function detectSkipFrequency(events: CairnEvent[]): DetectionResult {
   for (const [what, group] of skipGroups) {
     const title = `Frequently skipped: ${what}`;
 
-    const existing = getInsightByPattern('skip_frequency', title);
+    const existing = getInsightByPattern(db, 'skip_frequency', title);
     const totalOccurrences = (existing?.occurrenceCount ?? 0) + group.events.length;
 
     if (totalOccurrences < SKIP_FREQUENCY_THRESHOLD) continue;
@@ -484,10 +487,10 @@ function detectSkipFrequency(events: CairnEvent[]): DetectionResult {
     const confidence = Math.min(1.0, totalOccurrences / 4);
 
     if (existing) {
-      reinforceInsight(existing.id, evidence, Math.max(existing.confidence, confidence), group.events.length);
+      reinforceInsight(db, existing.id, evidence, Math.max(existing.confidence, confidence), group.events.length);
       reinforced++;
     } else {
-      createInsight('skip_frequency', title, description, evidence, confidence, group.events.length, prescription);
+      createInsight(db, 'skip_frequency', title, description, evidence, confidence, group.events.length, prescription);
       created++;
     }
   }
@@ -526,7 +529,7 @@ export function getCuratorStatus(): CuratorStatus {
     .prepare('SELECT last_processed_event_id, last_run_at FROM curator_state WHERE id = 1')
     .get() as { last_processed_event_id: number; last_run_at: string | null } | undefined;
 
-  const counts = countInsightsByStatus();
+  const counts = countInsightsByStatus(db);
 
   const activeCount = counts['active'] ?? 0;
   const staleCount = counts['stale'] ?? 0;
@@ -622,9 +625,11 @@ export interface ChangeVectorSweepResult {
  *
  * @returns Structured diagnostic counts for this sweep run.
  */
-function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResult {
+function sweepChangeVectors(
+  db: Database.Database,
+  config?: ChangeVectorConfig,
+): ChangeVectorSweepResult {
   const minSessions = config?.minSessionsObserved ?? DEFAULT_MIN_SESSIONS;
-  const db = getDb();
   const computedSkillIds = new Set<string>();
   const result: ChangeVectorSweepResult = {
     eligible: 0,
@@ -776,8 +781,7 @@ function sweepChangeVectors(config?: ChangeVectorConfig): ChangeVectorSweepResul
 }
 
 /** Update the last_run_at timestamp in curator_state. */
-function updateLastRunTimestamp(): void {
-  const db = getDb();
+function updateLastRunTimestamp(db: Database.Database): void {
   db.prepare(
     `INSERT OR IGNORE INTO curator_state (id, last_processed_event_id) VALUES (1, 0)`,
   ).run();

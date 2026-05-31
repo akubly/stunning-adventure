@@ -21,7 +21,7 @@ import { catchUpPreviousSession } from '../agents/archivist.js';
 import { curate, type CurateResult } from '../agents/curator.js';
 import { prescribe } from '../agents/prescriber.js';
 import { incrementSessionCounter } from '../db/prescriptions.js';
-import { getRepoKey } from './gitContext.js';
+import { getRepoKey, getWorkdir } from './gitContext.js';
 import { parseSqliteDateToMs } from '../utils/timestamps.js';
 import { checkIsScript } from '../utils/isScript.js';
 
@@ -40,8 +40,8 @@ interface HookInput {
  */
 const STALE_SESSION_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
 
-function isStaleSession(session: { id: string; startedAt: string }): boolean {
-  const lastEvent = getLastEventTime(session.id);
+function isStaleSession(db: Database.Database, session: { id: string; startedAt: string }): boolean {
+  const lastEvent = getLastEventTime(db, session.id);
   const referenceTime = lastEvent ?? session.startedAt;
   const referenceMs = parseSqliteDateToMs(referenceTime);
   // Fail-safe toward recovery: if we can't parse the timestamp, treat the
@@ -53,6 +53,13 @@ function isStaleSession(session: { id: string; startedAt: string }): boolean {
   return ageMs > STALE_SESSION_THRESHOLD_MS;
 }
 
+/** Options for runSessionStart. */
+export interface RunSessionStartOptions {
+  prescriberOrchestrationConfig?: PrescriberOrchestrationConfig;
+  afterCurate?: (curateResult: CurateResult) => void;
+  workdir?: string;
+}
+
 /**
  * Core session-start logic, separated from stdin plumbing for testability.
  *
@@ -61,16 +68,17 @@ function isStaleSession(session: { id: string; startedAt: string }): boolean {
  */
 export async function runSessionStart(
   repoKey: string,
-  prescriberOrchestrationConfig?: PrescriberOrchestrationConfig,
-  afterCurate?: (curateResult: CurateResult) => void,
+  options?: RunSessionStartOptions,
 ): Promise<{ fastPath: boolean }> {
-  const existing = getActiveSession(repoKey);
-  if (existing && !isStaleSession(existing)) {
+  const { prescriberOrchestrationConfig, afterCurate, workdir } = options ?? {};
+  const db = getDb();
+  const existing = getActiveSession(db, repoKey, workdir);
+  if (existing && !isStaleSession(db, existing)) {
     return { fastPath: true };
   }
 
   // Either no active session or the active session is stale (orphan).
-  catchUpPreviousSession(repoKey);
+  catchUpPreviousSession(repoKey, workdir);
   const curateResult = await curate(undefined, prescriberOrchestrationConfig);
   try {
     afterCurate?.(curateResult);
@@ -82,12 +90,12 @@ export async function runSessionStart(
 
   // Increment session counter BEFORE prescribe() so shouldResurface()
   // sees the correct session number without needing an off-by-one hack.
-  incrementSessionCounter();
+  incrementSessionCounter(db);
 
   // Chain prescribe() when insights changed (DP1 hybrid trigger)
   if (curateResult.insightsChanged) {
     try {
-      prescribe();
+      prescribe({ repoKey, workdir });
     } catch {
       // Fail-open — prescriber errors must not break session start
     }
@@ -124,11 +132,12 @@ export async function runSessionStartHook(
     dbOpened = true;
     // getRepoKey() shells out to `git remote get-url origin` (~10ms on
     // Windows). This runs before the fast-path DB check because
-    // getActiveSession() requires a repo-scoped key. The cost is acceptable:
+    // getActiveSession(db) requires a repo-scoped key. The cost is acceptable:
     // node startup + DB open (~400ms) dominate the hook budget, making the
     // 10ms git call negligible. Restructuring to avoid it (CWD-based keys,
     // repo-agnostic pre-checks) would add complexity for marginal gain.
     const repoKey = getRepoKey(hookData.cwd);
+    const workdir = getWorkdir(hookData.cwd);
     let prescriberOrchestrationConfig: PrescriberOrchestrationConfig | undefined;
     try {
       prescriberOrchestrationConfig = createPrescriberOrchestrationConfig?.(db);
@@ -138,7 +147,7 @@ export async function runSessionStartHook(
       );
       prescriberOrchestrationConfig = undefined;
     }
-    await runSessionStart(repoKey, prescriberOrchestrationConfig, afterCurate);
+    await runSessionStart(repoKey, { prescriberOrchestrationConfig, afterCurate, workdir });
   } catch {
     // Fail open — hooks must never break the user's workflow
   } finally {

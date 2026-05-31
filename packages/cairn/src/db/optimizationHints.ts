@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
-import { getDb } from './index.js';
+import { logEvent } from './events.js';
+import { ensureSystemSession } from './sessions.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -67,6 +68,15 @@ export interface InsertHintIfNewResult {
   existingHintId?: string;
 }
 
+export interface ReplaceActiveHintsAtomicallyResult {
+  expired: number;
+  inserted: number;
+  /** Hints not inserted because an active replacement already existed by insert time. Normally 0. */
+  skipped: number;
+  results: InsertHintIfNewResult[];
+}
+
+// Keep in sync with migration 013's partial UNIQUE index predicate; Wave 5 should consider a generated column or migration-time template for I8.
 export const ACTIVE_HINT_STATUSES: readonly HintStatus[] = ['pending', 'accepted', 'deferred'];
 
 // Allowed forward transitions from each status. The initial `pending` state
@@ -152,6 +162,13 @@ function insertOptimizationHintWithDb(db: Database.Database, hint: OptimizationH
   return hint.id;
 }
 
+function getOptimizationHintWithDb(db: Database.Database, id: string): OptimizationHintRow | null {
+  const row = db.prepare('SELECT * FROM optimization_hints WHERE id = ?').get(id) as
+    | Record<string, unknown>
+    | undefined;
+  return row ? mapRow(row) : null;
+}
+
 function findActiveHintId(
   db: Database.Database,
   skillId: string,
@@ -172,9 +189,63 @@ function findActiveHintId(
   return row?.id;
 }
 
+function emitHintTransitionEvent(
+  db: Database.Database,
+  skillId: string,
+  hintId: string,
+  fromState: HintStatus | null,
+  toState: HintStatus,
+): void {
+  const sessionId = ensureSystemSession(db);
+  logEvent(db, sessionId, 'hint_state_transition', {
+    skill_id: skillId,
+    hint_id: hintId,
+    from_state: fromState,
+    to_state: toState,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+function insertHintIfNewWithinTransaction(
+  db: Database.Database,
+  hint: OptimizationHintInsert,
+): InsertHintIfNewResult {
+  const existingHintId = findActiveHintId(db, hint.skillId, hint.source, hint.category);
+  if (existingHintId) {
+    return {
+      inserted: false,
+      existingHintId,
+    };
+  }
+
+  try {
+    insertOptimizationHintWithDb(db, hint);
+    emitHintTransitionEvent(db, hint.skillId, hint.id, null, hint.status ?? 'pending');
+    return { inserted: true };
+  } catch (err) {
+    // UNIQUE constraint violation on the partial index means another transaction
+    // concurrently inserted this (skill_id, source, category) into an active status.
+    // Treat as duplicate.
+    if (
+      err instanceof Error &&
+      (err as any).code === 'SQLITE_CONSTRAINT_UNIQUE' &&
+      err.message.includes('optimization_hints.skill_id') &&
+      err.message.includes('optimization_hints.source') &&
+      err.message.includes('optimization_hints.category')
+    ) {
+      const duplicateHintId = findActiveHintId(db, hint.skillId, hint.source, hint.category);
+      return {
+        inserted: false,
+        existingHintId: duplicateHintId,
+      };
+    }
+    throw err;
+  }
+}
+
 /** Insert a new optimization hint, suppressing active duplicates. Returns the inserted or existing hint id. */
-export function insertOptimizationHint(hint: OptimizationHintInsert): string {
-  const result = insertHintIfNew(getDb(), hint);
+export function insertOptimizationHint(db: Database.Database, hint: OptimizationHintInsert): string {
+  const result = insertHintIfNew(db, hint);
   return result.inserted ? hint.id : (result.existingHintId ?? hint.id);
 }
 
@@ -193,32 +264,92 @@ export function insertHintIfNew(
   db: Database.Database,
   hint: OptimizationHintInsert,
 ): InsertHintIfNewResult {
-  const existingHintId = findActiveHintId(db, hint.skillId, hint.source, hint.category);
-  if (existingHintId) {
-    return {
-      inserted: false,
-      existingHintId,
-    };
+  // Use BEGIN IMMEDIATE for write lock upfront, preventing concurrent inserts.
+  return db.transaction(() => insertHintIfNewWithinTransaction(db, hint)).immediate();
+}
+
+/**
+ * Atomically expire active hints for one tuple and insert their replacements.
+ * Emits one aggregate `hint_force_expired` event for the batch rather than
+ * per-hint expiration so the force-regenerate path remains cheap and observable.
+ *
+ * @param options.actor - Recorded in the hint_force_expired event payload; defaults to 'system:bulk-expire'.
+ */
+export function replaceActiveHintsAtomically(
+  db: Database.Database,
+  skillId: string,
+  source: HintSource,
+  category: string,
+  newHints: OptimizationHintInsert[],
+  options: { actor?: string } = {},
+): ReplaceActiveHintsAtomicallyResult {
+  for (const hint of newHints) {
+    if (hint.skillId !== skillId || hint.source !== source || hint.category !== category) {
+      throw new Error(
+        `Replacement hint tuple mismatch: expected ${skillId}/${source}/${category}, got ${hint.skillId}/${hint.source}/${hint.category}`,
+      );
+    }
   }
 
-  insertOptimizationHintWithDb(db, hint);
-  return { inserted: true };
+  return db.transaction(() => {
+    const placeholders = ACTIVE_HINT_STATUSES.map(() => '?').join(', ');
+    const expireResult = db.prepare(
+      `UPDATE optimization_hints
+          SET status = 'expired'
+        WHERE skill_id = ?
+          AND source = ?
+          AND category = ?
+          AND status IN (${placeholders})`
+    ).run(skillId, source, category, ...ACTIVE_HINT_STATUSES);
+
+    const expired = expireResult.changes;
+    const sessionId = ensureSystemSession(db);
+    logEvent(db, sessionId, 'hint_force_expired', {
+      skill_id: skillId,
+      source,
+      category,
+      count: expired,
+      actor: options.actor ?? 'system:bulk-expire',
+    });
+
+    const results = newHints.map((hint) => insertHintIfNewWithinTransaction(db, hint));
+    const inserted = results.filter((result) => result.inserted).length;
+    return {
+      expired,
+      inserted,
+      skipped: results.length - inserted,
+      results,
+    };
+  }).immediate();
+}
+
+/** Atomically expire and replace one active hint tuple, returning the insert result directly. */
+export function replaceActiveHintAtomically(
+  db: Database.Database,
+  hint: OptimizationHintInsert,
+  options: { actor?: string } = {},
+): InsertHintIfNewResult {
+  const result = replaceActiveHintsAtomically(db, hint.skillId, hint.source, hint.category, [
+    hint,
+  ], options).results[0];
+
+  if (!result) {
+    throw new Error(`Replacement did not produce an insert result for hint ${hint.id}`);
+  }
+
+  return result;
 }
 
 /** Get a single hint by id. */
-export function getOptimizationHint(id: string): OptimizationHintRow | null {
-  const db = getDb();
-  const row = db.prepare('SELECT * FROM optimization_hints WHERE id = ?').get(id) as
-    | Record<string, unknown>
-    | undefined;
-  return row ? mapRow(row) : null;
+export function getOptimizationHint(db: Database.Database, id: string): OptimizationHintRow | null {
+  return getOptimizationHintWithDb(db, id);
 }
 
 /** Query hints by skill, status, source, and/or parent prescription. */
 export function queryOptimizationHints(
+  db: Database.Database,
   query: OptimizationHintQuery = {},
 ): OptimizationHintRow[] {
-  const db = getDb();
   const where: string[] = [];
   const params: unknown[] = [];
 
@@ -259,8 +390,8 @@ export function queryOptimizationHints(
 }
 
 /** List all hints (most impactful, then most recent). */
-export function listOptimizationHints(limit?: number): OptimizationHintRow[] {
-  return queryOptimizationHints(limit !== undefined ? { limit } : {});
+export function listOptimizationHints(db: Database.Database, limit?: number): OptimizationHintRow[] {
+  return queryOptimizationHints(db, limit !== undefined ? { limit } : {});
 }
 
 /**
@@ -271,41 +402,46 @@ export function listOptimizationHints(limit?: number): OptimizationHintRow[] {
  * unless caller supplies an explicit value.
  */
 export function updateOptimizationHintStatus(
+  db: Database.Database,
   id: string,
   nextStatus: HintStatus,
   options: { appliedAt?: string; force?: boolean } = {},
 ): boolean {
-  const db = getDb();
-  const current = getOptimizationHint(id);
-  if (!current) return false;
-  if (current.status === nextStatus) return false;
+  return db.transaction(() => {
+    const current = getOptimizationHintWithDb(db, id);
+    if (!current) return false;
+    if (current.status === nextStatus) return false;
 
-  if (!options.force) {
-    const allowed = STATUS_TRANSITIONS[current.status] ?? [];
-    if (!allowed.includes(nextStatus)) {
-      throw new Error(
-        `Illegal hint status transition: ${current.status} -> ${nextStatus} (id=${id})`,
-      );
+    if (!options.force) {
+      const allowed = STATUS_TRANSITIONS[current.status] ?? [];
+      if (!allowed.includes(nextStatus)) {
+        throw new Error(
+          `Illegal hint status transition: ${current.status} -> ${nextStatus} (id=${id})`,
+        );
+      }
     }
-  }
 
-  const appliedAt =
-    nextStatus === 'applied'
-      ? (options.appliedAt ?? new Date().toISOString())
-      : current.appliedAt;
+    const appliedAt =
+      nextStatus === 'applied'
+        ? (options.appliedAt ?? new Date().toISOString())
+        : current.appliedAt;
 
-  const res = db.prepare(
-    `UPDATE optimization_hints
-       SET status = ?, applied_at = ?
+    const res = db.prepare(
+      `UPDATE optimization_hints
+         SET status = ?, applied_at = ?
        WHERE id = ?`
-  ).run(nextStatus, appliedAt, id);
+    ).run(nextStatus, appliedAt, id);
 
-  return res.changes > 0;
+    if (res.changes > 0) {
+      emitHintTransitionEvent(db, current.skillId, id, current.status, nextStatus);
+    }
+
+    return res.changes > 0;
+  }).immediate();
 }
 
 /** Delete a hint by id. */
-export function deleteOptimizationHint(id: string): boolean {
-  const db = getDb();
+export function deleteOptimizationHint(db: Database.Database, id: string): boolean {
   const res = db.prepare('DELETE FROM optimization_hints WHERE id = ?').run(id);
   return res.changes > 0;
 }

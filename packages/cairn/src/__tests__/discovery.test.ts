@@ -8,6 +8,9 @@ import { getDb, closeDb } from '../db/index.js';
 import { cacheTopology, getCachedTopology } from '../db/topologyCache.js';
 import type { ArtifactTopology } from '../types/index.js';
 
+let db: ReturnType<typeof getDb>;
+
+
 // ---------------------------------------------------------------------------
 // Temp directory helpers
 // ---------------------------------------------------------------------------
@@ -35,7 +38,7 @@ function expectedChecksum(content: string): string {
 beforeEach(() => {
   tmpDir = makeTmpDir();
   closeDb();
-  getDb(':memory:');
+  db = getDb(':memory:');
 });
 
 afterEach(() => {
@@ -517,8 +520,8 @@ describe('topology cache', () => {
       scanDurationMs: 42,
     };
 
-    cacheTopology(topology);
-    const cached = getCachedTopology();
+    cacheTopology(db, topology);
+    const cached = getCachedTopology(db);
 
     expect(cached).not.toBeNull();
     expect(cached!.scanDurationMs).toBe(42);
@@ -527,7 +530,7 @@ describe('topology cache', () => {
   });
 
   it('should return null when no cache exists', () => {
-    const cached = getCachedTopology();
+    const cached = getCachedTopology(db);
     expect(cached).toBeNull();
   });
 
@@ -539,9 +542,9 @@ describe('topology cache', () => {
       scanDurationMs: 10,
     };
 
-    cacheTopology(topology);
+    cacheTopology(db, topology);
     // Use a very short TTL to force expiry
-    const cached = getCachedTopology(1);
+    const cached = getCachedTopology(db, 1);
     expect(cached).toBeNull();
   });
 
@@ -559,9 +562,9 @@ describe('topology cache', () => {
       scanDurationMs: 2,
     };
 
-    cacheTopology(topology1);
-    cacheTopology(topology2);
-    const cached = getCachedTopology();
+    cacheTopology(db, topology1);
+    cacheTopology(db, topology2);
+    const cached = getCachedTopology(db);
 
     expect(cached).not.toBeNull();
     expect(cached!.scanDurationMs).toBe(2);
@@ -574,7 +577,7 @@ describe('topology cache', () => {
 
 describe('migration 007', () => {
   it('should create topology_cache table', () => {
-    const db = getDb();
+    db = getDb();
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
       .all() as Array<{ name: string }>;
@@ -582,10 +585,10 @@ describe('migration 007', () => {
   });
 
   it('should record schema version 9', () => {
-    const db = getDb();
+    db = getDb();
     const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
       version: number;
     };
-    expect(row.version).toBe(12);
+    expect(row.version).toBe(16);
   });
 });

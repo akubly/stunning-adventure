@@ -36,6 +36,8 @@ export interface Agent {
   description: string;
 }
 
+export type SessionKind = 'user' | 'system';
+
 /** Session tracking record. */
 export interface Session {
   id: string;
@@ -44,6 +46,8 @@ export interface Session {
   startedAt: string;
   endedAt?: string;
   status: string;
+  kind: SessionKind;
+  workdir?: string;
 }
 
 /** Preference with cascade scope. */

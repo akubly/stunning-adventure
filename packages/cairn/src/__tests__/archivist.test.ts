@@ -14,10 +14,13 @@ import {
 } from '../agents/archivist.js';
 import { scrubSecrets } from '../agents/secretScrubber.js';
 import {
+
   getSessionSummary,
   hasEventOccurred,
   findEvents,
 } from '../agents/sessionState.js';
+
+let db: ReturnType<typeof getDb>;
 
 beforeEach(() => {
   closeDb();
@@ -33,7 +36,7 @@ afterEach(() => {
 
 describe('archivist lifecycle', () => {
   beforeEach(() => {
-    getDb(':memory:');
+    db = getDb(':memory:');
   });
 
   it('should create a new session and log session_start event', () => {
@@ -41,12 +44,12 @@ describe('archivist lifecycle', () => {
     expect(sessionId).toBeDefined();
     expect(typeof sessionId).toBe('string');
 
-    const session = getActiveSession('org_repo');
+    const session = getActiveSession(db, 'org_repo');
     expect(session).toBeDefined();
     expect(session!.id).toBe(sessionId);
 
     // Check that a session_start event was logged
-    const db = getDb();
+    db = getDb();
     const events = db
       .prepare("SELECT * FROM event_log WHERE session_id = ? AND event_type = 'session_start'")
       .all(sessionId) as Array<Record<string, unknown>>;
@@ -59,7 +62,7 @@ describe('archivist lifecycle', () => {
     expect(secondId).toBe(firstId);
 
     // Check that a session_resume event was logged
-    const db = getDb();
+    db = getDb();
     const events = db
       .prepare("SELECT * FROM event_log WHERE session_id = ? AND event_type = 'session_resume'")
       .all(firstId) as Array<Record<string, unknown>>;
@@ -70,7 +73,7 @@ describe('archivist lifecycle', () => {
     const sessionId = startSession('https://github.com/org/repo.git', 'main');
     expect(sessionId).toBeDefined();
 
-    const session = getActiveSession('org_repo');
+    const session = getActiveSession(db, 'org_repo');
     expect(session).toBeDefined();
     expect(session!.id).toBe(sessionId);
   });
@@ -79,9 +82,9 @@ describe('archivist lifecycle', () => {
     const sessionId = startSession('org_repo', 'main');
     stopSession(sessionId);
 
-    expect(getActiveSession('org_repo')).toBeUndefined();
+    expect(getActiveSession(db, 'org_repo')).toBeUndefined();
 
-    const db = getDb();
+    db = getDb();
     const events = db
       .prepare("SELECT * FROM event_log WHERE session_id = ? AND event_type = 'session_end'")
       .all(sessionId) as Array<Record<string, unknown>>;
@@ -90,17 +93,17 @@ describe('archivist lifecycle', () => {
 
   it('should detect crashed sessions and recover them', () => {
     // Create a session but don't end it (simulates crash)
-    createSession('org_repo', 'main');
+    createSession(db, 'org_repo', 'main');
 
     const result = catchUpPreviousSession('org_repo');
     expect(result.recovered).toBe(true);
     expect(result.sessionId).toBeDefined();
 
     // Session should now be ended
-    expect(getActiveSession('org_repo')).toBeUndefined();
+    expect(getActiveSession(db, 'org_repo')).toBeUndefined();
 
     // Should have logged crash detection event
-    const db = getDb();
+    db = getDb();
     const events = db
       .prepare(
         "SELECT * FROM event_log WHERE session_id = ? AND event_type = 'session_crash_detected'",
@@ -124,15 +127,15 @@ describe('tool use recording', () => {
   let sessionId: string;
 
   beforeEach(() => {
-    getDb(':memory:');
-    sessionId = createSession('org_repo', 'main');
+    db = getDb(':memory:');
+    sessionId = createSession(db, 'org_repo', 'main');
   });
 
   it('should log a tool_use event with tool name and args', () => {
     const eventId = recordToolUse(sessionId, 'grep', { pattern: 'TODO' });
     expect(eventId).toBeGreaterThan(0);
 
-    const db = getDb();
+    db = getDb();
     const event = db
       .prepare('SELECT * FROM event_log WHERE id = ?')
       .get(eventId) as Record<string, unknown>;
@@ -150,7 +153,7 @@ describe('tool use recording', () => {
       { url: 'https://api.example.com', headers: { Authorization: 'Bearer eyJhbGciOiJIUzI1NiJ9.test.signature' } },
     );
 
-    const db = getDb();
+    db = getDb();
     const event = db
       .prepare('SELECT * FROM event_log WHERE id = ?')
       .get(eventId) as Record<string, unknown>;
@@ -168,15 +171,15 @@ describe('error recording', () => {
   let sessionId: string;
 
   beforeEach(() => {
-    getDb(':memory:');
-    sessionId = createSession('org_repo', 'main');
+    db = getDb(':memory:');
+    sessionId = createSession(db, 'org_repo', 'main');
   });
 
   it('should log an error event with category and message', () => {
     const eventId = recordError(sessionId, 'build', 'TypeScript compilation failed');
     expect(eventId).toBeGreaterThan(0);
 
-    const db = getDb();
+    db = getDb();
     const event = db
       .prepare('SELECT * FROM event_log WHERE id = ?')
       .get(eventId) as Record<string, unknown>;
@@ -192,7 +195,7 @@ describe('error recording', () => {
       token: 'ghp_1234567890abcdefghijklmnopqrstuvwxyz1234',
     });
 
-    const db = getDb();
+    db = getDb();
     const event = db
       .prepare('SELECT * FROM event_log WHERE id = ?')
       .get(eventId) as Record<string, unknown>;
@@ -209,8 +212,8 @@ describe('skip recording', () => {
   let sessionId: string;
 
   beforeEach(() => {
-    getDb(':memory:');
-    sessionId = createSession('org_repo', 'main');
+    db = getDb(':memory:');
+    sessionId = createSession(db, 'org_repo', 'main');
   });
 
   it('should log a skip event AND create a skip breadcrumb', () => {
@@ -218,14 +221,14 @@ describe('skip recording', () => {
     expect(eventId).toBeGreaterThan(0);
 
     // Check event_log
-    const db = getDb();
+    db = getDb();
     const event = db
       .prepare('SELECT * FROM event_log WHERE id = ?')
       .get(eventId) as Record<string, unknown>;
     expect(event.event_type).toBe('skip');
 
     // Check skip_breadcrumbs
-    const skips = getSkips(sessionId);
+    const skips = getSkips(db, sessionId);
     expect(skips).toHaveLength(1);
     expect(skips[0].whatSkipped).toBe('review');
     expect(skips[0].reason).toBe('time pressure');
@@ -236,7 +239,7 @@ describe('skip recording', () => {
     const eventId = recordSkipEvent(sessionId, 'lint');
     expect(eventId).toBeGreaterThan(0);
 
-    const skips = getSkips(sessionId);
+    const skips = getSkips(db, sessionId);
     expect(skips).toHaveLength(1);
     expect(skips[0].whatSkipped).toBe('lint');
     expect(skips[0].reason).toBeUndefined();
@@ -347,16 +350,16 @@ describe('queryable session state', () => {
   let sessionId: string;
 
   beforeEach(() => {
-    getDb(':memory:');
-    sessionId = createSession('org_repo', 'main');
+    db = getDb(':memory:');
+    sessionId = createSession(db, 'org_repo', 'main');
   });
 
   it('should return a complete session summary with counts', () => {
-    logEvent(sessionId, 'tool_use', { tool: 'grep' });
-    logEvent(sessionId, 'tool_use', { tool: 'view' });
-    logEvent(sessionId, 'error', { message: 'oops' });
+    logEvent(db, sessionId, 'tool_use', { tool: 'grep' });
+    logEvent(db, sessionId, 'tool_use', { tool: 'view' });
+    logEvent(db, sessionId, 'error', { message: 'oops' });
 
-    const summary = getSessionSummary(sessionId);
+    const summary = getSessionSummary(db, sessionId);
     expect(summary).toBeDefined();
     expect(summary!.sessionId).toBe(sessionId);
     expect(summary!.repoKey).toBe('org_repo');
@@ -369,28 +372,28 @@ describe('queryable session state', () => {
   });
 
   it('should return undefined for nonexistent session', () => {
-    expect(getSessionSummary('nonexistent-id')).toBeUndefined();
+    expect(getSessionSummary(db, 'nonexistent-id')).toBeUndefined();
   });
 
   it('should detect whether a specific event type has occurred', () => {
-    expect(hasEventOccurred(sessionId, 'tool_use')).toBe(false);
+    expect(hasEventOccurred(db, sessionId, 'tool_use')).toBe(false);
 
-    logEvent(sessionId, 'tool_use', { tool: 'grep' });
-    expect(hasEventOccurred(sessionId, 'tool_use')).toBe(true);
-    expect(hasEventOccurred(sessionId, 'review')).toBe(false);
+    logEvent(db, sessionId, 'tool_use', { tool: 'grep' });
+    expect(hasEventOccurred(db, sessionId, 'tool_use')).toBe(true);
+    expect(hasEventOccurred(db, sessionId, 'review')).toBe(false);
   });
 
   it('should find events by type pattern', () => {
-    logEvent(sessionId, 'tool_use', { tool: 'grep' });
-    logEvent(sessionId, 'session_start', { repo: 'org_repo' });
-    logEvent(sessionId, 'session_end', { status: 'completed' });
+    logEvent(db, sessionId, 'tool_use', { tool: 'grep' });
+    logEvent(db, sessionId, 'session_start', { repo: 'org_repo' });
+    logEvent(db, sessionId, 'session_end', { status: 'completed' });
 
-    const sessionEvents = findEvents(sessionId, 'session');
+    const sessionEvents = findEvents(db, sessionId, 'session');
     expect(sessionEvents).toHaveLength(2);
     expect(sessionEvents[0].eventType).toBe('session_start');
     expect(sessionEvents[1].eventType).toBe('session_end');
 
-    const toolEvents = findEvents(sessionId, 'tool');
+    const toolEvents = findEvents(db, sessionId, 'tool');
     expect(toolEvents).toHaveLength(1);
     expect(toolEvents[0].eventType).toBe('tool_use');
   });
@@ -402,41 +405,41 @@ describe('queryable session state', () => {
 
 describe('curator state', () => {
   beforeEach(() => {
-    getDb(':memory:');
+    db = getDb(':memory:');
   });
 
   it('should return 0 as the initial last processed event id', () => {
-    expect(getLastProcessedEventId()).toBe(0);
+    expect(getLastProcessedEventId(db)).toBe(0);
   });
 
   it('should advance the cursor position', () => {
-    advanceCursor(42);
-    expect(getLastProcessedEventId()).toBe(42);
+    advanceCursor(db, 42);
+    expect(getLastProcessedEventId(db)).toBe(42);
   });
 
   it('should be idempotent — can be called multiple times', () => {
-    advanceCursor(10);
-    expect(getLastProcessedEventId()).toBe(10);
+    advanceCursor(db, 10);
+    expect(getLastProcessedEventId(db)).toBe(10);
 
-    advanceCursor(20);
-    expect(getLastProcessedEventId()).toBe(20);
+    advanceCursor(db, 20);
+    expect(getLastProcessedEventId(db)).toBe(20);
 
-    advanceCursor(20);
-    expect(getLastProcessedEventId()).toBe(20);
+    advanceCursor(db, 20);
+    expect(getLastProcessedEventId(db)).toBe(20);
   });
 
   it('should never move cursor backward', () => {
-    advanceCursor(20);
-    expect(getLastProcessedEventId()).toBe(20);
+    advanceCursor(db, 20);
+    expect(getLastProcessedEventId(db)).toBe(20);
 
-    advanceCursor(10);
-    expect(getLastProcessedEventId()).toBe(20);
+    advanceCursor(db, 10);
+    expect(getLastProcessedEventId(db)).toBe(20);
   });
 
   it('should recover if curator_state row is missing', () => {
-    const db = getDb();
+    db = getDb();
     db.prepare('DELETE FROM curator_state WHERE id = 1').run();
-    expect(getLastProcessedEventId()).toBe(0);
+    expect(getLastProcessedEventId(db)).toBe(0);
   });
 });
 
@@ -446,11 +449,11 @@ describe('curator state', () => {
 
 describe('code review fixes', () => {
   it('should scrub secrets in error messages (not just context)', () => {
-    getDb(':memory:');
+    db = getDb(':memory:');
     const sessionId = startSession('test_repo');
     recordError(sessionId, 'auth', 'Failed with token ghp_abcdefghijklmnopqrstuvwxyz1234567890AB', {});
 
-    const events = findEvents(sessionId, 'error');
+    const events = findEvents(db, sessionId, 'error');
     const payload = JSON.parse(events[0].payload);
     expect(payload.message).toContain('[REDACTED:GitHub token]');
     expect(payload.message).not.toContain('ghp_');

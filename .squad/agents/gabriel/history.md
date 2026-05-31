@@ -270,6 +270,19 @@ first-class, agentic-debugger vision seed, determinism load-bearing) and
 position on Erasmus's 4-layer stack + 5 open tensions.
 
 **Deliverable:** `.squad/decisions/inbox/gabriel-deliberation-position.md`
+**Role:** Build / Infrastructure (ESLint rules, cross-package guardrails, lint gates)
+**Status:** Cycle 2 C8 resolution: eslint no-restricted-imports stays strict (no test-dir exemption).
+**Last update:** 2026-05-29
+
+**Key contributions:**
+- M1 acceptance criteria: Cross-package import guard (ESLint rule, auto-check)
+- Cycle 2: Supported Genesta's strict layering stance; no exemptions added
+- Infrastructure load-bearing: Dependency direction lint prevents kernel erosion
+
+**See history-archive.md for detailed entries.**
+
+**Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
+<!-- Append learnings below -->
 
 **Headlines:**
 - KEEP 5, REVISE 4, WITHDRAW 1, MERGE 1 of my 10 original ops stories.
@@ -709,3 +722,65 @@ See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-rev
 - `docs/crucible-technical-design/11-hermetic-replay.md` (§11.10.2 threat-model stub)
 
 **Decision drop:** `.squad/decisions/inbox/gabriel-pass-a-applier-infra.md`
+**Next Phase:** Phase 2 (live runtime verification) validates type contracts during SDK harness integration.
+
+---
+
+## Cross-Team Context: Eureka v1 Design Package Locked (2026-05-28)
+
+**Status:** Eureka v1 design package completed 3-cycle persona review and is now **M1 implementation-ready**.
+
+**What changed:** 19 cycle-1 findings (3 blocking, 11 important, 5 minor) all accepted and landed in cycle 2 fix wave. Cycle 3 cleanup addressed 4 advisories. Design contradictions resolved:
+- B1: Scoring formula canonicalized to additive (0.50 relevance + 0.20 importance + 0.20 trust + 0.10 recency)
+- B2: Trust/retire semantics: field-level immutability + explicit retirement flag + zombie-fact preservation
+- B3: Decision ownership: Forge writes audit (immutable), Eureka writes learning fact (mutable), shared decision_id
+
+**Key fact-correction:** ACT-R exponent corrected 0.7 → 0.5 (caught by Compliance reviewer during cycle 2).
+
+**Deliverables:** PRD v5, TDD Strategy (§55), Technical Design (§00–§50). All documents locked for M1.
+
+**M1 Go/No-Go:** Design ready. Eval set grounded in mem/ repo (M0 deliverable). M1–M5 milestones validated by Pragmatist reviewer.
+
+**For you:** If your work depends on Eureka design decisions, those are now stable. Cross-refs and canonical values are in .squad/decisions.md (Cycle 1 + Cycle 3 sections).
+
+**Commits:** f68873d (cycle 2 fix wave) + 37370f9 (cycle 3 cleanup).
+## Session: 2026-05-28 Wave 6 Tail — WI-B Scope Locked (Deferred)
+
+**Status:** Queued — awaiting WI-A merge
+
+- Issue #11 scope split approved: WI-A (Cairn code), WI-B (coordinator dispatch policy change)
+- WI-B assigned to Gabriel (Infrastructure/Coordinator)
+- WI-B is intentionally deferred until WI-A merges (correctness dependency)
+- WI-B scope: Coordinator uses \git worktree add\ per-issue instead of shared checkout
+
+**Blocked on:** WI-A merge (Roger's implementation + Laura's tests)
+
+**Next:** Start WI-B after WI-A is merged to main.
+
+### 2026-05-29 — WI-B Implementation: Coordinator Worktree Dispatch
+
+**Delivered:** Made the Pre-Spawn: Worktree Setup section in squad.agent.md (+ 2 template mirrors) enforced rather than aspirational.
+
+**Was the Pre-Spawn section really aspirational?**
+Yes — it used "should" language, omitted error handling entirely, and had no status marker. A coordinator following it literally would have done the right thing on the happy path but had no guidance for failure modes (lock files, permission errors, wrong-branch reuse, junction failures). The v0 state was documentation-only in practice.
+
+**Key implementation decisions:**
+- Activation: opt-in via `SQUAD_WORKTREES=1` (env-var only, v1). Config-based activation (`worktrees: true`) was removed from Pre-Spawn step 1 to match v1 scope, with a v2 note added to Worktree Lifecycle Management.
+- Fallback on error: errors fall back to main repo rather than aborting. Skeptic persona raised "fail-closed" as an option; rejected because a broken worktree setup should not block legitimate work in v1. Documented trade-off in decision inbox.
+- Parallel dispatch: warning-only with `list_agents` as the detection hint. Full state-tracking mechanism is v2.
+
+**Surprises in template structure:**
+- The two template mirrors (`.squad/templates/squad.agent.md.template` and `.squad/templates/squad.agent.md`) differ in 38 lines pre-existing (no `name:` field, no `CURRENT_DATETIME` in lightweight template in the plain version). The changed sections landed byte-identical as required.
+- The only difference between primary and `.template` is 2 version-stamp lines — expected.
+
+**Persona review findings (Code Panel, 4 personas):**
+- 12 findings captured; 11 accepted, 1 rejected (fail-closed activation)
+- Key fixes applied: {worktree}/{path} variable inconsistency, branch-mismatch dead end in step 2b, {branch} derivation in Cleanup, rmdir /s hazard warning, rm -f for Unix, activation section v1 note, YAML-style notation fix, {% if %} manual handling clarification, lightweight pre-render note substance
+
+**Files modified:**
+- `.github/agents/squad.agent.md`
+- `.squad/templates/squad.agent.md.template`
+- `.squad/templates/squad.agent.md`
+
+**Pattern extracted:** Worktree-junction cleanup recipe (rmdir before git worktree remove) documented as `.squad/skills/worktree-junction-cleanup/SKILL.md`
+

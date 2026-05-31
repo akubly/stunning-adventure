@@ -16,7 +16,9 @@
 import os from 'node:os';
 import path from 'node:path';
 
+import type Database from 'better-sqlite3';
 import { getDb } from '../db/index.js';
+import { getActiveSession } from '../db/sessions.js';
 import { getInsights } from '../db/insights.js';
 import { logEvent } from '../db/events.js';
 import { getPreference } from '../db/preferences.js';
@@ -117,14 +119,14 @@ export function shouldResurface(prescription: Prescription, currentSession: numb
  * meets or exceeds the suppression threshold.
  * Exported for Phase 7F (resolve_prescription MCP tool).
  */
-export function checkAutoSuppress(prescriptionId: number, deferCount: number): boolean {
+export function checkAutoSuppress(db: Database.Database, prescriptionId: number, deferCount: number): boolean {
   const parsed = parseInt(
-    getPreference('prescriber.suppress_threshold') ?? String(DEFAULT_SUPPRESS_THRESHOLD),
+    getPreference(db, 'prescriber.suppress_threshold') ?? String(DEFAULT_SUPPRESS_THRESHOLD),
     10,
   );
   const threshold = Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_SUPPRESS_THRESHOLD;
   if (deferCount >= threshold) {
-    suppressPrescription(prescriptionId);
+    suppressPrescription(db, prescriptionId);
     return true;
   }
   return false;
@@ -229,11 +231,15 @@ function computeTargetPath(
 
 /**
  * Try to find an active session for event logging.
+ * When repoKey is provided, scopes to the (repo_key, workdir) identity so
+ * prescriber events are attributed to the correct worktree session.
  * Returns undefined if no active session exists (prescribe() is fail-soft
  * on logging — it runs before the new session is created in sessionStart).
  */
-function findActiveSessionId(): string | undefined {
-  const db = getDb();
+function findActiveSessionId(db: Database.Database, repoKey?: string, workdir?: string): string | undefined {
+  if (repoKey) {
+    return getActiveSession(db, repoKey, workdir)?.id;
+  }
   const row = db
     .prepare(
       `SELECT id FROM sessions WHERE status = 'active'
@@ -262,8 +268,8 @@ const ACTIVE_STATUSES = new Set([
  * generation to prevent duplicates). Terminal states that allow
  * re-generation: expired, failed.
  */
-function hasActivePrescription(insightId: number): boolean {
-  const existing = listPrescriptions({ insightId });
+function hasActivePrescription(db: Database.Database, insightId: number): boolean {
+  const existing = listPrescriptions(db, { insightId });
   return existing.some((p) => ACTIVE_STATUSES.has(p.status));
 }
 
@@ -279,35 +285,37 @@ function hasActivePrescription(insightId: number): boolean {
  * 3. For each active insight without an active prescription:
  *    generate, score, persist, and log
  */
-export function prescribe(): PrescribeResult {
+export function prescribe(options?: { repoKey?: string; workdir?: string }): PrescribeResult {
+  const db = getDb();
+
   // Read configurable values — validate prefix to avoid generating
   // prescriptions that the Apply Engine will always reject.
-  const rawPrefix = getPreference('prescriber.sidecar_prefix') ?? DEFAULT_SIDECAR_PREFIX;
+  const rawPrefix = getPreference(db, 'prescriber.sidecar_prefix') ?? DEFAULT_SIDECAR_PREFIX;
   const prefix = isValidSidecarPrefix(rawPrefix) ? rawPrefix : DEFAULT_SIDECAR_PREFIX;
   const minConfidence = parseFloat(
-    getPreference('prescriber.min_confidence') ?? String(DEFAULT_MIN_CONFIDENCE),
+    getPreference(db, 'prescriber.min_confidence') ?? String(DEFAULT_MIN_CONFIDENCE),
   );
 
   // --- Step 1: Session cleanup ---
-  expireAbandonedPrescriptions();
+  expireAbandonedPrescriptions(db);
 
   // --- Step 2: Resurface deferred prescriptions past cooldown ---
-  const currentSession = getSessionsSinceInstall();
-  const deferred = listPrescriptions({ status: 'deferred' });
-  const activeInsights = getInsights('active');
-  const topology = getTopology();
+  const currentSession = getSessionsSinceInstall(db);
+  const deferred = listPrescriptions(db, { status: 'deferred' });
+  const activeInsights = getInsights(db, 'active');
+  const topology = getTopology(db);
 
   let generated = 0;
-  const sessionId = findActiveSessionId();
+  const sessionId = findActiveSessionId(db, options?.repoKey, options?.workdir);
 
   for (const rx of deferred) {
     if (!shouldResurface(rx, currentSession)) continue;
 
     // Check auto-suppression before resurfacing
-    if (checkAutoSuppress(rx.id, rx.deferCount)) continue;
+    if (checkAutoSuppress(db, rx.id, rx.deferCount)) continue;
 
     // Expire the old deferred prescription
-    updatePrescriptionStatus(rx.id, 'expired', {
+    updatePrescriptionStatus(db, rx.id, 'expired', {
       dispositionReason: 'resurfaced after cooldown',
     });
 
@@ -316,13 +324,13 @@ export function prescribe(): PrescribeResult {
     if (!sourceInsight) continue;
 
     // Generate new prescription from the same insight
-    const prescriptionId = generatePrescription(sourceInsight, topology, prefix, minConfidence);
+    const prescriptionId = generatePrescription(db, sourceInsight, topology, prefix, minConfidence);
 
     if (prescriptionId !== null) {
       generated++;
 
       if (sessionId) {
-        logEvent(sessionId, 'prescription_generated', {
+        logEvent(db, sessionId, 'prescription_generated', {
           prescriptionId,
           insightId: sourceInsight.id,
           patternType: sourceInsight.patternType,
@@ -339,9 +347,10 @@ export function prescribe(): PrescribeResult {
     if (insight.confidence < minConfidence) continue;
 
     // Idempotent: skip if an active prescription already exists
-    if (hasActivePrescription(insight.id)) continue;
+    if (hasActivePrescription(db, insight.id)) continue;
 
     const prescriptionId = generatePrescription(
+      db,
       insight,
       topology,
       prefix,
@@ -353,7 +362,7 @@ export function prescribe(): PrescribeResult {
 
       // Log event if we have a session context
       if (sessionId) {
-        logEvent(sessionId, 'prescription_generated', {
+        logEvent(db, sessionId, 'prescription_generated', {
           prescriptionId,
           insightId: insight.id,
           patternType: insight.patternType,
@@ -369,13 +378,13 @@ export function prescribe(): PrescribeResult {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-function getTopology(): ArtifactTopology | null {
-  const cached = getCachedTopology();
+function getTopology(db: Database.Database): ArtifactTopology | null {
+  const cached = getCachedTopology(db);
   if (cached) return cached;
 
   try {
     const topology = scanTopology(os.homedir(), process.cwd());
-    cacheTopology(topology);
+    cacheTopology(db, topology);
     return topology;
   } catch {
     return null;
@@ -387,6 +396,7 @@ function getTopology(): ArtifactTopology | null {
  * Returns the prescription ID, or null if generation was skipped.
  */
 function generatePrescription(
+  db: Database.Database,
   insight: Insight,
   topology: ArtifactTopology | null,
   prefix: string,
@@ -413,7 +423,7 @@ function generatePrescription(
     priorRejections,
   );
 
-  const prescriptionId = createPrescription({
+  const prescriptionId = createPrescription(db, {
     insightId: insight.id,
     patternType: insight.patternType,
     title,

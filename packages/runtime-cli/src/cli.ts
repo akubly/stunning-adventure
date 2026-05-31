@@ -5,11 +5,12 @@ import { closeDb, getKnowledgeDbPath } from '@akubly/cairn';
 import { runForgePrescribe } from './index.js';
 
 function printUsage(): void {
-  console.log(`Usage: forge-prescribe --skill <id> [--db <path>]
+  console.log(`Usage: forge-prescribe --skill <id> [--db <path>] [--force]
 
 Flags:
   --skill <id>  Required skill ID to prescribe for
-  --db <path>   Optional SQLite path (default: ${getKnowledgeDbPath()})`);
+  --db <path>   Optional SQLite path (default: ${getKnowledgeDbPath()})
+  --force       Force regeneration, expiring existing active hints before inserting new ones`);
 }
 
 function printSummary(result: {
@@ -38,6 +39,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     options: {
       skill: { type: 'string' },
       db: { type: 'string' },
+      force: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
   });
@@ -56,6 +58,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   const result = await runForgePrescribe({
     skillId: parsed.values.skill,
     dbPath: parsed.values.db,
+    forceRegenerate: parsed.values.force ?? false,
   });
 
   if (result.profileSource) {

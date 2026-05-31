@@ -1,4 +1,4 @@
-import { getDb } from './index.js';
+import type Database from 'better-sqlite3';
 import type { QualityVector } from '../types/index.js';
 
 /** Shape for inserting a test result. */
@@ -53,8 +53,7 @@ function mapRow(row: Record<string, unknown>): SkillTestResultRow {
 }
 
 /** Insert a single test result. Returns the new row id. */
-export function insertTestResult(result: SkillTestResultInsert): number {
-  const db = getDb();
+export function insertTestResult(db: Database.Database, result: SkillTestResultInsert): number {
   const stmt = db.prepare(
     `INSERT INTO skill_test_results
        (skill_path, skill_name, scenario_name, vector, tier, rule, score, passed, message, evidence, session_id, run_at)
@@ -79,8 +78,7 @@ export function insertTestResult(result: SkillTestResultInsert): number {
 }
 
 /** Insert multiple test results in a transaction. Returns row ids. */
-export function insertTestResults(results: SkillTestResultInsert[]): number[] {
-  const db = getDb();
+export function insertTestResults(db: Database.Database, results: SkillTestResultInsert[]): number[] {
   const stmt = db.prepare(
     `INSERT INTO skill_test_results
        (skill_path, skill_name, scenario_name, vector, tier, rule, score, passed, message, evidence, session_id, run_at)
@@ -113,8 +111,7 @@ export function insertTestResults(results: SkillTestResultInsert[]): number[] {
 }
 
 /** Get test results for a specific skill path, ordered by most recent. */
-export function getTestResults(skillPath: string, limit?: number): SkillTestResultRow[] {
-  const db = getDb();
+export function getTestResults(db: Database.Database, skillPath: string, limit?: number): SkillTestResultRow[] {
   const sql = limit
     ? `SELECT * FROM skill_test_results WHERE skill_path = ? ORDER BY run_at DESC, id DESC LIMIT ?`
     : `SELECT * FROM skill_test_results WHERE skill_path = ? ORDER BY run_at DESC, id DESC`;
@@ -125,8 +122,7 @@ export function getTestResults(skillPath: string, limit?: number): SkillTestResu
 }
 
 /** Get test history across all skills for a specific vector. */
-export function getTestHistory(vector: QualityVector, limit?: number): SkillTestResultRow[] {
-  const db = getDb();
+export function getTestHistory(db: Database.Database, vector: QualityVector, limit?: number): SkillTestResultRow[] {
   const sql = limit
     ? `SELECT * FROM skill_test_results WHERE vector = ? ORDER BY run_at DESC, id DESC LIMIT ?`
     : `SELECT * FROM skill_test_results WHERE vector = ? ORDER BY run_at DESC, id DESC`;
@@ -141,8 +137,7 @@ export function getTestHistory(vector: QualityVector, limit?: number): SkillTest
  * Note: groups by run_at at second precision. Two runs within the same second
  * would merge — acceptable for current interactive usage patterns.
  */
-export function getLatestTestRun(skillPath: string): SkillTestResultRow[] {
-  const db = getDb();
+export function getLatestTestRun(db: Database.Database, skillPath: string): SkillTestResultRow[] {
   const rows = db
     .prepare(
       `SELECT * FROM skill_test_results

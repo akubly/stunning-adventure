@@ -3,9 +3,10 @@ import * as cairn from '@akubly/cairn';
 import type { OptimizationHintInsert } from '@akubly/cairn';
 import { createPrescriberOrchestrationConfig } from '@akubly/skillsmith-runtime';
 
+let db: ReturnType<typeof cairn.getDb>;
 let hintCounter = 0;
 
-type ProfileSeed = Parameters<typeof cairn.upsertExecutionProfile>[0];
+type ProfileSeed = Parameters<typeof cairn.upsertExecutionProfile>[1];
 
 function makeProfile(skillId: string, overrides: Partial<ProfileSeed> = {}): ProfileSeed {
   return {
@@ -44,8 +45,8 @@ function seedVector(
   source: OptimizationHintInsert['source'],
   netImpactTuning: { deltaConvergence?: number; deltaDrift?: number; deltaCacheHit?: number } = {},
 ): void {
-  const db = cairn.getDb();
-  const hintId = cairn.insertOptimizationHint(
+  db = cairn.getDb();
+  const hintId = cairn.insertOptimizationHint(db,
     makeHint({
       skillId,
       category,
@@ -81,7 +82,7 @@ beforeEach(() => {
   vi.restoreAllMocks();
   cairn.closeDb();
   hintCounter = 0;
-  cairn.getDb(':memory:');
+  db = cairn.getDb(':memory:');
 });
 
 afterEach(() => {
@@ -91,7 +92,7 @@ afterEach(() => {
 
 describe('createPrescriberOrchestrationConfig', () => {
   it('runs prescribers for a profiled skill and persists generated hints', async () => {
-    cairn.upsertExecutionProfile(makeProfile('skill-alpha'));
+    cairn.upsertExecutionProfile(db, makeProfile('skill-alpha'));
     seedVector('skill-alpha', 'convergence', 'prompt-optimizer');
     seedVector('skill-alpha', 'cache-optimization', 'token-optimizer', { deltaCacheHit: 0.2 });
 
@@ -99,7 +100,7 @@ describe('createPrescriberOrchestrationConfig', () => {
     expect(config.loadProfile?.('skill-alpha')?.skillId).toBe('skill-alpha');
 
     const result = await config.runForSkill('skill-alpha', 3);
-    const pendingHints = cairn.queryOptimizationHints({ skillId: 'skill-alpha', status: 'pending' });
+    const pendingHints = cairn.queryOptimizationHints(db, { skillId: 'skill-alpha', status: 'pending' });
 
     expect(result.hintsGenerated).toBeGreaterThan(0);
     expect(result.hintsInserted).toBe(result.hintsGenerated);
@@ -109,7 +110,7 @@ describe('createPrescriberOrchestrationConfig', () => {
   });
 
   it('deduplicates a second run against the same active hints', async () => {
-    cairn.upsertExecutionProfile(makeProfile('skill-beta'));
+    cairn.upsertExecutionProfile(db, makeProfile('skill-beta'));
     seedVector('skill-beta', 'convergence', 'prompt-optimizer');
     seedVector('skill-beta', 'cache-optimization', 'token-optimizer', { deltaCacheHit: 0.2 });
 
@@ -138,7 +139,7 @@ describe('createPrescriberOrchestrationConfig', () => {
   });
 
   it('fails open on hint persistence errors by returning counts instead of throwing', async () => {
-    cairn.upsertExecutionProfile(makeProfile('skill-gamma'));
+    cairn.upsertExecutionProfile(db, makeProfile('skill-gamma'));
     seedVector('skill-gamma', 'convergence', 'prompt-optimizer');
     seedVector('skill-gamma', 'cache-optimization', 'token-optimizer', { deltaCacheHit: 0.2 });
     vi.spyOn(cairn, 'insertHintIfNew').mockImplementation(() => {
@@ -152,6 +153,6 @@ describe('createPrescriberOrchestrationConfig', () => {
     expect(result.hintsInserted).toBe(0);
     expect(result.hintsDuplicated).toBe(0);
     expect(result.hintsError).toBe(result.hintsGenerated);
-    expect(cairn.queryOptimizationHints({ skillId: 'skill-gamma', status: 'pending' })).toHaveLength(0);
+    expect(cairn.queryOptimizationHints(db, { skillId: 'skill-gamma', status: 'pending' })).toHaveLength(0);
   });
 });

@@ -101,8 +101,24 @@ export interface DBOMArtifact {
 // Session identity — minimal cross-package session reference
 // ---------------------------------------------------------------------------
 
+/**
+ * Branded SessionId primitive — shared identity across Cairn + Eureka (FR-13).
+ * See §20 §8.3 for design rationale ("shared identifiers > shared schemas").
+ *
+ * Branded SessionId type introduced 2026-05-28 (Eureka v1).
+ *
+ * ⚠️ Migration deferred: existing consumers (notably SessionIdentity.sessionId below)
+ * still use bare `string`. Brand provides no compile-time protection until consumers
+ * are migrated. Tracked in `.squad/decisions.md` under M5+ backlog (F14 / C7 / C9).
+ *
+ * New code MAY use SessionId for forward compatibility; existing code keeps `string`
+ * until a coordinated cross-package migration pass.
+ */
+export type SessionId = string & { readonly __brand: 'SessionId' };
+
 /** Minimal session identity for cross-package use. */
 export interface SessionIdentity {
+  /** @todo Migrate to SessionId in M5+ coordinated pass. See .squad/decisions.md (F14). */
   sessionId: string;
   repoKey: string;
   branch?: string;
@@ -160,6 +176,13 @@ export interface ProfileSignals {
   promptStability: number;
 }
 
+export type ProfileStalenessReason = 'count' | 'age' | 'count+age' | null;
+
+export interface ProfileStaleness {
+  stale: boolean;
+  reason: ProfileStalenessReason;
+}
+
 /** Aggregated execution profile for a skill at a given granularity. */
 export interface ExecutionProfile {
   skillId: string;
@@ -191,6 +214,10 @@ export interface ExecutionProfile {
    * profiles persisted before this field landed will simply omit it.
    */
   signals?: ProfileSignals;
+  /** Confidence in this profile's freshness/relevance after runtime annotations. */
+  confidence?: number;
+  /** Runtime annotation explaining confidence attenuation due to profile staleness. */
+  staleness?: ProfileStaleness;
   updatedAt: string;
 }
 
