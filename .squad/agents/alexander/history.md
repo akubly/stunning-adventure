@@ -1,13 +1,43 @@
 # Alexander — History
 
 **Role:** Implementation Specialist (Forge prescriber orchestration, change-vector platform)
-**Status:** W2-2 + W2-3 complete. Cycle 2 findings processed.
-**Last update:** 2026-05-29
+**Status:** M0/PR 1 (forge-mcp registration) shipped 2026-05-31. Cycle 2 findings processed.
+**Last update:** 2026-05-31
 
 **Key milestones:**
 - Wave 0-2: Canonical types in @akubly/types, SqliteChangeVectorProvider, Forge test growth
 - ForgePrescriberOrchestrator: Attenuation + autoApplyEligible propagation live
 - Phase 4.6: 1199+ tests passing, 9 work items landed
+- M0 (PR #36): forge-mcp registration in plugin + copilot configs, shipped 2026-05-31 as b22c8e7
+
+## M0/PR 1 — forge-mcp Registration (2026-05-31, PR #36)
+
+**PR:** https://github.com/akubly/stunning-adventure/pull/36
+**Branch:** `squad/35-forge-mcp-registration`
+**Build:** green (`tsc --build` exit 0)
+**Tests:** Baseline maintained (Cairn 609, Forge 644+3, Eureka 3/3)
+**Status:** ✅ MERGED as b22c8e7
+
+**Deliverables:**
+- Forge prescriber MCP registered in `.github/plugin/.mcp.json`
+- Forge prescriber MCP registered in `.copilot/mcp-config.json`
+- Issue #35 tracking registration + dogfood integration plan
+
+**CI Events:**
+- Commit 85d49b8 (turn alexander-8): Fixed eslint unused-variable error (`originalWrite` from cycle-2 stderr test). Root cause: `npm run lint` fails on Windows (glob expansion broken). Issue #37 filed for permanent fix. Workaround: use `npm run lint --workspace=<name>` for package modifications.
+
+**Rebase (turn alexander-9):**
+- Scribe commit d1a953f landed post-PR-open, creating merge conflict
+- Clean rebase via `merge=union` driver (both scribe + PR changes retained)
+- New HEAD: 3b88f1d
+- Force-with-lease push; PR #36 ready for merge
+
+**Post-merge (turn alexander-10, in flight):**
+- Worktree cleanup executing
+- Branch reset to main
+
+---
+
 ## Issue #25 — Wave 6 R6 Type-Tightening Polish (2026-05-30, PR #32)
 
 **Branch:** `squad/25-type-tightening-polish`
@@ -488,3 +518,5 @@ PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end
 **2026-05-30 cleanup:** PR #32 merged to main as commit aae18ae. Post-merge teardown completed per WI-B cleanup recipe: node_modules confirmed real (not junction), removed recursively; worktree D:\git\stunning-adventure-25 removed cleanly; local branch squad/25-type-tightening-polish deleted (forced after merge detection lag); remote branch deleted via `git push origin --delete`. Main's node_modules/@akubly survived intact. All verification checks passed. Recipe worked as documented; WI-B incident guard (strict cleanup ordering to prevent junction traversal during worktree remove) validated.
 
 📌 Team update (2026-05-30T23:05:00Z): **PR #32 / issue #25 shipped** as commit aae18ae. The runtime-cli metrics types are now backed by canonical unions (LoadedProfileSource, ProfileStalenessReason) with runtime-validated payload narrowing at the JSON.parse boundary. Lessons: (1) JSON.parse → unknown + boundary validation + stderr warning + drift-guard (2) @internal helpers prefer unexport (Path A) over convention promise (3) agent history.md commits in PRs are in-scope per merge=union pattern. — Scribe
+
+**2026-05-31 cleanup:** PR #36 merged to main as commit b22c8e7. Post-merge teardown completed per WI-B cleanup recipe: node_modules confirmed real (not junction), removed recursively; worktree D:\git\stunning-adventure-35 removed cleanly; local branch squad/35-register-forge-mcp deleted (force after merge detection); main's node_modules/@akubly survived intact. All verification checks passed.

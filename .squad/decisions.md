@@ -3549,3 +3549,118 @@ Type:
 
 **Applied to:** PR #32 body re-render in alexander-5. Prevents escape-sequence garble in future multiline content.
 
+---
+
+## 2026-05-30: Forge Roadmap Priority — Dogfood-First (Aaron Directive)
+
+**Date:** 2026-05-30T23:55:00-07:00  
+**Author:** Aaron Kubly (via Copilot)  
+**Status:** ADOPTED
+
+### What (1) — Eureka pace
+
+"Let's not pull too hard on Eureka yet, it's still in the works." Defer aggressive forge → Eureka integration moves (the C2-1/C2-2/C2-3 Eureka-internal items Graham proposed) until Eureka stabilizes further. Forge can continue without depending on Eureka.
+
+### What (2) — Next priority for forge
+
+Packaging + installability + dogfooding is now priority #1. Forge's Phase 4.6 surface is implemented; the next move is getting it into a state where Aaron (and the team) can install + run it locally on real work to generate signal.
+
+### What (3) — Compelling-but-deferred for forge
+
+GP-tournament selection (Phase 5 §2.4) and Meta-optimization (DBOM on prescriber decisions, §3.5) are noted as compelling future moves, but explicitly *behind* packaging/dogfooding. They're soft-designed today and benefit from real dogfood signal before contract is nailed.
+
+### Why
+
+User direction on roadmap sequencing. Dogfooding-first reflects the principle that real usage signal beats further design speculation, and the deferred Eureka work prevents thrashing on a moving target.
+
+### Implications
+
+- **M0 (Alexander):** forge-mcp registration in plugin + copilot configs (shipped 2026-05-31 as PR #36, b22c8e7)
+- **M1 (Roger):** Hint consumption MCP tools (cairn MCP expand recall hints → decision hints)
+- **M2 (Gabriel):** Bash hooks + README (install forge-mcp, shell init integration)
+- **Deferred:** Eureka FactStore adapter, forge→Eureka integration wiring (until Eureka v1 stabilizes)
+
+---
+
+## 2026-05-30: Forge Next Load-Bearing Move — SQLite FactStore Adapter (Graham Decision)
+
+**Date:** 2026-05-30  
+**Author:** Graham (Architect)  
+**Status:** PROPOSED FOR FUTURE DISPATCH (deferred by Aaron dogfood priority)
+
+### Context
+
+Eureka v1 (`ef06238`, 2026-05-30) landed `recall` with a composite ranker and injectable `FactStore`/`ClockProvider` seams. The `FactStore` interface is well-defined (`search({ query, sessionId, limit, minTrust }): Promise<RecallResult[]>`), but no SQLite-backed implementation exists.
+
+Forge's prescriber (`ForgePrescriberOrchestrator`) currently accepts an optional `ChangeVectorProvider` for historical context (statistical summaries). Eureka's `recall` would provide episodic context (trust-scored, recency-weighted facts) — complementary, not duplicative.
+
+### Decision
+
+**The next load-bearing move for forge is building the Eureka SQLite FactStore adapter.** Without it, `recall` is unreachable in production and the forge→Eureka integration loop cannot be validated.
+
+**Sequence (when Eureka stabilizes):**
+1. **Eureka SQLite FactStore adapter** — `packages/eureka/src/adapters/sqlite-fact-store.ts`, implements `FactStore.search()` against Eureka's SQLite DB. M, Edgar or Roger. This is Eureka's M5 milestone deliverable.
+2. **Wire `recall` into `ForgePrescriberOrchestrator`** — add optional `factStore?: FactStore` alongside existing `provider?: ChangeVectorProvider`. Fail-open (recall failure → prescribe without episodic context). S-M, Alexander. Forge imports `FactStore` type from `@akubly/eureka` only (no impl coupling).
+3. **`trustFloor` RecallOptions override** — small plumbing in `packages/eureka/src/activities/recall.ts`; seam already supports `minTrust` at FactStore boundary, just needs wiring. S, any agent.
+
+### What to defer
+
+- Eureka `commit` activity (v1.5+) — don't design before FactStore + recall wiring is proven.
+- Issue #17 async-IO sweep implementation — Alexander's T3 closed the W5-5 gaps; issue should be closed, not implemented. `better-sqlite3` sync model is acceptable for single-user local tool.
+
+### Risk
+
+Schema lock-in for FactStore SQLite backing: trust/importance/attentionTier storage must be durable. Any migration later breaks cognitive memory. Design the schema defensively (nullable fields, enum TEXT columns with normalizeX guards matching the `normalizeProfileSource` pattern from PR #32).
+
+### Current Status
+
+Deferred per Aaron's dogfood-first priority (2026-05-30). Will be picked up after M0/M1/M2 complete and Eureka v1 stabilizes.
+
+---
+
+## 2026-05-31: Cycle-2 Latent Lint Bug Pattern — Windows `npm run lint` Glob Failure
+
+**Date:** 2026-05-31  
+**Author:** Alexander (via Scribe, Issue #37)  
+**Status:** ROOT CAUSE IDENTIFIED; WORKAROUND DOCUMENTED; PERMANENT FIX TRACKED
+
+### What
+
+`npm run lint` fails on Windows with silent no-match (eslint glob `packages/*/src/` matches nothing via PowerShell glob expansion). Agents pushing code from Windows worktrees don't catch lint errors; Linux CI flags them post-merge. Example: commit 85d49b8 (PR #36 turn alexander-8) discovered unused-variable error during CI run, not local development.
+
+### Root Cause
+
+ESLint glob expansion via Node.js child_process on Windows uses native PowerShell glob rules (not sh glob rules). The pattern `packages/*/src/` expands to zero matches because PowerShell treats `*` literally when no files match at the top level. On Linux (`sh`), the glob expands correctly.
+
+### Workaround
+
+**UNTIL ISSUE #37 IS FIXED:** Agents modifying any package must use:
+```bash
+npm run lint --workspace=<package-name>
+```
+
+Examples:
+```bash
+npm run lint --workspace=forge
+npm run lint --workspace=eureka
+npm run lint --workspace=cairn
+```
+
+This bypasses the glob entirely and runs eslint directly on the package's source tree.
+
+### Permanent Fix
+
+**Tracked in Issue #37 (squad:gabriel):** Rewrite ESLint glob pattern or use a different linting approach:
+- Option A: Use `packages/{cairn,forge,eureka,types}/**/*.ts` (explicit list)
+- Option B: Run linter per-package in parallel (robust to glob expansion issues)
+- Option C: Use ESLint's built-in workspace support (v8+)
+
+### Team Discipline
+
+Until fixed, Scribe will flag any `npm run lint` (bare, not `--workspace=...`) runs in orchestration logs as **ANTI-PATTERN** and agents are expected to use the per-package form.
+
+### Follow-Up
+
+Add CI check to detect `npm run lint` (bare) in agent logs and fail CI with helpful error message pointing to Issue #37 + workaround.
+
+
