@@ -38,7 +38,7 @@
 
 Pattern used for M5+M6 branch prep:
 
-1. `git switch -c <feature>` — creates branch from current HEAD (carries Scribe's metadata commit + untracked files, but NOT tracked working-tree modifications)
+1. `git switch -c <feature>` — creates branch from current HEAD (carries Scribe's metadata commit, untracked files, AND tracked working-tree modifications — they stay in the index/working tree, not tied to the branch name)
 2. **Critical lesson:** `git switch` carries tracked working-tree modifications with you. If you then `git reset --hard origin/main` on the source branch, those modifications are wiped from disk — not preserved on the feature branch, because they were never committed.
 3. **Correct sequence** (learned the hard way): commit implementation on the feature branch BEFORE switching back to main to reset. Or stash before the reset. Never rely on working-tree state surviving a `reset --hard` on a parallel branch.
 4. After reset, untracked files survive (gitignore rules aside) because `reset --hard` only touches tracked state.
