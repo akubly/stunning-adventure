@@ -25,7 +25,7 @@ Use this skill when:
 // packages/<pkg>/src/activities/errors.ts
 
 export class MyDomainError extends Error {
-  readonly code: 'MY_DOMAIN_ERROR' = 'MY_DOMAIN_ERROR';
+  readonly code = 'MY_DOMAIN_ERROR' as const;
   readonly field: string;
 
   constructor(field: string, message: string) {
@@ -38,7 +38,7 @@ export class MyDomainError extends Error {
 }
 ```
 
-> **Canonical form:** Use the explicit-annotation style `readonly code: 'MY_DOMAIN_ERROR' = 'MY_DOMAIN_ERROR'`, not `readonly code = 'MY_DOMAIN_ERROR' as const`. The `as const` variant was reviewed and rejected in Cycle 1 (M7-A) as redundant — TypeScript already narrows the literal type from the explicit annotation, so `as const` adds noise without benefit. The reference implementation in `packages/eureka/src/activities/errors.ts` uses the explicit-annotation form throughout.
+> **Canonical form:** Use `readonly code = 'MY_DOMAIN_ERROR' as const`. The repo's ESLint config enforces `@typescript-eslint/prefer-as-const` as an **error**, which requires the `as const` assertion form. The explicit-annotation style (`readonly code: 'MY_DOMAIN_ERROR' = 'MY_DOMAIN_ERROR'`) was briefly recommended in Cycle 1 (M7-A) finding F7, but that finding was reversed — F7 missed the enforced lint rule. See inbox decision `edgar-m7-a-cycle4-f7-reversal.md`.
 
 ### 2. Inheritance strategy — preserve existing test assertions
 
@@ -53,13 +53,13 @@ base class to avoid breaking tests with zero modifications:
 
 ### 3. Discriminator `code` property
 
-Every typed error class MUST carry a `readonly code` with a string literal type, using the **explicit-annotation form** (the canonical form from the reference implementation):
+Every typed error class MUST carry a `readonly code` with a string literal type, using the **`as const` form** (enforced by the repo's ESLint config):
 
 ```typescript
-readonly code: 'FACT_NOT_FOUND' = 'FACT_NOT_FOUND';
+readonly code = 'FACT_NOT_FOUND' as const;
 ```
 
-> **Do not use `as const`:** `readonly code = 'FACT_NOT_FOUND' as const` was reviewed and rejected in M7-A Cycle 1 (F7) as redundant. TypeScript narrows the literal type correctly from the explicit annotation alone. The reference implementation in `packages/eureka/src/activities/errors.ts` uses the explicit-annotation form throughout — adopt that form in all new error classes.
+> **Do not use the explicit-annotation form:** `readonly code: 'FACT_NOT_FOUND' = 'FACT_NOT_FOUND'` triggers `@typescript-eslint/prefer-as-const` (error). That form was briefly recommended by Cycle 1 (M7-A) finding F7, but F7 was reversed — the repo's lint rule is the authoritative voice. See inbox decision `edgar-m7-a-cycle4-f7-reversal.md`.
 
 This enables realm-safe narrowing that survives `vm.runInNewContext` and dual-package
 esm/cjs builds where `instanceof` prototype chains may break:

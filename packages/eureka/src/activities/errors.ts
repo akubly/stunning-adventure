@@ -39,7 +39,7 @@
  * Prevents TrustUpdater from being called for a non-existent fact.
  */
 export class FactNotFoundError extends Error {
-  readonly code: 'FACT_NOT_FOUND' = 'FACT_NOT_FOUND';
+  readonly code = 'FACT_NOT_FOUND' as const;
   readonly factId: string;
 
   constructor(factId: string) {
@@ -60,7 +60,7 @@ export class FactNotFoundError extends Error {
  * programming-error path (the caller failed to supply a required field).
  */
 export class InvalidFeedbackOptionsError extends Error {
-  readonly code: 'INVALID_FEEDBACK_OPTIONS' = 'INVALID_FEEDBACK_OPTIONS';
+  readonly code = 'INVALID_FEEDBACK_OPTIONS' as const;
   /** Name of the offending / missing option field. */
   readonly field: string;
 
@@ -85,7 +85,7 @@ export class InvalidFeedbackOptionsError extends Error {
  * established in M5+M6.
  */
 export class InvalidTrustValueError extends RangeError {
-  readonly code: 'INVALID_TRUST_VALUE' = 'INVALID_TRUST_VALUE';
+  readonly code = 'INVALID_TRUST_VALUE' as const;
   /** The offending numeric value. */
   readonly value: number;
   /** Whether the bad value came from caller input or from storage. */
@@ -112,7 +112,7 @@ export class InvalidTrustValueError extends RangeError {
  * Extends `TypeError` to preserve the existing `instanceof TypeError` test assertion.
  */
 export class FactReaderContractError extends TypeError {
-  readonly code: 'FACT_READER_CONTRACT' = 'FACT_READER_CONTRACT';
+  readonly code = 'FACT_READER_CONTRACT' as const;
   readonly factId: string;
 
   constructor(factId: string) {
@@ -137,7 +137,7 @@ export class FactReaderContractError extends TypeError {
  * Extends `TypeError` to preserve the existing `instanceof TypeError` test assertion.
  */
 export class UnhandledFeedbackEventError extends TypeError {
-  readonly code: 'UNHANDLED_FEEDBACK_EVENT' = 'UNHANDLED_FEEDBACK_EVENT';
+  readonly code = 'UNHANDLED_FEEDBACK_EVENT' as const;
   readonly event: string;
 
   constructor(event: string) {
