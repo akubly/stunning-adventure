@@ -6065,3 +6065,141 @@ From .squad/decisions/inbox/roger-issue-11-implementation.md (WI-A history, cros
 
 **Cloud Review Cycles 1-5 completed** — Worktree-aware session resolution now in place. Schema version 16. Partial UNIQUE indexes for NULL-workdir case. All 1405 tests green. Ready for WI-B (coordinator dispatch).
 
+
+
+
+---
+
+## 2026-05-30: Squad Convention — Agent history.md Commits in Feature PRs Are In-Scope
+
+**Date:** 2026-05-30  
+**Source:** PR #32 / issue #25, Cycle 1 Skeptic review (F3 flagged as scope creep)  
+**Decision:** Agent-maintained history.md entries in feature PRs are **IN-SCOPE**, not scope creep.
+
+**Rationale:**
+The `.gitattributes` file defines `merge=union` driver (line 3) specifically to enable parallel agent history tracking within feature branches. This is an intentional design pattern, not incidental coupling.
+
+When `.gitattributes:3` declares `*.md merge=union`, it is explicitly authorizing commits that append to history files during feature development. Rejecting such commits as "scope creep" contradicts the declared merge strategy.
+
+**Citation:** `.gitattributes:3` — "\\*.md merge=union"
+
+**Scope boundary:** Agent history commits are IN-SCOPE when:
+- They document agent work on the feature (not tangential or admin work)
+- They follow the squad history.md format (one-liner, topic tag, date, agent)
+- They do not alter code or test artifacts
+
+Example in-scope entry:
+```
+- 2026-05-30 📌 alexander: JSON.parse boundary guarding via ProfileStalenessReason import
+```
+
+**Future:** If history bloat becomes a problem (file ≥15360 bytes), summarization rules apply (per Task 6). This is a hygiene gate, not a scope gate.
+
+
+---
+
+## 2026-05-30: Path A for Internal Helpers — Unexport and Shrink Test Surface
+
+**Date:** 2026-05-30  
+**Source:** PR #32 / issue #25, Cycle 2, C2-3 polish  
+**Decision:** When an `@internal` JSDoc tag cannot be enforced (no api-extractor or stripInternal pass), prefer unexporting the helper and shrinking the unit test surface over maintaining a false-promise export.
+
+**Rationale:**
+The helper `normalizeProfileSource(payload: unknown)` was introduced in Cycle 1 to centralize JSON.parse payload narrowing. Tagged `@internal`, it was still exported for unit testing. This creates a false API promise — users can import and call it despite the intent to keep it internal.
+
+Options:
+- **(a) Unexport + shrink tests (chosen)** — Move coverage to integration tests. Helper becomes truly internal (scoped to module).
+- **(b) Keep export + hope no one uses it** — Relies on convention; creates API risk.
+- **(c) Use namespace/private pattern** — Language-specific; TypeScript has no true private exports.
+
+**Choice:** Path A. The @internal tag already signals intent. Unexporting honors that intent and forces coverage dependency on integration tests (which are stronger anyway — they validate the full narrowing + validation flow, not the helper in isolation).
+
+**Applied to:** `normalizeProfileSource()` in PR #32. Reduced unit test count from 28→26; integration tests retain coverage.
+
+**Implication:** Team preference: explicit enforcement (unexport) > convention-based promises (@internal tag).
+
+
+---
+
+## 2026-05-30: JSON.parse Boundary Discipline — Unknown Typing + Runtime Validation + Drift Guard
+
+**Date:** 2026-05-30  
+**Source:** PR #32 / issue #25, Cycle 1 F1 (Correctness) + Cycle 2 C2-1/C2-2 (verification)  
+**Decision:** When narrowing types that flow from `JSON.parse(eventLogPayload)`, enforce a three-tier boundary discipline:
+
+### Tier 1: Type the payload as `unknown`
+```typescript
+const payload: unknown = JSON.parse(eventLogPayload);
+```
+Do NOT type it as `any` or the target type. This forces explicit narrowing.
+
+### Tier 2: Validate at the boundary
+Implement a helper (e.g., `normalizeProfileSource()`) that:
+- Takes `unknown` input
+- Validates shape (e.g., `if (typeof payload.source !== 'string')`)
+- Returns the narrowed type or throws/returns null
+
+Emit a **stderr warning** if coercion occurs (matching the pattern from `loadMetrics` in the codebase):
+```typescript
+if (payload.source && !VALID_PROFILE_SOURCES.includes(payload.source)) {
+  console.warn(`[LoadedProfileSource] Coerced unexpected source: ${payload.source}`);
+}
+```
+
+### Tier 3: Drift-guard the union
+When the upstream union (e.g., `ProfileStalenessReason | 'FRESH' | 'STALE'`) grows, catch missing branches at compile time using a `satisfies` pattern:
+```typescript
+const driftGuard: Record<LoadedProfileSource | ProfileStalenessReason, true> = {
+  'FRESH': true,
+  'STALE': true,
+  'UNKNOWN': true,
+};
+```
+If a new reason is added and this helper is not updated, TypeScript will fail on the guard object (RED test).
+
+**Citation:** Cycle 1 F1 raised that `JSON.parse` cast to `UnionType` was unguarded. Cycle 2 C2-1/C2-2 verified the drift-guard pattern resolves it.
+
+**Impact:** Ensures JSON.parse payloads cannot silently accept malformed data or diverge from enum reality.
+
+
+---
+
+## 2026-05-30: PowerShell Here-String Convention — Use Single-Quoted @'...'@ for Code Content
+
+**Date:** 2026-05-30  
+**Source:** PR #32 / issue #25, PR body rendering issues (2 occurrences)  
+**Decision:** When building multi-line file content in PowerShell that contains backticks (markdown code spans, `` `tsc ``, `` `null ``), use single-quoted here-strings `@'...'@` instead of double-quoted `@"..."@`.
+
+**Rationale:**
+PowerShell interprets escape sequences in double-quoted strings:
+- `` `t `` → TAB character
+- `` `n `` → newline
+- `` `r `` → carriage return
+
+Single-quoted here-strings treat backquotes literally.
+
+**Problem encountered (2 instances):**
+1. PR body description: `` `tsc `` became TAB + "sc", `` `n `` (in code block) became newline, eating the next line
+2. Earlier in session: GraphQL multiline field values mangled the same way
+
+**Pattern:**
+```powershell
+# ❌ WRONG — backticks interpreted
+$content = @"
+Run: `tsc --noEmit`
+Type:
+  - A (old)
+  - B (new)
+"@
+
+# ✅ CORRECT — backticks literal
+$content = @'
+Run: `tsc --noEmit`
+Type:
+  - A (old)
+  - B (new)
+'@
+```
+
+**Applied to:** PR #32 body re-render in alexander-5. Prevents escape-sequence garble in future multiline content.
+

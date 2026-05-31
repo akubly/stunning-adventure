@@ -4,6 +4,11 @@
       "type": "stdio",
       "command": "node",
       "args": ["dist/mcp/server.js"]
+    },
+    "forge": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["packages/skillsmith-runtime/dist/mcp/server.js"]
     }
   }
 }
