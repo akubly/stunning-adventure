@@ -12,6 +12,13 @@ export {
   applyFeedback,
   applyFeedbackById,
 } from './activities/recall.js';
+export {
+  FactNotFoundError,
+  InvalidFeedbackOptionsError,
+  InvalidTrustValueError,
+  FactReaderContractError,
+  UnhandledFeedbackEventError,
+} from './activities/errors.js';
 export type {
   RecallOptions,
   RecallDeps,
