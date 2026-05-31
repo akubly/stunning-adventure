@@ -5,7 +5,7 @@
 **Date:** Phase 4 close, 2026-05-28.
 **Scope:** Phase 4 surface — §1 (Graham), §6 (Graham), §3 (Roger), §10 (Roger),
 §5 + §5.A (Gabriel), §11.10 (Laura), §16.5 streaming + §16.7a layering
-(Laura), §17 scheduler catalog (Gabriel), §19 ADR index ADR-0019 + ADR-0024
+(Laura), §17 scheduler catalog (Gabriel), §19 ADR index ADR-0020 + ADR-0024
 (Graham). Total CTD now **377,794 bytes across 21 files** (19 numbered
 sections + Phase 1 + Phase 2 synthesis reviews; this Phase 4 review brings
 the count to 22 once landed).
@@ -36,7 +36,7 @@ framing-amendment ADRs (0019, 0024) and the four Phase 4 lane outputs.
 | 4 | §5 ↔ §3 — Gabriel's `scheduler_*` Decision sub-kinds vs §3.3.5 "WAL accepts scheduler-emitted Decisions" | CLEAN | §3.3.5 declares substrate acceptance regardless of emitter; §5.A.2 owns the four `scheduler_*` body shapes; both honor the `contextWindowCommitment` + `commitmentMethod` contract |
 | 5 | §11 ↔ §16 — trace-vs-behavioral distinction (§11.10 vs §16.7a) vocabulary consistency | CLEAN | Vocabulary verbatim across both sections (`trace reproducibility`, `behavioral reproducibility`, "the LLM IS the I/O subsystem"); §16.7a explicitly cross-refs §11.10 as the honesty clause it operationalizes |
 | 6 | §16 ↔ §3 — streaming `stream_open/delta/close` Observation sub-kinds; additive per §6.5; sub-kind names registered | CLEAN-with-followup | §16.5 declares the three sub-kinds; §3 acceptance via §3.3.1 sub-kind index handles them as additive Observation sub-kinds per §6.5 evolution rule. §6.3 enumeration table does NOT yet list `stream_open / stream_delta / stream_close` — this is the correct boundary (Laura authors the sub-kinds in §16; §6.3 enum updates land at the post-CTD §6.3 housekeeping pass once streaming policy is enabled, exactly per §6.5 additive rule). No blocking issue; flagged as informational for the §6.3 sync pass. |
-| 7 | §19 ADR index — ADR-0019 (typed trace algebra reframing) + ADR-0024 (L3.5 Scheduler) accurate one-liners | CLEAN | Both rows present, one-line decisions match the §1/§6/§5 substantive text verbatim; lifecycle note about numbering gaps (0019/0024) present in §19.3 |
+| 7 | §19 ADR index — ADR-0020 (typed trace algebra reframing) + ADR-0024 (L3.5 Scheduler) accurate one-liners | CLEAN | Both rows present, one-line decisions match the §1/§6/§5 substantive text verbatim; lifecycle note about numbering gaps (0020/0024) present in §19.3 |
 | 8 | Cross-section vocabulary — `invocationId`, `parentInvocationId`, `returnTo`, `scheduler_dispatched`, `dispatched_pending`, `trace reproducibility`, `behavioral reproducibility`, `stream_open/delta/close` | CLEAN | Spot-checked all eight terms across the modified files: §3.3.4 / §10.6 / §10.6.1 use identical CALL/RET vocabulary; §5.A / §5.2 / §17.1 / §3.3.5 use identical `scheduler_*` vocabulary; §11.10 / §16.7a use identical reproducibility vocabulary; §16.5 owns the streaming vocabulary, §11.10 references "I/O subsystem" identically |
 
 **Counts: CLEAN 8 · MINOR 0 · STRUCTURAL 0 · APPLIED 2 (errata A + B
@@ -190,7 +190,7 @@ synthesis reviews) · 19 ADRs indexed in §19.**
 | `16-test-strategy-invariants.md` | 21,656 | Laura | Phase 3 (Phase 4 §16.5/§16.7a) |
 | `17-observability-telemetry.md` | 12,667 | Gabriel | Phase 3 (Phase 4 catalog rows) |
 | `18-security-permissions.md` | 12,048 | Erasmus | Phase 3 |
-| `19-adr-set.md` | 8,783 | Graham | Phase 3 (Phase 4 ADR-0019/0024) |
+| `19-adr-set.md` | 8,783 | Graham | Phase 3 (Phase 4 ADR-0020/0024) |
 
 ## 0.5 ADR Index — 19 Titles Ready for Post-CTD Authoring
 
@@ -218,7 +218,7 @@ rules. Composition root predecessor is ADR-0001 (`docs/adr/0001-composition-root
 | ADR-0016 | Timestamps Informational + Monotonic-Within-Session Invariant | Laura |
 | ADR-0017 | Zero-Tolerance Mock-Drift Gate (Agentic-Cost Framing) | Laura |
 | ADR-0018 | Pareto-Incomparable Prescriptions Both Non-Dominated | Rosella |
-| ADR-0019 | Primitives as Minimal Typed Trace Algebra (not Universal ISA) | Graham |
+| ADR-0020 | Primitives as Minimal Typed Trace Algebra (not Universal ISA) | Graham |
 | ADR-0024 | Explicit L3.5 Scheduler Tier | Gabriel |
 
 Numbering gaps (0020–0023) are preserved per §19.3 — they correspond to

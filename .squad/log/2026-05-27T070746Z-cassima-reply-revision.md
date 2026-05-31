@@ -13,7 +13,7 @@ Erasmus redrafted with narrower focus:
 - **Freeze scope:** Only `SessionId` + `DecisionRecord` (removes WAL/event and prescriber API)
 - **Boundary change:** Aaron's directives locked in Crucible storage fork + Eureka standalone v1
 - **Integration:** Defers Eureka-as-prescriber to v1.5+ (recommends but non-blocking)
-- **Frameing:** Shifts from "here's what we need" to "here's what the new boundary reveals"
+- **Framing:** Shifts from "here's what we need" to "here's what the new boundary reveals"
 
 ## Decision
 

@@ -1,6 +1,6 @@
 # PA-B4: Ancestry/Replay Divergence — Options Analysis
 
-**Status:** DRAFT — awaiting Aaron ruling  
+**Status:** SUPERSEDED — Option A landed in §6.1 / §7.3 / §11.4 / §7.A. See `.squad/identity/now.md` (2026-05-30 PA-B4 note).  
 **Finding:** Pass A review identified divergence between §7 ancestry-aware reads and §10/§11 replay semantics  
 **Owner:** Rosella  
 **Date:** 2026-05-30

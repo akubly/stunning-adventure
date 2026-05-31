@@ -4,7 +4,7 @@
 
 # childSid Collision — Determinism Options Analysis
 
-**Status:** DRAFT — awaiting Aaron ruling  
+**Status:** SUPERSEDED by ADR-0019 (childsid-collision-hybrid)  
 **Finding:** Pass A review identified deterministic childSid collision risk in §10.4 fork protocol  
 **Owner:** Rosella  
 **Date:** 2026-05-30

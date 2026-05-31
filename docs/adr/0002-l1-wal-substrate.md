@@ -1,6 +1,6 @@
 # ADR-0002: L1 WAL Substrate Selection
 
-**Status:** Accepted — CTD-locked (pending date stamp by Aaron on file landing)
+**Status:** Accepted — 2026-05-29 by Aaron
 **Author:** Roger (L1 WAL owner, §3)
 **Date:** 2026-05-29 (shell authored by Graham; Roger fills full body)
 **CTD Anchor:** §3 — L1 WAL Substrate
@@ -54,8 +54,8 @@ SQLite (via `better-sqlite3`) used only for L2 derived/projection tables
 **Adopt A.3 hybrid** — custom pure-TS append-only WAL for L1, SQLite for
 derived tables only.
 
-One-line: Adopt Roger's A.3 hybrid — SQLite-WAL append log + per-record CBOR
-payload + BLAKE3 chain — as the single L1 substrate.
+One-line: Adopt Roger's A.3 hybrid — custom pure-TypeScript append-only WAL
+for L1, with SQLite reserved for derived tables only.
 
 ---
 

@@ -12,7 +12,7 @@ Generators and L4 Router per ADR-0024), the **6-chamber product map**, the
 with Cairn and Forge. Every downstream section refines one slice of this
 picture; none restates it.
 
-**Identity (locked, ADR-0019).** Crucible is **a minimal typed trace algebra
+**Identity (locked, ADR-0020).** Crucible is **a minimal typed trace algebra
 for replayable, accountable agentic computation, materialized as an
 append-only WAL with hermetic replay over hardware-class observability
 discipline.** The five primitives (§6) are the base algebra; executable
@@ -205,7 +205,7 @@ are not executable opcode semantics and they are not the architectural
 identity of Crucible. The load-bearing identity claim is the one in §1
 above: a **minimal typed trace algebra for replayable, accountable agentic
 computation**. Hardware analogies survive as long as they remain useful
-explanations; they are removable without touching the algebra. See ADR-0019
+explanations; they are removable without touching the algebra. See ADR-0020
 for the precision-reframing rationale (rejecting the earlier "universal
 instruction set of agentic computation" framing as overreach), §6.7 for the
 canonical analogy table, and ADR-0024 for the one place a hardware analogy

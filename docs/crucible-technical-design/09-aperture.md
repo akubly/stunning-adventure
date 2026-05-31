@@ -320,7 +320,7 @@ debugger affordances.
 
 | Verb                                | Semantics                                                                          |
 |-------------------------------------|------------------------------------------------------------------------------------|
-| `crucible aperture witness`         | Stream unresolved `attention`-tier rows; non-blocking; redraws on `onCommit`. ("Bear witness" — verb chosen to leave `watch` free for future debugger watchpoints; see ADR-0019.) |
+| `crucible aperture witness`         | Stream unresolved `attention`-tier rows; non-blocking; redraws on `onCommit`. ("Bear witness" — verb chosen to leave `watch` free for future debugger watchpoints; see ADR-0020.) |
 | `crucible aperture show [<id>]`     | Without id: open `@inbox`. With id: show full event body + causal slice one-hop.   |
 | `crucible aperture approve <id>`    | Write `structural_proposal_acked` Observation; queue entry resolves immediately.   |
 | `crucible aperture reject <id> [--reason <text>]` | Write `structural_proposal_rejected` with optional user note.            |

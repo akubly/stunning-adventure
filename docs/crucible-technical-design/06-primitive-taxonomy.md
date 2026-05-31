@@ -11,7 +11,7 @@ L0/L1 boundary as a `CrucibleEvent` (§2). Every upper layer (L2 derived
 queries, L3 generators, L3.5 scheduler, L4 router, L5 investigation,
 Aperture projections) indexes off these five kinds.
 
-**Framing (locked, ADR-0019).** These five primitives are the **minimal
+**Framing (locked, ADR-0020).** These five primitives are the **minimal
 typed trace algebra for replayable, accountable agentic computation**. The
 actual "instructions" are defined by **sub-kinds, schemas, declared effects,
 causal edges, and runtime semantics** — not by the primitive nouns alone.
@@ -35,7 +35,7 @@ semantics — what L3/L3.5/L4/Applier do when they see it. A sub-kind that
 cannot be specified along these four axes is not yet ready to enter the
 enum. Sub-kind proliferation is healthy when each addition pays the
 specification cost; it becomes inflation when sub-kinds are added without
-the four-axis discipline. See ADR-0019 for the precision-reframing
+the four-axis discipline. See ADR-0020 for the precision-reframing
 rationale.
 
 ## 6.1 Common Envelope
@@ -214,7 +214,7 @@ for normal tool calls.
 The CTD uses CPU/OS/database analogies to give readers a fast on-ramp into
 the primitive vocabulary. These analogies are **orientation aids, not
 executable opcode semantics** and not the architectural identity of
-Crucible (ADR-0019; §1.6). They are removable without touching the
+Crucible (ADR-0020; §1.6). They are removable without touching the
 algebra.
 
 | Primitive    | Hardware scaffolding analogy                  | What it actually is                                                                  |
@@ -226,7 +226,7 @@ algebra.
 | Decision     | conditional branch / commit                   | Typed commitment of control, with declared causal-context-window provenance.         |
 
 The analogies were the *route in* for Aaron's original framing; the precision
-reframing (ADR-0019) keeps them as scaffolding while moving the load-bearing
+reframing (ADR-0020) keeps them as scaffolding while moving the load-bearing
 claim to **typed trace algebra**. One hardware analogy *did* motivate an
 architectural change — the L3.5 Scheduler tier as the dispatch unit between
 generator emission and router policy (ADR-0024; §1.1 inset). The remaining

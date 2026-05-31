@@ -4,7 +4,7 @@
 
 # childSid Collision — Round 2: User Stories + Hybrid Proposal
 
-**Status:** DRAFT — awaiting Aaron ruling (Round 2)  
+**Status:** SUPERSEDED by ADR-0019 (childsid-collision-hybrid)
 **Finding:** Aaron requested user stories for Options A, C, and hybrid ("give the user the option to start fresh or resume")  
 **Owner:** Rosella  
 **Date:** 2026-05-30

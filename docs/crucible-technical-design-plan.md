@@ -776,7 +776,7 @@ Decision, Rationale, Consequences (per §19.3 body shape). "Why not" sections
 for rejected alternatives are mandatory — the panel (I13) specifically flagged
 that reviewers need to see rejected options, not just outcomes.
 
-**Remaining ADRs (ADR-0003–ADR-0019 excluding 0002/0011/0024):** may be authored
+**Remaining ADRs (ADR-0003–ADR-0020 excluding 0002/0011/0019/0024):** may be authored
 in parallel with Phase 1 implementation. They are not gated because their
 decisions are either downstream of Phase 1 outputs or have sufficient rationale
 already visible in the CTD section body.

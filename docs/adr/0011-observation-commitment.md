@@ -1,6 +1,6 @@
 # ADR-0011: Observation as First-Class L1 Primitive + Declared Context-Window Commitment
 
-**Status:** Accepted — CTD-locked (pending date stamp by Aaron on file landing)
+**Status:** Accepted — 2026-05-29 by Aaron
 **Author:** Graham (Lead / Architect)
 **Date:** 2026-05-29
 **CTD Anchor:** §2 (L0/L1 Boundary), §3 (L1 WAL), §6 (Primitive Taxonomy)

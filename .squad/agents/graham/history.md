@@ -25,6 +25,12 @@
 
 ## Learnings
 
+### ADR Status and Numbering Hygiene (2026-05-30)
+
+- **Accepted ADR files need concrete stamps.** Accepted — <date> by Aaron is not clerical polish; it is the lifecycle boundary between CTD-locked intent and durable ADR artifact.
+- **Landed ADR numbers are stable.** When a pending index row collides with a landed ADR file, renumber the pending row and update live cross-references rather than moving the landed artifact. Trade-off: less pretty numbering history, much safer review/reference continuity.
+- **Accepted ADRs cannot carry load-bearing open questions.** Either resolve the ownership in the ADR or demote the status; policy ownership questions are architectural decisions, not editorial TODOs.
+
 ### 2026-05-30: childSid Collision Hybrid Review
 
 **Context:** Rosella drafted a hybrid childSid collision design (user chooses fresh-vs-resume at fork time) as a follow-up to Pass A. Aaron requested architectural review focused on four areas: parent-ledger mutation, replay correctness, scheduler interaction, and time-aware nudge validity.

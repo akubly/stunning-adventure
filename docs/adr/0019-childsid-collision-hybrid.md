@@ -1,6 +1,6 @@
 # ADR-0019: childSid Collision — Always-Prompt Hybrid Design
 
-**Status:** Accepted  
+**Status:** Accepted — 2026-05-30 by Aaron  
 **Author:** Rosella (Plugin Dev)  
 **Date:** 2026-05-30  
 **CTD Anchor:** §10.4 — Fork Protocol  

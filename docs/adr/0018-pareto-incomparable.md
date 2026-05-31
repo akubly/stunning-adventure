@@ -218,6 +218,17 @@ The decision to enable refinement would be a policy-table row, not a code change
 
 ---
 
+## Security Implications
+
+- Keeping the full non-dominated frontier visible prevents a hidden evaluator
+  heuristic from silently approving a lower-trust or higher-risk prescription.
+  The Router remains the auditable policy choke-point for any tiebreak.
+- Incomparable candidates may include sensitive context in their rationale
+  fields. Aperture and CLI views must apply the same local-only retention and
+  redaction rules as other prescription projections (§18).
+
+---
+
 ## Resolved Questions
 
 **Q8 (TDD Strategy):** "When prescriptions are Pareto-incomparable, what does the Router see?"
