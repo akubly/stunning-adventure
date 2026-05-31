@@ -1,15 +1,41 @@
 # Edgar — History
 
 **Role:** Learning Systems Specialist (Plasticity, trust, recency, recall algorithms)
-**Status:** PR #34 cycle 2 complete. TrustUpdater JSDoc clarified (FactStore read-only caveat) + green-beat checklist clock item scoped to recency activities only. 40/40 tests green.
-**Last update:** 2026-05-30
+**Status:** M7-A complete. Typed error hierarchy shipped on `eureka/m7-a-typed-errors`. 40/40 tests green.
+**Last update:** 2026-05-31
 
 **Key milestones:**
 - R5-R6: Power-law recency + event-driven trust design
 - R7-R8: v5-final locked canonical (extraction-ready mechanisms verified)
 - M2-M3: recall() + composite-ranker landed (§30 §1.2 FR-2 formula inline)
 - Cycle 2 fixes: F6 minTrust interface, C5 Ranker JSDoc, C6 guard test
-- M5 GREEN: applyFeedback (TrustUpdater seam) — corroboration/contradiction/user_correction
+- M7-A GREEN: typed error hierarchy (FactNotFoundError, InvalidFeedbackOptionsError, InvalidTrustValueError, FactReaderContractError, UnhandledFeedbackEventError)
+
+## Learnings
+
+**2026-05-31 — M7-A: Typed error hierarchy for applyFeedback / applyFeedbackById**
+
+- **Final error class inventory:**
+
+  | Class | Code | Extends | Throw site |
+  |---|---|---|---|
+  | `FactNotFoundError` | `FACT_NOT_FOUND` | `Error` | `applyFeedbackById`: factReader returns `null` |
+  | `InvalidFeedbackOptionsError` | `INVALID_FEEDBACK_OPTIONS` | `Error` | `applyFeedback`: `correctionDelta` undefined for `user_correction` |
+  | `InvalidTrustValueError` | `INVALID_TRUST_VALUE` | `RangeError` | `applyFeedback`: `currentTrust` non-finite/out-of-range; `correctionDelta` non-finite; `applyFeedbackById`: `fact.trust` non-finite |
+  | `FactReaderContractError` | `FACT_READER_CONTRACT` | `TypeError` | `applyFeedbackById`: factReader returns `undefined` |
+  | `UnhandledFeedbackEventError` | `UNHANDLED_FEEDBACK_EVENT` | `TypeError` | `applyFeedback`: exhaustive switch `never` branch |
+
+- **Inheritance discipline for zero test changes:** Existing M5+M6 tests assert `instanceof RangeError` (3 tests) and `instanceof TypeError` (2 tests). By making `InvalidTrustValueError extends RangeError` and `FactReaderContractError`/`UnhandledFeedbackEventError extends TypeError`, all existing assertions pass without any test edits. This is the correct green-beat discipline — typed error introduction is a refactor, not a behavior change.
+
+- **`correctionDelta` non-finite maps to `InvalidTrustValueError`:** The task spec scoped `InvalidTrustValueError` to "currentTrust or stored fact.trust", but the test asserts `RangeError` for non-finite `correctionDelta`. Using `InvalidTrustValueError(value, 'input', msg)` is the cleanest fit — it extends `RangeError`, preserves the assertion, and the `source: 'input'` is accurate. M7-B narrowing tests can document this mapping explicitly.
+
+- **`Object.setPrototypeOf` is mandatory:** When extending built-in Error subclasses (RangeError, TypeError) in TypeScript compiled to ES5 targets, `Object.setPrototypeOf(this, new.target.prototype)` is required to restore the prototype chain. Without it, `instanceof` checks fail in environments where classes are transpiled to functions. Even if the repo targets ES2022, the defensive call costs nothing and avoids environment-specific surprises.
+
+- **Discriminator `code` field enables realm-safe narrowing:** Cross-ESM-realm (e.g., vm.runInNewContext, dual CJS/ESM packages) `instanceof` checks can fail because each realm has its own Error prototype chain. The `readonly code: 'FACT_NOT_FOUND' | ...` pattern (string literal type) enables `if (err.code === 'FACT_NOT_FOUND')` narrowing that works regardless of realm. This is the M7-B contract test hook.
+
+- **Test count delta: 0.** No new tests; no removed tests. Only assertion tightening in M7-B (follow-up PR). 40/40 → 40/40.
+
+- **Branch:** `eureka/m7-a-typed-errors` | PR: (see below after push)
 - M6 GREEN: applyFeedbackById (FactReader read-seam) + user_correction required-delta guard
 - M5+M6 cycle 2: correctionDelta NaN/Infinity guard, @concurrency accuracy, FactReader strict-null contract
 - Build: 609 Cairn, 644 Forge, 37 Eureka tests green
