@@ -38,6 +38,10 @@
 
 ## Learnings
 
+### 2026-05-31: PR #33 Cloud Review Cycle 4 Replay Result Capture
+
+- **Record results, not just choices, when results are not deterministically recoverable from recorded inputs.** ADR-0019's `--new` fork path recorded `chosenOption='new'` but not the timestamp-derived `childSid`; replay weeks later could not recompute the same `created_at_ns`. Fix pattern: parent-ledger Decisions for fork collisions now record `resultingChildSid`, and replay consumes that result directly.
+
 ### 2026-05-31: PR #33 Cloud Review Cycle 3 Taxonomy Sweep
 
 - **Taxonomy registration sweeps must cover producer sections, not just §17.** When §6 is the canonical `Observation.subKind` registry, sweep §04 hook-bus, §16 test/streaming, and §18 security-permissions for event names in addition to §17 observability; otherwise taxonomy drift can survive outside the catalog.

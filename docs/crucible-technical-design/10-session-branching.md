@@ -180,17 +180,27 @@ SessionLedger.fork(parentSid: SessionId, forkPointOffset: CommitOffset,
     else:
       # Explicit flag provided
       chosenMode := options.mode
-    
+
+    if chosenMode == 'new':
+      # Generate the new result before recording the Decision. Replay consumes
+      # resultingChildSid directly; it does not recompute created_at/preimage.
+      created_at := max(now_ns(), parentRow.timestampNs + 1)
+      childSid := blake3('crucible:session:' || parentSid || ':' || forkPointOffset || ':' || created_at)
+    else:
+      childSid := existingChild.session_id
+
     # Record Decision row on PARENT ledger (ADR-0019)
     decision := Decision{
       kind: 'decision',
       payload: {
+        eventType: 'fork.collision_choice',
         question: 'Fork session at offset ' || forkPointOffset || '?',
         chosenOption: chosenMode,
         alternatives: ['new', 'resume'],
         evidence: {
           rationale: (options.mode != NULL) ? '--' || chosenMode || ' flag provided' : 'user selected ' || chosenMode || ' at prompt',
           existingChildSid: existingChild.session_id,
+          resultingChildSid: childSid,
           collisionDetected: true,
           collisionDetectedAt: now_ns(),
         }
@@ -217,11 +227,13 @@ SessionLedger.fork(parentSid: SessionId, forkPointOffset: CommitOffset,
   else:
     # No collision — default to fresh fork
     chosenMode := 'new'
-  
+    created_at := max(now_ns(), parentRow.timestampNs + 1)
+    childSid := blake3('crucible:session:' || parentSid || ':' || forkPointOffset || ':' || created_at)
+
   # Fresh fork (new session)
-  # Preimage includes timestamp for collision avoidance (ADR-0019)
-  created_at := max(now_ns(), parentRow.timestampNs + 1)
-  childSid := blake3('crucible:session:' || parentSid || ':' || forkPointOffset || ':' || created_at)
+  # Preimage includes timestamp for collision avoidance (ADR-0019); on
+  # collision replay, the parent-ledger Decision's resultingChildSid is
+  # authoritative and this computation is skipped.
   segment := createSegment(childSid, segment0=true)
 
   # Child offset 0 = synthetic fork-origin Observation (§3.2):

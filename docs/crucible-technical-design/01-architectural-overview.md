@@ -91,8 +91,8 @@ Router-Scheduler boundary; Gabriel owns that authoring slice.
 | Layer | Owns | Produces | Consumes | Implemented in |
 |---|---|---|---|---|
 | **L0 — Provider** | SDK adapter; hermetic boundary projection. | `BootstrapPayload` (once), `CrucibleEvent` stream, per-tool-call boundary tags (§2.5). | SDK-native events; `OutboundPrompt`, `ControlSignal` from L1. | `@akubly/crucible-l0-provider` (+ vendor adapters, e.g. Copilot SDK in §12) |
-| **L1 — WAL** | Append-only ledger at `~/.crucible/crucible.db`; primitive envelope, content-addressing, monotonic timestamps, bootstrap offset-0 semantics, context-window commitments. | Durable rows; `AppendProtocol` ack; pre-commit hook bus events. | `CrucibleEvent` via `AppendProtocol`; pre-commit hook verdicts. | `@akubly/crucible-l1-wal` |
-| **L2 — Derived Query** | Pure projections over L1 (read-set tracked, deterministic, recomputable). | Query results, projection tables (incl. `aperture_events`), `ReadSetRef` provenance for downstream emitters. | L1 row stream (via `LedgerWindowReader`). | `@akubly/crucible-derived-query` |
+| **L1 — WAL** | Append-only pure-TypeScript ledger under `~/.crucible/wal/`; primitive envelope, content-addressing, monotonic timestamps, bootstrap offset-0 semantics, context-window commitments. | Durable rows; `AppendProtocol` ack; pre-commit hook bus events. | `CrucibleEvent` via `AppendProtocol`; pre-commit hook verdicts. | `@akubly/crucible-l1-wal` |
+| **L2 — Derived Query** | Pure projections over L1 (read-set tracked, deterministic, recomputable); SQLite projection storage at `~/.crucible/crucible.db`. | Query results, projection tables (incl. `aperture_events`), `ReadSetRef` provenance for downstream emitters. | L1 row stream (via `LedgerWindowReader`). | `@akubly/crucible-derived-query` |
 | **L3 — Generators** | `ProposalGenerator` contract (data + structural variants); trust-tier attribution; conformance suite. | `DataProposal`, `StructuralProposal`, Pareto-fitness results (`PrescriptionResult` with `nonDominatedReason`). | L2 projections; plugin manifests from the registry. | `@akubly/crucible-generators` (interface); Curator, Alchemist, Forge-as-L3 adapter, third-party plugins. |
 | **L3.5 — Scheduler** | Dispatch unit between L3 and L4: resolves which generator emissions advance to Router policy and in what order; owns generator-emission ordering, dispatch fairness, and instruction-trace hazard analysis (RAW/WAR/WAW across concurrent generators). Authors no policy verdicts, writes no ledger rows. | `SchedulerDispatch` events (proposal-ordering decisions, hazard annotations); generator-fairness telemetry. | L3 proposals; L2 projections (for hazard analysis); Router back-pressure signals. | `@akubly/crucible-scheduler` (ADR-0024; §5 canonical for the Router boundary). |
 | **L4 — Router** (decision sub-tier) | Policy table indexed by `(primitiveKind, trustTier)`; verdict bus; paused-dependent-paths state; Pareto-non-dominated surfacing. | `RouterDecision` events; verdicts (`APPROVE`/`DENY`/`OBSERVE`/`PAUSE`/`ESCALATE_USER_REVIEW`); Aperture queue enqueues. | Scheduler-dispatched proposals; pre-commit hook outcomes; user acks via Aperture. | `@akubly/crucible-router` |
@@ -153,8 +153,8 @@ for this namespace.
 | `@akubly/types` | Shared cross-product types: `SessionId` brand, `SessionMetadata`, `BootstrapPayload`, `ContextWindowCommitment`, `StructuralProposal`, `PluginVersionLock`, `PrescriptionResult`, `OptimizationCategory`. | Co-owned (Crucible + Cairn + Forge). Only convergence point across products. |
 | `@akubly/crucible-boundary` | The §2 pure-data interface package: `CrucibleEvent`, `BootstrapPayload`, `OutboundPrompt`, `ControlSignal`, `ToolCallBoundary`. Dependency-cruiser rules live here. | No runtime logic; type-only + adapter contracts. |
 | `@akubly/crucible-l0-provider` | L0 adapter base + per-SDK implementations. | Vendor adapters (e.g. Copilot SDK §12) live in subpaths or sibling packages. |
-| `@akubly/crucible-l1-wal` | Custom append-only WAL, content-addressing, monotonic-timestamp validator, `AppendProtocol`, `LedgerWindowReader`, `ReadSetHasher`. | Storage at `~/.crucible/crucible.db`. |
-| `@akubly/crucible-derived-query` | L2 projection runtime; `LedgerProjector`, `QueryExecutor`; `aperture_events` projection table. | Pure functions over L1; replayable. |
+| `@akubly/crucible-l1-wal` | Custom append-only WAL, content-addressing, monotonic-timestamp validator, `AppendProtocol`, `LedgerWindowReader`, `ReadSetHasher`. | Storage under `~/.crucible/wal/`. |
+| `@akubly/crucible-derived-query` | L2 projection runtime; `LedgerProjector`, `QueryExecutor`; `aperture_events` projection table. | Projection storage at `~/.crucible/crucible.db`; pure functions over L1; replayable. |
 | `@akubly/crucible-generators` | L3 `ProposalGenerator` interfaces, conformance suite, generic adapter test catalog, built-in Curator + Alchemist generators. | Forge-as-L3 adapter lives here as the worked example; third parties register through the plugin registry. |
 | `@akubly/crucible-router` | L4 policy engine, verdict bus, paused-dependent-paths state machine, `RouterDecision` shape. | Aperture handshake on structural queue ack/reject. |
 | `@akubly/crucible-applier` | §8 Applier: state machine (`proposed → approved → applying → applied|failed`), ledger-position fence check, context-window-commitment computation. | Records Decision/Artifact back through §2. |
@@ -184,8 +184,9 @@ architecture commits to four invariants:
    subsystems; Cairn and Forge do not call into Crucible. The Forge-as-L3
    adapter (§7.B) is the single allowed Crucible-facing surface, and it is a
    conformance-tested *adapter* — not a runtime dependency on the Forge product.
-2. **No shared substrate.** Crucible's WAL is `~/.crucible/crucible.db`;
-   Cairn's knowledge DB is `~/.cairn/knowledge.db`. No shared schema, no
+2. **No shared substrate.** Crucible's L1 WAL lives under `~/.crucible/wal/`;
+   Crucible's L2 projections live at `~/.crucible/crucible.db`; Cairn's
+   knowledge DB is `~/.cairn/knowledge.db`. No shared schema, no
    cross-DB foreign keys, no shim packages, no harness-in-harness.
 3. **Convergence at `@akubly/types` only.** Both teams co-own the shared
    types package. Neither product is the source of truth for the other.

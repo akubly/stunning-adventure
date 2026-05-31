@@ -87,7 +87,7 @@ This is deterministic **within a single execution timeline**, but creates a coll
 3. **Naming:** "New" instead of "Fresh" (Valanice — parallel structure with "Resume").
 4. **Non-TTY behavior:** exit code 2, error message "Interactive prompt unavailable. Use --new or --resume."
 5. **Flags:** `crucible fork <sid> --at <offset> [--new | --resume] [--no-interactive] [--label <text>]`. Mutually exclusive.
-6. **Determinism:** record user's choice as Decision row in PARENT ledger ({chosenOption, existingChildSid, collisionDetectedAt offset}). Idiomatic Question/Decision pattern.
+6. **Determinism:** record user's choice and result as a Decision row in PARENT ledger (`{chosenOption, existingChildSid, resultingChildSid, collisionDetectedAt}`). For `--new`, replay consumes `resultingChildSid` directly and skips timestamp/preimage recomputation. Idiomatic Question/Decision pattern.
 7. **Preimage:** timestamp variant for --new (`parentSid || offset || created_at_ns`); reuse existing childSid for --resume.
 8. **Observation row:** add `fork_resume` sub-kind to §6.3 taxonomy (appended at resume point in child ledger).
 9. **Keep both `--resume` flag AND `crucible session resume` verb** (Roger — orthogonal workflows: flag = "resume at fork time", verb = "resume discovered aborted session").
@@ -129,7 +129,7 @@ This is deterministic **within a single execution timeline**, but creates a coll
 - Add pseudocode for:
   - Collision detection: check if `(parentSid, offset)` already has child with `status='aborted'`
   - Interactive prompt: TTY detection, `[N]ew / [R]esume / [C]ancel` UX, relative time display
-  - Decision row writing: `{chosenOption: 'new' | 'resume', existingChildSid, collisionDetected: boolean}`
+  - Decision row writing: `{eventType: 'fork.collision_choice', chosenOption: 'new' | 'resume', existingChildSid, resultingChildSid, collisionDetected: boolean}`
   - Preimage rules: timestamp variant for "new", reuse existing `childSid` for "resume"
   - Resume mechanics: append `fork_resume` Observation at resume point
 
@@ -166,7 +166,7 @@ This is deterministic **within a single execution timeline**, but creates a coll
 
 ### Positive
 - **All four user stories supported:** US-1 (quick retry), US-2 (crash recovery), US-3 (side-by-side), US-4 (accidental resume prevention)
-- **Replay-deterministic:** Decision row recording makes user choice replayable without re-prompting
+- **Replay-deterministic:** Decision row recording makes both the user choice and the resulting child session replayable without re-prompting or recomputing timestamp-derived IDs
 - **Collision surfacing:** Prevents silent data loss; teaches fork model implicitly
 - **Power-user graduation path:** Flags bypass prompt for known-intent workflows
 
@@ -183,7 +183,7 @@ This is deterministic **within a single execution timeline**, but creates a coll
 ## Acceptance Signals
 
 **Contract-tier signals:**
-- Decision row schema validates: `{question, chosenOption: 'new'|'resume', evidence: {rationale, existingChildSid, collisionDetected}}`
+- Decision row schema validates: `{question, chosenOption: 'new'|'resume', evidence: {rationale, existingChildSid, resultingChildSid, collisionDetected}}`
 - `fork_resume` Observation sub-kind validates against §6.3 schema
 
 **Component-tier signals:**
@@ -196,7 +196,7 @@ This is deterministic **within a single execution timeline**, but creates a coll
 - A-Fork-2: `crucible fork --at 50` + crash + `crucible fork --at 50 --resume` → same `childSid`, `fork_resume` row appended
 - A-Fork-3: closed session + `crucible fork --at 10` → error unless `--new`
 - A-Fork-4: aborted session created 3 days ago + `crucible fork --at 50` → prompt shows "3 days ago" relative time
-- A-Fork-5: replay parent session → Decision row followed → child sessions replay deterministically
+- A-Fork-5: replay parent session → Decision row followed → `--new` consumes recorded `resultingChildSid` rather than recomputing timestamp-derived childSid; `--resume` follows the existing child reference
 - A-Fork-6: `echo "..." | crucible fork --at 50` (non-TTY) → exit code 2, "Interactive prompt unavailable. Use --new or --resume."
 - A-Fork-7: `crucible fork --at 50 --no-interactive` without `--new`/`--resume` → exit code 2
 - A-Fork-8: `crucible session resume <childSid>` → resumes aborted session, appends `fork_resume` row
@@ -232,7 +232,7 @@ Fork-choice Decision appends are replay-consumed: A-Fork-5 follows the recorded 
    **A:** No. Fork collision detection emits a Question, user choice is captured as a Decision row (idiomatic RFC pattern). Closed sessions accept metadata appends, not work-session appends. (Graham review finding.)
 
 2. **Q: Is replay deterministic if the user chooses different options on retry?**  
-   **A:** Replay reads the **recorded Decision row** from parent ledger, not live user input. Original run prompts user, records choice; replay follows recorded choice, no re-prompt. (Laura review finding.)
+   **A:** Replay reads the **recorded Decision row** from parent ledger, not live user input. Original run prompts user, records choice and `resultingChildSid`; replay follows recorded choice and, for `--new`, uses the recorded result rather than recomputing `created_at_ns`. (Laura/Graham review finding.)
 
 3. **Q: What if user crashes during the prompt?**  
    **A:** No Decision row written → no child session created. Next fork attempt detects same collision, re-prompts. Idempotent.

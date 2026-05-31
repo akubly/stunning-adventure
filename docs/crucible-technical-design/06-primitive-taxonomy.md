@@ -150,6 +150,7 @@ interface DecisionPayload {
     | 'router.paused'
     | 'router.decision'
     | 'applier.revert'
+    | 'fork.collision_choice'
     | 'scheduler_dispatched'
     | 'scheduler_deferred'
     | 'scheduler_cancelled'
@@ -178,12 +179,22 @@ interface QuestionPayload {
 | Request     | `tool_call`, `llm_call`, `TaskStart`, `user_input` |
 | Artifact    | `tool_output`, `llm_output`, `synthetic_output` (M3) |
 | Observation | `system_prompt`, `tool_definitions`, `injected_memory`, `tool_output`, `llm_response`, `stream_open`, `stream_delta`, `stream_close`, `cross_session_memory`, `context_truncation`, `external_input`, `TaskEnd`, `monotonic_violation`, `structural_proposal_emitted`, `structural_proposal_acked`, `structural_proposal_rejected`, `structural_proposal_expired`, `fork_origin`, `fork_resume`, `predicate_registered`, `predicate_unregistered`, `predicate_timeout`, `row_budget_exhausted`, `fence_violation_retry`, `fence_exhausted`, `replay_divergence`, `ci_gate_failure`, `subscriber_drop`, `projection_stale`, `projection_recovered`, `storage_soft_warn` |
-| Decision    | (no sub-kind; differentiated by `eventType`, `commitmentMethod`, and `nonDominatedReason`; v1 `eventType` values: `router.paused`, `router.decision`, `applier.revert`, `scheduler_dispatched`, `scheduler_deferred`, `scheduler_cancelled`, `scheduler_quanta_exhausted`) |
+| Decision    | (no sub-kind; differentiated by `eventType`, `commitmentMethod`, and `nonDominatedReason`; v1 `eventType` values: `router.paused`, `router.decision`, `applier.revert`, `fork.collision_choice`, `scheduler_dispatched`, `scheduler_deferred`, `scheduler_cancelled`, `scheduler_quanta_exhausted`) |
 | Question    | (differentiated by `audience` + `expectedAnswerShape`) |
 
 `TaskStart` and `TaskEnd` are **enum values on existing Request and Observation
 kinds**, not new primitive types (Round 2.2 lock). `task_id` on the envelope
 ties a fan-out together; the same kind-indexed hook dispatch handles them.
+
+**Fork payload schemas (ADR-0019).** `fork_origin` Observation bodies carry
+`{ parentSessionId, forkPointOffset, forkPointEventId,
+parentForkPointTimestampNs }`. Parent-ledger fork collision Decisions carry
+`eventType: 'fork.collision_choice'`, `chosenOption: 'new' | 'resume'`,
+`existingChildSid`, `collisionDetected: true`, `collisionDetectedAt`, and
+`resultingChildSid`. For `chosenOption: 'new'`, replay MUST consume the
+recorded `resultingChildSid` and skip timestamp/preimage recomputation; for
+`chosenOption: 'resume'`, `resultingChildSid` equals the existing child
+reference.
 
 ## 6.4 Parent / Causal Linking
 

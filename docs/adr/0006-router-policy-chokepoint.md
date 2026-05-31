@@ -119,3 +119,16 @@ and SDK never decide policy.
   compromising the Router itself, not any of the downstream components.
 - Session-pinned policy (§5.5, TDD-Q3) prevents mid-session policy
   mutation, eliminating a TOCTOU class of policy-bypass attacks.
+
+---
+
+## Resolved Questions
+
+1. **Q: Who owns tiebreak policy for non-singleton non-dominated prescription sets?**
+   **A:** The Router owns it. PA-B3 classifies non-dominated tiebreaks as policy decisions, so the Router emits the selected prescription or an escalation verdict.
+
+2. **Q: What inputs feed the tiebreak?**
+   **A:** Router policy evaluates the session-pinned `PolicyRow`, trust-tier and capability context, the full non-dominated prescription candidate set, candidate fitness metadata, and the proposal/read-set evidence carried through the standard Router Decision path.
+
+3. **Q: Does DecisionGate have an independent `tiebreak()` or allow/deny path?**
+   **A:** No. DecisionGate verifies that a RouterDecision is present, session-pinned, authorized, and compatible with the Applier fence; it enforces Router-decided policy but does not evaluate policy itself.

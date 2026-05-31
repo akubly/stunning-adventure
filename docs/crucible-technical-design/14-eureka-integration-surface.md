@@ -27,7 +27,8 @@ SHARED is PRIVATE to its owner and MUST NOT be reached around.
 | §7.A Generic L3 Adapter Conformance suite | **SHARED** (test contract) | Laura (§5.3 runner) | Adapter MUST pass C-1…C-8 unchanged. |
 | Eureka knowledge graph / `facts` table / BM25 ranker / sweep | **PRIVATE** | Eureka | Crucible never reads, writes, or schemas this. |
 | Eureka `eureka` CLI, reconcile, ingest-decisions | **PRIVATE** | Eureka | May be invoked by users; not orchestrated by Crucible. |
-| Crucible L1 WAL (`~/.crucible/crucible.db`) | **PRIVATE** | Crucible (§3) | Eureka MUST NOT see WAL internals, rows, or filesystem layout. |
+| Crucible L1 WAL (`~/.crucible/wal/`) | **PRIVATE** | Crucible (§3) | Eureka MUST NOT see WAL internals, rows, or filesystem layout. |
+| Crucible L2 SQLite projections (`~/.crucible/crucible.db`) | **PRIVATE** | Crucible (§3/§5.A) | Derived projection tables only; Eureka MUST NOT treat this as the L1 ledger or read it directly. |
 | Crucible hook bus, Router policy, Applier fence, Aperture queue | **PRIVATE** | Crucible (§4/§5/§8/§9) | Not exposed; the adapter mediates. |
 | `~/.crucible/` filesystem | **PRIVATE** | Crucible | Eureka has no read or write authority here. |
 | `~/.cairn/knowledge.db`, Cairn `event_log`, Cairn `sessions` | **PRIVATE** to Cairn | Cairn | Not Crucible's concern (§14.3). |
