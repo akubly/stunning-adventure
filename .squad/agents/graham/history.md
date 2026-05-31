@@ -75,3 +75,24 @@ Any other `.squad/` paths (log, orchestration-log, sessions, decisions/inbox/, .
 **Lesson 3 — `test_results.txt` as tracked artifact.**  
 Local test captures with ANSI codes and machine-specific paths (D:/git/...) are never source artifacts. Add to `.gitignore` under `# Local test capture artifacts` and delete from disk.
 
+
+### 2026-05-29: WI-B Scoping Complete (Recovered from ae62558)
+
+**Event:** Pre-implementation scoping decision made on cycle 4 findings.
+
+**WI-B Scope Confirmation:** Make the coordinator CREATE worktrees per-issue instead of dispatching agents into shared main. Pre-Spawn documentation (lines 697–742) was aspirational; Gabriel to implement.
+
+**Opt-in vs default-on decision:** Option A (Opt-in via SQUAD_WORKTREES=1) recommended for v1. Zero behavior change unless explicitly enabled. Minimal complexity — one if check. Risk is low (worst case: feature unused, status quo maintained).
+
+**Key risk flags codified:**
+- File-deletion mystery event: WI-B mitigates via isolation
+- 
+ode_modules re-install: cleanup flow handles junction removal before git worktree remove
+- Pre-Spawn documentation-only: add ACTIVE status + enforcement language
+- Parallel dispatch guard: warning-only for v1
+- Template drift: atomic updates across all three files
+
+**Status:** Scoping locked. Ready for Gabriel implementation.
+
+
+📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
