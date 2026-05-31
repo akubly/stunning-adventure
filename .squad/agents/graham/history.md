@@ -50,3 +50,28 @@ Pattern used for M5+M6 branch prep:
 - Commit B: team metadata (history, skills) — lower-signal noise that would dilute Commit A's review surface
 - Trade-off: 3-commit branch (Scribe + A + B) vs. 2-commit. Accepted — Scribe commit is inert to review-cycle (no code).
 
+---
+
+**2026-05-30 — gitignore vs `--cached`: untracking committed files + coordinator spawn-prompt error**
+
+Context: PR #34 review (Copilot threads 8, 9, 10) flagged `.squad/orchestration-log/` (34 files), `.squad/log/` (1 file), and `test_results.txt` as committed despite being gitignored.
+
+**Lesson 1 — gitignore does NOT untrack, only blocks new adds.**  
+Once a file is committed, `.gitignore` has no effect on it. The only way to untrack it:
+```
+git rm -r --cached <path>   # removes from index, preserves local files (runtime state safe)
+git rm <path>               # removes from index AND from disk (for junk files)
+```
+Then commit the staged deletions. After the commit, `.gitignore` will prevent re-adds.
+
+**Lesson 2 — Coordinator spawn-prompt error that caused this.**  
+My spawn instructions to Scribe listed `orchestration-log/` and `log/` as allowed Scribe-write paths that should be committed. They are gitignored runtime state and must NOT be committed. The correct allowed-paths list for Scribe:
+- `decisions.md`, `decisions-archive.md`
+- `agents/{name}/history.md`, `agents/{name}/history-archive.md`
+- `identity/now.md`
+
+Any other `.squad/` paths (log, orchestration-log, sessions, decisions/inbox/, .scratch/) are runtime state — gitignored, local-only.
+
+**Lesson 3 — `test_results.txt` as tracked artifact.**  
+Local test captures with ANSI codes and machine-specific paths (D:/git/...) are never source artifacts. Add to `.gitignore` under `# Local test capture artifacts` and delete from disk.
+
