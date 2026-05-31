@@ -526,4 +526,5 @@ pm run build --workspace=@akubly/runtime-cli (exit 0)
 pm run lint --workspace=<name>) rather than relying on root lint. The glob slint packages/*/src/ doesn't work in PowerShell; follow-up issue filed to fix root lint permanently.
 
 **Follow-up:** Opened issue #XX for root 
-pm run lint Windows failure (squad/gabriel tag).
+pm run lint Windows failure — issue #37 opened (squad/gabriel tag).
+
