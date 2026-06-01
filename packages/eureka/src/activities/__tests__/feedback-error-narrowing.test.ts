@@ -332,10 +332,13 @@ describe('Group 3 — inheritance preservation (instanceof convenience)', () => 
 // Group 4 — source discrimination on InvalidTrustValueError
 //
 // InvalidTrustValueError carries source: 'input' | 'storage' to distinguish
-// whether the bad value came from the caller or from storage. Three paths:
-//   - source:'input' via non-finite currentTrust (applyFeedback guard fires first)
-//   - source:'input' via non-finite correctionDelta (user_correction path)
-//   - source:'storage' via FactReader returning corrupt trust (applyFeedbackById guard)
+// where the bad value originated. Two source paths (post-M7-C):
+//   - source:'input'   — caller supplied a non-finite correctionDelta; applyFeedback
+//                         throws before mutate() is ever called (pre-flight validation)
+//   - source:'storage' — storage's mutate impl calls fn(corruptTrust); the activity-layer
+//                         fn validates currentTrust on entry and throws; write is aborted
+//                         (FactReader is no longer on this path — currentTrust is provided
+//                         by the storage seam, not by the caller)
 // =============================================================================
 
 describe('Group 4 — source discrimination on InvalidTrustValueError', () => {

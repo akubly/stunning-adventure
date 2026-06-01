@@ -206,12 +206,15 @@ function runTrustUpdaterContract(makeImpl: () => TrustUpdaterTestImpl): void {
   });
 
   // -------------------------------------------------------------------------
-  // C-6 — Concurrent mutate() on DIFFERENT factIds is NOT serialized
+  // C-6 — Mutations on different factIds do not interfere
   // -------------------------------------------------------------------------
-  // Mutations on different facts can run in parallel — the impl must not use a
-  // single global lock.
+  // Both mutations reach the correct final value when run concurrently.
+  //
+  // Note: per-factId parallelism is PERMITTED but not required by the contract.
+  // A globally-serialized impl (e.g., single-connection SQLite) is valid and
+  // would pass this test. C-6 proves independence of results, not parallelism.
 
-  it('C-6: concurrent mutate() on different factIds can run in parallel (no global lock)', async () => {
+  it('C-6: mutations on different factIds do not interfere — each reaches correct final value', async () => {
     const FACT_A = 'fact-contract-A';
     const FACT_B = 'fact-contract-B';
     const { impl, setTrust, getTrust } = makeImpl();
