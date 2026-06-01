@@ -240,8 +240,9 @@ export type FeedbackEvent = 'corroboration' | 'contradiction' | 'user_correction
  *     propagates out of `mutate()` unchanged.
  *   - If the fact does not exist: `mutate()` MUST throw `FactNotFoundError(factId)` before
  *     calling `fn`. `fn` is never invoked for a missing fact.
- *   - If `fn` returns a non-finite value: storage MUST reject by throwing
- *     `InvalidTrustValueError(value, 'storage', ...)`.
+ *   - If `fn` returns a non-finite or out-of-range [0, 1] value: storage MUST reject by
+ *     throwing `InvalidTrustValueError(value, 'storage', ...)`. This clause is normative —
+ *     implementations MUST NOT silently commit a corrupt trust value.
  *
  * Production implementation delegates to the persistence/storage layer (e.g., a future
  * FactStore extension or dedicated writer interface — the FactStore interface here is read-only).
@@ -324,7 +325,8 @@ export interface ApplyFeedbackByIdDeps {
  *
  * @concurrency Atomicity is a CONTRACT guarantee of `TrustUpdater.mutate()`:
  *   the storage implementation MUST execute read + fn + write as a single atomic operation
- *   per factId. See edgar-m7-c-contract.md and TrustUpdater JSDoc for the full contract.
+ *   per factId. See `.squad/decisions.md` § "M7-C Atomicity Contract" (PR #41) and
+ *   TrustUpdater JSDoc for the full contract.
  *
  * @throws {UnhandledFeedbackEventError} if an unrecognised FeedbackEvent variant is encountered at runtime
  * @throws {InvalidFeedbackOptionsError} if event='user_correction' and correctionDelta is omitted
