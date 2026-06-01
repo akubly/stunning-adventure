@@ -31,7 +31,7 @@
 
 **Summary:** M7-A (Typed Error Hierarchy, Edgar lead) completed 3-cycle review (Cycles 1–2 + fix wave). PR #38 review-complete, pending ship decision.
 
-**Next up:** M7-C — Real FactReader contract test and atomicity contract design. Crispin leads with Edgar on design spec. Scope: genuine FactReader integration (not mock) with multi-threaded access patterns and fact consistency guarantees.
+**Next up:** M7-C — Real FactReader contract test and atomicity contract design. Direction locked: Aaron picked (c) mutate callback over (a) caller-serialization and (b) CAS token. Rationale: pushes read-modify-write into seam, keeps activity layer pure, makes correctness a storage-layer property. Crispin/Edgar implementing mutate callback interface on `eureka/m7-c-atomicity`. Coordinator will spawn verification when both agents report completion.
 
 ---
 
@@ -349,3 +349,47 @@ Using `updated_at` for recency computation conflates **modification time** with 
 📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
 📌 Team update (2026-05-31T07:24:22Z): **M7-A (PR #38) shipped** — Typed error classes for applyFeedback/applyFeedbackById. 5 error classes with code discriminators. All 40 existing tests GREEN (no changes required, inheritance preserved). Next: M7-B (Laura — exhaustive narrowing tests) and M7-C (Crispin/Edgar — FactReader contract + atomicity). — Scribe
+
+---
+
+### 2026-05-31: M7-C — Real FactReader Implementation + Contract Test Suite — COMPLETE
+
+**Branch:** `eureka/m7-c-factreader` (branched from `eureka/m7-bd-narrowing-regression`)
+
+**Summary:** Delivered the real FactReader implementation and shared contract test suite for M7-C. Parallel to Edgar's atomicity contract work on `eureka/m7-c-atomicity`.
+
+#### Data Layer Survey Finding
+
+`packages/eureka/src/` has no persistence layer. No `storage/` directory, no DB driver, no migration files. Only `activities/` + `index.ts`. The package has zero production dependencies besides `@akubly/types`. Both `FactReader` and `TrustUpdater` exist purely as mock-injected interfaces today.
+
+#### Implementation Chosen: In-Memory FactReader
+
+Selected option (i) — `Map<factId, FactRecord[]>` backed in-memory implementation. Rationale:
+- No SQLite dependency exists in Eureka; introducing it would require a schema decision that belongs alongside the full `FactStore.search()` design (Crispin's storage-layer milestone)
+- The `FactReader` interface's job in M7-C is the recall pipeline + direct callers — the in-memory form is sufficient for both
+- The contract test suite is the primary deliverable; a real storage backend wires in later without test rewriting
+
+Deferred: SQLite FactReader to M8-storage (schema + persistence layer milestone).
+
+#### Key design decisions:
+- **SessionId scoping:** `read()` returns `null` for a correct factId in the wrong session — this is a contract requirement, not just an optimization. Different sessions are isolated.
+- **Trust passthrough:** Read layer returns raw NaN/corrupt values unchanged. Validation is the caller's job (`InvalidTrustValueError(source:'storage')` in `applyFeedbackById`).
+- **Seed helper is NOT part of FactReader interface:** `InMemoryFactReader.seed()` is a test/dev utility. Future impls (SQLite) would seed via standard DB writes.
+- **Connection lifecycle:** In-memory impl owns its own Map. Documented that production impls should accept a db handle as constructor arg.
+
+#### Contract Test Pattern
+
+`runFactReaderContract(implName, makeHarness)` — a shared exported helper that any FactReader impl can register with. Five invariants:
+- CL-1: Read existing fact returns `{trust}`
+- CL-2: Read missing fact returns `null`
+- CL-3: Wrong-session isolation returns `null`
+- CL-4: Trust passthrough (NaN returned as-is)
+- CL-5: Result shape carries numeric `trust` field
+
+Pattern scales: adding a new implementation = one `runFactReaderContract(...)` call, zero test duplication.
+
+#### Coordination with Edgar
+
+Edgar's `eureka/m7-c-atomicity` removes `FactReader` from `ApplyFeedbackByIdDeps` (it moves to the storage layer via the `mutate` callback). This is expected and fine — `FactReader` survives for pure-read use cases. No blocking constraints discovered. No `needs-edgar` coordination file required.
+
+#### Test counts: 62 baseline → 67 after M7-C (5 new contract tests). Build clean. All 67 pass.
