@@ -1,35 +1,52 @@
 # Edgar — History
 
 **Role:** Learning Systems Specialist (Plasticity, trust, recency, recall algorithms)
-**Status:** PR #34 cycle 2 complete. TrustUpdater JSDoc clarified (FactStore read-only caveat) + green-beat checklist clock item scoped to recency activities only. 40/40 tests green.
-**Last update:** 2026-05-30
+**Status:** M7-A complete. Typed error hierarchy shipped on `eureka/m7-a-typed-errors`. 40/40 tests green.
+**Last update:** 2026-05-31
 
 **Key milestones:**
 - R5-R6: Power-law recency + event-driven trust design
 - R7-R8: v5-final locked canonical (extraction-ready mechanisms verified)
 - M2-M3: recall() + composite-ranker landed (§30 §1.2 FR-2 formula inline)
 - Cycle 2 fixes: F6 minTrust interface, C5 Ranker JSDoc, C6 guard test
-- M5 GREEN: applyFeedback (TrustUpdater seam) — corroboration/contradiction/user_correction
-- M6 GREEN: applyFeedbackById (FactReader read-seam) + user_correction required-delta guard
-- M5+M6 cycle 2: correctionDelta NaN/Infinity guard, @concurrency accuracy, FactReader strict-null contract
-- Build: 609 Cairn, 644 Forge, 37 Eureka tests green
-- PR #34 cycle 2 (2026-05-30): TrustUpdater JSDoc — replaced "FactStore persistence layer" with generic storage language; green-beat checklist — scoped `clock` requirement to activities that read time only
+- M7-A GREEN: typed error hierarchy (FactNotFoundError, InvalidFeedbackOptionsError, InvalidTrustValueError, FactReaderContractError, UnhandledFeedbackEventError)
 
-**See history-archive.md for detailed entries.**
+## Current & Recent
 
-**Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
+**2026-05-31 — M7-A Cycle 1: Code Panel review fixes (11 ACCEPT, 2 REJECT)**
 
-**Scribe note (2026-05-30T22:59:00-07:00):** PR #34 Copilot review addressed (4 threads). (1) Added missing `@throws {RangeError}` to `applyFeedbackById` for out-of-range stored trust propagated from `applyFeedback` (defense-in-depth). (2–4) Corrected green-beat skill §3a, §3 example signature, and §5: `clock` is required ONLY when the activity reads time; activities that don't read time (`applyFeedback`, `applyFeedbackById`) omit `clock` entirely — phantom deps are anti-pattern (§30 §2.3, §55 §1.2). 40/40 tests green, build clean.
+- **`err.code` is the canonical discriminator, not `instanceof`:** Declared explicitly in file header and decisions.md. `instanceof` works in a single realm but fails across ESM realms and after dual-pkg bundling. The `code` string literal is always realm-safe. This should be the stated policy in any typed error hierarchy — not just implied by the presence of a `code` field.
 
-**Scribe note (2026-05-30T22:19:00Z):** M5+M6 review-cycle cycle 2 hardening complete. Three findings addressed: (1) correctionDelta non-finite guard added inside user_correction branch; (2) @concurrency JSDoc rewritten to accurately present caller-serialization vs. API-widening options with M7-C scope updated; (3) FactReader contract aligned to strict null across interface, impl (=== null), and §2.3 spec. 37/37 tests green.
+- **Symmetry is a design invariant for error classes:** `UnhandledFeedbackEventError` was missing its `readonly event: string` field while all other 4 classes stored their key payload as a readonly property. Asymmetry forces callers to parse `.message` strings — a fragile contract. Rule: every error class must carry all discriminating payload as typed readonly fields.
 
-**Scribe note (2026-05-30T22:28:23Z):** Cycle 3 (final) polish wave closed. Edgar's 2 minor findings: (1) P1 — spec §2.3 Guard Contracts bullet added for correctionDelta non-finite guard (impl already has check, spec now documents it parallel to currentTrust); (2) P2 — friendlier undefined error in applyFeedbackById after null guard (converts opaque 'Cannot read properties' into explicit "FactReader contract violation" TypeError). Build + 40 tests green. Commit: polish(eureka): M5+M6 cycle 3 — spec bullet + friendly FactReader undefined error. Laura owns 2 parallel findings.
+- **`readonly code: 'X' = 'X'` is idiomatic over `readonly code = 'X' as const`:** The explicit annotation form (`readonly code: 'FACT_NOT_FOUND' = 'FACT_NOT_FOUND'`) is the canonical TypeScript pattern. `as const` on a readonly literal initializer is redundant — TypeScript already narrows the type. Apply consistently.
 
-## Learnings
+- **`.name` override is an intentional, observable behavior change that needs documentation:** Setting `this.name = 'InvalidTrustValueError'` diverges from the native base-class name (`'RangeError'`). This is the right thing — readable stack traces, domain-labelled logs — but it's a breaking change for any downstream code keying on `err.name`. Document it explicitly in the file header; don't let it slip through as a silent side-effect.
 
-**2026-05-30 — M5+M6 cycle 2 hardening (correctionDelta, @concurrency, FactReader contract)**
+- **`Object.setPrototypeOf` comment matters as much as the call:** The comment "required for extending built-in Error in ES5 targets" was misleading at ES2022 target. The correct justification is defensive: guards against downstream bundlers that re-transpile to ES5. A misleading comment is worse than no comment because it causes future engineers to remove the call for the wrong reason.
 
-- **Validate ALL inputs in a math path, not just the first one:** Cycle 1 added a `currentTrust` guard but left `correctionDelta` unchecked. A NaN delta produces NaN trust, which propagates silently into TrustUpdater. The pattern: when a function takes multiple numeric inputs into a computation, each must be independently validated before the first side-effect-producing `await`.
+- **@throws ordering should match runtime check order:** JSDoc @throws listed `FactNotFoundError` before `FactReaderContractError` but the runtime checks `undefined` before `null`. Reorder to match reality — JSDoc is documentation of behavior, not narrative summary.
+
+- **REJECT-defer with rationale is a valid and disciplined outcome:** F3 (EurekaError base class) was rejected not because it's a bad idea but because it's M7-B scope. M7-A's mandate was minimal: typed errors with zero test changes. A base class introduction requires designing a new hierarchy contract that M7-B narrowing tests will anchor. Scope discipline > completeness.
+
+- **Branch:** `eureka/m7-a-typed-errors` | **PR:** #38 — cycle 1 fixes committed post-review.
+
+**2026-05-31 — M7-A Cycle 2: @throws order regression from a claimed fix**
+
+- **A fix can land backwards.** Cycle-1 F10 was documented as "swap @throws to match runtime check order." The commit landed with `FactReaderContractError` listed first — the *opposite* of runtime order (code checks `null` → `FactNotFoundError` first, `undefined` → `FactReaderContractError` second). Three of four cycle-2 personas independently caught it. The lesson: after making a swap, re-read the resulting state against the ground truth (the actual runtime code), not just against the before state. "I swapped it" is not the same as "it is now correct." Diff review must verify the final ordering, not just the presence of a change.
+
+- **Inheritance discipline for zero test changes:** Existing M5+M6 tests assert `instanceof RangeError` (3 tests) and `instanceof TypeError` (2 tests). By making `InvalidTrustValueError extends RangeError` and `FactReaderContractError`/`UnhandledFeedbackEventError extends TypeError`, all existing assertions pass without any test edits. This is the correct green-beat discipline — typed error introduction is a refactor, not a behavior change.
+
+- **`correctionDelta` non-finite maps to `InvalidTrustValueError`:** The task spec scoped `InvalidTrustValueError` to "currentTrust or stored fact.trust", but the test asserts `RangeError` for non-finite `correctionDelta`. Using `InvalidTrustValueError(value, 'input', msg)` is the cleanest fit — it extends `RangeError`, preserves the assertion, and the `source: 'input'` is accurate. M7-B narrowing tests can document this mapping explicitly.
+
+- **Test count delta: 0.** No new tests; no removed tests. Only assertion tightening in M7-B (follow-up PR). 40/40 → 40/40.
+
+**2026-05-31 — M7-A PR #38 Copilot Cloud Review Cycle (docs-only, Cycle 3)**
+
+- **Three pure-docs threads closed cleanly in one commit (f8f94c3):** All three Copilot findings were pre-aligned with Cycle 1 decisions — no new design work required. Thread A (gitignored inbox path) → replaced with `.squad/decisions.md` § "M7-A" citation per the `doc-references-respect-gitignore` skill. Threads B+C (`as const` examples) → replaced with `readonly code: 'X' = 'X'` explicit-annotation form, with "Do not use as const" callout pointing back to Cycle 1 (F7) and the reference implementation. Reply-before-resolve discipline applied: all 3 threads replied on before calling `resolveReviewThread`.
+
+**See history-archive.md for detailed entries from M5, M6, earlier reviews, and design ceremony.**
+
 
 - **JSDoc concurrency notes must describe the mechanism, not just the obligation:** "atomicity is a storage-backend responsibility" was misleading because `TrustUpdater.update` only accepts an absolute value — the backend has no CAS surface without an API change. Accurate JSDoc names both v1 (caller serialization) and the future path (API widening: CAS token or mutate callback) so M7-C has a concrete scope.
 
@@ -78,5 +95,9 @@
 - **Function decomposition over parameter growth:** Adding `currentTrust` to `applyFeedbackById`'s options signature was rejected. The higher-level function should own the read; callers shouldn't need to know current trust. `applyFeedback` (takes currentTrust) and `applyFeedbackById` (takes factId, reads internally) form a clean two-level API with explicit layering.
 
 - **§30 §2.3 spec gap filled:** The docs section jumped §2.2 → §2.4. Writing §2.3 "Trust Dynamics Beyond the Static Floor" as part of M6 delivery closes the gap that Laura originally flagged in the RED decision drop. Spec gaps should be closed in the same milestone that implements the behavior — not deferred.
+
+## Learnings
+
+- **F7 reversal (2026-05-31, PR #38 Cycle 4):** The Cycle 1 F7 finding that switched discriminator declarations from `readonly code = 'X' as const` to the explicit-annotation form `readonly code: 'X' = 'X'` was reversed. Root cause: the repo's ESLint config enforces `@typescript-eslint/prefer-as-const` as an error — the explicit-annotation form violates it, breaking CI on both Node 20 and Node 22. The `as const` form was correct all along. Lesson: **the repo's enforced lint config is authoritative over Craft-persona stylistic opinions**. Local Windows lint failed to catch this because the root `npm run lint` glob doesn't match workspace files on Windows — use `npm run lint --workspace=@akubly/eureka` for the gate the CI actually runs.
 
 📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe

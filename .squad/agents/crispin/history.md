@@ -1,8 +1,8 @@
 # Crispin — History
 
 **Role:** Knowledge Representation Specialist (Graph schema, FactStore contract, kind taxonomies)
-**Status:** v5-final locked canonical. M2-M3: FactStore seams verified. Cycle 2 F6 resolution joint-authored.
-**Last update:** 2026-05-29
+**Status:** v5-final locked canonical. M2-M3: FactStore seams verified. M7-A review-complete 2026-05-31. M7-C (real FactReader contract) queued next.
+**Last update:** 2026-05-31
 
 **Key milestones:**
 - R1-R8: Schema design + 5 tension mitigations (confidence/trust brands, extraction-readiness)
@@ -22,6 +22,16 @@
 **R7 Lock:** v4-final locked as canonical. All 5 schema risks mitigated. Branded types enforcement mechanism is load-bearing (prevents confidence/trust collapse). Seven-mechanism defense-in-depth correct.
 
 **R8 Amendment:** Session identity unification. SessionId branded type ships v1 (FR-12 #8). Kind=session facts reference SessionId as content field, not PK. No identity collision risk. Edge schema references fact.id (KR convention); session_id is a content/grouping field. Latency claim holds.
+
+---
+
+## Current & Next
+
+### 2026-05-31: M7-A Review Cycle — COMPLETE (Observed)
+
+**Summary:** M7-A (Typed Error Hierarchy, Edgar lead) completed 3-cycle review (Cycles 1–2 + fix wave). PR #38 review-complete, pending ship decision.
+
+**Next up:** M7-C — Real FactReader contract test and atomicity contract design. Crispin leads with Edgar on design spec. Scope: genuine FactReader integration (not mock) with multi-threaded access patterns and fact consistency guarantees.
 
 ---
 
@@ -338,3 +348,4 @@ Using `updated_at` for recency computation conflates **modification time** with 
 ---
 📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
+📌 Team update (2026-05-31T07:24:22Z): **M7-A (PR #38) shipped** — Typed error classes for applyFeedback/applyFeedbackById. 5 error classes with code discriminators. All 40 existing tests GREEN (no changes required, inheritance preserved). Next: M7-B (Laura — exhaustive narrowing tests) and M7-C (Crispin/Edgar — FactReader contract + atomicity). — Scribe
