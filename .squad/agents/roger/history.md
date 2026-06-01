@@ -12,6 +12,16 @@
 - Eureka M2-M3: tsc clean, no new coupling risks
 
 **See history-archive.md for detailed entries.**
+## Learnings (2026-05-31 — M1 Cycle-2 Polish Wave: Issue #39 / PR #40)
+
+### Migration-collapse rule (pre-merge)
+
+When two migrations for the same feature are both unmerged to main, fold them into the lower-numbered one. Each column gets its own `if (!cols.some(...)) { db.exec(...) }` idempotency check (not a combined early `return`). Keep the single stderr guard at the top for missing-table protection. Delete the higher-numbered file, remove its import and registration from schema.ts. Tests that assert schema version go back to the lower number.
+
+### Shared serializer pattern (N3)
+
+For tool families with a list (summary) + get (full) shape, extract a private `buildXxxSummary()` helper in server.ts. The get builder spreads summary and adds full-detail fields. Location: private (non-exported) function above the exported builder pair in server.ts. This prevents list/get field drift. Document intentional omissions (e.g., raw confidence float) with a one-line JSDoc on the summary helper.
+
 ## Learnings (2026-05-31 — M1 Cycle-1 Findings: Issue #39)
 
 ### Schema co-evolution: two migrations in one PR (017 + 018)
@@ -45,6 +55,9 @@ Pattern: `buildListHintsResult(db, params)`, `buildResolveHintResult(db, params)
 - Error path: `return { content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }], isError: true }`.
 - `confidenceToWords()` is already exported from server.ts for high/medium/emerging labels.
 - For read-only tools: `annotations: { readOnlyHint: true }`. For mutating tools: `annotations: { readOnlyHint: false }`.
+
+### Never use `git add .` after manual file work
+Never use `git add .` after manual file work — explicit per-file staging avoids sweeping untracked artifacts into commits.
 
 ### Idempotent resolution with status machine
 - `optimization_hints` has a strict state machine (STATUS_TRANSITIONS). User-facing "resolve" actions should use `force: true` semantics or bypass the machine directly via SQL UPDATE.

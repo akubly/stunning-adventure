@@ -129,17 +129,23 @@ export const migration017: Migration = {
 
     // Idempotency guard for ALTER TABLE (SQLite doesn't support IF NOT EXISTS):
     const cols = db.pragma('table_info(my_table)') as Array<{ name: string }>;
-    if (cols.some((c) => c.name === 'my_column')) return;
-
-    db.exec(`ALTER TABLE my_table ADD COLUMN my_column TEXT;`);
+    if (!cols.some((c) => c.name === 'my_column_a')) {
+      db.exec(`ALTER TABLE my_table ADD COLUMN my_column_a TEXT;`);
+    }
+    if (!cols.some((c) => c.name === 'my_column_b')) {
+      db.exec(`ALTER TABLE my_table ADD COLUMN my_column_b TEXT;`);
+    }
   },
 };
 ```
+
+**Collapsing related migrations (pre-merge):** If two migrations for the same feature are both unmerged, fold them into the lower-numbered one. Check each column separately with `if (!cols.some(...)) { db.exec(...) }` to keep the idempotency guard correct when adding multiple columns. Keep the single stderr guard at the top for missing-table protection. Delete the higher-numbered file.
 
 Then in `schema.ts`:
 1. Import the new migration
 2. Append to the `migrations` array
 3. Update any test that asserts `MAX(version) = N` or `COUNT(*) from schema_version = N`
+4. Consolidate per-migration schema sanity tests into one `it()` that asserts all new columns
 
 Use `strftime('%Y-%m-%dT%H:%M:%fZ','now')` for ISO UTC timestamps — matches the project convention.
 
@@ -241,7 +247,49 @@ it('returns null for unknown id', () => {
 
 - **String id fields**: `.max(256)` as defense-in-depth: `z.string().max(256).describe('...')`
 - **Free-text note fields**: `.max(1000)` to bound DB size: `z.string().max(1000).optional()`
-- **Status enums**: export a `const` tuple from the DB module, use `z.enum(MY_STATUSES)` — never duplicate literals in server.ts
+- **Status enums**: export a `const` tuple from the DB module, use `z.enum(MY_STATUSES)` — never duplicate literals in server.ts. For paired enum types (status + resolution disposition), export both as `const` arrays and derive `type MyResolution = typeof MY_RESOLUTIONS[number]`.
+
+---
+
+## Pattern: shared summary serializer (N3, M1 cycle-2)
+
+When a tool family has a list tool (summary shape) and a get tool (full shape), extract a private `buildXxxSummary()` helper that produces the common fields. The get builder spreads the summary and adds full-detail fields. This prevents list/get drift when adding new fields.
+
+```typescript
+// Private helper — single source of truth for summary fields
+function buildHintSummary(h: OptimizationHintRow): Record<string, unknown> {
+  return {
+    id: h.id,
+    skill_id: h.skillId,
+    // ... summary fields ...
+    /**
+     * Note: raw confidence float omitted from summary — use get_xxx for the float value.
+     */
+    confidence_level: confidenceToWords(h.confidence),
+  };
+}
+
+// List builder uses the summary directly
+export function buildListXxxResult(db, params): Record<string, unknown> {
+  const rows = queryXxx(db, params);
+  return { count: rows.length, items: rows.map(buildHintSummary) };
+}
+
+// Get builder spreads summary and adds full-detail fields
+export function buildGetXxxResult(db, params): Record<string, unknown> | null {
+  const h = getXxx(db, params.id);
+  if (!h) return null;
+  return {
+    ...buildHintSummary(h),
+    // Full-detail extras:
+    confidence: h.confidence,
+    evidence: h.evidence,
+    // ...
+  };
+}
+```
+
+When a field appears only in the get result (e.g., raw `confidence` float), document the omission in the summary helper's JSDoc so future engineers know the asymmetry is intentional.
 - **Nullable fields in response objects**: use `?? null` (not `?? undefined`) so the key is always present with a consistent shape
 
 ---
