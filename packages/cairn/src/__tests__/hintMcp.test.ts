@@ -192,25 +192,14 @@ describe('resolveOptimizationHint DB helper', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Migration 017 schema sanity check
+// Migration 017 schema sanity check — both columns added in one migration
 // ---------------------------------------------------------------------------
 
 describe('migration 017 schema', () => {
-  it('optimization_hints table has resolution_note column after migrations', () => {
+  it('optimization_hints table has both resolution_note and resolution_disposition columns after migrations', () => {
     const cols = db.pragma('table_info(optimization_hints)') as Array<{ name: string }>;
     const names = cols.map((c) => c.name);
     expect(names).toContain('resolution_note');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Migration 018 schema sanity check
-// ---------------------------------------------------------------------------
-
-describe('migration 018 schema', () => {
-  it('optimization_hints table has resolution_disposition column after migrations', () => {
-    const cols = db.pragma('table_info(optimization_hints)') as Array<{ name: string }>;
-    const names = cols.map((c) => c.name);
     expect(names).toContain('resolution_disposition');
   });
 });

@@ -78,7 +78,7 @@ describe('database initialization', () => {
     const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
       version: number;
     };
-    expect(row.version).toBe(18);
+    expect(row.version).toBe(17);
   });
 });
 
@@ -423,14 +423,14 @@ describe('schema migration', () => {
     const before = db.prepare('SELECT COUNT(*) as count FROM schema_version').get() as {
       count: number;
     };
-    expect(before.count).toBe(18);
+    expect(before.count).toBe(17);
     // Re-run should be a no-op
     applyMigrations(db);
 
     const after = db.prepare('SELECT COUNT(*) as count FROM schema_version').get() as {
       count: number;
     };
-    expect(after.count).toBe(18);
+    expect(after.count).toBe(17);
   });
 
   it('migration 014 should backfill __system__ sessions as system kind', () => {

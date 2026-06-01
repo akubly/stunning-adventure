@@ -49,6 +49,7 @@ import {
   getOptimizationHint,
   ACTIVE_HINT_STATUSES,
   HINT_STATUSES,
+  HINT_RESOLUTIONS,
 } from '../db/optimizationHints.js';
 import type { HintStatus, HintResolution } from '../db/optimizationHints.js';
 
@@ -1409,8 +1410,32 @@ server.registerTool(
 // Tool: list_optimization_hints
 // ---------------------------------------------------------------------------
 
-const HINT_RESOLUTION_STATUSES = ['resolved', 'dismissed'] as const;
-// HINT_STATUSES imported from optimizationHints.ts — single source of truth.
+// HINT_STATUSES and HINT_RESOLUTIONS imported from optimizationHints.ts — single source of truth.
+
+/**
+ * Shared summary shape for a hint row — used by both buildListHintsResult and
+ * buildGetHintResult so the fields in a list summary stay in sync with the get
+ * response. Get builds on this and adds the extra full-detail fields.
+ */
+function buildHintSummary(h: ReturnType<typeof queryOptimizationHints>[number]): Record<string, unknown> {
+  return {
+    id: h.id,
+    skill_id: h.skillId,
+    source: h.source,
+    category: h.category,
+    summary: h.description,
+    recommendation: h.recommendation,
+    impact_score: h.impactScore,
+    /**
+     * Note: raw confidence float omitted from summary — use get_optimization_hint for the float value.
+     */
+    confidence_level: confidenceToWords(h.confidence),
+    status: h.status,
+    resolution_disposition: h.resolutionDisposition ?? null,
+    resolution_note: h.resolutionNote ?? null,
+    created_at: h.createdAt,
+  };
+}
 
 /**
  * Core list-hints logic extracted for handler-level testing.
@@ -1422,9 +1447,7 @@ export function buildListHintsResult(
   db: Database.Database,
   params: { status?: HintStatus; skill_id?: string; limit: number },
 ): Record<string, unknown> {
-  const effectiveStatuses: HintStatus[] | HintStatus | undefined = params.status
-    ? (params.status as HintStatus)
-    : ([...ACTIVE_HINT_STATUSES] as HintStatus[]);
+  const effectiveStatuses = params.status ?? [...ACTIVE_HINT_STATUSES];
 
   const hints = queryOptimizationHints(db, {
     status: effectiveStatuses,
@@ -1432,20 +1455,7 @@ export function buildListHintsResult(
     limit: params.limit,
   });
 
-  const summaries = hints.map((h) => ({
-    id: h.id,
-    skill_id: h.skillId,
-    source: h.source,
-    category: h.category,
-    summary: h.description,
-    recommendation: h.recommendation,
-    impact_score: h.impactScore,
-    confidence_level: confidenceToWords(h.confidence),
-    status: h.status,
-    resolution_disposition: h.resolutionDisposition ?? null,
-    resolution_note: h.resolutionNote ?? null,
-    created_at: h.createdAt,
-  }));
+  const summaries = hints.map(buildHintSummary);
 
   const result: Record<string, unknown> = { count: summaries.length, hints: summaries };
 
@@ -1561,7 +1571,7 @@ server.registerTool(
         .max(256)
         .describe('The ID of the hint to resolve. Get IDs from list_optimization_hints.'),
       resolution: z
-        .enum(HINT_RESOLUTION_STATUSES)
+        .enum(HINT_RESOLUTIONS)
         .describe(
           '"resolved" — you addressed the issue manually. ' +
           '"dismissed" — you have decided not to act on this hint.',
@@ -1612,6 +1622,7 @@ server.registerTool(
 /**
  * Core get-hint logic extracted for handler-level testing.
  * Returns the full hint row payload, or null when the hint does not exist.
+ * Builds on buildHintSummary and adds the full-detail fields.
  */
 export function buildGetHintResult(
   db: Database.Database,
@@ -1621,25 +1632,16 @@ export function buildGetHintResult(
   if (!h) return null;
 
   return {
-    id: h.id,
-    skill_id: h.skillId,
-    source: h.source,
-    category: h.category,
-    description: h.description,
-    recommendation: h.recommendation,
-    impact_score: h.impactScore,
+    ...buildHintSummary(h),
+    // Full-detail fields omitted from list summary:
     confidence: h.confidence,
-    confidence_level: confidenceToWords(h.confidence),
-    status: h.status,
+    description: h.description,
     auto_apply_eligible: h.autoApplyEligible ?? null,
     parent_prescription_id: h.parentPrescriptionId,
     evidence: h.evidence,
     metric_snapshot: h.metricSnapshot,
     generated_at: h.generatedAt,
     applied_at: h.appliedAt,
-    created_at: h.createdAt,
-    resolution_disposition: h.resolutionDisposition ?? null,
-    resolution_note: h.resolutionNote ?? null,
   };
 }
 

@@ -80,6 +80,9 @@ export interface ReplaceActiveHintsAtomicallyResult {
 
 export type HintResolution = 'resolved' | 'dismissed';
 
+/** All valid hint resolution dispositions — single source of truth for Zod enum and type guards. */
+export const HINT_RESOLUTIONS = ['resolved', 'dismissed'] as const;
+
 export interface ResolveHintResult {
   id: string;
   resolution: HintResolution | null;
