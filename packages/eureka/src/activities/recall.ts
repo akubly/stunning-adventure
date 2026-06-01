@@ -8,6 +8,13 @@
  */
 
 import type { SessionId } from '@akubly/types';
+import {
+  FactNotFoundError,
+  InvalidFeedbackOptionsError,
+  InvalidTrustValueError,
+  FactReaderContractError,
+  UnhandledFeedbackEventError,
+} from './errors.js';
 
 /** Minimal fact shape returned from FactStore.search() at the storage seam. */
 export interface RecallResult {
@@ -277,10 +284,11 @@ export interface ApplyFeedbackByIdDeps {
  * delegates the write to the injected `TrustUpdater` seam. This function does NOT
  * read from storage — use `applyFeedbackById` when the caller doesn't know currentTrust.
  *
- * @throws {RangeError} if currentTrust is non-finite or outside [0, 1] (corrupt/buggy caller)
- * @throws {Error} if event='user_correction' and correctionDelta is omitted (programming error —
+ * @throws {InvalidTrustValueError} if currentTrust is non-finite or outside [0, 1] (corrupt/buggy caller)
+ * @throws {InvalidFeedbackOptionsError} if event='user_correction' and correctionDelta is omitted (programming error —
  *         a 0-delta silent fallback would call TrustUpdater for no reason and mislead callers)
- * @throws {RangeError} if event='user_correction' and correctionDelta is non-finite (NaN, ±Infinity)
+ * @throws {InvalidTrustValueError} if event='user_correction' and correctionDelta is non-finite (NaN, ±Infinity)
+ * @throws {UnhandledFeedbackEventError} if an unrecognised FeedbackEvent variant is encountered at runtime
  */
 export async function applyFeedback(
   options: ApplyFeedbackOptions,
@@ -290,7 +298,9 @@ export async function applyFeedback(
   const { trustUpdater } = deps;
 
   if (!Number.isFinite(currentTrust) || currentTrust < 0 || currentTrust > 1) {
-    throw new RangeError(
+    throw new InvalidTrustValueError(
+      currentTrust,
+      'input',
       `applyFeedback: currentTrust must be a finite number in [0, 1]; received ${currentTrust}`,
     );
   }
@@ -306,12 +316,16 @@ export async function applyFeedback(
       break;
     case 'user_correction':
       if (correctionDelta === undefined) {
-        throw new Error(
+        throw new InvalidFeedbackOptionsError(
+          'correctionDelta',
           'applyFeedback: correctionDelta is required when event is "user_correction"',
         );
       }
       if (!Number.isFinite(correctionDelta)) {
-        throw new RangeError(
+        // TODO(M7-B): correctionDelta error should use a purpose-specific type (e.g. InvalidDeltaValueError)
+        throw new InvalidTrustValueError(
+          correctionDelta,
+          'input',
           `applyFeedback: correctionDelta must be a finite number; received ${correctionDelta}`,
         );
       }
@@ -319,7 +333,7 @@ export async function applyFeedback(
       break;
     default: {
       const _exhaustive: never = event;
-      throw new TypeError(`applyFeedback: unhandled FeedbackEvent variant "${_exhaustive}"`);
+      throw new UnhandledFeedbackEventError(_exhaustive);
     }
   }
 
@@ -346,10 +360,12 @@ export async function applyFeedback(
  *   mutate callback)" — the deferred RED beat is designing this contract, not just implementing
  *   storage-layer locking.
  *
- * @throws {Error} if FactReader returns null (fact not found — TrustUpdater is NOT called)
- * @throws {RangeError} if the stored fact.trust is non-finite (corrupted storage row)
- * @throws {RangeError} propagated from applyFeedback if the stored fact.trust is outside [0, 1] (corrupted storage row that survived the local non-finite check — defense in depth)
- * @throws {Error} propagated from applyFeedback if event='user_correction' and correctionDelta is omitted
+ * @throws {FactNotFoundError} if FactReader returns null (fact not found — TrustUpdater is NOT called)
+ * @throws {FactReaderContractError} if FactReader.read() returns undefined (contract violation)
+ * @throws {InvalidTrustValueError} if the stored fact.trust is non-finite or outside [0, 1] (corrupted storage row)
+ * @throws {InvalidFeedbackOptionsError} propagated from applyFeedback if event='user_correction' and correctionDelta is omitted
+ * @throws {InvalidTrustValueError} propagated from applyFeedback if correctionDelta is non-finite
+ * @throws {UnhandledFeedbackEventError} propagated from applyFeedback if event is an unrecognized variant
  */
 export async function applyFeedbackById(
   options: ApplyFeedbackByIdOptions,
@@ -360,15 +376,15 @@ export async function applyFeedbackById(
 
   const fact = await factReader.read({ factId, sessionId });
   if (fact === null) {
-    throw new Error(`applyFeedbackById: fact not found — factId="${factId}"`);
+    throw new FactNotFoundError(factId);
   }
   if (fact === undefined) {
-    throw new TypeError(
-      `applyFeedbackById: FactReader.read() returned undefined; the contract requires {trust:number} or null — check your FactReader implementation`,
-    );
+    throw new FactReaderContractError(factId);
   }
   if (!Number.isFinite(fact.trust)) {
-    throw new RangeError(
+    throw new InvalidTrustValueError(
+      fact.trust,
+      'storage',
       `applyFeedbackById: stored trust is non-finite — factId="${factId}", trust=${fact.trust}`,
     );
   }

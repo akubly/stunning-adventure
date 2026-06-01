@@ -656,12 +656,49 @@ See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-rev
 
 **Role:** Implementation Specialist (Forge prescriber orchestration, change-vector platform)
 **Status:** W2-2 + W2-3 complete. Cycle 2 findings processed.
-**Last update:** 2026-05-29
+**Last update:** 2026-05-31
 
 **Key milestones:**
 - Wave 0-2: Canonical types in @akubly/types, SqliteChangeVectorProvider, Forge test growth
 - ForgePrescriberOrchestrator: Attenuation + autoApplyEligible propagation live
 - Phase 4.6: 1199+ tests passing, 9 work items landed
+## Rebase Cycle (2026-05-31 — PR #36 mergeability)
+
+**PR:** #36 | **Branch:** `squad/35-register-forge-mcp` | **Worktree:** D:\git\stunning-adventure-35
+
+**Situation:** PR #36 showed `mergeStateStatus: DIRTY, mergeable: CONFLICTING` after scribe commit (`d1a953f`) landed on main earlier this session. This was the same scenario as PR #32 cycle 1 — GitHub's 3-way merge check doesn't honor `.gitattributes merge=union` directive for `.squad/*` files, so union-file overlaps are incorrectly flagged as conflicts.
+
+**Action:** Rebased `squad/35-register-forge-mcp` onto latest `origin/main` (a5b89a2). Rebase auto-resolved all `.squad/*` conflicts via the `merge=union` driver:
+- `.squad/decisions.md`: auto-union merged ✓
+- `.squad/agents/alexander/history.md`: auto-union merged ✓
+
+**Commit dropped:** Fix for `runtime-cli` (85d49b8) was already upstream in main, so rebase dropped it.
+
+**Validation:** Build ✓, `npm test --workspace=@akubly/runtime-cli` (26/26 tests) ✓, pushed with `--force-with-lease`.
+
+**Result:** PR #36 now shows `mergeable: MERGEABLE` ✓. New HEAD: `2ac5b61` (was `d251e29`).
+
+---
+
+## Learnings (2026-05-31 — Issue #35, PR #36: forge-mcp manifest registration)
+
+**Issue:** #35 | **PR:** https://github.com/akubly/stunning-adventure/pull/36 | **Branch:** `squad/35-register-forge-mcp`
+
+**What was done:** Added `forge` entry to both MCP manifests (`.github/plugin/.mcp.json` and `.copilot/mcp-config.json`). No source changes — registration only.
+
+**Cairn manifest pattern observed:**
+- `.github/plugin/.mcp.json`: uses `npx -y --package @akubly/cairn cairn-mcp` (package install + bin invocation). Args are split — `--package` and `@akubly/cairn` are separate array elements, NOT `--package=@akubly/cairn`. Mirrored exactly for `forge`: `npx -y --package @akubly/skillsmith-runtime forge-mcp`.
+- `.copilot/mcp-config.json`: cairn uses bare `node dist/mcp/server.js` with no `cwd` field. This is the local-dev config. Since there's only one server entry per config and cairn's path is relative (presumably resolved from the cairn package dir), the forge entry uses a root-relative path `packages/skillsmith-runtime/dist/mcp/server.js` instead of mirroring bare `dist/mcp/server.js` (which would be ambiguous from the repo root).
+
+**Surprising observations:**
+1. `squad:alexander` label does not exist in the repo. The available squad labels are: graham, gabriel, roger, rosella, ralph, valanice. Used `squad` (base label) only.
+2. The `forge-mcp` server already had its `bin` field declared in `package.json` and the server was fully implemented (stdio transport, `forge_prescribe` registered, DB bootstrap via `cairn.getDb()`). This was purely a missing registration — zero source changes needed.
+3. Smoke test (stdio MCP server): exits 0 with empty stderr when stdin is closed immediately. This is correct behavior — the server initializes, connects the transport, and exits cleanly when the input stream closes. "Didn't crash" is confirmed.
+
+**Build/test:** `npm run build --workspace=@akubly/skillsmith-runtime` exit 0; 49/49 tests pass.
+
+---
+
 ## Issue #25 — Wave 6 R6 Type-Tightening Polish (2026-05-30, PR #32)
 
 **Branch:** `squad/25-type-tightening-polish`
@@ -1140,3 +1177,26 @@ PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end
 
 ## Learnings (2026-05-30 — Post-merge cleanup, PR #32)
 **2026-05-30 cleanup:** PR #32 merged to main as commit aae18ae. Post-merge teardown completed per WI-B cleanup recipe: node_modules confirmed real (not junction), removed recursively; worktree D:\git\stunning-adventure-25 removed cleanly; local branch squad/25-type-tightening-polish deleted (forced after merge detection lag); remote branch deleted via `git push origin --delete`. Main's node_modules/@akubly survived intact. All verification checks passed. Recipe worked as documented; WI-B incident guard (strict cleanup ordering to prevent junction traversal during worktree remove) validated.
+
+📌 Team update (2026-05-30T23:05:00Z): **PR #32 / issue #25 shipped** as commit aae18ae. The runtime-cli metrics types are now backed by canonical unions (LoadedProfileSource, ProfileStalenessReason) with runtime-validated payload narrowing at the JSON.parse boundary. Lessons: (1) JSON.parse → unknown + boundary validation + stderr warning + drift-guard (2) @internal helpers prefer unexport (Path A) over convention promise (3) agent history.md commits in PRs are in-scope per merge=union pattern. — Scribe
+
+## Lint Error Fix (2026-05-31 — PR #36 CI Blocker)
+
+**Issue:** CI build #20 on PR #36 failed with @typescript-eslint/no-unused-vars on orgeMetrics.test.ts:346: originalWrite was captured but never used.
+
+**Root cause:** Latent bug from PR #32 cycle-2 stderr-warning test. The test captured process.stderr.write to restore it later, but the restoration never happened (dead code). Root 
+pm run lint (eslint packages/*/src/) fails silently on Windows, so this only surfaced in Linux CI.
+
+**Fix:** Option B (delete unused capture). The afterEach hook already calls i.restoreAllMocks(), so manual restoration was unnecessary. Commit 85d49b8, bundled into PR #36.
+
+**Validation:** ✅ 
+px eslint packages/runtime-cli/src/__tests__/forgeMetrics.test.ts (exit 0) ✅ 
+pm test --workspace=@akubly/runtime-cli (26/26 green) ✅ 
+pm run build --workspace=@akubly/runtime-cli (exit 0)
+
+**Lesson learned:** Windows agents must use workspace-scoped lint (
+pm run lint --workspace=<name>) rather than relying on root lint. The glob slint packages/*/src/ doesn't work in PowerShell; follow-up issue filed to fix root lint permanently.
+
+**Follow-up:** Opened issue #XX for root 
+pm run lint Windows failure — issue #37 opened (squad/gabriel tag).
+

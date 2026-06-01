@@ -1304,8 +1304,8 @@ When spawning test-authoring agents, point to the ADR's Acceptance Signals subse
 # Laura — History
 
 **Role:** Tester (Contract-first patterns, integration testing, test architecture)
-**Status:** M3 baseline preserved. Eureka M2 GREEN landed 2026-05-28. Cycle 2 composite-ranker + F6 resolution verified. Cycle 3 polish: 40/40 tests green.
-**Last update:** 2026-05-30
+**Status:** M3 baseline preserved. Eureka M2 GREEN landed 2026-05-28. M7-A review-complete 2026-05-31. M7-B (narrowing tests) queued next.
+**Last update:** 2026-05-31
 
 **Key milestones:**
 - Phase 2-4.6 test architecture (contract-first, metamorphic testing)
@@ -1316,6 +1316,16 @@ When spawning test-authoring agents, point to the ADR's Acceptance Signals subse
 - M5+M6 review wave: 8 new tests, 29→37 total
 
 **See history-archive.md for detailed entries.**
+
+## Current & Next
+
+### 2026-05-31: M7-A Review Cycle — COMPLETE
+
+**Summary:** M7-A (Typed Error Hierarchy, Edgar lead) completed 3-cycle review process (Cycles 1–2 panel + fix wave, Cycle 3 lightweight). All 40 tests green throughout. PR #38 review-complete, pending ship decision.
+
+**Next up:** M7-B — exhaustive narrowing tests for typed error discriminators (`err.code === '...'` + `instanceof`). Will exercise M7-A's canonical narrowing policy with comprehensive error path testing.
+
+---
 
 ## Learnings
 
@@ -1388,4 +1398,5 @@ When spawning test-authoring agents, point to the ADR's Acceptance Signals subse
 
 **Pattern reinforced:** Skill documentation is a contract. When the shipped implementation deviates from a required-but-unused dep pattern, update the skill immediately so future RED beats aren't taught the wrong interface shape.
 
-### 2026-05-30: M5 RED — Trust Feedback Mutation Contract
+### 2026-05-30: M5 RED — Trust Feedback Mutation Contract
+📌 Team update (2026-05-31T07:24:22Z): **M7-A (PR #38) shipped** — Typed error classes for applyFeedback/applyFeedbackById. 5 error classes with code discriminators. All 40 existing tests GREEN (no changes required, inheritance preserved). Next: M7-B (Laura — exhaustive narrowing tests) and M7-C (Crispin/Edgar — FactReader contract + atomicity). — Scribe

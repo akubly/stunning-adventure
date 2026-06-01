@@ -4,6 +4,11 @@
       "type": "stdio",
       "command": "npx",
       "args": ["-y", "--package", "@akubly/cairn", "cairn-mcp"]
+    },
+    "forge": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "--package", "@akubly/skillsmith-runtime", "forge-mcp"]
     }
   }
 }
