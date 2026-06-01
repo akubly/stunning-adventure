@@ -686,7 +686,7 @@ Targets (single-session, NVMe local disk, default batch size 64 rows):
 | Append latency (single row, p99) | ≤ 1 ms           | A.3 lock; v1 commitment |
 | Group-commit fsync amortized     | ≤ 32 µs / row    | 1 fsync ≈ 2 ms / 64-row batch on NVMe |
 | Hook bus per-predicate budget    | ≤ 80 µs          | §4; ~50 predicates safe |
-| Hook bus per-batch budget        | ≤ 80 µs × rows   | Hard ceiling; over-budget predicates time out and fail open (§4) |
+| Hook bus per-batch budget        | ≤ 80 µs × rows   | Cooperative v1 target; over-budget completions emit telemetry and may quarantine future rows (§4) |
 | Bootstrap batch (typical, ≤16 Observations) | ≤ 5 ms p99 | One fsync + CAS writes  |
 | Decision commit additional cost (fallback path) | O(prefix length) hash | Amortized by session compaction snapshots (§15) |
 | Decision commit additional cost (declared path) | O(slice length) hash | Typically 32–128 EventIds |

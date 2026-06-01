@@ -194,16 +194,16 @@ SessionLedger.fork(parentSid: SessionId, forkPointOffset: CommitOffset,
       kind: 'decision',
       payload: {
         eventType: 'fork.collision_choice',
-        question: 'Fork session at offset ' || forkPointOffset || '?',
         chosenOption: chosenMode,
+        existingChildSid: existingChild.session_id,
+        collisionDetected: true,
+        collisionDetectedAt: now_ns(),
+        resultingChildSid: childSid,
+        rationale: (options.mode != NULL) ? '--' || chosenMode || ' flag provided' : 'user selected ' || chosenMode || ' at prompt',
         alternatives: ['new', 'resume'],
-        evidence: {
-          rationale: (options.mode != NULL) ? '--' || chosenMode || ' flag provided' : 'user selected ' || chosenMode || ' at prompt',
-          existingChildSid: existingChild.session_id,
-          resultingChildSid: childSid,
-          collisionDetected: true,
-          collisionDetectedAt: now_ns(),
-        }
+        contextWindowCommitment: hashForkCollisionWindow(parentSid, forkPointOffset, existingChild.session_id),
+        causalContextWindowSlice: forkCollisionWindow(parentSid, forkPointOffset),
+        commitmentMethod: 'declared',
       }
     }
     AppendProtocol.append(parentSid, [decision])  # write to PARENT ledger
@@ -214,10 +214,13 @@ SessionLedger.fork(parentSid: SessionId, forkPointOffset: CommitOffset,
         subKind: 'fork_resume',
         body: {
           parentSessionId: parentSid,
+          existingChildSid: existingChild.session_id,
           forkPointOffset: forkPointOffset,
+          resumeOffset: nextOffset(existingChild.session_id),
           resumedAt: now_ns(),
           abortedAt: existingChild.updated_at_ns,
           turnCountAtAbort: countTurns(existingChild.session_id),
+          restoredFromStatus: 'aborted',
         },
         flags: { ... },
       }

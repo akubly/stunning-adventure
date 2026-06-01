@@ -87,7 +87,7 @@ This is deterministic **within a single execution timeline**, but creates a coll
 3. **Naming:** "New" instead of "Fresh" (Valanice — parallel structure with "Resume").
 4. **Non-TTY behavior:** exit code 2, error message "Interactive prompt unavailable. Use --new or --resume."
 5. **Flags:** `crucible fork <sid> --at <offset> [--new | --resume] [--no-interactive] [--label <text>]`. Mutually exclusive.
-6. **Determinism:** record user's choice and result as a Decision row in PARENT ledger (`{chosenOption, existingChildSid, resultingChildSid, collisionDetectedAt}`). For `--new`, replay consumes `resultingChildSid` directly and skips timestamp/preimage recomputation. Idiomatic Question/Decision pattern.
+6. **Determinism:** record user's choice and result as a Decision row in PARENT ledger (standard Decision commitment fields plus `{eventType: 'fork.collision_choice', chosenOption, existingChildSid, collisionDetected, collisionDetectedAt, resultingChildSid}`). For `--new`, replay consumes `resultingChildSid` directly and skips timestamp/preimage recomputation. Idiomatic Question/Decision pattern.
 7. **Preimage:** timestamp variant for --new (`parentSid || offset || created_at_ns`); reuse existing childSid for --resume.
 8. **Observation row:** add `fork_resume` sub-kind to §6.3 taxonomy (appended at resume point in child ledger).
 9. **Keep both `--resume` flag AND `crucible session resume` verb** (Roger — orthogonal workflows: flag = "resume at fork time", verb = "resume discovered aborted session").
@@ -129,7 +129,7 @@ This is deterministic **within a single execution timeline**, but creates a coll
 - Add pseudocode for:
   - Collision detection: check if `(parentSid, offset)` already has child with `status='aborted'`
   - Interactive prompt: TTY detection, `[N]ew / [R]esume / [C]ancel` UX, relative time display
-  - Decision row writing: `{eventType: 'fork.collision_choice', chosenOption: 'new' | 'resume', existingChildSid, resultingChildSid, collisionDetected: boolean}`
+  - Decision row writing: `{eventType: 'fork.collision_choice', chosenOption: 'new' | 'resume', existingChildSid, collisionDetected: true, collisionDetectedAt, resultingChildSid}`
   - Preimage rules: timestamp variant for "new", reuse existing `childSid` for "resume"
   - Resume mechanics: append `fork_resume` Observation at resume point
 
@@ -139,7 +139,7 @@ This is deterministic **within a single execution timeline**, but creates a coll
 
 ### §6.3 Observation Taxonomy
 - Add `fork_resume` to Observation sub-kinds table
-- Body schema: `{ parentSessionId, forkPointOffset, resumedAt: TimestampNs, abortedAt: TimestampNs, turnCountAtAbort }`
+- Body schema: `{ parentSessionId, existingChildSid, forkPointOffset, resumeOffset, resumedAt: TimestampNs, abortedAt: TimestampNs, turnCountAtAbort, restoredFromStatus: 'aborted' }`
 
 ### §13.1 CLI Verb Table
 - Update `crucible fork` row: add `[--new | --resume] [--no-interactive]` flags
@@ -183,7 +183,7 @@ This is deterministic **within a single execution timeline**, but creates a coll
 ## Acceptance Signals
 
 **Contract-tier signals:**
-- Decision row schema validates: `{question, chosenOption: 'new'|'resume', evidence: {rationale, existingChildSid, resultingChildSid, collisionDetected}}`
+- Decision row schema validates: standard Decision commitment fields plus `{eventType: 'fork.collision_choice', chosenOption: 'new'|'resume', existingChildSid, collisionDetected: true, collisionDetectedAt, resultingChildSid}`
 - `fork_resume` Observation sub-kind validates against §6.3 schema
 
 **Component-tier signals:**

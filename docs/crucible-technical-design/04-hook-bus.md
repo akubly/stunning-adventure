@@ -52,7 +52,7 @@ interface PredicateRegistration {
   version: string;                                  // bumped on edit; both id + version recorded per fired verdict
   primitiveKinds: PrimitiveKind[];                  // kind-indexed dispatch input
   subKinds?: string[];                              // optional second-level filter
-  budgetMicros: number;                             // declared per-evaluation budget; bus enforces ≤80 µs hard cap
+  budgetMicros: number;                             // declared per-evaluation budget; bus measures ≤80 µs cooperatively in v1
   evaluate: (row: WalRowDraft, ctx: PredicateContext) => HookVerdict;
   witnessShape?: 'minimal' | 'full';                // CAS body verbosity for observe/pause
 }
@@ -70,7 +70,7 @@ reconstructible from the WAL. Unregistration emits a paired
 `'predicate_unregistered'` Observation. Replay (§11) loads the predicate set
 by walking these rows up to the offset under test.
 
-## 4.3 Bus Dispatch Pseudocode + 80 µs Budget
+## 4.3 Bus Dispatch Pseudocode + Cooperative 80 µs Budget
 
 ```pseudo
 PreCommitHookBus.dispatch(staged: WalRowDraft[]) -> Array<HookVerdict | null>:
@@ -82,14 +82,18 @@ PreCommitHookBus.dispatch(staged: WalRowDraft[]) -> Array<HookVerdict | null>:
             continue
         rowVerdict := 'continue'                      # default when a predicate matches but all say continue
         rowWitnesses := []
-        rowBudget := 80µs                             # hard per-row cap
+        rowBudget := 80µs                             # cooperative per-row budget
         for predicate in matched:                     # deterministic registration order
-            withTimeout(min(predicate.budgetMicros, rowBudget)):
-                v := predicate.evaluate(row, ctx(row, predicate))
-            onTimeout:
-                v := 'observe'                        # fail-open with a witness
+            start := monotonicNow()
+            v := predicate.evaluate(row, ctx(row, predicate))  # synchronous; cannot be preempted in v1
+            elapsedMicros := monotonicNow() - start
+            if elapsedMicros > min(predicate.budgetMicros, rowBudget):
                 emitAttention('predicate_timeout', predicate.id, row.commitOffset)
-            rowBudget -= elapsed()
+                decrementRetryBudget(predicate.id)
+                if retryBudgetExhausted(predicate.id):
+                    quarantineForFutureRows(predicate.id)
+                    stageUnregistrationAfterCurrentCommit(predicate.id)
+            rowBudget -= elapsedMicros
             if v != 'continue':
                 rowWitnesses.append({ predicateId: predicate.id,
                                       predicateVersion: predicate.version,
@@ -114,10 +118,17 @@ PreCommitHookBus.dispatch(staged: WalRowDraft[]) -> Array<HookVerdict | null>:
 ```
 
 **Per-predicate 80 µs budget breakdown:** see §3.11. Total per-batch budget
-is `80 µs × rows in batch`, hard-capped at the session-configured ceiling
-(default 8 ms). Over-budget predicates **time out and fail open** by emitting
-an `observe` verdict plus an Aperture attention-tier event — they never
-silently drop, and they never block the commit.
+is `80 µs × rows in batch`, bounded cooperatively in v1 by runtime measurement
+against the session-configured ceiling (default 8 ms). Because
+`PredicateRegistration.evaluate` is synchronous, v1 cannot preempt a
+CPU-bound predicate already running on the event loop; timeout detection is
+post-hoc for predicates that eventually return. Over-budget completions emit
+`predicate_timeout`, decrement the predicate retry budget, and quarantine the
+predicate in memory when that budget is exhausted so later rows in the current
+process skip it. The durable `predicate_unregistered` Observation is staged
+only after the current append finishes; hook dispatch never performs a nested
+WAL append. True hard preemption requires v1.5+ worker/process isolation or an
+async cancellable predicate API.
 
 **Pause short-circuit.** As soon as any predicate returns `pause`, the bus
 stops dispatching against further predicates for that row and returns the
@@ -168,10 +179,11 @@ hook bus signoff R3:
 
 ### 4.5.1 Capacity Model and Throughput Budget
 
-**Per-row 80 µs bound is not a throughput model.** The §4.3 budget constrains
-single-row evaluation latency but leaves CPU saturation, queue overload, and
-aggregate throughput unspecified. Without a capacity model and CI regression
-gates, the bus will degrade unpredictably under load.
+**Per-row 80 µs target is not a throughput model.** The §4.3 budget is a
+cooperative latency target for well-behaved synchronous predicates, but leaves
+CPU saturation, queue overload, and aggregate throughput unspecified. Without
+a capacity model and CI regression gates, the bus will degrade unpredictably
+under load.
 
 **Throughput equation (v1 analytical model):**
 

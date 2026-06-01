@@ -131,7 +131,7 @@ interface ObservationPayload {
     | 'fork_resume'        // resumed aborted fork marker (ADR-0019)
     | 'predicate_registered'   // Hook Bus predicate registration (§4.2)
     | 'predicate_unregistered' // Hook Bus predicate unregistration (§4.2)
-    | 'predicate_timeout'  // Hook Bus fail-open timeout (§4.3, §17.1)
+    | 'predicate_timeout'  // Hook Bus cooperative budget overrun (§4.3, §17.1)
     | 'row_budget_exhausted' // Hook Bus per-row budget exhausted (§4.3, §17.1)
     | 'fence_violation_retry' // Applier fence retry (§8.3, §17.1)
     | 'fence_exhausted'    // Applier fence retries exhausted (§8.3, §17.1)
@@ -155,6 +155,11 @@ interface DecisionPayload {
     | 'scheduler_deferred'
     | 'scheduler_cancelled'
     | 'scheduler_quanta_exhausted';
+  chosenOption?: 'new' | 'resume'; // REQUIRED iff eventType='fork.collision_choice'
+  existingChildSid?: SessionId;    // REQUIRED iff eventType='fork.collision_choice'
+  collisionDetected?: true;        // REQUIRED iff eventType='fork.collision_choice'
+  collisionDetectedAt?: number;    // REQUIRED iff eventType='fork.collision_choice'
+  resultingChildSid?: SessionId;   // REQUIRED iff eventType='fork.collision_choice'
   rationale: string;
   alternatives: unknown[];          // structured per Trust-Tier badge requirements
   contextWindowCommitment: string;  // 32-byte BLAKE3 over CBOR-canonicalized window (R2-1 LOCK)
@@ -188,7 +193,13 @@ ties a fan-out together; the same kind-indexed hook dispatch handles them.
 
 **Fork payload schemas (ADR-0019).** `fork_origin` Observation bodies carry
 `{ parentSessionId, forkPointOffset, forkPointEventId,
-parentForkPointTimestampNs }`. Parent-ledger fork collision Decisions carry
+parentForkPointTimestampNs }`. `fork_resume` Observation bodies carry
+`{ parentSessionId, existingChildSid, forkPointOffset, resumeOffset,
+resumedAt, abortedAt, turnCountAtAbort, restoredFromStatus: 'aborted' }`.
+`resumeOffset` is the child-ledger offset of the `fork_resume` row and MUST
+match the envelope `commitOffset`; `resumedAt` is the logical timestamp for
+the resume marker. Parent-ledger fork collision Decisions carry the standard
+Decision commitment fields plus
 `eventType: 'fork.collision_choice'`, `chosenOption: 'new' | 'resume'`,
 `existingChildSid`, `collisionDetected: true`, `collisionDetectedAt`, and
 `resultingChildSid`. For `chosenOption: 'new'`, replay MUST consume the

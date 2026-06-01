@@ -31,7 +31,7 @@ type ApertureEventKind =
   | 'structural-proposal-resolved'  // sourced from acked|rejected|expired
   | 'apply-failed'                  // §8.8
   | 'hook-pause'                    // §4 pause verdict on a row
-  | 'predicate-timeout'             // §4 fail-open observe
+  | 'predicate-timeout'             // §4 cooperative budget overrun
   | 'monotonic-violation'           // §6 invariant trip
   | 'capability-denied'             // Router veto on external tier
   | 'leaderboard-update'            // RouterDecision with >1 non-dominated

@@ -38,6 +38,11 @@
 
 ## Learnings
 
+### 2026-05-31: PR #33 Cloud Review Cycle 5 Taxonomy and Watchdog Corrections
+
+- **Sub-kind registration requires a payload schema, not just enum membership.** Future §6.3 taxonomy additions must register the enum value and declare the authoritative payload shape, effects, causal-edge contract, and runtime semantics before dependent sections cite them.
+- **`Promise.race()` is not a sandboxing primitive for synchronous code.** For v1, synchronous predicate timing must be described as convention/cooperative measurement plus post-hoc telemetry and retry-budget quarantine; hard preemption belongs in v1.5+ worker/process isolation or an async cancellable API.
+
 ### 2026-05-31: PR #33 Cloud Review Cycle 4 Replay Result Capture — COMPLETE
 
 **Status:** 3 fixes applied in commit a0db370; decision merged to squad/decisions.md; Scribe session logged.
