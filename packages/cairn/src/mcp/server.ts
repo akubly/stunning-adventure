@@ -46,7 +46,9 @@ import { insertTestResults } from '../db/skillTestResults.js';
 import {
   queryOptimizationHints,
   resolveOptimizationHint,
+  getOptimizationHint,
   ACTIVE_HINT_STATUSES,
+  HINT_STATUSES,
 } from '../db/optimizationHints.js';
 import type { HintStatus, HintResolution } from '../db/optimizationHints.js';
 
@@ -1408,10 +1410,55 @@ server.registerTool(
 // ---------------------------------------------------------------------------
 
 const HINT_RESOLUTION_STATUSES = ['resolved', 'dismissed'] as const;
-const VALID_HINT_STATUSES = [
-  'pending', 'accepted', 'applied', 'rejected',
-  'deferred', 'expired', 'suppressed', 'failed',
-] as const;
+// HINT_STATUSES imported from optimizationHints.ts — single source of truth.
+
+/**
+ * Core list-hints logic extracted for handler-level testing.
+ * Returns the raw JSON payload (not the MCP content wrapper).
+ * When a specific status filter is present, `active_count` is omitted
+ * because the caller already knows which status they requested.
+ */
+export function buildListHintsResult(
+  db: Database.Database,
+  params: { status?: HintStatus; skill_id?: string; limit: number },
+): Record<string, unknown> {
+  const effectiveStatuses: HintStatus[] | HintStatus | undefined = params.status
+    ? (params.status as HintStatus)
+    : ([...ACTIVE_HINT_STATUSES] as HintStatus[]);
+
+  const hints = queryOptimizationHints(db, {
+    status: effectiveStatuses,
+    skillId: params.skill_id,
+    limit: params.limit,
+  });
+
+  const summaries = hints.map((h) => ({
+    id: h.id,
+    skill_id: h.skillId,
+    source: h.source,
+    category: h.category,
+    summary: h.description,
+    recommendation: h.recommendation,
+    impact_score: h.impactScore,
+    confidence_level: confidenceToWords(h.confidence),
+    status: h.status,
+    resolution_disposition: h.resolutionDisposition ?? null,
+    resolution_note: h.resolutionNote ?? null,
+    created_at: h.createdAt,
+  }));
+
+  const result: Record<string, unknown> = { count: summaries.length, hints: summaries };
+
+  // Omit active_count when the caller requested a specific status — the filter
+  // already scopes the result set and the field would be misleading or redundant.
+  if (!params.status) {
+    result.active_count = hints.filter((h) =>
+      (ACTIVE_HINT_STATUSES as readonly string[]).includes(h.status),
+    ).length;
+  }
+
+  return result;
+}
 
 server.registerTool(
   'list_optimization_hints',
@@ -1425,7 +1472,7 @@ server.registerTool(
       'Use resolve_optimization_hint to mark a hint as resolved or dismissed.',
     inputSchema: {
       status: z
-        .enum(VALID_HINT_STATUSES)
+        .enum(HINT_STATUSES)
         .optional()
         .describe(
           'Filter by hint status. Omit to return active hints (pending, accepted, deferred). ' +
@@ -1433,6 +1480,7 @@ server.registerTool(
         ),
       skill_id: z
         .string()
+        .max(256)
         .optional()
         .describe('Filter to hints for a specific skill ID. Omit to return hints for all skills.'),
       limit: z
@@ -1448,54 +1496,14 @@ server.registerTool(
   async ({ status, skill_id, limit }) => {
     try {
       ensureDb();
-
-      const effectiveStatuses: HintStatus[] | HintStatus | undefined = status
-        ? (status as HintStatus)
-        : ([...ACTIVE_HINT_STATUSES] as HintStatus[]);
-
-      const hints = queryOptimizationHints(db, {
-        status: effectiveStatuses,
-        skillId: skill_id,
-        limit,
-      });
-
-      const summaries = hints.map((h) => ({
-        id: h.id,
-        skill_id: h.skillId,
-        source: h.source,
-        category: h.category,
-        summary: h.description,
-        recommendation: h.recommendation,
-        impact_score: h.impactScore,
-        confidence_level: confidenceToWords(h.confidence),
-        status: h.status,
-        created_at: h.createdAt,
-        resolution_note: h.resolutionNote ?? undefined,
-      }));
-
-      const activeCount = hints.filter((h) =>
-        (ACTIVE_HINT_STATUSES as readonly string[]).includes(h.status),
-      ).length;
-
+      const result = buildListHintsResult(db, { status: status as HintStatus | undefined, skill_id, limit });
       return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(
-              {
-                count: summaries.length,
-                active_count: activeCount,
-                hints: summaries,
-              },
-              null,
-              2,
-            ),
-          },
-        ],
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
       };
     } catch (err: unknown) {
+      process.stderr.write(`[list_optimization_hints] error: ${String(err)}\n`);
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Internal error querying hints' }) }],
         isError: true,
       };
     }
@@ -1505,6 +1513,37 @@ server.registerTool(
 // ---------------------------------------------------------------------------
 // Tool: resolve_optimization_hint
 // ---------------------------------------------------------------------------
+
+/**
+ * Core resolve-hint logic extracted for handler-level testing.
+ * Returns the raw JSON payload (not the MCP content wrapper).
+ * Returns `{ error: string }` when the hint is not found.
+ */
+export function buildResolveHintResult(
+  db: Database.Database,
+  params: { hint_id: string; resolution: HintResolution; note?: string },
+): Record<string, unknown> | null {
+  const result = resolveOptimizationHint(db, params.hint_id, params.resolution, params.note);
+  if (!result) return null;
+
+  const message = result.alreadyResolved
+    ? `ℹ️ Hint was already in a terminal state (${result.status}).`
+    : params.resolution === 'resolved'
+      ? '✅ Hint marked as resolved.'
+      : '👍 Hint dismissed.';
+
+  return {
+    hint_id: result.id,
+    // F2: null when already resolved — the caller's intent was not acted on.
+    resolution: result.resolution,
+    prior_status: result.prior_status,
+    status: result.status,
+    resolution_disposition: result.resolutionDisposition ?? null,
+    resolution_note: result.resolutionNote ?? null,
+    already_resolved: result.alreadyResolved,
+    message,
+  };
+}
 
 server.registerTool(
   'resolve_optimization_hint',
@@ -1519,6 +1558,7 @@ server.registerTool(
     inputSchema: {
       hint_id: z
         .string()
+        .max(256)
         .describe('The ID of the hint to resolve. Get IDs from list_optimization_hints.'),
       resolution: z
         .enum(HINT_RESOLUTION_STATUSES)
@@ -1528,6 +1568,7 @@ server.registerTool(
         ),
       note: z
         .string()
+        .max(1000)
         .optional()
         .describe('Optional note explaining why you resolved or dismissed this hint.'),
     },
@@ -1537,9 +1578,9 @@ server.registerTool(
     try {
       ensureDb();
 
-      const result = resolveOptimizationHint(db, hint_id, resolution as HintResolution, note);
+      const payload = buildResolveHintResult(db, { hint_id, resolution: resolution as HintResolution, note });
 
-      if (!result) {
+      if (!payload) {
         return {
           content: [
             {
@@ -1551,34 +1592,99 @@ server.registerTool(
         };
       }
 
-      const message = result.alreadyResolved
-        ? `ℹ️ Hint was already in a terminal state (${result.status}).`
-        : resolution === 'resolved'
-          ? '✅ Hint marked as resolved.'
-          : '👍 Hint dismissed.';
-
       return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(
-              {
-                hint_id: result.id,
-                resolution: result.resolution,
-                status: result.status,
-                resolution_note: result.resolutionNote ?? undefined,
-                already_resolved: result.alreadyResolved,
-                message,
-              },
-              null,
-              2,
-            ),
-          },
-        ],
+        content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
       };
     } catch (err: unknown) {
+      process.stderr.write(`[resolve_optimization_hint] error: ${String(err)}\n`);
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Internal error resolving hint' }) }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: get_optimization_hint
+// ---------------------------------------------------------------------------
+
+/**
+ * Core get-hint logic extracted for handler-level testing.
+ * Returns the full hint row payload, or null when the hint does not exist.
+ */
+export function buildGetHintResult(
+  db: Database.Database,
+  params: { hint_id: string },
+): Record<string, unknown> | null {
+  const h = getOptimizationHint(db, params.hint_id);
+  if (!h) return null;
+
+  return {
+    id: h.id,
+    skill_id: h.skillId,
+    source: h.source,
+    category: h.category,
+    description: h.description,
+    recommendation: h.recommendation,
+    impact_score: h.impactScore,
+    confidence: h.confidence,
+    confidence_level: confidenceToWords(h.confidence),
+    status: h.status,
+    auto_apply_eligible: h.autoApplyEligible ?? null,
+    parent_prescription_id: h.parentPrescriptionId,
+    evidence: h.evidence,
+    metric_snapshot: h.metricSnapshot,
+    generated_at: h.generatedAt,
+    applied_at: h.appliedAt,
+    created_at: h.createdAt,
+    resolution_disposition: h.resolutionDisposition ?? null,
+    resolution_note: h.resolutionNote ?? null,
+  };
+}
+
+server.registerTool(
+  'get_optimization_hint',
+  {
+    title: 'Get Optimization Hint',
+    description:
+      'Retrieve the full details of a single optimization hint by ID. ' +
+      'Returns all evidence, metric snapshot, parent prescription link, timestamps, ' +
+      'and resolution information (disposition and note). ' +
+      'Use list_optimization_hints to discover hint IDs.',
+    inputSchema: {
+      hint_id: z
+        .string()
+        .max(256)
+        .describe('The ID of the hint to retrieve. Get IDs from list_optimization_hints.'),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ hint_id }) => {
+    try {
+      ensureDb();
+
+      const payload = buildGetHintResult(db, { hint_id });
+
+      if (!payload) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({ error: `Hint '${hint_id}' not found.` }),
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+      };
+    } catch (err: unknown) {
+      process.stderr.write(`[get_optimization_hint] error: ${String(err)}\n`);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Internal error reading hint' }) }],
         isError: true,
       };
     }

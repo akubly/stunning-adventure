@@ -1,7 +1,8 @@
 /**
  * Tests for M1 hint consumption MCP tools:
- *   - list_optimization_hints (backing logic via queryOptimizationHints)
- *   - resolve_optimization_hint (backing logic via resolveOptimizationHint)
+ *   - list_optimization_hints (backing logic via queryOptimizationHints + buildListHintsResult)
+ *   - resolve_optimization_hint (backing logic via resolveOptimizationHint + buildResolveHintResult)
+ *   - get_optimization_hint (backing logic via getOptimizationHint + buildGetHintResult)
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { getDb, closeDb } from '../db/index.js';
@@ -13,6 +14,11 @@ import {
   ACTIVE_HINT_STATUSES,
 } from '../db/optimizationHints.js';
 import type { OptimizationHintInsert } from '../db/optimizationHints.js';
+import {
+  buildListHintsResult,
+  buildResolveHintResult,
+  buildGetHintResult,
+} from '../mcp/server.js';
 
 let db: ReturnType<typeof getDb>;
 
@@ -119,9 +125,11 @@ describe('resolveOptimizationHint DB helper', () => {
 
     expect(result).not.toBeNull();
     expect(result!.resolution).toBe('dismissed');
+    expect(result!.resolutionDisposition).toBe('dismissed');
     expect(result!.status).toBe('rejected');
     expect(result!.resolutionNote).toBe('not relevant');
     expect(result!.alreadyResolved).toBe(false);
+    expect(result!.prior_status).toBeNull();
   });
 
   it('resolves a pending hint', () => {
@@ -129,9 +137,11 @@ describe('resolveOptimizationHint DB helper', () => {
     const result = resolveOptimizationHint(db, 'h-resolve', 'resolved', 'fixed manually');
 
     expect(result!.resolution).toBe('resolved');
+    expect(result!.resolutionDisposition).toBe('resolved');
     expect(result!.status).toBe('rejected');
     expect(result!.resolutionNote).toBe('fixed manually');
     expect(result!.alreadyResolved).toBe(false);
+    expect(result!.prior_status).toBeNull();
   });
 
   it('is idempotent — does not error on already-terminal hint', () => {
@@ -141,6 +151,9 @@ describe('resolveOptimizationHint DB helper', () => {
     expect(result).not.toBeNull();
     expect(result!.status).toBe('rejected');
     expect(result!.alreadyResolved).toBe(true);
+    // F2: resolution is null when already resolved
+    expect(result!.resolution).toBeNull();
+    expect(result!.prior_status).toBe('rejected');
   });
 
   it('is idempotent for all terminal statuses', () => {
@@ -167,12 +180,13 @@ describe('resolveOptimizationHint DB helper', () => {
     expect(result!.resolutionNote).toBeNull();
   });
 
-  it('persists resolution_note in the DB row', () => {
+  it('persists resolution_note and resolution_disposition in the DB row', () => {
     insertOptimizationHint(db, hint({ id: 'h-persist' }));
     resolveOptimizationHint(db, 'h-persist', 'dismissed', 'noise');
 
     const row = getOptimizationHint(db, 'h-persist');
     expect(row!.resolutionNote).toBe('noise');
+    expect(row!.resolutionDisposition).toBe('dismissed');
     expect(row!.status).toBe('rejected');
   });
 });
@@ -186,5 +200,117 @@ describe('migration 017 schema', () => {
     const cols = db.pragma('table_info(optimization_hints)') as Array<{ name: string }>;
     const names = cols.map((c) => c.name);
     expect(names).toContain('resolution_note');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Migration 018 schema sanity check
+// ---------------------------------------------------------------------------
+
+describe('migration 018 schema', () => {
+  it('optimization_hints table has resolution_disposition column after migrations', () => {
+    const cols = db.pragma('table_info(optimization_hints)') as Array<{ name: string }>;
+    const names = cols.map((c) => c.name);
+    expect(names).toContain('resolution_disposition');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Handler-level tests (F3) — buildListHintsResult, buildResolveHintResult, buildGetHintResult
+// ---------------------------------------------------------------------------
+
+describe('buildListHintsResult handler', () => {
+  it('no status arg returns only active hints (default-fallback path)', () => {
+    insertOptimizationHint(db, hint({ id: 'hl-pending', status: 'pending' }));
+    insertOptimizationHint(db, hint({ id: 'hl-rejected', status: 'rejected', category: 'cat-r' }));
+    insertOptimizationHint(db, hint({ id: 'hl-applied', status: 'applied', category: 'cat-a' }));
+
+    const result = buildListHintsResult(db, { limit: 20 });
+    const ids = (result.hints as Array<{ id: string }>).map((h) => h.id);
+
+    expect(ids).toContain('hl-pending');
+    expect(ids).not.toContain('hl-rejected');
+    expect(ids).not.toContain('hl-applied');
+    // active_count present when no status filter
+    expect(result.active_count).toBeDefined();
+  });
+
+  it('omits active_count when a specific status filter is passed', () => {
+    insertOptimizationHint(db, hint({ id: 'hl-s1', status: 'rejected', category: 'cat-s1' }));
+
+    const result = buildListHintsResult(db, { status: 'rejected', limit: 20 });
+    expect('active_count' in result).toBe(false);
+    expect(result.count).toBe(1);
+  });
+
+  it('surfaces resolution_disposition and resolution_note on resolved hints', () => {
+    insertOptimizationHint(db, hint({ id: 'hl-res', status: 'pending', category: 'cat-res' }));
+    resolveOptimizationHint(db, 'hl-res', 'resolved', 'done');
+
+    const result = buildListHintsResult(db, { status: 'rejected', limit: 20 });
+    const row = (result.hints as Array<Record<string, unknown>>).find((h) => h.id === 'hl-res');
+    expect(row?.resolution_disposition).toBe('resolved');
+    expect(row?.resolution_note).toBe('done');
+  });
+});
+
+describe('buildResolveHintResult handler', () => {
+  it('returns null for unknown hint id (not-found error path)', () => {
+    const result = buildResolveHintResult(db, { hint_id: 'no-such', resolution: 'dismissed' });
+    expect(result).toBeNull();
+  });
+
+  it('resolves a pending hint — returns structured payload', () => {
+    insertOptimizationHint(db, hint({ id: 'hr-1', status: 'pending', category: 'cat-hr1' }));
+    const result = buildResolveHintResult(db, { hint_id: 'hr-1', resolution: 'resolved', note: 'fixed it' });
+
+    expect(result).not.toBeNull();
+    expect(result!.hint_id).toBe('hr-1');
+    expect(result!.resolution).toBe('resolved');
+    expect(result!.resolution_disposition).toBe('resolved');
+    expect(result!.status).toBe('rejected');
+    expect(result!.resolution_note).toBe('fixed it');
+    expect(result!.already_resolved).toBe(false);
+    expect(result!.prior_status).toBeNull();
+  });
+
+  it('already-resolved path returns resolution: null and prior_status', () => {
+    insertOptimizationHint(db, hint({ id: 'hr-2', status: 'applied', category: 'cat-hr2' }));
+    const result = buildResolveHintResult(db, { hint_id: 'hr-2', resolution: 'dismissed' });
+
+    expect(result!.already_resolved).toBe(true);
+    expect(result!.resolution).toBeNull();
+    expect(result!.prior_status).toBe('applied');
+  });
+});
+
+describe('buildGetHintResult handler', () => {
+  it('returns null for unknown hint id', () => {
+    expect(buildGetHintResult(db, { hint_id: 'nope' })).toBeNull();
+  });
+
+  it('round-trip — returns full hint including evidence, metric_snapshot, and resolution fields', () => {
+    insertOptimizationHint(db, hint({
+      id: 'hg-1',
+      evidence: { tokens_saved: 42 },
+      metricSnapshot: { drift: 0.1 },
+      parentPrescriptionId: 'presc-x',
+    }));
+    resolveOptimizationHint(db, 'hg-1', 'dismissed', 'low value');
+
+    const result = buildGetHintResult(db, { hint_id: 'hg-1' });
+
+    expect(result).not.toBeNull();
+    expect(result!.id).toBe('hg-1');
+    expect(result!.skill_id).toBe('skill-a');
+    expect((result!.evidence as Record<string, unknown>).tokens_saved).toBe(42);
+    expect((result!.metric_snapshot as Record<string, unknown>).drift).toBe(0.1);
+    expect(result!.parent_prescription_id).toBe('presc-x');
+    expect(result!.resolution_disposition).toBe('dismissed');
+    expect(result!.resolution_note).toBe('low value');
+    expect(result!.status).toBe('rejected');
+    expect(result!.confidence_level).toBeDefined();
+    expect(result!.generated_at).toBeDefined();
+    expect(result!.created_at).toBeDefined();
   });
 });

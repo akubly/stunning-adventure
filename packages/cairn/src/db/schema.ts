@@ -16,6 +16,7 @@ import { migration014 } from './migrations/014-session-kind.js';
 import { migration015 } from './migrations/015-workdir-sessions.js';
 import { migration016 } from './migrations/016-active-session-unique.js';
 import { migration017 } from './migrations/017-hint-resolution-note.js';
+import { migration018 } from './migrations/018-hint-resolution-disposition.js';
 
 export interface Migration {
   version: number;
@@ -23,7 +24,7 @@ export interface Migration {
   up: (db: Database.Database) => void;
 }
 
-const migrations: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017];
+const migrations: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018];
 
 export function applyMigrations(db: Database.Database): void {
   db.exec(`
