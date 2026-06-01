@@ -227,6 +227,51 @@ Scribe will log completion once Edgar and Crispin finish. Coordinator will spawn
 
 ---
 
+### 2026-05-31: M7-C Complete — Edgar (TrustUpdater.mutate atomicity)
+
+**Author:** Edgar (Learning Systems Specialist)
+**Date:** 2026-05-31
+**Branch:** `eureka/m7-c-atomicity`
+**Status:** COMPLETE — PR #41
+
+**Contract shape:**
+```ts
+export interface TrustUpdater {
+  mutate(args: {
+    factId: string;
+    sessionId: SessionId;
+    fn: (currentTrust: number) => number;
+  }): Promise<void>;
+}
+```
+
+**Atomicity guarantee:** The storage implementation MUST execute read, fn-application, and write as a single atomic operation per factId. If `fn` throws, write is aborted. If `fn` returns non-finite or out-of-range [0,1], storage MUST throw `InvalidTrustValueError(source:'storage')`. Variant B: `currentTrust` removed from `ApplyFeedbackOptions`; `applyFeedbackById` is a zero-logic thin wrapper.
+
+**Test count delta:** 62 → 68 (+6 contract tests). All green.
+
+**Breaking API changes:** `TrustUpdater.update` → `TrustUpdater.mutate`; `ApplyFeedbackOptions.currentTrust` removed; `ApplyFeedbackByIdDeps.factReader` removed.
+
+---
+
+### 2026-05-31: M7-C Complete — Crispin (InMemoryFactReader + contract suite)
+
+**Author:** Crispin (Knowledge Representation Specialist)
+**Date:** 2026-05-31
+**Branch:** `eureka/m7-c-factreader` (merged into `eureka/m7-c-atomicity` via PR #41)
+**Status:** COMPLETE
+
+**Decision:** In-memory FactReader (option i). No SQLite — Eureka has no persistence layer yet; SQLite deferred to M8-storage when FactStore.search() schema is locked.
+
+**Implementation:** `packages/eureka/src/storage/fact-reader.ts` — `InMemoryFactReader` backed by `Map<factId, Array<{trust, sessionId}>>`. Session-scoped; trust passthrough (NaN returned as-is; validation is caller's job).
+
+**Contract test pattern:** `runFactReaderContract(implName, makeHarness)` — shared helper in `fact-reader.contract.test.ts`. Invariants: CL-1 read existing fact, CL-2 read missing → null, CL-3 session isolation, CL-4 trust passthrough, CL-5 shape contract. Adding a new impl requires one `runFactReaderContract(...)` call — zero test duplication.
+
+**Test count delta:** 62 → 67 (+5 contract tests).
+
+**Rationale for in-memory choice:** No DB idiom exists in Eureka; introducing SQLite pre-FactStore schema would be premature. The contract suite is designed so SQLite wires in trivially in M8+ by passing a factory to `runFactReaderContract`.
+
+---
+
 ## Eureka M5+M6 Review Cycle
 
 ### 2026-05-30: M5+M6 Branch Preparation (Graham)
