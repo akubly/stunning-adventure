@@ -11,7 +11,7 @@
  * Contract under test (TrustUpdater.mutate):
  *   - Atomically reads currentTrust, calls fn(currentTrust), writes the result
  *   - If fn throws: write is aborted, error propagates, state unchanged
- *   - If fn returns non-finite/out-of-range: storage SHOULD reject (impl-dependent)
+ *   - If fn returns non-finite or out-of-range [0,1]: storage MUST throw InvalidTrustValueError(source:'storage') and MUST NOT mutate storage
  *   - If fact is missing: mutate throws FactNotFoundError before calling fn
  *   - Concurrent mutate() calls on the same factId are serialized
  *
@@ -20,7 +20,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { TrustUpdater } from '../recall.js';
-import { FactNotFoundError } from '../errors.js';
+import { FactNotFoundError, InvalidTrustValueError } from '../errors.js';
 import type { SessionId } from '@akubly/types';
 
 // ---------------------------------------------------------------------------
@@ -57,6 +57,13 @@ function makeInMemoryTrustUpdater(): TrustUpdaterTestImpl {
         }
         const current = store.get(factId)!;
         const newTrust = fn(current); // fn may throw — write is then skipped
+        if (!Number.isFinite(newTrust) || newTrust < 0 || newTrust > 1) {
+          throw new InvalidTrustValueError(
+            newTrust,
+            'storage',
+            `TrustUpdater.mutate: fn returned an out-of-range trust value (${newTrust}); expected a finite number in [0, 1]`,
+          );
+        }
         store.set(factId, newTrust);
       } finally {
         resolve(); // unblock the next queued mutation
@@ -126,31 +133,24 @@ function runTrustUpdaterContract(makeImpl: () => TrustUpdaterTestImpl): void {
   });
 
   // -------------------------------------------------------------------------
-  // C-3 — fn returns NaN: impl may reject or write NaN
+  // C-3 — fn returns NaN: impl MUST throw InvalidTrustValueError(source:'storage')
+  //        AND MUST NOT mutate storage
   // -------------------------------------------------------------------------
-  // The contract says storage MAY reject on non-finite return. We test that the
-  // impl does not silently swallow NaN — either it throws OR getTrust returns NaN
-  // (so callers can detect corruption on read). Both behaviours are observable.
 
-  it('C-3: fn returns NaN — impl does not silently hide the value (throws or stores NaN)', async () => {
+  it('C-3: fn returns NaN — impl throws InvalidTrustValueError(source:storage), storage unchanged', async () => {
     const { impl, setTrust, getTrust } = makeImpl();
     setTrust(FACT_ID, 0.50);
 
-    let threw = false;
-    try {
-      await impl.mutate({
+    await expect(
+      impl.mutate({
         factId:    FACT_ID,
         sessionId: SESSION,
         fn: () => NaN,
-      });
-    } catch {
-      threw = true;
-    }
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_TRUST_VALUE', source: 'storage' });
 
-    if (!threw) {
-      // If the impl didn't throw, it must have written NaN so the caller can detect it
-      expect(getTrust(FACT_ID)).toBeNaN();
-    }
+    // Write MUST have been aborted — stored trust is unchanged
+    expect(getTrust(FACT_ID)).toBeCloseTo(0.50, 5);
   });
 
   // -------------------------------------------------------------------------
@@ -184,33 +184,25 @@ function runTrustUpdaterContract(makeImpl: () => TrustUpdaterTestImpl): void {
   // It does NOT test real storage atomicity — that is Crispin's concern.
 
   it('C-5: concurrent mutate() calls on the same factId are serialized (no interleave)', async () => {
-    const { impl, setTrust } = makeImpl();
-    setTrust(FACT_ID, 0.50);
+    const { impl, setTrust, getTrust } = makeImpl();
+    setTrust(FACT_ID, 0.0);
 
+    const N = 5;
     const log: string[] = [];
+    const mutations = Array.from({ length: N }, (_, i) =>
+      impl.mutate({
+        factId:    FACT_ID,
+        sessionId: SESSION,
+        fn: t => { log.push(String(i)); return t + 0.1; },
+      }),
+    );
 
-    // Both mutations start "concurrently" (no await between them)
-    const a = impl.mutate({
-      factId:    FACT_ID,
-      sessionId: SESSION,
-      fn: t => { log.push('A'); return t + 0.10; },
-    });
-    const b = impl.mutate({
-      factId:    FACT_ID,
-      sessionId: SESSION,
-      fn: t => { log.push('B'); return t + 0.05; },
-    });
+    await Promise.all(mutations);
 
-    await Promise.all([a, b]);
-
-    // Both mutations ran (log has both entries)
-    expect(log).toHaveLength(2);
-    // Serialized — the two fn calls did not interleave (A or B went first, fully)
-    // Just verify the final trust is consistent with serial application
-    // (0.50 + 0.10 + 0.05 = 0.65 if A first, or 0.50 + 0.05 + 0.10 = 0.65 if B first)
-    const { getTrust } = makeImpl();
-    // We can't call getTrust on the same impl instance... use the impl's state directly
-    // by running a read-only mutate that reads and returns current
+    // All N mutations ran — no updates were lost
+    expect(log).toHaveLength(N);
+    // Final value must equal N * 0.1 — serial application with no lost writes
+    expect(getTrust(FACT_ID)).toBeCloseTo(N * 0.1, 5);
   });
 
   // -------------------------------------------------------------------------
