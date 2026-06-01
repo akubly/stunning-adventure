@@ -233,8 +233,11 @@ export type FeedbackEvent = 'corroboration' | 'contradiction' | 'user_correction
  *
  * M7-C atomicity contract:
  *   The storage implementation MUST execute the read, fn-application, and write as a
- *   single atomic operation with respect to other `mutate()` calls on the **same factId**.
- *   Calls for different factIds may proceed concurrently.
+ *   single atomic operation with respect to other `mutate()` calls on the **same
+ *   (sessionId, factId) pair**. Calls for different pairs may proceed concurrently.
+ *
+ *   Storage MUST scope state by `(sessionId, factId)`. A `mutate()` on one `sessionId`
+ *   MUST NOT observe or mutate state belonging to a different `sessionId`.
  *
  *   - If `fn` throws: the write is aborted; no partial state is committed; the error
  *     propagates out of `mutate()` unchanged.

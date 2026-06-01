@@ -9,13 +9,15 @@
  * Crispin can re-use this suite by pointing `makeImpl` at the real storage impl.
  *
  * Contract under test (TrustUpdater.mutate):
+ *   - Storage MUST scope state by (sessionId, factId); mutations on one sessionId
+ *     MUST NOT observe or mutate state belonging to a different sessionId
  *   - Atomically reads currentTrust, calls fn(currentTrust), writes the result
  *   - If fn throws: write is aborted, error propagates, state unchanged
  *   - If fn returns non-finite or out-of-range [0,1]: storage MUST throw InvalidTrustValueError(source:'storage') and MUST NOT mutate storage
  *   - If fact is missing: mutate throws FactNotFoundError before calling fn
- *   - Concurrent mutate() calls on the same factId are serialized
+ *   - Concurrent mutate() calls on the same (sessionId, factId) are serialized
  *
- * Total M7-C contract tests: 6
+ * Total M7-C contract tests: 7
  */
 
 import { describe, it, expect } from 'vitest';
@@ -33,29 +35,35 @@ import type { SessionId } from '@akubly/types';
 
 interface TrustUpdaterTestImpl {
   impl: TrustUpdater;
-  setTrust(factId: string, trust: number): void;
-  getTrust(factId: string): number | undefined;
+  setTrust(sessionId: SessionId, factId: string, trust: number): void;
+  getTrust(sessionId: SessionId, factId: string): number | undefined;
+}
+
+/** Composite key using null-byte separator to prevent accidental collisions. */
+function storeKey(sessionId: SessionId, factId: string): string {
+  return `${sessionId}\0${factId}`;
 }
 
 function makeInMemoryTrustUpdater(): TrustUpdaterTestImpl {
   const store = new Map<string, number>();
-  // Per-factId promise chain for serialized mutation — the key M7-C atomicity primitive.
+  // Per-(sessionId,factId) promise chain for serialized mutation — the key M7-C atomicity primitive.
   const locks = new Map<string, Promise<void>>();
 
   const impl: TrustUpdater = {
-    async mutate({ factId, fn }) {
-      // Chain onto existing lock for this factId (or a resolved promise if first call)
-      const prior = locks.get(factId) ?? Promise.resolve();
+    async mutate({ factId, sessionId, fn }) {
+      const key = storeKey(sessionId, factId);
+      // Chain onto existing lock for this key (or a resolved promise if first call)
+      const prior = locks.get(key) ?? Promise.resolve();
       let resolve!: () => void;
       const next = new Promise<void>(r => { resolve = r; });
-      locks.set(factId, next);
+      locks.set(key, next);
 
-      await prior; // wait for previous mutation on this factId to complete
+      await prior; // wait for previous mutation on this (sessionId, factId) to complete
       try {
-        if (!store.has(factId)) {
+        if (!store.has(key)) {
           throw new FactNotFoundError(factId);
         }
-        const current = store.get(factId)!;
+        const current = store.get(key)!;
         const newTrust = fn(current); // fn may throw — write is then skipped
         if (!Number.isFinite(newTrust) || newTrust < 0 || newTrust > 1) {
           throw new InvalidTrustValueError(
@@ -64,8 +72,13 @@ function makeInMemoryTrustUpdater(): TrustUpdaterTestImpl {
             `TrustUpdater.mutate: fn returned an out-of-range trust value (${newTrust}); expected a finite number in [0, 1]`,
           );
         }
-        store.set(factId, newTrust);
+        store.set(key, newTrust);
       } finally {
+        // Clean up lock entry if no subsequent mutation has queued (prevents unbounded growth).
+        // Identity check guards against racing with a queued next mutation that already replaced the entry.
+        if (locks.get(key) === next) {
+          locks.delete(key);
+        }
         resolve(); // unblock the next queued mutation
       }
     },
@@ -73,8 +86,8 @@ function makeInMemoryTrustUpdater(): TrustUpdaterTestImpl {
 
   return {
     impl,
-    setTrust(factId, trust) { store.set(factId, trust); },
-    getTrust(factId)        { return store.get(factId); },
+    setTrust(sessionId, factId, trust) { store.set(storeKey(sessionId, factId), trust); },
+    getTrust(sessionId, factId)        { return store.get(storeKey(sessionId, factId)); },
   };
 }
 
@@ -100,7 +113,7 @@ function runTrustUpdaterContract(makeImpl: () => TrustUpdaterTestImpl): void {
 
   it('C-1: happy-path — fn(currentTrust) result is written to storage', async () => {
     const { impl, setTrust, getTrust } = makeImpl();
-    setTrust(FACT_ID, 0.50);
+    setTrust(SESSION, FACT_ID, 0.50);
 
     await impl.mutate({
       factId:    FACT_ID,
@@ -108,7 +121,7 @@ function runTrustUpdaterContract(makeImpl: () => TrustUpdaterTestImpl): void {
       fn: t => t + 0.10,
     });
 
-    expect(getTrust(FACT_ID)).toBeCloseTo(0.60, 5);
+    expect(getTrust(SESSION, FACT_ID)).toBeCloseTo(0.60, 5);
   });
 
   // -------------------------------------------------------------------------
@@ -117,7 +130,7 @@ function runTrustUpdaterContract(makeImpl: () => TrustUpdaterTestImpl): void {
 
   it('C-2: fn throws → write is aborted, stored trust is unchanged, error propagates', async () => {
     const { impl, setTrust, getTrust } = makeImpl();
-    setTrust(FACT_ID, 0.50);
+    setTrust(SESSION, FACT_ID, 0.50);
 
     const boom = new Error('fn failed intentionally');
     await expect(
@@ -129,7 +142,7 @@ function runTrustUpdaterContract(makeImpl: () => TrustUpdaterTestImpl): void {
     ).rejects.toBe(boom);
 
     // State must be unchanged after fn threw
-    expect(getTrust(FACT_ID)).toBeCloseTo(0.50, 5);
+    expect(getTrust(SESSION, FACT_ID)).toBeCloseTo(0.50, 5);
   });
 
   // -------------------------------------------------------------------------
@@ -139,7 +152,7 @@ function runTrustUpdaterContract(makeImpl: () => TrustUpdaterTestImpl): void {
 
   it('C-3: fn returns NaN — impl throws InvalidTrustValueError(source:storage), storage unchanged', async () => {
     const { impl, setTrust, getTrust } = makeImpl();
-    setTrust(FACT_ID, 0.50);
+    setTrust(SESSION, FACT_ID, 0.50);
 
     await expect(
       impl.mutate({
@@ -150,7 +163,7 @@ function runTrustUpdaterContract(makeImpl: () => TrustUpdaterTestImpl): void {
     ).rejects.toMatchObject({ code: 'INVALID_TRUST_VALUE', source: 'storage' });
 
     // Write MUST have been aborted — stored trust is unchanged
-    expect(getTrust(FACT_ID)).toBeCloseTo(0.50, 5);
+    expect(getTrust(SESSION, FACT_ID)).toBeCloseTo(0.50, 5);
   });
 
   // -------------------------------------------------------------------------
@@ -185,7 +198,7 @@ function runTrustUpdaterContract(makeImpl: () => TrustUpdaterTestImpl): void {
 
   it('C-5: concurrent mutate() calls on the same factId are serialized (no interleave)', async () => {
     const { impl, setTrust, getTrust } = makeImpl();
-    setTrust(FACT_ID, 0.0);
+    setTrust(SESSION, FACT_ID, 0.0);
 
     const N = 5;
     const log: string[] = [];
@@ -202,7 +215,7 @@ function runTrustUpdaterContract(makeImpl: () => TrustUpdaterTestImpl): void {
     // All N mutations ran — no updates were lost
     expect(log).toHaveLength(N);
     // Final value must equal N * 0.1 — serial application with no lost writes
-    expect(getTrust(FACT_ID)).toBeCloseTo(N * 0.1, 5);
+    expect(getTrust(SESSION, FACT_ID)).toBeCloseTo(N * 0.1, 5);
   });
 
   // -------------------------------------------------------------------------
@@ -218,16 +231,39 @@ function runTrustUpdaterContract(makeImpl: () => TrustUpdaterTestImpl): void {
     const FACT_A = 'fact-contract-A';
     const FACT_B = 'fact-contract-B';
     const { impl, setTrust, getTrust } = makeImpl();
-    setTrust(FACT_A, 0.50);
-    setTrust(FACT_B, 0.70);
+    setTrust(SESSION, FACT_A, 0.50);
+    setTrust(SESSION, FACT_B, 0.70);
 
     await Promise.all([
       impl.mutate({ factId: FACT_A, sessionId: SESSION, fn: t => t + 0.10 }),
       impl.mutate({ factId: FACT_B, sessionId: SESSION, fn: t => t - 0.10 }),
     ]);
 
-    expect(getTrust(FACT_A)).toBeCloseTo(0.60, 5);
-    expect(getTrust(FACT_B)).toBeCloseTo(0.60, 5);
+    expect(getTrust(SESSION, FACT_A)).toBeCloseTo(0.60, 5);
+    expect(getTrust(SESSION, FACT_B)).toBeCloseTo(0.60, 5);
+  });
+
+  // -------------------------------------------------------------------------
+  // C-7 — Cross-session isolation: mutate on sessionA MUST NOT affect sessionB
+  // -------------------------------------------------------------------------
+  // Storage MUST scope state by (sessionId, factId). The same factId under
+  // different sessions is a different logical record. Mirrors the per-session
+  // isolation contract already established in FactReader (CL-3).
+
+  it('C-7: cross-session isolation — mutate on sessionB does not affect sessionA', async () => {
+    const SESSION_A = 'session-contract-A' as SessionId;
+    const SESSION_B = 'session-contract-B' as SessionId;
+    const { impl, setTrust, getTrust } = makeImpl();
+
+    setTrust(SESSION_A, FACT_ID, 0.50);
+    setTrust(SESSION_B, FACT_ID, 0.70);
+
+    await impl.mutate({ factId: FACT_ID, sessionId: SESSION_B, fn: t => t + 0.10 });
+
+    // sessionA's value is completely unaffected
+    expect(getTrust(SESSION_A, FACT_ID)).toBeCloseTo(0.50, 5);
+    // sessionB's value was mutated correctly
+    expect(getTrust(SESSION_B, FACT_ID)).toBeCloseTo(0.80, 5);
   });
 }
 
