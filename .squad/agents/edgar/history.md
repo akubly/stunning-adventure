@@ -45,6 +45,13 @@
 
 - **Three pure-docs threads closed cleanly in one commit (f8f94c3):** All three Copilot findings were pre-aligned with Cycle 1 decisions — no new design work required. Thread A (gitignored inbox path) → replaced with `.squad/decisions.md` § "M7-A" citation per the `doc-references-respect-gitignore` skill. Threads B+C (`as const` examples) → replaced with `readonly code: 'X' = 'X'` explicit-annotation form, with "Do not use as const" callout pointing back to Cycle 1 (F7) and the reference implementation. Reply-before-resolve discipline applied: all 3 threads replied on before calling `resolveReviewThread`.
 
+**2026-05-31 — M7-C Atomicity Direction (Aaron decision)**
+
+- **Pattern locked: mutate callback** (option c, over caller-serialization and CAS token)
+- **Rationale:** Pushing read-modify-write into FactReader/TrustUpdater seam keeps activity layer pure; correctness becomes a storage-layer property
+- **Status:** Implementing on `eureka/m7-c-atomicity` with Crispin (FactReader callback interface)
+- **Coordinator note:** Will spawn verification when both agents report completion
+
 **See history-archive.md for detailed entries from M5, M6, earlier reviews, and design ceremony.**
 
 
