@@ -60,8 +60,9 @@ server.registerTool(
         ],
       };
     } catch (err: unknown) {
+      process.stderr.write(`[tool_name] error: ${String(err)}\n`);
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Internal error ...' }) }],
         isError: true,
       };
     }
@@ -119,7 +120,12 @@ export const migration017: Migration = {
         `SELECT COUNT(*) as n FROM sqlite_master WHERE type='table' AND name='my_table'`,
       ).get() as { n: number }
     ).n > 0;
-    if (!tableExists) return;
+    if (!tableExists) {
+      process.stderr.write(
+        '[migrationNNN] WARNING: my_table not found — skipping. Expected in partial-schema test DBs.\n',
+      );
+      return;
+    }
 
     // Idempotency guard for ALTER TABLE (SQLite doesn't support IF NOT EXISTS):
     const cols = db.pragma('table_info(my_table)') as Array<{ name: string }>;
@@ -185,3 +191,66 @@ describe('migration NNN schema', () => {
 4. **Idempotent resolve tools** — check terminal-state membership before transitioning; return `alreadyResolved: true` instead of erroring.
 5. **Terminal hint statuses** — `applied, rejected, expired, suppressed, failed`. Active statuses (`ACTIVE_HINT_STATUSES`) = `pending, accepted, deferred`.
 6. **Schema version assertions** — any test asserting `MAX(version) = N` must be bumped to `N+1` when adding a migration. Affected test files: `db.test.ts`, `discovery.test.ts`, `migration012.test.ts`, `prescriptions.test.ts`.
+
+---
+
+## Pattern: handler-level testability (extracted pure functions)
+
+Extracting handler logic into exported pure functions enables handler-level tests without a full MCP harness:
+
+```typescript
+// In server.ts — export the core logic
+export function buildMyToolResult(
+  db: Database.Database,
+  params: { id: string; limit: number },
+): Record<string, unknown> | null {
+  const row = getMyRow(db, params.id);
+  if (!row) return null;
+  return { id: row.id, /* ... */ };
+}
+
+// The MCP handler wraps the result
+server.registerTool('my_tool', { ... }, async ({ id, limit }) => {
+  try {
+    ensureDb();
+    const payload = buildMyToolResult(db, { id, limit });
+    if (!payload) {
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ error: `... not found.` }) }], isError: true };
+    }
+    return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
+  } catch (err: unknown) {
+    process.stderr.write(`[my_tool] error: ${String(err)}\n`);
+    return { content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Internal error ...' }) }], isError: true };
+  }
+});
+```
+
+Tests import the pure function from `server.ts` (safe — `if (isScript)` guard prevents server startup on import):
+
+```typescript
+import { buildMyToolResult } from '../mcp/server.js';
+
+it('returns null for unknown id', () => {
+  expect(buildMyToolResult(db, { id: 'nope', limit: 10 })).toBeNull();
+});
+```
+
+---
+
+## Zod field conventions (M1 cycle-1)
+
+- **String id fields**: `.max(256)` as defense-in-depth: `z.string().max(256).describe('...')`
+- **Free-text note fields**: `.max(1000)` to bound DB size: `z.string().max(1000).optional()`
+- **Status enums**: export a `const` tuple from the DB module, use `z.enum(MY_STATUSES)` — never duplicate literals in server.ts
+- **Nullable fields in response objects**: use `?? null` (not `?? undefined`) so the key is always present with a consistent shape
+
+---
+
+## Idiomatic already-resolved response shape
+
+When a resolution tool is idempotent (hint/prescription already in terminal state):
+- Set `resolution: null` — the caller's intent was NOT acted on
+- Include `prior_status` — the actual state the hint was already in
+- Set `already_resolved: true`
+
+This prevents LLM consumers from misreading the response as a successful disposition.

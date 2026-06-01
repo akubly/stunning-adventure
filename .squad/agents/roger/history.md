@@ -12,6 +12,26 @@
 - Eureka M2-M3: tsc clean, no new coupling risks
 
 **See history-archive.md for detailed entries.**
+## Learnings (2026-05-31 — M1 Cycle-1 Findings: Issue #39)
+
+### Schema co-evolution: two migrations in one PR (017 + 018)
+
+Adding migration 018 to the same PR as 017 was fine — the runner is purely sequential, both migrations are guarded against missing tables, and each is idempotent. The only cost was updating the "MAX(version)" assertions in 4 test files a second time. If the two columns had been logically coupled from the start I'd prefer one migration, but when review feedback drives the change, a second migration is the right call — it keeps the migration history honest (017 = what shipped, 018 = what review demanded) and makes rollback surgical.
+
+### Handler-layer testability pattern (extracted pure functions)
+
+The cleanest approach: extract each handler body into an exported pure function that takes `db: Database.Database` + params and returns the raw JSON payload object. The MCP handler wraps the result in `{ content: [{ type: 'text', text: JSON.stringify(result) }] }`. Tests import the pure function directly from `server.ts` (safe because the `if (isScript)` guard prevents the MCP server from starting on import). Benefits:
+- Tests operate on plain objects, not MCP content wrappers
+- No MCP harness needed
+- Functions are also useful in non-MCP contexts (e.g., CLI tools, tests in other packages)
+Pattern: `buildListHintsResult(db, params)`, `buildResolveHintResult(db, params)`, `buildGetHintResult(db, params)`.
+
+### Persona finding initially disagreed with, then came around
+
+**F6 (active_count misleading when status filter present):** My first reaction was "the consumer knows what status they asked for, active_count is just extra info." But after implementing it I understood the Craft persona's point: if you ask for `status=rejected` and get `active_count: 0`, an LLM consumer might interpret that as "nothing is active" when really active hints exist — they just weren't in scope. Omitting the field when it can only be misleading is the cleaner contract. The comment in the code documents this intent for the next engineer.
+
+**F11 (event payload missing resolution intent):** Also came around on this. The initial emit recorded `from_state → rejected` which is sufficient for lifecycle tracking. But Aaron's stated dogfood loop requires forge to distinguish user-dismissed hints from system-expired ones. Without `source: 'mcp'` + `resolution_disposition` in the event, forge can't learn from Copilot's disposition signal. The fix was low-cost; the signal is high-value.
+
 ## Learnings (2026-05-31 — Issue #39 M1: Hint Consumption MCP Tools)
 
 ### Partial-schema test DB gotcha with ALTER TABLE migrations
