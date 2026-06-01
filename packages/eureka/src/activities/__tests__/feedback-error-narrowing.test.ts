@@ -46,11 +46,14 @@ const SESSION: SessionId = 'session-m7b-narrowing' as SessionId;
 const FACT_ID = 'fact-narrowing-001';
 
 function makeTrustUpdater() {
-  return { update: vi.fn().mockResolvedValue(undefined) };
+  return { mutate: vi.fn().mockResolvedValue(undefined) };
 }
 
-function makeFactReader(result: { trust: number } | null | undefined) {
-  return { read: vi.fn().mockResolvedValue(result) };
+/** Mutate mock that calls fn(storageTrust) — simulates storage providing trust. */
+function makeMutateCalling(storageTrust: number) {
+  return {
+    mutate: vi.fn().mockImplementation(async ({ fn }: { fn: (t: number) => number }) => { fn(storageTrust); }),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -97,14 +100,15 @@ function narrowEurekaError(err: unknown): EurekaTag {
 describe('Group 1 — code-based narrowing (primary contract)', () => {
 
   it('FactNotFoundError: code, factId, message substring, and name are correct', async () => {
-    const trustUpdater = makeTrustUpdater();
-    const factReader   = makeFactReader(null); // null → FactNotFoundError
+    const trustUpdater = {
+      mutate: vi.fn().mockRejectedValue(new FactNotFoundError(FACT_ID)),
+    };
 
     let caught: unknown;
     try {
       await applyFeedbackById(
         { factId: FACT_ID, sessionId: SESSION, event: 'corroboration' as const },
-        { factReader, trustUpdater },
+        { trustUpdater },
       );
     } catch (err) {
       caught = err;
@@ -132,7 +136,6 @@ describe('Group 1 — code-based narrowing (primary contract)', () => {
           factId: FACT_ID,
           sessionId: SESSION,
           event: 'user_correction' as const,
-          currentTrust: 0.5,
           // correctionDelta intentionally omitted → InvalidFeedbackOptionsError
         },
         { trustUpdater },
@@ -148,18 +151,14 @@ describe('Group 1 — code-based narrowing (primary contract)', () => {
     expect((caught as InvalidFeedbackOptionsError).name).toBe('InvalidFeedbackOptionsError');
   });
 
-  it('InvalidTrustValueError: code, value, source, message substring, and name are correct', async () => {
-    const trustUpdater = makeTrustUpdater();
+  it('InvalidTrustValueError: code, value, source, message substring, and name are correct (storage path)', async () => {
+    // M7-C: storage corruption is surfaced when fn(NaN) is called by the storage impl.
+    const trustUpdater = makeMutateCalling(NaN);
 
     let caught: unknown;
     try {
       await applyFeedback(
-        {
-          factId: FACT_ID,
-          sessionId: SESSION,
-          event: 'corroboration' as const,
-          currentTrust: NaN, // non-finite → InvalidTrustValueError(source:'input')
-        },
+        { factId: FACT_ID, sessionId: SESSION, event: 'corroboration' as const },
         { trustUpdater },
       );
     } catch (err) {
@@ -169,31 +168,23 @@ describe('Group 1 — code-based narrowing (primary contract)', () => {
     expect(caught).toBeDefined();
     expect((caught as InvalidTrustValueError).code).toBe('INVALID_TRUST_VALUE');
     expect((caught as InvalidTrustValueError).value).toBeNaN();
-    expect((caught as InvalidTrustValueError).source).toBe('input');
-    expect((caught as InvalidTrustValueError).message).toContain('currentTrust');
+    expect((caught as InvalidTrustValueError).source).toBe('storage');
+    expect((caught as InvalidTrustValueError).message).toContain('non-finite');
     expect((caught as InvalidTrustValueError).name).toBe('InvalidTrustValueError');
   });
 
-  it('FactReaderContractError: code, factId, message substring, and name are correct', async () => {
-    const trustUpdater = makeTrustUpdater();
-    const factReader   = makeFactReader(undefined); // undefined → FactReaderContractError
+  it('FactReaderContractError: code, factId, message substring, and name are correct (direct constructor — SUT no longer drives this on write path)', () => {
+    // M7-C: FactReader no longer used in applyFeedbackById write path.
+    // FactReaderContractError is still exported for recall/display paths (Crispin).
+    // Verify class integrity directly.
+    const err = new FactReaderContractError(FACT_ID);
 
-    let caught: unknown;
-    try {
-      await applyFeedbackById(
-        { factId: FACT_ID, sessionId: SESSION, event: 'corroboration' as const },
-        { factReader, trustUpdater },
-      );
-    } catch (err) {
-      caught = err;
-    }
-
-    expect(caught).toBeDefined();
-    expect((caught as FactReaderContractError).code).toBe('FACT_READER_CONTRACT');
-    expect((caught as FactReaderContractError).factId).toBe(FACT_ID);
-    expect((caught as FactReaderContractError).message).toContain('FactReader.read()');
-    expect((caught as FactReaderContractError).message).toContain('undefined');
-    expect((caught as FactReaderContractError).name).toBe('FactReaderContractError');
+    expect(err).toBeDefined();
+    expect(err.code).toBe('FACT_READER_CONTRACT');
+    expect(err.factId).toBe(FACT_ID);
+    expect(err.message).toContain('FactReader.read()');
+    expect(err.message).toContain('undefined');
+    expect(err.name).toBe('FactReaderContractError');
   });
 
   it('UnhandledFeedbackEventError: code, event, message substring, and name are correct', async () => {
@@ -207,7 +198,6 @@ describe('Group 1 — code-based narrowing (primary contract)', () => {
           sessionId: SESSION,
           // Runtime cast bypasses the TypeScript union — simulates untrusted boundary
           event: 'meditated' as unknown as FeedbackEvent,
-          currentTrust: 0.5,
         },
         { trustUpdater },
       );
@@ -236,36 +226,35 @@ describe('Group 1 — code-based narrowing (primary contract)', () => {
 describe('Group 2 — exhaustive code-discriminator switch', () => {
 
   it('routes all five error codes correctly and no valid Eureka error falls to default', async () => {
-    // Drive each error class out of the SUT, then run through the helper.
+    // Drive each error class out of the SUT (or directly for FactReaderContractError),
+    // then run through the helper.
 
     const cases: Array<Promise<unknown>> = [
-      // FactNotFoundError
+      // FactNotFoundError — mutate simulates storage throwing for missing fact
       applyFeedbackById(
         { factId: 'fact-switch-01', sessionId: SESSION, event: 'corroboration' as const },
-        { factReader: makeFactReader(null), trustUpdater: makeTrustUpdater() },
+        { trustUpdater: { mutate: vi.fn().mockRejectedValue(new FactNotFoundError('fact-switch-01')) } },
       ).catch(e => e),
 
-      // InvalidFeedbackOptionsError
+      // InvalidFeedbackOptionsError — missing correctionDelta
       applyFeedback(
-        { factId: 'fact-switch-02', sessionId: SESSION, event: 'user_correction' as const, currentTrust: 0.5 },
+        { factId: 'fact-switch-02', sessionId: SESSION, event: 'user_correction' as const },
         { trustUpdater: makeTrustUpdater() },
       ).catch(e => e),
 
-      // InvalidTrustValueError (source:'input')
+      // InvalidTrustValueError (source:'input') — non-finite correctionDelta
       applyFeedback(
-        { factId: 'fact-switch-03', sessionId: SESSION, event: 'corroboration' as const, currentTrust: NaN },
+        { factId: 'fact-switch-03', sessionId: SESSION, event: 'user_correction' as const, correctionDelta: NaN },
         { trustUpdater: makeTrustUpdater() },
       ).catch(e => e),
 
-      // FactReaderContractError
-      applyFeedbackById(
-        { factId: 'fact-switch-04', sessionId: SESSION, event: 'corroboration' as const },
-        { factReader: makeFactReader(undefined), trustUpdater: makeTrustUpdater() },
-      ).catch(e => e),
+      // FactReaderContractError — M7-C: no longer SUT-driven on write path; test via direct construction
+      // FactReaderContractError still exists for recall/display paths (Crispin's READ seam).
+      Promise.reject(new FactReaderContractError('fact-switch-04')).catch((e: unknown) => e),
 
-      // UnhandledFeedbackEventError
+      // UnhandledFeedbackEventError — runtime cast from untrusted boundary
       applyFeedback(
-        { factId: 'fact-switch-05', sessionId: SESSION, event: 'unknown_evt' as unknown as FeedbackEvent, currentTrust: 0.5 },
+        { factId: 'fact-switch-05', sessionId: SESSION, event: 'unknown_evt' as unknown as FeedbackEvent },
         { trustUpdater: makeTrustUpdater() },
       ).catch(e => e),
     ];
@@ -297,11 +286,12 @@ describe('Group 2 — exhaustive code-discriminator switch', () => {
 describe('Group 3 — inheritance preservation (instanceof convenience)', () => {
 
   it('InvalidTrustValueError instanceof RangeError (preserves pre-M7-A assertion)', async () => {
+    // M7-C: no currentTrust input; use correctionDelta NaN path for source:'input'
     const trustUpdater = makeTrustUpdater();
     let caught: unknown;
     try {
       await applyFeedback(
-        { factId: FACT_ID, sessionId: SESSION, event: 'corroboration' as const, currentTrust: 2.0 },
+        { factId: FACT_ID, sessionId: SESSION, event: 'user_correction' as const, correctionDelta: NaN },
         { trustUpdater },
       );
     } catch (err) {
@@ -312,21 +302,13 @@ describe('Group 3 — inheritance preservation (instanceof convenience)', () => 
     expect((caught as InvalidTrustValueError).code).toBe('INVALID_TRUST_VALUE');
   });
 
-  it('FactReaderContractError instanceof TypeError (preserves pre-M7-A assertion)', async () => {
-    const factReader   = makeFactReader(undefined);
-    const trustUpdater = makeTrustUpdater();
-    let caught: unknown;
-    try {
-      await applyFeedbackById(
-        { factId: FACT_ID, sessionId: SESSION, event: 'corroboration' as const },
-        { factReader, trustUpdater },
-      );
-    } catch (err) {
-      caught = err;
-    }
+  it('FactReaderContractError instanceof TypeError (direct constructor — class integrity assertion)', () => {
+    // M7-C: FactReaderContractError no longer SUT-driven on the write path.
+    // Verify inheritance via direct construction.
+    const err = new FactReaderContractError(FACT_ID);
     // Convenience assertion only — code-based check is primary (see Group 1)
-    expect(caught).toBeInstanceOf(TypeError);
-    expect((caught as FactReaderContractError).code).toBe('FACT_READER_CONTRACT');
+    expect(err).toBeInstanceOf(TypeError);
+    expect(err.code).toBe('FACT_READER_CONTRACT');
   });
 
   it('UnhandledFeedbackEventError instanceof TypeError (preserves pre-M7-A assertion)', async () => {
@@ -334,7 +316,7 @@ describe('Group 3 — inheritance preservation (instanceof convenience)', () => 
     let caught: unknown;
     try {
       await applyFeedback(
-        { factId: FACT_ID, sessionId: SESSION, event: 'bogus' as unknown as FeedbackEvent, currentTrust: 0.5 },
+        { factId: FACT_ID, sessionId: SESSION, event: 'bogus' as unknown as FeedbackEvent },
         { trustUpdater },
       );
     } catch (err) {
@@ -358,12 +340,12 @@ describe('Group 3 — inheritance preservation (instanceof convenience)', () => 
 
 describe('Group 4 — source discrimination on InvalidTrustValueError', () => {
 
-  it("source:'input' — applyFeedback with non-finite currentTrust produces source='input'", async () => {
+  it("source:'input' — applyFeedback with non-finite correctionDelta produces source='input'", async () => {
     const trustUpdater = makeTrustUpdater();
     let caught: unknown;
     try {
       await applyFeedback(
-        { factId: FACT_ID, sessionId: SESSION, event: 'corroboration' as const, currentTrust: Infinity },
+        { factId: FACT_ID, sessionId: SESSION, event: 'user_correction' as const, correctionDelta: Infinity },
         { trustUpdater },
       );
     } catch (err) {
@@ -373,10 +355,10 @@ describe('Group 4 — source discrimination on InvalidTrustValueError', () => {
     expect((caught as InvalidTrustValueError).code).toBe('INVALID_TRUST_VALUE');
     expect((caught as InvalidTrustValueError).source).toBe('input');
     expect((caught as InvalidTrustValueError).value).toBe(Infinity);
-    expect(trustUpdater.update).not.toHaveBeenCalled();
+    expect(trustUpdater.mutate).not.toHaveBeenCalled();
   });
 
-  it("source:'input' — applyFeedback with non-finite correctionDelta produces source='input'", async () => {
+  it("source:'input' — applyFeedback with NaN correctionDelta produces source='input'", async () => {
     const trustUpdater = makeTrustUpdater();
     let caught: unknown;
     try {
@@ -385,7 +367,6 @@ describe('Group 4 — source discrimination on InvalidTrustValueError', () => {
           factId: FACT_ID,
           sessionId: SESSION,
           event: 'user_correction' as const,
-          currentTrust: 0.5,
           correctionDelta: NaN, // non-finite delta → source:'input'
         },
         { trustUpdater },
@@ -397,17 +378,17 @@ describe('Group 4 — source discrimination on InvalidTrustValueError', () => {
     expect((caught as InvalidTrustValueError).code).toBe('INVALID_TRUST_VALUE');
     expect((caught as InvalidTrustValueError).source).toBe('input');
     expect((caught as InvalidTrustValueError).value).toBeNaN();
-    expect(trustUpdater.update).not.toHaveBeenCalled();
+    expect(trustUpdater.mutate).not.toHaveBeenCalled();
   });
 
-  it("source:'storage' — applyFeedbackById with FactReader returning NaN trust produces source='storage'", async () => {
-    const factReader   = makeFactReader({ trust: NaN }); // corrupt storage row
-    const trustUpdater = makeTrustUpdater();
+  it("source:'storage' — fn called with NaN trust by storage produces source='storage'", async () => {
+    // M7-C: storage corruption surfaces when mutate calls fn(NaN).
+    const trustUpdater = makeMutateCalling(NaN);
     let caught: unknown;
     try {
       await applyFeedbackById(
         { factId: FACT_ID, sessionId: SESSION, event: 'corroboration' as const },
-        { factReader, trustUpdater },
+        { trustUpdater },
       );
     } catch (err) {
       caught = err;
@@ -416,7 +397,8 @@ describe('Group 4 — source discrimination on InvalidTrustValueError', () => {
     expect((caught as InvalidTrustValueError).code).toBe('INVALID_TRUST_VALUE');
     expect((caught as InvalidTrustValueError).source).toBe('storage');
     expect((caught as InvalidTrustValueError).value).toBeNaN();
-    expect(trustUpdater.update).not.toHaveBeenCalled();
+    // mutate WAS called — fn threw inside it, aborting the write
+    expect(trustUpdater.mutate).toHaveBeenCalledOnce();
   });
 });
 
@@ -438,7 +420,6 @@ describe('Group 5 — InvalidFeedbackOptionsError.field discriminator', () => {
           factId: FACT_ID,
           sessionId: SESSION,
           event: 'user_correction' as const,
-          currentTrust: 0.5,
           // correctionDelta omitted — the only current throw site for this error class
         },
         { trustUpdater },
@@ -450,7 +431,7 @@ describe('Group 5 — InvalidFeedbackOptionsError.field discriminator', () => {
     expect((caught as InvalidFeedbackOptionsError).code).toBe('INVALID_FEEDBACK_OPTIONS');
     // field discriminator — enables callers to switch on which option was invalid
     expect((caught as InvalidFeedbackOptionsError).field).toBe('correctionDelta');
-    expect(trustUpdater.update).not.toHaveBeenCalled();
+    expect(trustUpdater.mutate).not.toHaveBeenCalled();
   });
 });
 
@@ -476,7 +457,6 @@ describe('Group 6 — UnhandledFeedbackEventError runtime-cast path', () => {
           sessionId: SESSION,
           // Simulates a runtime cast from untrusted boundary (e.g. JSON.parse, untyped API response)
           event: BAD_EVENT as unknown as FeedbackEvent,
-          currentTrust: 0.5,
         },
         { trustUpdater },
       );
@@ -488,6 +468,6 @@ describe('Group 6 — UnhandledFeedbackEventError runtime-cast path', () => {
     // err.event carries the original bad string — callers can log or alert on it
     expect((caught as UnhandledFeedbackEventError).event).toBe(BAD_EVENT);
     expect((caught as UnhandledFeedbackEventError).message).toContain(BAD_EVENT);
-    expect(trustUpdater.update).not.toHaveBeenCalled();
+    expect(trustUpdater.mutate).not.toHaveBeenCalled();
   });
 });
