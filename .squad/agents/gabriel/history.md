@@ -1,3 +1,5 @@
+📌 Team update (2026-06-02T06:13:21Z): **Crucible Sprint 0 Kickoff — MERGED** — Gabriel's crucible-cli Package Scaffold decision merged to `.squad/decisions.md`. Inbox file deleted. Orchestration log created. Infrastructure decisions locked: vitest (inherited from eureka), TypeScript project references (../types only), acceptance test directory (src/__tests__/acceptance/). Both packages scaffolded; workspace wired. — Scribe
+
 📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Gabriel (PA-B6 fence-violation retry counter + staleness detection + threat-model stubs). Concrete params: max 5 retries, jittered backoff 2^N, 100-event staleness threshold, 50ms catch-up budget. All Pass A agents complete. — Scribe
 
 📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
@@ -79,6 +81,21 @@ Phase 2 fan-out now unblocked. Full R2 locks in `.squad/decisions.md`.
 ## Learnings
 
 <!-- Append learnings below -->
+
+### 2026-06-01 — Crucible CLI Package Scaffold Pattern
+
+**Template:** `packages/eureka/package.json` and `packages/eureka/tsconfig.json` are the canonical sources for new package scaffolding in this monorepo.
+
+**Key structure decisions carried forward:**
+- `"type": "module"` with `"module": "Node16"` / `"moduleResolution": "Node16"` in tsconfig — ESM-native throughout.
+- `tsconfig.json` `"exclude"` array drops `src/**/__tests__` and `src/**/*.test.ts` so test files don't pollute the `dist/` build; vitest picks them up independently.
+- `"composite": true` in tsconfig is required for project references (`"references": [{ "path": "../types" }]`).
+- `"devDependencies"` stays minimal: `@types/node` + `vitest` only; `rimraf` lives at root.
+- Acceptance test directory `src/__tests__/acceptance/` is created empty; test file authorship is decoupled from scaffolding (Laura owns the red test file).
+
+**npm workspace registration:** After creating `packages/<name>/`, run `npm install --no-audit --no-fund` from root (no `--workspaces` filter — that flag caused a spurious "no workspace folder present" warning on a freshly created package; plain install resolves it cleanly).
+
+**Files created for `packages/crucible-cli`:** `package.json`, `tsconfig.json`, `src/index.ts`, `src/__tests__/acceptance/` (dir), `README.md`.
 
 ### Phase 3 — §17/§18 Cross-Section Harvesting Pattern
 

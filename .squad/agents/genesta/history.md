@@ -2,7 +2,9 @@
 
 **Role:** System Architect (Substrate integration, Eureka-Cairn-Forge overlap, kernel extraction)
 **Status:** Path D approved. R6-R8 verdicts locked. Cycle 2 C8 resolution: strict eslint + §40 documentation.
-**Last update:** 2026-05-29
+**Last update:** 2026-06-02
+
+📌 **Team Alert** (2026-06-02T06:13:21Z): **Crucible Sprint 0 Kickoff — First RED Test LANDED** — Graham (kickoff plan + types), Gabriel (infrastructure scaffold), Laura (first RED test confirmed). Inbox merged; decisions archived per 7-day rule. Session beginning NOW with outside-in GREEN descent. Genesta/Crispin/Edgar: Coordinate as needed for L1 substrate + schema overlap decisions pre-sprint-2. — Scribe
 
 **Key milestones:**
 - R6: B+ verdict on PRD v3 (v3.1 patch path recommended)

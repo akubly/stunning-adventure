@@ -2,7 +2,9 @@
 
 **Role:** Learning Systems Specialist (Plasticity, trust, recency, recall algorithms)
 **Status:** M7-A complete. Typed error hierarchy shipped on `eureka/m7-a-typed-errors`. 40/40 tests green.
-**Last update:** 2026-05-31
+**Last update:** 2026-06-02
+
+📌 **Team Alert** (2026-06-02T06:13:21Z): **Crucible Sprint 0 Kickoff — First RED Test LANDED** — Graham (kickoff plan + types), Gabriel (infrastructure scaffold), Laura (first RED test confirmed). Inbox merged; decisions archived per 7-day rule. Session beginning NOW with outside-in GREEN descent. Edgar/Genesta/Crispin: Coordinate as needed for learning-loop + substrate decisions pre-sprint-2. — Scribe
 
 **Key milestones:**
 - R5-R6: Power-law recency + event-driven trust design

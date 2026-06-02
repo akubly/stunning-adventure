@@ -2,7 +2,9 @@
 
 **Role:** Knowledge Representation Specialist (Graph schema, FactStore contract, kind taxonomies)
 **Status:** v5-final locked canonical. M2-M3: FactStore seams verified. M7-A review-complete 2026-05-31. M7-C (real FactReader contract) queued next.
-**Last update:** 2026-05-31
+**Last update:** 2026-06-02
+
+📌 **Team Alert** (2026-06-02T06:13:21Z): **Crucible Sprint 0 Kickoff — First RED Test LANDED** — Graham (kickoff plan + types), Gabriel (infrastructure scaffold), Laura (first RED test confirmed). Inbox merged; decisions archived per 7-day rule. Session beginning NOW with outside-in GREEN descent. Crispin/Genesta/Edgar: Coordinate as needed for schema + L1 decisions pre-sprint-2. — Scribe
 
 **Key milestones:**
 - R1-R8: Schema design + 5 tension mitigations (confidence/trust brands, extraction-readiness)

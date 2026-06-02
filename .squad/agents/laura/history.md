@@ -1,3 +1,5 @@
+📌 Team update (2026-06-02T06:13:21Z): **Crucible Sprint 0 Kickoff — FIRST RED CONFIRMED** — Laura's first RED test for Crucible (session fork, 47 primitives, fork at offset 23) merged to decisions.md. Inbox file deleted. RED confirmed: `TypeError: (0 , createSession) is not a function` (correct failure mode). Test file: `packages/crucible-cli/src/__tests__/acceptance/session-fork.test.ts`. Next: GREEN descent (outside-in, layer by layer). Contract anchor: test must not be modified between RED and GREEN. Orchestration log created. — Scribe
+
 📌 **ADR-0019 CONTRIBUTION** (2026-05-30T194147Z): Wall-clock replay-determinism bug finding (independent convergence with Graham) + 8 A-Fork-* acceptance scenarios added to §16.9. Key insight: hermetic replay requires logical-time (offset), not wall-clock time. Multi-persona convergence on this correctness violation made the blocker non-negotiable. Test tier coverage: contract (A-Fork-1/2/3), component (A-Fork-4/6/7), acceptance (A-Fork-5/8). Capture for future: Cross-persona review with distinct lenses (Architect + Tester) surfaces correctness bugs that unit tests or single-reviewer design alone would miss.
 
 📌 Team update (2026-05-30T122214Z): **childSid collision hybrid review DONE** — Laura testability review complete. Verdict: APPROVE-WITH-CONDITIONS. Two required fixes: (1) time-aware default MUST use logical session time (replay-determinism landmine if wall-clock-dependent), (2) fork_resume Observation sub-kind needed in §6.3. Test coverage: 8 new acceptance scenarios (A-Fork-1 through A-Fork-8), all 4 user stories testable, replay determinism via Decision row recording. Review doc: `.squad/decisions/inbox/laura-review-childsid-hybrid.md`. Awaiting Aaron ruling on time-threshold vs. always-default-to-Fresh. — Laura
@@ -20,8 +22,34 @@
 # Laura — History
 
 **Role:** Tester (Contract-first patterns, integration testing, test architecture)
-**Status:** M3 baseline preserved. Eureka M2 GREEN landed 2026-05-28. Cycle 2 composite-ranker + F6 resolution verified.
-**Last update:** 2026-05-29
+**Status:** M3 baseline preserved. Eureka M2 GREEN landed 2026-05-28. Cycle 2 composite-ranker + F6 resolution verified. Crucible first RED test written 2026-06-01.
+**Last update:** 2026-06-01
+
+## Learnings
+
+### 2026-06-01: Crucible First Red Test — Pattern Capture
+
+**Context:** Authored the first failing acceptance test for `@akubly/crucible-cli` per TDD strategy §4.1 Walkthrough A RED Phase.
+
+**First-red-test pattern:**
+- File lives at `packages/<pkg>/src/__tests__/acceptance/<scenario>.test.ts` — acceptance tests are a named subdirectory, not flat.
+- Import from `../../index.js` (ESM `.js` extension required even for `.ts` sources due to `"type": "module"` in package.json). Symbols that don't exist yet produce `TypeError: X is not a function` — correct RED signal; not a compile error because the empty export `{}` is valid.
+- vitest config: `globals: false` — must import `{ describe, it, expect }` explicitly from `'vitest'`.
+- Header comment must cite PRD user stories, acceptance scenario ID, TDD strategy section, and locked decision ID. This creates a paper trail through all three docs (PRD → TDD strategy → CTD) without needing inline prose in the test body.
+
+**vitest layout in crucible-cli:**
+- Package: `packages/crucible-cli`; `"type": "module"`; `vitest@^3`; no `vitest.config.ts` scaffolded by Gabriel yet — vitest defaults pick up `src/**/*.test.ts`.
+- Run: `cd packages/crucible-cli && npx vitest run <file>` or `npm run test -- <file>` from package root. Workspace runner: `npm test --workspace=@akubly/crucible-cli`.
+
+**Naming convention chosen (§8.5):**
+- `describe('Session Fork', () => { it('Acceptance: Fork session creates child with inherited ledger prefix [parentId, forkOffset, childLineage]', ...) })`
+- §8.5 template: `[Layer] [Component] [Scenario] [Expected Behavior]`. Acceptance-level uses `Acceptance:` prefix. Params in brackets `[...]` follow the scenario name to make CI output self-documenting.
+
+**Next GREEN descent:**
+1. Export `createSession` + `fork` as minimal stubs from `index.ts`, wire to mocked L1 Ledger.
+2. Write unit test for `SessionManager.forkSession` (mock DB collaborator).
+3. Implement `DB.insertSession` leaf, make unit test green.
+4. Ascend: replace mocks → integration stubs → real implementations until acceptance test passes.
 
 ## 2026-05-30: childSid Collision Hybrid Review — Testability Focus
 
