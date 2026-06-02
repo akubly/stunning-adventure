@@ -80,6 +80,55 @@ Phase 2 fan-out now unblocked. Full R2 locks in `.squad/decisions.md`.
 
 <!-- Append learnings below -->
 
+### 2026-06-01 — M2: forge-mcp Bash Shell Init Hooks
+
+**Task:** Deliver M2 of the forge-mcp dogfood plan — bash shell init integration
+so a developer who clones the repo can wire Cairn's session-start telemetry into
+their interactive bash sessions with a single command.
+
+**Shipped (PR #44, branch squad/m2-forge-mcp-bash-hooks):**
+- `.github/hooks/cairn/shell-init.sh` — sourceable bash hook
+- `.github/hooks/cairn/install.sh` — idempotent `~/.bashrc` wiring
+- `.github/hooks/cairn/uninstall.sh` — clean marker-block removal
+- `README.md` — new forge-mcp Bash Shell Init (M2) section
+- `.squad/skills/forge-mcp-shell-install/SKILL.md` — reusable pattern
+
+**Design choices:**
+
+1. **Hook location: `.github/hooks/cairn/`** — the natural home, parallel to
+   `curate.ps1` / `record.ps1`. Users exploring the hooks directory find all
+   variants together. The package (`skillsmith-runtime`) already owns its concern
+   (MCP server, sessionStart.ts); shell integration is a repo/infra concern.
+
+2. **Idempotency — two-layer guard:** install script uses marker-block grep before
+   appending; shell-init.sh uses `_FORGE_MCP_SHELL_INIT_LOADED` env var so
+   re-sourcing the rc file mid-session doesn't double-fire.
+
+3. **Non-interactive safety: `[[ $- != *i* ]] && return`** — this one line makes
+   the hook safe for CI, git hooks, and scripts that source rc files. It's not
+   optional; without it the hook fires in every subshell.
+
+4. **Script resolution mirrors curate.ps1 exactly:** user override →
+   global npm (skillsmith-runtime preferred, cairn fallback) → repo checkout.
+   Cross-platform behavioral parity is worth the duplication of the discovery
+   logic. Future changes to discovery order should update both.
+
+5. **Detached execution:** `node "$script" &>/dev/null & disown 2>/dev/null || true`
+   — `disown` is bash-specific and may fail in other shells, so `|| true` is
+   non-negotiable. The `&>/dev/null` silences both stdout and stderr so hook
+   noise never reaches the user's prompt.
+
+6. **Portable sed for uninstall:** `sed --version` to detect GNU vs BSD is the
+   battle-tested pattern. The macOS `-i ''` vs Linux `-i` difference is the
+   most common portability footgun in shell scripts.
+
+**Cross-platform reality:** The bash hooks work in Git Bash on Windows (tested
+syntax via `bash -n`). The main risk is `node` not being on the Git Bash PATH —
+documented in README. No deeper Windows work needed since the Copilot CLI
+plugin already handles Windows via `curate.ps1`.
+
+**Build/test:** tsc clean, 49/49 tests pass. No TypeScript changes — pure infra.
+
 ### Phase 3 — §17/§18 Cross-Section Harvesting Pattern
 
 **Pattern: thin cross-cutting sections introduce no new vocabulary.** §17 and §18 are both ≤1pp sections whose job is to enumerate, not to specify. The right authoring shape for that role is:
