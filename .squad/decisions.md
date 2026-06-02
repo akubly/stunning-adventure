@@ -114,6 +114,164 @@
 
 ---
 
+
+### 2026-05-31: M7-B + M7-D Complete (Laura)
+
+**Author:** Laura (Tester)  
+**Date:** 2026-05-31  
+**Branch:** `eureka/m7-bd-narrowing-regression`  
+**Status:** COMPLETE — local branch, awaiting Aaron's ship decision
+
+#### M7-B — Exhaustive error narrowing tests
+**File:** `packages/eureka/src/activities/__tests__/feedback-error-narrowing.test.ts`  
+**Tests:** 14 new tests across 6 groups
+
+Proves the realm-safe narrowing contract for all 5 error classes in `errors.ts`:
+- Group 1 (5 tests): Code-based narrowing (primary) — code, fields, message, name per class
+- Group 2 (1 test): Exhaustive code-discriminator switch — canonical caller pattern
+- Group 3 (3 tests): Inheritance preservation — instanceof (realm-convenience, documented)
+- Group 4 (3 tests): source discrimination on InvalidTrustValueError — 'input' × 2, 'storage' × 1
+- Group 5 (1 test): InvalidFeedbackOptionsError.field discriminator
+- Group 6 (1 test): UnhandledFeedbackEventError runtime-cast path
+
+#### M7-D — applyFeedbackById user_correction regression locks
+**File:** `packages/eureka/src/activities/__tests__/feedback-by-id-regression.test.ts`  
+**Tests:** 8 new tests
+
+Locks the user_correction value-plumbing and error-ordering contracts.
+
+#### Test Counts
+| Baseline (pre-M7-B/D) | M7-B | M7-D | Total |
+|-----------------------|------|------|-------|
+| 40                    | 14   | 8    | **62** |
+
+All 62 pass. Build clean (tsc exits 0). No production code changes.
+
+#### Deferred Items Uncovered
+- **InvalidDeltaValueError purpose-specific class:** Currently `correctionDelta` non-finite path reuses `InvalidTrustValueError(source:'input')`. A TODO at recall.ts:325 flags this for M7-B follow-up — deferred, not blocking.
+- **M7-C atomicity contract:** Unchanged. Crispin/Edgar ownership.
+
+**Files Added (test files only):**
+- `packages/eureka/src/activities/__tests__/feedback-error-narrowing.test.ts` — NEW
+- `packages/eureka/src/activities/__tests__/feedback-by-id-regression.test.ts` — NEW
+
+**Files Modified:**
+- `.squad/agents/laura/history.md` — updated status, appended M7-B+M7-D learnings
+
+---
+
+### 2026-05-31: Cycle 1 F7 Reversal — `as const` Restored (Edgar)
+
+**Date:** 2026-05-31  
+**Author:** Edgar (Learning Systems Specialist)  
+**PR:** #38 (`eureka/m7-a-typed-errors`)  
+**Branch:** `eureka/m7-a-typed-errors`  
+**Status:** CLOSED — F7 reversal committed
+
+#### What
+Reverted Cycle 1 F7 finding and all downstream documentation that propagated it. F7 had instructed switching discriminator declarations from:
+```typescript
+readonly code = 'FACT_NOT_FOUND' as const;
+```
+to:
+```typescript
+readonly code: 'FACT_NOT_FOUND' = 'FACT_NOT_FOUND';
+```
+
+Cycle 3 (commit f8f94c3) further propagated that preference into SKILL.md with explicit "Do not use `as const`" callouts. This revert restores `as const` form in both `errors.ts` (5 sites) and `SKILL.md`.
+
+#### Why
+The repo's ESLint config enforces **`@typescript-eslint/prefer-as-const` as an error**. The explicit-annotation form violates that rule — CI on Node 20 and Node 22 failed with 5 identical errors:
+```
+  42:18  error  Expected a `const` assertion instead of a literal type annotation  @typescript-eslint/prefer-as-const
+```
+
+The enforced lint rule is the **authoritative voice** on code style. The F7 Craft persona critique was reasonable stylistically but missed the enforced rule entirely. The `as const` form was correct all along.
+
+#### Lesson
+**Personas can have stylistic opinions; the repo's enforced lint config trumps them.** Before accepting any Code Panel finding that changes code form/style, cross-check it against the repo's actual ESLint/TypeScript config. A finding that produces a lint violation is automatically incorrect, regardless of how reasonable it sounds.
+
+---
+
+### 2026-05-31: Aaron's M7-C Direction Decision (Atomicity Contract)
+
+**Decision Owner:** Aaron (Lead)  
+**Date:** 2026-05-31  
+**Session:** M7 continuation (M7-B + M7-D landed; M7-C in flight)  
+**Status:** DIRECTION LOCKED — mutate callback pattern selected
+
+#### The Question
+How should `applyFeedbackById` address the non-atomic read-then-write sequence in FactReader → Trust Math → TrustUpdater? Three options were evaluated:
+
+**(a) Caller-side serialization:** Caller wraps `applyFeedbackById` in a lock/mutex before calling.  
+**(b) CAS token:** Return a token from read, require token in write; abort if token stale.  
+**(c) Mutate callback:** Push read-modify-write logic into seam; receive callback that performs write inside read lock.
+
+#### Decision
+**Aaron selected option (c) — mutate callback pattern.**
+
+#### Rationale
+Pushing read-modify-write into the seam (FactReader/TrustUpdater boundary) keeps the activity layer pure and makes correctness a storage-layer property. This is the most maintainable pattern:
+- Activity layer doesn't need to know about atomicity concerns
+- Storage layer becomes the source of truth for atomic compound operations
+- Callback captures the exact semantics ("given current trust, apply this delta")
+- No leaky abstractions — caller doesn't need to understand serialization
+
+#### Implementation Status
+- Crispin (FactReader Specialist): Implementing mutate callback interface in FactReader
+- Edgar (Learning Systems Specialist): Integrating callback into applyFeedbackById call site
+- Tracking branch: `eureka/m7-c-atomicity`
+
+#### Next Coordination
+Scribe will log completion once Edgar and Crispin finish. Coordinator will spawn verification when both agents report COMPLETE.
+
+---
+
+### 2026-05-31: M7-C Complete — Edgar (TrustUpdater.mutate atomicity)
+
+**Author:** Edgar (Learning Systems Specialist)
+**Date:** 2026-05-31
+**Branch:** `eureka/m7-c-atomicity`
+**Status:** COMPLETE — PR #41
+
+**Contract shape:**
+```ts
+export interface TrustUpdater {
+  mutate(args: {
+    factId: string;
+    sessionId: SessionId;
+    fn: (currentTrust: number) => number;
+  }): Promise<void>;
+}
+```
+
+**Atomicity guarantee:** The storage implementation MUST execute read, fn-application, and write as a single atomic operation per (sessionId, factId) pair. Storage MUST scope state by (sessionId, factId); a mutate on one sessionId MUST NOT affect another. If `fn` throws, write is aborted. If `fn` returns non-finite or out-of-range [0,1], storage MUST throw `InvalidTrustValueError(source:'storage')`. Variant B: `currentTrust` removed from `ApplyFeedbackOptions`; `applyFeedbackById` is a zero-logic thin wrapper.
+
+**Test count delta:** 62 → 69 (+7 contract tests, C-1..C-7). All green.
+
+**Breaking API changes:** `TrustUpdater.update` → `TrustUpdater.mutate`; `ApplyFeedbackOptions.currentTrust` removed; `ApplyFeedbackByIdDeps.factReader` removed.
+
+---
+
+### 2026-05-31: M7-C Complete — Crispin (InMemoryFactReader + contract suite)
+
+**Author:** Crispin (Knowledge Representation Specialist)
+**Date:** 2026-05-31
+**Branch:** `eureka/m7-c-factreader` (merged into `eureka/m7-c-atomicity` via PR #41)
+**Status:** COMPLETE
+
+**Decision:** In-memory FactReader (option i). No SQLite — Eureka has no persistence layer yet; SQLite deferred to M8-storage when FactStore.search() schema is locked.
+
+**Implementation:** `packages/eureka/src/storage/fact-reader.ts` — `InMemoryFactReader` backed by `Map<factId, Array<{trust, sessionId}>>`. Session-scoped; trust passthrough (NaN returned as-is; validation is caller's job).
+
+**Contract test pattern:** `runFactReaderContract(implName, makeHarness)` — shared helper in `fact-reader.contract.test.ts`. Invariants: CL-1 read existing fact, CL-2 read missing → null, CL-3 session isolation, CL-4 trust passthrough, CL-5 shape contract. Adding a new impl requires one `runFactReaderContract(...)` call — zero test duplication.
+
+**Test count delta:** 62 → 67 (+5 contract tests).
+
+**Rationale for in-memory choice:** No DB idiom exists in Eureka; introducing SQLite pre-FactStore schema would be premature. The contract suite is designed so SQLite wires in trivially in M8+ by passing a factory to `runFactReaderContract`.
+
+---
+
 ## Eureka M5+M6 Review Cycle
 
 ### 2026-05-30: M5+M6 Branch Preparation (Graham)

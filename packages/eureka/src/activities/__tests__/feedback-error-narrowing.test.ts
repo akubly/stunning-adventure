@@ -1,0 +1,476 @@
+/**
+ * M7-B — Exhaustive error narrowing tests
+ *
+ * Activities under test: applyFeedback / applyFeedbackById (recall.ts)
+ * Contract under test:   realm-safe narrowing via err.code (primary discriminator)
+ *                        instanceof (convenience only — see Group 3 comment)
+ *
+ * Per decisions.md "Canonical narrowing policy (M7-A Cycle 1)":
+ *   err.code === '...' is the PRIMARY discriminator. instanceof is convenience-only
+ *   and can fail across ESM realms (e.g., vm.runInNewContext). code is always realm-safe.
+ *
+ * Error classes under test (all in packages/eureka/src/activities/errors.ts):
+ *   FactNotFoundError              code 'FACT_NOT_FOUND'
+ *   InvalidFeedbackOptionsError    code 'INVALID_FEEDBACK_OPTIONS'
+ *   InvalidTrustValueError         code 'INVALID_TRUST_VALUE'   (extends RangeError, has source)
+ *   FactReaderContractError        code 'FACT_READER_CONTRACT'  (extends TypeError)
+ *   UnhandledFeedbackEventError    code 'UNHANDLED_FEEDBACK_EVENT' (extends TypeError)
+ *
+ * Test groups:
+ *   1. Code-based narrowing (primary contract)      — 5 tests, one per error class
+ *   2. Exhaustive code-discriminator switch         — 1 test, canonical caller pattern
+ *   3. Inheritance preservation (instanceof)        — 3 tests, realm-convenience assertions
+ *   4. source discrimination on InvalidTrustValueError — 3 tests ('input' × 2, 'storage' × 1)
+ *   5. InvalidFeedbackOptionsError.field discriminator — 1 test
+ *   6. UnhandledFeedbackEventError runtime-cast path   — 1 test
+ *
+ * Total M7-B: 14 tests
+ */
+
+import { describe, it, expect, vi } from 'vitest';
+import { applyFeedback, applyFeedbackById, type FeedbackEvent } from '../recall.js';
+import {
+  FactNotFoundError,
+  InvalidFeedbackOptionsError,
+  InvalidTrustValueError,
+  FactReaderContractError,
+  UnhandledFeedbackEventError,
+} from '../errors.js';
+import type { SessionId } from '@akubly/types';
+
+// ---------------------------------------------------------------------------
+// Shared fixtures
+// ---------------------------------------------------------------------------
+
+const SESSION: SessionId = 'session-m7b-narrowing' as SessionId;
+const FACT_ID = 'fact-narrowing-001';
+
+function makeTrustUpdater() {
+  return { mutate: vi.fn().mockResolvedValue(undefined) };
+}
+
+/** Mutate mock that calls fn(storageTrust) — simulates storage providing trust. */
+function makeMutateCalling(storageTrust: number) {
+  return {
+    mutate: vi.fn().mockImplementation(async ({ fn }: { fn: (t: number) => number }) => { fn(storageTrust); }),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Group 2 helper — canonical code-discriminator switch pattern
+//
+// This function is the canonical pattern callers should use for realm-safe
+// programmatic narrowing. It accepts `unknown` (the natural catch-site type)
+// and dispatches on err.code. The `default` branch is unreachable for any
+// valid Eureka error. In a narrower typed context (e.g., err: EurekaErrorCode)
+// the `default: never` form provides a compile-time exhaustiveness check.
+// ---------------------------------------------------------------------------
+
+type EurekaTag =
+  | 'fact_not_found'
+  | 'invalid_feedback_options'
+  | 'invalid_trust_value'
+  | 'fact_reader_contract'
+  | 'unhandled_feedback_event'
+  | 'unknown';
+
+function narrowEurekaError(err: unknown): EurekaTag {
+  if (typeof err !== 'object' || err === null || !('code' in err)) return 'unknown';
+  switch ((err as { code: string }).code) {
+    case 'FACT_NOT_FOUND':           return 'fact_not_found';
+    case 'INVALID_FEEDBACK_OPTIONS': return 'invalid_feedback_options';
+    case 'INVALID_TRUST_VALUE':      return 'invalid_trust_value';
+    case 'FACT_READER_CONTRACT':     return 'fact_reader_contract';
+    case 'UNHANDLED_FEEDBACK_EVENT': return 'unhandled_feedback_event';
+    default:
+      // Unreachable for valid Eureka errors — all five codes are handled above.
+      // Test below (Group 2) asserts that every error class routes to a non-'unknown' tag.
+      return 'unknown';
+  }
+}
+
+// =============================================================================
+// Group 1 — Code-based narrowing (primary contract)
+//
+// For each error class: drive the SUT into the throw path, catch the error,
+// and assert code, discriminator fields, message substring, and name.
+// These are the canonical checks callers should make at catch sites.
+// =============================================================================
+
+describe('Group 1 — code-based narrowing (primary contract)', () => {
+
+  it('FactNotFoundError: code, factId, message substring, and name are correct', async () => {
+    const trustUpdater = {
+      mutate: vi.fn().mockRejectedValue(new FactNotFoundError(FACT_ID)),
+    };
+
+    let caught: unknown;
+    try {
+      await applyFeedbackById(
+        { factId: FACT_ID, sessionId: SESSION, event: 'corroboration' as const },
+        { trustUpdater },
+      );
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeDefined();
+    // Primary discriminator (realm-safe)
+    expect((caught as FactNotFoundError).code).toBe('FACT_NOT_FOUND');
+    // Discriminator field
+    expect((caught as FactNotFoundError).factId).toBe(FACT_ID);
+    // Message preserves pre-M7-A text (F4 finding)
+    expect((caught as FactNotFoundError).message).toContain('fact not found');
+    expect((caught as FactNotFoundError).message).toContain(FACT_ID);
+    // name is the domain class name, NOT the native base class name (F4)
+    expect((caught as FactNotFoundError).name).toBe('FactNotFoundError');
+  });
+
+  it('InvalidFeedbackOptionsError: code, field, message substring, and name are correct', async () => {
+    const trustUpdater = makeTrustUpdater();
+
+    let caught: unknown;
+    try {
+      await applyFeedback(
+        {
+          factId: FACT_ID,
+          sessionId: SESSION,
+          event: 'user_correction' as const,
+          // correctionDelta intentionally omitted → InvalidFeedbackOptionsError
+        },
+        { trustUpdater },
+      );
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeDefined();
+    expect((caught as InvalidFeedbackOptionsError).code).toBe('INVALID_FEEDBACK_OPTIONS');
+    expect((caught as InvalidFeedbackOptionsError).field).toBe('correctionDelta');
+    expect((caught as InvalidFeedbackOptionsError).message).toContain('correctionDelta');
+    expect((caught as InvalidFeedbackOptionsError).name).toBe('InvalidFeedbackOptionsError');
+  });
+
+  it('InvalidTrustValueError: code, value, source, message substring, and name are correct (storage path)', async () => {
+    // M7-C: storage corruption is surfaced when fn(NaN) is called by the storage impl.
+    const trustUpdater = makeMutateCalling(NaN);
+
+    let caught: unknown;
+    try {
+      await applyFeedback(
+        { factId: FACT_ID, sessionId: SESSION, event: 'corroboration' as const },
+        { trustUpdater },
+      );
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeDefined();
+    expect((caught as InvalidTrustValueError).code).toBe('INVALID_TRUST_VALUE');
+    expect((caught as InvalidTrustValueError).value).toBeNaN();
+    expect((caught as InvalidTrustValueError).source).toBe('storage');
+    expect((caught as InvalidTrustValueError).message).toContain('non-finite');
+    expect((caught as InvalidTrustValueError).name).toBe('InvalidTrustValueError');
+  });
+
+  it('FactReaderContractError: code, factId, message substring, and name are correct (direct constructor — SUT no longer drives this on write path)', () => {
+    // M7-C: FactReader no longer used in applyFeedbackById write path.
+    // FactReaderContractError is still exported for recall/display paths (Crispin).
+    // Verify class integrity directly.
+    const err = new FactReaderContractError(FACT_ID);
+
+    expect(err).toBeDefined();
+    expect(err.code).toBe('FACT_READER_CONTRACT');
+    expect(err.factId).toBe(FACT_ID);
+    expect(err.message).toContain('FactReader.read()');
+    expect(err.message).toContain('undefined');
+    expect(err.name).toBe('FactReaderContractError');
+  });
+
+  it('UnhandledFeedbackEventError: code, event, message substring, and name are correct', async () => {
+    const trustUpdater = makeTrustUpdater();
+
+    let caught: unknown;
+    try {
+      await applyFeedback(
+        {
+          factId: FACT_ID,
+          sessionId: SESSION,
+          // Runtime cast bypasses the TypeScript union — simulates untrusted boundary
+          event: 'meditated' as unknown as FeedbackEvent,
+        },
+        { trustUpdater },
+      );
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeDefined();
+    expect((caught as UnhandledFeedbackEventError).code).toBe('UNHANDLED_FEEDBACK_EVENT');
+    expect((caught as UnhandledFeedbackEventError).event).toBe('meditated');
+    expect((caught as UnhandledFeedbackEventError).message).toContain('meditated');
+    expect((caught as UnhandledFeedbackEventError).name).toBe('UnhandledFeedbackEventError');
+  });
+});
+
+// =============================================================================
+// Group 2 — Exhaustive code-discriminator switch (canonical narrowing pattern)
+//
+// Demonstrates the canonical pattern callers should use for programmatic
+// narrowing. The `narrowEurekaError` helper (defined above) uses an exhaustive
+// switch on err.code. This test asserts:
+//   - All five Eureka error codes route to the correct non-'unknown' tag
+//   - No valid Eureka error reaches the `default` (unknown) branch
+// =============================================================================
+
+describe('Group 2 — exhaustive code-discriminator switch', () => {
+
+  it('routes all five error codes correctly and no valid Eureka error falls to default', async () => {
+    // Drive each error class out of the SUT (or directly for FactReaderContractError),
+    // then run through the helper.
+
+    const cases: Array<Promise<unknown>> = [
+      // FactNotFoundError — mutate simulates storage throwing for missing fact
+      applyFeedbackById(
+        { factId: 'fact-switch-01', sessionId: SESSION, event: 'corroboration' as const },
+        { trustUpdater: { mutate: vi.fn().mockRejectedValue(new FactNotFoundError('fact-switch-01')) } },
+      ).catch(e => e),
+
+      // InvalidFeedbackOptionsError — missing correctionDelta
+      applyFeedback(
+        { factId: 'fact-switch-02', sessionId: SESSION, event: 'user_correction' as const },
+        { trustUpdater: makeTrustUpdater() },
+      ).catch(e => e),
+
+      // InvalidTrustValueError (source:'input') — non-finite correctionDelta
+      applyFeedback(
+        { factId: 'fact-switch-03', sessionId: SESSION, event: 'user_correction' as const, correctionDelta: NaN },
+        { trustUpdater: makeTrustUpdater() },
+      ).catch(e => e),
+
+      // FactReaderContractError — M7-C: no longer SUT-driven on write path; test via direct construction
+      // FactReaderContractError still exists for recall/display paths (Crispin's READ seam).
+      Promise.reject(new FactReaderContractError('fact-switch-04')).catch((e: unknown) => e),
+
+      // UnhandledFeedbackEventError — runtime cast from untrusted boundary
+      applyFeedback(
+        { factId: 'fact-switch-05', sessionId: SESSION, event: 'unknown_evt' as unknown as FeedbackEvent },
+        { trustUpdater: makeTrustUpdater() },
+      ).catch(e => e),
+    ];
+
+    const [fnf, ifo, itv, frc, ufe] = await Promise.all(cases);
+
+    expect(narrowEurekaError(fnf)).toBe('fact_not_found');
+    expect(narrowEurekaError(ifo)).toBe('invalid_feedback_options');
+    expect(narrowEurekaError(itv)).toBe('invalid_trust_value');
+    expect(narrowEurekaError(frc)).toBe('fact_reader_contract');
+    expect(narrowEurekaError(ufe)).toBe('unhandled_feedback_event');
+
+    // Non-Eureka objects correctly reach the default branch
+    expect(narrowEurekaError(new Error('plain error'))).toBe('unknown');
+    expect(narrowEurekaError({ code: 'SOME_OTHER_CODE' })).toBe('unknown');
+    expect(narrowEurekaError(null)).toBe('unknown');
+  });
+});
+
+// =============================================================================
+// Group 3 — Inheritance preservation (instanceof)
+//
+// ⚠️ CONVENIENCE ASSERTIONS ONLY. instanceof checks are provided for completeness
+//    and work within a single ESM realm. Do NOT rely on instanceof for cross-realm
+//    narrowing (e.g., vm.runInNewContext, multi-bundle envs). Use err.code instead
+//    (see Group 1 and decisions.md "Canonical narrowing policy (M7-A Cycle 1)").
+// =============================================================================
+
+describe('Group 3 — inheritance preservation (instanceof convenience)', () => {
+
+  it('InvalidTrustValueError instanceof RangeError (preserves pre-M7-A assertion)', async () => {
+    // M7-C: no currentTrust input; use correctionDelta NaN path for source:'input'
+    const trustUpdater = makeTrustUpdater();
+    let caught: unknown;
+    try {
+      await applyFeedback(
+        { factId: FACT_ID, sessionId: SESSION, event: 'user_correction' as const, correctionDelta: NaN },
+        { trustUpdater },
+      );
+    } catch (err) {
+      caught = err;
+    }
+    // Convenience assertion only — code-based check is primary (see Group 1)
+    expect(caught).toBeInstanceOf(RangeError);
+    expect((caught as InvalidTrustValueError).code).toBe('INVALID_TRUST_VALUE');
+  });
+
+  it('FactReaderContractError instanceof TypeError (direct constructor — class integrity assertion)', () => {
+    // M7-C: FactReaderContractError no longer SUT-driven on the write path.
+    // Verify inheritance via direct construction.
+    const err = new FactReaderContractError(FACT_ID);
+    // Convenience assertion only — code-based check is primary (see Group 1)
+    expect(err).toBeInstanceOf(TypeError);
+    expect(err.code).toBe('FACT_READER_CONTRACT');
+  });
+
+  it('UnhandledFeedbackEventError instanceof TypeError (preserves pre-M7-A assertion)', async () => {
+    const trustUpdater = makeTrustUpdater();
+    let caught: unknown;
+    try {
+      await applyFeedback(
+        { factId: FACT_ID, sessionId: SESSION, event: 'bogus' as unknown as FeedbackEvent },
+        { trustUpdater },
+      );
+    } catch (err) {
+      caught = err;
+    }
+    // Convenience assertion only — code-based check is primary (see Group 1)
+    expect(caught).toBeInstanceOf(TypeError);
+    expect((caught as UnhandledFeedbackEventError).code).toBe('UNHANDLED_FEEDBACK_EVENT');
+  });
+});
+
+// =============================================================================
+// Group 4 — source discrimination on InvalidTrustValueError
+//
+// InvalidTrustValueError carries source: 'input' | 'storage' to distinguish
+// where the bad value originated. Two source paths (post-M7-C):
+//   - source:'input'   — caller supplied a non-finite correctionDelta; applyFeedback
+//                         throws before mutate() is ever called (pre-flight validation)
+//   - source:'storage' — storage's mutate impl calls fn(corruptTrust); the activity-layer
+//                         fn validates currentTrust on entry and throws; write is aborted
+//                         (FactReader is no longer on this path — currentTrust is provided
+//                         by the storage seam, not by the caller)
+// =============================================================================
+
+describe('Group 4 — source discrimination on InvalidTrustValueError', () => {
+
+  it("source:'input' — applyFeedback with non-finite correctionDelta produces source='input'", async () => {
+    const trustUpdater = makeTrustUpdater();
+    let caught: unknown;
+    try {
+      await applyFeedback(
+        { factId: FACT_ID, sessionId: SESSION, event: 'user_correction' as const, correctionDelta: Infinity },
+        { trustUpdater },
+      );
+    } catch (err) {
+      caught = err;
+    }
+
+    expect((caught as InvalidTrustValueError).code).toBe('INVALID_TRUST_VALUE');
+    expect((caught as InvalidTrustValueError).source).toBe('input');
+    expect((caught as InvalidTrustValueError).value).toBe(Infinity);
+    expect(trustUpdater.mutate).not.toHaveBeenCalled();
+  });
+
+  it("source:'input' — applyFeedback with NaN correctionDelta produces source='input'", async () => {
+    const trustUpdater = makeTrustUpdater();
+    let caught: unknown;
+    try {
+      await applyFeedback(
+        {
+          factId: FACT_ID,
+          sessionId: SESSION,
+          event: 'user_correction' as const,
+          correctionDelta: NaN, // non-finite delta → source:'input'
+        },
+        { trustUpdater },
+      );
+    } catch (err) {
+      caught = err;
+    }
+
+    expect((caught as InvalidTrustValueError).code).toBe('INVALID_TRUST_VALUE');
+    expect((caught as InvalidTrustValueError).source).toBe('input');
+    expect((caught as InvalidTrustValueError).value).toBeNaN();
+    expect(trustUpdater.mutate).not.toHaveBeenCalled();
+  });
+
+  it("source:'storage' — fn called with NaN trust by storage produces source='storage'", async () => {
+    // M7-C: storage corruption surfaces when mutate calls fn(NaN).
+    const trustUpdater = makeMutateCalling(NaN);
+    let caught: unknown;
+    try {
+      await applyFeedbackById(
+        { factId: FACT_ID, sessionId: SESSION, event: 'corroboration' as const },
+        { trustUpdater },
+      );
+    } catch (err) {
+      caught = err;
+    }
+
+    expect((caught as InvalidTrustValueError).code).toBe('INVALID_TRUST_VALUE');
+    expect((caught as InvalidTrustValueError).source).toBe('storage');
+    expect((caught as InvalidTrustValueError).value).toBeNaN();
+    // mutate WAS called — fn threw inside it, aborting the write
+    expect(trustUpdater.mutate).toHaveBeenCalledOnce();
+  });
+});
+
+// =============================================================================
+// Group 5 — InvalidFeedbackOptionsError.field discriminator
+//
+// The current throw site sets field='correctionDelta'. This test locks that
+// the field is set correctly and is narrowable at catch sites.
+// =============================================================================
+
+describe('Group 5 — InvalidFeedbackOptionsError.field discriminator', () => {
+
+  it("field='correctionDelta' when correctionDelta is omitted for user_correction", async () => {
+    const trustUpdater = makeTrustUpdater();
+    let caught: unknown;
+    try {
+      await applyFeedback(
+        {
+          factId: FACT_ID,
+          sessionId: SESSION,
+          event: 'user_correction' as const,
+          // correctionDelta omitted — the only current throw site for this error class
+        },
+        { trustUpdater },
+      );
+    } catch (err) {
+      caught = err;
+    }
+
+    expect((caught as InvalidFeedbackOptionsError).code).toBe('INVALID_FEEDBACK_OPTIONS');
+    // field discriminator — enables callers to switch on which option was invalid
+    expect((caught as InvalidFeedbackOptionsError).field).toBe('correctionDelta');
+    expect(trustUpdater.mutate).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// Group 6 — UnhandledFeedbackEventError runtime-cast path
+//
+// TypeScript prevents bad event values at compile time, but runtime casts
+// (e.g. JSON.parse, untyped boundary) can leak unknown strings through.
+// This test uses `as unknown as FeedbackEvent` to simulate the runtime scenario.
+// =============================================================================
+
+describe('Group 6 — UnhandledFeedbackEventError runtime-cast path', () => {
+
+  it('unknown event string via runtime cast produces UnhandledFeedbackEventError with err.event set', async () => {
+    const trustUpdater = makeTrustUpdater();
+    const BAD_EVENT    = 'reinforcement_learning'; // plausible future value; currently unhandled
+
+    let caught: unknown;
+    try {
+      await applyFeedback(
+        {
+          factId: FACT_ID,
+          sessionId: SESSION,
+          // Simulates a runtime cast from untrusted boundary (e.g. JSON.parse, untyped API response)
+          event: BAD_EVENT as unknown as FeedbackEvent,
+        },
+        { trustUpdater },
+      );
+    } catch (err) {
+      caught = err;
+    }
+
+    expect((caught as UnhandledFeedbackEventError).code).toBe('UNHANDLED_FEEDBACK_EVENT');
+    // err.event carries the original bad string — callers can log or alert on it
+    expect((caught as UnhandledFeedbackEventError).event).toBe(BAD_EVENT);
+    expect((caught as UnhandledFeedbackEventError).message).toContain(BAD_EVENT);
+    expect(trustUpdater.mutate).not.toHaveBeenCalled();
+  });
+});

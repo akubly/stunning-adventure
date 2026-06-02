@@ -1304,7 +1304,7 @@ When spawning test-authoring agents, point to the ADR's Acceptance Signals subse
 # Laura — History
 
 **Role:** Tester (Contract-first patterns, integration testing, test architecture)
-**Status:** M3 baseline preserved. Eureka M2 GREEN landed 2026-05-28. M7-A review-complete 2026-05-31. M7-B (narrowing tests) queued next.
+**Status:** M3 baseline preserved. Eureka M2 GREEN landed 2026-05-28. M7-A review-complete 2026-05-31. M7-B+M7-D complete 2026-05-31 (branch: eureka/m7-bd-narrowing-regression, 62 tests total).
 **Last update:** 2026-05-31
 
 **Key milestones:**
@@ -1323,11 +1323,39 @@ When spawning test-authoring agents, point to the ADR's Acceptance Signals subse
 
 **Summary:** M7-A (Typed Error Hierarchy, Edgar lead) completed 3-cycle review process (Cycles 1–2 panel + fix wave, Cycle 3 lightweight). All 40 tests green throughout. PR #38 review-complete, pending ship decision.
 
-**Next up:** M7-B — exhaustive narrowing tests for typed error discriminators (`err.code === '...'` + `instanceof`). Will exercise M7-A's canonical narrowing policy with comprehensive error path testing.
+**Next up:** M7-C — Real FactReader contract + atomicity design. Direction locked: Aaron picked (c) mutate callback over (a) caller-serialization and (b) CAS token. Rationale: pushes read-modify-write into seam, keeps activity layer pure, makes correctness a storage-layer property. Crispin/Edgar implementing on `eureka/m7-c-atomicity`.
 
 ---
 
 ## Learnings
+
+### 2026-05-31: M7-B+M7-D — Exhaustive narrowing + regression locks
+
+**Test counts:** Baseline 40 + M7-B 14 + M7-D 8 = **62 total**. All green. Build clean.
+
+**Branch:** `eureka/m7-bd-narrowing-regression` (2 commits from 3009d81 "M7-A").
+
+**What the narrowing tests revealed:**
+
+1. **`err.name` is the domain class name, not the base class name (F4 confirmed).** InvalidTrustValueError.name is 'InvalidTrustValueError', not 'RangeError'. Any caller branching on `err.name === 'RangeError'` for InvalidTrustValueError would break — `err.code` is the correct primary discriminator.
+
+2. **`source` field on InvalidTrustValueError is highly useful at catch sites.** The two throw paths ('input' via currentTrust/correctionDelta, 'storage' via FactReader) can be distinguished without re-inspecting the message. Group 4 locked both paths distinctly.
+
+3. **Exhaustive switch on `unknown` input requires an explicit struct check first (`typeof err === 'object' && 'code' in err`) before the switch.** Without this, accessing `err.code` on a plain string or null throws. The `narrowEurekaError` helper demonstrates the canonical three-step: type-guard → code access → switch.
+
+4. **Zero-delta passthrough (M7-D-4) is a meaningful regression lock.** A short-circuit optimization that skips the write for delta=0 would violate the caller contract — the caller explicitly chose a 0-delta, and not writing is a silent behavior change. Locked.
+
+5. **`factReader.read` was called even when `correctionDelta=NaN` throws (M7-D-8 confirmed read order).** The storage read happens first; only the subsequent write is prevented. Error ordering is: read → validate storage trust → validate input delta → write.
+
+6. **No bugs found in errors.ts or recall.ts.** The M7-A contract held completely. No production code changes were needed or made.
+
+**Contract ambiguities surfaced (deferred):**
+
+- TODO comment in recall.ts (line 325) notes correctionDelta's error should use a purpose-specific `InvalidDeltaValueError` class. Currently it reuses `InvalidTrustValueError(source:'input')`, which is technically accurate but semantically loose (correctionDelta is a delta, not a trust value). Flagged for M7-B follow-up; not addressed here per task scope.
+
+- `FactReaderContractError` carries `factId` but the FactReader contract error is a programming error in the FactReader implementation, not a per-fact error. The `factId` field is useful for debugging but may be surprising to callers who don't expect it. Noted — no change.
+
+---
 
 ### 2026-05-30: M5+M6 Cycle 3 — Polish: correctionDelta regression + comment cleanup
 

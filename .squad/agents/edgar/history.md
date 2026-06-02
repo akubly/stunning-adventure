@@ -2,7 +2,7 @@
 
 **Role:** Learning Systems Specialist (Plasticity, trust, recency, recall algorithms)
 **Status:** M7-A complete. Typed error hierarchy shipped on `eureka/m7-a-typed-errors`. 40/40 tests green.
-**Last update:** 2026-05-31
+**Last update:** 2026-06-01
 
 **Key milestones:**
 - R5-R6: Power-law recency + event-driven trust design
@@ -12,6 +12,54 @@
 - M7-A GREEN: typed error hierarchy (FactNotFoundError, InvalidFeedbackOptionsError, InvalidTrustValueError, FactReaderContractError, UnhandledFeedbackEventError)
 
 ## Current & Recent
+
+**2026-06-01 — M7-C PR #41 Copilot Review Cycle 5 (comprehensive stale-ref grep pass)**
+
+- **When refactoring a public interface, grep the entire repo for the old name BEFORE shipping — not after Copilot drips findings out one per cycle.** M7-C renamed `TrustUpdater.update → mutate`, removed `currentTrust` from `ApplyFeedbackOptions`, removed `factReader` from `ApplyFeedbackByIdDeps`, and re-keyed storage by `(sessionId, factId)`. Every one of those changes had stale references that Copilot found one cycle at a time over 5 review rounds. A single pre-merge grep pass (search terms: old method name, old parameter names, old count references) would have cleared all of them in one shot.
+
+- **Hard-coded repo-wide test totals in code-adjacent files are drift bombs.** `fact-reader.contract.test.ts` had "Baseline (pre-M7-C): 62 tests; Post-M7-C: 67." That count was stale after cycle 1 and silently wrong for cycles 2-5. Per-suite counts (e.g. "each call adds 5 tests") are stable and useful; repo-wide totals in inline comments are always one refactor away from lying. Remove them.
+
+- **Historical entries in history.md and decisions.md are intentionally accurate for their time — don't retroactively rewrite them.** The distinction: fix forward-facing docs (interfaces, guard contracts, SKILL.md, JSDoc) because engineers read those to understand current behavior. Leave historical records describing what was done and why — those tell the story of how we got here.
+
+**2026-06-01 — M7-C PR #41 Copilot Review Cycle 4 (lint fix + doc consistency)**
+
+- **Lint before push, always.** `npm run lint` at the root uses `eslint packages/*/src/` which matches no files on Windows (glob expansion difference). Use `npx eslint packages/eureka/src/` directly. The unused-import error was real: removing `FactReader` from the write path in M7-C left `FactNotFoundError` and `FactReaderContractError` imported in `recall.ts` but never referenced in production code. CI caught it; local lint would have too if run correctly.
+
+- **A seam change cascades into docs.** Tightening the key from `factId` to `(sessionId, factId)` in cycle 3 left four stale references: the `@concurrency` JSDoc in `recall.ts`, the SKILL.md parallel-requirement claim, the SKILL.md test count, and the `decisions.md` atomicity entry. Contract changes are not done until every document that references the contract is updated.
+
+- **The SKILL must not overclaim the contract.** `contract-test-shared-helper/SKILL.md` said "different keys MUST be parallel (no global lock)." That was already wrong after cycle 2 (Option B deliberately dropped the parallelism mandate). The SKILL is normative guidance for future agents; if it says MUST, future agents will write tests that rule out valid impls. Fixed to: MAY be parallel; non-interference required, not concurrency.
+
+**2026-06-01 — M7-C PR #41 Copilot Review Cycle 3 (session-scoping + locks cleanup)**
+
+- **Read/write contract symmetry is non-optional.** FactReader (CL-3) was already session-scoped: reading factX for sessionA with sessionB returns null. TrustUpdater used only factId as the storage key. That is a data model contradiction: reads see (sessionId, factId) tuples; writes ignore sessionId. The fix — re-keying by `(sessionId, factId)` — is not an optimization; it's required for semantic correctness. **Lesson:** when two seams share a data model, their contracts must share the same key invariants. Reviewing FactReader's contract should have prompted "is TrustUpdater consistent on this?"
+
+- **Session-scoping and atomicity are orthogonal but both required.** Atomicity says "read-fn-write is indivisible for the same key." Session-scoping says "the key must include sessionId." You can have atomicity without session-scoping (we did), and you can have session-scoping without atomicity. The contract suite must cover both dimensions.
+
+- **Unbounded Map growth in a reference impl is a real bug, not a theoretical one.** The `locks` Map accumulated a finished-promise entry for every unique factId ever mutated. For long-running processes or test suites with many facts, this is a memory leak. The identity-check cleanup (`if (locks.get(key) === next) locks.delete(key)`) is the right pattern: it's safe because if a concurrent mutation has already replaced the entry, `locks.get(key)` will equal the newer promise, not this one, so we don't delete live state.
+
+- **The identity-check guard is a general pattern for atomic cleanup in promise chains.** Whenever you own an entry in a shared Map keyed by a resource and you need to clean up after yourself, check `map.get(key) === yourToken` before deleting. If true, you were the last — clean up. If false, a successor has already replaced you — leave it.
+
+**2026-06-01 — M7-C PR #41 Copilot Review Cycle 2 (stale comment + C-6 rescoping)**
+
+- **Major refactors leave comment archaeology in test files.** Group 4 in `feedback-error-narrowing.test.ts` was written before M7-C and described `currentTrust` as a caller input and FactReader as the `source:'storage'` path. Both are gone. The fix is to audit ALL group headers after any seam-level refactor — not just the changed files, but the test files that describe the contracts those seams implement.
+
+- **A contract test must not rule out valid implementations.** C-6 claimed "the impl must not use a single global lock." But the TrustUpdater contract requires per-factId atomicity, not per-factId parallelism. A single-connection SQLite impl that serializes ALL mutations still satisfies the contract. Writing a test that would fail a valid impl is a false contract. **Option B (rename/rescope) was correct:** C-6 now proves result independence, not parallelism. If we ever want to mandate parallelism, that needs to be an explicit contract decision, not an implicit claim in a test name.
+
+- **The distinction: atomicity vs. parallelism.** Atomicity (no partial reads between read-fn-write for the same factId) is a requirement. Parallelism across factIds is an optimization a specific impl may provide. Contract tests must lock requirements, not implementation strategies.
+
+**2026-06-01 — M7-C PR #41 Copilot Cloud Review Cycle (contract tightening)**
+
+- **The contract test was weak — Copilot caught a real gap.** C-3 said "impl does not silently hide NaN — either it throws OR stores NaN." That's not a contract test, that's a helpless shrug. A contract test must assert the REQUIRED behavior, not the union of all behaviors. The fix: C-3 now requires `InvalidTrustValueError(source:'storage')` AND storage unchanged. The reference impl validates `!Number.isFinite(newTrust) || newTrust < 0 || newTrust > 1` before committing.
+
+- **Reference impl must implement the contract it documents.** The InMemoryTrustUpdater in the contract test file was writing whatever `fn` returned — including NaN — despite the JSDoc on `TrustUpdater.mutate` saying storage MUST reject non-finite values. The impl is the first consumer of the contract; if it doesn't enforce the contract, the suite is lying about what it proves.
+
+- **getTrust from a fresh instance is always undefined.** C-5 did `const { getTrust } = makeImpl();` at the end — a brand-new instance with an empty Map. The mutation results were invisible to it. Always destructure all side-channel helpers from the SAME `makeImpl()` call as `impl`.
+
+- **A TODO in a contract test is a broken contract.** The C-5 TODO "We can't call getTrust on the same impl instance" was wrong AND left the serialization property unverified. Rule: a contract test that doesn't assert the contract property it's named for is worse than no test — it creates false confidence.
+
+- **Gitignored inbox files can slip through on cross-branch merges.** Crispin's branch included `.squad/decisions/inbox/` files. When merged, they became committed files in the tree even though `.gitignore` excludes them from new staging. The guard is `git status` review before merge commits, not just trusting that gitignore prevents all accidents.
+
+- **JSDoc must not reference gitignored paths.** `@concurrency` in recall.ts pointed at `edgar-m7-c-contract.md` (inbox path). Public-facing JSDoc must only cite paths that exist in the committed tree or use project-relative paths to versioned files (`.squad/decisions.md`).
 
 **2026-05-31 — M7-A Cycle 1: Code Panel review fixes (11 ACCEPT, 2 REJECT)**
 
@@ -44,6 +92,13 @@
 **2026-05-31 — M7-A PR #38 Copilot Cloud Review Cycle (docs-only, Cycle 3)**
 
 - **Three pure-docs threads closed cleanly in one commit (f8f94c3):** All three Copilot findings were pre-aligned with Cycle 1 decisions — no new design work required. Thread A (gitignored inbox path) → replaced with `.squad/decisions.md` § "M7-A" citation per the `doc-references-respect-gitignore` skill. Threads B+C (`as const` examples) → replaced with `readonly code: 'X' = 'X'` explicit-annotation form, with "Do not use as const" callout pointing back to Cycle 1 (F7) and the reference implementation. Reply-before-resolve discipline applied: all 3 threads replied on before calling `resolveReviewThread`.
+
+**2026-05-31 — M7-C Atomicity Direction (Aaron decision)**
+
+- **Pattern locked: mutate callback** (option c, over caller-serialization and CAS token)
+- **Rationale:** Pushing read-modify-write into FactReader/TrustUpdater seam keeps activity layer pure; correctness becomes a storage-layer property
+- **Status:** Implementing on `eureka/m7-c-atomicity` with Crispin (FactReader callback interface)
+- **Coordinator note:** Will spawn verification when both agents report completion
 
 **See history-archive.md for detailed entries from M5, M6, earlier reviews, and design ceremony.**
 
@@ -99,5 +154,17 @@
 ## Learnings
 
 - **F7 reversal (2026-05-31, PR #38 Cycle 4):** The Cycle 1 F7 finding that switched discriminator declarations from `readonly code = 'X' as const` to the explicit-annotation form `readonly code: 'X' = 'X'` was reversed. Root cause: the repo's ESLint config enforces `@typescript-eslint/prefer-as-const` as an error — the explicit-annotation form violates it, breaking CI on both Node 20 and Node 22. The `as const` form was correct all along. Lesson: **the repo's enforced lint config is authoritative over Craft-persona stylistic opinions**. Local Windows lint failed to catch this because the root `npm run lint` glob doesn't match workspace files on Windows — use `npm run lint --workspace=@akubly/eureka` for the gate the CI actually runs.
+
+- **M7-C (2026-05-31): Variant B removes `currentTrust` from caller API entirely.** The key insight behind Variant B over Variant A: when atomicity is a storage guarantee, the caller *cannot* provide `currentTrust` — the storage impl reads it inside `mutate()`. Forcing callers to supply `currentTrust` would create a false interface that ignores the supplied value. Variant B is the only shape consistent with the contract.
+
+- **Pre-flight vs. fn-time validation — two distinct seams:** Pre-flight validation (event type, correctionDelta presence/finiteness) fires BEFORE `mutate()` is called. Storage-trust validation fires INSIDE `fn` when storage calls `fn(currentTrust)`. This creates two observable test patterns: (1) pre-flight errors → mutate never called; (2) fn-time errors → mutate WAS called, fn threw, write aborted. Tests must differentiate these.
+
+- **`FactReaderContractError` dead on the write path after M7-C.** The class survives in errors.ts for Crispin's READ seam (recall, display paths). Tests that used to drive it via `applyFeedbackById({ factReader: makeFactReader(undefined) })` must become direct constructor integrity tests. Document this transition explicitly in test comments so future readers understand the historical context.
+
+- **`runTrustUpdaterContract` shared helper is immediately reusable by Crispin.** The helper accepts `makeImpl: () => { impl, setTrust, getTrust }` so any impl — in-memory, SQLite, Postgres — can be exercised against the same 7 contracts. The per-(sessionId,factId) promise chain in `InMemoryTrustUpdater` is the minimal reference impl for serialization semantics.
+
+- **ESM `require()` fails; use static imports.** In an ESM-only package (no CJS build), `require('../errors.js')` inside a test function throws at runtime. All imports must be top-level `import` statements. This bit me in the M6-B3 class-integrity test migration.
+
+- **Test count on `eureka/m7-c-atomicity` vs. prior branches:** 68 tests (not 73) because `fact-reader.contract.test.ts` (5 tests, Crispin's READ seam) lives only on the commits that include Scribe's interim artifacts. The 68 are the right count for Edgar's M7-C branch.
 
 📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
