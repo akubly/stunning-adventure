@@ -117,17 +117,52 @@ mytool_check() {
 This doubles as the documentation for how resolution works — users can call it
 after `source ~/.bashrc` to confirm the install is correct.
 
-### 7. Portable uninstall (GNU + BSD sed)
+### 7. Portable uninstall — bash state machine (no sed)
+
+Use a bash line-by-line loop, not sed range-delete. The sed two-pass approach
+has a fatal sequencing bug: the blank-line cleanup pass consumes `MARKER_START`
+when it appears immediately after a blank line, making the range-delete pass a
+no-op and leaving the block body + `MARKER_END` orphaned in the file.
 
 ```bash
-if sed --version &>/dev/null 2>&1; then
-  # GNU sed (Linux)
-  sed -i "/${MARKER_START//\//\\/}/,/${MARKER_END//\//\\/}/d" "$SHELL_RC"
-else
-  # BSD sed (macOS)
-  sed -i '' "/${MARKER_START//\//\\/}/,/${MARKER_END//\//\\/}/d" "$SHELL_RC"
-fi
+_remove_block() {
+  local file="$1" start="$2" end="$3"
+  local tmp="${file}.forge-mcp-bak"
+
+  {
+    local skip=0 held_blank=0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      # Entering the block: drop buffered blank separator, start skipping.
+      if [[ $skip -eq 0 && "$line" == "$start" ]]; then
+        held_blank=0; skip=1; continue
+      fi
+      # Inside the block: skip until MARKER_END (inclusive).
+      if [[ $skip -eq 1 ]]; then
+        [[ "$line" == "$end" ]] && skip=0; continue
+      fi
+      # Outside: buffer blank lines one-deep to suppress the separator.
+      if [[ -z "$line" ]]; then
+        [[ $held_blank -eq 1 ]] && printf '\n'
+        held_blank=1
+      else
+        [[ $held_blank -eq 1 ]] && printf '\n'
+        held_blank=0
+        printf '%s\n' "$line"
+      fi
+    done < "$file"
+    [[ $held_blank -eq 1 ]] && printf '\n'
+  } > "$tmp"
+
+  mv "$tmp" "$file"
+}
+
+_remove_block "$SHELL_RC" "$MARKER_START" "$MARKER_END"
 ```
+
+**Why:** The bash loop is portable across Linux, macOS, and Git Bash on Windows
+with no GNU/BSD sed detection required. The byte-identical roundtrip property
+(install → uninstall → file unchanged) is the acceptance criterion — verify it
+on a sample rc file before shipping any uninstaller.
 
 ---
 
@@ -142,8 +177,14 @@ fi
 
 ## Anti-Patterns
 
-- **Bare `source` append without marker** — causes duplicate source lines on
-  re-install. Always use a marker block.
+- **sed range-delete for marker-block removal** — the two-pass approach (blank-line
+  cleanup first, then range delete) has a sequencing bug: when the blank separator
+  appears immediately before `MARKER_START`, the first pass consumes `MARKER_START`,
+  leaving the block body and `MARKER_END` orphaned so the second pass never fires.
+  Each install/uninstall cycle accumulates garbage, and `install.sh` can't detect
+  the orphaned tail so it appends a new block on top. Use the bash state-machine
+  loop (pattern #7) instead — it passes the byte-identical roundtrip test that
+  exposes this bug.
 - **Synchronous hook execution** — `node "$script"` without `&` blocks the
   prompt for every new shell. Use detached background execution.
 - **Hard-coded single path** — if the package can be installed globally OR from

@@ -180,9 +180,9 @@ bash .github/hooks/cairn/uninstall.sh
 source ~/.bashrc
 ```
 
-The uninstall script removes the entire marker block from `~/.bashrc` using
-`sed` (works on both GNU/Linux and macOS BSD sed). Idempotent: no-op if not
-installed.
+The uninstall script removes the entire marker block from `~/.bashrc` using a
+pure-bash line-by-line filter (no sed dependency; identical behavior on Linux,
+macOS, and Git Bash on Windows). Idempotent: no-op if not installed.
 
 ### Zsh compatibility
 
