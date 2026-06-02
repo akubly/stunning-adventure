@@ -53,6 +53,8 @@ export interface OptimizationHintRow {
   generatedAt: string;
   appliedAt: string | null;
   createdAt: string;
+  resolutionNote: string | null;
+  resolutionDisposition: HintResolution | null;
 }
 
 export interface OptimizationHintQuery {
@@ -76,8 +78,29 @@ export interface ReplaceActiveHintsAtomicallyResult {
   results: InsertHintIfNewResult[];
 }
 
+export type HintResolution = 'resolved' | 'dismissed';
+
+/** All valid hint resolution dispositions — single source of truth for Zod enum and type guards. */
+export const HINT_RESOLUTIONS = ['resolved', 'dismissed'] as const;
+
+export interface ResolveHintResult {
+  id: string;
+  resolution: HintResolution | null;
+  prior_status: HintStatus | null;
+  status: HintStatus;
+  resolutionDisposition: HintResolution | null;
+  resolutionNote: string | null;
+  alreadyResolved: boolean;
+}
+
 // Keep in sync with migration 013's partial UNIQUE index predicate; Wave 5 should consider a generated column or migration-time template for I8.
 export const ACTIVE_HINT_STATUSES: readonly HintStatus[] = ['pending', 'accepted', 'deferred'];
+
+/** All valid hint statuses — single source of truth for Zod enum and type guards. */
+export const HINT_STATUSES = [
+  'pending', 'accepted', 'applied', 'rejected',
+  'deferred', 'expired', 'suppressed', 'failed',
+] as const;
 
 // Allowed forward transitions from each status. The initial `pending` state
 // can move to any terminal-or-intermediate state; once `applied`/`rejected`/
@@ -119,6 +142,8 @@ function mapRow(row: Record<string, unknown>): OptimizationHintRow {
     generatedAt: row.generated_at as string,
     appliedAt: (row.applied_at as string | null) ?? null,
     createdAt: row.created_at as string,
+    resolutionNote: (row.resolution_note as string | null) ?? null,
+    resolutionDisposition: (row.resolution_disposition as HintResolution | null) ?? null,
   };
 }
 
@@ -195,6 +220,7 @@ function emitHintTransitionEvent(
   hintId: string,
   fromState: HintStatus | null,
   toState: HintStatus,
+  extra?: { resolution_disposition?: string | null; resolution_note?: string | null; source?: string },
 ): void {
   const sessionId = ensureSystemSession(db);
   logEvent(db, sessionId, 'hint_state_transition', {
@@ -203,6 +229,9 @@ function emitHintTransitionEvent(
     from_state: fromState,
     to_state: toState,
     timestamp: new Date().toISOString(),
+    ...(extra?.resolution_disposition != null ? { resolution_disposition: extra.resolution_disposition } : {}),
+    ...(extra?.resolution_note != null ? { resolution_note: extra.resolution_note } : {}),
+    ...(extra?.source != null ? { source: extra.source } : {}),
   });
 }
 
@@ -445,3 +474,62 @@ export function deleteOptimizationHint(db: Database.Database, id: string): boole
   const res = db.prepare('DELETE FROM optimization_hints WHERE id = ?').run(id);
   return res.changes > 0;
 }
+
+/**
+ * Resolve or dismiss a hint from Copilot. Idempotent: if the hint is already
+ * in a terminal state, returns the current state without erroring.
+ *
+ * - `resolved`: hint addressed by the user — transitions to `rejected` with note.
+ * - `dismissed`: hint not wanted — transitions to `rejected` with note.
+ *
+ * Both dispositions map to `rejected` (the correct terminal state for
+ * user-directed closure); the `resolution` field in the return value
+ * preserves the user's intent.
+ *
+ * Returns null if the hint does not exist.
+ */
+export function resolveOptimizationHint(
+  db: Database.Database,
+  id: string,
+  resolution: HintResolution,
+  note?: string,
+): ResolveHintResult | null {
+  return db.transaction(() => {
+    const current = getOptimizationHintWithDb(db, id);
+    if (!current) return null;
+
+    // F5: derive terminal-state from the transitions map — no hardcoded list.
+    const alreadyResolved = (STATUS_TRANSITIONS[current.status]?.length ?? 0) === 0;
+
+    if (!alreadyResolved) {
+      const resolvedNote = note ?? null;
+      db.prepare(
+        `UPDATE optimization_hints
+            SET status = 'rejected',
+                resolution_note = ?,
+                resolution_disposition = ?
+          WHERE id = ?`
+      ).run(resolvedNote, resolution, id);
+
+      emitHintTransitionEvent(db, current.skillId, id, current.status, 'rejected', {
+        resolution_disposition: resolution,
+        resolution_note: resolvedNote,
+        source: 'mcp',
+      });
+    }
+
+    const updated = getOptimizationHintWithDb(db, id)!;
+    // F2: when already resolved, `resolution` is null — the caller's intent was
+    // not acted on. `prior_status` tells the caller what state the hint was in.
+    return {
+      id: updated.id,
+      resolution: alreadyResolved ? null : resolution,
+      prior_status: alreadyResolved ? current.status : null,
+      status: updated.status,
+      resolutionDisposition: updated.resolutionDisposition,
+      resolutionNote: updated.resolutionNote,
+      alreadyResolved,
+    };
+  }).immediate();
+}
+

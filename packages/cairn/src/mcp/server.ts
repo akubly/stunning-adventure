@@ -43,6 +43,15 @@ import { lintSkill, formatLintSummary } from '../agents/skillLinter.js';
 import { validateSkill, formatValidationSummary } from '../agents/skillValidator.js';
 import { loadTestScenario, runTestScenario, formatTestReport } from '../agents/skillTestHarness.js';
 import { insertTestResults } from '../db/skillTestResults.js';
+import {
+  queryOptimizationHints,
+  resolveOptimizationHint,
+  getOptimizationHint,
+  ACTIVE_HINT_STATUSES,
+  HINT_STATUSES,
+  HINT_RESOLUTIONS,
+} from '../db/optimizationHints.js';
+import type { HintStatus, HintResolution } from '../db/optimizationHints.js';
 
 import type { GrowthSummary, InsightStatus, PrescriptionStatus, Session, ValidationResult } from '../types/index.js';
 import type { SkillTestResultInsert } from '../db/skillTestResults.js';
@@ -1391,6 +1400,293 @@ server.registerTool(
     } catch (err: unknown) {
       return {
         content: [{ type: 'text' as const, text: JSON.stringify({ error: String(err) }) }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: list_optimization_hints
+// ---------------------------------------------------------------------------
+
+// HINT_STATUSES and HINT_RESOLUTIONS imported from optimizationHints.ts — single source of truth.
+
+/**
+ * Shared summary shape for a hint row — used by both buildListHintsResult and
+ * buildGetHintResult so the fields in a list summary stay in sync with the get
+ * response. Get builds on this and adds the extra full-detail fields.
+ */
+function buildHintSummary(h: ReturnType<typeof queryOptimizationHints>[number]): Record<string, unknown> {
+  return {
+    id: h.id,
+    skill_id: h.skillId,
+    source: h.source,
+    category: h.category,
+    summary: h.description,
+    recommendation: h.recommendation,
+    impact_score: h.impactScore,
+    /**
+     * Note: raw confidence float omitted from summary — use get_optimization_hint for the float value.
+     */
+    confidence_level: confidenceToWords(h.confidence),
+    status: h.status,
+    resolution_disposition: h.resolutionDisposition ?? null,
+    resolution_note: h.resolutionNote ?? null,
+    created_at: h.createdAt,
+  };
+}
+
+/**
+ * Core list-hints logic extracted for handler-level testing.
+ * Returns the raw JSON payload (not the MCP content wrapper).
+ * When a specific status filter is present, `active_count` is omitted
+ * because the caller already knows which status they requested.
+ */
+export function buildListHintsResult(
+  db: Database.Database,
+  params: { status?: HintStatus; skill_id?: string; limit: number },
+): Record<string, unknown> {
+  const effectiveStatuses = params.status ?? [...ACTIVE_HINT_STATUSES];
+
+  const hints = queryOptimizationHints(db, {
+    status: effectiveStatuses,
+    skillId: params.skill_id,
+    limit: params.limit,
+  });
+
+  const summaries = hints.map(buildHintSummary);
+
+  const result: Record<string, unknown> = { count: summaries.length, hints: summaries };
+
+  // Omit active_count when the caller requested a specific status — the filter
+  // already scopes the result set and the field would be misleading or redundant.
+  if (!params.status) {
+    result.active_count = hints.filter((h) =>
+      (ACTIVE_HINT_STATUSES as readonly string[]).includes(h.status),
+    ).length;
+  }
+
+  return result;
+}
+
+server.registerTool(
+  'list_optimization_hints',
+  {
+    title: 'List Optimization Hints',
+    description:
+      'List optimization hints that Forge has generated for your skills. ' +
+      'Each hint includes a summary, category, impact score, confidence, and current status. ' +
+      'Defaults to showing active (pending/accepted/deferred) hints — the ones you can act on. ' +
+      'Filter by status or skill_id to narrow results. ' +
+      'Use resolve_optimization_hint to mark a hint as resolved or dismissed.',
+    inputSchema: {
+      status: z
+        .enum(HINT_STATUSES)
+        .optional()
+        .describe(
+          'Filter by hint status. Omit to return active hints (pending, accepted, deferred). ' +
+          'Pass a specific status to see hints in that lifecycle state.',
+        ),
+      skill_id: z
+        .string()
+        .max(256)
+        .optional()
+        .describe('Filter to hints for a specific skill ID. Omit to return hints for all skills.'),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .default(20)
+        .describe('Maximum number of hints to return (1–100, default 20).'),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ status, skill_id, limit }) => {
+    try {
+      ensureDb();
+      const result = buildListHintsResult(db, { status: status as HintStatus | undefined, skill_id, limit });
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (err: unknown) {
+      process.stderr.write(`[list_optimization_hints] error: ${String(err)}\n`);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Internal error querying hints' }) }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: resolve_optimization_hint
+// ---------------------------------------------------------------------------
+
+/**
+ * Core resolve-hint logic extracted for handler-level testing.
+ * Returns the raw JSON payload (not the MCP content wrapper).
+ * Returns `{ error: string }` when the hint is not found.
+ */
+export function buildResolveHintResult(
+  db: Database.Database,
+  params: { hint_id: string; resolution: HintResolution; note?: string },
+): Record<string, unknown> | null {
+  const result = resolveOptimizationHint(db, params.hint_id, params.resolution, params.note);
+  if (!result) return null;
+
+  const message = result.alreadyResolved
+    ? `ℹ️ Hint was already in a terminal state (${result.status}).`
+    : params.resolution === 'resolved'
+      ? '✅ Hint marked as resolved.'
+      : '👍 Hint dismissed.';
+
+  return {
+    hint_id: result.id,
+    // F2: null when already resolved — the caller's intent was not acted on.
+    resolution: result.resolution,
+    prior_status: result.prior_status,
+    status: result.status,
+    resolution_disposition: result.resolutionDisposition ?? null,
+    resolution_note: result.resolutionNote ?? null,
+    already_resolved: result.alreadyResolved,
+    message,
+  };
+}
+
+server.registerTool(
+  'resolve_optimization_hint',
+  {
+    title: 'Resolve Optimization Hint',
+    description:
+      'Mark an optimization hint as resolved or dismissed. ' +
+      'Use "resolved" when you have addressed the hint manually. ' +
+      'Use "dismissed" when you have decided not to act on it. ' +
+      'Both actions are idempotent — safe to call even if the hint is already resolved. ' +
+      'Use list_optimization_hints to find hint IDs.',
+    inputSchema: {
+      hint_id: z
+        .string()
+        .max(256)
+        .describe('The ID of the hint to resolve. Get IDs from list_optimization_hints.'),
+      resolution: z
+        .enum(HINT_RESOLUTIONS)
+        .describe(
+          '"resolved" — you addressed the issue manually. ' +
+          '"dismissed" — you have decided not to act on this hint.',
+        ),
+      note: z
+        .string()
+        .max(1000)
+        .optional()
+        .describe('Optional note explaining why you resolved or dismissed this hint.'),
+    },
+    annotations: { readOnlyHint: false },
+  },
+  async ({ hint_id, resolution, note }) => {
+    try {
+      ensureDb();
+
+      const payload = buildResolveHintResult(db, { hint_id, resolution: resolution as HintResolution, note });
+
+      if (!payload) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({ error: `Hint '${hint_id}' not found.` }),
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+      };
+    } catch (err: unknown) {
+      process.stderr.write(`[resolve_optimization_hint] error: ${String(err)}\n`);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Internal error resolving hint' }) }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: get_optimization_hint
+// ---------------------------------------------------------------------------
+
+/**
+ * Core get-hint logic extracted for handler-level testing.
+ * Returns the full hint row payload, or null when the hint does not exist.
+ * Builds on buildHintSummary and adds the full-detail fields.
+ */
+export function buildGetHintResult(
+  db: Database.Database,
+  params: { hint_id: string },
+): Record<string, unknown> | null {
+  const h = getOptimizationHint(db, params.hint_id);
+  if (!h) return null;
+
+  return {
+    ...buildHintSummary(h),
+    // Full-detail fields omitted from list summary:
+    confidence: h.confidence,
+    description: h.description,
+    auto_apply_eligible: h.autoApplyEligible ?? null,
+    parent_prescription_id: h.parentPrescriptionId,
+    evidence: h.evidence,
+    metric_snapshot: h.metricSnapshot,
+    generated_at: h.generatedAt,
+    applied_at: h.appliedAt,
+  };
+}
+
+server.registerTool(
+  'get_optimization_hint',
+  {
+    title: 'Get Optimization Hint',
+    description:
+      'Retrieve the full details of a single optimization hint by ID. ' +
+      'Returns all evidence, metric snapshot, parent prescription link, timestamps, ' +
+      'and resolution information (disposition and note). ' +
+      'Use list_optimization_hints to discover hint IDs.',
+    inputSchema: {
+      hint_id: z
+        .string()
+        .max(256)
+        .describe('The ID of the hint to retrieve. Get IDs from list_optimization_hints.'),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ hint_id }) => {
+    try {
+      ensureDb();
+
+      const payload = buildGetHintResult(db, { hint_id });
+
+      if (!payload) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({ error: `Hint '${hint_id}' not found.` }),
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+      };
+    } catch (err: unknown) {
+      process.stderr.write(`[get_optimization_hint] error: ${String(err)}\n`);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Internal error reading hint' }) }],
         isError: true,
       };
     }

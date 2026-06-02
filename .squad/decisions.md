@@ -2,6 +2,96 @@
 
 ## Open Decisions (Current Session)
 
+### 2026-05-31: Decision Drop: M1 Hint Consumption MCP Tools (Roger)
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-05-31T19:04:59Z  
+**Issue:** #39  
+**PR:** #40  
+
+---
+
+## Context
+
+Forge produces `optimization_hints` in the cairn DB but there was no way for Aaron to see or act on them from Copilot. `get_status` mentioned "N new suggestions" but the content was invisible. This PR closes that gap.
+
+---
+
+## Final Tool Surfaces
+
+### `list_optimization_hints`
+
+**Kind:** Read-only MCP tool  
+**Inputs:**
+
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `status` | enum (pending/accepted/applied/rejected/deferred/expired/suppressed/failed) | — | Omit to return active hints (pending+accepted+deferred) |
+| `skill_id` | string | — | Optional filter by skill |
+| `limit` | integer 1–100 | 20 | Max hints returned |
+
+**Output fields per hint:** `id`, `skill_id`, `source`, `category`, `summary`, `recommendation`, `impact_score`, `confidence_level` (high/medium/emerging), `status`, `created_at`, `resolution_note`  
+**Envelope:** `{ count, active_count, hints[] }`
+
+---
+
+### `resolve_optimization_hint`
+
+**Kind:** Mutating MCP tool  
+**Inputs:**
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `hint_id` | string | ✅ | Hint ID from `list_optimization_hints` |
+| `resolution` | `resolved` \| `dismissed` | ✅ | `resolved` = manually addressed; `dismissed` = not acting on it |
+| `note` | string | — | Optional reason |
+
+**Output:** `{ hint_id, resolution, status, resolution_note, already_resolved, message }`  
+**Idempotent:** Yes — if hint is already in a terminal state, returns current state with `already_resolved: true` and no error.  
+**Internal mapping:** Both dispositions transition to `rejected` status; `resolution` field and `resolution_note` preserve user intent.
+
+---
+
+## Schema / Migration
+
+**Migration 017** (`packages/cairn/src/db/migrations/017-hint-resolution-note.ts`)
+
+- Adds `resolution_note TEXT` column to `optimization_hints`  
+- **Version:** 17 (bumped from 16)  
+- **Guarded:** Checks `sqlite_master` for table existence before ALTER (partial-schema test DB safety)  
+- **Idempotent:** Uses `PRAGMA table_info` to skip if column already exists  
+- **Timestamp convention:** No new timestamp column needed; existing `applied_at` pattern is sufficient
+
+---
+
+## New DB Helper
+
+`resolveOptimizationHint(db, id, resolution, note?)` in `optimizationHints.ts`
+
+- Explicit `db: Database.Database` injection (per project convention)
+- New types: `HintResolution = 'resolved' | 'dismissed'`, `ResolveHintResult`
+- `OptimizationHintRow` extended with `resolutionNote: string | null`
+- Wraps in `db.transaction().immediate()` for atomicity
+
+---
+
+## Test Counts
+
+| | Count |
+|---|---|
+| Before (cairn suite) | 693 |
+| Added (hintMcp.test.ts) | +15 |
+| **After** | **708** |
+
+New tests cover: list backing logic, resolveOptimizationHint DB helper, migration 017 schema check.  
+Four other test files updated: version assertion 16 → 17 (db, discovery, migration012, prescriptions).
+
+---
+
+## Build / Test Status
+
+- `npm run build` — ✅ green  
+- `npm test --workspace=@akubly/cairn` — ✅ 708/708 passing
 ### 2026-05-31: M7-A — Typed Error Hierarchy for applyFeedback / applyFeedbackById (Edgar)
 
 **Author:** Edgar (Learning Systems Specialist)  
@@ -3281,6 +3371,124 @@ Type:
   - A (old)
   - B (new)
 '@
+```
+
+**Applied to:** PR #32 body re-render in alexander-5. Prevents escape-sequence garble in future multiline content.
+
+---
+
+## 2026-05-30: Forge Roadmap Priority — Dogfood-First (Aaron Directive)
+
+**Date:** 2026-05-30T23:55:00-07:00  
+**Author:** Aaron Kubly (via Copilot)  
+**Status:** ADOPTED
+
+### What (1) — Eureka pace
+
+"Let's not pull too hard on Eureka yet, it's still in the works." Defer aggressive forge → Eureka integration moves (the C2-1/C2-2/C2-3 Eureka-internal items Graham proposed) until Eureka stabilizes further. Forge can continue without depending on Eureka.
+
+### What (2) — Next priority for forge
+
+Packaging + installability + dogfooding is now priority #1. Forge's Phase 4.6 surface is implemented; the next move is getting it into a state where Aaron (and the team) can install + run it locally on real work to generate signal.
+
+### What (3) — Compelling-but-deferred for forge
+
+GP-tournament selection (Phase 5 §2.4) and Meta-optimization (DBOM on prescriber decisions, §3.5) are noted as compelling future moves, but explicitly *behind* packaging/dogfooding. They're soft-designed today and benefit from real dogfood signal before contract is nailed.
+
+### Why
+
+User direction on roadmap sequencing. Dogfooding-first reflects the principle that real usage signal beats further design speculation, and the deferred Eureka work prevents thrashing on a moving target.
+
+### Implications
+
+- **M0 (Alexander):** forge-mcp registration in plugin + copilot configs (shipped 2026-05-31 as PR #36, b22c8e7)
+- **M1 (Roger):** Hint consumption MCP tools (cairn MCP expand recall hints → decision hints)
+- **M2 (Gabriel):** Bash hooks + README (install forge-mcp, shell init integration)
+- **Deferred:** Eureka FactStore adapter, forge→Eureka integration wiring (until Eureka v1 stabilizes)
+
+---
+
+## 2026-05-30: Forge Next Load-Bearing Move — SQLite FactStore Adapter (Graham Decision)
+
+**Date:** 2026-05-30  
+**Author:** Graham (Architect)  
+**Status:** PROPOSED FOR FUTURE DISPATCH (deferred by Aaron dogfood priority)
+
+### Context
+
+Eureka v1 (`ef06238`, 2026-05-30) landed `recall` with a composite ranker and injectable `FactStore`/`ClockProvider` seams. The `FactStore` interface is well-defined (`search({ query, sessionId, limit, minTrust }): Promise<RecallResult[]>`), but no SQLite-backed implementation exists.
+
+Forge's prescriber (`ForgePrescriberOrchestrator`) currently accepts an optional `ChangeVectorProvider` for historical context (statistical summaries). Eureka's `recall` would provide episodic context (trust-scored, recency-weighted facts) — complementary, not duplicative.
+
+### Decision
+
+**The next load-bearing move for forge is building the Eureka SQLite FactStore adapter.** Without it, `recall` is unreachable in production and the forge→Eureka integration loop cannot be validated.
+
+**Sequence (when Eureka stabilizes):**
+1. **Eureka SQLite FactStore adapter** — `packages/eureka/src/adapters/sqlite-fact-store.ts`, implements `FactStore.search()` against Eureka's SQLite DB. M, Edgar or Roger. This is Eureka's M5 milestone deliverable.
+2. **Wire `recall` into `ForgePrescriberOrchestrator`** — add optional `factStore?: FactStore` alongside existing `provider?: ChangeVectorProvider`. Fail-open (recall failure → prescribe without episodic context). S-M, Alexander. Forge imports `FactStore` type from `@akubly/eureka` only (no impl coupling).
+3. **`trustFloor` RecallOptions override** — small plumbing in `packages/eureka/src/activities/recall.ts`; seam already supports `minTrust` at FactStore boundary, just needs wiring. S, any agent.
+
+### What to defer
+
+- Eureka `commit` activity (v1.5+) — don't design before FactStore + recall wiring is proven.
+- Issue #17 async-IO sweep implementation — Alexander's T3 closed the W5-5 gaps; issue should be closed, not implemented. `better-sqlite3` sync model is acceptable for single-user local tool.
+
+### Risk
+
+Schema lock-in for FactStore SQLite backing: trust/importance/attentionTier storage must be durable. Any migration later breaks cognitive memory. Design the schema defensively (nullable fields, enum TEXT columns with normalizeX guards matching the `normalizeProfileSource` pattern from PR #32).
+
+### Current Status
+
+Deferred per Aaron's dogfood-first priority (2026-05-30). Will be picked up after M0/M1/M2 complete and Eureka v1 stabilizes.
+
+---
+
+## 2026-05-31: Cycle-2 Latent Lint Bug Pattern — Windows `npm run lint` Glob Failure
+
+**Date:** 2026-05-31  
+**Author:** Alexander (via Scribe, Issue #37)  
+**Status:** ROOT CAUSE IDENTIFIED; WORKAROUND DOCUMENTED; PERMANENT FIX TRACKED
+
+### What
+
+`npm run lint` fails on Windows with silent no-match (eslint glob `packages/*/src/` matches nothing via PowerShell glob expansion). Agents pushing code from Windows worktrees don't catch lint errors; Linux CI flags them post-merge. Example: commit 85d49b8 (PR #36 turn alexander-8) discovered unused-variable error during CI run, not local development.
+
+### Root Cause
+
+ESLint glob expansion via Node.js child_process on Windows uses native PowerShell glob rules (not sh glob rules). The pattern `packages/*/src/` expands to zero matches because PowerShell treats `*` literally when no files match at the top level. On Linux (`sh`), the glob expands correctly.
+
+### Workaround
+
+**UNTIL ISSUE #37 IS FIXED:** Agents modifying any package must use:
+```bash
+npm run lint --workspace=<package-name>
+```
+
+Examples:
+```bash
+npm run lint --workspace=forge
+npm run lint --workspace=eureka
+npm run lint --workspace=cairn
+```
+
+This bypasses the glob entirely and runs eslint directly on the package's source tree.
+
+### Permanent Fix
+
+**Tracked in Issue #37 (squad:gabriel):** Rewrite ESLint glob pattern or use a different linting approach:
+- Option A: Use `packages/{cairn,forge,eureka,types}/**/*.ts` (explicit list)
+- Option B: Run linter per-package in parallel (robust to glob expansion issues)
+- Option C: Use ESLint's built-in workspace support (v8+)
+
+### Team Discipline
+
+Until fixed, Scribe will flag any `npm run lint` (bare, not `--workspace=...`) runs in orchestration logs as **ANTI-PATTERN** and agents are expected to use the per-package form.
+
+### Follow-Up
+
+Add CI check to detect `npm run lint` (bare) in agent logs and fail CI with helpful error message pointing to Issue #37 + workaround.
+
 ```
 
 **Applied to:** PR #32 body re-render in alexander-5. Prevents escape-sequence garble in future multiline content.
