@@ -22,18 +22,61 @@ if ! grep -qF "$MARKER_START" "$SHELL_RC" 2>/dev/null; then
   exit 0
 fi
 
-# Remove the marker block (sed portable: works on macOS and Linux)
-# The pattern removes the blank separator line before MARKER_START,
-# MARKER_START itself, everything between, and MARKER_END.
-if sed --version &>/dev/null 2>&1; then
-  # GNU sed
-  sed -i "/^[[:space:]]*$/{N;/\n${MARKER_START//\//\\/}/d}" "$SHELL_RC"
-  sed -i "/${MARKER_START//\//\\/}/,/${MARKER_END//\//\\/}/d" "$SHELL_RC"
-else
-  # BSD sed (macOS)
-  sed -i '' "/^[[:space:]]*$/{N;/\n${MARKER_START//\//\\/}/d;}" "$SHELL_RC"
-  sed -i '' "/${MARKER_START//\//\\/}/,/${MARKER_END//\//\\/}/d" "$SHELL_RC"
-fi
+# Remove the marker block using a bash line-by-line state machine.
+#
+# Why not sed? The two-pass approach (blank-line removal first, then range
+# delete) has a sequencing bug: the first pass consumes MARKER_START when it
+# appears immediately after a blank line, leaving the block body and MARKER_END
+# orphaned so the second pass never fires. The bash loop avoids this entirely.
+#
+# Algorithm:
+#   - Buffer blank lines rather than emitting them immediately.
+#   - When MARKER_START is seen: discard the buffered blank (the separator
+#     install.sh prepended) and enter skip mode.
+#   - While skipping: discard all lines until MARKER_END, then exit skip mode.
+#   - Non-blank lines outside skip: flush the buffer, emit the line.
+_remove_block() {
+  local file="$1" start="$2" end="$3"
+  local tmp="${file}.forge-mcp-bak"
+
+  {
+    local skip=0 held_blank=0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      # Entering the block: drop buffered blank separator, start skipping.
+      if [[ $skip -eq 0 && "$line" == "$start" ]]; then
+        held_blank=0
+        skip=1
+        continue
+      fi
+
+      # Inside the block: skip every line until MARKER_END (inclusive).
+      if [[ $skip -eq 1 ]]; then
+        [[ "$line" == "$end" ]] && skip=0
+        continue
+      fi
+
+      # Outside the block: blank lines are buffered one-deep so we can
+      # suppress the separator if the very next line turns out to be MARKER_START.
+      if [[ -z "$line" ]]; then
+        # Flush any previously held blank before buffering the new one.
+        [[ $held_blank -eq 1 ]] && printf '\n'
+        held_blank=1
+      else
+        # Non-blank: flush held blank (it wasn't a separator) then emit.
+        [[ $held_blank -eq 1 ]] && printf '\n'
+        held_blank=0
+        printf '%s\n' "$line"
+      fi
+    done < "$file"
+
+    # Flush a trailing blank line at EOF if present.
+    [[ $held_blank -eq 1 ]] && printf '\n'
+  } > "$tmp"
+
+  mv "$tmp" "$file"
+}
+
+_remove_block "$SHELL_RC" "$MARKER_START" "$MARKER_END"
 
 echo "✓ forge-mcp shell init removed from $SHELL_RC"
 echo ""

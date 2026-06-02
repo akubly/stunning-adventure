@@ -57,12 +57,15 @@ _forge_mcp_resolve_script() {
 # Internal: fire the hook silently in the background
 # ---------------------------------------------------------------------------
 _forge_mcp_run_hook() {
-  local script
-  script="$(_forge_mcp_resolve_script)"
-  [[ -z "$script" ]] && return 0
-
-  # Run detached — must never block shell startup or print to stdout/stderr.
-  node "$script" &>/dev/null &
+  # Both resolution (which calls `npm root -g`, 150ms–1s+) and execution are
+  # moved into the background subshell so nothing blocks shell startup.
+  # The subshell inherits _forge_mcp_resolve_script from the parent process.
+  (
+    local script
+    script="$(_forge_mcp_resolve_script)"
+    [[ -z "$script" ]] && exit 0
+    node "$script"
+  ) &>/dev/null &
   disown 2>/dev/null || true
 }
 
@@ -88,9 +91,11 @@ forge_mcp_check() {
   fi
   echo "  sessionStart script: $script"
 
-  # Report version (from package.json next to dist/)
+  # Report version (from package.json two levels above dist/hooks/)
+  # $script = .../skillsmith-runtime/dist/hooks/sessionStart.js
+  # dirname x1 → dist/hooks, dirname x2 → dist, dirname x3 → skillsmith-runtime
   local pkg_json
-  pkg_json="$(dirname "$(dirname "$script")")/package.json"
+  pkg_json="$(dirname "$(dirname "$(dirname "$script")")")/package.json"
   if [[ -f "$pkg_json" ]]; then
     local version
     version=$(node -p "require('$pkg_json').version" 2>/dev/null)
