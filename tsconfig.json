@@ -6,6 +6,8 @@
     { "path": "packages/forge" },
     { "path": "packages/skillsmith-runtime" },
     { "path": "packages/runtime-cli" },
-    { "path": "packages/eureka" }
+    { "path": "packages/eureka" },
+    { "path": "packages/crucible-core" },
+    { "path": "packages/crucible-cli" }
   ]
 }

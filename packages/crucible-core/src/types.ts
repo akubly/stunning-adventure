@@ -1,0 +1,57 @@
+/**
+ * Crucible primitive types — Sprint 0 public surface.
+ *
+ * Primitive vocabulary is the five-kind algebra from §6 of the Crucible
+ * Technical Design. This file exposes the minimal subset needed for the
+ * Sprint 0 acceptance test; fuller envelope fields (id, trustTier, hooks,
+ * schemaVersion, etc.) are deferred to future sprints.
+ */
+
+/** The five Crucible primitive kinds per §6.1. */
+export type PrimitiveKind =
+  | 'request'
+  | 'artifact'
+  | 'observation'
+  | 'decision'
+  | 'question';
+
+/** Input shape for appending a primitive to a session ledger. */
+export interface PrimitiveInput {
+  primitiveKind: PrimitiveKind;
+  primitivePayload: unknown;
+  causalReadSet: string[];
+}
+
+/**
+ * A committed primitive — PrimitiveInput plus its logical offset in the
+ * session. Offset is 0-indexed; query range is inclusive on both ends.
+ */
+export interface Primitive extends PrimitiveInput {
+  offset: number;
+}
+
+/** Fork-lineage and creation metadata for a session. */
+export interface SessionMetadata {
+  parentSessionId: string | null;
+  forkPointEventId: number | null;
+  createdAt: number;
+}
+
+/** Runtime session object returned by createSession() and fork(). */
+export interface Session {
+  id: string;
+  metadata: SessionMetadata;
+  /**
+   * Append a primitive to this session.
+   * Assigned offset = forkPointEventId + 1 + ownEventCount for child sessions,
+   * or simply ownEventCount for root sessions.
+   */
+  append(p: PrimitiveInput): Promise<void>;
+  /**
+   * Query primitives in the inclusive-inclusive offset range [a, b].
+   * Returns up to b - a + 1 primitives.
+   * For child sessions, offsets ≤ forkPointEventId delegate to the parent's
+   * event store (logical prefix — parent events are never physically copied).
+   */
+  query(opts: { range: [number, number] }): Promise<Primitive[]>;
+}
