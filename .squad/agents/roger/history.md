@@ -646,6 +646,28 @@ Alexander's split (one shared pre-commit bus, three verdict outcomes, pause unif
 - Either both NULL (no predicate matched) or both populated. `continue` verdicts with witnesses are valid (useful for "yes this predicate ran and said continue" audit trails) but optional — registrants choose at registration time whether to witness `continue`.
 - Per-row cost: +1 byte tag always, +32 bytes when verdict ≠ continue OR witness requested. Zero when no predicate matched.
 
+## Learnings (2026-06-02 — M8 Slice A: SqliteFactReader + Eureka migrations bootstrap)
+
+**Branch:** `eureka/m8-slice-a-sqlite-factreader`
+**PR:** M8 Slice A (graham-m8-scope-proposal.md approved, Q1/Q2/Q3 locked by Aaron)
+
+**What shipped:**
+- `packages/eureka/src/db/`: `schema.ts` (applyMigrations verbatim on Cairn pattern), `migrations/001-facts.ts` (facts + FTS5 + triggers + trust_history scaffold), `openDatabase.ts`, `index.ts` barrel.
+- `packages/eureka/src/storage/fact-reader-sqlite.ts`: SqliteFactReader implementing FactReader; db handle injected per Cairn convention.
+- `packages/eureka/src/storage/index.ts`: storage barrel (InMemoryFactReader + SqliteFactReader re-exported).
+- Contract wiring: `runFactReaderContract('SqliteFactReader', makeHarness)` at end of fact-reader.contract.test.ts; +5 contract tests.
+- Test count: 74 → 79 (+5). All 79 pass. No regressions in cairn/forge/skillsmith-runtime.
+
+**NaN decision:** trust column is NULLABLE (not `NOT NULL`) despite Graham's sketch showing `REAL NOT NULL DEFAULT 0.5`. CL-4 requires {trust: NaN} round-trip. SQLite has no NaN literal; `NOT NULL` coerces NaN to 0.0 at INSERT. Nullable column + JS-layer `NULL ↔ NaN` is the only compliant path. Schema deviation documented in roger-m8-slice-a.md decision drop.
+
+**DB path:** `~/.eureka/eureka.db` per Aaron Q3 approval. `openDatabase` uses `os.homedir()`.
+
+**Cairn DB-layer helper convention confirmed:** constructor takes `db: Database.Database` (caller-injected); `openDatabase` creates and migrates; SqliteFactReader never opens or closes the handle.
+
+**Better-sqlite3 named params:** `Statement.get()` TypeScript types give "expected 1 argument" when passing two positional `?` values even though the runtime accepts them. Use `$name` named parameters and pass an object — single-argument signature, same runtime behavior. Adopted throughout.
+
+**trust_history table:** scaffolded in migration 001 per Aaron Q1 approval; no writes in Slice A. Slice B will add the mutate writes.
+
 **Predicate registration (new L1 ABI):**
 - Predicates are **registered by ID**, not passed per-row. Registration returns a handle with explicit lifetime (per Alexander's fork-isolation point: child-fork registrations do not back-propagate to parent).
 - Registration **compiles** predicates to native ops where possible, bytecode fallback otherwise.
