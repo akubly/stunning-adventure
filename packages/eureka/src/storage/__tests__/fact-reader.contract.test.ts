@@ -23,9 +23,12 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import Database from 'better-sqlite3';
 import type { FactReader } from '../../activities/recall.js';
 import type { SessionId } from '@akubly/types';
 import { InMemoryFactReader } from '../fact-reader.js';
+import { SqliteFactReader } from '../fact-reader-sqlite.js';
+import { applyMigrations } from '../../db/schema.js';
 
 // ---------------------------------------------------------------------------
 // Shared contract harness type
@@ -122,9 +125,17 @@ export function runFactReaderContract(
     // The read layer is NOT responsible for validating trust; that is the
     // caller's job (applyFeedbackById throws InvalidTrustValueError(source:'storage')).
     // Silently clamping or filtering at read time would hide storage corruption.
+    //
+    // Storage round-trip requirement: the harness `seed` function MUST write
+    // NaN to the backing store before `read` is called — not cache it in memory.
+    // For SQLite implementations, NaN has no native literal and is stored as NULL;
+    // `read` must re-hydrate NULL → NaN. This test is the primary regression lock
+    // for that NaN→NULL→NaN conversion path. A seed implementation that bypasses
+    // the backing store (e.g., caches in-memory) would let a silent conversion
+    // bug slip through undetected.
     // -----------------------------------------------------------------------
 
-    it('CL-4: returns {trust: NaN} for a NaN-seeded fact — read layer does NOT validate', async () => {
+    it('CL-4: NaN trust round-trips through the storage write/read cycle — read layer does NOT validate', async () => {
       const sessionId = 'session-contract-A' as SessionId;
       await seed('fact-cl4-corrupt', sessionId, NaN);
 
@@ -164,6 +175,27 @@ runFactReaderContract('InMemoryFactReader', () => {
     reader: impl,
     seed: async (factId, sessionId, trust) => {
       impl.seed(factId, sessionId, trust);
+    },
+  };
+});
+
+// ---------------------------------------------------------------------------
+// Wire contract suite to SqliteFactReader
+// ---------------------------------------------------------------------------
+
+runFactReaderContract('SqliteFactReader', () => {
+  const db = new Database(':memory:');
+  applyMigrations(db);
+  const insertStmt = db.prepare(
+    'INSERT INTO facts (fact_id, session_id, trust) VALUES (?, ?, ?)',
+  );
+  const reader = new SqliteFactReader(db);
+  return {
+    reader,
+    seed: async (factId: string, sessionId: SessionId, trust: number) => {
+      // Map NaN → NULL for storage (CL-4 round-trip: NULL re-hydrates as NaN on read).
+      const stored = Number.isNaN(trust) ? null : trust;
+      insertStmt.run(factId, sessionId, stored);
     },
   };
 });
