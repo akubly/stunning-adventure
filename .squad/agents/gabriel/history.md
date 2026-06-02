@@ -70,6 +70,25 @@ Phase 2 fan-out now unblocked. Full R2 locks in `.squad/decisions.md`.
 
 <!-- Append learnings below -->
 
+### 2026-06-01 — Topic Branch Recovery: "Scribe Committed Meta to Main, Code Uncommitted"
+
+**Pattern:** When Scribe commits meta-files (.squad/) directly to main while the real code work remains uncommitted + untracked:
+
+1. **Create topic branch from dirty HEAD:** `git checkout -b squad/<name>` — the WIP files ride along; checkout is safe on untracked content.
+2. **On the topic branch:** Revert unrelated drift (`git checkout -- <file>`), delete scribe-scratch files (`Remove-Item`), stage + commit in logical groups.
+3. **Reset main:** `git checkout main` → `git reset --hard origin/main` — cleans up the premature Scribe commits.
+4. **Result:** Topic branch has both the Scribe meta-commits AND the two new logical commits (code + skills docs); main is clean.
+
+**Why this matters:** Scribe's session persistence sometimes commits incremental state to main before code review/squash happens. The recovery pattern preserves the work (meta + code) on a topic branch while keeping main clean for the next review-cycle.
+
+**.gitignore addition:** Added patterns to exclude ``.squad/health-report-*/`` and ``.squad/scribe-health-report-*/`` so temporary Scribe scratch files don't appear in git status.
+
+**Commits created:**
+- `92a8c2e` — feat(crucible): Sprint 0 Walkthrough A — RED test + GREEN impl + REFACTOR (SessionManager/ForkLineage)
+- `01afeb6` — docs(squad): London-school TDD skills from Crucible Sprint 0
+
+**Files affected:** packages/crucible-cli, packages/crucible-core, tsconfig.json, package-lock.json, .gitignore, 4 new london-tdd-* skill files.
+
 ### 2026-06-01 — Crucible CLI Package Scaffold Pattern
 
 **Template:** `packages/eureka/package.json` and `packages/eureka/tsconfig.json` are the canonical sources for new package scaffolding in this monorepo.
