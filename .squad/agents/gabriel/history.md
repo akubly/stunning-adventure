@@ -13,6 +13,8 @@
 
 **M2: forge-mcp Bash Shell Init Hooks (2026-06-01):** Shipped PR #44 — .github/hooks/cairn/ scripts (init/install/uninstall), README M2 section, skill extraction. Design: idempotent marker-block strategy, co-location with PowerShell hooks. All tests passing (49/49). Ready for review.
 
+**M2 Cycle-1 Fixes (2026-06-01):** Addressed 3 review findings on PR #44 (commit e7ef8f3): (1) BLOCKING — replaced broken two-pass sed in uninstall.sh with a bash state-machine loop; byte-identical roundtrip verified on Git Bash. (2) IMPORTANT — moved npm resolution into background subshell so nothing blocks shell startup. (3) MEDIUM — fixed pkg_json dirname depth (2→3) so forge_mcp_check prints correct version 0.1.0. Build clean, 49/49 tests passing.
+
 ---
 
 ## Current Workload
