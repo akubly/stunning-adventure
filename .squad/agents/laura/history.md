@@ -1428,3 +1428,8 @@ When spawning test-authoring agents, point to the ADR's Acceptance Signals subse
 
 ### 2026-05-30: M5 RED — Trust Feedback Mutation Contract
 📌 Team update (2026-05-31T07:24:22Z): **M7-A (PR #38) shipped** — Typed error classes for applyFeedback/applyFeedbackById. 5 error classes with code discriminators. All 40 existing tests GREEN (no changes required, inheritance preserved). Next: M7-B (Laura — exhaustive narrowing tests) and M7-C (Crispin/Edgar — FactReader contract + atomicity). — Scribe
+
+---
+
+📌 Team update (2026-06-02T06:00:00Z): **M7-B + M7-C + M7-D (PR #41) COMPLETE — Eureka M7 Shipped** — Edgar + Crispin delivered 5-cycle marathon. 22 unique Copilot findings (44 threads). Final: 74 tests green, tsc-clean, lint-clean, merged to main as ed6be2c. M7 COMPLETE: error narrowing (B) ✅ + atomicity contract (C) ✅ + session-scoped regression tests (D) ✅. New skill: `.squad/skills/refactor-grep-cleanup/SKILL.md` (grep repo for old interface names post-refactor, not across N cycles). — Scribe
+

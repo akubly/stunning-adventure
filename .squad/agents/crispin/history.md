@@ -94,3 +94,18 @@
 
 
 **See history-archive.md for detailed entries (pre-2026-05-26 work).**
+
+---
+
+## 2026-06-02 — PR #41 COMPLETE: M7-C (Crispin + Edgar) Shipped on Main (ed6be2c)
+
+**Note:** Crispin's M7-C parallel work (FactReader contract test design) is shipped and merged to main as part of ed6be2c. The contract-test pattern documented in M7-C is immediately available for Crispin's next M7-D/E work (real FactReader + FactStore integration).
+
+**Key from Edgar's 5-cycle review:**
+- FactReader **survives** on the READ seam (recall, display paths). Not touched by M7-C write-path refactor.
+- `FactReaderContractError` class remains in public error vocabulary; external FactReader impls may throw it.
+- New shared helper `.squad/skills/contract-test-shared-helper/SKILL.md` + `runTrustUpdaterContract(makeImpl)` designed for plugging in any FactReader/storage impl.
+
+**Eureka M7 complete: B (error narrowing), C (atomicity contract), D (session-scoped regression tests) all shipped.**
+
+

@@ -168,3 +168,41 @@
 - **Test count on `eureka/m7-c-atomicity` vs. prior branches:** 68 tests (not 73) because `fact-reader.contract.test.ts` (5 tests, Crispin's READ seam) lives only on the commits that include Scribe's interim artifacts. The 68 are the right count for Edgar's M7-C branch.
 
 📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
+
+---
+
+**2026-06-02 — M7-C PR #41 COMPLETE — Eureka M7 (B+C+D) Shipped on Main (ed6be2c)**
+
+5-cycle Copilot review marathon complete. 22 unique findings (44 threads), all resolved. 74 final tests, tsc-clean, lint-clean, CI 3/3 passing.
+
+**Cycle 5 (7ce81da) — Comprehensive Grep-Cleanup Pass (Aaron authorized diminishing-returns sweep):**
+
+- **Lesson: Grep the entire repo for old interface names post-refactor, not across 5 cycles.** M7-C renamed `TrustUpdater.update → mutate`, removed `currentTrust`, removed `factReader`, re-keyed by `(sessionId, factId)`. Each change had residual references that Copilot surfaced one-at-a-time over cycles 1-5. A pre-merge grep sweep (9 terms, one pass) would have cleared all in one commit. New skill created: `.squad/skills/refactor-grep-cleanup/SKILL.md`.
+- **Hard-coded repo-wide test totals are drift bombs.** Removed "Post-M7-C: 67 tests" from inline comments. Per-suite counts are stable; repo-wide numbers in comments are always stale after one refactor.
+- **Aaron's diminishing-returns call:** Cycle 5 had 6 stale-doc nits; rather than iterate cycle 6+, authorized one comprehensive grep pass + merge. Proved effective.
+
+**Cycle 4 (75c9f25) — Real CI Lint Failure + Doc Consistency:**
+
+- **Windows npm run lint gotcha confirmed.** Root glob `eslint packages/*/src/` matches no files on Windows (PowerShell glob expansion differs from bash). Always use `npx eslint packages/eureka/src/` for local gate matching CI.
+- **Seam changes cascade into every doc.** Key changed from `factId` to `(sessionId, factId)` in cycle 3; left 4 stale refs: @concurrency JSDoc, SKILL parallelism claim, SKILL test count, decisions.md atomicity note. All require updates.
+- **SKILL.md is normative — must not overclaim the contract.** SKILL said "different keys MUST be parallel (no global lock)." That contradicts cycle-2 Option B (parallelism permitted, not required). Future agents read SKILL literally; if it says MUST, they write tests that reject valid impls. Fixed to MAY.
+
+**Cycle 3 (1413826) — Session-Scoping Missing + Locks Cleanup:**
+
+- **Read/write contract symmetry required.** FactReader already session-scoped; TrustUpdater used only factId. Data-model contradiction. Re-keyed by `${sessionId}\0${factId}` (null-byte separator prevents collisions). Added C-7 cross-session isolation test.
+- **Atomicity and session-scoping are orthogonal.** Atomicity = read-fn-write indivisible for same key. Session-scoping = key must include sessionId. Both required; only one is atomic.
+- **Identity-check cleanup in promise chains.** `if (locks.get(key) === next) locks.delete(key)` is the safe pattern for final cleanup: if no successor has replaced you, you clean up.
+
+**Cycle 2 (5fb53b4) — Stale Comments + Atomicity vs. Parallelism:**
+
+- **Contract tests must not rule out valid implementations.** C-6 claimed "no global lock" but only asserted correctness. A globally-serialized impl satisfies the contract. Option B (rescope to result-independence, not parallelism) was correct.
+- **Atomicity ≠ parallelism.** These are distinct contract properties. Conflating them in test names misleads readers about the contract requirements.
+
+**Cycle 1 (f128f78) — Contract Suite Gaps + Dangling Reference:**
+
+- **"Throw OR store NaN" is not a contract, it's helplessness.** C-3 accepted both behaviors. A contract test must assert REQUIRED behavior. Fixed: MUST throw InvalidTrustValueError(source:'storage') AND storage unchanged.
+- **Reference impl must implement the contract it documents.** InMemoryTrustUpdater was writing NaN despite JSDoc saying MUST reject. Impl is the first consumer; if it doesn't enforce, the suite lies.
+- **getTrust from a fresh makeImpl() is always empty.** C-5 error: called makeImpl() again at end. Always destructure all helpers from the SAME instance.
+- **Gitignored files can slip through cross-branch merges.** Crispin's inbox files became committed. Guard: `git status` review, not just trusting gitignore.
+
+**Outcome:** Eureka M7 (B+C+D) complete. Shipped to main as ed6be2c (squash). All learnings documented in `.squad/decisions.md` PR #41 section. New skill: `.squad/skills/refactor-grep-cleanup/SKILL.md`. Branches cleaned. Ready for next sprint.
