@@ -76,7 +76,11 @@ describe('FooInterface contract — InMemoryFoo', () => {
    - fn-throws → write aborted, state unchanged, error propagates
    - Missing-key → typed error (e.g. `FactNotFoundError`)
    - Concurrent calls on same key → serialized
-   - Concurrent calls on different keys → parallel (no global lock)
+   - Concurrent calls on different keys → MAY be processed in parallel; implementations
+     are not required to do so. The contract requires non-interference (each key reaches
+     the correct final value), not concurrency. A globally-serialized impl (e.g.,
+     single-connection SQLite) is valid.
+   - Cross-session isolation → mutate on sessionA MUST NOT affect sessionB's state
 
 5. **Concurrency test via in-memory scheduler** — use promise chains (not
    real timers/delays) to verify serialization. Real storage atomicity is
@@ -89,7 +93,8 @@ describe('FooInterface contract — InMemoryFoo', () => {
 `packages/eureka/src/activities/__tests__/trust-updater-contract.test.ts`
 
 - `InMemoryTrustUpdater` — per-key promise chain for serialization
-- `runTrustUpdaterContract(makeImpl)` — 6 contract tests (C-1 through C-6)
+- `runTrustUpdaterContract(makeImpl)` — 7 contract tests (C-1 through C-7)
+  - C-7: cross-session isolation — mutate on sessionB MUST NOT affect sessionA
 - Used to validate `TrustUpdater.mutate()` (M7-C atomicity seam)
 
 ---

@@ -9,10 +9,8 @@
 
 import type { SessionId } from '@akubly/types';
 import {
-  FactNotFoundError,
   InvalidFeedbackOptionsError,
   InvalidTrustValueError,
-  FactReaderContractError,
   UnhandledFeedbackEventError,
 } from './errors.js';
 
@@ -328,7 +326,7 @@ export interface ApplyFeedbackByIdDeps {
  *
  * @concurrency Atomicity is a CONTRACT guarantee of `TrustUpdater.mutate()`:
  *   the storage implementation MUST execute read + fn + write as a single atomic operation
- *   per factId. See `.squad/decisions.md` § "M7-C Atomicity Contract" (PR #41) and
+ *   per (sessionId, factId) pair. See `.squad/decisions.md` § "M7-C Atomicity Contract" (PR #41) and
  *   TrustUpdater JSDoc for the full contract.
  *
  * @throws {UnhandledFeedbackEventError} if an unrecognised FeedbackEvent variant is encountered at runtime
