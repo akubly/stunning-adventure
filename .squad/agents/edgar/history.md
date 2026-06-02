@@ -13,6 +13,14 @@
 
 ## Current & Recent
 
+**2026-06-01 — M7-C PR #41 Copilot Review Cycle 5 (comprehensive stale-ref grep pass)**
+
+- **When refactoring a public interface, grep the entire repo for the old name BEFORE shipping — not after Copilot drips findings out one per cycle.** M7-C renamed `TrustUpdater.update → mutate`, removed `currentTrust` from `ApplyFeedbackOptions`, removed `factReader` from `ApplyFeedbackByIdDeps`, and re-keyed storage by `(sessionId, factId)`. Every one of those changes had stale references that Copilot found one cycle at a time over 5 review rounds. A single pre-merge grep pass (search terms: old method name, old parameter names, old count references) would have cleared all of them in one shot.
+
+- **Hard-coded repo-wide test totals in code-adjacent files are drift bombs.** `fact-reader.contract.test.ts` had "Baseline (pre-M7-C): 62 tests; Post-M7-C: 67." That count was stale after cycle 1 and silently wrong for cycles 2-5. Per-suite counts (e.g. "each call adds 5 tests") are stable and useful; repo-wide totals in inline comments are always one refactor away from lying. Remove them.
+
+- **Historical entries in history.md and decisions.md are intentionally accurate for their time — don't retroactively rewrite them.** The distinction: fix forward-facing docs (interfaces, guard contracts, SKILL.md, JSDoc) because engineers read those to understand current behavior. Leave historical records describing what was done and why — those tell the story of how we got here.
+
 **2026-06-01 — M7-C PR #41 Copilot Review Cycle 4 (lint fix + doc consistency)**
 
 - **Lint before push, always.** `npm run lint` at the root uses `eslint packages/*/src/` which matches no files on Windows (glob expansion difference). Use `npx eslint packages/eureka/src/` directly. The unused-import error was real: removing `FactReader` from the write path in M7-C left `FactNotFoundError` and `FactReaderContractError` imported in `recall.ts` but never referenced in production code. CI caught it; local lint would have too if run correctly.
