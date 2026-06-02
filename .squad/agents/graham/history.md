@@ -1,14 +1,14 @@
 # Graham — History
 
 📌 **Role:** Lead / Architect (Overall vision, cross-system integration, tiebreak arbitration)  
-📌 **Last update:** 2026-06-01  
+📌 **Last update:** 2026-06-02
 
 ## Current Status
 
 **M0/M1/M2 Dogfood Scope:**
 - M0 (Alexander, PR #36): ✅ Shipped — forge-mcp registration + plugin config
 - M1 (Roger, PR #40): ✅ Open — hint consumption MCP tools (list_optimization_hints, resolve_optimization_hint)
-- M2 (Gabriel, PR #44): ✅ Open — bash shell-init hooks + install README
+- M2 (Gabriel, PR #44): ✅ Review-Complete (2-cycle + doc sweep) — bash shell-init hooks + install README; ready to merge
 
 **Recent Major Work:**
 - PR #33 Cloud-Review-Cycle round 6 — Crucible CTD ADR final fixes (cycle 2–6 complete)
