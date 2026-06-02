@@ -247,7 +247,7 @@ export interface TrustUpdater {
 
 **Atomicity guarantee:** The storage implementation MUST execute read, fn-application, and write as a single atomic operation per (sessionId, factId) pair. Storage MUST scope state by (sessionId, factId); a mutate on one sessionId MUST NOT affect another. If `fn` throws, write is aborted. If `fn` returns non-finite or out-of-range [0,1], storage MUST throw `InvalidTrustValueError(source:'storage')`. Variant B: `currentTrust` removed from `ApplyFeedbackOptions`; `applyFeedbackById` is a zero-logic thin wrapper.
 
-**Test count delta:** 62 → 68 (+6 contract tests, updated post-cycle-3: now C-1..C-7, +7 tests; total 62 → 69). All green.
+**Test count delta:** 62 → 69 (+7 contract tests, C-1..C-7). All green.
 
 **Breaking API changes:** `TrustUpdater.update` → `TrustUpdater.mutate`; `ApplyFeedbackOptions.currentTrust` removed; `ApplyFeedbackByIdDeps.factReader` removed.
 

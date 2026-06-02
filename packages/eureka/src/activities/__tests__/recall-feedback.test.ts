@@ -42,7 +42,7 @@ describe('applyFeedback', () => {
   // ---------------------------------------------------------------------------
   //
   // Fixture: currentTrust=0.60 → new trust = min(1.0, 0.60 + 0.10) = 0.70
-  // Drives: TrustUpdater.update({ factId, sessionId, trust: 0.70 })
+  // Drives: TrustUpdater.mutate({ factId, sessionId, fn: t => min(1.0, t + 0.10) })
   //
   // RED failure: applyFeedback is undefined → TypeError: applyFeedback is not a function
 
@@ -101,7 +101,7 @@ describe('applyFeedback', () => {
   // ---------------------------------------------------------------------------
   //
   // Fixture: currentTrust=0.50 → new trust = max(0.0, 0.50 - 0.10) = 0.40
-  // Drives: TrustUpdater.update({ factId, sessionId, trust: 0.40 })
+  // Drives: TrustUpdater.mutate({ factId, sessionId, fn: t => max(0.0, t - 0.10) })
 
   it('calls TrustUpdater.mutate with fn returning trust −0.10 for contradiction event (§30 §2.3)', async () => {
     const trustUpdater = {

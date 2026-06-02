@@ -20,8 +20,6 @@
  *
  * Each call to runFactReaderContract adds 5 tests.
  * InMemoryFactReader wired below → 5 contract tests total.
- * Baseline (pre-M7-C): 62 tests across 4 files.
- * Post-M7-C total: 67 tests.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';

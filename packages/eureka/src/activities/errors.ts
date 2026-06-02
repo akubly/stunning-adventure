@@ -35,8 +35,8 @@
 // ---------------------------------------------------------------------------
 
 /**
- * Thrown by `applyFeedbackById` when `FactReader.read()` returns `null`.
- * Prevents TrustUpdater from being called for a non-existent fact.
+ * Thrown by `TrustUpdater.mutate()` when the requested fact does not exist in storage.
+ * Prevents the mutation fn from being invoked for a non-existent fact.
  */
 export class FactNotFoundError extends Error {
   readonly code = 'FACT_NOT_FOUND' as const;
@@ -117,7 +117,7 @@ export class FactReaderContractError extends TypeError {
 
   constructor(factId: string) {
     super(
-      `applyFeedbackById: FactReader.read() returned undefined; the contract requires {trust:number} or null — check your FactReader implementation`,
+      `FactReader.read() returned undefined; the contract requires {trust:number} or null — check your FactReader implementation`,
     );
     this.name = 'FactReaderContractError';
     this.factId = factId;
