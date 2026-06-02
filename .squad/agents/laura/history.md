@@ -1,4 +1,39 @@
+# SUMMARY (as of 2026-06-01)
+
+File size: 17270 bytes. See history-archive.md for earlier entries.
+
+---
+
 ## Learnings
+
+### 2026-06-01: Crucible REFACTOR RED — SessionManager Unit Tests (London-school with mocked DB)
+
+**Context:** Authored 4 failing unit tests for `SessionManager` per §4.1 Refactor 2, one turn after Roger's GREEN acceptance test landed.
+
+**London-school unit-test layout for SessionManager:**
+- File: `packages/crucible-core/src/__tests__/unit/session-manager.test.ts`
+- Follows the layer-descent pattern: acceptance ring (no mocks) → unit ring (mocked DB collaborator). The acceptance test stays outermost and mock-free; the unit test introduces the first mock seam at the `DB` collaborator boundary.
+- Import: `import { SessionManager } from '../../index.js'` — `.js` ESM extension, same rule as acceptance level. `SessionManager` doesn't exist yet → `TypeError: SessionManager is not a constructor` = correct RED.
+
+**MockDB shape pattern locked:**
+```typescript
+type MockDB = {
+  getSession:    ReturnType<typeof vi.fn>;  // returns { id, ledgerSize, pluginVersions? }
+  insertSession: ReturnType<typeof vi.fn>;  // called with { id, parentSessionId, forkPointEventId, pluginVersions, createdAt }
+  queryEvents:   ReturnType<typeof vi.fn>;  // present but unused in current tests; kept for shape completeness
+};
+```
+Pattern: `makeMockDB()` factory + `vi.resetAllMocks()` in `beforeEach`. For success-path tests, mock `insertSession.mockResolvedValue('child-id')` so `forkSession` can complete.
+
+**Proactive negative-offset edge case:**
+`rejects negative fork offset` is not in §4.1 verbatim — proactively added per Laura's charter (edge cases aren't optional). Regex `/non-negative|negative/` gives Roger phrasing freedom.
+
+**`objectContaining` for multi-field call assertions:**
+`expect(mockDB.insertSession).toHaveBeenCalledWith(expect.objectContaining({ ... }))` so generated fields (id, createdAt) don't make the test brittle.
+
+**Decision drop:** `.squad/decisions/inbox/laura-crucible-refactor-unit-tests.md`
+
+---
 
 ### 2026-06-01: Crucible First Red Test — Pattern Capture
 

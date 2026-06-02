@@ -1,3 +1,9 @@
+# SUMMARY (as of 2026-06-01)
+
+File size: 103960 bytes. See history-archive.md for earlier entries.
+
+---
+
 📌 **ADR-0019 CONTRIBUTION** (2026-05-30T194147Z): CLI design findings incorporated: TTY detection + exit codes (non-TTY exit code 2 + error requiring explicit flag protects automation), `--no-interactive` flag spec, dropped `--disambiguator` (redundant with timestamp-variant preimage), kept both `--resume` flag and `crucible session resume` verb (orthogonal workflows). TTY/exit-code spec became load-bearing for final design. Skill: Interactive prompt + CI integration requires explicit TTY contract upfront; exit code conventions (130 for cancel, 2 for "needs flag") are essential for automation safety.
 
 📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Roger (§13.1 CLI verbs: `crucible perf [top]` + `defer` help alignment). Coordinate with Valanice on §9.9 disclosure. All Pass A agents complete. Options docs PA-B4/childSid awaiting Aaron ruling. — Scribe
@@ -893,3 +899,93 @@ See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-rev
 
 📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
+
+## Session: 2026-06-01 — Crucible Sprint 0 First GREEN
+
+**Status:** Complete
+
+### What was done
+- Scaffolded `packages/crucible-core/` (package.json, tsconfig.json, README.md, vitest.config.ts)
+- Implemented 6-stub public surface: `PrimitiveKind`, `PrimitiveInput`, `Primitive`, `SessionMetadata`, `Session`, `createSession`, `fork`
+- Wired `packages/crucible-cli/src/index.ts` to re-export `createSession`/`fork` from `@akubly/crucible-core`
+- Updated crucible-cli package.json, tsconfig.json, and root tsconfig.json references
+- All 4 A1 invariants GREEN in Laura's acceptance test
+
+### Learnings
+
+#### GREEN-phase pattern: simplest real impl behind the acceptance API
+When an acceptance test directly calls `createSession`/`fork` (no injected collaborators), the GREEN step is a real in-memory implementation — not a mock. London-school descent (introduce Ledger mock) happens in the next RED cycle. Don't jump to abstractions in GREEN.
+
+#### query() range convention: inclusive-inclusive [a, b]
+`query({ range: [a, b] })` returns b − a + 1 primitives when all offsets are present. Derived from the test: `query({ range: [0, 46] }) → length 47`. Document this as a comment in the implementation; it's easy to misread as exclusive-end.
+
+#### In-memory parent-registry approach for fork
+Module-level `Map<sessionId, Primitive[]>` holds each session's **own events only**. Child sessions store zero events at fork time; their `query` for offsets ≤ `forkPointEventId` delegates to the parent's registry entry. No physical copy is made. Parent remains unmodified. This satisfies the A1 "parent unmodified" invariant with minimal code.
+
+Child offset assignment:
+```ts
+const baseOffset = forkPointEventId === null ? 0 : forkPointEventId + 1;
+const offset = baseOffset + ownEvents.length;
+```
+This works for both root sessions (null → base 0) and child sessions (fork at N → base N+1).
+
+#### Deferred: Ledger abstraction
+No Ledger class, WAL interface, or Cairn integration introduced. That is the REFACTOR step of the next TDD cycle. Keeping GREEN minimal is discipline, not laziness.
+
+
+## Session: 2026-06-01 — Crucible Sprint 0 REFACTOR Phase
+
+**Status:** Complete
+
+### What was done
+- Extracted ForkLineage value object at packages/crucible-core/src/ledger/fork-lineage.ts
+- Introduced DB interface (db.ts) and SessionManager class (session-manager.ts)
+- Created createInMemoryDB() adapter (in-memory-db.ts) wrapping the old registry
+- Refactored session.ts to compose against singleton InMemoryDB + SessionManager
+- Updated barrel index.ts to export all new public surface
+- Decision inbox: oger-crucible-refactor-session-manager.md
+- Skill: london-tdd-refactor-extract-collaborator/SKILL.md written
+
+### Test results
+- crucible-core unit (4/4 GREEN): rejects fork-beyond-size, rejects negative offset, inherits transitive dep graph, records lineage
+- crucible-cli acceptance (1/1 GREEN): no regression
+- Full monorepo build: exit 0
+
+## Learnings
+
+### REFACTOR pattern: extract value object + collaborator interface + adapter
+
+When the GREEN step has a flat module with module-level state, REFACTOR follows this sequence:
+1. **Value object**: extract the invariant holder as a class (ForkLineage). Pure data + validation, no I/O.
+2. **Collaborator interface**: define the narrowest possible DB interface — exactly the methods the new class needs. This is the seam the unit tests mock.
+3. **Service class**: create the collaborator-using class (SessionManager) that accepts DB in its constructor. All invariant checks live here.
+4. **Adapter**: implement the interface against existing in-memory state (createInMemoryDB). Internal helpers (not in the DB interface) are exposed via an extended InMemoryDB interface used only by the composition layer.
+5. **Wire**: update the public-facing module-level functions to compose new pieces without changing signatures.
+
+### DB interface contract (locked for unit test compatibility)
+
+`	s
+export interface DB {
+  getSession(id: string): Promise<{ id: string; ledgerSize: number; pluginVersions?: Record<string, string> } | null>;
+  insertSession(session: { id: string; parentSessionId: string | null; forkPointEventId: number | null; pluginVersions?: Record<string, string>; createdAt: number }): Promise<void>;
+  queryEvents(id: string, opts: { range: [number, number] }): Promise<unknown[]>;
+}
+`
+
+This shape is locked because Laura's unit test mocks mirror it exactly. Any shape change here requires updating session-manager.test.ts in tandem.
+
+### In-memory adapter: extend DB for internal helpers
+
+The DB interface is the minimal mock contract. The real adapter needs extra methods (insertRootSession, pushEvent, getOwnEvents, getMetadata) that the service class should not see. Pattern: define InMemoryDB extends DB in in-memory-db.ts, return it from createInMemoryDB(). Import InMemoryDB in session.ts for the singleton; import only DB in SessionManager. Clean separation.
+
+### ledgerSize computation for in-memory adapter
+
+- Root session: ownEvents.length
+- Child session: orkPointEventId + 1 + ownEvents.length
+
+This mirrors the offset assignment in uildSession: aseOffset = forkPointEventId === null ? 0 : forkPointEventId + 1.
+
+### ForkLineage.parentSessionId: string | null (not just string)
+
+The strategy doc snippet declared parentSessionId: string, but oot() needs to pass 
+ull. Accept string | null. Document with a comment in the file. This is a common pattern: the strategy snippet covers the happy-path shape; the sentinel case reveals the fuller type.

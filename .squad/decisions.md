@@ -2402,3 +2402,259 @@ const offset = baseOffset + ownEvents.length;
 ## 6. Deferred: Ledger Abstraction
 
 No `Ledger` class, no `WAL` interface, no Cairn integration in this turn. This is the **GREEN phase only** — simplest correct implementation behind the acceptance API. The REFACTOR step (next TDD cycle) is where a Ledger collaborator abstraction would be introduced, followed by the London-school descent to introduce an L1 mock layer. Deferred per Graham's sprint plan (OQ-2).
+
+
+---
+
+# Decision Drop: Crucible REFACTOR Cycle — SessionManager Unit Tests (RED)
+
+**Author:** Laura (Tester)  
+**Date:** 2026-06-01  
+**Beat:** REFACTOR cycle RED — SessionManager unit tests with mocked DB collaborator  
+**Status:** RED — 4 tests failing (`TypeError: SessionManager is not a constructor`)
+
+---
+
+## What Landed
+
+**File:** `packages/crucible-core/src/__tests__/unit/session-manager.test.ts`
+
+4 unit tests authored per §4.1 Refactor 2, London-school style with a mocked `DB` collaborator:
+
+| # | Test name | Invariant locked |
+|---|---|---|
+| 1 | `Unit: SessionManager.forkSession() rejects fork beyond parent ledger size` | Fork offset > parent ledger size throws with message matching `/exceeds parent ledger size 47/` |
+| 2 | `Unit: SessionManager.forkSession() rejects negative fork offset` | Fork offset < 0 throws with message matching `/non-negative\|negative/` |
+| 3 | `Unit: SessionManager.forkSession() child session inherits transitive dependency graph from parent` | `DB.insertSession` called with full `pluginVersions` map (transitive graph intact) |
+| 4 | `Unit: SessionManager.forkSession() child fork lineage records parentSessionId and forkPointEventId` | `DB.insertSession` called with `{ parentSessionId: 'parent-id', forkPointEventId: 23 }` |
+
+---
+
+## MockDB Shape Locked
+
+```typescript
+type MockDB = {
+  getSession:    ReturnType<typeof vi.fn>;  // → { id, ledgerSize, pluginVersions? }
+  insertSession: ReturnType<typeof vi.fn>;  // ← { id, parentSessionId, forkPointEventId, pluginVersions, createdAt }
+  queryEvents:   ReturnType<typeof vi.fn>;  // reserved — not yet called in these scenarios
+};
+```
+
+`mockDB.getSession.mockResolvedValue({ id: 'parent-id', ledgerSize: 47, pluginVersions?: {...} })`  
+`mockDB.insertSession.mockResolvedValue('child-id')` — for success-path tests.
+
+**`queryEvents` is present on the shape** so negative-path tests can assert it was NOT called (validation fails before any event query).
+
+---
+
+## RED Confirmation
+
+```
+TypeError: SessionManager is not a constructor
+  ❯ src/__tests__/unit/session-manager.test.ts:77:23
+  ❯ src/__tests__/unit/session-manager.test.ts:96:23
+  ❯ src/__tests__/unit/session-manager.test.ts:120:23
+  ❯ src/__tests__/unit/session-manager.test.ts:144:23
+
+Test Files  1 failed (1)
+     Tests  4 failed (4)
+```
+
+`SessionManager` imported from `../../index.js` — not yet exported from Roger's in-memory sprint 0 implementation. Correct RED signal.
+
+---
+
+## Proactive Edge Case (Test #2)
+
+Test #2 (`rejects negative fork offset`) is not in §4.1 verbatim — it is a proactive extension of the `ForkLineage` invariant ("Fork point must be non-negative"). The regex `/non-negative|negative/` gives Roger phrasing freedom. This is Laura's charter: edge cases aren't optional.
+
+---
+
+## Next Steps
+
+### Immediate — Roger (REFACTOR)
+
+Roger's REFACTOR cycle must:
+
+1. **Extract `SessionManager` class** from the module-level functions in `session.ts`.
+   - Constructor signature: `new SessionManager(db: DB)` where `DB` matches the mockDB shape above.
+   - `forkSession(parentId: string, forkOffset: number): Promise<string>` — returns child session ID string.
+
+2. **Implement validation** in `forkSession`:
+   - Call `db.getSession(parentId)` → get `{ ledgerSize }`.
+   - If `forkOffset < 0` → throw with message matching `/non-negative|negative/`.
+   - If `forkOffset > ledgerSize` → throw with message matching `/exceeds parent ledger size <N>/`.
+
+3. **Implement happy path** in `forkSession`:
+   - Generate a new child UUID.
+   - Call `db.insertSession({ id, parentSessionId, forkPointEventId, pluginVersions, createdAt })`.
+   - Return child `id`.
+
+4. **Export `SessionManager`** from `packages/crucible-core/src/index.ts`.
+
+5. **Keep acceptance test GREEN**: `packages/crucible-cli/src/__tests__/acceptance/session-fork.test.ts` (1 test) must remain passing. Roger's in-memory `fork` function can coexist or be internalized into `SessionManager`.
+
+### Follow-up — Laura (§4.1 Refactor 3 + §7 Mock Drift)
+
+- **Integration test**: `packages/crucible-cli/src/__tests__/integration/session-fork.integration.ts` — real SQLite DB (`:memory:`), verify schema correctness and ledger prefix semantics.
+- **Mock Drift Defense (§7)**: Extract `makeMockDB()` from inline to `packages/crucible-core/src/__tests__/fixtures/mock-db-builder.ts` once Roger's `DB` interface is formally typed.
+
+---
+
+## Acceptance Test Guard
+
+The existing acceptance test **must remain GREEN** after Roger's REFACTOR:
+
+```
+packages/crucible-cli/src/__tests__/acceptance/session-fork.test.ts (1 test) ✅
+```
+
+Roger's refactor must not change the public `fork` / `createSession` API surface.
+
+
+---
+
+# Decision: Crucible Sprint 0 — REFACTOR Phase: SessionManager + ForkLineage
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-06-01  
+**Sprint:** 0 — REFACTOR cycle (§4.1 Refactor 1 + 2)  
+**Status:** COMPLETE — both test layers GREEN
+
+---
+
+## What was done
+
+### Refactor 1: ForkLineage value object extracted
+
+**File:** `packages/crucible-core/src/ledger/fork-lineage.ts`
+
+Extracted a `ForkLineage` value object that encapsulates fork ancestry invariants:
+
+- Constructor `(parentSessionId: string | null, forkPointEventId: number)` — typed `string | null` (not just `string`) so `ForkLineage.root()` can produce a valid sentinel without a non-null assertion.
+- Throws `"Fork point must be non-negative"` when `forkPointEventId < 0`.
+- `static root()` — returns `new ForkLineage(null, 0)`, sentinel for root sessions.
+- `isRoot(): boolean` — returns `parentSessionId === null`.
+
+The `string | null` deviation from the strategy snippet's `string` type is intentional and documented with a comment in the file: the strategy snippet declares `parentSessionId: string` but `root()` passes `null`, so we accept both.
+
+---
+
+### Refactor 2: SessionManager class + DB interface introduced
+
+**Files:**
+- `packages/crucible-core/src/db.ts` — `DB` interface
+- `packages/crucible-core/src/session-manager.ts` — `SessionManager` class
+
+#### DB interface (locked shape — must match Laura's mockDB)
+
+```ts
+export interface DB {
+  getSession(
+    id: string,
+  ): Promise<{ id: string; ledgerSize: number; pluginVersions?: Record<string, string> } | null>;
+
+  insertSession(session: {
+    id: string;
+    parentSessionId: string | null;
+    forkPointEventId: number | null;
+    pluginVersions?: Record<string, string>;
+    createdAt: number;
+  }): Promise<void>;
+
+  queryEvents(id: string, opts: { range: [number, number] }): Promise<unknown[]>;
+}
+```
+
+#### SessionManager.forkSession() validation order
+
+1. `db.getSession(parentId)` → throw `"Parent session {id} not found"` if null.
+2. `forkOffset > parent.ledgerSize` → throw `"Fork point {n} exceeds parent ledger size {m}"`.
+3. `new ForkLineage(parentId, forkOffset)` → throws `"Fork point must be non-negative"` if negative.
+4. `db.insertSession(...)` — forwards `parent.pluginVersions` verbatim (transitive dep graph).
+5. Returns `crypto.randomUUID()` child id.
+
+---
+
+### Refactor 2b: In-memory DB adapter (`createInMemoryDB`)
+
+**File:** `packages/crucible-core/src/in-memory-db.ts`
+
+Created `createInMemoryDB(): InMemoryDB` factory that backs the Sprint 0 in-memory state. `InMemoryDB` extends `DB` with internal helpers (`insertRootSession`, `pushEvent`, `getOwnEvents`, `getMetadata`) used only by `session.ts` composition layer — not visible to `SessionManager`.
+
+`ledgerSize` computation:
+- Root sessions: `ownEvents.length`
+- Child sessions: `forkPointEventId + 1 + ownEvents.length`
+
+---
+
+### Backward compatibility: session.ts wired to singleton adapter
+
+`session.ts` was refactored to:
+- Create a module-level `db = createInMemoryDB()` + `manager = new SessionManager(db)`.
+- `createSession()` calls `db.insertRootSession()` directly (no DB interface; root sessions don't go through SessionManager).
+- `fork()` calls `manager.forkSession()` for all invariant checks + DB insert, then builds the `Session` object using `db.getMetadata()` + `db.getOwnEvents()`.
+- `buildSession()` uses `db.pushEvent()` / `db.getOwnEvents()` instead of the old module-level `registry` Map.
+
+The old `registry` Map is gone; the in-memory DB owns all state.
+
+---
+
+### Barrel update
+
+`packages/crucible-core/src/index.ts` now exports:
+- `createSession`, `fork` (unchanged public surface)
+- `SessionManager` (class)
+- `DB` (interface — type-only)
+- `ForkLineage` (class)
+- `createInMemoryDB` (factory)
+- `InMemoryDB` (interface — type-only)
+- Existing types (`PrimitiveKind`, `PrimitiveInput`, `Primitive`, `SessionMetadata`, `Session`)
+
+---
+
+## Test results
+
+### Unit tests (Laura's file — verified GREEN)
+
+```
+✓ src/__tests__/unit/session-manager.test.ts (4 tests)
+  ✓ Unit: SessionManager.forkSession() rejects fork beyond parent ledger size
+  ✓ Unit: SessionManager.forkSession() rejects negative fork offset
+  ✓ Unit: SessionManager.forkSession() child session inherits transitive dependency graph from parent
+  ✓ Unit: SessionManager.forkSession() child fork lineage records parentSessionId and forkPointEventId
+Test Files 1 passed (1)
+Tests 4 passed (4)
+```
+
+### Acceptance tests (no regression)
+
+```
+✓ src/__tests__/acceptance/session-fork.test.ts (1 test)
+  ✓ Acceptance: Fork session creates child with inherited ledger prefix [parentId, forkOffset, childLineage]
+Test Files 1 passed (1)
+Tests 1 passed (1)
+```
+
+### Full monorepo build
+
+`npm run build` — exit 0, no TypeScript errors.
+
+---
+
+## Decisions and tradeoffs
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| `ForkLineage.parentSessionId` type | `string \| null` | `root()` requires null; typed string in strategy snippet but null is the correct sentinel value |
+| Validation order in forkSession | getSession → ledgerSize check → ForkLineage (negative) | Matches spec; negative check last because ForkLineage is constructed after parent lookup |
+| InMemoryDB internal helpers | `InMemoryDB extends DB` interface | Clean separation: DB interface is the mock contract; internal helpers only exist in the concrete adapter |
+| `createSession` bypasses SessionManager | Yes — calls `db.insertRootSession` directly | SessionManager.forkSession is the only operation requiring invariant validation; root sessions need no parent lookup |
+
+---
+
+## Deferred
+
+- **Refactor 3: Real SQLite integration stub** — `packages/crucible-cli/src/__tests__/integration/session-fork.integration.ts` + `createTestDatabase()`. Not this turn.
+- **Shared-fixture mockDB builder** — `packages/crucible-core/src/__tests__/fixtures/mock-db-builder.ts` (§7 Mock Drift Defense). Not this turn; mockDB is inline in Laura's test file per her note.
+- **`SessionManager.createSession()`** — not introduced; root session creation stays in `session.ts` for now. Move to SessionManager when the integration stub lands.

@@ -84,4 +84,6 @@ Phase 2 fan-out now unblocked. Full R2 locks in `.squad/decisions.md`.
 **npm workspace registration:** After creating `packages/<name>/`, run `npm install --no-audit --no-fund` from root (no `--workspaces` filter — that flag caused a spurious "no workspace folder present" warning on a freshly created package; plain install resolves it cleanly).
 
 **Files created for `packages/crucible-cli`:** `package.json`, `tsconfig.json`, `src/index.ts`, `src/__tests__/acceptance/` (dir), `README.md`.
-
+
+
+📌 **Crucible Sprint 0 — Walkthrough A Dual-Package GREEN** (2026-06-02T06:43:01Z): Gabriel's dual-package scaffold remains green through Roger's REFACTOR cycle. @akubly/crucible-core (SessionManager + DB interface + ForkLineage) and @akubly/crucible-cli (acceptance tests) both passing. No scaffolding work this turn but architecture remains extension-ready for Refactor 3 (SQLite integration stub) and Walkthrough B. — Scribe

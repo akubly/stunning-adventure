@@ -1,3 +1,9 @@
+# SUMMARY (as of 2026-06-01)
+
+File size: 23692 bytes. See history-archive.md for earlier entries.
+
+---
+
 ---
 
 ## 📋 SUMMARY (as of 2026-05-31)
