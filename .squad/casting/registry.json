@@ -77,6 +77,20 @@
       "persistent_name": "Cassima",
       "universe": "Sierra On-Line Adventure Games",
       "status": "active"
+    },
+    "erasmus": {
+      "created_at": "2026-05-24T07:45:00.000Z",
+      "persistent_name": "Erasmus",
+      "universe": "Sierra On-Line / Quest for Glory",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "sonny": {
+      "created_at": "2026-05-24T21:33:00.000Z",
+      "persistent_name": "Sonny",
+      "universe": "Sierra On-Line / Police Quest",
+      "legacy_named": false,
+      "status": "active"
     }
   }
 }

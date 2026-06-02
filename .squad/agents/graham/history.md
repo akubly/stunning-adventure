@@ -1,98 +1,66 @@
-# Graham — History
+---
 
-**Role:** Lead / Architect (Overall vision, cross-system integration, tiebreak arbitration)
-**Status:** M5+M6 branch prep complete. Feature branch `eureka/m5-m6-trust-feedback` ready for review-cycle.
-**Last update:** 2026-05-30
+## 📋 SUMMARY (as of 2026-05-31)
 
-**Key contributions:**
-- Phase 4.6 wave orchestration: 5 waves integrated (0-6)
-- Brain system: ADR-pending (Curator-driven orchestration, composition root)
-- Eureka C8: Recommended exemption for integration test validation (conservative layering concern)
-- Resolution: Aaron sided with Genesta; strict eslint enforced; §40 documentation compensates
-
-**See history-archive.md for detailed entries.**
-
-**Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
-**Milestone:** R6 opened — Eureka source-reading unlocked; trio (Genesta/Crispin/Edgar) reconciled v3 PRD against Cairn/Forge substrate.
-
-**Key outcomes:**
-- Genesta (B+ verdict): PRD v3 stands with v3.1 patch (4 targeted fixes)
-- Crispin (Path A recommended): clean-slate Eureka over Cairn extension
-- Edgar (Kernel extraction): ~70% mechanical infra exists; recommend shared learning-kernel package
-
-**Your involvement:** Advisory roles on boundaries/UX (2-3 hrs/week contribution rate).
-
-**Decision gates pending Aaron's direction:**
-1. Vector search scope (in/out for v1)?
-2. Architectural path (A clean-slate or B extension)?
-3. Learning-kernel extraction (now or defer)?
-4. v3 patch or v4 rewrite?
-
-**Next:** Cassima on deck for v3.1 or v4 intake pending Aaron's architectural direction.
+**Current Focus:** Crucible CTD final review + post-CTD ADR authoring  
+**Latest Major Work:** PR #33 cloud-review-cycle round 5 — 3 Copilot findings addressed (fork_resume schema, ADR-0019 payloads, predicate timing honesty); Scribe merged and staged  
+**Key Architectural Contributions:** Replay-determinism bug finding, childSid hybrid protocol review, L3.5 Scheduler Phase 0.5 stub acceptance, sub-kind governance completeness  
 
 ---
 
-## Learnings
+📌 **PR #33 Cloud-Review-Cycle Round 5 COMPLETE** (2026-05-31T22:55Z): Graham addressed 3 Copilot findings. (1) Fork resume schema: Added authoritative payload schema for `fork_resume` sub-kind in §6.3, completing registry-level governance alongside `fork_origin` and `fork.collision_choice`. (2) ADR-0019 acceptance signal: Updated concrete examples to use actual `fork.collision_choice` payload shape (chosenOption/existingChildSid/resultingChildSid) instead of generic placeholders. (3) Predicate timing honesty: Reframed v1 Hook Bus predicate timing as cooperative measurement with post-hoc telemetry + retry-budget quarantine, not hard preemption (v1.5+ worker/process isolation). Sub-kind governance completeness + watchdog honesty patterns now captured. Build + tests passing. Decision merged to decisions.md; branch staged for Copilot re-review. — Scribe
 
-**2026-05-30 — Branch hygiene: rescuing dirty main → feature branch**
+📌 **PR #33 Cloud-Review-Cycle Round 2 COMPLETE** (2026-05-31T06:15:00Z): Graham addressed all 11 Copilot review threads on Crucible CTD ADRs. Fixes applied: ADR-0002 summary clarity, ADR-0006 PA-B3 ownership, ADR-0018 Security section, ADR-0011/0019 accepted-date stamps, ADR-0020 renumbering. Decision captured: graham-adr-number-stability.md. Build + tests passing. — Scribe
 
-Pattern used for M5+M6 branch prep:
+📌 **ADR-0019 CONTRIBUTION** (2026-05-30T194147Z): Wall-clock replay-determinism bug finding (independent convergence with Laura) elevated heuristic drop from "nice-to-have" to "non-negotiable." Architectural finding: offsets are load-bearing primitives; wall-clock time is informational metadata. This discovery directly led to Aaron's decision to implement always-prompt UX without automatic nudges. — Scribe
 
-1. `git switch -c <feature>` — creates branch from current HEAD (carries Scribe's metadata commit, untracked files, AND tracked working-tree modifications — they stay in the index/working tree, not tied to the branch name)
-2. **Critical lesson:** `git switch` carries tracked working-tree modifications with you. If you then `git reset --hard origin/main` on the source branch, those modifications are wiped from disk — not preserved on the feature branch, because they were never committed.
-3. **Correct sequence** (learned the hard way): commit implementation on the feature branch BEFORE switching back to main to reset. Or stash before the reset. Never rely on working-tree state surviving a `reset --hard` on a parallel branch.
-4. After reset, untracked files survive (gitignore rules aside) because `reset --hard` only touches tracked state.
-5. Reconstruction was possible here because the test file (untracked — survived) fully specifies the contract, enabling faithful reimplementation from the test alone.
+# Graham — Key Learnings (Recent)
 
-**Rationale for 2-commit structure vs. 1 monolith:**
-- Kept Scribe's metadata commit as-is (don't rewrite what Scribe already landed cleanly)
-- Commit A: implementation + tests + spec — single logical RED→GREEN deliverable; reviewers see the complete contract in one diff
-- Commit B: team metadata (history, skills) — lower-signal noise that would dilute Commit A's review surface
-- Trade-off: 3-commit branch (Scribe + A + B) vs. 2-commit. Accepted — Scribe commit is inert to review-cycle (no code).
+## 2026-06-01T22:34:34-07:00: PR #33 Cloud Review Cycle 6 — Trivial-Fix Sweep Close-Out
+
+- Closed the cycle 6 duplicate Copilot sweep with three one-time doc fixes: aligned observability capture wording to post-filter tool results, marked the dependency-cruiser snippet as proposed/M1 scaffolding, and removed the stale ADR-0006 Shell suffix.
+
+## 2026-05-31: PR #33 Cloud Review Cycle 5 — Sub-Kind Schema Governance + Watchdog Honesty
+
+**Sub-kind schema completeness:**
+- Sub-kind registration requires payload schema, not just enum membership. Future §6.3 additions must declare authoritative payload shape, effects, causal-edge contract, and runtime semantics. Conformance tests cannot validate enum-only vocabulary.
+
+**Predicate timing honesty:**
+- `Promise.race()` is not a sandboxing primitive for synchronous code. For v1, synchronous predicate timing is convention/cooperative measurement plus post-hoc telemetry and retry-budget quarantine. Hard preemption belongs in v1.5+ worker/process isolation.
+
+**Pattern for governance clarifications:**
+- When Copilot flags an overstated capability or missing specification, trace the root: incomplete registration? conflated with future capabilities? missing supporting artifact? Address the root, not just the surface claim.
+
+## 2026-05-31: PR #33 Cloud Review Cycle 4 Replay Result Capture
+
+**Status:** 3 fixes applied in commit a0db370; decision merged; Scribe session logged.
+
+- Record results, not just choices, when results are not deterministically recoverable from inputs. ADR-0019's `--new` fork path now records `resultingChildSid`. Replay consumes recorded value; no recomputation needed.
+- Pattern: For any Decision whose result depends on environment-specific state (wall-clock, random allocation), record the final identifier in payload. Generalizes beyond fork collisions.
+
+## 2026-05-30: childSid Collision Hybrid Review
+
+**Verdict:** APPROVE-WITH-CONDITIONS (3 conditions below).
+
+**Key architectural insights:**
+1. Parent-ledger mutation (fork Decision) is idiomatic. Structured identically to existing Question/Decision pattern. No ADR needed if framed as RFC (Request for Choice).
+2. Replay correctness is clean. Decision records `chosenOption` + optional `existingChildSid`. No ambiguity or hidden complexity.
+3. Scheduler is unaffected. Fork creation (L1 protocol) happens before session starts. Scheduler operates on proposals within session only.
+4. Time-aware nudge needs principled basis. Wall-clock comparison inappropriate in offset-based replay system. Better heuristic: child's last-write offset + parent growth since fork point. Or drop heuristic, always prompt.
+
+**Conditions:**
+1. Parent-ledger append ADR if Aaron wants explicit coverage (alternative: frame as RFC+Decision, no ADR needed)
+2. Replay test coverage (A-Fork-Collision: fork → choose fresh/resume → close → fork again → replay parent)
+3. Scheduler invariant check (verify scheduler sees correct order of proposals from resumed child)
+
+## 2026-05-30: ADR Status and Numbering Hygiene
+
+- Accepted ADR files need concrete stamps. Accepted — <date> by Aaron is not polish; it is the lifecycle boundary.
+- Landed ADR numbers are stable. Colliding pending row is renumbered, not the landed artifact. Safer review/reference continuity.
+- Accepted ADRs cannot carry load-bearing open questions. Either resolve ownership in ADR or demote status.
 
 ---
 
-**2026-05-30 — gitignore vs `--cached`: untracking committed files + coordinator spawn-prompt error**
+## Archive
 
-Context: PR #34 review (Copilot threads 8, 9, 10) flagged `.squad/orchestration-log/` (34 files), `.squad/log/` (1 file), and `test_results.txt` as committed despite being gitignored.
-
-**Lesson 1 — gitignore does NOT untrack, only blocks new adds.**  
-Once a file is committed, `.gitignore` has no effect on it. The only way to untrack it:
-```
-git rm -r --cached <path>   # removes from index, preserves local files (runtime state safe)
-git rm <path>               # removes from index AND from disk (for junk files)
-```
-Then commit the staged deletions. After the commit, `.gitignore` will prevent re-adds.
-
-**Lesson 2 — Coordinator spawn-prompt error that caused this.**  
-My spawn instructions to Scribe listed `orchestration-log/` and `log/` as allowed Scribe-write paths that should be committed. They are gitignored runtime state and must NOT be committed. The correct allowed-paths list for Scribe:
-- `decisions.md`, `decisions-archive.md`
-- `agents/{name}/history.md`, `agents/{name}/history-archive.md`
-- `identity/now.md`
-
-Any other `.squad/` paths (log, orchestration-log, sessions, decisions/inbox/, .scratch/) are runtime state — gitignored, local-only.
-
-**Lesson 3 — `test_results.txt` as tracked artifact.**  
-Local test captures with ANSI codes and machine-specific paths (D:/git/...) are never source artifacts. Add to `.gitignore` under `# Local test capture artifacts` and delete from disk.
-
-
-### 2026-05-29: WI-B Scoping Complete (Recovered from ae62558)
-
-**Event:** Pre-implementation scoping decision made on cycle 4 findings.
-
-**WI-B Scope Confirmation:** Make the coordinator CREATE worktrees per-issue instead of dispatching agents into shared main. Pre-Spawn documentation (lines 697–742) was aspirational; Gabriel to implement.
-
-**Opt-in vs default-on decision:** Option A (Opt-in via SQUAD_WORKTREES=1) recommended for v1. Zero behavior change unless explicitly enabled. Minimal complexity — one if check. Risk is low (worst case: feature unused, status quo maintained).
-
-**Key risk flags codified:**
-- File-deletion mystery event: WI-B mitigates via isolation
-- 
-ode_modules re-install: cleanup flow handles junction removal before git worktree remove
-- Pre-Spawn documentation-only: add ACTIVE status + enforcement language
-- Parallel dispatch guard: warning-only for v1
-- Template drift: atomic updates across all three files
-
-**Status:** Scoping locked. Ready for Gabriel implementation.
-
-
-📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
+Older detailed history (before 2026-05-30) archived to `history-archive.md`.

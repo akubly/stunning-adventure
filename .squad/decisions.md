@@ -1425,3603 +1425,415 @@ All findings preserved in inbox for detailed review:
 
 ## Active Decisions
 
-# Open Question: Brain/Memory/Learning System — Repo Placement
+### W2-1: ChangeVectorSummary Category Field (Roger)
 
-**Status:** Deliberation (Round 2 consulting, no final decision)  
-**Date:** 2026-05-22  
-**Requestor:** Aaron  
-**Consulting Agents:** Graham Knight (Lead), Roger Wilco (Platform), Alexander (SDK/Runtime), Valanice (UX)
-### Wave 4 Scope Approved (Graham, 2026-05-23)
+**Scope:** Type consolidation for shared `ChangeVectorSummary` contract
 
-**Status:** Γ£à Ratified by Aaron
+**Decision:** Use stricter `OptimizationCategory` union (six-value string union from Forge) for `category` field in canonical `@akubly/types` definition.
 
-**Wave 4 Deliverables:**
-1. **W4-1** ΓÇö insertHintIfNew atomicity fix (partial UNIQUE index + BEGIN IMMEDIATE) ΓÇö Roger Γ£à
-2. **W4-2** ΓÇö Curator observability gap (CairnEvent extensions for hint state transitions + profile bumps) ΓÇö Roger Γ£à
-3. **W4-3** ΓÇö Force-overwrite knob (--force CLI flag for forceRegenerate) ΓÇö Rosella Γ£à
-4. **W4-4** ΓÇö Integration tests (~14 tests, ~200 LOC) ΓÇö Laura (9/14 passing; test infra gaps identified)
+**Rationale:** Forge already encodes the domain's real category set. Making the union canonical now ensures type safety for W2-2/W2-7 follow-on work while remaining additive (no existing duplicates switched yet).
 
-**Team Ownership:** All work items assigned and implemented on phase-4.6/wave-4 branch (commits 978d7a0..1808d8f).
+**Impact:** Both Forge and Cairn gain shared, stricter type contract; future category additions go through Forge's enum.
 
-## The Question
+### W2-7: Category Narrowing at SQLite Boundary (Rosella)
 
-Should a new agentic brain/memory/thinking/learning system be:
-1. **NEW REPO** (@akubly/cortex, @akubly/synapse, etc.) — standalone product with independent release cadence
-2. **NEW PACKAGE in this repo** (packages/mem/) — satellite package alongside Cairn/Forge
-3. **EXTEND CAIRN** (same package) — Curator extension for pattern learning
+**Scope:** Cairn data layer type safety for ChangeVectorSummary contract
 
-## Agent Recommendations (Round 2, Refined)
+**Decision:** Narrow raw `optimization_hints.category` strings at Cairn's SQLite read boundary instead of widening the shared contract back to `string`.
 
-### Graham Knight — NEW REPO (High conviction)
+**Implementation:** `getAllCategories()` filters DB values through the canonical `OptimizationCategory` union from `@akubly/types`. `summarizeChangeVectors()` only accepts narrowed categories. `SqliteChangeVectorProvider.getSummaries()` drops summaries where `vectorCount === 0`.
 
-**Key insight:** Five-dimension expansion (TIERS, KINDS, PROPERTIES, ACTIVITIES, REPRESENTATION, ACQUISITION) confirms system boundary shift.
+**Rationale:** DB schema remains permissive for backward compatibility, but cross-package `ChangeVectorSummary` contract is strict. Narrowing once at boundary keeps rest of Cairn aligned with Forge's canonical union without unsafe casts. Zero-vector summaries provide no historical signal and trigger Phase 4.5 fallback mode.
 
-**Why:**
-- User-memory tier is cross-repo infrastructure (cwd-aware hooks outside this monorepo)
-- Brain is a **runtime** with control loops (meditate, dream, pray), not a library
-- KINDS are ontological (practical, semantic, linguistic, symbolic, philosophical) — no overlap with Cairn's types
-- PROPERTIES (recency, trustworthiness, plasticity) are learning primitives, not event signals
-- REPRESENTATION (graph + versioning) differs from Cairn's SQLite + event log
+**Impact:** Cairn data layer now type-safe; empty summaries filtered at provider output.
 
-**Verdict:** This isn't a Cairn extension. It's a product with zero hard dependencies on Cairn/Forge.
+### W2-5: Negative Impact Gate + autoApplyEligible Semantics (Alexander)
 
----
+**Scope:** Attenuation boundary and hint eligibility signal for negative-impact vectors
 
-### Roger Wilco — NEW PACKAGE in Monorepo (Medium conviction, pragmatic)
+**Decision:** Gate boundary is **inclusive** (`<=`) at `-0.2`. Mature negative vectors attenuate and disable auto-apply when `meanNetImpact <= NEGATIVE_IMPACT_AUTO_APPLY_GATE` (value: `-0.2`). A summary at exactly `-0.2` triggers auto-apply disable.
 
-**Key insight:** FLIPPED from "extend Curator." Multi-tier + polyglot system can't fit in Curator, but can fit as separate package.
+**Rationale:** Safety asymmetry + FP fragility. Inclusive boundary prevents false positives at the exact threshold and provides stronger guard against brittle boundary conditions. Dual-layer testing locks behavior: unit test (alexander-2 maturity-gradient) expects gating at exactly -0.2; E2E canary (laura-1 wave2-pipeline) uses constant directly for drift-proof coverage.
 
-**Why:**
-- Monorepo velocity (shared build, shared types, single test suite)
-- Cairn stays focused (project-level knowledge, not multi-scope router)
-- Clean delegation: packages/mem/src/tiers/project.ts wraps Cairn Curator
-- Tier/kind federation avoids schema conflicts and package boundary violations
+**Implementation:** Gate comparison changed from `<` to `<=` in Forge prescribers and Cairn gate logic. Safety-boundary comment added at comparison site. Maturity-gradient test updated to expect gating at exactly -0.2. E2E pipeline canary uses `NEGATIVE_IMPACT_AUTO_APPLY_GATE` constant directly (prevents configuration drift).
 
-**Trade-off:** Org-tier federation (multi-writer shared memory) still wants backend service later, but Phase 1-3 can use SQLite + Git.
+**Impact:** Negative-impact gate boundary now locked by dual-layer testing (unit + E2E); Applier receives explicit attenuation signal for hints at and below threshold; safety margin increased. Decided by Aaron 2026-05-22.
 
-**Verdict:** NEW PACKAGE as pragmatic step; extract to separate repo in Phase 5+ if org-tier backend service is needed.
+### W2-8: Active Status Set for Optimization Hints (Rosella)
 
----
+**Scope:** Deduplication logic for `(skillId, source, category)` tuples
 
-### Alexander — NEW REPO (High conviction)
+**Decision:** Use `pending`, `accepted`, and `deferred` as the active statuses for optimization-hint dedup. Terminal statuses (`applied`, `rejected`, `expired`, `suppressed`, `failed`) do not block reinsertion of same semantic recommendation.
 
-**Key insight:** FLIPPED from monorepo. Q3 (org-tier federation) reveals backend/deployment boundary.
+**Rationale:** Active set represents hints still live in operator workflow: waiting to be reviewed, explicitly approved but not yet applied, or intentionally postponed. A second hint during those states duplicates work and pollutes category history. Terminal statuses no longer represent live hints, so they should not block fresh inserts—allows operators to retry after rejection or expiration.
 
-**Why:**
-- **Q1 (Runtime coupling):** Brain is Forge sibling, not layer on Forge — separate repo avoids confusion
-- **Q2 (User-tier distribution):** CAN work from monorepo via npm, BUT separate repo enforces "no accidental Forge deps"
-- **Q3 (Org-tier federation):** Wants Postgres + Azure Functions as separate deployment unit — this is the decisive factor
+**Implementation:** `packages/cairn/src/db/optimizationHints.ts` encodes `ACTIVE_HINT_STATUSES` constant and uses in both `insertHintIfNew()` and `hasActiveOptimizationHint()`.
 
-**Key argument:** The 5-dimension expansion is 10x scope increase. Original analysis (monorepo works) was correct for narrow scope; Graham's position is correct for expanded scope.
+**Impact:** Deduplication now enforced at Cairn DB layer; Forge applier receives deduplicated hint stream; zero-vector summaries filtered at provider boundary.
 
-**Verdict:** If brain's org tier needs Postgres + backend service, it's a separate system boundary. Matches deployment boundaries, not just code boundaries.
+### W2-9: Manual CLI Surface Location (Roger)
 
----
+**Scope:** Composition root for Wave 2 manual orchestration
 
-### Valanice — NEW REPO with Phased Extraction (Medium conviction)
+**Decision:** Created new `packages/runtime-cli/` workspace package with bin entry `forge-prescribe`. This package is the explicit composition root that can legally import both `@akubly/cairn` and `@akubly/forge`.
 
-**Key insight:** Infrastructure positioning determines repo choice; mental model boundaries matter for discoverability.
+**Rationale:** Repo already exposes binaries from package-level `bin` entries (e.g., `@akubly/cairn`). Wave 2 needs composition root without creating package cycles. `packages/runtime-cli` keeps boundary honest and buildable. Local invocation: `npx forge-prescribe --skill <id> [--db <path>]`.
 
-**Why:**
-- Brain is **infrastructure** (like Git, Redis) that follows the user globally and hooks per-repo
-- Installation story: 
-pm install -g @akubly/brain (not embedded in Cairn)
-- Branding independence signals "infrastructure for any agentic system," not "Cairn feature"
-- UX principle: Mental model boundaries should match repo boundaries
+**Implementation Details:**
+- Per-skill → global profile fallback: Try canonical `(granularity='per-skill', granularity_key='global')` first, then fall back to `global/global`
+- Exit codes: `0` on success (including zero hints or dedup skips), `1` when no profile found, `2` for arg/DB/persistence errors
+- CLI tests: 4 passing (happy path, no-profile, empty result, mixed)
 
-**Phased approach:**
-- **MVP (Prototype in monorepo):** xperiments/brain/ or packages/brain/
-- **Extract when:** Brain has independent CLI, MCP server, test suite, branding decision
-- **Branding options:** Synapse, Mneme, Cortex, Engram
+**Impact:** Wave 2 has manual trigger surface independent of Curator. Wave 3 will migrate to Curator-driven automatic orchestration. Package boundary preserved for future Phase 5 cloud wiring.
 
-**Verdict:** Lean toward separate repo, but prototype in monorepo first to validate scope.
+### W2-6: E2E Pipeline Test Location + Spec Ambiguity Note (Laura)
 
----
+**Scope:** Integration test placement and discovered spec mismatch
 
-## Summary of Positions
+**Decision:** Placed Wave 2 end-to-end pipeline test in `packages/forge/src/__tests__/wave2-pipeline.test.ts`. Forge is focal point because `runForgePrescribers()` is consumer ingesting Cairn summaries and emitting final hints applier sees.
 
-| Agent | Position | Conviction | Reasoning Core |
-|-------|----------|-----------|-----------------|
-| **Graham** | NEW REPO | 🟢 High | System boundary (5 dimensions) |
-| **Roger** | NEW PACKAGE | 🟡 Medium | Pragmatic: monorepo velocity, can extract later |
-| **Alexander** | NEW REPO | 🟢 High | Org-tier backend service = deployment boundary |
-| **Valanice** | NEW REPO (phased) | 🟡 Medium | Infrastructure positioning + phased extraction |
+**Spec Ambiguity Discovered:** `docs/forge-phase4.6-wave2-scope.md` §6.1 says `meanNetImpact = -0.2` should yield `autoApplyEligible = false`, but live Forge/Cairn logic and Alexander's W2-5 tests treat boundary as still eligible (`meanNetImpact >= NEGATIVE_IMPACT_AUTO_APPLY_GATE`). Test kept aligned with implementation + §4.5 semantics. **Action item:** Reconcile boundary explicitly in Wave 3 (pending ADR).
 
-**Consensus:** 3 agents recommend NEW REPO (Graham, Alexander, Valanice); 1 recommends NEW PACKAGE (Roger, pragmatic compromise).
+**Rationale:** Forge already hosts substantive integration coverage under `packages/forge/src/__tests__/`. New test stays with existing cross-module surface instead of one-off harness. To avoid production dependency from Forge to Cairn, test imports Cairn source directly and Forge's `tsconfig.json` excludes test files from package build.
 
----
+**Test Coverage:** Full maturity gradient (0 vectors → mature catastrophic), dedup regression on repeated persistence, provider omission, fail-open behavior, shared `ChangeVectorSummary` contract flow.
 
-## Open Questions for Aaron
+**Impact:** Real SQLite path fully validated; attenuation + `autoApplyEligible` propagation verified end-to-end; provider fail-open semantics confirmed.
 
-1. **Is brain Cairn/Forge-exclusive, or infrastructure for any agentic system?**
-   - If exclusive: NEW PACKAGE makes sense; Roger's approach is solid
-   - If infrastructure: NEW REPO makes sense; Graham + Alexander + Valanice alignment is strong
+### W3-D1: Composition Root → R2 (`@akubly/skillsmith-runtime`)
 
-2. **What's the MVP scope?**
-   - If 2-week prototype: Keep in xperiments/brain/ for now
-   - If 2-month full system: Decide repo placement before implementation
+**Scope:** Where should the runtime that imports both `@akubly/cairn` and `@akubly/forge` live?
 
-3. **Who is the primary user?**
-   - If agents (LX-first): Infrastructure positioning → NEW REPO
-   - If humans (UX-first): Could be either, but tooling/discovery favors NEW REPO
+**Decision:** Adopt R2 — new `@akubly/skillsmith-runtime` library package (composition layer importing both) plus thin `@akubly/runtime-cli` wrapper.
 
-4. **How soon is org-tier federation needed?**
-   - If Phase 1-2 MVP: SQLite + Git works, monorepo packaging is OK (Roger path)
-   - If Phase 3+ scaling: Postgres + backend needed, repo boundary matters (Alexander path)
+**Rationale:** Clean separation of concerns, best test isolation, zero build-order risks, Phase 5-portable. Roger and Alexander independently converged on this architecture.
 
-5. **Backend service story?**
-   - If Postgres + sync service: Separate repo is cleaner (deployment boundary)
-   - If stay local (SQLite + cwd-aware hooks): Either repo works
+**Status:** Accepted by Aaron 2026-05-22
 
----
+**Impact:** Unblocks all Wave 3 work items
 
-## Impact Analysis
+### W3-D2: Package Name → `@akubly/skillsmith-runtime`
 
-### If NEW REPO
-- **Coordination:** Separate squad, separate release cadence
-- **Squad changes:** Forge + Types must publish to npm; Cairn depends on Brain
-- **Timeline:** Phase 0-4 for brain squad (parallel to Phase 5 PGO)
-- **Risk:** Version skew between Cairn and Brain
+**Scope:** What name for the new composition library package?
 
-### If NEW PACKAGE in Monorepo
-- **Coordination:** Same squad, shared build/test/types
-- **Squad changes:** Create packages/mem/, implement tier delegation to Cairn
-- **Timeline:** Integrate into main roadmap (maybe Phase 5 stretch goal)
-- **Risk:** Org-tier federation later wants backend service (deployment boundary mismatch)
+**Decision:** Use `@akubly/skillsmith-runtime` (domain-specific, not generic `@akubly/runtime`).
 
-### If Extend Cairn
-- **Rejected by all agents** — violates single responsibility, schema conflicts, architectural mismatch
+**Rationale:** Domain-specific naming (a) fits the cairn/forge metaphor, (b) describes what operates on (skills), (c) leaves room for future additions (scheduler, dashboard, policy engine).
 
----
+**Status:** Accepted by Aaron 2026-05-22
 
-## Session Log
+**Impact:** Naming locked; packaging can proceed
 
-See .squad/log/2026-05-22T20-25-51-brain-repo-deliberation.md for full Round 1 + Round 2 synthesis.
+### W3-D3: MCP Tool Exposure → Dropped from Wave 3
 
-See .squad/orchestration-log/2026-05-22T20-25-51-*.md for individual agent analyses (4 files).
+**Scope:** Should Wave 3 include an MCP tool for manual prescriber invocation?
 
----
+**Decision:** No — Wave 3 ships with no MCP tool exposure. Curator hook is autonomous surface; CLI is manual surface.
 
-## Artifact Status
+**Rationale:** Proposed `run_prescriber_optimization` tool offers no net-new capability over existing CLI. Defer to later wave when concrete operator need surfaces. Removes W3-6, W3-7, ~2 MCP scenarios from W3-9 (~7 items, ~18 tests).
 
-- **Inbox files:** 7 files to be archived after decision
-  - graham-brain-repo-placement.md (Round 1)
-  - oger-curator-overlap-analysis.md (Round 1)
-  - graham-brain-refined.md (Round 2)
-  - oger-brain-refined.md (Round 2)
-  - lexander-brain-refined.md (Round 2)
-  - lexander-forge-coupling-analysis.md (analysis)
-  - alanice-brain-ux.md (Round 2)
+**Status:** Accepted by Aaron 2026-05-22
 
-- **Orchestration logs:** 4 files created (2026-05-22T20-25-51-*.md)
+**Impact:** Wave 3 scope reduced; MCP tool re-opens only when operator need materializes
 
-- **Session log:** 1 file created (2026-05-22T20-25-51-brain-repo-deliberation.md)
+### W3-D4: Curator Hook Invocation → Always-On
 
----
+**Scope:** Should Curator automatically invoke prescriber orchestration in v1?
 
-**Status:** Deliberation ongoing. Aaron to decide. Once decision is made, this section will either close as a decision or pivot to implementation planning.
+**Decision:** Yes — automatic invocation always enabled. No opt-in flag in v1.
 
----
+**Rationale:** Existing safety rails (negative-impact attenuation, hint dedup, fail-open semantics) are sufficient. Opt-in flag adds config without meaningful safety benefit.
 
-# R5 PRD v3: Eureka v1 Product Requirements Document (Canonical Specification)
+**Status:** Accepted by Aaron 2026-05-22
 
-**Author:** Cassima (Product Manager)  
-**Date:** 2026-05-24  
-**Status:** Draft v3 — incorporates Aaron's 9 R5 round-3 OQ resolutions  
-**Ceremony Context:** R5 (Requirements) round 3 — supersedes v2 on every point of conflict  
-**Canonical note:** This specification is preserved verbatim as the ground truth for R6 reconciliation work. See R6 sections below for substrate reconciliation findings.
+**Locked Design:** Hint persistence stays in orchestrator; fail-open codified; profile selection trigger-driven only (global fallback deferred to Wave 4).
 
-*[Full PRD v3 text preserved below]*
+**Impact:** Unlocks automatic hint flow; enables Wave 3 implementation
 
----
+### W3-Impl-1: Workspace Dependencies via Existing Pattern (Roger)
 
-# Open Question: Squad Fit for Brain/Memory/Learning System
+**Scope:** How should `@akubly/skillsmith-runtime` declare dependencies on Cairn/Forge/Types?
 
-**Status:** Self-assessment complete (Round 3)  
-**Date:** 2026-05-22  
-**Requestor:** Aaron  
-**Self-Assessing Agents:** Graham Knight (Lead), Roger Wilco (Platform), Alexander (SDK/Runtime), Valanice (UX)
+**Decision:** Use existing internal dependency specifier pattern (`"*"`) instead of `workspace:*`. Root monorepo workspace glob `packages/*` covers new package; no redundant root `workspaces` entry needed.
 
----
+**Rationale:** Environment npm rejects `workspace:*` with `EUNSUPPORTEDPROTOCOL`. Repository already uses `"*"` pattern consistently; new package integrates cleanly with existing convention.
 
-## Summary: Does This Squad Fit?
+**Implementation:** `skillsmith-runtime/package.json` declares `"@akubly/types": "*"`, `"@akubly/cairn": "*"`, `"@akubly/forge": "*"`. Root `tsconfig.json` references updated.
 
-**Unanimous honest verdict: NO. This squad is NOT the right primary owner for the brain project.**
+**Impact:** Workspace registration consistent across all packages; new package installs and builds cleanly.
 
-**Recommendation:** New squad with epistemology + knowledge-graph expertise. Current squad continues Cairn/Forge; offers advisory roles.
+### W3-Impl-2: Thin Runtime-CLI via Composition Migration (Roger)
 
----
+**Scope:** How to refactor `runtime-cli` while preserving CLI contract?
 
-## The Core Mismatch
+**Decision:** Move entire `runForgePrescribe()` composition body from `runtime-cli` to `skillsmith-runtime/src/index.ts`. Reduce `runtime-cli` to thin facade: arg parsing, console formatting, exit-code mapping, top-level error reporting.
 
-**This squad was assembled for:** Cairn (observability/event pipeline) + Forge (SDK deterministic runtime) — a platform team  
-**Brain needs:** Cognitive infrastructure, knowledge representation, agentic reasoning loops, epistemology — a cognitive systems team
+**Rationale:** Implements W3-D1 (R2 architecture) immediately instead of carrying temporary inline composition forward. Moved code is the old implementation, relocated intact — smallest behavioral risk. Avoids asking Alexander to re-migrate same code in W3-5.
 
-**These are orthogonal problem domains.** Adding brain to this squad splits focus and dooms both Cairn/Forge stabilization and brain delivery.
+**Implementation:** `skillsmith-runtime` owns `runForgePrescribe()` (profile load, vector provider, Forge invocation, dedup, persistence). `runtime-cli` owns CLI concerns only. CLI contract (`npx forge-prescribe --skill <id>`) unchanged.
 
----
+**Impact:** Composition root established; CLI behavior identical; foundation ready for W3-5 Curator factory.
 
-## Graham Knight (Lead) — NEW SQUAD REQUIRED
+### W3-Impl-3: ExecutionProfile Reuse in Types (Alexander)
 
-**Honest verdict:** NO for brain leadership.
+**Scope:** How to define `PrescriberOrchestrationConfig` and `PrescriberRunResult` in `@akubly/types`?
 
-**Reason:** Graham excels at platform architecture (boundaries, technology trade-offs, systems design). Brain requires **epistemology-first** leadership. No shipping experience with ontologies, reasoning loops, or knowledge consolidation.
+**Decision:** Keep `ExecutionProfile` in canonical location (`@akubly/types`); reference directly from `PrescriberOrchestrationConfig`. Keep `loadProfile` **synchronous** in Wave 3.
 
-**Can contribute:** Advisory role on system boundaries and technology selection (2-3 hrs/week).
+**Rationale:** `ExecutionProfile` already stable in `@akubly/types`; re-declaring structurally creates duplicate truth. Synchronous `loadProfile` matches current reality (Cairn SQLite-backed accessors are sync). Async deferrable to Phase 5 if cloud profile loading surfaces.
 
-**Key finding:** Graham's brain recommendations so far focus on repo placement and scope boundaries (classic platform thinking). Brain's harder problems — "What makes knowledge durable?" "How do tiers consolidate learning?" — require someone with cognitive systems expertise.
+**Implementation:** Added `PrescriberOrchestrationConfig` and `PrescriberRunResult` to `packages/types/src/index.ts`. `skillsmith-runtime` re-exports canonical types. No Cairn compatibility shim required.
 
-**Leadership profile needed:**
-- Epistemology/knowledge representation theorist (PhD-level)
-- Shipped graph-based learning systems or similar
-- Thinks in ontologies, not layers
-- Comfortable with uncertainty and probabilistic models
+**Impact:** Wave 3 Curator-facing port has stable, reusable type contracts. No Cairn-to-types inversion. Foundation for W3-4 and W3-5.
 
----
+### W3-Impl-4: Curate Async Transition + Trigger-Driven Skills (Alexander)
 
-## Roger Wilco (Platform Dev) — PARTIAL FIT (PHASE 1-3 INFRASTRUCTURE)
+**Scope:** How should `curate()` accept and orchestrate the prescriber config?
 
-**Honest verdict:** YES for infrastructure, NO for cognition.
+**Decision:** 
+1. `curate()` is now `async`, returns `Promise<CurateResult>`
+2. Qualifying skills sourced from `ChangeVectorSweepResult.computedSkillIds` — distinct, sorted skill IDs whose vectors were newly inserted this cycle
+3. Per-skill `runForSkill(skillId, minSessions)` receives `minSessions` from existing Curator chain: `changeVectorConfig?.minSessionsObserved ?? DEFAULT_MIN_SESSIONS`
 
-**Energy breakdown:**
-- 🟢 HIGH: TIERS, PROPERTIES, REPRESENTATION, ACQUISITION (Cairn patterns transfer)
-- 🔴 LOW: ACTIVITIES (dream/meditate/pray), KINDS (semantic/linguistic/symbolic) — unfamiliar
+**Rationale:** `runForSkill()` is async by contract; keeping `curate()` sync would lie or drop orchestration results. `computedSkillIds` is smallest signal matching accepted trigger-driven rule. Reusing `minSessionsObserved` aligns vector-sweep and prescriber gates.
 
-**Recommendation:** Stay as Platform Lead for Phase 1–3 infrastructure (storage, federation, acquisition). Hand off reasoning + ontology to specialists.
+**Implementation:** All sync call sites updated to `await curate()`. Per-skill exceptions log `console.warn`, produce error-shaped `PrescriberRunResult`, do not abort cycle (fail-open).
 
-**Can contribute:** Phase 1-3 infrastructure build. Phase 3+ transition to Cairn as brain's backend service needs emerge.
+**Impact:** Async Curator orchestration ready for W3-5/W3-6. Fail-open semantics locked. All 32 call sites updated and tested. Cairn 576/576 passing.
 
-**Needed alongside:** LLM/agentic specialist + knowledge ontology specialist + graph DB specialist (optional).
+### W3-Impl-5: Shared Prescriber Execution Helper (Alexander)
 
----
+**Scope:** How to avoid duplicating the Cairn+Forge composition pipeline between manual CLI (`runForgePrescribe`) and Curator factory?
 
-## Alexander (SDK/Runtime Dev) — BOUNDARY SPECIALIST ONLY
+**Decision:** Extract shared `executePrescriberRun()` helper inside `packages/skillsmith-runtime/src/index.ts` that owns the per-skill execution body:
+1. Instantiate `SqliteChangeVectorProvider`
+2. Call `runForgePrescribers()`
+3. Persist hints via Cairn `insertHintIfNew()` dedup
+4. Return generation / inserted / duplicated / error counts
 
-**Honest verdict:** NO for core work. YES for boundaries and integration.
+`runForgePrescribe()` (manual CLI) keeps existing operator-facing result contract and global profile fallback. `createPrescriberOrchestrationConfig()` (Curator factory) adapts to Curator-facing `PrescriberRunResult` contract.
 
-**Design philosophy mismatch:**
-- Forge: "How do I make non-determinism safe?" (containment, control)
-- Brain: "How do I make non-determinism useful?" (autonomy, discovery)
+**Rationale:** Single-sourced composition body while allowing different consumers to apply different profile-selection policy and result shaping. Makes W3-6 hook wiring smaller.
 
-These are opposing philosophies. Knowledge representation, learning loops, agentic coordination — these are outside Alexander's expertise.
+**Implementation:** Extracted `executePrescriberRun()` helper. `runForgePrescribe()` and `createPrescriberOrchestrationConfig().runForSkill()` both call shared helper. Cairn gains `getExecutionProfileWithDb()` convenience.
 
-**Can contribute:** Boundary specialist — design Brain ↔ Forge adapter, npm publishing strategy, type safety proofs.
+**Impact:** Composition logic centralized, no duplication. Factory ready for W3-6 hook wiring. Per-skill Curator orchestration fully realized. Skillsmith-Runtime 6/6 passing.
 
-**Needed alongside:** Agentic systems architect + knowledge representation designer.
+### W3-Impl-6: Curator Hook Wiring via Injected Config (Roger)
 
----
+**Scope:** How to wire always-on Curator prescriber orchestration at session start without violating W3-D1 boundary?
 
-## Valanice (UX/Human Factors) — 70% YES, 30% NO
+**Decision:** Pick **R-Hook-A (inject config into hook)**. `packages/cairn/src/hooks/sessionStart.ts` accepts optional `PrescriberOrchestrationConfig` and forwards to `curate(undefined, prescriberOrchestrationConfig)`. Production bootstrap moved to `packages/skillsmith-runtime/src/hooks/sessionStart.ts`, which calls Cairn's hook runner with factory that constructs `createPrescriberOrchestrationConfig({ db })` from already-open SQLite handle.
 
-**Honest verdict:** YES for UX/LX, NO for cognitive science.
-
-**Strong transfer (🟢 HIGH):**
-- Mental model boundaries (repo placement mirrors mental models)
-- Interaction design (pull-based, max 1 proactive insight per session)
-- LX optimization (MCP tools, context budgets, signal density)
-- Config surfaces (trust thresholds, recency gradients, plasticity policies)
-- Observable vs invisible design
-
-**Critical gaps (🔴 LOW):**
-- Cognitive science fundamentals (what does "meditation" mean neurologically?)
-- Knowledge ontology (are the five kinds exhaustive? mutually exclusive?)
-- Graph information architecture (traversal algorithms, semantic linking)
-- Learning primitives semantics (recency decay, trustworthiness measurement)
-
-**Recommendation:** Lead interaction design. Bring cognitive scientist + information architect alongside.
-
-**Can contribute:** 70% of team. Other 30% is cognitive science + knowledge management expertise. Without them, brain has beautiful UX on shaky assumptions.
-
----
-
-## Squad Composition: Recommended Path
-
-**Current Squad Role:**
-- ✅ **Graham, Roger, Gabriel, Alexander, Rosella, Laura** — Continue Cairn/Forge
-- 🟡 **Graham + Valanice** — Advisory roles on brain (2-3 hrs/week) for boundaries/UX
-- 🟡 **Roger** — OPTIONAL: Phase 1-3 infrastructure if assigned
-
-**New Squad for Brain:**
-1. **Lead:** Epistemology/Knowledge Systems architect (PhD-level, shipped graph-based systems)
-2. **Graph/Vector Specialist:** neo4j/PostgreSQL + vector stores, ontology design
-3. **Distributed Systems Engineer:** Federation, conflict resolution, versioning
-4. **Agentic Learning Systems Engineer:** Reinforcement learning, meta-learning, reasoning loops
-5. **Observability/Testing Bridge:** Interface with Laura/Gabriel (observation-focused testing)
-
----
-
-## Missing Expertise Clusters
-
-| Expertise | Current Squad | Brain Needs | Severity |
-|-----------|---------------|-------------|----------|
-| **Knowledge Graph Architecture** | ❌ None | ✅ Critical | 🔴 BLOCKER |
-| **Vector/ML Systems** | ❌ None | ✅ Important | 🔴 BLOCKER |
-| **Epistemology/Knowledge Representation** | ❌ None | ✅ Critical | 🔴 BLOCKER |
-| **Distributed Systems (federation)** | ❌ None | ✅ Important | 🔴 BLOCKER |
-| **Cognitive Systems/Agentic Loops** | ❌ None | ✅ Critical | 🔴 BLOCKER |
-| **Backend/Services** | ✅ Roger | ✅ Useful Phase 2+ | 🟡 SECONDARY |
-| **Testing/Verification** | ✅ Laura | ✅ Useful | 🟡 SECONDARY |
-| **DevOps/Deployment** | ✅ Gabriel | ✅ Useful Phase 3+ | 🟡 SECONDARY |
-
----
-
-## Per-Member Recommendation
-
-### Can Stay on Cairn/Forge
-- ✅ Graham (architecture, boundaries)
-- ✅ Roger (backend, data layer)
-- ✅ Gabriel (deployment, CI/CD)
-- ✅ Laura (testing, verification)
-- ✅ Rosella (plugin architecture, SDK integration)
-- ✅ Alexander (SDK runtime, Forge coupling)
-
-### Can Contribute to Brain (Advisory Only)
-- 🟡 Graham — System boundaries, technology selection (not leadership)
-- 🟡 Valanice — Interaction design, LX optimization (60% contribution rate)
-
-### Should NOT Work on Brain (Wrong Domain)
-- ❌ Rosella — Plugin architecture is orthogonal
-- ❌ Alexander (core) — SDK abstraction is orthogonal (keep as boundary specialist)
-
----
-
-## Three Options for Aaron
-
-### Option A: Fresh Squad (🟢 RECOMMENDED)
-**Brain gets its own squad** with epistemology + graph DB + distributed systems expertise.
-- **Outcome:** Brain gets undivided focus and right expertise. Cairn/Forge stabilization uninterrupted.
-- **Timeline:** Parallel to Phase 5 PGO work
-- **Risk:** New team ramp-up, version skew between brain and Cairn
-
-### Option B: Current Squad + 3 Specialists (❌ NOT RECOMMENDED)
-**Graft epistemology, graph DB, and distributed systems engineers** onto existing squad.
-- **Risk:** Graham still leads a domain he doesn't have DNA for. Cairn/Forge work stalls. Hybrid squads split focus and underdeliver both.
-
-### Option C: Keep Everything in Current Squad (❌ REJECT)
-**Suicide by overcommit.** Cairn/Forge doesn't stabilize, brain never ships.
-
----
-
-## Open Questions for Aaron
-
-1. **Is brain Copilot-specific infrastructure or general agentic infrastructure?**
-   - If Copilot-specific → maybe this squad could own it (bad idea, but possible)
-   - If general → definitely needs new squad
-
-2. **What's the MVP timeline?**
-   - If 2 weeks → prototype in current squad (risky, rush job)
-   - If 2+ months → new squad (recommended)
-
-3. **How important is the epistemology layer?**
-   - If "storage only" → current squad could do it (still not ideal)
-   - If "learning system" → new squad required
-
-4. **Budget for 3–5 new hires?**
-   - If yes → new squad (go)
-   - If no → delay brain until Cairn/Forge done, then hire for it
-
----
-
-## Artifacts
-
-**Orchestration logs (4 files):** `.squad/orchestration-log/2026-05-22T20-32-55Z-{agent}.md`
-- Graham: HIGH conviction, NEW SQUAD required
-- Roger: HIGH confidence, Phase 1-3 infrastructure only
-- Alexander: HIGH conviction, keep as boundary specialist
-- Valanice: MEDIUM conviction, 70% UX/LX yes, 30% cognitive science no
-
-**Session log (1 file):** `.squad/log/2026-05-22T20-32-55Z-brain-squad-fit.md`
-
-**Inbox files to delete (merged):**
-- `.squad/decisions/inbox/graham-squad-fit.md`
-- `.squad/decisions/inbox/roger-self-fit.md`
-- `.squad/decisions/inbox/alexander-self-fit.md`
-- `.squad/decisions/inbox/valanice-self-fit.md`
-
-**Status:** OPEN QUESTION — Strong recommendation toward fresh squad, awaiting Aaron's input on budget, timeline, and scope.
-
-
----
-
-## R5 PRD v3 Full Specification (Canonical)
-
-[Full PRD v3 text — 48KB, preserved verbatim]
-
-### Changelog from v2
-
-Every delta below cites the OQ directive that drove it.
-
-- **Attention tier transitions:** Minimal v1 rules locked: default=warm; commit→hot; retire→warm; sweep-aged demotion only (no auto-promotion); session-count hysteresis; precedence explicit > commit > sweep-aged > default. N/M placeholders R6-tunable.
-- **Storage primitive (OQ-2):** v1 strawman locked: SQLite + sqlite-vec, per-tier uniform .db files at FR-7.2 paths; embedder injected. Flagged "pending R6 review against Cairn."
-- **Commit follow-through (OQ-3):** Three-stage evolution locked: v1 = pull-with-boost only; v1.5 = list_active_commitments(scope) caller-initiated; retire() explicit-only + sweep emits stale-flag (never auto-retires); v2 = opt-in commit_floor?.
-- **Decide schema (OQ-4):** Full structured schema locked: {question, options:[{id, label, rationale?, rejected_for?}], chosen, rationale, principal_id, confidence?, supersedes_decision_id?, revisit_at?, timestamp}. Decider renamed to principal_id.
-- **Edge types (OQ-5):** Restructured into three tiers. Tier 1 eager (10): derived_from, references, contradicts, supersedes, part_of, instance_of, precedes, defined_in, decided_by, committed_in. Tier 2 sweep (2): similar_to, co_accessed_with. Tier 3 parking lot (6): caused_by, useful_for, equivalent_to, responds_to, requires, analogous_to. Tags explicitly excluded.
-- **Contemplate in v1 (OQ-6):** Omitted from v1 exports entirely — no callable export, no type export, no stub. Reserved in FR-10 vocabulary table only.
-- **Trust decay (OQ-7):** No automatic trust decay in v1. Trust is event-driven only. Time_since_last_verification derived field (not stored). Sweep emits stale_trust flag (does not mutate trust). T2 RESOLVED.
-- **Ranker weights/formula (OQ-8):** Locked: raw = 0.5·rel + 0.2·imp + 0.2·trust + 0.1·rec; final = raw × attention_multiplier (hot=1.20, warm=1.00, cold=0.80); trust floor 0.15 (gate, configurable). T3 RESOLVED.
-- **Session model (OQ-9):** Replaced. Sessions are kind=session facts (NOT a sibling table, NOT a field on every entry). New FR-13 specifies schema; FR-9 edge enum gains originated_in, modified_in, referenced_in (Tier 1) and recalled_in (Tier 2, per-session dedup).
-
----
-
-## 2026-05-24: Aaron's R6 Signals (Post-Trio Reconciliation)
-
-**By:** Aaron Kubly (via Copilot)  
-**Date:** 2026-05-24  
-**What:** After reading Genesta/Crispin/Edgar's R6 reconciliation reports, Aaron contributed four signals to fold into Cassima's synthesis
-
-### Four R6 Signals
-
-1. **"Session" is the Copilot nomenclature — converge on it.** PRD v3 has `kind=session` facts. Cairn has a `sessions` table. Aaron's position: these *are* both describing the same thing. Don't rename PRD's `kind=session` to `kind=conversation` (Genesta's proposed patch). Instead, treat the collision as a signal that we need ONE session concept across the stack. Cassima/Crispin to figure out the mechanics — table vs fact vs both — but the *name* stays `session`.
-
-2. **Decisions in Cairn/Forge already include human decisions.** Worth keeping in mind: the existing `DecisionRecord` is about auditing the reasoning chain and building trust, not just an agent log. PRD v3's `decide` schema and the existing one are closer in spirit than Crispin's "flat vs structured, irreconcilable" framing suggests.
-
-3. **Aaron likes the substrate overlap.** Curator≈sweep, confidence≈trust, decision records — these convergent designs are a *feature*, not a problem. Lean into the overlap rather than around it.
-
-4. **Path D probe — design with Cairn in mind, don't force Cairn to adopt yet.** Is there a fourth strategy beyond Genesta's extend-Cairn (Path C), Crispin's clean-slate (Path A), and Edgar's shared-kernel-extract (Path B)? Specifically: design Eureka's graph model and storage **as if** the shared kernel existed and Cairn used it, but **don't** force Cairn to migrate now. Eureka ships standalone but kernel-shaped. Cairn migrates later when there's a reason. Decouples timeline pressure from architectural correctness.
-
-### Rationale for Four Signals
-
-These signals come from Aaron's product judgment about:
-- (a) Copilot ecosystem alignment
-- (b) what Cairn/Forge decisions actually mean
-- (c) where the substrate convergence is doing real work
-- (d) how to avoid Edgar's "refactor everything first" timeline trap without falling into Crispin's "throw it all away" disconnection
-
-### Direction to Cassima
-
-Aaron's four signals serve as constraints + a new Path D to evaluate, combined with the three trio reports. Cassima inherits these as input for recommending v3.1 (if reconciliation is clean) or v4 (if a path change is warranted). She holds the pen.
-
----
-
-## 2026-05-25: Cassima R6 Synthesis — Path D Vindicated, v3.1 Patch Recommended
-
-[Detailed synthesis pending — see `.squad/decisions/archive/` for full R6 closure]
-
----
-
-## 2026-05-27: OQ-1 Resolved — Monorepo Accepted (ADR-0002)
-
-**Status:** ✅ DECIDED  
-**Date:** 2026-05-27  
-**Decided By:** Aaron  
-**Documented By:** Graham (Lead/Architect)
-
-**Decision:** Merge `mem/` and `harness/` into a single `@akubly/` monorepo with shared `packages/{cairn,forge,types}` and project-specific `packages/{eureka,crucible}`.
-
-**Trade-off accepted:** One-time migration cost (repo merge, CI consolidation, workspace rewiring) over ongoing coordination overhead of synchronising shared types across two repositories.
-
-**Cross-references:**
-- [ADR-0002](../../docs/eureka/adrs/0002-shared-substrate-ownership.md) — full decision record with options analysis
-- FR-12 mechanism #8 — ESLint cross-system session-type import ban; trivially enforceable in monorepo
-- FR-13 — `SessionId` branded primitive; single source of truth by construction
-- §70 T7 — shared substrate ownership tension (now resolved)
-
-**Implications for London-school TDD:** The mock seams for `@akubly/types` `SessionId` brand are now stable. Laura can rely on a single resolved shared substrate when designing outside-in tests — the `SessionId` import path will not change shape based on substrate topology. Mock contracts authored against `@akubly/types` in the monorepo are final; no seam drift risk from OQ-1 remains.
-
-**Signed:** Graham (Architecture)
-
----
-
-## 2026-05-27: §55 Review Discovered §30 Updates (Edgar Follow-ups)
-
-**Date:** 2026-05-27  
-**Author:** Edgar (Learning Systems Specialist)  
-**Context:** Review of Laura's §55 TDD Strategy against §30 Learning Systems  
-**Status:** Three non-blocking improvements identified for §30
-
-### Background
-
-Laura authored §55 (London-school TDD strategy) without reading §30 (anti-anchoring discipline). Review verdict: **APPROVED WITH NOTES**. Three seam mismatches discovered where §30 should evolve to match what outside-in tests revealed, not the other way around.
-
-### Decision Items
-
-#### 1. Add Time-Mocking Guidance to §30
-
-**What:** Add subsection "2.4 Time Injection for Testability" to §30 Property Dynamics.
-
-**Why:** §30's recency formula `(now() - last_accessed) / 86400` is time-dependent. Tests need deterministic clock. §55 correctly mocks storage I/O but is silent on time. §30 should document the seam.
-
-**Proposed §30 addition:**
-
-```markdown
-### 2.4 Time Injection for Testability
-
-**Testing Requirement:** Recency calculations depend on `now()`. Tests must inject a deterministic clock.
-
-**Interface (extraction-ready):**
-```typescript
-// packages/eureka/src/learning/properties/clock.ts
-export interface ClockProvider {
-  now(): number;  // Unix epoch ms
-### Design Decision D2: forceRegenerate Surface (Rosella, 2026-05-23)
-
-**Status:** Γ£à Resolved ΓÇö CLI only for Wave 4 per Aaron's D2 decision
-
-**Resolution:** --force CLI flag for forge-prescribe to bypass hint deduplication and force re-emission.
-
-**Implementation:**
-- Flag name: `--force` (boolean, default: false)
-- Semantics: UPDATE active hints to `status = 'expired'` before calling `insertHintIfNew()`
-- MCP surface: **EXCLUDED** from Wave 4 per Aaron's D2 decision (deferred to Wave 5 with full Phase 5 scope clarity)
-- Call path: CLI ΓåÆ `runForgePrescribe()` ΓåÆ `executePrescriberRun({ forceRegenerate })` ΓåÆ `expireActiveHints()` + `insertHintIfNew()`
-
-**Rationale:**
-- Closes critical operator workflow gap (recovery from hint rejection storms)
-- CLI surface immediate relief for documented operator need
-- MCP generalization (confirmation prompts, safety guards) defers to Wave 5
-
-**Trade-off Accepted:**
-- Gain: Operator escape hatch live immediately via CLI
-- Trade-off: Operators stay in manual-override mode longer; MCP automation deferred to Wave 5
-
-**Test Coverage:** Γ£à Unit tests 8/8 passing; integration group C 1/4 (3 failures = test infra)
-- forceRegenerate reduces skipped count when duplicates exist
-- Only expires hints matching (skill_id, source, category)
-- Does NOT expire terminal-status hints
-- MCP surface correctly excluded
-
-**Files Modified:**
-- `packages/skillsmith-runtime/src/index.ts`
-- `packages/runtime-cli/src/cli.ts`
-- `packages/runtime-cli/src/__tests__/forgePrescribe.test.ts` (4 new tests)
-
-### Integration Test Pattern: Monorepo Singletons (Laura, 2026-05-24)
-
-**Status:** Γ£à Resolved ΓÇö Module import standardization + `:memory:` DB pattern
-
-**Root Cause Identified:** TypeScript module singleton fragmentation from mixed import paths in integration tests.
-
-**Problem:** Test setup imported from source paths (`../../../cairn/src/...`); implementation from package barrels (`@akubly/cairn`). These resolved to different module instances in TypeScript's dependency graph, each maintaining separate singleton state. Test beforeEach seeded DB in one instance; runForgePrescribe opened DB in the other.
-
-**Decision:** Standardize integration test pattern to match wave2/wave3 conventions:
-
-1. **Import from package barrels only** ΓÇö No source path imports
-   - `import { getDb, closeDb, ... } from '@akubly/cairn'` Γ£à
-   - NOT `import { getDb } from '../../../cairn/src/db/index.js'` Γ¥î
-
-2. **Use `:memory:` DB singleton pattern**
-   ```typescript
-   beforeEach(() => {
-     closeDb();
-     getDb(':memory:');  // Creates singleton
-   });
-   
-   afterEach(() => {
-     closeDb();  // No file cleanup needed
-   });
-   ```
-
-3. **Pass `dbPath: ':memory:'` to functions** ΓÇö Reuses singleton from beforeEach
-
-4. **Test helper functions** for setting up test data with seeded vectors
-
-**Rationale:**
-- Singleton behavior only guaranteed if all code imports from the same module path
-- `:memory:` DBs auto-close; eliminates Windows EBUSY cleanup errors
-- Matches established patterns in wave2-pipeline/wave3-pipeline/runtime-cli tests
-- Faster test execution (in-memory vs file-backed)
-
-**Implementation:** Commit 472e77d
-
-**Test Results Before Fix:** 9/14 passing (5 infrastructure failures in Groups C & D)  
-**Test Results After Fix:** 14/14 passing Γ£à  
-**Repo-wide:** 644/647 tests passing
-
-**Files Modified:**
-- `packages/forge/src/__tests__/wave4-pipeline.test.ts` ΓÇö Imports fixed, DB pattern standardized, all tests green
-
-**Consequences:**
-- Γ£à Wave 4 integration tests now fully passing
-- Γ£à All three work items (W4-1, W4-2, W4-3) validated end-to-end
-- Γ£à Windows EBUSY cleanup issue eliminated
-- Γ£à Pattern documented for future test authors
-- Trade-off: Cannot test file-based DB persistence in integration suite (acceptable; unit tests can cover if needed)
-
-**Related Evidence:**
-- wave2-pipeline.test.ts (established pattern)
-- wave3-pipeline.test.ts (reference implementation)
-- runtime-cli forgePrescribe.test.ts (unit test reference)
-
-### Raw-SQL Constraint Test Pattern for DB Invariants (Laura, 2026-05-24)
-
-**Status:** Γ£à Implemented in PR #22 cloud review cycle
-
-**Context:** PR #22 Copilot review (Thread 3) flagged that the "concurrent inserts" test in `optimizationHints.test.ts` ran both transactions sequentially and relied on `insertHintIfNew`'s internal dedupe logic, never proving the partial UNIQUE index fired independently.
-
-**Decision:** For any DB constraint that is the subject of a test (not just a side effect), the test should bypass the business-logic wrapper and assert the constraint directly via raw SQL. This applies to:
-- Partial UNIQUE indexes
-- CHECK constraints
-- Foreign key constraints
-
-**Rationale:** Functional wrappers can mask constraint failures. If `insertHintIfNew` is refactored to check existence differently, the old "concurrent inserts" test would still pass even if the UNIQUE index was accidentally dropped.
+**Rationale:** Smallest change preserving W3-D1 boundary. Cairn owns hook mechanics and Curator invocation but does not import `skillsmith-runtime`, avoiding cairn ↔ skillsmith-runtime cycle. Always-on guaranteed by composition root bootstrap logic.
 
 **Implementation:** 
-- Added `'partial UNIQUE index rejects a raw duplicate active-status insert'` test in `packages/cairn/src/__tests__/optimizationHints.test.ts`
-- Uses raw `db.prepare().run()` to insert a second active-status row for the same `(skill_id, source, category)` tuple and asserts `UNIQUE constraint failed`
-- Also verifies terminal-status rows bypass the partial index
+- Cairn hook runner: optional `PrescriberOrchestrationConfig` parameter
+- `skillsmith-runtime/src/hooks/sessionStart.ts`: production bootstrap wrapper
+- `.github/hooks/cairn/curate.ps1`: updated to prefer runtime hook for both global-install and repo-checkout paths
+- Tests call `runSessionStart(repoKey)` with `undefined` for backward compatibility
 
-**Commit:** 81fd6a8 (cycle 3)
+**Impact:** Always-on Curator orchestration wired. Composition boundary preserved. Tests and production use same hook path. Cairn 576/576 passing.
 
-### forceRegenerate Test Must Exercise Both Branches (Laura, 2026-05-24)
+### W3-Impl-7: E2E Integration Test — Auto Trigger, Dedup, Fail-Open (Laura)
 
-**Status:** Γ£à Implemented in PR #22 cloud review cycle
+**Scope:** Validate Wave 3 end-to-end: auto trigger for computed skills, dedup confirmation, fail-open behavior, profile miss handling.
 
-**Context:** PR #22 Copilot review (Thread 1) flagged that the forceRegenerate test only exercised the `false` path. The `true` path (which calls `replaceActiveHintAtomically`) was unexercised.
+**Decision:** Place `wave3-pipeline.test.ts` in `packages/forge/src/__tests__/` covering four scenarios:
+1. Auto trigger: new vectors computed → prescribers run → hints inserted
+2. Dedup (trigger-driven): second pass with newly-qualified vectors → re-checked via eligibility → duplicates blocked
+3. Fail-open: per-skill exception → logged, continued
+4. No profile: skill skipped without error
 
-**Decision:** Any feature with a boolean fork (`forceRegenerate: true/false`) should have assertions on both branches in the same test or closely related tests. For the `true` path specifically, assert behavioral consequences (state change) not just return values.
+**Rationale:** Forge is focal point (ingests Cairn summaries, emits final hints). Test location aligns with existing cross-module coverage. Real SQLite path fully validated. To avoid production dependency from Forge to Cairn, test imports Cairn source directly; Forge's `tsconfig.json` excludes test files from package build.
 
-**Implementation:** 
-- Extended the existing test to add a second call with `forceRegenerate: true`, capturing the previously-active hint ID
-- Asserts `status === 'expired'` post-run, plus `skipped === 0` and `inserted > 0`
+**Key Behavioral Finding:** Accepted W3-D4 (trigger-driven orchestration) only reruns for skills with newly-computed vectors (`computedSkillIds`). This means unchanged DB state cannot produce dedup rerun on back-to-back invocations. Test adapted to realistic scenario: second pass with newly-qualified existing vectors triggering dedup-visible behavior.
 
-**Commit:** 81fd6a8 (cycle 3)
+**Implementation:** 4 scenarios, bootstrap via `runSessionStart`, assertions on `PrescriberRunResult` counts and DB state. Forge 630/630 passing.
 
-### Narrow UNIQUE Constraint Catches in Cairn DB Layer (Roger Wilco, 2026-01-31; merged 2026-05-25)
+**Impact:** Wave 3 end-to-end integration validated. Dedup and auto-trigger mechanics confirmed. Real Cairn+Forge persistence path exercised.
 
-**Status:** Γ£à Ratified and implemented in PR #22
+### Crucible-TDD-1: London-School TDD Strategy for Agentic Runtime (Laura)
 
-**Decision:** For all UNIQUE constraint error handling in the cairn db layer, use a two-part check:
+**Date:** 2026-05-27  
+**Author:** Laura Bow (Tester)  
+**Status:** DRAFT (Awaiting Aaron Review — 8 Open Questions)  
+**Artifact:** `docs/crucible-tdd-strategy.md`
 
-1. `(err as any).code === 'SQLITE_CONSTRAINT_UNIQUE'` ΓÇö confirms the error is a UNIQUE constraint violation (not a foreign key, CHECK, or NOT NULL constraint)
-2. Column-tuple check on the specific index columns ΓÇö confirms it's the intended index, not the PK or another UNIQUE index
+**Scope:** Define outside-in London-school TDD discipline for Crucible runtime, PRD-derived, firewalled from technical design.
 
-**Do NOT use** a bare `err.message.includes('UNIQUE constraint failed')` check. That string prefix matches ALL UNIQUE violations on the table, including PK collisions on `.id`, which are real bugs that should propagate.
+**Decision:** Authored comprehensive TDD strategy (120KB, 12 sections, 28 pages) covering:
+- **12 acceptance scenarios (A1–A12):** Session forking, hermetic replay, pre-commit hook veto, causal slicing, Aperture notifications, plugin pinning, Curator orchestration, Pareto fitness, determinism conformance, Router policy escalation, bisect, marketplace trust gradient
+- **18 collaborator contract roles:** SessionBootstrapper, ObservationCaptureStore, AppendProtocol, PreCommitHookBus, ReadSetHasher, LedgerProjector, QueryExecutor, PrescriberOrchestrator, ChangeVectorProvider, ParetoFitnessEvaluator, PolicyEngine, EscalationQueue, CausalSliceEngine, BisectOrchestrator, PluginRegistry, CLIRenderer (each with defined contract test strategy)
+- **5-tier test pyramid:** Unit (500–1000 tests) → Component (200–400) → Contract (30–60) → Integration (50–100) → Acceptance (12)
+- **8 invariant property tests:** Append-only, hash-chain determinism, replay equivalence, fork lineage, hook verdict determinism, projection purity, trust-tier monotonicity (via fast-check)
+- **5-layer mock drift defense:** Contract tests (PR-time), shared fixture builders (build-time), golden files (nightly), CI double-check (PR-time), interface stability tracking
 
-**Context:** PR #22 review (Thread 1) identified that the original `insertHintIfNewWithinTransaction` catch block used:
-```typescript
-if (err instanceof Error && err.message.includes('UNIQUE constraint failed')) {
-```
-This swallows PK collisions on `optimization_hints.id`, masking potential bugs.
+**Rationale:** 
+1. London-school (outside-in) forces explicit interface design (matches immutable primitives)
+2. Tell-don't-ask interaction pattern aligns with event-ledger semantics
+3. Collaborator contracts enforce L0–L5 layer boundaries (prevents accidental coupling)
+4. Acceptance tests anchor user workflows (prevents over-engineering the substrate)
+5. Mock drift is tractable in greenfield with contract-test discipline + fixture builders
 
-**Correct Pattern (active-dedup index in optimizationHints.ts):**
-```typescript
-if (
-  err instanceof Error &&
-  (err as any).code === 'SQLITE_CONSTRAINT_UNIQUE' &&
-  err.message.includes('optimization_hints.skill_id') &&
-  err.message.includes('optimization_hints.source') &&
-  err.message.includes('optimization_hints.category')
-) {
-  // Treat as concurrent duplicate ΓÇö fetch existing hint id
-} else {
-  throw err;  // PK collision or unexpected constraint ΓÇö propagate
-}
+**8 Open Questions Flagged for Aaron (§11):**
+- **Q1:** Session-end hook observation capture granularity (per-tool-call vs per-primitive vs per-turn)
+- **Q2:** Eureka prescriber integration path (standalone L3 vs library vs deferred to v1.5)
+- **Q3:** Structural proposal approval UX (blocking modal vs Aperture notification vs separate review CLI)
+- **Q4:** Plugin pinning scope (direct deps vs transitive vs full environment)
+- **Q5:** Bisect test execution environment (shell out vs isolated subprocess vs in-process runner)
+- **Q6:** Determinism conformance timestamp normalization (excluded vs deterministic sequence vs non-deterministic field)
+- **Q7:** Mock drift detection failure threshold (zero-tolerance vs ≥3 in layer vs ≥10% total)
+- **Q8:** Pareto fitness contract with missing axes (reject comparison vs zero-fill vs partial dominance)
 
-export const systemClock: ClockProvider = {
-  now: () => Date.now()
-};
-```
+**Recommendations:** Provided for each question (favor simplicity + v1 MVM scope).
 
-**Test pattern:**
-```typescript
-const mockClock = { now: vi.fn().mockReturnValue(1609459200000) };  // 2021-01-01
-const recency = computeRecency(fact.last_accessed, mockClock);
-expect(recency).toBe(0.5);  // 1-day-old at formula parameters
-```
+**Testing Blockers Identified:**
+- Q1 blocks A2 (hermetic replay acceptance test)
+- Q2 affects test layering (separate tier vs shared orchestration)
+- Q3 blocks A10 (Router policy escalation test assertions)
+- Q4 affects `SessionMetadata` fixture builders
+- Q5 blocks bisect integration test design
+- Q6 affects determinism conformance suite implementation
 
-**Design note:** This is FR-12 mechanism #1 (extraction-ready boundary). ClockProvider has no Eureka-specific types.
-```
+**Firewall Compliance:** ✅ Zero references to CTD artifacts; PRD-only vocabulary; no implementation details (file paths, class names, function signatures).
 
-**Impact:** Low — doesn't change algorithm, just documents testability boundary.
-The active-dedup partial index is `idx_optimization_hints_active_dedup` on `(skill_id, source, category) WHERE status IN ('pending', 'accepted', 'deferred')`. SQLite error message format: `UNIQUE constraint failed: optimization_hints.skill_id, optimization_hints.source, optimization_hints.category`.
+**Impact:** TDD strategy locked for PRD scope (12 acceptance scenarios), collaborator contract inventory complete, test layering blueprint ready. Implementation awaits Aaron resolution of Q1–Q8.
 
-**Rationale:**
-- Avoids silently discarding PK collisions or violations from future UNIQUE indexes on other column tuples
-- `SQLITE_CONSTRAINT_UNIQUE` code confirms constraint class before inspecting the message
-- Column-tuple check is the precise discriminator between the active-dedup index and the PK
-- Pattern is consistent and testable: PK collision test confirms the error propagates
+**Next Steps:** 
+1. Aaron reviews strategy, resolves 8 open questions
+2. Laura updates strategy based on resolutions
+3. Decision merges to decisions.md
+4. Laura updates `.squad/agents/laura/history.md` with learnings
+5. Optional: Extract `london-tdd-for-agentic-runtimes` skill if reusable pattern emerges
 
-**Commit:** dcdcd26 (cycle 4)
+### Crucible-CTD-1: Technical Design Plan Decomposition + Sequencing (Graham)
 
+**Date:** 2026-05-27 (Updated after Aaron locks blocking questions)  
+**Author:** Graham Knight (Lead / Architect)  
+**Status:** ACTIVE (Approved for fan-out; blocking questions resolved)  
+**Artifact:** `docs/crucible-technical-design-plan.md`
 
-### Decision: Harness Vision Document Drafted (Graham, 2026-05-23)
+**Scope:** Decompose full technical design into 19 sections, 7 team members + 2 consultants, 4 authoring phases + 1 review round (~9 working days).
 
-**Status:** Awaiting Aaron's review
+**Decision:** Produced comprehensive CTD plan with resolved blocking questions:
 
-**Artifact:** docs/harness-vision.md (3,200+ words, 14 sections)
+1. **DB file placement:** ✅ FORK to `~/.crucible/crucible.db` — clean separation from Cairn (decided by Aaron 2026-05-27)
+2. **Cairn/Forge coexistence:** ✅ FULL COEXIST FOREVER — independent live products with own roadmaps. Crucible greenfield alongside. No delegation, no shim packages, no absorption (decided by Aaron 2026-05-27)
+3. **Eureka status:** ✅ EXTERNAL LIBRARY VIA OPTIONAL ADAPTER — not a Crucible chamber (decided by Aaron 2026-05-27)
 
-**Next Steps:** PRD authoring session (Wave 5 scope)
+**Fan-Out Manifest (Appendix C of plan):**
+- **Phase 0 (serial):** 2 sections (Graham) — L0/L1 boundary + primitive taxonomy
+- **Phase 1 (parallel):** 8 sections, 5 lanes — Roger, Rosella, Alexander, Laura, Gabriel, Graham
+- **Phase 2 (parallel):** 6 sections, 6 lanes — Roger, Valanice, Graham, Laura
+- **Phase 3 (parallel):** 3 sections, 2 lanes — Gabriel, Graham
+- **Review round:** All 19 sections cross-reviewed per ownership map
 
-### Wave 5 Shape Approved (Graham, 2026-05-25)
+**Section structure:** `docs/crucible-technical-design/` folder, one numbered file per section + README index, each with owner, output file, input artifacts, dependencies, acceptance criteria.
 
-**Status:** Γ£à Ratified by Aaron ΓÇö Shape B (Foundation + Safety)
+**Rationale:** Three blocking questions cleared path for team-wide fan-out without discovery looping. Architecture locked. Sequencing respects Layer dependencies (L0→L1→L2/L3→L4/L5) and authoring parallelism (some sections can proceed concurrently after their inputs are available).
 
-**Wave 5 Scope:**
-1. **W5-1** ΓÇö Session-kind separation (MCP fallback correctness fix) ΓÇö Roger Γ£à
-2. **W5-3** ΓÇö Global tier fallback for profile selection (expand from per-skill only) ΓÇö Rosella (pending)
-3. **W5-2** ΓÇö DB convention standardization (explicit injection, testability) ΓÇö Roger (pending)
-4. **W5-4** ΓÇö Profile staleness check + confidence attenuation ΓÇö Rosella (pending)
-**Status:** ✅ Ratified by Aaron — Shape B (Foundation + Safety)
+**Impact:** Technical design ready for parallel authoring sprint. Team assignments clarified. Acceptance criteria explicit per section. Estimated completion: ~9 working days post-fan-out.
 
-**Wave 5 Scope:**
-1. **W5-1** — Session-kind separation (MCP fallback correctness fix) — Roger ✅
-2. **W5-3** — Global tier fallback for profile selection (expand from per-skill only) — Rosella (pending)
-3. **W5-2** — DB convention standardization (explicit injection, testability) — Roger (pending)
-4. **W5-4** — Profile staleness check + confidence attenuation — Rosella (pending)
+**Cross-Link:** Crucible-TDD-1 (Laura, parallel track) is firewalled from CTD to preserve test-design independence; TDD strategy is PRD-only, CTD is implementation-specific. Both feed Crucible delivery but remain architecturally separate.
 
-**Wave 5 Deferred to Wave 6:**
-- W5-5: MCP surface for forceRegenerate (needs W5-1 prerequisite + UX policy)
-- W5-6: Metrics dashboard (product shape undefined; needs Aaron's surface decision)
+### Phase 4 Synthesis — CTD CLOSE GREEN-FINAL (2026-05-28)
 
-**Wave 5 Timeline:** Four parallel/sequential items, ~3-4 work sessions. Phase 4.6 completes upon Wave A landing (W5-1, W5-3 concurrent; then W5-2, W5-4).
+**Date:** 2026-05-28 (Synthesis Review completed 2026-05-29T072142Z)  
+**Author:** Graham Knight (Lead / Architect)  
+**Status:** FINAL — CTD v1 STRUCTURALLY COMPLETE  
+**Artifact:** Merged from `.squad/decisions/inbox/graham-ctd-phase4-synthesis.md`
 
-**Rationale:**
-- **W5-1 (correctness):** CLI `--force` shipped in Wave 4. MCP fallback currently returns `__system__` session to user-facing tools ΓÇö this is a bug blocking safe MCP expansion.
-- **W5-3 (functionality):** `loadExecutionProfile()` only walks `per-skill` ΓåÆ `global`, skipping `per-model` and `per-user` tiers. Wave 4's observability (profile_bump events) surfaces this gap when operators see bumps that never influence prescriptions.
-- **W5-1 (correctness):** CLI `--force` shipped in Wave 4. MCP fallback currently returns `__system__` session to user-facing tools — this is a bug blocking safe MCP expansion.
-- **W5-3 (functionality):** `loadExecutionProfile()` only walks `per-skill` → `global`, skipping `per-model` and `per-user` tiers. Wave 4's observability (profile_bump events) surfaces this gap when operators see bumps that never influence prescriptions.
-- **W5-2 (maintainability):** 12+ Cairn functions use internal `getDb()` calls; new code uses explicit injection. Standardizing now prevents test infrastructure failures in future waves (proven by Wave 4 integration test debugging).
-- **W5-4 (trust):** Profiles have `updatedAt` but nothing checks it. Stale profiles generate misleading prescriber confidence without a safety gate.
+**Scope:** Final pre-close interface-coherence synthesis across the four Phase 4 authoring lanes (Graham framing §1/§6/§19; Roger CALL/RET + Scheduler WAL §3/§10; Gabriel L3.5 Scheduler §5/§5.A/§17; Laura reproducibility honesty §11.10 + §16.5/§16.7a). Two minor errata resolved inline during synthesis gate.
 
-**Wave 6 Scope (backlog):**
-- I10: Curator system-event handling (depends on W5-1; better addressed when Phase 5 architecture is concrete)
-- W5-5: MCP forceRegenerate surface (confirmation UX + safety guards need Aaron's policy input)
-- W5-6: Metrics dashboard (TBD: CLI report vs. MCP resource vs. new package)
+**Verdict:** **GREEN-FINAL — CTD is complete.** Coherence matrix: 8 CLEAN / 0 MINOR / 0 STRUCTURAL / 2 APPLIED. Final inventory: 377,794 bytes across 21 files (19 numbered sections + Phase 1/Phase 2 synthesis reviews); 19 ADRs indexed and ready for post-CTD authoring.
 
-### Design Decision W5-1: Session-Kind Separation (Roger, 2026-05-25)
+**Coherence Checks (All CLEAN):**
+- §1.2 L3.5 row aligns with §5.A spec aligns with §17 catalog aligns with §3.3.5 WAL acceptance
+- §3.3.4 CALL/RET body fields are read verbatim by §10.6.1 stack-frame reconstruction
+- Trace-vs-behavioral vocabulary (§11.10 ↔ §16.7a) is identical across both sections
+- Streaming `stream_open/delta/close` sub-kinds are additive per §6.5
+- §19 ADR-0019 + ADR-0024 index rows are accurate one-liners
+- (Two errata applied; see below)
 
-**Status:** Γ£à Implemented ΓÇö Migration 014 landed; MCP fallback corrected
+**Errata Applied (Graham Authority):**
 
-**Context:** Phase 4's `ensureSystemSession()` creates system sessions on every prescriber run. MCP endpoints (`resolve_prescription`, `lint_skill`, `test_skill`) currently fall back to `__system__` session when no repo key is available ΓÇö a correctness bug that pollutes user-facing attribution.
-**Status:** ✅ Implemented — Migration 014 landed; MCP fallback corrected
+1. **InvocationId Canonical Lock** (§3.3.4)
+   - **Decision:** `invocationId = BLAKE3(sessionId || taskId || commitOffset)`, mandatory in L0
+   - **Rationale:** Hermetic-replay invariant (ADR-0008; §11.6 byte-equivalence) is non-negotiable. §10.6.1 reconstruction keys off `invocationId`. Structural-compute cost in L0 is one BLAKE3 over three small inputs at TaskStart-emit time. L0 flexibility on this field had no compelling driver against an invariant this load-bearing.
+   - **Ripple:** None — change strictly strengthens existing properties. No impact to §10, §11, or other sections.
 
-**Context:** Phase 4's `ensureSystemSession()` creates system sessions on every prescriber run. MCP endpoints (`resolve_prescription`, `lint_skill`, `test_skill`) currently fall back to `__system__` session when no repo key is available — a correctness bug that pollutes user-facing attribution.
+2. **§7.D Supersede Contract Amendment** (§7.D clause 6 + conformance check C-9)
+   - **Decision:** Replacement proposals that the Scheduler will cancel with `reason='superseded'` MUST set `envelope.parentId` to the EventId of the obsoleted proposal
+   - **Rationale:** Scheduler uses that lineage edge to populate `scheduler_cancelled.body.supersededBy` deterministically. Contract violation caught at generator boundary (§7.A C-9), not at Scheduler. Closes Gabriel's Phase 4 flag.
+   - **Ripple:** None — no change to §5.A.2 body shape; §6.4 `parentId` vocabulary unchanged; §3 and §17 unaffected.
 
-**Resolution:** Migration 014 with `session_kind` column (enum: 'user' | 'system').
+**Newly-Surfaced Ambiguity:** None — CTD is complete. One informational note (non-blocking): Laura's `stream_open` / `stream_delta` / `stream_close` Observation sub-kinds are correctly additive per §6.5 evolution rule, but the §6.3 enumeration table does not yet list them. This is the right boundary for post-CTD §6.3 housekeeping pass (Laura owns streaming sub-kind authoring in §16; table updates land at sync pass exactly per §6.5 rule).
 
-**Schema Changes:**
-```sql
-ALTER TABLE sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'user' 
-  CHECK (session_kind IN ('user', 'system'));
-```
+**Impact:** This is the final architecture-design gate. Post-CTD authoring is unblocked:
+- Nineteen ADR files under `docs/adr/`
+- §13 CLI implementation scaffolding
+- §16 test-strategy scaffolding
+- Greenfield package work under `@akubly/crucible-*`
 
-**Backfill:** Existing rows with `repo_key = '__system__'` set to `session_kind = 'system'`. All others default to 'user'.
+No Phase 5 spawn required. No new open question requires Aaron triage.
 
-**API Changes:**
-- Added `getMostRecentUserSession()` ΓÇö falls back only to user sessions
-- Added `getActiveUserSession(repoKey)` ΓÇö user-scoped variant
-- Kept `getMostRecentActiveSession()` and `getActiveSession(repoKey)` for internal/system-aware callers
-- Created `getUserSessionForMcpFallback()` ΓÇö wrapper for all MCP call sites
-
-**MCP Call Sites Updated:**
-1. `resolve_prescription` ΓÇö accept/apply attribution
-2. `lint_skill` ΓÇö telemetry event logging
-3. `test_skill` ΓÇö scenario-path telemetry and result persistence
-4. `test_skill` ΓÇö direct validation telemetry and result persistence
-
-**Test Coverage:** Γ£à 100/100 passing (db.test.ts + mcp.test.ts)
-- Added `getMostRecentUserSession()` — falls back only to user sessions
-- Added `getActiveUserSession(repoKey)` — user-scoped variant
-- Kept `getMostRecentActiveSession()` and `getActiveSession(repoKey)` for internal/system-aware callers
-- Created `getUserSessionForMcpFallback()` — wrapper for all MCP call sites
-
-**MCP Call Sites Updated:**
-1. `resolve_prescription` — accept/apply attribution
-2. `lint_skill` — telemetry event logging
-3. `test_skill` — scenario-path telemetry and result persistence
-4. `test_skill` — direct validation telemetry and result persistence
-
-**Test Coverage:** ✅ 100/100 passing (db.test.ts + mcp.test.ts)
-- Migration schema validation
-- `getMostRecentUserSession()` filtering excludes system sessions
-- MCP fallback with `__system__` as most-recent returns user session instead
-- All four MCP endpoints attribute correctly
-
-**Files Modified:**
-- `packages/cairn/src/db/migrations/014-session-kind.ts` (new)
-- `packages/cairn/src/db/schema.ts` (registered migration)
-- `packages/cairn/src/db/sessions.ts` (new API functions, ensureSystemSession update)
-- `packages/cairn/src/mcp/server.ts` (four call sites using getUserSessionForMcpFallback)
-- `packages/cairn/src/__tests__/db.test.ts` and `mcp.test.ts` (new tests)
-
-**Commit:** 8b0a69a (phase-4.6/w5-1-session-kind)
-
-**Deferred:** I10 (Curator system-event filtering) ΓÇö depends on W5-1 but is a cloud telemetry design decision (Phase 5).
-
-### Design Decision W5-3: Global Tier Fallback Semantics (Graham, 2026-05-25)
-
-**Status:** Γ£à Spec locked; implementation complete ΓÇö Rosella drop landed (2026-05-25)
-
-**Context:** `loadExecutionProfile()` only checks `per-skill` ΓåÆ `global`, skipping `per-model` and `per-user` tiers. DB schema (migration 011) already supports all four granularities; the read path is incomplete.
-
-**Resolution:** Extend fallback chain from `per-skill` ΓåÆ `global` to `per-skill` ΓåÆ `per-model` ΓåÆ `per-user` ΓåÆ `global`.
-
-**Fallback Semantics (Five Decisions):**
-
-1. **Trigger:** Profile absence only (no row exists). Staleness does NOT trigger fallback ΓÇö W5-4 handles staleness via confidence attenuation instead.
-
-2. **Payload:** Complete `ExecutionProfile` from first non-null tier. No blending across tiers ΓÇö full replacement only. The `source` field on `LoadedExecutionProfile` tells downstream code which tier was actually used.
-
-3. **Composition:** Strictly first-match-wins down the chain. No blending (would require empirical weight parameters we don't have). Blending can be added as a separate feature in Phase 5 without changing the chain.
-
-4. **Identity Keys:** New optional `TierFallbackContext` with `modelId?`, `userId?`. Tiers with unknown keys are skipped (not queried with 'global'). No migration required ΓÇö `execution_profiles` schema already complete.
-**Deferred:** I10 (Curator system-event filtering) — depends on W5-1 but is a cloud telemetry design decision (Phase 5).
-
-### Design Decision W5-3: Global Tier Fallback Semantics (Graham, 2026-05-25)
-
-**Status:** ✅ Spec locked; implementation complete — Rosella drop landed (2026-05-25)
-
-**Context:** `loadExecutionProfile()` only checks `per-skill` → `global`, skipping `per-model` and `per-user` tiers. DB schema (migration 011) already supports all four granularities; the read path is incomplete.
-
-**Resolution:** Extend fallback chain from `per-skill` → `global` to `per-skill` → `per-model` → `per-user` → `global`.
-
-**Fallback Semantics (Five Decisions):**
-
-1. **Trigger:** Profile absence only (no row exists). Staleness does NOT trigger fallback — W5-4 handles staleness via confidence attenuation instead.
-
-2. **Payload:** Complete `ExecutionProfile` from first non-null tier. No blending across tiers — full replacement only. The `source` field on `LoadedExecutionProfile` tells downstream code which tier was actually used.
-
-3. **Composition:** Strictly first-match-wins down the chain. No blending (would require empirical weight parameters we don't have). Blending can be added as a separate feature in Phase 5 without changing the chain.
-
-4. **Identity Keys:** New optional `TierFallbackContext` with `modelId?`, `userId?`. Tiers with unknown keys are skipped (not queried with 'global'). No migration required — `execution_profiles` schema already complete.
-
-   ```typescript
-   interface TierFallbackContext {
-     modelId?: string;      // Enables per-model tier lookup
-     userId?: string;       // Enables per-user tier lookup
-   }
-   
-   function loadExecutionProfile(
-     db: RuntimeDb,
-     skillId: string,
-     options: { fallback?: TierFallbackContext }
-   ): LoadedExecutionProfile | null;
-   ```
-
-5. **Staleness Interaction:** Staleness attenuates confidence on the selected profile post-fallback. Never triggers fallback. See W5-4 for details.
-
-**Chain Behavior with Partial Context:**
-
-| modelId   | userId  | Chain walked |
-|-----------|---------|-------------|
-| undefined | undefined | `per-skill` ΓåÆ `global` (backward compatible) |
-| 'gpt-5'   | undefined | `per-skill` ΓåÆ `per-model('gpt-5')` ΓåÆ `global` |
-| undefined | 'alice'   | `per-skill` ΓåÆ `per-user('alice')` ΓåÆ `global` |
-| 'gpt-5'   | 'alice'   | `per-skill` ΓåÆ `per-model('gpt-5')` ΓåÆ `per-user('alice')` ΓåÆ `global` |
-
-**Backward Compatibility:** Existing call sites with no context fall back to today's `per-skill` ΓåÆ `global` chain.
-| undefined | undefined | `per-skill` → `global` (backward compatible) |
-| 'gpt-5'   | undefined | `per-skill` → `per-model('gpt-5')` → `global` |
-| undefined | 'alice'   | `per-skill` → `per-user('alice')` → `global` |
-| 'gpt-5'   | 'alice'   | `per-skill` → `per-model('gpt-5')` → `per-user('alice')` → `global` |
-
-**Backward Compatibility:** Existing call sites with no context fall back to today's `per-skill` → `global` chain.
-
-**Updated `LoadedProfileSource` type:**
-```typescript
-export type LoadedProfileSource =
-  | 'per-skill'
-  | 'per-model'
-  | 'per-user'
-  | 'global'
-  | 'global fallback';  // deprecated, kept for compat
-```
-
-**Files Touched:**
-- `packages/skillsmith-runtime/src/index.ts` ΓÇö `loadExecutionProfile()`, types, two call sites
-- Tests ΓÇö tier chain unit tests with mock profiles at each level, integration test with per-model profile
-
-**Files NOT Touched:** No Cairn changes. No Forge prescriber changes. No DB migration.
-
-**Test Coverage:** Γ£à 18/18 passing in skillsmith-runtime (10 tier-fallback specific)
-- `packages/skillsmith-runtime/src/index.ts` — `loadExecutionProfile()`, types, two call sites
-- Tests — tier chain unit tests with mock profiles at each level, integration test with per-model profile
-
-**Files NOT Touched:** No Cairn changes. No Forge prescriber changes. No DB migration.
-
-**Test Coverage:** ✅ 18/18 passing in skillsmith-runtime (10 tier-fallback specific)
-- Per-skill tier selection
-- Per-model tier fallback when per-skill missing
-- Per-user tier fallback when per-model missing
-- Global tier fallback as final chain
-- Partial context (modelId only, userId only, both)
-- Missing identity keys skip their tiers
-- Staleness intentionally ignored by selection (W5-4 handles post-selection)
-
-**Full Repo Test Status:** Skillsmith-runtime 18/18 Γ£à; Forge 644/647; runtime-cli 9/9; build clean.
-
-**Commit:** c74463f (phase-4.6/w5-3-tier-fallback)
-
----
-
-### Design Decision W5-2: Explicit DB Threading Hard Cut (Roger Wilco, 2026-05-25)
-
-**Status:** ✅ Implemented — All 50+ files refactored; explicit db parameter threaded through Cairn/Forge/runtime
-
-**Context:** Wave 5 test infrastructure revealed fragile coupling: 12+ Cairn public helpers relied on singleton `getDb()` fallback. Tests passed locally but failed in concurrent/worktree scenarios due to ambient global state. Standardizing to explicit db parameter enables deterministic test setups and future parallelization.
-
-**Resolution:** Hard-cut public DB helpers to accept explicit `db: Database.Database` parameter as first positional argument. Removed all singleton fallback overloads.
-
-**Signature Changes (Pattern):**
-```typescript
-// Before
-export function getPreference(key: string, sessionId?: string): string | undefined {
-  const db = getDb();
-  // ...
-}
-
-// After
-export function getPreference(
-  db: Database.Database,
-  key: string,
-  sessionId?: string,
-): string | undefined {
-  // ...
-}
-```
-
-**Helpers Killed:**
-- `logEventWithDefaultDb()` — removed
-- Deprecated `logEvent(sessionId, ...)` overload — removed
-- `getExecutionProfileWithDb()` — collapsed into `getExecutionProfile(db, ...)`
-- Deprecated fallback overload from `ensureSystemSession()` — removed
-
-**Call Sites Updated:**
-- Cairn agents: `curate()`, `prescriber()`, `archivist()`, `applier()`, `sessionState()` — all capture db once and pass through
-- Hooks: `runSessionStart()` — passes db to stale-session checks and DB counters
-- MCP server: Stores explicit db handle after `ensureDb()`
-- Tests: All 50+ test files updated to pass db explicitly; removed ambient singleton reads
-- Forge integration: `wave2-pipeline.test.ts`, `wave3-pipeline.test.ts`, `wave4-pipeline.test.ts` updated
-- Runtime CLI: `forgePrescribe.test.ts`, `orchestrationConfig.test.ts` updated
-- Skillsmith-runtime: `index.ts` updated for tier fallback integration
-
-**Test Coverage:** ✅ All tests passing across all workspaces
-- `@akubly/cairn`: All unit tests green
-- `@akubly/forge`: 644/647 passing (no new failures from refactor)
-- `@akubly/runtime-cli`: 9/9 passing
-- `@akubly/skillsmith-runtime`: 24/24 passing (includes W5-3 tier fallback + W5-2 integration)
-
-**Files Modified:** 50 files
-- Cairn db layer: 15+ modules (preferences, events, profiles, hints, prescriptions, sessions, insights, etc.)
-- Cairn agents: 5 files (curate, prescribe, archive, apply, sessionState)
-- Cairn tests: 20+ test files (100+ test assertions tightened)
-- Forge integration tests: 3 files
-- Runtime CLI tests: 2 files
-- Skillsmith-runtime: 1 file
-- Skills/support: 1 skill doc update
-
-**Rationale:**
-- Eliminates ambient global state in tests → enables parallelization and worktree safety
-- Explicit dependency injection simplifies reasoning about who owns the DB connection
-- Catches refactoring bugs: if a helper forgot to thread db, TypeScript errors immediately
-- Prepares for future architectural changes (e.g., connection pooling, transaction scoping)
-
-**Deferred Follow-ups:**
-- `getDb()` remains as connection factory for process entry points (CLI, server startup)
-- Root `npm test` stalls under shared CLI TTY (npm + Vitest interaction); direct workspace tests pass; no product code fix needed unless CI reproduces
-- Some test scenarios still use singleton factory to create db, then pass handle explicitly (acceptable pattern)
-
-**Commit:** 963a0aa (phase-4.6/w5-2-db-hard-cut)
-
-### Design Decision W5-4: Profile Staleness Confidence Attenuation (Rosella, 2026-05-25)
-
-**Status:** ✅ Implemented — Runtime profiles now carry staleness annotation + confidence scaling
-
-**Context:** Execution profiles carry `updatedAt` but nothing checks it. Prescriber confidence reflects profile quality, yet stale profiles (unchanged for 50+ sessions or 7+ days) still emit `confidence: 1`. Safety gate needed to prevent misleading trust in outdated data.
-
-**Resolution:** `loadExecutionProfile()` returns profiles with staleness annotation and attenuates confidence.
-
-**Staleness Shape:**
-```typescript
-staleness: {
-  stale: boolean;
-  reason: 'count' | 'age' | 'count+age' | null;
-}
-```
-
-Fresh profiles (not stale): `confidence: 1` (unchanged).  
-Stale profiles: `confidence * 0.5` (attenuated exactly once, even when both thresholds trip).
-
-**Threshold Defaults:**
-- **Count threshold:** Stale when `sessions_since_install - profile.sessionCount > 50`
-- **Age threshold:** Stale when `now - profile.updatedAt > 7 days`
-- Either threshold triggers staleness; both produce `reason: 'count+age'`
-- Attenuation factor: `0.5` exactly once
-
-**Composition with W5-3 (Tier Fallback):**
-- W5-3 tier selection runs first: `per-skill` → optional `per-model` → optional `per-user` → `global`, first match wins
-- W5-4 staleness check runs post-selection on the chosen profile
-- Staleness does NOT trigger fallback; confidence attenuation only
-- `LoadedExecutionProfile.source` preserved (tells downstream code which tier was used)
-
-**Test Coverage:** ✅ 16/16 passing in `profileFallback.test.ts`
-- Fresh profile → confidence: 1
-- Stale (count only) → confidence: 0.5
-- Stale (age only) → confidence: 0.5
-- Stale (both count + age) → confidence: 0.5 (single attenuation)
-- Custom attenuation option and clamping behavior
-- No profile → no error
-- W5-3 staleness does not trigger fallback behavior
-- Full repo: Forge 644/647 tests passing (no new failures)
-
-**Files Modified:**
-- `packages/skillsmith-runtime/src/index.ts` — `loadExecutionProfile()` implementation, types, threshold constants
-- `packages/skillsmith-runtime/src/__tests__/profileFallback.test.ts` — 16 tests covering staleness scenarios
-
-**Rationale:**
-- Closes trust gap: Prescriber confidence now reflects profile recency, not just structure
-- Configurable thresholds (50 sessions, 7 days) balance staleness detection with profile lifecycle
-- Confidence attenuation (0.5×) is conservative — allows fallback via W5-3 if available, or lets consumer decide to refresh
-- No Cairn schema changes — uses existing `updatedAt` and session counter relationship
-- No auto-refresh or notification surface added; those remain future product decisions
-
-**Deferred Follow-ups:**
-- Explicit profile last-update session counter would strengthen count-threshold semantics; deferred to future Cairn schema work
-- Auto-refresh, notification surface, or Forge prescriber behavior changes deferred to Phase 5 Curator work
-- Confidence attenuation factor (0.5) is hardcoded; making it configurable deferred to product input
-
-**Commit:** 96f7d6e (phase-4.6/w5-4-staleness-attenuation)
-
-### Phase 4.6 Wave 5 Wave B Complete (2026-05-25)
-
-**Status:** ✅ Wave A (W5-1, W5-3) landed + Wave B (W5-2, W5-4) landed locally on isolated branches
-
-**Wave A Completion:**
-- ✅ **W5-1 (commit 8b0a69a):** Session-kind separation → MCP fallback correctness fixed; 100/100 tests passing
-- ✅ **W5-3 (commit c74463f):** Tier fallback chain extended (per-skill → per-model → per-user → global); 18/18 tests passing; W5-3 does NOT trigger on staleness (W5-4 handles)
-
-**Wave B Completion:**
-- ✅ **W5-2 (commit 963a0aa):** Explicit DB threading hard cut (50 files, 1496 LOC refactored); all workspaces green; removes ambient global state
-- ✅ **W5-4 (commit 96f7d6e):** Staleness confidence attenuation (16 tests covering count/age/both scenarios); confidence scaled 0.5× when stale
-
-**Phase 4.6 Completion Criterion Met:**
-- Wave 5 Shape approved (2026-05-25)
-- Wave A landed on isolated branches (W5-1, W5-3)
-- Wave B landed on isolated branches (W5-2, W5-4)
-- All four commits ready for Aaron to review and merge (PR creation deferred per wave-4 pattern)
-
-**Next Step:** Aaron to review and open PRs:
-1. W5-1 base=main
-2. W5-3 base=main
-3. W5-4 base=W5-3 (depends on tier fallback selection logic)
-4. W5-2 base=main (can merge independently; no functional dependencies)
-
-**Wave 6 Backlog (on hold until Wave 5 PRs land):**
-- W5-5: MCP surface for forceRegenerate (needs W5-1 prerequisite + Aaron's UX policy input on confirmation prompts)
-- W5-6: Metrics dashboard (product shape undefined; needs Aaron's surface decision: CLI report vs. MCP resource vs. new package)
-
-**Test Status Summary:**
-- `@akubly/cairn`: All unit tests ✅
-- `@akubly/forge`: 644/647 (no new failures from W5 work)
-- `@akubly/runtime-cli`: 9/9 ✅
-- `@akubly/skillsmith-runtime`: 24/24 ✅ (includes W5-1, W5-3, W5-4 integration)
-- **Repo-wide:** All targeted tests green; Windows worktree safety validated
-
-**Full Repo Test Status:** Skillsmith-runtime 18/18 ✅; Forge 644/647; runtime-cli 9/9; build clean.
-
-**Commit:** c74463f (phase-4.6/w5-3-tier-fallback)
-
-### Design Decision W5-1: Session-Kind Separation (Roger, 2026-05-25)
-
-**Status:** ✅ Implemented — Migration 014 landed; MCP fallback corrected
-
-**Context:** Phase 4's `ensureSystemSession()` creates system sessions on every prescriber run. MCP endpoints (`resolve_prescription`, `lint_skill`, `test_skill`) currently fall back to `__system__` session when no repo key is available — a correctness bug that pollutes user-facing attribution.
-
-**Resolution:** Migration 014 with `session_kind` column (enum: 'user' | 'system').
-
-**Schema Changes:**
-```sql
-ALTER TABLE sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'user' 
-  CHECK (session_kind IN ('user', 'system'));
-```
-
-**Backfill:** Existing rows with `repo_key = '__system__'` set to `session_kind = 'system'`. All others default to 'user'.
-
-**API Changes:**
-- Added `getMostRecentUserSession()` — falls back only to user sessions
-- Added `getActiveUserSession(repoKey)` — user-scoped variant
-- Kept `getMostRecentActiveSession()` and `getActiveSession(repoKey)` for internal/system-aware callers
-- Created `getUserSessionForMcpFallback()` — wrapper for all MCP call sites
-
-**MCP Call Sites Updated:**
-1. `resolve_prescription` — accept/apply attribution
-2. `lint_skill` — telemetry event logging
-3. `test_skill` — scenario-path telemetry and result persistence
-4. `test_skill` — direct validation telemetry and result persistence
-
-**Test Coverage:** ✅ 100/100 passing
-- Migration schema validation
-- `getMostRecentUserSession()` filtering excludes system sessions
-- MCP fallback with `__system__` as most-recent returns user session instead
-- All four MCP endpoints attribute correctly
-- Full Cairn: 597/597 passing
-- Skillsmith runtime: 8/8 passing
-- Wave 4 integration: 14/14 passing
-
-**Files Modified:**
-- `packages/cairn/src/db/migrations/014-session-kind.ts` (new)
-- `packages/cairn/src/db/schema.ts` (registered migration)
-- `packages/cairn/src/db/sessions.ts` (new API functions, ensureSystemSession update)
-- `packages/cairn/src/mcp/server.ts` (four call sites using getUserSessionForMcpFallback)
-- `packages/cairn/src/__tests__/db.test.ts` and `mcp.test.ts` (new tests)
-
-**Deferred:** I10 (Curator system-event filtering) — depends on W5-1 but is a cloud telemetry design decision (Phase 5).
-
-### Design Decision W5-2: Explicit DB Threading Hard Cut (Roger, 2026-05-25)
-
-**Status:** ✅ Implemented — All 50+ files refactored; explicit db parameter threaded through Cairn/Forge/runtime
-
-**Context:** Wave 5 test infrastructure revealed fragile coupling: 12+ Cairn public helpers relied on singleton `getDb()` fallback. Tests passed locally but failed in concurrent/worktree scenarios due to ambient global state. Standardizing to explicit db parameter enables deterministic test setups and future parallelization.
-
-**Resolution:** Hard-cut public DB helpers to accept explicit `db: Database.Database` parameter as first positional argument. Removed all singleton fallback overloads.
-
-**Signature Pattern:**
-```typescript
-// Before
-export function getPreference(key: string, sessionId?: string): string | undefined {
-  const db = getDb();
-  // ...
-}
-
-// After
-export function getPreference(
-  db: Database.Database,
-  key: string,
-  sessionId?: string,
-): string | undefined {
-  // ...
-}
-```
-
-**Helpers Killed:**
-- `logEventWithDefaultDb()` — removed
-- Deprecated `logEvent(sessionId, ...)` overload — removed
-- `getExecutionProfileWithDb()` — collapsed into `getExecutionProfile(db, ...)`
-- Deprecated fallback overload from `ensureSystemSession()` — removed
-
-**Structural Changes:**
-- `curate()` captures one db handle and passes it into detector helpers
-- `runSessionStart()` passes db into stale-session checks and DB counters
-- MCP server initialization stores explicit db handle after `ensureDb()`
-- Tests keep explicit per-test db handles instead of relying on ambient singleton reads
-
-**Files Modified:** 50+ files across Cairn, Forge, runtime-cli, skillsmith-runtime
-
-**Test Coverage:** All workspaces green
-- Cairn: 597/597 passing
-- Forge: 644/647 (3 pre-existing todos)
-- Runtime-CLI: 9/9 passing
-- Skillsmith-runtime: 24/24 passing
-
-**Deferred Follow-ups:**
-- `getDb()` remains as connection factory for process entry points and test setup
-- Some tests still use singleton factory to create db, then pass handle explicitly
-- Root `npm test` stalls under shared CLI TTY when npm wraps Vitest; direct workspace tests pass
-
-### Design Decision W5-3: Global Tier Fallback Semantics (Rosella, 2026-05-25)
-
-**Status:** ✅ Implemented — Tier fallback chain extended; all tests passing
-
-**Context:** `loadExecutionProfile()` only checks `per-skill` → `global`, skipping `per-model` and `per-user` tiers. DB schema (migration 011) already supports all four granularities; the read path is incomplete.
-
-**Resolution:** Extend fallback chain from `per-skill` → `global` to `per-skill` → `per-model` → `per-user` → `global`.
-
-**Final API Surface:**
-```typescript
-export interface TierFallbackContext {
-  modelId?: string;
-  userId?: string;
-}
-
-function loadExecutionProfile(
-  db: RuntimeDb,
-  skillId: string,
-  fallbackContext?: TierFallbackContext
-): LoadedExecutionProfile | null;
-
-export type LoadedProfileSource = 
-  | 'per-skill'
-  | 'per-model'
-  | 'per-user'
-  | 'global';
-```
-
-**Chain-Walking Algorithm:**
-1. Always query `per-skill` first
-2. If `modelId` present, query `per-model` 
-3. If `userId` present, query `per-user`
-4. Always query `global` last
-5. Return first non-null row as complete profile; do not blend tiers
-6. Missing identity keys skip their tiers
-7. Staleness intentionally ignored by selection (W5-4 handles post-selection)
-
-**Test Coverage:** ✅ 18 passing tests
-- Per-skill tier selection
-- Per-model tier fallback when per-skill missing
-- Per-user tier fallback when per-model missing
-- Global tier fallback as final chain
-- Partial context (modelId only, userId only, both)
-- Missing identity keys skip their tiers
-- Staleness intentionally ignored by selection
-
-**Files Modified:**
-- `packages/skillsmith-runtime/src/index.ts` — loadExecutionProfile() and types
-- Tests — tier fallback unit tests
-
-**Scope Notes:** No Cairn schema, migration, or Forge prescriber changes required.
-
-### Design Decision W5-4: Profile Staleness Confidence Attenuation (Rosella, 2026-05-25)
-
-**Status:** ✅ Implemented — Runtime profiles now carry staleness annotation + confidence scaling
-
-**Context:** Execution profiles carry `updatedAt` but nothing checks it. Prescriber confidence reflects profile quality, yet stale profiles (unchanged for 50+ sessions or 7+ days) still emit `confidence: 1`. Safety gate needed to prevent misleading trust in outdated data.
-
-**Resolution:** `loadExecutionProfile()` returns profiles with staleness annotation and attenuates confidence.
-
-**Staleness Shape:**
-```typescript
-staleness: {
-  stale: boolean;
-  reason: 'count' | 'age' | 'count+age' | null;
-}
-```
-
-Fresh profiles: `confidence: 1` (unchanged).  
-Stale profiles: `confidence * 0.5` (attenuated exactly once, even when both thresholds trip).
-
-**Threshold Defaults:**
-- **Count threshold:** Stale when `sessions_since_install - profile.sessionCount > 50`
-- **Age threshold:** Stale when `now - profile.updatedAt > 7 days`
-- Either threshold triggers staleness; both produce `reason: 'count+age'`
-- Attenuation factor: `0.5` exactly once
-
-**Composition with W5-3:**
-- W5-3 tier selection runs first (per-skill → per-model → per-user → global)
-- W5-4 staleness check runs post-selection on chosen profile
-- Staleness does NOT trigger fallback; confidence attenuation only
-- `LoadedExecutionProfile.source` preserved
-
-**Test Coverage:** ✅ 24 passing tests in skillsmith-runtime
-- Fresh profile → confidence: 1
-- Stale (count only) → confidence: 0.5
-- Stale (age only) → confidence: 0.5
-- Stale (both count + age) → confidence: 0.5 (single attenuation)
-- Custom attenuation option and clamping
-- No profile → no error
-- W5-3 staleness does not trigger fallback behavior
-
-**Files Modified:**
-- `packages/skillsmith-runtime/src/index.ts` — loadExecutionProfile() staleness logic, types, thresholds
-- `packages/skillsmith-runtime/src/__tests__/profileFallback.test.ts` — 16 staleness tests
-
-**Deferred Follow-ups:**
-- Explicit profile last-update session counter would strengthen count-threshold semantics (future Cairn work)
-- Auto-refresh, notification surface, or Forge prescriber behavior changes deferred to Phase 5
-
-### Wave 5 Integration & Merge Strategy (Roger, 2026-05-26)
-
-**Status:** ✅ Integration branch resolves all inter-dependencies
-
-**Integration Branch:** `phase-4.6/wave-5-integration`
-
-**Recommended Merge Order:**
-1. **W5-1 session-kind** (clean merge)
-2. **W5-3 tier fallback** (clean merge)
-3. **W5-4 staleness attenuation** (depends on W5-3 tier fallback logic; stacks cleanly)
-4. **W5-2 explicit DB hard-cut** (cross-cutting; apply last to thread new APIs once)
-
-**Conflict Resolution Summary:**
-- **W5-1:** Clean merge
-- **W5-3:** Clean merge
-- **W5-4:** Conflict in `.squad/identity/now.md` — kept main's completed Wave 5 status (newer, reflected all four isolated branches)
-- **W5-2:** Code conflicts in:
-  - migration 012 tests
-  - `packages/cairn/src/db/sessions.ts`
-  - `packages/cairn/src/mcp/server.ts`
-  - `packages/skillsmith-runtime/src/index.ts`
-  - Root cause: stale W5-3 test under W5-2's public API hard-cut; fixed by passing explicit `db` parameter
-
-**Test Validation (Post-Integration):**
-- `npm run build`: clean ✅
-- `npm test`: green across all workspaces ✅
-- Cairn: 597/597 passing
-- Forge: 644 passed + 3 pre-existing todo = 647 total
-- Runtime-CLI: 9/9 passing
-- Skillsmith-runtime: 24/24 passing
-
-**Note on Forge "644/647":** Not failures. Three are pre-existing `it.todo` placeholders:
-- `prescribers-vectors.test.ts`: prompt-optimizer negative meanNetImpact confidence penalty (todo)
-- `prescribers-vectors.test.ts`: token-optimizer negative meanNetImpact confidence penalty (todo)
-- `weight-consistency.test.ts`: cross-package weight consistency (todo)
-
-**PR Strategy Recommendation:**
-Prefer one integration PR from `phase-4.6/wave-5-integration`. The isolated branches were green, but value is in resolved interaction between W5-1's session APIs, W5-3/W5-4 runtime profile behavior, and W5-2's explicit DB hard-cut. If separate review units desired, use four PRs in same order and include runtime-cli test fix on W5-2 PR.
-
-#### 2. Map Latency Targets to Test Assertions
-
-**What:** Cross-reference §30 §4.1 (Synchronous Scheduling) latency targets with §55 test examples.
-
-**Why:** §30 has latency targets (<100ms recall, <5s sweep). §55 has test examples. They don't currently reference each other. Tests should assert against targets.
-
-**Proposed §30 change in §4.1:**
-
-```diff
- **Measurable Latency:**
- - integrate: < 10ms (single fact insert)
- - recall: < 100ms (BM25 query + scoring for 10 results)
-+  Test assertion: `expect(recallDuration).toBeLessThan(100)`
- - rerank: < 50ms (rescore 10 facts)
- - decide: < 10ms (single-pass selection)
- - commit: < 500ms (batch persist for typical session of 50 facts)
-```
-
-**Impact:** Low — documentation hygiene, doesn't change spec.
-
-#### 3. Adopt Laura's `CuratorStore.retrieve(sessionId, query)` Signature
-
-**What:** Update §30 §1.2 (recall algorithm) to use `CuratorStore.retrieve(sessionId, query)` instead of implicit "search global then filter by session."
-
-**Current §30 pseudocode (line 86):**
-```
-candidates = searchBM25(query)
-if tier_filter is provided:
-  candidates = candidates.filter(f => f.tier in tier_filter)
-```
-
-## Cycle 1 Review Disposition — recall.ts (ea05e62)
-
-**Author:** Edgar (Learning Systems Specialist)  
-**Date:** 2026-05-29  
-**Review source:** 5-persona Code Panel, commit ea05e62  
-**Branch:** eureka/v1-m1-m4
-
----
-
-### Summary
-
-7 of 9 findings accepted and implemented. 1 escalated (spec gap). 1 deferred with comment.
-All tests pass; build clean.
-
----
-
-### Finding Dispositions
-
-#### F1 — NaN on future last_accessed · **ACCEPTED**
-
-- **Change:** `Math.max(0, (nowMs - fact.last_accessed) / 86_400_000)` — clamps negative
-  tDays to zero so future-dated `last_accessed` values cannot produce NaN in `Math.pow`.
-- **Location:** `recall.ts:compositeScore()` — tDays computation.
-- **Regression tests added:**
-  - `compositeScore returns finite value when last_accessed is in the future (F1 — NaN guard)` — direct unit test on `compositeScore`.
-  - `recall with a future-dated fact produces sane ordering, not NaN-corrupted (F1)` — end-to-end ordering test with future `last_accessed`.
-
----
-
-#### F2 — attention_tier typed as `string` · **ACCEPTED**
-
-- **Change:** `attention_tier: 'hot' | 'warm' | 'cold'` in `RecallResult`. `ATTENTION_MULTIPLIERS`
-  keyed as `Record<'hot' | 'warm' | 'cold', number>`. Removed `?? 1.00` fallback (now unnecessary
-  since the union type makes the lookup exhaustive at compile time).
-- **Regression test added:**
-  - `compositeScore produces finite positive scores for all attention_tier values (F2 exhaustiveness)` — runtime exhaustiveness check confirming all three tier values produce finite, positive scores with no `?? 1.00` fallback path.
-
----
-
-#### F3 — tDays=0 fallback gives unaccessed facts MAX recency · **ACCEPTED**
-
-- **Change:** `last_accessed` absent → `tDays = Infinity` → `recency = 0.1` (floor). Previously
-  used `tDays = 0` which gave `recency = 1.0`, treating never-accessed facts as just-accessed.
-- **Comment added:** Inline explanation: "never-accessed treated as very stale, not just-accessed".
-- **Regression test added:**
-  - `fact with no last_accessed ranks below identical fact with recent last_accessed (F3)` — verifies
-    a never-accessed fact ranks below an identical fact with `last_accessed = BASE_MS`.
-
----
-
-#### F4 — compositeScore not exported + scores discarded · **ACCEPTED**
-
-- **Design choice: option (a) — sibling `recallWithScores` function.**
-  `recallWithScores(options, deps): Promise<ScoredResult[]>` is the underlying function that
-  returns facts paired with their FR-2 scores. `recall(options, deps): Promise<RecallResult[]>`
-  becomes a thin convenience wrapper that calls `recallWithScores` and strips scores.
-  
-  **Rationale for (a) over (b):**  
-  Option (b) (debug flag: `RecallOptions.debug?: boolean`) conflates the return type contract
-  with a runtime flag, creating a union return type `Fact[] | ScoredResult[]` that callers must
-  narrow. Option (a) gives each concern its own function with a clear, stable type signature.
-  Separation of concerns is stronger: `recallWithScores` is the computational truth; `recall`
-  is the convenience alias. Adding a debug flag later is still possible without breaking either.
-
-- **New exports:** `compositeScore` (named), `ScoredResult` (interface), `recallWithScores` (named).
-- **Barrel updated:** `packages/eureka/src/index.ts` exports `recallWithScores`, `compositeScore`,
-  `ScoredResult`, `Ranker`.
-- **Existing test contract preserved:** All three existing tests use `recall()` — interface unchanged.
-
----
-
-#### F5 — Stale JSDoc bullet · **ACCEPTED**
-
-- **Change:** Removed `- Recency-gradient decay over time (ClockProvider seam — §30 §2.4)` from
-  the `recall()` JSDoc "Not yet implemented" list. M4 wired the ClockProvider seam; the bullet
-  was stale. The two remaining deferred bullets are preserved:
-  - `lastAccessedAt / accessCount side effects (§10 §10.1)`
-  - `Trust score updates from feedback (§30 §2.1)`
-- **Note:** JSDoc was moved to `recallWithScores` (the new underlying function). `recall` gets
-  a shorter doc pointing callers to `recallWithScores`.
-
----
-
-#### F6 — Trust filter undersupply · **ESCALATED**
-
-- **Action:** Researched §30 §1.2, §30 §2.3, §40. Spec is silent on overfetch policy — genuine
-  spec gap, not a §-tension.
-- **Decision drop:** `.squad/decisions/F6-recall-undersupply-escalation.md` (see below)
-- **Recommendation in drop:** Option (b) or (d) — push `trustFloor` into `FactStore.search()`.
-  Filtering belongs at the storage seam, not post-retrieval.
-- **Awaiting:** Cassima (product semantics), Crispin (FactStore contract).
-
----
-
-#### F9 — Reserve `ranker?: Ranker` placeholder · **ACCEPTED**
-
-- **New type:** `Ranker = (facts: RecallResult[], deps: { nowMs: number }) => ScoredResult[]`
-- **Added to `RecallDeps`:** `ranker?: Ranker` (optional).
-- **Wired conditional in `recallWithScores`:**
-  ```typescript
-  const scored = ranker
-    ? ranker(trusted, { nowMs })
-    : trusted.map(f => ({ fact: f, score: compositeScore(f, nowMs) }));
-  ```
-- **No test added** for the injection path (no consumer needs it yet — seam is non-breaking).
-- **Barrel updated:** `Ranker` exported from `packages/eureka/src/index.ts`.
-
----
-
-#### F10 — Remove `[key: string]: unknown` from RecallResult · **ACCEPTED**
-
-- **Change:** Removed index signature from `RecallResult`. The interface now has explicit typed
-  fields only: `content`, `trust`, `attention_tier` (union), `relevance?`, `importance?`, `last_accessed?`.
-- **Verification:** All test fixtures use only these explicitly typed fields — no fixture relied
-  on the index signature for extra fields. The stale schema comment in M3 test (referencing the
-  old `[key: string]: unknown` as a pass-through mechanism) was also removed.
-
----
-
-#### F12 — Trust floor hardcoded · **DEFERRED WITH COMMENT**
-
-- **Change:** Added inline TODO comment at `TRUST_FLOOR`:
-  ```typescript
-  // TODO(M5+): configurable per-call trustFloor via RecallOptions. See decision drop edgar-recall-undersupply-escalation if filed.
-  ```
-- **No value change.** Connected to F6's resolution path (if (b)/(d) chosen, trustFloor becomes
-  a pass-through from `RecallOptions` which also resolves this).
-
----
-
-### Build + Test Results
-
-**Build:** `npm run build` (tsc --build) → exit 0 ✅
-
-**Eureka (7 tests):**
-```
-✓ src/activities/__tests__/recall.test.ts (7 tests) 5ms
-  ✓ recall > surfaces keyword-overlapping entries at ≥80% precision
-  ✓ recall > ranks results by FR-2 composite formula descending (§30 §1.2)
-  ✓ recall > ranks recently-accessed fact above stale fact when clock is pinned (§30 §2.4)
-  ✓ recall > compositeScore returns finite value when last_accessed is in the future (F1 — NaN guard)
-  ✓ recall > recall with a future-dated fact produces sane ordering, not NaN-corrupted (F1)
-  ✓ recall > compositeScore produces finite positive scores for all attention_tier values (F2 exhaustiveness)
-  ✓ recall > fact with no last_accessed ranks below identical fact with recent last_accessed (F3)
-Test Files  1 passed (1)
-     Tests  7 passed (7)
-```
-
-**Cairn (609 tests):** 609 passed ✅  
-**Forge (647 tests):** 644 passed | 3 todo ✅
-
----
-
-### §-Tensions Discovered During F6 Research
-
-- §30 §1.2, §30 §2.3, §40 are uniformly silent on overfetch policy. Not a tension between
-  two spec clauses — a genuine gap. The spec assumed a healthy corpus where sub-floor facts
-  are rare. No existing guardrail.
-
----
-
-### Commit
-
-All changes in one commit on `eureka/v1-m1-m4`.  
-Commit message: `Eureka review cycle 1 fixes: F1,F2,F3,F4,F5,F9,F10,F12`  
-SHA: 0f83dcf
-
----
-
-## F6 Escalation — recall() Trust-Filter Undersupply
-
-**Author:** Edgar (Learning Systems Specialist)  
-**Date:** 2026-05-29  
-**Origin:** F6 — Trust filter undersupply (Correctness+Craft finding, cycle 1 review of ea05e62)  
-**Status:** ESCALATED — awaiting PM (Cassima) + Knowledge Rep (Crispin) input  
-**Reviewers needed:** Cassima (product semantics), Crispin (FactStore contract)
-
----
-
-### Problem
-
-`recall()` fetches exactly `k` candidates from `FactStore.search({ limit: k })`, then applies
-a trust floor filter (`trust >= 0.15`). When multiple candidates fall below the floor, the
-returned set silently shrinks to fewer than `k` results.
-
-```typescript
-// packages/eureka/src/activities/recall.ts:109,113
-const candidates = await factStore.search({ query, sessionId, limit: k });
-// ...
-const trusted = candidates.filter(f => f.trust >= TRUST_FLOOR); // may yield < k
-```
-
-Neither §30 §1.2 (recall algorithm) nor §30 §2.3 (trust dynamics) nor §40 specifies
-an overfetch policy. The spec documents the trust floor predicate but is silent on what
-`recall()` must do when that predicate thins the candidate set below `k`.
-
-**Observed failure mode:** A caller requests `k=5` and receives 2 results without any
-signal that the shortfall occurred. No error, no partial-result flag, no retry. The caller
-cannot distinguish "only 2 relevant facts exist" from "3 more facts exist but fell below
-the trust floor."
-
----
-
-### Options
-
-#### (a) Overfetch with buffer: `limit: k * 3`
-
-Pass `limit: k * 3` to `FactStore.search()`. After trust filtering, slice to `k`.
-
-**Pros:** Simple. Likely yields full `k` in practice (low-trust facts are rare at steady state).  
-**Cons:** Wastes storage I/O (fetches 3× what is needed in the happy path). The multiplier
-`3` is a magic number with no principled derivation. Brittle if the corpus is dominated by
-low-trust facts (post-contemplate penalties, Path 2 ingest). Over-fetching obscures the
-real semantics of `k`.
-
-#### (b) Push trust floor into `FactStore.search()` as a query parameter
-
-Extend the search interface: `search({ query, sessionId, limit, trustFloor? })`.
-The storage layer (SQLite BM25 index) applies `WHERE trust >= trustFloor` before
-ranking and returning `k` results. The filter happens where the data lives.
-
-**Pros:** Semantically cleanest — storage returns exactly `k` post-filter results.
-Enables future index optimization (partial index on `trust >= 0.15`). Eliminates the
-over-fetch problem at source. Aligns with London-school seam discipline: FactStore.search()
-owns its own filtering contract.  
-**Cons:** Requires a FactStore interface change → Crispin's domain (§20 storage contract).
-Requires a FactStore contract test update (§55 §3.3).
-
-#### (c) Document as caller contract: "recall may return < k"
-
-Add JSDoc: `@returns up to k results; may return fewer if trust floor filters candidates`.
-No code change.
-
-**Pros:** Minimal. Honest about current behavior.  
-**Cons:** Callers cannot tell how many results were suppressed. UX: if the agent asks for
-`k=5` and gets 2, it has no signal to retry with lower trust floor or fallback. Brittle
-for downstream pipelines that assume exactly-k semantics.
-
-#### (d) Widen FactStore search interface to accept `trustFloor`
-
-Same as (b) but as an optional parameter: `search({ ..., trustFloor?: number })`. The
-storage layer applies it as a `WHERE` predicate only when provided.
-
-**Pros:** Backwards compatible — existing calls without `trustFloor` continue to work.
-FactStore implementors can choose to filter at SQL level or fall back to application-level
-filter for implementations that don't support it.  
-**Cons:** Optional parameter creates two code paths; implementors may implement inconsistently.
-Less precise than (b)'s mandatory contract.
-
----
-
-### Recommendation
-
-**Option (b) or (d) — push the filter to where the data lives.**
-
-Layering rationale: trust filtering is a storage-level predicate (`WHERE trust >= 0.15`),
-not a post-retrieval concern. Doing it after `search()` returns results means we always
-fetch more than we need and silently discard. The correct seam is at `FactStore.search()`.
-
-Between (b) and (d): prefer **(b)** if Crispin can update the FactStore contract in the
-same sprint (clean, mandatory, testable via contract test). Prefer **(d)** as a temporary
-bridge if FactStore interface is frozen and backwards compatibility is required.
-
-Option (c) is the minimum viable mitigation if the sprint gate prohibits interface changes —
-at least it documents the behavior honestly so callers can handle partial results.
-
-Option (a) is discouraged: the multiplier is arbitrary, and the over-fetch cost compounds
-for callers with large `k` values (e.g., sweep pipelines).
-
----
-
-### Inputs Needed Before Implementation
-
-1. **Cassima (PM):** Is "recall may return < k" acceptable caller contract for v1, or does
-   the product require exact-k semantics? Does user-facing UX depend on a full result set?
-
-2. **Crispin (Knowledge Rep / FactStore contract):** Can `FactStore.search()` accept a
-   `trustFloor` parameter in the next sprint? Would the SQLite implementation apply it as
-   a `WHERE` predicate before returning results? Contract test surface?
-
-3. **Laura (TDD):** If we go with (b)/(d), a new M5-adjacent RED beat is needed:
-   `recallWithScores()` with trust-depleted corpus still returns exactly `k` results.
-
----
-
-### §-Tensions Discovered
-
-None — §30 §1.2, §30 §2.3, and §40 are uniformly silent on overfetch policy. This is a
-genuine spec gap, not a tension between two existing spec clauses. The silence likely
-reflects v1 assuming a healthy corpus where low-trust facts are uncommon.
-
----
-
-### Related
-
-- F12: `TRUST_FLOOR` is currently hardcoded at 0.15. If this decision resolves toward
-  option (b)/(d), `trustFloor` becomes a pass-through from `RecallOptions`, which
-  also resolves F12's per-call configurability TODO.
-- `recall.ts:60`: `// TODO(M5+): configurable per-call trustFloor via RecallOptions.`
-
----
-
----
-
-### 2026-05-29: F6 Resolution — Recall undersupply policy
-
-**Authors:** Crispin (Knowledge Rep, FactStore owner) + Cassima (PM)
-**Resolves:** Cycle 1 finding F6 (Correctness + Craft), Edgar's escalation drop
-**Context:** `recall()` asks FactStore for exactly `k` candidates, then applies a
-trust-floor filter in the activity layer, then slices to `k`. When any of the `k`
-raw candidates fail the 0.15 trust gate, the returned set silently shrinks —
-breaking the implicit AC-1.3 assumption that `recall({ k: 5 })` returns 5 facts
-when the store holds ≥5 qualifying facts.
-
----
-
-**Decision: Option (b) — Push `minTrust` into `FactStore.search()`**
-
-This is not a new policy concern crossing a layer boundary. §20 §7.4 already
-specifies `min_trust` as a first-class `RecallQuery` predicate, with the default
-recall filter documented as `WHERE retired = false AND trust >= 0.15`. The
-contract tests listed in §7.4 explicitly exercise `search({ min_trust: 0.6 })`.
-The current TypeScript `FactStore` seam (recall.ts line 33) simply lags the
-spec. This fix closes that gap.
-
----
-
-**What changes:**
-
-- **`FactStore` interface (recall.ts line 33):** add `minTrust?: number` to the
-  `search()` args. New shape:
-  ```typescript
-  search(args: {
-    query: string;
-    sessionId: SessionId;
-    limit: number;
-    minTrust?: number;   // default 0.15 per §20 §7.4
-  }): Promise<RecallResult[]>;
-  ```
-
-- **`recallWithScores()` call site (recall.ts line 134):** pass the floor:
-  ```typescript
-  const candidates = await factStore.search({
-    query,
-    sessionId,
-    limit: k,
-    minTrust: TRUST_FLOOR,
-  });
-  ```
-
-- **Remove activity-layer post-filter (recall.ts line 137):** delete the
-  `.filter(f => f.trust >= TRUST_FLOOR)` line. The store now owns this
-  predicate; applying it twice is redundant and masks test failures.
-
-- **Activity unit tests:** update FactStore mocks to honor `minTrust` in their
-  stub implementations, so tests exercise the correct contract.
-
-- **§20 §7.4 doc note (optional, low-priority):** add a one-line cross-ref
-  noting that the TypeScript seam in recall.ts now matches the `RecallQuery`
-  shape shown here. No structural doc change required — the spec was already
-  correct.
-
-- **Sequencing:** lands in **M4** (current cycle). Small surgical change;
-  no new implementation surface.
-
----
-
-**Rationale:**
-
-**Layering (Crispin):** The trust floor is a *data quality predicate*, not an
-activity-level ranking policy. The distinction matters: `retired = false` and
-`trust >= 0.15` are both hard-gate filters that belong at the query layer — they
-define the valid working set, not how it is ranked. The FR-2 composite formula
-(relevance, importance, trust weighting, recency) is the activity's ranking
-policy and it correctly stays in `recallWithScores()`. Pushing `minTrust` into
-the store contract does not leak ranking policy; it moves a structural WHERE
-clause to where it executes most efficiently and is already specified (§20 §7.4).
-The concern about "FactStore knowing about trust semantics" is a non-issue:
-FactStore already stores `trust` as a first-class property — filtering on it is
-no different from filtering on `session_id`.
-
-**PM scope (Cassima):** The concrete FactStore SQLite implementation is on the
-M5+ critical path. That is not a blocker here. What changes in M4 is the
-*interface definition* (a TypeScript type, not an implementation) and the
-*activity call site*. Activity tests already mock FactStore — mocks need a
-one-line update to respect `minTrust`. The real SQLite implementation will
-inherit the correct contract when Crispin builds it in M5+; it simply
-translates `minTrust` to a `WHERE trust >= ?` clause, which was always the
-specified behavior. This fix adds zero scope to the FactStore implementation
-milestone. If anything, it removes scope: the activity no longer has to own a
-filter loop, which is a net subtraction of implementation surface.
-
-**AC-1.3 fidelity:** With this fix, `recall({ k: 5 })` will return 5 facts
-whenever the store holds ≥5 facts with `trust >= 0.15`. The `limit: k` cap is
-applied *after* the trust filter inside the store query (i.e., `WHERE trust >= 0.15 ... LIMIT k`), so the caller receives exactly k qualifying results.
-Residual failure mode: if the store holds fewer than k qualifying facts, recall
-correctly returns fewer than k — this is honest, not a pipeline bug. The silent
-undersupply bug (store had qualifying facts the activity never asked for) is
-eliminated.
-
-**Forward compat:**
-- *Ranker seam (F9, `ranker?: Ranker`):* The ranker receives already-filtered
-  candidates from FactStore. Moving trust filtering to the store means the ranker
-  gets a pre-qualified working set — strictly better input. No interface change
-  needed for F9.
-- *Per-call configurable trust floor (TODO comment, M5+):* When Aaron eventually
-  adds `trustFloor` to `RecallOptions`, the wiring is a clean one-liner:
-  `minTrust: options.trustFloor ?? TRUST_FLOOR`. No rework of this fix required.
-- *Trust-feedback updates (M5 target):* Trust updates modify stored `trust`
-  values. The `minTrust` filter evaluates whatever is currently in the store —
-  no coupling to update mechanics.
-
----
-
-**Rejected alternatives (one line each):**
-
-- **(a) Overfetch (`limit: k * BUFFER_FACTOR`):** rejected — arbitrary multiplier
-  cannot guarantee k results under adversarial trust distributions; wastes I/O
-  on healthy stores; does not fix the root cause; introduces a magic constant
-  with no principled basis.
-
-- **(c) Document as caller contract (`recall may return < k`):** rejected —
-  punts the correctness problem to every consumer; directly undermines AC-1.3
-  which specifies ≥80% precision *at k=5*, implying k results are expected;
-  sets a brittle precedent for future activities.
-
-- **(d) Generic filter params (open-ended predicate map):** rejected — §20 §7.4
-  already chose *typed, named predicates* (`min_trust`, `include_retired`, `tier`,
-  `kind`) over a generic predicate bag. Option (d) would diverge from the
-  specified contract for no v1 benefit; reserve generic composition for v2+ if
-  a use case emerges.
-
----
-
-**Implementation handoff:**
-
-- **Owner:** Edgar (call site + test updates), reviewed by Crispin (interface
-  shape ownership)
-- **Sequencing:** M4 — current cycle. Unblocked.
-- **Blockers:** None. FactStore SQLite implementation (M5+) is not required;
-  the mock boundary is sufficient.
-- **Contract test note:** The existing §20 §7.4 contract test requirement
-  (`search({ min_trust: 0.6 })` excludes facts below threshold) already covers
-  this. When the real FactStore ships, that contract test validates the SQL
-  predicate. Edgar's activity tests need mock updates only.
-
----
-
-**Signed:** Crispin (Knowledge Rep), Cassima (PM), 2026-05-29
-
-
----
-
-### 2026-05-29: Cycle 2 Combo Pass — F6 + C5 + C6
-
-**Author:** Edgar (Learning Systems Specialist)
-**Branch:** eureka/v1-m1-m4
-**Commit:** c459f6a
-
----
-
-## F6 — `minTrust` wired into `FactStore.search()` per §20 §7.4
-
-### Interface change
-
-`FactStore.search()` in `packages/eureka/src/activities/recall.ts` (line ~32) gains a new optional parameter:
-
-```typescript
-export interface FactStore {
-  search(args: {
-    query: string;
-    sessionId: SessionId;
-    limit: number;
-    /** Trust floor predicate per §20 §7.4 — store applies WHERE trust >= minTrust. Default 0.15. */
-    minTrust?: number;
-  }): Promise<RecallResult[]>;
-}
-```
-
-TypeScript camelCase (`minTrust`) matches the §20 §7.4 SQL predicate `min_trust`. Optional (`?`) so existing mocks that don't assert the field compile without changes; contract tests will enforce it explicitly.
-
-### Call-site change
-
-`recallWithScores()` now passes the trust floor at the data layer:
-
-```typescript
-const candidates = await factStore.search({ query, sessionId, limit: k, minTrust: TRUST_FLOOR });
-```
-
-`TRUST_FLOOR = 0.15` (const, unchanged). The store now receives the predicate and applies `WHERE trust >= 0.15 LIMIT k`, which is the §20 §7.4-specified behavior. This closes the silent undersupply bug: when the store holds ≥k qualifying facts, it now returns exactly k qualifying facts, not k unchecked facts that may include below-floor entries.
-
-### Post-filter decision: KEPT (belt-and-suspenders)
-
-The activity-layer `candidates.filter(f => f.trust >= TRUST_FLOOR)` line is **retained** as defense-in-depth. Reasoning:
-
-- The Crispin/Cassima resolution recommended removal; Aaron's Cycle 2 brief recommended keeping it.
-- Keeping it means: if a FactStore mock or future implementation does not honor `minTrust`, no below-floor facts reach the ranker. The contract test (when written) will verify the mock honored `minTrust`; the post-filter is a safety net for implementations that diverge.
-- This is documented inline with a comment explaining the choice.
-- Cost of keeping: negligible. A no-op filter when FactStore honors `minTrust` correctly.
-
-If a future cycle decides to remove it (for simplicity), the change is one line deletion and the existing F6 regression test continues to validate the call-site argument.
-
-### TODO comment updated
-
-Old:
-```
-// TODO(M5+): configurable per-call trustFloor via RecallOptions. See decision drop edgar-recall-undersupply-escalation if filed.
-```
-
-New:
-```
-// TODO(M5+): per-call trustFloor override via RecallOptions — needs §-decision;
-// tracked in cassima-crispin-recall-undersupply-resolution. min_trust IS now
-// configurable at the FactStore boundary (F6); the remaining work is wiring an
-// optional RecallOptions.trustFloor through as minTrust: options.trustFloor ?? TRUST_FLOOR.
-```
-
-This is the F12 deferral — the spec already supports `minTrust` at the store boundary; the open question is whether `RecallOptions` should expose a per-call override. Deferred to M5+.
-
-### Regression test added
-
-```typescript
-it('passes minTrust: 0.15 to factStore.search so trust filtering happens at the data layer (F6)', async () => {
-  const factStore = { search: vi.fn().mockResolvedValue([]) };
-
-  await recall(
-    { query: 'trust floor test', sessionId, k: 5 },
-    { factStore, clock: fixedClock },
-  );
-
-  expect(factStore.search).toHaveBeenCalledWith(
-    expect.objectContaining({ minTrust: 0.15 }),
-  );
-});
-```
-
-Vitest call-argument assertion on the mock confirms the data-layer parameter is wired correctly.
-
----
-
-## C5 — Ranker JSDoc clarification
-
-Added to the `Ranker` type JSDoc in recall.ts:
-
-> Note: recallWithScores always re-sorts; ordering produced by Ranker is ignored. Return scored pairs; sorting is the caller's responsibility.
-
-The implicit re-sort semantics were previously undocumented. A custom ranker returning pre-sorted `ScoredResult[]` would silently have its sort overridden by `recallWithScores`'s `.sort((a, b) => b.score - a.score)`. This note makes the contract explicit at the type definition.
-
-**Disposition:** Complete. No behavioral change — documentation only.
-
----
-
-## C6 — Ranker-path guard test
-
-Added one test exercising the optional ranker code branch:
-
-```typescript
-it('no-op ranker (compositeScore inline) produces same ordering as inline scoring path (C6 — ranker guard)', async () => {
-  // fixture: same 4-fact set as FR-2 ordering test (EPOCH_MS, deterministic scores)
-  // noOpRanker: calls compositeScore directly — semantically identical to inline path
-  // asserts: withRanker ordering === withoutRanker ordering
-});
-```
-
-**Purpose:** If `recallWithScores` ever diverges in how it handles the ranker branch (e.g., skips the final re-sort, applies different slicing), this test catches it immediately. The test is load-bearing for ranker seam stability.
-
-**Disposition:** Complete. 1 new test; all 9 Eureka tests pass.
-
----
-
-## Build / test results
-
-| Suite | Files | Tests | Result |
-|---|---|---|---|
-| @akubly/eureka | 1 | 9 | ✅ |
-| @akubly/cairn | 26 | 609 | ✅ |
-| @akubly/forge | 24 | 644 + 3 todo | ✅ |
-| `tsc --build` | — | — | ✅ |
-
----
-
-**Signed:** Edgar, 2026-05-29
-
-
----
-
-### 2026-05-29T23:24:24Z: User directive — Eureka layering rule (C8 resolution)
-
-**By:** Aaron Kubly (via Copilot, as team lead resolving Graham/Genesta split)
-**Context:** Cycle 2 finding C8 — should eslint test-dir exemption be added to allow cairn/forge integration tests importing @akubly/eureka?
-
-**What:**
-- Eureka is a standalone component built on shared substrate (@akubly/types). It tests its OWN integration with Cairn/Forge (consumer-tests-upstream pattern). Cairn and Forge MUST NOT import @akubly/eureka — in production code OR in tests.
-- The eslint `no-restricted-imports` guardrail (Gabriel's commit 27ff2af) stays strict — no test-dir exemption.
-- Cross-package integration tests for Eureka behavior live in `packages/eureka/src/__tests__/`. Eureka may add cairn/forge as devDependencies to exercise real integration.
-
-**Why:** Preserves the kernel boundary and the "independently deployable" promise of Eureka. Aligns with Genesta's architectural lens. Documented in §40 to prevent the foot-gun Graham warned about (engineers might otherwise normalize "just a quick cross-package test" in cairn/forge, eroding the layering).
-
-**Tiebreak:** Graham (Lead) recommended exempting test dirs for boundary validation; Genesta (Eureka architect) recommended strict. Aaron sided with Genesta and authorized the third-option documentation pass.
-
-
----
-
-## Archived Decisions
-
-See decisions-archive.md for Wave 1, Wave 2, Wave 3, and earlier Cycle 1 decisions.
-
-
----
-
-# Issue #17 — Async IO Sweep Summary
-
-**Date:** 2026-05-26  
-**Author:** Laura (Tester)  
-**Branch:** `issue-17/async-io-sweep`
-
----
-
-## Scope Swept
-
-5 focus areas per spec, in priority order:
-
-1. Cairn DB layer (db/index.ts)
-2. skillsmith-runtime composition root (src/index.ts + hooks/sessionStart.ts)
-3. runtime-cli commands (cli.ts)
-4. Forge prescribers (prescribers/)
-5. MCP server handlers (mcp/server.ts) + hook entry points
-
----
-
-## Findings Count by Priority
-
-| Priority | Count | Description |
-|----------|-------|-------------|
-| **HIGH** (blocking, must fix) | 0 | — |
-| **MEDIUM** (addressable, improves correctness) | 0 | — |
-| **LOW** (informational, guard verified) | 2 | resolveAndReadSkill sync IO; gitContext execSync |
-| **ACCEPTABLE** (expected, leave as-is) | 3 | DB init; applier file writes; discovery scan |
-| **CLEAN** (no IO) | 3 | Forge prescribers; skillsmith-runtime; runtime-cli |
-
-**Total: 0 required fixes. 8 areas swept. 12 tests added.**
-
----
-
-## Key Recommendations
-
-1. **No async conversion needed.** The MCP stdio transport is serial — sync IO cannot starve other requests. Converting would add `async` complexity with no practical benefit.
-
-2. **Guards are the invariants, not sync-vs-async.** The important properties are: size limit (1 MB), timeout (2000ms on execSync), and error-handling (all guards produce correct error responses). All three verified.
-
-3. **`resolveAndReadSkill` is the correct pattern** for MCP file IO: extract to a helper, apply name/size/read guards, test the helper directly. Other handlers should follow this pattern if they ever need file IO.
-
-4. **W5-5 (`forge_prescribe` MCP handler)** is not yet landed. Test plan written at `.squad/decisions/inbox/laura-w5-5-async-test-plan.md`. Rosella should integrate these 5 tests when W5-5 ships.
-
----
-
-## Tests Added
-
-File: `packages/cairn/src/__tests__/mcp-async-io.test.ts` (12 tests, all passing)
-
-- 8 tests: `resolveAndReadSkill` guard behaviors (name check, size limit, read error, success path, relative path, directory append)
-- 2 tests: `gitContext.ts` structural — timeout guards and stdio pipe flags present
-- 2 tests: MCP server structural — sync IO isolated to `resolveAndReadSkill` only, helper call sites counted
-
-Code change: exported `resolveAndReadSkill` and `isSkillFileError` from `mcp/server.ts` to enable direct testing. No behavior change.
-
----
-
-## W5-5 Coverage
-
-Branch `phase-4.6/w5-5-mcp-forge-prescribe` does **not** exist at sweep time.
-
-Test plan written: `.squad/decisions/inbox/laura-w5-5-async-test-plan.md`  
-Covers: Promise return check, CairnEvent fail-open, sequential re-use safety, forceRegenerate semantics, structural no-inline-fs assertion.
-
-
----
-
-# W5-5 Async-Correctness Test Plan
-
-**Date:** 2026-05-26  
-**Author:** Laura (Tester)  
-**Target branch:** `phase-4.6/w5-5-mcp-forge-prescribe` (not yet landed)  
-**Status:** PLAN — for Rosella to integrate when W5-5 ships
-
----
-
-## Context
-
-W5-5 adds a `forge_prescribe` MCP tool handler to the Cairn MCP server. Based on the W5-5 intent (surfacing forge-prescribe via MCP) and the async-IO sweep findings on the existing server, these tests should be written before the handler goes to review.
-
----
-
-## Test File
-
-When W5-5 lands, add these tests to a new or existing file:  
-`packages/cairn/src/__tests__/mcp-forge-prescribe.test.ts`
-
-Or append to `mcp-async-io.test.ts` if scope is limited.
-
----
-
-## Required Tests
-
-### A. Handler does not block on sync IO
-
-**Laura's discovered seam (§55 §2.3):**
-```typescript
-const store = new CuratorStore();
-const candidates = await store.retrieve(options.sessionId, options.query);
-```
-
-**Why Laura's is better:**
-- Session isolation is **explicit** in the interface (prevents accidental cross-session leaks)
-- Aligns with FR-13 §SessionId brand as load-bearing integration primitive
-- Makes §30 §1.2 algorithm match the test-discovered boundary
-
-**Proposed §30 revision (line 84-89):**
-```diff
- function recall(query, limit, tier_filter, trust_floor):
-   trust_floor = trust_floor ?? 0.15
--  candidates = searchBM25(query)  // BM25 lexical search
-+  candidates = curatorStore.retrieve(session_id, query)  // BM25 + session-scoped
-   
-   if tier_filter is provided:
-     candidates = candidates.filter(f => f.tier in tier_filter)
-```
-
-**Impact:** Medium — changes internal collaborator signature but not observable behavior. Test-discovered seam is cleaner than original §30 design.
-
-### Recommendation
-
-**For Aaron:** None of these block §55 acceptance or v1 implementation. All three are §30-internal improvements.
-
-**For Edgar (next session):** Apply all three changes to §30 in a single update pass. Then mark this decision as "Applied."
-
-**Timeline:** Before first `recall` implementation PR. Seam #3 (CuratorStore signature) is load-bearing for tests; others are hygiene.
-
-### Related
-
-- §55: TDD Strategy (Laura, approved with notes)
-- §30: Learning Systems (Edgar, will receive updates)
-- FR-12: Extraction-ready design (mechanism #1 = ClockProvider)
-- FR-13: SessionId brand (CuratorStore signature change honors this)
-
----
-
-## Open Decision Queue (Updated 2026-05-27)
-
-All remaining open questions from R6 reconciliation remain open. London-school TDD spine (§55) authored and approved. Implementation readiness pending Graham's TOC integration (in progress).
-
-**Author:** Cassima (Product Manager)  
-**Date:** 2026-05-25  
-**Status:** R6 synthesis — trio reconciliation + Aaron's 4 signals → recommendation  
-**Inputs:**
-- PRD v3 (embedded above)
-- Genesta R6 (B+ verdict, v3.1 patch path)
-- Crispin R6 (Path A clean-slate recommended)
-- Edgar R6 (learning-kernel extraction)
-- Aaron's 4 signals (above)
-
-### Part 1: Honest Scoreboard of the Trio
-
-**Why did three agents read the same codebase and reach different conclusions?**
-
-They read the **same evidence** but applied **different priors**:
-
-| Agent | Evidence focus | Prior/lens | Conclusion |
-|-------|---------------|------------|------------|
-| **Genesta** | System architecture (does v3's shape fit the substrate?) | Integration-first ("how do we unify?") | B+ — v3 is sound; patch name collisions, add sqlite-vec reality check |
-| **Crispin** | Schema compatibility (does v3's schema fit Cairn's tables?) | Representation purity ("schemas should be clean") | Path A — v3 is orthogonal to Cairn; clean-slate is honest |
-| **Edgar** | Algorithm reusability (can we extract shared primitives?) | Reuse maximalism ("don't duplicate what exists") | learning-kernel extract — 70% exists, extract it |
-
-**The split is priors, not evidence.** All three agree on the substrate truths:
-- Cairn has no vector search (confirmed)
-- Sessions are a table, not facts (confirmed)
-- `DecisionRecord` is flat, not structured (confirmed)
-- Sweep/ranker/trust machinery exists but is prescription-locked (confirmed)
-
-**Crispin's "irreconcilable" framing is schema-purist.** He's technically correct that sessions-as-facts and sessions-as-table are different data models. But Aaron's signal (b) says the existing `DecisionRecord` is "closer in spirit than Crispin's framing suggests." Same pattern applies to sessions: the *concept* is shared; the *mechanics* differ.
-
-**Edgar's "extract learning-kernel" is correct but orthogonal.** Extracting sweep/ranker/trust is a refactor that Cairn *could* adopt — but Aaron's signal (d) decouples Eureka's timeline from Cairn's. Extraction is a future-ready design decision, not a v1 blocker.
-
-**Genesta's "v3.1 patch" understates the session mechanics.** Renaming `kind=session` to `kind=conversation` (Genesta's patch #1) is explicitly rejected by Aaron's signal (a): "Session is THE Copilot nomenclature — converge on it."
-
-**Net:** The trio agrees on facts, disagrees on what to do about them. The disagreement is philosophical (purity vs integration vs reuse), not evidentiary.
-
-### Part 2: Evaluate Path D (Aaron's Probe)
-
-Aaron's signal (d) probed a fourth option:
-
-> **Path D: Design with Cairn in mind, don't force Cairn to adopt yet.** Eureka ships standalone but kernel-shaped. Cairn migrates later when there's a reason.
-
-**What does Path D concretely look like?**
-
-| Dimension | Path D concrete design |
-|-----------|------------------------|
-| **Storage layout** | `~/.copilot/eureka/{agent,project,user}.db` — Eureka's own tier-per-file layout. Cairn keeps `~/.cairn/knowledge.db`. No forced path harmonization. |
-| **Schema** | Eureka builds its own `facts` table (unified storage per v3), `relations` table (edge graph per v3), `sessions` as `kind=session` facts. Does NOT touch Cairn's `sessions` table. |
-| **Edge model** | Eureka's Tier 1/2/3 edge enum (16+ types) lives in Eureka only. Cairn's FK-based joins stay as-is. No migration 013/014 pushed onto Cairn. |
-| **Sweep** | Eureka's sweep is Edgar's generalized `learning-kernel/sweep` module. Cairn's Curator COULD adopt it later, but v1 ships them separately. |
-| **Ranker** | Eureka's composite ranker (0.5·rel + 0.2·imp + 0.2·trust + 0.1·rec) is a standalone module. Cairn's `computePriority()` stays prescription-locked. Extraction happens when Cairn maintainer chooses. |
-| **Decide schema** | Eureka's `DecisionPayload` (structured, `options[]`, `confidence: number`) coexists with Forge's `DecisionRecord` (flat, `alternatives[]`, `confidence: 'high'|'medium'|'low'`). Bridge adapter maps between them. **Aaron signal (b):** "closer in spirit than Crispin says" — adapter is tractable. |
-
-**Path D vs Alternatives**
-
-| Path | Summary | Cairn impact | Eureka timeline | Architectural purity |
-|------|---------|--------------|-----------------|---------------------|
-| **A (Crispin)** | Clean-slate Eureka; Cairn unchanged | None | Fast (greenfield) | High (no compromise) |
-| **B (Edgar)** | Extract `learning-kernel/`; both Cairn and Eureka compose | Refactor required | Slow (refactor first) | High (shared kernel) |
-| **C (Genesta)** | Extend Cairn with v3.1 patches; Eureka as Cairn plugin | Schema changes | Medium | Medium (forces convergence) |
-| **D (Aaron probe)** | Eureka standalone but kernel-shaped; Cairn adopts later | None now; optional later | Fast (ships standalone) | High (future-compatible) |
-
-**Is Path D a real fourth option, or is it just "Path B but defer Cairn refactor"?**
-
-Path D is a **third axis**: it's Path A's greenfield + Path B's kernel-shaped design, without Path B's refactor-first timeline. It decouples architectural correctness from timeline pressure.
-
-- Path A says "ignore Cairn entirely"
-- Path B says "refactor Cairn first, then build"
-- Path D says "design as if the refactor happened, ship without forcing it"
-
-**Concrete difference:** Path B extracts `packages/learning-kernel/` as a prereq. Path D writes Eureka's sweep/ranker/trust as standalone modules that COULD be extracted later, but ships them inside `packages/eureka/src/learning/` for v1.
-
-### Part 3: Recommendation — **Path D**
-
-**Reasoning:**
-
-1. **Aaron's signal (c): "I like the substrate overlap."** Curator≈sweep, confidence≈trust, decision records — these are convergent designs. Path D leans into overlap without forcing Cairn changes.
-
-2. **Aaron's signal (d): "Decouple timeline pressure from architectural correctness."** Path D does exactly this. Eureka ships v1 without blocking on Cairn refactor.
-
-3. **No v4 rewrite needed.** PRD v3's spec is sound. The gaps are implementation details (vector search, session mechanics, decide schema adapter), not structural rewrites.
-
-4. **Trio consensus on substrate truths.** All three agree that sweep/ranker/trust exist and are reusable. Path D preserves that reuse potential without forcing extraction now.
-
----
-
-### Part 4: v3.1 Patch (Not v4 Redraft)
-
-Based on Path D, PRD v3 stands with targeted patches. **No structural rework needed.**
-
-#### Patch 1: Sessions — Mechanics, Not Rename
-
-**Source:** Aaron signal (a): "Session is THE Copilot nomenclature — converge on it."
-
-**Problem:** PRD v3's `kind=session` facts vs Cairn's `sessions` table.
-
-**v3.1 resolution:**
-- **Name stays `session`.** No rename to `conversation`.
-- **Mechanics:** Eureka `kind=session` facts are standalone. They do NOT replace Cairn's `sessions` table.
-- **Linking:** Add optional `cairn_session_id: string?` field on session facts for cross-reference when Cairn bridge emits.
-- **v1 scope:** Eureka session facts are self-contained. Cairn's session table remains authoritative for observability use cases.
-
-**FR-13 edit:**
-> Sessions are `kind=session` facts in Eureka's fact store. When a session originates from Cairn observability, the fact MAY include a `cairn_session_id` field pointing to Cairn's `sessions.id`. Eureka does not read Cairn's `sessions` table directly; the link is for audit correlation only.
-
-#### Patch 2: Vector Search — Explicit Scope Gate
-
-**Source:** Genesta R6 finding: "Vector support does not exist. Migration 012 is prescription deltas, not embeddings."
-
-**Problem:** PRD v3 assumes sqlite-vec; substrate has no vector infrastructure.
-
-**v3.1 resolution:**
-- **v1 scope:** Vector search is **OUT** of v1.
-- FR-2 recall uses BM25 (already specified as v1 strawman).
-- `sqlite-vec` integration moves to v1.5 roadmap.
-- FR-7.3 adds explicit note: "sqlite-vec is a design requirement for v1.5+; v1 ships with BM25 only."
-
-**FR-7.3 edit:**
-> v1 storage: SQLite with `better-sqlite3` (per Cairn precedent). BM25 full-text search for recall. `sqlite-vec` deferred to v1.5 for semantic similarity. Schema includes reserved `embedding_vector` column (nullable, unpopulated in v1).
-
-#### Patch 3: Decide Schema — Coexistence Adapter
-
-**Source:** Aaron signal (b): "DecisionRecord is about auditing reasoning chain and building trust... closer in spirit than Crispin's framing."
-
-**Problem:** PRD v3's `DecisionPayload` (structured) vs Forge's `DecisionRecord` (flat).
-
-**v3.1 resolution:**
-- **Both schemas coexist.** Eureka uses `DecisionPayload` internally. Forge uses `DecisionRecord`.
-- **Bridge adapter:** When Eureka emits a decision to observability, it maps `DecisionPayload` → `DecisionRecord`:
-  - `options[].id` → `chosenOption` (chosen option's id)
-  - `options[].label` → `alternatives[]` (non-chosen labels)
-  - `confidence: number` → `confidence: 'high'|'medium'|'low'` (threshold mapping: >0.8=high, 0.5-0.8=medium, <0.5=low)
-  - `principal_id` → `source` (human if principal is human, ai_recommendation if agent)
-- **No Forge changes.** Adapter lives in Eureka's export layer.
-
-**FR-10 (`decide`) edit:**
-> Eureka's `DecisionPayload` is the authoritative internal schema. For interop with Forge's `DecisionRecord` (observability use case), Eureka provides `toDecisionRecord(payload): DecisionRecord` adapter. Adapter is one-way; Eureka does not consume Forge's `DecisionRecord` as input.
-
-#### Patch 4: Storage Paths — Eureka-Specific
-
-**Source:** Crispin R6: "Per-tier storage ≠ single database. Architectural mismatch."
-
-**Problem:** PRD v3 proposed `~/.copilot/eureka/` paths. Cairn uses `~/.cairn/knowledge.db`.
-
-**v3.1 resolution:**
-- **Eureka owns its paths.** No path harmonization with Cairn.
-- v3's proposed layout stands: `~/.copilot/eureka/agent.db`, `<repo>/.eureka/project.db`, `~/.copilot/eureka/user.db`.
-- **Rationale:** Path D — Eureka ships standalone; Cairn's paths unchanged.
-
-**FR-7.2 edit (no change needed, just clarification):**
-> Eureka storage paths are independent of Cairn. Cairn's `~/.cairn/knowledge.db` remains observability-scoped. Eureka's paths are knowledge-scoped. No shared database; no FK constraints across systems.
-
-#### Patch 5: Learning Kernel — Design Now, Extract Later
-
-**Source:** Edgar R6: "~70% of infrastructure exists. Extract sweep/ranker/trust."
-
-**v3.1 resolution:**
-- **v1:** Sweep, ranker, trust modules live in `packages/eureka/src/learning/`.
-- **v1.5+:** IF Cairn team chooses to adopt, extract to `packages/learning-kernel/` and both packages depend on it.
-- **Design constraint:** Eureka's modules are written with clean interfaces (no Eureka-specific types in signatures). This makes future extraction tractable.
-
-**New design note (add to FR-12):**
-> Eureka's sweep, ranker, and trust modules are designed for potential extraction to a shared `learning-kernel` package. v1 ships them as `packages/eureka/src/learning/`. Extraction is a Cairn-team decision; Eureka does not block on it.
-
----
-
-### v3.1 Summary Table
-
-| Patch | PRD v3 section | Change type | Source signal |
-|-------|---------------|-------------|---------------|
-| Sessions | FR-13 | Mechanics clarification (add `cairn_session_id`) | Aaron (a) |
-| Vector | FR-7.3, FR-2 | Scope gate (BM25 only in v1) | Genesta finding |
-| Decide | FR-10 | Adapter spec (coexistence, not replacement) | Aaron (b) |
-| Paths | FR-7.2 | Clarification (no change, confirm independence) | Crispin finding |
-| Kernel | FR-12 | Design note (extraction-ready, defer extraction) | Edgar finding + Aaron (d) |
-
----
-
-### Decision Gates for Aaron
-
-1. **Vector v1 scope:** Confirm BM25-only for v1, sqlite-vec for v1.5. (Recommended: YES)
-
-2. **Path D adoption:** Confirm Eureka ships standalone-but-kernel-shaped; Cairn adopts later if maintainer chooses. (Recommended: YES)
-
-3. **Decide adapter direction:** One-way Eureka→Forge adapter. Forge does not change. (Recommended: YES)
-
----
-
-### 2026-05-29: WI-B Implementation Decisions — Coordinator Worktree Dispatch (#28)
-
-**Author:** Gabriel (Infrastructure)  
-**Date:** 2026-05-29  
-**Issue:** #28 — Coordinator worktree dispatch  
-**Branch:** `squad/28-coordinator-worktrees`  
-
----
-
-#### Decision 1: Opt-in vs Default-on
-
-**Choice:** Opt-in via `SQUAD_WORKTREES=1` (env-var only for v1)
-
-**Rationale:** Per Graham's §3 recommendation and task spec. Default-on would silently change behavior for all existing users — requiring a worktree to exist for every issue-based spawn, which breaks repos that haven't set up the naming convention. Opt-in lets users test before committing. Config-based activation (`worktrees: true` in squad.config.ts or package.json) is documented as planned for v2 but removed from v1 Pre-Spawn enforcement to avoid partial implementation.
-
-**Trade-off acknowledged:** Users who want isolation MUST remember to set the env var each session. A smarter default (e.g., auto-detect based on whether `{repo}-{issue}` worktree exists) is v2 scope.
-
----
-
-#### Decision 2: Error handling → fall back, not fail closed
-
-**Choice:** When `git worktree add` or junction linking fails, fall back to main repo (`WORKTREE_MODE: false`), not abort.
-
-**Rationale:** In v1, worktrees are opt-in safety feature, not a hard requirement. If a worktree can't be created (permissions, OS restrictions, disk space), the coordinator should still be able to do work — just without isolation. Failing closed would block legitimate agent spawns for infrastructure reasons outside the coordinator's control.
-
-**Trade-off acknowledged:** Skeptic persona raised that fallback "defeats the isolation contract" — if a user set `SQUAD_WORKTREES=1` expecting isolation, silent fallback to main repo is surprising. This is a real concern. Mitigation: the fallback is always logged to history.md so it's not fully silent. v2 could add an explicit warning to the user before falling back.
-
----
-
-#### Decision 3: Branch-mismatch → remove stale worktree and recreate
-
-**Choice:** If a worktree exists at the expected path but has the wrong branch, log and remove it, then create fresh.
-
-**Rationale:** A stale worktree on the wrong branch is more dangerous than no worktree — the coordinator would spawn agents thinking they're on `squad/42-fix-login` but actually committing to `main` or another branch. Better to detect and recreate than to silently proceed.
-
-**Added during persona review:** Correctness and Craft reviewers both flagged the original step 2b had no else-clause for branch mismatch. Fixed before committing.
-
----
-
-#### Decision 4: Parallel dispatch — warning only, detection via list_agents
-
-**Choice:** Warning-only (no block), with `list_agents` as the suggested detection mechanism.
-
-**Rationale:** The task spec explicitly says "Warning-only, no block." The detection mechanism (does coordinator know another agent is in the same checkout?) is inherently session-state-dependent. Adding a hint (`check via list_agents for active spawns`) makes this actionable without requiring a new state-tracking subsystem. Full detection with a dispatch registry is v2.
-
----
-
-**Deviations from Graham's Scope:** None structural. Minor additions from persona review:
-- Branch-mismatch handling in step 2b (not in original scope, clear safety improvement)
-- `node_modules` existence check on worktree reuse (edge case, Correctness reviewer)
-- `rmdir /s` hazard warning (Correctness reviewer — agents add flags helpfully)
-- `{branch}` derivation instruction in Cleanup (Craft reviewer — undefined variable)
-- v1-only note in Worktree Lifecycle Management activation section (consistency with Pre-Spawn)
-
----
-
-### Why Not v4?
-
-v4 redraft is warranted when:
-- Structural assumptions are wrong (they're not — fact graph, trust, attention tiers are validated)
-- Schema shape needs redesign (it doesn't — v3's schema is sound, just needs mechanics patches)
-- Path changes fundamentally (Path D is v3's Path A with future-compatibility, not a new direction)
-
-v3.1 patches address trio findings + Aaron signals without reframing. PRD v3 is the correct shape; implementation details needed tuning.
-
----
-
-*End of Cassima R6 synthesis.*
-
----
-
-### Round-4 Patches (post-Aaron review of v3)
-
-- **Conceptual frame:** NEW "Conceptual Model" section after Problem Statement names integration in the Jungian sense and maps each verb's contribution.
-- **Pray vs Commit:** Pray retired as a verb. Commit introduced with full mechanics (hot tier, registry, retire path, future commit_floor). Aspirations encoded as kind=aspiration within integrate with lighter surfacing, no auto-promotion, sweep-flaggable as stale via new stale_aspiration flag.
-- **Generation/reflection family:** Note added: likely parametric modes of a shared reflection engine; verb split exists for caller-intent clarity (same pattern as recall/rerank); R6+ may collapse with a mode parameter if usage warrants.
-
-### Key FRs (Summary)
-
-- **FR-1:** Knowledge Storage (Core CRUD) — facts with schema, attention tiers, commitment flag
-- **FR-2:** Semantic Retrieval (recall) — composite ranker: 0.5·rel + 0.2·imp + 0.2·trust + 0.1·rec; trust floor 0.15
-- **FR-3:** Trust Tracking (event-driven only) — no automatic decay
-- **FR-4:** Activity Surface (locked vocabulary) — integrate, recall, rerank, decide, commit, retire, evict, meditate (deferred), contemplate (deferred)
-- **FR-5:** Recency Scoring — ACT-R power-law decay
-- **FR-6:** Importance Scoring — stored column, sweep-maintained
-- **FR-7:** Storage Architecture — SQLite + sqlite-vec per-tier at ~/.copilot/eureka/ paths (pending R6 review)
-- **FR-8:** Progressive Disclosure
-- **FR-9:** Graph-Ready Relations Schema (Tier 1 eager, Tier 2 sweep, Tier 3 parking lot)
-- **FR-10:** Activity Vocabulary Contracts (full per-verb specification)
-- **FR-11:** Commitment Registry (v1 = pull-with-boost only; minimal follow-through)
-- **FR-12:** Opportunistic Sweep Process — lightweight, well-defined triggers (end-of-session, first-query-of-day)
-- **FR-13:** Session Model (NEW in v3) — sessions are kind=session facts with Tier 1/2 edges
-
-### Success Metrics
-
-- **US-1 (Codebase Familiarization):** After one session, agent can answer 5 questions without re-reading; second session token consumption drops ≥50%; retrieved facts ≥80% precision; recall P95 < 500ms
-- **US-5 (Cross-Session Continuity):** Agent can produce 3-bullet summary using only recall; checkpoints re-surface in next-session queries; continuity retrieval P95 < 200ms via session-fact + originated_in edge
-
-### Roadmap at a Glance
-
-| Capability | v1 | v1.5 | v2 |
-|---|---|---|---|
-| Core CRUD, attention tiers (minimal rules), trust (event-driven), importance, recall, rerank, decide, commit, retire, evict | ✅ | | |
-| Sweep (importance decay, Tier 2 edges, stale flags, demotions, revisit_at surfacing) | ✅ | | |
-| Sessions as facts, Tier 1 session edges, originated_in continuity | ✅ | | |
-| Graph-ready edge schema (Tier 1/2/3) | ✅ | | |
-| Sync-readiness in schema (design req) | ✅ | | |
-| Contemplate (narrow+deep reflection, trust refinement, contradicts population) | | ✅ export | |
-| Meditate (broad+shallow sweep-style reflection) | | ✅ | |
-| List_active_commitments(scope) | | ✅ | |
-| MCP server wrapper | | ✅ | |
-| Squad migration (Eureka as Squad knowledge backend) | | ✅ partial | ✅ full |
-| Commit_floor opt-in soft floor on recall | | | ✅ |
-| Sync layer (CRDT-friendly, cross-machine sessions) | | | ✅ |
-| Edge traversal API (graph queries) | | | ✅ |
-
-**Note:** Full PRD v3 preserved verbatim in .squad/decisions/inbox/cassima-requirements-r5-v3.md (48KB canonical source). This summary captures key structural elements; see original for complete FRs, field semantics, NFRs, and deferred items.
-
----
-
-## R6 Source-Reading Reconciliation — Trio Verdicts
-
-**Ceremony:** R6 reconciliation  
-**Directive:** Copilot lifted "no substrate reading" rule for Eureka agents (Genesta, Crispin, Edgar, Cassima). Trio tasked with source-grounded reconciliation of PRD v3 against packages/cairn/src and packages/forge/src substrate.  
-**Status:** Complete. Three independent reports produced.  
-**Outcome split:** Genesta (B+ / v3.1 patch path) vs Crispin (Path A clean-slate recommended) vs Edgar (learning-kernel extraction).
-
-### Genesta's Verdict: B+ Grade / v3.1 Patch Path
-
-**Summary:** PRD v3 is structurally sound. Core architecture (facts, trust, activities, ranker) aligns with substrate. Name conflicts (sessions, decisions) and vector search gap are resolvable.
-
-**Grade:** B+ overall; structurally sound, needs 4 patches before v1 lock.
-
-**Recommendation:** v3 stands with v3.1 patch:
-1. Rename kind='session' → kind='conversation'
-2. Add sqlite-vec reality check to FR-7.3
-3. Clarify Forge DecisionRecord coexistence in FR-10
-4. Propose ~/.copilot/ path harmonization
-
-**Timeline:** 1-day turnaround on patches; no v4 rewrite needed.
-
-**Key findings:**
-- Storage primitive (SQLite): A — exact match, path conflict minor
-- Trust/confidence model: A — convergent design, vocabulary unification needed
-- Event-driven arch: A — Curator validates approach
-- Vector search: D — assumed but not present, HIGH risk
-- Session model: C — name collision, schema incompatible
-- Decision schema: B — coexistence viable, mapping needed
-- Three-tier segmentation: B — sound design, conflicts with Cairn single-DB
-- Activity verbs: A — Curator as reference impl
-- Composite ranker: A — Drift scoring precedent validates pattern
-
-### Crispin's Verdict: Path A (Clean-Slate) Recommended
-
-**Summary:** PRD v3 describes a new system, not an evolution of Cairn. Schema collisions are fundamental (not patches):
-- kind=session facts vs Cairn's sessions table (incompatible by design)
-- Structured decide schema vs flat DecisionRecord (irreconcilable)
-- Per-tier .db files vs single knowledge.db (architectural mismatch)
-- Edges as first-class vs foreign keys (graph vs relational)
-
-**Top finding:** PRD v3's schema, storage primitive, and conceptual model are orthogonal to Cairn. Forcing convergence creates a schema serving neither use case well.
-
-**Two paths forward:**
-
-#### Path A: Clean-Slate Eureka (RECOMMENDED)
-- Build Eureka as standalone package (packages/eureka/) with own schema
-- Storage: ~/.copilot/eureka/{agent,project,user}.db with sqlite-vec
-- Schema: unified facts + edges + kinds + trust/attention/importance
-- Cairn unchanged — Eureka consumes Cairn's events (via bridge) but not storage
-- v4 PRD rewrites FR-7.3: "Eureka does not reuse Cairn's database."
-
-#### Path B: Cairn Extension (NOT RECOMMENDED)
-- Rewrite v4 PRD to accept Cairn's schema as ground truth
-- Sessions stay as table (not facts); decisions use Forge's DecisionRecord shape
-- Add edges as new migration 013 (relations table)
-- Add vector support as migration 014 (sqlite-vec + embedding column)
-- Eureka becomes Cairn plugin
-
-**Why Path A?** Cairn's schema is optimized for observability (events, insights, prescriptions). Eureka's schema is optimized for knowledge representation (facts, edges, trust, attention). Forcing convergence creates a Frankenstein schema.
-
-**Confidence:** HIGH. R6 reads confirm v3's assumptions about "reuse Cairn's schema" are not grounded.
-
-### Edgar's Verdict: Learning-Kernel Extraction Recommended
-
-**Summary:** ~70% of Eureka's learning infrastructure already exists in Cairn (sweep, ranker, trust dynamics). BUT: tightly coupled to prescription domain.
-
-**Top finding:** Cairn's Curator + prescriber pipeline IS Eureka's sweep — but prescription-locked.
-
-**Key discoveries:**
-- Sweep exists: Cairn Curator + prescriber pipeline = Eureka's sweep mechanism (HIGH confidence)
-- Ranker formula exists: 3-term weighted sum; adding 2 more terms is O(1) (HIGH confidence)
-- Trust is event-driven: already the status quo; no automatic decay (HIGH confidence)
-- No retrieval primitive: grepped all of Cairn — no BM25, no vector store (HIGH confidence)
-- Decide is already built: Forge's makeDecisionRecord() matches v3 schema exactly (HIGH confidence)
-- Commitment registry missing: no committed field, no registry queries (HIGH confidence)
-
-**Recommendation:** Extract Cairn's sweep/ranker/trust into shared learning-kernel package that both Cairn and Eureka compose.
-
-`
-packages/learning-kernel/
-  sweep/        — cursor-based opportunistic sweep (generalized from Curator)
-  ranker/       — composite scoring (generalized from computePriority)
-  trust/        — event-driven confidence updates (generalized from change_vectors)
-  recency/      — power-law decay (v3's ACT-R formula)
-`
-
-**Cost:** Medium refactor; ~70% of infra reusable; Cairn tests remain passing (must verify).
-
-**Benefit:** One codebase; no divergence; both systems benefit from future improvements.
-
-**Next steps:**
-1. Should Eureka extract Cairn's sweep, or duplicate? (Recommend extract)
-2. What retrieval library? (Recommend sqlite-vec + flexsearch)
-3. Should sessions migrate to kind=session facts? (Recommend yes)
-4. Who owns the learning kernel? (Recommend packages/learning-kernel/)
-
----
-
-## R6 Coordinator Directive: Source-Reading Rule Lift
-
-**Date:** 2026-05-24  
-**By:** Coordinator (via Copilot)  
-**Scope:** R6 ceremony coordinate
-
-### Directive: Lift "No Substrate Reading" Rule
-
-As of R6, the "Eureka agents may not read packages/cairn/src/ or packages/forge/src/" hard rule (in force through R5) is LIFTED. Eureka agents (Genesta, Crispin, Edgar, Cassima) may now read both source trees freely.
-
-**Purpose:** R6 is the reconciliation ceremony. PRD v3 was written in deliberate isolation from implementation reality. Before locking v1 scope, we need a source-grounded pass to surface gaps, contradictions, and capability surprises.
-
-**Scope:** Read-only access for now. Trio (Genesta/Crispin/Edgar) reports findings back through Cassima, who decides whether v3 stands or v4 is needed.
-
-**Rationale for rule lift:**
-
-The hard rule existed R1-R5 to keep requirements work decoupled from implementation reality. Cassima could draft PRD without being anchored to what Cairn/Forge could "easily" build. This produced a requirements spec written from first principles, not from "what's already there."
-
-R6 lifts the rule now because Round 5 locked PRD v3 on substantive grounds (OQ resolutions, Aaron's 9 directives integrated). Before implementation begins, we need a reconciliation pass: does v3's spec match reality? Are there gaps, contradictions, or surprises?
-
-**Execution model:**
-1. Each agent independently reads substrate, reconciles PRD v3
-2. Each agent produces detailed report (graded findings, verdicts, recommendations)
-3. Reports feed to Cassima for v3.1 patch or v4 rewrite decision
-4. Aaron approves decision before implementation ramp
-
-**Scope boundaries:**
-- ✅ Read-only: grep, view code, trace architectures
-- ✅ Read both Cairn and Forge source
-- ❌ No modifications to Cairn/Forge during R6
-- ❌ No merging of Eureka code into Cairn/Forge until Aaron approves
-
----
-
-## R6 Reconciliation Summary
-
-**Decision gates** (awaiting Aaron's direction):
-
-1. **Vector search scope:** In or out for v1? (affects Genesta's patch #2, Edgar's retrieval work)
-2. **Architectural path:** A (clean-slate) or B (extension)? (affects Crispin's recommendation)
-3. **Learning-kernel extraction:** Do it now or defer? (affects Edgar's roadmap)
-4. **v3 vs v4:** Patch path or rewrite? (affects Cassima's intake work)
-
-**Next steps:**
-- [ ] Aaron reviews Genesta/Crispin/Edgar reports
-- [ ] Cassima integrates Aaron's architectural decision into v3.1 or v4
-- [ ] Squad decides vector search scope, path, kernel extraction
-- [ ] Implementation roadmap updated with R6 findings
-
-describe('forge_prescribe MCP tool — async correctness', () => {
-  it('handler returns a Promise (not a sync value)', () => {
-    // Call the handler directly (import the backing function, not through
-    // McpServer transport). Assert the return value is a Promise.
-    // This catches the case where someone accidentally calls runForgePrescribe
-    // without await or returns a sync result.
-    const result = forgePrescriberHandler({ skill_id: 'test-skill', ...defaultArgs });
-    expect(result).toBeInstanceOf(Promise);
-  });
-```
-
-### B. CairnEvent write does not block tool response
-
-The W5-5 handler is expected to write a `CairnEvent` (hint_state_transition or similar) after prescribing. This event log write should:
-
-```typescript
-  it('CairnEvent write failure does not block the tool response', async () => {
-    // Stub logEvent to throw
-    vi.spyOn(cairnDb, 'logEvent').mockImplementationOnce(() => {
-      throw new Error('DB full');
-    });
-
-    // Handler should still return a successful response (fail-open)
-    const result = await forgePrescriberHandler({ skill_id: 'test-skill', ...defaultArgs });
-    expect(result.isError).toBeUndefined(); // or isError: false
-    expect(result.content[0].text).not.toContain('DB full');
-  });
-```
-
-### C. Multiple sequential invocations do not serialize on shared state
-
-better-sqlite3 is synchronous — "concurrent" here means sequential calls on the same DB handle. Two invocations back-to-back must each complete cleanly:
-
-```typescript
-  it('two sequential invocations complete without shared-state corruption', async () => {
-    // Note: better-sqlite3 is synchronous — no actual parallelism.
-    // This test validates DB singleton re-use is safe across calls.
-    const result1 = await forgePrescriberHandler({ skill_id: 'skill-a', ...defaultArgs });
-    const result2 = await forgePrescriberHandler({ skill_id: 'skill-b', ...defaultArgs });
-
-    // Each result should be independent
-    const parsed1 = JSON.parse(result1.content[0].text);
-    const parsed2 = JSON.parse(result2.content[0].text);
-    expect(parsed1.skill_id).toBe('skill-a');
-    expect(parsed2.skill_id).toBe('skill-b');
-  });
-```
-
-### D. Handler respects forceRegenerate flag
-
-```typescript
-  it('forceRegenerate: true expires active hints before inserting new ones', async () => {
-    // Seed an active hint for skill-a
-    const db = getDb(':memory:');
-    insertOptimizationHint(db, { ...seedHint, skillId: 'skill-a', status: 'active' });
-
-    await forgePrescriberHandler({ skill_id: 'skill-a', force: true, ...defaultArgs });
-
-    const active = db.prepare(
-      "SELECT * FROM optimization_hints WHERE skill_id = ? AND status = 'active'"
-    ).all('skill-a');
-    // After force, old hint should be expired
-    expect(active).toHaveLength(0); // or 1 if new hint was inserted
-  });
-```
-
-### E. Handler does not perform sync readFileSync / statSync inside tool body
-
-```typescript
-  it('forge_prescribe handler body contains no inline fs.readFileSync or statSync calls (structural)', () => {
-    const serverPath = fileURLToPath(new URL('../mcp/server.ts', import.meta.url));
-    const source = fs.readFileSync(serverPath, 'utf8');
-
-    // Find the forge_prescribe registration block
-    const handlerStart = source.indexOf("'forge_prescribe'");
-    const handlerEnd = source.indexOf('\n);\n', handlerStart);
-    const handlerBody = source.slice(handlerStart, handlerEnd);
-
-    // Handler should call runForgePrescribe (async), not inline fs calls
-    expect(handlerBody).not.toMatch(/fs\.(readFileSync|statSync|existsSync)\b/);
-    expect(handlerBody).toContain('runForgePrescribe');
-    expect(handlerBody).toContain('await');
-  });
-```
-
----
-
-## Integration with Existing Pattern
-
-The W5-5 handler should follow the same pattern as `run_curate`:
-- Wrap in try/catch with error response
-- Use `ensureDb()` first  
-- CairnEvent logging in a nested try/catch (fail-open)
-- Return structured JSON content
-
-All existing MCP tool handlers follow this pattern. `forge_prescribe` should too.
-
----
-
-## Notes for Rosella
-
-1. better-sqlite3 is synchronous — there is no actual concurrency risk. "Concurrent invocation" tests verify sequential re-use safety, not parallel execution.
-2. The CairnEvent write test is the most important of these five. An unguarded DB write in the success path would leave the handler stuck if the DB is full or locked.
-3. Use `:memory:` DBs in all tests (see history.md for the singleton import pattern).
-4. Run `npm test --workspace=@akubly/cairn` before declaring done.
-
-
----
-
-# W5-5 Post-Review Fixes
-
-**Date:** 2026-05-26
-**Author:** Rosella
-**Branch:** `phase-4.6/w5-5-rosella-mcp-forge-prescribe`
-**Commit:** 5065082
-
----
-
-## Build Break Root Cause
-
-**Error:** TypeScript `TS2345` — `McpToolResult` was not assignable to the MCP SDK's `CallToolResult` type because it lacked the required index signature.
-
-**Root cause:** The `@modelcontextprotocol/sdk` `registerTool` callback expects a return type of `{ [x: string]: unknown; content: ...; isError?: ... }`. A custom interface without `[key: string]: unknown` fails the assignability check under strict project-references build (`tsc --build`).
-
-**Fix already present:** The index signature was added in the original commit (`9499cb0`) before the push. Root `npm run build` confirmed clean on the branch. Roger's report was based on a pre-fix snapshot.
-
-**Pattern to remember:** Any custom type returned from an MCP SDK `registerTool` callback must carry `[key: string]: unknown` — it's part of `CallToolResult`'s contract. Inline return objects satisfy this automatically; named interfaces need the explicit index signature.
-
----
-
-## CairnEvent Fail-Open Fix
-
-**Problem (identified by Laura):** The original `cairn.logEvent()` call in the handler was unguarded. A DB write failure (full disk, lock contention, broken connection) would propagate as an unhandled exception and turn a successful prescriber run into an MCP tool error response.
-
-**Fix:** Wrapped the entire event-log block (`ensureSystemSession` + `logEvent`) in a `try/catch`. Failures are written to `process.stderr` with context (`skill=X`) but do not surface to the caller.
-
-```typescript
-// Before (line 114 original):
-cairn.logEvent(db, logSessionId, 'prescriber_run', payload);
-
-// After:
-try {
-  const logSessionId = session?.id ?? cairn.ensureSystemSession(db);
-  // ... build payload ...
-  cairn.logEvent(db, logSessionId, 'prescriber_run', payload);
-} catch (eventErr) {
-  process.stderr.write(`[skillsmith-runtime] prescriber_run event write failed ...`);
-}
-```
-
-**Why fail-open:** The prescriber result (inserted/skipped/errored counts) is the primary value the MCP caller needs. Observability is secondary. If the event DB is unavailable, operators still get their hints — the missing event is a logging gap, not a functional failure.
-
----
-
-## New Tests Added (+4, total 48)
-
-| Test | Suite | What it covers |
-|------|-------|---------------|
-| `logEvent throws → tool returns ok:true` | `fail-open` | Core fail-open guard |
-| `ensureSystemSession throws → tool still succeeds` | `fail-open` | Full event-log block is guarded |
-| `handler.ts contains no inline fs.readFileSync/statSync` | `structural` | Hot-path filesystem access guard |
-| `forgePrescribeHandler returns a Promise` | `structural` | Async-correctness baseline |
-
-Tests C (sequential invocations) and D (forceRegenerate flag) from Laura's plan are already covered by the existing integration and edge-case suites.
-
-
----
-
-# Decision: W5-5 forge_prescribe MCP Tool
-
-**Date:** 2026-05-26
-**Author:** Rosella (Plugin Dev)
-**Status:** Implemented — branch `phase-4.6/w5-5-rosella-mcp-forge-prescribe`, commit 9499cb0
-
----
-
-## Tool Signature
-
-```typescript
-server.registerTool(
-  'forge_prescribe',
-  {
-    inputSchema: {
-      skill_id:  z.string(),              // required — skill to prescribe for
-      force:     z.boolean().optional(),  // default: false — expire active hints before run
-      repo_key:  z.string().optional(),   // optional — repo scope for session lookup
-    },
-  },
-  async ({ skill_id, force, repo_key }) => { ... }
-)
-```
-
-**Returns:** Full `ForgePrescribeResult` JSON (ok, skillId, profileSource, inserted/skipped/errored/totalHints).
-
-**Error handling:** Structured `{ ok: false, message: '...' }` on no-profile or run failure; never throws unhandled. `isError: true` set on the content result so MCP hosts render it appropriately.
-
----
-
-## CairnEvent Shape
-
-Event type: `prescriber_run`
-
-```typescript
-interface PrescriberRunEventPayload {
-  skill_id:     string;
-  force:        boolean;
-  session_id:   string | null;        // resolved user session id; null = no user session found
-  profile_used: LoadedProfileSource | null;  // 'per-skill' | 'per-model' | 'per-user' | 'global'
-  confidence:   number | null;        // attenuated confidence from loaded profile pre-run
-  ts:           string;               // ISO timestamp of MCP invocation
-  result: {
-    inserted:   number;
-    skipped:    number;
-    errored:    number;
-    total_hints: number;
-  };
-}
-```
-
-**Omissions vs Aaron's spec:**
-- `autoApplyEligible` omitted — it's a per-hint field, not meaningfully aggregated at run level. Including a boolean aggregate would be semantically ambiguous (any vs all eligible). Deferred for future consideration if a use case emerges.
-
-**No migration needed.** `event_log.event_type` is a free-text string; payload is a schemaless JSON blob. The TypeScript interface above is documentation only.
-
----
-
-**CORRECTION (cycle-1 fix):** The shipped payload uses **camelCase** keys, not snake_case. The actual schema is:
-
-```typescript
-interface PrescriberRunEventPayload {
-  skillId:       string;
-  triggeredBy:   string;               // 'mcp:forge_prescribe'
-  force:         boolean;
-  sessionId:     string | null;        // resolved user session id; null = no user session found
-  profileSource: LoadedProfileSource | null;  // 'per-skill' | 'per-model' | 'per-user' | 'global'
-  confidence:    number | null;        // attenuated confidence from loaded profile pre-run
-  ts:            string;               // ISO timestamp of MCP invocation
-  result: {
-    inserted:   number;
-    skipped:    number;
-    errored:    number;
-    totalHints: number;                // camelCase, not total_hints
-  };
-}
-```
-
-The cycle-1 fix realigned the payload keys to match codebase convention (camelCase for JSON payloads). See handler.ts:102-118 for the canonical payload construction.
-
----
-
-## Session Fallback Semantics
-
-1. `repo_key` provided → `cairn.getActiveUserSession(db, repo_key)` — most-recent active user session for that repo.
-2. `repo_key` absent → `cairn.getMostRecentUserSession(db)` — most-recent active user session across all repos (W5-1 session-kind separation ensures `__system__` sessions are excluded).
-3. No user session found → `cairn.ensureSystemSession(db)` used as event log target. `session_id: null` recorded in payload so consumers know attribution was unavailable.
-
-**Rationale:** Mirrors the `getUserSessionForMcpFallback(db, repoKey?)` pattern from `@akubly/cairn/src/mcp/sessionFallback.ts` without pulling in cairn's internal mcp module. Avoids circular dep; the session APIs (`getActiveUserSession`, `getMostRecentUserSession`) are exported from cairn's barrel.
-
----
-
-## Architecture Note: Two-Server Design
-
-The `forge_prescribe` tool lives in `@akubly/skillsmith-runtime`, not `@akubly/cairn`. This is required by the dependency graph:
-
-```
-cairn ← skillsmith-runtime
-```
-
-Placing the tool in cairn would create a circular dependency. The forge MCP server (`dist/mcp/server.js`) is registered separately in `.mcp.json` alongside cairn's server. This is intentional; Graham's W5-5 skeleton documents the forced aggregator question for Wave 7.
-
-**Server entry point:** `bin: { "forge-mcp": "dist/mcp/server.js" }` in `packages/skillsmith-runtime/package.json`.
-
----
-
-## Deviations from Task Spec
-
-| Spec | Implemented | Reason |
-|------|-------------|--------|
-| `autoApplyEligible` in event | Omitted | Per-hint field; run-level aggregate undefined |
-| Branch `phase-4.6/w5-5-mcp-forge-prescribe` | `phase-4.6/w5-5-rosella-mcp-forge-prescribe` | Concurrent agent activity caused branch name collision |
-| `db_path` arg (Graham's skeleton) | Not included | Aaron's approved spec uses `repo_key`; `db_path` is a server-startup concern |
-
----
-
-# Decision: W5-6 forge-metrics CLI Implementation
-
-**Date:** 2026-05-26  
-**Author:** Roger (Platform Dev)  
-**Status:** Implemented — commit `871a492` on `phase-4.6/wave-6`
-
----
-
-## Command Signature
-
-```
-forge-metrics --skill <skill_id> [--format json|table] [--repo-key <key>] [--db <path>]
-```
-
-| Flag | Required | Default | Notes |
-|------|----------|---------|-------|
-| `--skill` | ✅ | — | Skill ID to report |
-| `--format` | No | `json` | `json` or `table` |
-| `--repo-key` | No | most-recent user session | Fallback via `getMostRecentUserSession()` |
-| `--db` | No | `getKnowledgeDbPath()` | Override SQLite path |
-
----
-
-## JSON Schema (SkillMetrics — stable contract)
-
-```typescript
-interface SkillMetrics {
-  skillId: string;
-  repoKey: string | null;
-  queriedAt: string;                // ISO-8601
-  profile: SkillMetricsProfile;     // discriminated union: {found:true,...} | {found:false}
-  staleness: SkillMetricsStaleness | null;
-  confidence: SkillMetricsConfidence | null;
-  autoApplyEligible: boolean | null;
-  recentPrescriberRuns: SkillMetricsPrescriberRun[] | null;
-}
-
-type SkillMetricsProfile =
-  | { found: true; tier: string; sessionCount: number; updatedAt: string; daysSinceUpdate: number }
-  | { found: false };
-
-interface SkillMetricsStaleness {
-  stale: boolean;
-  reason: 'count' | 'age' | 'count+age' | null;
-  sessionsSinceUpdate: number;
-}
-
-interface SkillMetricsConfidence {
-  raw: number;        // Always 1.0 for DB profiles
-  attenuated: number; // raw * 0.5 when stale, else raw
-  isAttenuated: boolean;
-}
-```
-
-**Schema stability contract:** fields are additive; removals require a major version bump.
-
----
-
-## Table Format
-
-Sections: Identity → Profile → Staleness → Confidence → Auto-Apply → Recent Prescriber Runs.  
-One key-value row per metric. Width: 32-char label column + value column.
-
----
-
-## W5-5 Graceful Degradation
-
-`recentPrescriberRuns` has three states:
-- `null` — `prescriber_run` event type not present (W5-5 not landed)
-- `[]` — event type exists but no runs recorded for this skill
-- `[{...}]` — parsed run events, most-recent first, capped at 10 (default)
-
-Implemented as a defensive `try/catch` around `json_extract(payload, '$.skillId')` query.
-
----
-
-## W5-3 / W5-4 Integration Points
-
-| Feature | How consumed |
-|---------|-------------|
-| W5-3 tier fallback | `loadExecutionProfile(db, skillId, { fallbackPolicy: 'full-chain' })` |
-| W5-3 tier reporting | `loaded.source` field ('per-skill' \| 'per-model' \| 'per-user' \| 'global') |
-| W5-4 staleness attenuation | `profile.staleness` (stale flag + reason) on returned profile |
-| W5-4 attenuated confidence | `profile.confidence` on returned profile (0.5× if stale) |
-| W5-2 explicit db | All DB calls thread explicit `db` handle |
-| W5-1 session-kind | `getMostRecentUserSession()` for `--repo-key` fallback |
-
----
-
-## Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Success (even if no profile found — JSON output describes the state) |
-| 2 | Argument error or runtime failure |
-
----
-
-## Files
-
-- `packages/runtime-cli/src/metrics/types.ts`
-- `packages/runtime-cli/src/metrics/loadMetrics.ts`
-- `packages/runtime-cli/src/metrics/formatters.ts`
-- `packages/runtime-cli/src/forge-metrics.ts`
-- `packages/runtime-cli/src/__tests__/forgeMetrics.test.ts` (13 tests)
-- `packages/runtime-cli/package.json` (added `forge-metrics` bin entry)
-
-
----
-# PR #26 Cycle 2 Doc Alignment — Inbox References Replaced, DecisionRecord Disambiguated
-
-# PR #26 Cycle 2 Doc Alignment — Inbox References Replaced, DecisionRecord Disambiguated
-
-**Date:** 2026-05-28  
-**Agent:** Cassima (PM, Eureka)  
-**Context:** Cycle 2 sweep on PR #26 (cloud-review-cycle). Copilot automated review flagged 18 additional doc issues after cycle 1 merge. Scribe merged inbox files into `.squad/decisions.md` first, providing stable citation anchors.
-
----
-
-## Summary
-
-Addressed 18 documentation threads across 3 rule categories:
-
-- **Rule R1 (No Gitignored Citations):** Replaced 15 broken inbox links with merged `.squad/decisions.md` citations
-- **Rule R2 (DecisionRecord Disambiguation):** Fixed TS type vs Squad dotfile conflation in `20-knowledge-representation.md`
-- **Rule R3 (No Machine Paths):** Scrubbed `D:\git\...` paths from ADR-0002 and `40-integration.md`
-
----
-
-## Changes Landed
-
-### Group A — Inbox Citation Cleanup (15 threads)
-
-All replaced gitignored `.squad/decisions/inbox/` links with stable committed references:
-
-1. **`docs/eureka/sections/00-overview.md:425`** — Crucible Impact Analysis  
-   → `.squad/decisions.md` § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27)
-
-2. **`docs/eureka/sections/10-activities-and-tiers.md:470`** — G4 governance rule source  
-   → Same as #1
-
-3. **`docs/eureka/sections/20-knowledge-representation.md:563`** — References section  
-   → § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27) + § "Eureka PRD v5-final LOCKED — R8 4-Reviewer Lock-In Panel (Session Identity Unification)" (2026-05-26)
-
-4. **`docs/eureka/sections/30-learning-systems.md:986`** — References section  
-   → § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27)
-
-5. **`docs/eureka/sections/40-integration.md:648`** — DI seam audit citation  
-   → Removed inbox link; noted "DI seam audit for v1.5 is planned but not yet documented in committed decisions"
-
-6. **`docs/eureka/sections/40-integration.md:752`** — Kernel coupling blockers  
-   → Removed inbox link; noted "Document coupling points in new Squad decision entry if encountered during v1 extraction"
-
-7. **`docs/eureka/sections/40-integration.md:893`** — Crucible boundary  
-   → § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27) + scrubbed `D:\git\harness` machine path
-
-8. **`docs/eureka/sections/60-ux-human-factors.md:283`** — DecisionPayload vs DecisionRecord  
-   → Same as #7
-
-9. **`docs/eureka/sections/60-ux-human-factors.md:356`** — Appendix A cross-reference  
-   → Same as #7
-
-10. **`.squad/handoffs/2026-05-27-london-tdd-kickoff.md:21`** — London-TDD directive  
-    → § "Eureka v0.1 Technical Design — Assembled & Blocked on 4 Critical Decisions" (2026-05-27)
-
-11. **`.squad/skills/doc-references-respect-gitignore/SKILL.md:139`** — **SELF-VIOLATION FIX**  
-    → Skill's own "Learning Source" section cited inbox path while codifying the rule against it. Replaced with § "PR #26 — Copilot Review Doc Alignment (Cycle 1)" (2026-05-28)
-
-12. **`.squad/decisions.md:195`** — DecisionRecord disambiguation directive  
-    → Added usage example ("write 'Forge DecisionRecord' or 'Squad decision dotfile'")
-
-13. **`.squad/decisions/eureka-prd-v5-final.md:434`** — FR-13 session-identity narrative  
-    → § "Eureka PRD v5-final LOCKED" (2026-05-26)
-
-14. **`.squad/decisions/eureka-prd-v5-final.md:848`** — Decision-log pointers table  
-    → Collapsed multiple inbox artifact rows into single reference to § "Eureka PRD v5-final LOCKED" (2026-05-26)
-
-15. **`.squad/decisions/eureka-prd-v5-final.md:861`** — SessionId R8 panel verdicts row  
-    → Same as #14 (5 inbox verdict files → 1 decisions.md entry)
-
-**Stable anchors used:**
-- § "PR #26 — Copilot Review Doc Alignment (Cycle 1)" (2026-05-28)
-- § "DecisionRecord Naming Disambiguation" (2026-05-28)
-- § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27)
-- § "Narrower Substrate Freeze Proposal" (2026-05-27)
-- § "Eureka v0.1 Technical Design — Assembled & Blocked on 4 Critical Decisions" (2026-05-27)
-- § "Eureka PRD v5-final LOCKED — R8 4-Reviewer Lock-In Panel (Session Identity Unification)" (2026-05-26)
-
----
-
-### Group B — Content Corrections (3 threads)
-
-1. **`docs/eureka/sections/20-knowledge-representation.md:449`** — DecisionRecord naming collision (Rule R2)  
-   **Problem:** Forge `DecisionRecord` described as "materialized markdown file under `.squad/decisions/inbox/*.md`" — conflates TS interface with Squad workflow artifacts.  
-   **Fix:** Clarified Forge DecisionRecord = "Runtime TypeScript interface in `@akubly/types` representing audited decision metadata." Added note distinguishing Squad decision dotfiles (markdown memos) from Forge DecisionRecord (TS type). Matches Aaron's directive (2026-05-28): use "Forge DecisionRecord" for TS type, "Squad decision dotfile" for workflow artifacts.
-
-2. **`docs/eureka/sections/30-learning-systems.md:967`** — Stale date  
-   **Problem:** Date `2025-01-24` is pre-Eureka v0.1 design (project in 2026-05).  
-   **Fix:** Updated to `2026-05-27` (Eureka v0.1 Technical Design date). Added note: "Last updated: 2026-05-27 (Eureka v0.1 Technical Design)."
-
-3. **`docs/eureka/technical-design.md:66`** — OQ-5 framed as contingency  
-   **Problem:** OQ-5 framed as "if OQ-1 NOT resolved" — OQ-1 IS resolved (ADR-0002 accepted 2026-05-27).  
-   **Fix:** Marked OQ-5 **CLOSED/MOOT** with note: "OQ-1 resolved via ADR-0002 (monorepo accepted 2026-05-27); OQ-5 contingency no longer applicable." No residual question remains.
-
----
-
-### Group C — Machine Path Cleanup (1 thread, Rule R3)
-
-1. **`docs/eureka/adrs/0002-shared-substrate-ownership.md:63`** — Option B submodule example  
-   **Problem:** Used machine-specific paths: `D:\git\akubly-substrate\`, `D:\git\mem\`, `D:\git\harness\`.  
-   **Fix:** Replaced with generic placeholders: `<substrate-repo>/`, `<mem-repo>/`, `<harness-repo>/`. Reads cleanly as illustrative without tying to Aaron's local machine.
-
----
-
-### Group D — Deferred (Not Touched)
-
-1. **`.squad/orchestration-log/2026-05-27T08-13-25Z-valanice-ux-section.md:1`** — Aaron's call: keep as historical archive. Scribe owns lifecycle. Coordinator will reply on thread and resolve.
-2. **`.squad/log/2026-05-27T08-13-25Z-eureka-tech-design-v01.md:1`** — Same as #1.
-
-**Rationale:** Aaron's strategy: gitignored logs are historical archive, not live docs. No citation cleanup needed.
-
----
-
-## SKILL.md Enhancement
-
-**`.squad/skills/doc-references-respect-gitignore/SKILL.md`** — Added "Pitfalls" section:
-
-> **Writing examples in skill docs:**  
-> If you write examples in this skill that illustrate the rule, **lint those examples against the rule itself**. Examples that violate the rule undermine credibility. For instance, if this skill's "Learning Source" or "Deliverable" section cites an inbox path, that's a self-violation.
-
-**Context:** The skill's own "Learning Source" section cited `.squad/decisions/inbox/cassima-pr26-copilot-doc-alignment.md` while codifying the rule against inbox citations. Fixed in this sweep by pointing to merged decisions.md entry. Added pitfall warning to prevent recurrence.
-
----
-
-## Decisions.md Enhancement
-
-**`.squad/decisions.md:195`** — DecisionRecord Naming Disambiguation directive  
-Added usage example after "Why" paragraph:
-
-> **Usage example:** When discussing the Forge runtime audit interface, write "Forge DecisionRecord." When discussing Squad markdown memos, write "Squad decision dotfile" or "Squad decision memo."
-
-**Rationale:** Directive was clear on WHAT to do but lacked HOW example. One-sentence add makes it actionable.
-
----
-
-## What Worked
-
-1. **Scribe-first dependency strategy:** All stable anchors (`§ "Crucible ↔ Eureka Cross-Project Overlap"`, etc.) available before I started — no blind references.
-2. **Batch efficiency:** 15 similar edits (Group A) done in one pass via grep → decisions.md heading search → surgical replace.
-3. **Rule R2 caught real bug:** DecisionRecord conflation was conceptually wrong, not just a citation fix. The doc said Forge's TS interface = "markdown files" which is incorrect.
-4. **OQ-5 rewrite was clean:** ADR-0002 acceptance made OQ-5 moot. Simple CLOSED/MOOT marker + one-line note.
-
----
-
-## What I Learned
-
-1. **Skills that codify rules should warn about self-violations.** Meta-level discipline — if you write a rule, your examples must honor it. Added "Pitfalls" section to SKILL.md to codify this.
-2. **Large-scale citation cleanup = grep + heading search.** 15 threads = 15 topic searches in decisions.md. Grep was faster than manual scan for patterns like "SessionId," "Crucible," "Substrate."
-3. **Machine paths are visually subtle.** Only 2 threads (C1 + A7) but easy to miss in long file paths. Used grep for `D:\\git\\` to catch stragglers.
-4. **DecisionRecord disambiguation is load-bearing.** The naming collision isn't cosmetic — Forge's TS interface vs Squad's markdown memos are different artifact types. Conflating them in docs creates reader confusion about "where does decision data live?"
-
----
-
-## Files Changed
-
-### Committed docs (`docs/eureka/`)
-- `sections/00-overview.md` — 1 inbox ref → decisions.md citation
-- `sections/10-activities-and-tiers.md` — 1 inbox ref → decisions.md citation
-- `sections/20-knowledge-representation.md` — 2 edits (inbox ref + DecisionRecord disambiguation)
-- `sections/30-learning-systems.md` — 2 edits (inbox ref + stale date update)
-- `sections/40-integration.md` — 3 edits (2 inbox refs + machine path scrub)
-- `sections/60-ux-human-factors.md` — 2 edits (2 inbox refs)
-- `technical-design.md` — 1 edit (OQ-5 rewrite)
-- `adrs/0002-shared-substrate-ownership.md` — 2 edits (machine path scrub in Option B)
-
-### Squad dotfiles
-- `.squad/handoffs/2026-05-27-london-tdd-kickoff.md` — 1 inbox ref → decisions.md citation
-- `.squad/skills/doc-references-respect-gitignore/SKILL.md` — 2 edits (self-violation fix + pitfall warning)
-- `.squad/decisions.md` — 1 edit (added usage example for DecisionRecord directive)
-- `.squad/decisions/eureka-prd-v5-final.md` — 2 edits (collapsed 2 inbox-heavy table rows)
-
-**Total:** 12 files, 18 edits (15 Group A, 3 Group B, 2 Group C overlapping with A).
-
----
-
-## Next Steps for Coordinator
-
-1. **Verify all threads addressed.** Group A/B/C should be green. Group D (orchestration-log, log files) need coordinator reply.
-2. **Confirm SKILL.md pitfall addition.** Meta-rule: "Examples must honor the rule" is useful for all skills, not just this one.
-3. **Close cycle 2.** If no new threads flagged, ready for merge.
-
----
-
-## Rationale for Key Decisions
-
-### Why "Forge DecisionRecord" vs "Squad decision dotfile"?
-- **Forge DecisionRecord:** Runtime TS interface in `@akubly/types` representing audited decision metadata (e.g., `{ decision_id, timestamp, question, chosen, rationale }`).
-- **Squad decision dotfile:** Markdown workflow artifact under `.squad/decisions/` (e.g., `cassima-crucible-eureka-impact.md`, `graham-r8-session-identity.md`).
-- These are different artifact types. Calling them both "DecisionRecord" conflates runtime data structures with team memo files.
-
-### Why mark OQ-5 CLOSED/MOOT instead of rewriting?
-- OQ-5 was framed as "what if OQ-1 fails?" contingency. OQ-1 didn't fail — it's resolved (ADR-0002).
-- No residual question survives. Rewriting would invent a new question that wasn't in the original OQ-5.
-- CLOSED/MOOT + one-line note is honest: "This question is no longer relevant."
-
-### Why generic placeholders `<substrate-repo>/` instead of example paths like `~/repos/akubly-substrate/`?
-- Aaron's rule R3: "No machine-specific absolute paths in committed docs."
-- `D:\git\mem\` is Aaron's local path. `~/repos/mem/` is Unix convention. `<mem-repo>/` is platform-neutral.
-- ADR-0002 Option B is illustrative (not chosen). Generic placeholders keep it abstract.
-
----
-
-## Delivery
-
-- **History entry:** `.squad/agents/cassima/history.md` § "PR #26 Cycle 2 Doc Alignment" (appended)
-- **Drop file:** `.squad/decisions/inbox/cassima-pr26-cycle2-doc-alignment.md` (this file)
-- **SKILL.md enhancement:** Pitfalls section added
-
-**Status:** All Group A/B/C threads addressed. Group D deferred per plan. Ready for coordinator review.
-
----
-# PR #26 Cycle 3 Residual Sweep — 7 Issues Addressed
-
-# PR #26 Cycle 3 Residual Sweep — 7 Issues Addressed
-
-**Date:** 2026-05-28  
-**Author:** Cassima (PM — Eureka)  
-**Context:** Cycle 3 of cloud-review-cycle on PR #26 (maxCycles ceiling)  
-**Status:** ✅ All 7 threads addressed
-
----
-
-## Summary
-
-Copilot's review of commit `aa9cdae` surfaced 7 residual issues — 3 fresh content findings, 4 places where cycles 1+2 missed the same failure patterns:
-
-1. **T1 — Stale date header** in §10-activities-and-tiers.md (2025-01-21 → 2026-05-27)
-2. **T2 — Spec inconsistency** in §10 line 44: `integrate()` default `cold` contradicts PRD/§00 (canonical: `warm`)
-3. **T3 — Stale status header** in technical-design.md (still said "awaiting blockers" despite OQ-1 resolved)
-4. **T4 — Missed Timeline row** in ADR-0002 (pnpm/turborepo → npm/tsc --build)
-5. **T5 — SKILL.md self-violation** in line 56 examples (used real inbox paths instead of placeholders)
-6. **T6 — Orchestration log citation** in valanice log (inbox reference → merged .squad/decisions.md anchor)
-7. **T7 — Graham history citations** (3 inbox refs → merged anchors)
-
----
-
-## Changes Landed
-
-### T1: Date Header Alignment
-**File:** `docs/eureka/sections/10-activities-and-tiers.md` line 3  
-**Change:** `Last Updated: 2025-01-21` → `Last Updated: 2026-05-27`  
-**Rationale:** Matches Eureka v0.1 design date (2026-05-27) used throughout design package.
-
----
-
-### T2: Attention-Default Spec Correction
-**File:** `docs/eureka/sections/10-activities-and-tiers.md` line 44  
-**Change:** `(default: cold)` → `(default: warm)`  
-**Rationale:** PRD line ~663 and §00-overview line ~229 both say **default warm**. §10 was stale. Verified no other §10 text contradicts the new default (grep found no other `cold` default references).
-
----
-
-### T3: Design Status Header Update
-**File:** `docs/eureka/technical-design.md` line 3  
-**Before:** `Status: ✅ Sections drafted — awaiting Aaron's decisions on blockers`  
-**After:** `Status: ✅ Locked — v0.1 assembled (§00–§70, 3 ADRs); OQ-1 resolved via ADR-0002; remaining open decisions (OQ-2, OQ-3, OQ-4) tracked in §00 ADR index`  
-**Rationale:** OQ-1 resolved (ADR-0002 Accepted), OQ-5 CLOSED/MOOT (cycle 2 fix), body Executive Summary already reflects this. Header now matches body.
-
 ---
 
-### T4: ADR-0002 Timeline Toolchain Correction
-**File:** `docs/eureka/adrs/0002-shared-substrate-ownership.md` line 176  
-**Before:** `Monorepo scaffolding: pnpm workspace, turborepo, unified tsconfig`  
-**After:** `Monorepo scaffolding: npm workspace config (already present), unified tsconfig with tsc --build`  
-**Rationale:** Cycles 1+2 fixed Pros section and M0 Prerequisites to say "npm workspaces with tsc --build" but missed the Timeline row. All references now consistent.
-
----
-
-### T5: SKILL.md Self-Violation Fix
-**File:** `.squad/skills/doc-references-respect-gitignore/SKILL.md` line 56  
-**Before:** "Bad" examples cited concrete inbox paths: `.squad/decisions/inbox/cassima-t7-shared-substrate-blocker.md`, `.squad/decisions/inbox/cassima-crucible-eureka-impact.md`  
-**After:** Generic placeholders: `.squad/decisions/inbox/<memo-slug>.md`  
-**Rationale:** Skill codifies rule against citing gitignored paths; its own examples were self-violations (albeit as "Bad" illustrations). Placeholders convey "this is what NOT to write" without being real broken links.
-
----
-
-### T6: Orchestration Log Citation Swap
-**File:** `.squad/orchestration-log/2026-05-27T08-13-25Z-valanice-ux-section.md` line 11  
-**Before:** `.squad/decisions/inbox/valanice-eureka-friction-evidence-gates.md`  
-**After:** `.squad/decisions.md` § "Friction-Level UX Decisions — Gated by v1 Dogfood Evidence" (2026-05-27)  
-**Rationale:** Tracked orchestration log (intentional historical archive per Aaron) referenced gitignored inbox memo. Surgical citation swap preserves audit trail intent; citation TARGET moved, reference still means the same thing. No narrative rewrite.
-
----
-
-### T7: Graham History Citations
-**File:** `.squad/agents/graham/history.md` lines ~94, ~108, ~143  
-**Changes:**
-1. Line 94: "cites Aaron R8 directive + verdicts with `.squad/decisions/inbox/` file paths" → "cites Aaron R8 directive + verdicts (now documented in `.squad/decisions.md`)"
-2. Line 108: "item-by-item sign-off in `.squad/decisions/inbox/graham-r8-lock-verdict.md`" → "item-by-item sign-off — see `.squad/decisions.md` 'R8 Lock-Review Orchestration'"
-3. Line 143: "`.squad/decisions/inbox/graham-design-v0.1-assembled.md` — Decision file documenting assembly completion" → "Assembly completion and blockers documented in `.squad/decisions.md` § 'Eureka v0.1 Technical Design' (2026-05-27)"
-
-**Rationale:** History.md is audit trail; surgical swap to point at merged locations. Preserves what was said (the events described remain the same), just updates citation targets to committed files.
-
----
-
-## What Cycles 1+2 Missed
-
-1. **Didn't sweep tracked `.squad/` files:** history.md, orchestration-log, log, handoffs — only swept `docs/`.
-2. **Missed line 56 in SKILL.md itself:** The skill that teaches "don't cite inbox paths" had concrete inbox paths in its own "Bad" examples.
-3. **Missed Timeline row in ADR-0002:** Only fixed Pros/Prerequisites in cycle 1; Timeline table row still had stale toolchain.
-4. **Missed §10 spec bug:** Attention-default `cold` in §10 contradicts PRD/§00 canonical `warm`. That's not a citation issue — it's a spec inconsistency. Copilot caught it in cycle 3.
-
-**Root cause:** Incomplete sweeps — all 7 threads were variations of patterns cycles 1+2 addressed elsewhere. We just didn't search broadly enough.
-
----
-
-## SKILL.md Enhancements
-
-Updated `.squad/skills/doc-references-respect-gitignore/SKILL.md`:
-
-1. **"How to Find Violations" section:** Added note that sweeps must include `.squad/agents/*/history.md`, tracked `.squad/orchestration-log/`, tracked `.squad/log/`, and `.squad/handoffs/` — not just `docs/`.
-
-2. **"Pitfalls" section enhancements:**
-   - Added "Not sweeping broadly enough" anti-pattern: "When fixing violations, don't just fix the specific flagged lines. Search the entire repository (including `.squad/agents/`, `.squad/orchestration-log/`, `.squad/log/`, `.squad/handoffs/`) for the same pattern. Partial sweeps leave broken links that surface in later review cycles."
-   - Enhanced existing "Writing examples in skill docs" pitfall: "Use generic placeholders (e.g., `.squad/decisions/inbox/<memo-slug>.md`) or wrap concrete paths in inline code that's clearly labeled as 'what NOT to do' — not clickable markdown links to real files."
-
----
-
-## Follow-Up Note
-
-**For future doc-cleanup sweeps:** Grep the WHOLE repo (including tracked `.squad/*` files) for the failure pattern, not just Copilot-flagged lines.
-
-**Pattern:** When Copilot flags 3 instances of a citation/path/format issue, assume there are 7–10 more instances elsewhere. Run repo-wide grep for the pattern:
-
-```bash
-# Example: Find all inbox citations
-git grep -n 'inbox/' -- '*.md'
-
-# Example: Find all machine paths
-git grep -n 'D:\\git\\' -- '*.md'
-
-# Example: Find stale dates (year 2025 in 2026 context)
-git grep -n '2025-' -- 'docs/eureka/**/*.md'
-```
-
-Surgical fix all matches, not just Copilot-flagged lines. This is the discipline that prevents residual issues in cycle 3.
-
----
-
-## Verification
-
-After all edits:
-- ✅ §10 default attention = `warm` (matches PRD line 663, §00 line 229)
-- ✅ §10 Last Updated = 2026-05-27 (matches design package date)
-- ✅ technical-design.md status header reflects OQ-1 resolved
-- ✅ ADR-0002 Timeline/Pros/Prerequisites all say "npm workspace, tsc --build"
-- ✅ SKILL.md examples use generic placeholders, not real paths
-- ✅ Orchestration log and history.md cite `.squad/decisions.md` anchors, not inbox
-- ✅ No grep matches for `.squad/decisions/inbox/` in committed `docs/eureka/` or tracked `.squad/*` files
-
----
-
-## Cassima's Learnings
-
-**What worked:**
-- Surgical edits preserved doc structure, voice, and audit trail intent.
-- T2 spec bug was caught by Copilot review (not a citation issue — genuine inconsistency).
-- SKILL.md enhancements codify "sweep broadly" discipline for future agents.
-
-**What I learned:**
-- **Sweep the WHOLE repo for each failure pattern, not just flagged lines.** Residual issues = incomplete sweeps.
-- **Skills that teach a rule must self-audit against that rule.** SKILL.md line 56 was a self-violation (examples cited real inbox paths).
-- **Attention-default spec inconsistency was subtle.** PRD §9 Glossary line 663 is canonical; §10 line 44 was stale. This shows cross-section alignment sweeps need to verify spec consistency, not just citations.
-
-**What I'd change next time:**
-- Run `git grep -n 'inbox/' -- '*.md'` at the START of cycle 1 to find all 22 instances (not just the 5 Copilot flagged). Would've avoided cycles 2+3.
-- For spec inconsistencies like T2, add a checklist: "After fixing one spec claim (e.g., attention-default in §00), grep the entire design package for the old value (e.g., `cold`) and verify no other sections contradict."
-
----
-
-## Status
-
-✅ All 7 threads addressed. SKILL.md enhanced. Ready for cloud-review-cycle coordinator to evaluate maxCycles decision (merge clean or escalate to Aaron).
-
----
-# Laura — M1 Decision Drop: First Red Test for Eureka v1
-
-# Laura — M1 Decision Drop: First Red Test for Eureka v1
-
-**Date:** 2026-05-28  
-**Author:** Laura (Tester)  
-**Audience:** Edgar, Crispin, Roger — M2+ implementers  
-**Status:** Record only — no decision required. Anchors the TDD cascade.
-
----
-
-## Seed Acceptance Criterion
-
-**AC-1.3** — Keyword-scoped recall at ≥80% precision  
-Source: §00 §0.5 Acceptance Criteria Index; §55 §5 PRD-to-Test Mapping
-
-### Why AC-1.3 is the seed
-
-1. **§55 §2 prescribes it.** The canonical §55 worked example walks through `recall` with AC-1.3 as the first test. The TDD spine itself names this AC.
-2. **`recall` is the highest-value observable entry point.** It is what agents call first to surface prior knowledge (§10 §10.1 trigger: "called when orchestration needs to surface prior knowledge"). Driving from `recall` outward forces discovery of the storage seam first — the highest-risk dependency.
-3. **AC-1.3 is appropriately ambitious for a first test.** It demands real collaborator behavior (keyword-matching content returned by FactStore) but remains a single, focused assertion (≥80% precision, not exact scoring). It's harder to green with a hardcoded stub than AC-2.5 (cold-start empty result), which means each cycle is meaningful.
-
----
-
-## Activity Under Test
-
-**`recall`** (§10 §10.1)
-
-Signature driven by the test:
-```typescript
-recall(
-  options: { query: string; sessionId: SessionId; k: number },
-  deps: { factStore: { search: (...) => Promise<...> } }
-): Promise<Fact[]>
-```
-
-The second argument (`deps`) is the London-school injection point. It was not shown in §55 §2.1's first example, but §55 §2.5 introduces it when fan-out testing forces multi-store injection. I added it in M1 because the task brief explicitly requires mocking collaborators from the first test.
-
----
-
-## Mock Contracts Locked for M2 Cascade
-
-### FactStore.search() — §20 §7.4
-
-**Mock shape (M1):**
-```typescript
-{
-  search: vi.fn().mockResolvedValue([
-    { content: string; trust: number; attention_tier: string },
-    // ...
-  ])
-}
-```
-
-**Contract requirement (§55 §3.3):** Every vi.fn() mock must have a corresponding contract test. M2 must include `packages/eureka/src/persistence/fact-store.contract.test.ts` validating:
-- Session isolation: `search({ session_id })` returns only matching facts
-- Trust floor: `search({ min_trust: 0.6 })` excludes facts below threshold  
-- Tier filtering: results respect `tier` constraint
-- BM25 normalization: `bm25_score` ∈ [0, 1]
-
-**Interface to be formalised in M2** (per §20 §7.4):
-```typescript
-interface FactStore {
-  search(query: RecallQuery): Promise<RecallResult[]>;
-  traverse(query: TraversalQuery): Promise<Fact[]>;
-  filter(query: FilterQuery): Promise<Fact[]>;
-}
-```
-
----
-
-## SessionId Type
-
-`SessionId` branded primitive added to `@akubly/types/src/index.ts`:
-```typescript
-export type SessionId = string & { readonly __brand: 'SessionId' };
-```
-
-This was missing before M1. §20 §8.3 specifies its location. Now available to all packages. Crispin/Edgar: import from `@akubly/types` — do not redefine locally.
-
----
-
-## Red Test Location
-
-```
-packages/eureka/src/activities/__tests__/recall.test.ts
-```
-
-Matches §55 §2.1 and §55 §5 table (`recall.test.ts` column).
-
----
-
-## M2 Cascade Entry Points
-
-The RED test drives the GREEN phase. M2 implementers should:
-
-1. **Edgar / Crispin — create `packages/eureka/src/activities/recall.ts`**
-   - Signature: `recall(options: RecallOptions, deps: RecallDeps): Promise<Fact[]>`
-   - Minimal GREEN: delegate to `deps.factStore.search(...)`, slice to `k`, return content array
-   - Side effects to add per §55 §2.6 (will be forced by M2 tests): `accessCount++`, `lastAccessedAt` update, attention tier promotion
-
-2. **Crispin — create `packages/eureka/src/persistence/fact-store.ts`**
-   - Formalise `FactStore` interface per §20 §7.4
-   - Add contract test file validating the mock assumptions above
-
-3. **Roger — `packages/eureka/src/index.ts` exports**
-   - Wire `recall` to the package barrel when green
-
----
-
-## Open Questions This Test Does NOT Answer
-
-- Exact `RecallResult` vs `Fact` return type — the mock returns `Fact`-shaped objects; §20 §7.1 has a `RecallResult` wrapper. M2 will resolve this when the GREEN implementation is shaped.
-- `factStore.search()` sync vs async — mock uses `mockResolvedValue` (async); §20 §7.4 shows sync signature. M2 contract test will lock this.
-- `ClockProvider` — not yet mocked. Will be forced in M2 when the `lastAccessedAt` side-effect test (§55 §2.6) is written.
-
----
-
-## Package Scaffold Summary
-
-Files created for M1 scaffolding (no production logic):
-
-| File | Purpose |
-|------|---------|
-| `packages/eureka/package.json` | Workspace member `@akubly/eureka` |
-| `packages/eureka/tsconfig.json` | Project reference, excludes test dirs |
-| `packages/eureka/vitest.config.ts` | `src/**/*.test.ts` include pattern |
-| `packages/eureka/src/index.ts` | Empty barrel (satisfies tsc --build) |
-| `packages/eureka/src/activities/__tests__/recall.test.ts` | First red test |
-| `packages/types/src/index.ts` | Added `SessionId` brand |
-| `tsconfig.json` (root) | Added `packages/eureka` project reference |
-
-
-
-
-
-## Recently Merged (This Session)
-
----
-
-# Alexander — Wave 6 Cycle-1 Fix Wave: Non-Obvious Decisions
-
-**Date:** 2026-05-26  
-**Author:** Alexander (SDK/Runtime Dev)  
-**Context:** Wave 6 cycle-1 persona review produced 1 blocking + 7 supporting findings. This document records the non-obvious implementation choices made during the fix wave.
-
----
-
-## Decision 1: Align handler to reader (not reader to handler) — B1
-
-**Options:**
-- A. Update handler.ts to use camelCase (match reader's existing schema)
-- B. Update loadMetrics.ts to use snake_case (match handler's existing schema)
-
-**Choice:** A — align handler to reader.
-
-**Rationale:** The reader (loadMetrics.ts) was written with camelCase and its test suite already uses camelCase events (see forgeMetrics.test.ts `logEvent` calls). The reader's schema is also the public-facing type (`SkillMetricsPrescriberRun` in types.ts), making it the canonical contract. Changing the reader would require touching the public type, the formatter, and multiple existing tests — higher blast radius than fixing the writer. The handler payload is an internal observability field with no public consumers.
-
----
-
-## Decision 2: Fix I3 at the SQL layer, not just JS layer
-
-**Options:**
-- A. Only add per-row try/catch around JSON.parse in JS
-- B. Add `json_valid(payload)` guard in the SQL WHERE clause PLUS per-row JS try/catch
-
-**Choice:** B — guard at both SQL and JS layers.
-
-**Rationale:** Testing revealed that the bundled SQLite version (3.47.x in better-sqlite3) throws a `malformed JSON` error when `json_extract()` is called on an invalid JSON payload, regardless of SQLite's documented behavior for 3.38+. The error happens during WHERE clause evaluation, before any JS code runs. A pure JS fix (per-row try/catch) cannot intercept this. Adding `AND json_valid(payload)` before `AND json_extract(...)` prevents SQLite from evaluating json_extract on invalid payloads, which silently skips corrupt rows without aborting the query. The per-row JS try/catch remains as defense-in-depth for edge cases where a JSON string passes json_valid but fails JSON.parse (e.g., BOM, encoding anomalies).
-
----
-
-## Decision 3: Export forgePrescribeHandler from skillsmith-runtime index
-
-**Options:**
-- A. Export via index.ts (only existing export point)
-- B. Add a new `"./mcp"` subpath export in package.json
-
-**Choice:** A — add to index.ts.
-
-**Rationale:** The package.json only exposes `"."` as an export path. Adding a subpath export would require a package.json change, a tsconfig path update, and a more complex import path in the test (`@akubly/skillsmith-runtime/mcp`). Exporting from index.ts keeps the public surface under the single-barrel model already established, at the cost of one additional export on the barrel. The handler, args type, and result type are legitimate SDK surfaces callers may need.
-
----
-
-## Decision 4: M2 force-flag test — unconditional assertions over profile seeding
-
-**Options:**
-- A. Seed a profile that guarantees ≥1 hint, make assertions conditional-free
-- B. Assert the relational contract unconditionally without guaranteeing hint count
-
-**Choice:** B — assert the relational contract.
-
-**Rationale:** Determining what profile configuration guarantees hint generation requires knowledge of the prescriber's internal thresholds, which are not part of the handler test's scope (they belong in prescriber unit tests). The contract being tested is dedup and force-eviction semantics, not hint generation. `body3.skipped === 0` (force always clears active hints) and `body2.skipped === firstInserted` + `body2.inserted === 0` (dedup invariant) are both unconditionally correct regardless of hint count — when firstInserted=0, both assertions hold trivially (0 skipped, 0 inserted), which is not ideal but is not wrong either.
-
-
----
+### PR #33 Cycle 5: Fork Resume Schema + Predicate Timing Honesty (Graham)
 
-# Decision: Issue #11 Scope Split
+**Date:** 2026-05-31
+**Author:** Graham Knight (Architecture Lead)
+**Status:** APPROVED (Merged in commit 40d39d3)
+**Scope:** Address three Copilot findings from PR #33 cycle 5 review round
 
-**Author:** Graham (Lead)
-**Date:** 2026-05-27
-**Status:** Proposed — awaiting Aaron's approval via Decision-Point gate
+**Status:** Inbox — Scribe merge pending
 
 ## Decision
 
-Split issue #11 into two independent work items:
+PR #33 cycle 5 applies two governance clarifications:
 
-1. **WI-A: Cairn session-resolution code** — Schema migration 015, `getWorkdir()`, session identity = `(repo_key, workdir)`, archivist/hook/MCP threading, tests.
-2. **WI-B: Coordinator dispatch-policy change** — Squad coordinator uses `git worktree add` per-issue instead of shared checkout. Separate concern; depends on WI-A being merged first for correctness.
+1. §6.3 sub-kind registration is incomplete unless the sub-kind has an authoritative payload schema. `fork_resume` now has the same registry-level schema treatment as `fork_origin` and `fork.collision_choice`.
+2. v1 Hook Bus predicate timing is cooperative measurement, not hard preemption. `PredicateRegistration.evaluate` remains synchronous; over-budget predicates produce post-hoc telemetry and retry-budget quarantine for future rows. True hard preemption is deferred to v1.5+ worker/process isolation or an async cancellable predicate API.
 
 ## Rationale
 
-- WI-A is a correctness fix in Cairn's data model. WI-B is an infrastructure/orchestration change in `.squad/` coordinator logic.
-- Different owners, different risk profiles, different test strategies.
-- WI-A can be tested in isolation with unit/integration tests. WI-B requires end-to-end validation of the dispatch flow.
-- Splitting lets us ship WI-A first and dogfood it during WI-B development.
+The first clarification prevents conformance tests from accepting enum-only vocabulary with no payload contract. The second prevents §18 from overstating `Promise.race()` as a sandboxing primitive for CPU-bound synchronous JavaScript.
 
-## Migration Number Correction
+## Files touched
 
-Issue #11 body says "migration 005". The current last migration is **014-session-kind.ts**. The new migration must be **015-workdir-sessions.ts**. Issue body is stale on this number.
-
-## Q2 Resolution: get_status Returns Flat Array (2026-05-27)
-
-Aaron confirmed breaking changes are acceptable (no external consumers yet). Evaluated option (a) flat array vs option (b) primary+siblings on five axes. **Option (a) wins decisively** — option (b) has a circular dependency: it needs workdir to separate primary from siblings, but the scenario is "workdir omitted." Flat array is stateless, composes cleanly with `get_session`, and directly becomes the future `list_sessions` shape. Response is always `{ sessions: [...], curator: {...} }`.
-
-## Confirmed Decisions
-
-- **Q1:** Lazy backfill (NULL workdir for existing sessions) ✅
-- **Q2:** Flat array for `get_status` — always returns `sessions: [...]` ✅
-- **Q3:** WI-B same wave, serialized after WI-A merge ✅
-
-## Agent Assignments
-
-- **Roger (Platform Dev):** WI-A owner. Sessions/DB is his domain; fresh after Wave 6.
-- **Gabriel (Infrastructure):** WI-B owner. Coordinator dispatch is his domain.
-- **Laura (Tester):** Test scope for WI-A (5 test areas per issue body).
-
+- `docs/crucible-technical-design/04-hook-bus.md`
+- `docs/crucible-technical-design/06-primitive-taxonomy.md`
+- `docs/crucible-technical-design/10-session-branching.md`
+- `docs/crucible-technical-design/18-security-permissions.md`
+- `docs/adr/0019-childsid-collision-hybrid.md`
 
 ---
 
-# Laura → Team: Issue #11 WI-A Test Scope Shipped
+## Open Questions
 
-**Date:** 2026-05-28  
-**Author:** Laura (Tester)  
-**Issue:** #11 Worktree-aware sessions  
-**Branch:** `squad/11-worktree-aware-sessions` (worktree `D:\git\stunning-adventure-11`)
+### W3-7 Trigger-Driven Dedup Semantics (Laura)
 
----
+**Status:** FLAGGED FOR AARON'S DIRECTION
 
-## What Landed
+**Observation:** Wave 3's accepted trigger-driven orchestration (W3-D4) means Curator only calls prescribers for skills in `changeVectorSweep.computedSkillIds` — i.e., skills whose change vectors were newly inserted this cycle.
 
-Three new test files in `packages/cairn/src/__tests__/`:
+**Implication:** If the same skill's vectors remain unchanged across two consecutive session starts, the prescriber does not run on the second start, and no dedup-visible result is produced. This is correct by the trigger-driven design, but it differs from a "rerun on every session start" behavior.
 
-| File | Tests | Status |
-|---|---|---|
-| `migration015.test.ts` | 11 | ✅ all passing |
-| `worktreeSessions.test.ts` | 17 | ✅ all passing |
-| `worktreeMcp.test.ts` | 12 | ✅ all passing |
-| **Total new** | **40** | |
-| **Suite total** | **647** | **647/647 ✅** |
+**Question:** Should Wave 4+ introduce a broader trigger mechanism to allow reruns for skills with existing (non-new) summaries? Examples:
+- Always rerun skills that have any vector summaries (regardless of new-this-cycle)
+- Expose a manual scheduler or `force=true` flag for operator-initiated reruns
+- Defer to Phase 5 when MCP/cloud integration allows finer control
 
----
+**Current Design:** Trigger-driven only (W3-D4). This prevents unnecessary prescriber invocations and aligns with the "on new signal" principle, but it limits dedup visibility to cycles where vectors are genuinely computed.
 
-## Test Coverage by Area
+**Recommendation:** Clarify with product whether current trigger semantics are intentional, or if dedup should be visible on *every* session start regardless of new vectors.
 
-**Area 1 — Worktree-aware lookup** (`worktreeSessions.test.ts`):
-- `getActiveSession(db, repoKey, workdir)` returns the correct session for each workdir
-- Does not bleed across workdirs (wrong workdir → undefined)
-- Session row carries workdir field
-- Most-recent-active semantics within a workdir
 
-**Area 2 — Collision prevention** (`worktreeSessions.test.ts`):
-- Two workdirs for same repo create distinct rows
-- Neither session overrides the other (both remain active)
-- `listActiveSessionsForRepo` returns all active sessions across all workdirs
-- Excludes sessions from other repos
-- Excludes ended/completed sessions
+# [ARCHIVED SECTIONS BEFORE 2026-05-24]
 
-**Area 3 — NULL-workdir backward compatibility** (`worktreeSessions.test.ts`):
-- NULL-workdir sessions are findable via `getActiveSession(db, repoKey)` with no workdir arg
-- No-arg call returns most recent active (no workdir filter) — see flag below
-- Mixed scenario: NULL + non-NULL workdir sessions coexist and are independently retrievable
-- `listActiveSessionsForRepo` includes both NULL and workdir-populated sessions
-- Raw DB row confirms `workdir IS NULL` (not empty string) for pre-migration sessions
+Entries from 2026-05-23 and 2026-05-22 have been archived to decisions/archive/archive-2026-05-23.md
 
-**Area 4 — getWorkdir() contract** (`worktreeSessions.test.ts`):
-- Returns non-empty string inside current git repo
-- Accepts explicit cwd arg
-- Returns `undefined` (not throw) outside a git repo
 
 **Area 5 — MCP surfaces** (`worktreeMcp.test.ts`):
 - `get_status` handler returns `sessions:` key (flat array shape, not `session:`)
