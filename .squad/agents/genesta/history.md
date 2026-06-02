@@ -4,6 +4,8 @@
 **Status:** Path D approved. R6-R8 verdicts locked. Cycle 2 C8 resolution: strict eslint + §40 documentation.
 **Last update:** 2026-06-02
 
+📌 **Team Alert** (2026-06-02T06:26:54Z): **Crucible Sprint 0 — First GREEN CYCLE COMPLETE** — Roger's implementation: acceptance scenario A1 passing, all 4 invariants GREEN. Packages: `@akubly/crucible-core` (NEW, types + session), `@akubly/crucible-cli` (re-exports from core). Types finalized: PrimitiveKind, PrimitiveInput, Session, SessionMetadata, Primitive. Range convention locked: inclusive-inclusive. Parent-registry approach: in-memory, logical delegation, no substrate integration yet. OQ-2 (Crucible L1 WAL vs Cairn event_log) remains pre-sprint-2. Genesta/Crispin/Edgar: Coordinate as needed pre-sprint-2 for L1 substrate decisions. — Scribe
+
 📌 **Team Alert** (2026-06-02T06:13:21Z): **Crucible Sprint 0 Kickoff — First RED Test LANDED** — Graham (kickoff plan + types), Gabriel (infrastructure scaffold), Laura (first RED test confirmed). Inbox merged; decisions archived per 7-day rule. Session beginning NOW with outside-in GREEN descent. Genesta/Crispin/Edgar: Coordinate as needed for L1 substrate + schema overlap decisions pre-sprint-2. — Scribe
 
 **Key milestones:**

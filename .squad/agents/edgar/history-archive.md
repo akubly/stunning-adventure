@@ -610,3 +610,29 @@ Interfaces that trail specs create invisible undersupply bugs. The FactStore int
 ---
 
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
+
+---
+# Archived History: 2026-06-01T23:28:28Z
+
+# Edgar — History
+📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
+---
+# Archived History: 2026-06-01T23:28:48Z
+
+# Edgar — History
+
+**Role:** Learning Systems Specialist (Plasticity, trust, recency, recall algorithms)
+**Status:** M7-A complete. Typed error hierarchy shipped on `eureka/m7-a-typed-errors`. 40/40 tests green.
+**Last update:** 2026-06-02
+
+📌 **Team Alert** (2026-06-02T06:26:54Z): **Crucible Sprint 0 — First GREEN CYCLE COMPLETE** — Roger's implementation: acceptance scenario A1 passing, all 4 invariants GREEN. Packages: `@akubly/crucible-core` (NEW, types + session), `@akubly/crucible-cli` (re-exports from core). Session types finalized: PrimitiveKind (5-union), PrimitiveInput, Session, SessionMetadata. Range convention: inclusive-inclusive. Parent-registry approach: in-memory, logical delegation, no substrate yet. OQ-2 (Crucible L1 WAL vs Cairn event_log federate-vs-merge) deferred pre-sprint-2. No learning-loop integration yet (REFACTOR phase scope TBD). Edgar/Genesta/Crispin: Coordinate as needed pre-sprint-2 for substrate + learning decisions. — Scribe
+
+📌 **Team Alert** (2026-06-02T06:13:21Z): **Crucible Sprint 0 Kickoff — First RED Test LANDED** — Graham (kickoff plan + types), Gabriel (infrastructure scaffold), Laura (first RED test confirmed). Inbox merged; decisions archived per 7-day rule. Session beginning NOW with outside-in GREEN descent. Edgar/Genesta/Crispin: Coordinate as needed for learning-loop + substrate decisions pre-sprint-2. — Scribe
+
+**Key milestones:**
+- R5-R6: Power-law recency + event-driven trust design
+- R7-R8: v5-final locked canonical (extraction-ready mechanisms verified)
+- M2-M3: recall() + composite-ranker landed (§30 §1.2 FR-2 formula inline)
+- Cycle 2 fixes: F6 minTrust interface, C5 Ranker JSDoc, C6 guard test
+- M7-A GREEN: typed error hierarchy (FactNotFoundError, InvalidFeedbackOptionsError, InvalidTrustValueError, FactReaderContractError, UnhandledFeedbackEventError)
+
