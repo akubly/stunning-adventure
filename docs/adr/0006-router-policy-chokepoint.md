@@ -1,4 +1,4 @@
-# ADR-0006: Router as Single Policy Choke-Point — Shell
+# ADR-0006: Router as Single Policy Choke-Point
 
 **Status:** Accepted — 2026-05-29 by Aaron
 **Author:** Gabriel (Router owner, §5); shell by Graham

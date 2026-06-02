@@ -130,7 +130,7 @@ multi-user workloads justify the complexity.
 - **Leaderboard multi-candidate row (§17.1):** When Router emits `prescriptionCandidates[]` with multiple non-dominated prescriptions, all are visible in the L1 ledger and Aperture. No information hiding at the telemetry layer.
 - **`[incomparable-axes]` badge in Aperture (§9.7):** Users see when prescriptions are Pareto-incomparable. This transparency is intentional — policy decisions (tiebreak/escalate) happen at Router tier (§5), not in the observability layer.
 - **Trust-tier routing:** Router policy table (§18.2) can apply different rules for incomparable builtin vs community prescriptions. Telemetry surfaces the full frontier; policy decides visibility/escalation downstream.
-- **No secret-leakage amplification:** Observability emits what's already in L1 primitives (§6). Same PII/secret exposure model as §18.4.1 (captured Observations contain verbatim tool outputs). No telemetry-layer expansion of sensitive data.
+- **No secret-leakage amplification:** Observability emits what's already in L1 primitives (§6). Same PII/secret exposure model as §18.4.1 (captured Observations contain verbatim tool results). No telemetry-layer expansion of sensitive data.
 
 **Cross-references:** ADR-0018 (Pareto-incomparable prescriptions), §9.7 (Aperture leaderboard), §18.2 (Router policy defaults), §18.4.1 (PII/secret handling).
 

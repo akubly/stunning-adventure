@@ -200,7 +200,8 @@ A dependency-cruiser ruleset enforces the boundary statically. Rule names
 and globs are part of this contract; implementations MUST register them.
 
 ```jsonc
-// .dependency-cruiser.cjs (excerpt)
+// Proposed/example .dependency-cruiser.cjs excerpt; file not yet landed and
+// will be added during M1 scaffolding.
 {
   "forbidden": [
     {

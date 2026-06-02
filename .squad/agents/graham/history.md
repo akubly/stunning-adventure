@@ -16,6 +16,10 @@
 
 # Graham — Key Learnings (Recent)
 
+## 2026-06-01T22:34:34-07:00: PR #33 Cloud Review Cycle 6 — Trivial-Fix Sweep Close-Out
+
+- Closed the cycle 6 duplicate Copilot sweep with three one-time doc fixes: aligned observability capture wording to post-filter tool results, marked the dependency-cruiser snippet as proposed/M1 scaffolding, and removed the stale ADR-0006 Shell suffix.
+
 ## 2026-05-31: PR #33 Cloud Review Cycle 5 — Sub-Kind Schema Governance + Watchdog Honesty
 
 **Sub-kind schema completeness:**
@@ -60,4 +64,3 @@
 ## Archive
 
 Older detailed history (before 2026-05-30) archived to `history-archive.md`.
-
