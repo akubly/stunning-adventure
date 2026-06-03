@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { PrimitiveInput, Primitive, Session, SessionMetadata } from './types.js';
 import { SessionManager } from './session-manager.js';
 import { createInMemoryDB } from './in-memory-db.js';
@@ -10,6 +11,13 @@ import { createInMemoryDB } from './in-memory-db.js';
  * This keeps createSession/fork backward-compatible for acceptance tests.
  *
  * Sprint 0 only — real SQLite integration is deferred to Refactor 3.
+ *
+ * NOTE — InMemoryDB coupling: This module calls InMemoryDB's extended
+ * methods (getOwnEvents, getMetadata, insertRootSession, pushEvent),
+ * NOT the narrow DB interface used by SessionManager. When a real SQLite
+ * adapter lands at Refactor 3, it must either satisfy InMemoryDB's
+ * extended surface or session.ts must be restructured to use DB.queryEvents
+ * with explicit parent lookups. Intentional for Sprint 0 simplicity.
  */
 const db = createInMemoryDB();
 const manager = new SessionManager(db);
@@ -64,9 +72,14 @@ function buildSession(id: string, metadata: SessionMetadata): Session {
   };
 }
 
+/** Reset the module-level singleton DB — for test isolation only. */
+export function resetInMemoryDb(): void {
+  db.clear();
+}
+
 /** Create a new root session with no parent lineage. */
 export async function createSession(): Promise<Session> {
-  const id = crypto.randomUUID();
+  const id = randomUUID();
   const createdAt = Date.now();
   const metadata: SessionMetadata = {
     parentSessionId: null,

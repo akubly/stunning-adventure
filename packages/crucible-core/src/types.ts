@@ -30,7 +30,14 @@ export interface Primitive extends PrimitiveInput {
   offset: number;
 }
 
-/** Fork-lineage and creation metadata for a session. */
+/**
+ * Fork-lineage and creation metadata for a session.
+ *
+ * Invariant: `parentSessionId` and `forkPointEventId` are BOTH null (root
+ * session) OR BOTH non-null (forked session). Mixed states are illegal.
+ * TypeScript discriminated union deferred — see ForkLineage for invariant
+ * enforcement.
+ */
 export interface SessionMetadata {
   parentSessionId: string | null;
   forkPointEventId: number | null;
@@ -52,6 +59,11 @@ export interface Session {
    * Returns up to b - a + 1 primitives.
    * For child sessions, offsets ≤ forkPointEventId delegate to the parent's
    * event store (logical prefix — parent events are never physically copied).
+   *
+   * The `range` tuple is `[startOffset, endOffset]` — both endpoints inclusive.
+   * Example: `range: [0, 46]` returns offsets 0 through 46 (47 events max).
+   * A named-field API (`{startOffset, endOffset}`) is under consideration for
+   * a future sprint; tuple is kept for Sprint 0 to minimise API churn.
    */
   query(opts: { range: [number, number] }): Promise<Primitive[]>;
 }

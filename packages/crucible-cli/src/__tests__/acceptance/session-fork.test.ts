@@ -21,11 +21,17 @@
  *   4. Parent ledger remains unmodified (still 47 primitives)
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 // These symbols do not exist yet — import failure is the intended RED signal.
 import { createSession, fork } from '../../index.js';
+import { resetInMemoryDb } from '@akubly/crucible-core';
 
 describe('Session Fork', () => {
+  // Reset the module-level in-memory DB so each test starts from a clean slate.
+  beforeEach(() => {
+    resetInMemoryDb();
+  });
+
   it(
     'Acceptance: Fork session creates child with inherited ledger prefix [parentId, forkOffset, childLineage]',
     async () => {

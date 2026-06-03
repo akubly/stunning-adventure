@@ -27,6 +27,8 @@ export interface InMemoryDB extends DB {
   getMetadata(
     sessionId: string,
   ): { parentSessionId: string | null; forkPointEventId: number | null; createdAt: number } | null;
+  /** Clear all session state — for test isolation only. */
+  clear(): void;
 }
 
 /**
@@ -76,7 +78,9 @@ export function createInMemoryDB(): InMemoryDB {
     },
 
     pushEvent(sessionId, event) {
-      store.get(sessionId)?.ownEvents.push(event);
+      const s = store.get(sessionId);
+      if (!s) throw new Error(`pushEvent: session '${sessionId}' not found`);
+      s.ownEvents.push(event);
     },
 
     getOwnEvents(sessionId) {
@@ -91,6 +95,10 @@ export function createInMemoryDB(): InMemoryDB {
         forkPointEventId: s.forkPointEventId,
         createdAt: s.createdAt,
       };
+    },
+
+    clear() {
+      store.clear();
     },
   };
 }

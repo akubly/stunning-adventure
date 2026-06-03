@@ -11,6 +11,15 @@
 
 Given a RED acceptance test (outermost ring, no mocks), implement the **simplest correct code** that makes it GREEN. Defer every abstraction to the REFACTOR step. Do not introduce Ledger classes, repository interfaces, or collaborator seams during GREEN — those are the next TDD cycle's RED test targets.
 
+> **Sprint 0 variant — diverges from `docs/crucible-tdd-strategy.md` §4.1 GREEN.**
+> The strategy doc's §4.1 GREEN phase descends outside-in through a mocked
+> `Ledger` collaborator at each layer boundary. This SKILL instead uses real
+> in-memory data structures (module-level Map/registry) with no mocks, deferring
+> collaborator seams entirely to REFACTOR. The divergence is intentional: Sprint 0
+> acceptance tests exercise the full stack end-to-end, so a mocked-Ledger GREEN
+> adds indirection without value at this stage. Mocked-Ledger descent applies
+> when the acceptance surface grows beyond single-module reach (Sprint 1+).
+
 ---
 
 ## When to Apply

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { ForkLineage } from './ledger/fork-lineage.js';
 import type { DB } from './db.js';
 
@@ -20,16 +21,16 @@ export class SessionManager {
       throw new Error(`Parent session ${parentId} not found`);
     }
 
-    if (forkOffset > parent.ledgerSize) {
+    if (forkOffset >= parent.ledgerSize) {
       throw new Error(
-        `Fork point ${forkOffset} exceeds parent ledger size ${parent.ledgerSize}`,
+        `Fork point ${forkOffset} must be < parent ledger size ${parent.ledgerSize}`,
       );
     }
 
     // ForkLineage constructor enforces the non-negative invariant.
     const lineage = new ForkLineage(parentId, forkOffset);
 
-    const childId = crypto.randomUUID();
+    const childId = randomUUID();
     await this.db.insertSession({
       id: childId,
       parentSessionId: lineage.parentSessionId,

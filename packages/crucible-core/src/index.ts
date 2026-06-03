@@ -6,7 +6,7 @@
  * L1 WAL integration deferred to a future sprint (OQ-2).
  */
 export type { PrimitiveKind, PrimitiveInput, Primitive, SessionMetadata, Session } from './types.js';
-export { createSession, fork } from './session.js';
+export { createSession, fork, resetInMemoryDb } from './session.js';
 export { SessionManager } from './session-manager.js';
 export type { DB } from './db.js';
 export { ForkLineage } from './ledger/fork-lineage.js';

@@ -2,8 +2,7 @@
  * ForkLineage — value object capturing a session's fork ancestry.
  *
  * parentSessionId is typed string | null (not just string) so that
- * ForkLineage.root() can produce a valid sentinel without a non-null
- * assertion. Root sessions carry parentSessionId === null; all forked
+ * root sessions can carry parentSessionId === null; all forked
  * sessions carry the id of the session they branched from.
  */
 export class ForkLineage {
@@ -16,10 +15,10 @@ export class ForkLineage {
     }
   }
 
-  /** Sentinel lineage for root (non-forked) sessions. */
-  static root(): ForkLineage {
-    return new ForkLineage(null, 0);
-  }
+  // root() factory removed (YAGNI): zero callers, and its sentinel
+  // (forkPointEventId = 0) conflicts with session.ts convention where
+  // forkPointEventId === null marks root sessions. Re-introduce with
+  // consistent null semantics when a caller actually needs it.
 
   isRoot(): boolean {
     return this.parentSessionId === null;

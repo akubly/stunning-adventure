@@ -58,8 +58,9 @@ describe('SessionManager', () => {
   let mockDB: MockDB;
 
   beforeEach(() => {
-    mockDB = makeMockDB();
+    // Reset first so vi.fn() instances created by makeMockDB() start pristine.
     vi.resetAllMocks();
+    mockDB = makeMockDB();
   });
 
   // ── §4.1 Refactor 2 — fork-point bounds invariant ──────────────────────────
@@ -76,7 +77,7 @@ describe('SessionManager', () => {
       // ensuring the error message references the offending values.
       await expect(
         manager.forkSession('parent-id', 50),
-      ).rejects.toThrow(/exceeds parent ledger size 47/);
+      ).rejects.toThrow(/exceeds parent ledger size 47|must be < parent ledger size 47|must be less than/i);
     },
   );
 
@@ -129,6 +130,40 @@ describe('SessionManager', () => {
           pluginVersions: parentPlugins,
         }),
       );
+    },
+  );
+
+  // ── B1 boundary tests — equal-to-ledgerSize is also out-of-bounds ──────────
+  // These are RED until Roger changes the bounds check from `>` to `>=`.
+  // Roger has wording freedom; the regex matches any reasonable phrasing.
+
+  it(
+    'Unit: SessionManager rejects forkOffset equal to parent ledger size',
+    async () => {
+      // Arrange — ledger has 47 events (offsets 0–46); fork AT 47 is out-of-bounds.
+      mockDB.getSession.mockResolvedValue({ id: 'parent-id', ledgerSize: 47 });
+
+      const manager = new SessionManager(mockDB);
+
+      // Act + Assert — permissive regex: Roger may phrase this any of several ways.
+      await expect(
+        manager.forkSession('parent-id', 47),
+      ).rejects.toThrow(/exceeds parent ledger size 47|must be (less than|< parent ledger size)|>= ?47/i);
+    },
+  );
+
+  it(
+    'Unit: SessionManager rejects fork on empty parent at offset 0',
+    async () => {
+      // Edge case: ledgerSize 0 means no events exist — any fork offset, including
+      // 0, is out-of-bounds. Exercises the >= 0 boundary explicitly.
+      mockDB.getSession.mockResolvedValue({ id: 'parent-id', ledgerSize: 0 });
+
+      const manager = new SessionManager(mockDB);
+
+      await expect(
+        manager.forkSession('parent-id', 0),
+      ).rejects.toThrow(/exceeds parent ledger size 0|must be (less than|< parent ledger size)|>= ?0/i);
     },
   );
 
