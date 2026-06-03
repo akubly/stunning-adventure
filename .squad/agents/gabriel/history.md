@@ -17,14 +17,17 @@
 
 **M2 Cycle-3 Fixes (2026-06-02):** Addressed 8 active Copilot threads on PR #44. Bucket A `b16a485`: bash resolver now matches `curate.ps1` fallbacks and Git Bash smoke reports package version. Bucket B `c831e64`: README now documents Node >=20, exact resolver order, and bash/Git Bash support boundary. Bucket C `19f35e9`: removed Graham history ESC artifact. Bucket D `a5f1e17`: consolidated date-stamped squad archives into canonical archive files. Persona-review follow-up `3245fc1`: refreshed shell-install skill parity, README troubleshooting/fallback notes, smoke-check fallback warning, and archive cleanup details. Verification: `npm run build`, `npm test`, and Git Bash `forge_mcp_check` all clean.
 
+**M2 Cycle-4 Fix (2026-06-02):** Addressed blocking process-leak thread `PRRT_kwDORy1V9M6GqI4o` in commit `ac524c3`. Root cause: interactive bash launched `node "$script"` with stdin inherited from the terminal, so `runSessionStartHook()` waited forever for EOF. Fix: pipe finite `{"toolName":"shellInit","cwd":"..."}` JSON into Node, with Git Bash cwd converted through `cygpath -w`, so stdin reaches EOF and repo/workdir attribution remains deterministic. Verification: `npm run build`, `npm test`, Git Bash `forge_mcp_check`, and process-leak smoke clean; transient Node PID exited before the 5-second recheck.
+
 ---
 
 ## Current Workload
 
 - Crucible CTD Phase 3: §17 (observability/telemetry) + §18 (diagnostics/recovery) unblocked
-- M2 PR #44: Cycle-3 fixes shipped; awaiting coordinator thread resolution/merge
+- M2 PR #44: Cycle-4 fix shipped; awaiting coordinator thread resolution/merge
 - Dogfood scope: M2 complete; M3+ planning pending
 
 ---
 
 **For detailed history, see history-archive.md**
+
