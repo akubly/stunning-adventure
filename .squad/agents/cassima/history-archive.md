@@ -106,7 +106,7 @@
 
 **Key findings:**
 - **Roadmap: v1 scope unchanged.** Eureka v5-final (617 lines, R8 LOCKED) remains canonical. All 4 user stories (US-1 through US-4) ship as designed. Crucible being a sibling changes Eureka's v1.5+ integration path (consumes Crucible WAL) but not v1 deliverables.
-- **Coordination: Schema freeze gates + async memos.** Graham is cross-project schema czar; locks SessionId brand, Cairn sessions table, Forge DecisionRecord before either implementation starts. No recurring syncs; substrate changes require Graham sign-off via `decision inbox drop ` memos. Genesta (Eureka) + Roger (Crucible) coordinate on DB migrations; Crispin (Eureka) + Alexander (Crucible) coordinate on dependency bumps.
+- **Coordination: Schema freeze gates + async memos.** Graham is cross-project schema czar; locks SessionId brand, Cairn sessions table, Forge DecisionRecord before either implementation starts. No recurring syncs; substrate changes require Graham sign-off via `decision inbox drop-box` memos. Genesta (Eureka) + Roger (Crucible) coordinate on DB migrations; Crispin (Eureka) + Alexander (Crucible) coordinate on dependency bumps.
 - **Dogfood timing: Cassima recommends Eureka SECOND.** If Crucible ships first, Eureka's US-1 trains on real Crucible session logs (higher fidelity). If Eureka ships first, it trains on Copilot CLI logs (ephemeral data). Crucible's v1 success bar is existential (months-long bootstrap loop); Eureka's is incremental (2-session validation). Parallel dogfood viable but higher-friction (context-switching tax, merge conflicts, tool-boundary confusion).
 - **Non-problems dissolved:** (1) Forge ownership crisis is moot (same repo = no duplication/drift); (2) Resourcing concern overstated (Cassima/Graham are gates, not bottlenecks); (3) "Is Eureka a Crucible feature?" answered (separate v1s, integrate v1.5+); (4) Bootstrap order delegated (whichever ships first gets dogfooded first).
 
@@ -219,7 +219,7 @@
 **Changes landed:**
 1. **technical-design.md exec summary (line 14):** Updated three-tier description from "agent fully wired; user/project stubbed" to "agent tier only in v1; user/project tiers reserved in schema, adapters deferred to v1.5 per PRD FR-7.2." Replaced "Four open decisions block implementation" with "OQ-1 resolved via ADR-0002; remaining open decisions tracked in §00 ADR index."
 
-2. **technical-design.md References (lines 163-166):** Replaced `decision inbox drop ` links (gitignored, broken for other contributors) with references to merged content in `.squad/decisions.md` (Crucible Impact → "Crucible ↔ Eureka Cross-Project Overlap"; Substrate Blocker → "Narrower Substrate Freeze Proposal" + ADR-0002).
+2. **technical-design.md References (lines 163-166):** Replaced `decision inbox drop-box` links (gitignored, broken for other contributors) with references to merged content in `.squad/decisions.md` (Crucible Impact → "Crucible ↔ Eureka Cross-Project Overlap"; Substrate Blocker → "Narrower Substrate Freeze Proposal" + ADR-0002).
 
 3. **ADR-0002 header (line 8):** Replaced `decision inbox drop cassima-t7-shared-substrate-blocker.md` reference with merged decision reference: "§70 T7; merged substrate analysis in `.squad/decisions.md` 'Narrower Substrate Freeze Proposal' (2026-05-27)."
 
@@ -227,7 +227,7 @@
 
 5. **00-overview.md tier table (lines 242-246):** Changed user/project v1 Status from "Stub (throws on write, empty on read)" to "Not shipped in v1 — schema reserved, adapter deferred to v1.5" per PRD FR-7.2 canonical wording. Updated "Recall Fan-Out Strategy" to note v1.5+ for multi-tier fan-out.
 
-**Rule extracted:** Committed docs must not cite paths under gitignored directories (`decision inbox drop ` is gitignored → broken for other contributors/CI). References to decision content should point to merged locations in `.squad/decisions.md` or committed ADRs.
+**Rule extracted:** Committed docs must not cite paths under gitignored directories (`decision inbox drop-box` is gitignored → broken for other contributors/CI). References to decision content should point to merged locations in `.squad/decisions.md` or committed ADRs.
 
 **Toolchain reality check:** Confirmed repo uses npm workspaces (root `package.json` + `package-lock.json`), not pnpm/turborepo. Build command is `tsc --build`. ADR-0002 now reflects actual tooling rather than aspirational claims.
 
@@ -238,7 +238,7 @@
 
 **What I learned:**
 - Post-merge alignment sweeps are PM scope when they affect PRD/design consistency.
-- `decision inbox drop ` is for local-only working memos; references from committed docs must resolve for all team members.
+- `decision inbox drop-box` is for local-only working memos; references from committed docs must resolve for all team members.
 - Toolchain claims in ADRs should match repository evidence, not aspirational future state (or clearly label as "future migration").
 
 **Status:** All 5 threads addressed. Skill documented. Ready for next work.

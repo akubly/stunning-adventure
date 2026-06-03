@@ -243,7 +243,7 @@ Four other test files updated: version assertion 16 → 17 (db, discovery, migra
 **Explicitly prohibited (gitignored runtime state):**
 - `.squad/orchestration-log/` — agent orchestration logs
 - `.squad/log/` — session summary logs
-- `decision inbox drop ` — transient decision queue (consumed by Scribe, not committed)
+- `decision inbox drop-box` — transient decision queue (consumed by Scribe, not committed)
 - `.squad/sessions/` — session data
 - `.squad/.scratch/` — scratch space
 
@@ -1073,7 +1073,7 @@ M2 London-school TDD beat complete. `recall()` is implemented and the AC-1.3 see
 
 Post-merge alignment sweep to fix 5 documentation inconsistencies flagged by Copilot's automated review. Substrate ownership was decided (ADR-0002 Option A monorepo, accepted 2026-05-27), but several committed docs still:
 1. Referenced pre-decision state ("Four open decisions block...")
-2. Cited gitignored `decision inbox drop ` paths (broken for other contributors/CI)
+2. Cited gitignored `decision inbox drop-box` paths (broken for other contributors/CI)
 3. Claimed "pnpm workspaces, turborepo" when repo uses npm workspaces + `tsc --build`
 4. Described user/project tiers as "stubbed" when PRD FR-7.2 says "NOT SHIPPED in v1 at all"
 
@@ -1115,7 +1115,7 @@ All edits were surgical — preserved doc structure, voice, and content except t
 - **Substrate Ownership:** See `.squad/decisions.md` § "Narrower Substrate Freeze Proposal" and ADR-0002 (2026-05-27)
 ```
 
-**Rationale:** `decision inbox drop ` is gitignored (local-only working memos). Committed docs must reference content that resolves for all contributors. Merged substrate analysis now lives in `.squad/decisions.md` and ADR-0002.
+**Rationale:** `decision inbox drop-box` is gitignored (local-only working memos). Committed docs must reference content that resolves for all contributors. Merged substrate analysis now lives in `.squad/decisions.md` and ADR-0002.
 
 ---
 
@@ -1194,7 +1194,7 @@ Also updated "Recall Fan-Out Strategy" prose to note multi-tier fan-out is v1.5+
 
 **Committed docs must not cite paths under gitignored directories.**
 
-- `decision inbox drop ` is gitignored → broken for other contributors and CI.
+- `decision inbox drop-box` is gitignored → broken for other contributors and CI.
 - References to decision content should point to:
   1. Merged content in `.squad/decisions.md` (cite section heading + date), OR
   2. Committed ADRs (`docs/eureka/adrs/*.md`), OR

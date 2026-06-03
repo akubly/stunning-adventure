@@ -19,7 +19,7 @@ Broken links to gitignored files are invisible to the author (who has the local 
 
 ## Context
 
-`decision inbox drop ` is gitignored in the `mem/` repo. It's a local-only working-memo directory where agents draft decision documents before they're merged into `.squad/decisions.md` (the committed, canonical team decision log).
+`decision inbox drop-box` is gitignored in the `mem/` repo. It's a local-only working-memo directory where agents draft decision documents before they're merged into `.squad/decisions.md` (the committed, canonical team decision log).
 
 During Eureka v1 design phase, several committed docs (ADRs, technical design) referenced `decision inbox drop cassima-*.md` files. These references worked for Cassima (who had the local files) but were broken for other contributors and CI.
 
@@ -36,7 +36,7 @@ All three were replaced with references to merged content in `.squad/decisions.m
 **Before committing any doc that references another file:**
 
 1. Check if the referenced path is under a gitignored directory.
-   - In `mem/` repo: `decision inbox drop ` is gitignored.
+   - In `mem/` repo: `decision inbox drop-box` is gitignored.
    - Check `.gitignore` if unsure.
 
 2. If yes, replace the reference with one of:
@@ -59,7 +59,7 @@ All three were replaced with references to merged content in `.squad/decisions.m
 **Tension Reference:** §70 T7, `decision inbox drop <memo-slug>.md`
 ```
 
-**Why broken:** `decision inbox drop ` is gitignored → file doesn't exist in other contributors' checkouts or CI.
+**Why broken:** `decision inbox drop-box` is gitignored → file doesn't exist in other contributors' checkouts or CI.
 
 ### ✅ Good (Points to Merged Content)
 
@@ -98,7 +98,7 @@ All three were replaced with references to merged content in `.squad/decisions.m
 git diff --cached | grep 'inbox/'
 ```
 
-If any committed docs reference `decision inbox drop `, replace with merged-content references.
+If any committed docs reference `decision inbox drop-box`, replace with merged-content references.
 
 **When sweeping for violations, search the ENTIRE repository** — not just `docs/`:
 - `.squad/agents/*/history.md` (agent audit trails)
@@ -159,4 +159,5 @@ When fixing violations, don't just fix the specific flagged lines. Search the en
 Copilot automated review flagged 3 broken inbox references in committed Eureka docs. All replaced with merged-content references. Rule extracted to prevent recurrence.
 
 **Cycle 1 Summary:** See `.squad/decisions.md` § "PR #26 — Copilot Review Doc Alignment (Cycle 1)" (2026-05-28) for full fix sweep documentation.
+
 

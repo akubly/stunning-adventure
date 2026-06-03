@@ -37,7 +37,6 @@ fi
 #   - Non-blank lines outside skip: flush the buffer, emit the line.
 _remove_block() {
   local file="$1" start="$2" end="$3"
-  local tmpfile
   tmpfile=$(mktemp "${file}.forge-mcp-bak.XXXXXX")
   trap '[[ -n "${tmpfile:-}" ]] && rm -f "$tmpfile"' EXIT INT TERM
 
@@ -76,6 +75,8 @@ _remove_block() {
   } > "$tmpfile"
 
   mv "$tmpfile" "$file"
+  tmpfile=""
+  trap - EXIT INT TERM
 }
 
 _remove_block "$SHELL_RC" "$MARKER_START" "$MARKER_END"

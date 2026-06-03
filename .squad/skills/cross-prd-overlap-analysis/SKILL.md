@@ -146,4 +146,5 @@ Short (1-2 pages max) memo that:
 - When one PRD assumes the other's substrate is stable, but Aaron's recent directives forked/restructured it
 - When meeting invite arrives before overlap analysis complete
 
-**Output:** Two artifacts (position paper + memo) in `decision inbox drop `. Counterparty reads before meeting. Meeting agenda revised based on position.
+**Output:** Two artifacts (position paper + memo) in `decision inbox drop-box`. Counterparty reads before meeting. Meeting agenda revised based on position.
+

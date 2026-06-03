@@ -53,9 +53,9 @@ Aaron established this as team-wide engineering standard. London-school (outside
 **Authors:** Aaron (directives) + Genesta (architecture) + Cassima (PM)
 **Status:** Adopted
 **Inbox References:**
-- [copilot-directive-2026-05-26-crucible-first-and-schema-signoff.md](./inbox/copilot-directive-2026-05-26-crucible-first-and-schema-signoff.md)
-- [genesta-g4-scope.md](./inbox/genesta-g4-scope.md)
-- [cassima-g4-scope.md](./inbox/cassima-g4-scope.md)
+- copilot-directive-2026-05-26-crucible-first-and-schema-signoff.md
+- genesta-g4-scope.md
+- cassima-g4-scope.md
 
 ### Aaron's Two Directives (Adopted)
 
@@ -215,9 +215,9 @@ Without G4, Crucible can unilaterally mutate DecisionRecord schema breaking Eure
 **Authors:** Aaron (directives) + Genesta (architecture) + Cassima (PM)
 **Status:** Accepted (decision gates remain pending)
 **Inbox References:**
-- [copilot-directive-2026-05-26-shared-substrate.md](./inbox/copilot-directive-2026-05-26-shared-substrate.md)
-- [genesta-shared-substrate-revision.md](./inbox/genesta-shared-substrate-revision.md)
-- [cassima-shared-substrate-revision.md](./inbox/cassima-shared-substrate-revision.md)
+- copilot-directive-2026-05-26-shared-substrate.md
+- genesta-shared-substrate-revision.md
+- cassima-shared-substrate-revision.md
 
 ### Context
 
@@ -258,7 +258,7 @@ Genesta and Cassima conducted a four-agent overlap analysis (Genesta/Crispin/Edg
 
 **Dogfood timing:** Aaron's directive allows either ship first. **Cassima's recommendation: Eureka second.** Rationale: (1) Crucible's v1 success bar is existential (months-long bootstrap loop); Eureka's is incremental (2-session validation). (2) If Crucible ships first, Eureka's US-1 "familiarization" trains on real Crucible WAL (higher fidelity). (3) If Eureka ships first, it trains on Copilot CLI logs (ephemeral). Crucible-first de-risks both projects. Parallel dogfood viable but higher-friction (context-switching tax, merge conflicts, tool-boundary confusion during v1 coexistence).
 
-**Coordination cost:** Schema freeze gates + async memos (no recurring syncs). Graham is cross-project schema czar; locks SessionId, Cairn sessions table, Forge DecisionRecord before implementations start. Substrate changes require Graham sign-off via `decision inbox drop ` memos (Genesta/Crispin → Graham for Eureka changes; Alexander/Roger → Graham for Crucible changes). Genesta + Roger coordinate DB migrations; Crispin + Alexander coordinate dependency bumps. Coordination overhead: <30min/week.
+**Coordination cost:** Schema freeze gates + async memos (no recurring syncs). Graham is cross-project schema czar; locks SessionId, Cairn sessions table, Forge DecisionRecord before implementations start. Substrate changes require Graham sign-off via `decision inbox drop-box` memos (Genesta/Crispin → Graham for Eureka changes; Alexander/Roger → Graham for Crucible changes). Genesta + Roger coordinate DB migrations; Crispin + Alexander coordinate dependency bumps. Coordination overhead: <30min/week.
 
 ### Key Learning
 
@@ -287,8 +287,8 @@ Genesta and Cassima conducted a four-agent overlap analysis (Genesta/Crispin/Edg
 **Author:** Aaron (directive) + Genesta (architecture) + Cassima (PM)
 **Status:** Analyzed & Converged — Recommendation: ADOPT G4, REJECT branch-tree
 **Inbox References:**
-- [genesta-branch-strategy.md](./inbox/genesta-branch-strategy.md) — Architectural analysis
-- [cassima-branch-strategy.md](./inbox/cassima-branch-strategy.md) — PM/timing analysis
+- genesta-branch-strategy.md — Architectural analysis
+- cassima-branch-strategy.md — PM/timing analysis
 
 ### Context
 

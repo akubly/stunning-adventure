@@ -57,7 +57,7 @@
 
 - **A TODO in a contract test is a broken contract.** The C-5 TODO "We can't call getTrust on the same impl instance" was wrong AND left the serialization property unverified. Rule: a contract test that doesn't assert the contract property it's named for is worse than no test — it creates false confidence.
 
-- **Gitignored inbox files can slip through on cross-branch merges.** Crispin's branch included `decision inbox drop ` files. When merged, they became committed files in the tree even though `.gitignore` excludes them from new staging. The guard is `git status` review before merge commits, not just trusting that gitignore prevents all accidents.
+- **Gitignored inbox files can slip through on cross-branch merges.** Crispin's branch included `decision inbox drop-box` files. When merged, they became committed files in the tree even though `.gitignore` excludes them from new staging. The guard is `git status` review before merge commits, not just trusting that gitignore prevents all accidents.
 
 - **JSDoc must not reference gitignored paths.** `@concurrency` in recall.ts pointed at `edgar-m7-c-contract.md` (inbox path). Public-facing JSDoc must only cite paths that exist in the committed tree or use project-relative paths to versioned files (`.squad/decisions.md`).
 

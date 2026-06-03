@@ -34,7 +34,7 @@
 
 **Participants:** Aaron (user), Cassima (agent, spawning in parallel)
 
-**Work:** Aaron walked all 9 OQ (Open Questions) from Cassima v2 PRD; resolutions captured as directive files in `decision inbox drop `. Cassima v3 spawned (background) to integrate all directives into final R5 PRD.
+**Work:** Aaron walked all 9 OQ (Open Questions) from Cassima v2 PRD; resolutions captured as directive files in `decision inbox drop-box`. Cassima v3 spawned (background) to integrate all directives into final R5 PRD.
 
 **Outcome:** All 9 OQs resolved. Cassima v3 in progress. Inbox protection maintained per Aaron's standing rule.
 
@@ -53,3 +53,4 @@
 | **Rationale** | R6 readers see polished PRD spec (scaffolding removed); forever-guardrails (design constraints) survive; full audit trail lives in Changelog + git SHA `4c18ec7` |
 | **Result** | PRD v3 now clean and ready for R6 reconciliation; document reads as final specification, not a running commentary |
 | **Outcome** | Completed ✅
+

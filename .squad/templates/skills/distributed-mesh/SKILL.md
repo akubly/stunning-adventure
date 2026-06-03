@@ -13,7 +13,7 @@ source: "multi-model-consensus (Opus 4.6, Sonnet 4.5, GPT-5.4)"
 1. **`mesh.json`** — Generated from user answers about zones and squads (which squads participate, what zone each is in, paths/URLs for each), using `mesh.json.example` in this skill's directory as the schema template
 2. **`sync-mesh.sh` and `sync-mesh.ps1`** — Copied from this skill's directory into the project root (these are bundled resources, NOT generated code)
 3. **Zone 2 state repo initialization** (if applicable) — If the user specified a Zone 2 shared state repo, run `sync-mesh.sh --init` to scaffold the state repo structure
-4. **A decision entry** in `decision inbox drop ` documenting the mesh configuration for team awareness
+4. **A decision entry** in `decision inbox drop-box` documenting the mesh configuration for team awareness
 
 **❌ THIS SKILL DOES NOT PRODUCE:**
 
@@ -285,3 +285,4 @@ Run `bash sync-mesh.sh` (or `.\sync-mesh.ps1` on Windows) before agents start to
 - Modifying agent charters or routing rules
 - Setting up CI/CD pipelines for mesh sync
 - Creating dashboards or monitoring tools
+
