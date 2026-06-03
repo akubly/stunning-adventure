@@ -112,7 +112,7 @@ so the prescriber runs automatically each time you open a terminal.
 
 ### Prerequisites
 
-- **Node.js** ≥ 18 on your `PATH`
+- **Node.js** ≥ 20 on your `PATH`
 - Either: the repo cloned and built locally (`npm run build`), **or** the
   runtime package installed globally (`npm install -g @akubly/skillsmith-runtime`)
 
@@ -160,10 +160,10 @@ npm install -g @akubly/skillsmith-runtime
 ### How it works
 
 `shell-init.sh` is sourced by `~/.bashrc` on every new interactive bash session.
-It resolves the `sessionStart.js` entrypoint (in priority order: user-deployed
-override → global npm → repo checkout), then runs it detached in the background
-so it never blocks your prompt. Non-interactive shells (scripts, CI) are skipped
-via `[[ $- != *i* ]] && return`.
+It resolves the `sessionStart.js` entrypoint (see the table below for exact
+priority order), then runs it detached in the background so it never blocks your
+prompt. Non-interactive shells (scripts, CI) are skipped via
+`[[ $- != *i* ]] && return`.
 
 **Script resolution order:**
 
@@ -171,7 +171,10 @@ via `[[ $- != *i* ]] && return`.
 |----------|------|
 | 1 | `~/.cairn/hook/sessionStart.mjs` (user override) |
 | 2 | `$(npm root -g)/@akubly/skillsmith-runtime/dist/hooks/sessionStart.js` |
-| 3 | `<repo>/.github/hooks/cairn/../../../packages/skillsmith-runtime/dist/hooks/sessionStart.js` |
+| 3 | `$(npm root -g)/@akubly/cairn/dist/hooks/sessionStart.js` |
+| 4 | `<repo>/packages/skillsmith-runtime/dist/hooks/sessionStart.js` |
+| 5 | `<repo>/packages/cairn/dist/hooks/sessionStart.js` |
+| 6 | `<repo>/dist/hooks/sessionStart.js` |
 
 ### Uninstall
 
@@ -184,17 +187,12 @@ The uninstall script removes the entire marker block from `~/.bashrc` using a
 pure-bash line-by-line filter (no sed dependency; identical behavior on Linux,
 macOS, and Git Bash on Windows). Idempotent: no-op if not installed.
 
-### Zsh compatibility
+### Shell compatibility
 
-`shell-init.sh` uses `[[ ]]` syntax, which works in zsh. To enable it in zsh,
-add the equivalent line to `~/.zshrc`:
-
-```zsh
-source /path/to/.github/hooks/cairn/shell-init.sh
-```
-
-Automated zsh wiring (`install.sh` targeting `~/.zshrc`) is deferred — file a
-GitHub issue if you need it.
+`shell-init.sh` is supported for bash and Git Bash. Do not source it from zsh:
+the hook uses bash-specific `${BASH_SOURCE[0]}` self-location for repo-checkout
+fallbacks, so zsh sourcing can break local repo resolution. Automated zsh wiring
+is deferred — file a GitHub issue if you need first-class zsh support.
 
 ### Git Bash on Windows
 
