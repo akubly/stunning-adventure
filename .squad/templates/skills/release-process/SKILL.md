@@ -344,32 +344,32 @@ git push origin main
 
 ### EOTP Error (npm OTP Required)
 
-**Symptom:** Workflow fails with `EOTP` error.  
-**Root cause:** NPM_TOKEN is a User token with 2FA enabled. CI can't provide OTP.  
+**Symptom:** Workflow fails with `EOTP` error.
+**Root cause:** NPM_TOKEN is a User token with 2FA enabled. CI can't provide OTP.
 **Fix:** Replace NPM_TOKEN with an Automation token (no 2FA). See "NPM_TOKEN Verification" above.
 
 ### Verify Step 404 (npm Propagation Delay)
 
-**Symptom:** Verify step fails with 404 even though publish succeeded.  
-**Root cause:** npm registry propagation delay (5-30 seconds).  
+**Symptom:** Verify step fails with 404 even though publish succeeded.
+**Root cause:** npm registry propagation delay (5-30 seconds).
 **Fix:** Verify step now has retry loop (5 attempts, 15s interval). Should auto-resolve. If not, wait 2 minutes and re-run workflow.
 
 ### Version Mismatch (package.json ≠ tag)
 
-**Symptom:** Verify step fails with "Package version (X) does not match target version (Y)".  
-**Root cause:** package.json version doesn't match the tag version.  
+**Symptom:** Verify step fails with "Package version (X) does not match target version (Y)".
+**Root cause:** package.json version doesn't match the tag version.
 **Fix:** Ensure all 3 package.json files were updated in Step 1. Re-run `npm version` if needed.
 
 ### 4-Part Version Mangled by npm
 
-**Symptom:** Published version on npm doesn't match package.json (e.g., 0.8.21.4 became 0.8.2-1.4).  
-**Root cause:** 4-part versions are NOT valid semver. npm's parser misinterprets them.  
+**Symptom:** Published version on npm doesn't match package.json (e.g., 0.8.21.4 became 0.8.2-1.4).
+**Root cause:** 4-part versions are NOT valid semver. npm's parser misinterprets them.
 **Fix:** NEVER use 4-part versions. Only 3-part (0.8.22) or prerelease (0.8.23-preview.1). Run `semver.valid()` before ANY commit.
 
 ### Draft Release Didn't Trigger Workflow
 
-**Symptom:** Release created but `publish.yml` never ran.  
-**Root cause:** Release was created as a draft. Draft releases don't emit `release: published` event.  
+**Symptom:** Release created but `publish.yml` never ran.
+**Root cause:** Release was created as a draft. Draft releases don't emit `release: published` event.
 **Fix:** Edit release and change to published: `gh release edit "v$VERSION" --draft=false`. Workflow should trigger immediately.
 
 ---
@@ -411,7 +411,7 @@ After dev sync:
 
 ## Post-Mortem Reference
 
-This skill was created after the v0.8.22 release disaster. Full retrospective: `.squad/decisions/inbox/keaton-v0822-retrospective.md`
+This skill was created after the v0.8.22 release disaster. Full retrospective: `decision inbox drop keaton-v0822-retrospective.md`
 
 **Key learnings:**
 1. No release without a runbook = improvisation = disaster

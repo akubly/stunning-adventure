@@ -153,7 +153,7 @@
 ---
 
 **Artifacts Produced:**
-- `.squad/decisions/inbox/valanice-brainstorm-lx.md` — 10 LX Heuristics (parallel to Nielsen's 10), Decision Consequence Taxonomy, slop-as-upstream-LX-failure analysis, OOP mental model mapping, new LX vocabulary
+- `decision inbox drop valanice-brainstorm-lx.md` — 10 LX Heuristics (parallel to Nielsen's 10), Decision Consequence Taxonomy, slop-as-upstream-LX-failure analysis, OOP mental model mapping, new LX vocabulary
 - Proposed LX Heuristic Evaluation checklist as highest-leverage next action
 
 **Key LX Principles Identified:**
@@ -196,7 +196,7 @@
 **The Flywheel:** Shiproom generates structured signal about decision quality → Curator detects patterns in overturned/amended decisions → Prescriber suggests improvements → Future decisions improve → Fewer Shiproom amendments → Lower ceremony cost → More time building.
 
 **Artifacts Produced:**
-- `.squad/decisions/inbox/valanice-shiproom-ceremony.md` — full design specification
+- `decision inbox drop valanice-shiproom-ceremony.md` — full design specification
 
 **Open Questions:**
 - Auto-trigger threshold calibration (start at 3+ Altitude ≥ 2, adapt via amendment/overturn rates)
@@ -277,13 +277,13 @@
 4. Does brain need visual interface (text queries vs graph visualization)?
 
 **Artifacts:**
-- `.squad/decisions/inbox/valanice-brain-ux.md` — full UX analysis and recommendation
+- `decision inbox drop valanice-brain-ux.md` — full UX analysis and recommendation
 
 ## Consultation: Brain/Memory System Repo Placement (Round 2)
 
-**Date:** 2026-05-22  
-**Session:** Refined recommendation following Aaron's brain dump clarification  
-**Artifact:** .squad/orchestration-log/2026-05-22T20-25-51-valanice-*.md  
+**Date:** 2026-05-22
+**Session:** Refined recommendation following Aaron's brain dump clarification
+**Artifact:** .squad/orchestration-log/2026-05-22T20-25-51-valanice-*.md
 **Merged into:** .squad/decisions.md as "Open Question: Brain/Memory/Learning System"
 
 ### Summary
@@ -326,7 +326,7 @@ Participated in Round 2 consulting on repo placement for new agentic brain/memor
    - Design graph structure and traversal semantics
    - Ground learning primitives in cognitive science / machine learning
 
-**Artifact:** `.squad/decisions/inbox/valanice-self-fit.md` — full confidence matrix, squad composition recommendation, and honest assessment of scope
+**Artifact:** `decision inbox drop valanice-self-fit.md` — full confidence matrix, squad composition recommendation, and honest assessment of scope
 
 **Recommendation:** Brain project is **70% interaction design (Valanice owns) + 30% cognitive science/IA (needs specialist)**. Proceed with prototype, but validate cognitive foundations BEFORE full design. Don't ask me to defend what "meditation" means — bring someone who can.
 
@@ -358,9 +358,9 @@ Participated in Round 2 consulting on repo placement for new agentic brain/memor
 
 ## Eureka Project Kickoff (2026-05-22)
 
-**Date:** 2026-05-22  
-**Event:** Aaron approved project name + hired 3 specialists; primary focus shift to Eureka  
-**New Colleagues:** Genesta (Cognitive Systems Lead), Crispin (Knowledge Representation), Edgar (Learning Systems)  
+**Date:** 2026-05-22
+**Event:** Aaron approved project name + hired 3 specialists; primary focus shift to Eureka
+**New Colleagues:** Genesta (Cognitive Systems Lead), Crispin (Knowledge Representation), Edgar (Learning Systems)
 **Role:** UX/LX Lead for Eureka; 60% allocation (Cairn advisory: 40%)
 
 ### Context & Rationale
@@ -398,8 +398,8 @@ Round 3 self-assessment outcome:
 
 ### Design Partnership
 
-**Valanice owns:** How Eureka's knowledge surfaces to humans  
-**Specialists own:** What Eureka's knowledge *means* cognitively  
+**Valanice owns:** How Eureka's knowledge surfaces to humans
+**Specialists own:** What Eureka's knowledge *means* cognitively
 **Interface:** Config files as the agreed-upon "source of truth" — Valanice designs UI to set policies; specialists define what those policies mean
 
 

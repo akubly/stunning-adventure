@@ -1,8 +1,8 @@
 # Cross-Package Type Promotion
 
-**Pattern Name:** Cross-Package Type Promotion  
-**Context:** Multiple packages need the same semantic contract, but one implementation package currently appears to "own" the shape.  
-**Problem:** Reusing the shape by importing from the implementation package creates boundary inversion and drift pressure.  
+**Pattern Name:** Cross-Package Type Promotion
+**Context:** Multiple packages need the same semantic contract, but one implementation package currently appears to "own" the shape.
+**Problem:** Reusing the shape by importing from the implementation package creates boundary inversion and drift pressure.
 **Solution:** Promote the shared contract into `@akubly/types` (or reuse it there if already canonical), then have implementation packages adapt or re-export as needed.
 
 ---
@@ -69,7 +69,7 @@ export interface PrescriberOrchestrationConfig {
 
 - `packages/types/src/index.ts`
 - `packages/cairn/src/db/executionProfiles.ts`
-- `.squad/decisions/inbox/alexander-w3-3-executionprofile-contract-placement.md`
+- `decision inbox drop alexander-w3-3-executionprofile-contract-placement.md`
 
 ---
 

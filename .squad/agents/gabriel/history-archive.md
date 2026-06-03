@@ -398,7 +398,7 @@ the new `scheduler_*` sub-kinds; Graham owns §1 layer-stack diagram update.
    catalog rows; `scheduler_dispatched` on builtin tier is silent (same
    posture as `router.decision` apply); read-path perf-counter table for
    quanta consumed, queue depth, dispatch latency, defer rate.
-3. `.squad/decisions/inbox/gabriel-ctd-phase4-scheduler.md` — decision drop.
+3. `decision inbox drop gabriel-ctd-phase4-scheduler.md` — decision drop.
 
 **Learning — boundary articulation as load-bearing.** The single sentence
 "Scheduler decides WHICH and IN WHAT ORDER; Router decides WHETHER" did more
@@ -429,7 +429,7 @@ and one diagram update in Graham's §1.
 
 **Files:** `docs/crucible-technical-design/05-router-design.md`,
 `docs/crucible-technical-design/17-observability-telemetry.md`. Decision drop:
-`.squad/decisions/inbox/gabriel-ctd-phase4-scheduler.md`.
+`decision inbox drop gabriel-ctd-phase4-scheduler.md`.
 
 ## 2026-05-28: Crucible CTD Rev. 3 — R2 Locks for Gabriel
 
@@ -513,7 +513,7 @@ plugin already handles Windows via `curate.ps1`.
 
 **Cross-section harvest discipline:** when authoring a cross-cutting section, the temptation is to "fix" inconsistencies you find while harvesting. Resist. Flag them in the decision drop as Phase 3 synthesis items for Graham to triage at the close-out gate. I surfaced four such items (CI gate sub-kind, §7 `confidence` field shape, `urgent` severity guard, v1 Tension #6 UX warning) rather than patching upstream sections — the harvester's job is to catalog, the synthesis gate's job is to reconcile.
 
-**Files:** `docs/crucible-technical-design/17-observability-telemetry.md` (10066B), `docs/crucible-technical-design/18-security-permissions.md` (11954B). Decision drop: `.squad/decisions/inbox/gabriel-ctd-phase3.md`.
+**Files:** `docs/crucible-technical-design/17-observability-telemetry.md` (10066B), `docs/crucible-technical-design/18-security-permissions.md` (11954B). Decision drop: `decision inbox drop gabriel-ctd-phase3.md`.
 
 ### 2026-03-28 — Recon: Prior Infrastructure & Community Practices
 
@@ -688,7 +688,7 @@ specialist take. React to Aaron's three new insights (branching sessions as
 first-class, agentic-debugger vision seed, determinism load-bearing) and
 position on Erasmus's 4-layer stack + 5 open tensions.
 
-**Deliverable:** `.squad/decisions/inbox/gabriel-deliberation-position.md`
+**Deliverable:** `decision inbox drop gabriel-deliberation-position.md`
 **Role:** Build / Infrastructure (ESLint rules, cross-package guardrails, lint gates)
 **Status:** Cycle 2 C8 resolution: eslint no-restricted-imports stays strict (no test-dir exemption).
 **Last update:** 2026-05-29
@@ -1006,7 +1006,7 @@ carry bus traffic," I withdraw and we go to Round 4.
 
 ## 2026-05-24 Round 4: Phase B reconciliation against `stunning-adventure`
 
-**Inbox:** `.squad/decisions/inbox/gabriel-reconciliation-2026-05-24T2330Z.md`
+**Inbox:** `decision inbox drop gabriel-reconciliation-2026-05-24T2330Z.md`
 
 **Headlines:**
 - ALREADY-EXISTS: 0. PARTIALLY-EXISTS: 4. NET-NEW: 6. CONTRADICTS-EXISTING: 1.
@@ -1034,11 +1034,11 @@ carry bus traffic," I withdraw and we go to Round 4.
 
 **Recommended trajectory if (c) wins:** ship v1 → measure 4-8 weeks of Aaron's daily use → use the actual incident corpus (what did Crucible flag post-hoc that *should* have been prevented?) to evidence-base which subset of predicates need promotion to pre-commit in v2. Sharply scopes (a)/(b)'s work and lets Aaron's real workflow drive the safety/performance tradeoff rather than our pre-build guesses.
 
-**Output:** `.squad/decisions/inbox/gabriel-spike-fork-c-parallel-ingest-2026-05-25T0030Z.md` (full survey + survival matrix + safety matrix + operational topology + hybrid trajectory + verdict + tags).
+**Output:** `decision inbox drop gabriel-spike-fork-c-parallel-ingest-2026-05-25T0030Z.md` (full survey + survival matrix + safety matrix + operational topology + hybrid trajectory + verdict + tags).
 
 ## 2026-05-25 Round 7: Triage of Gabriel stories against v1 framework
 
-**Inbox:** `.squad/decisions/inbox/gabriel-triage-2026-05-25T0200Z.md`
+**Inbox:** `decision inbox drop gabriel-triage-2026-05-25T0200Z.md`
 
 **v1 bar:** Aaron runs one-week productivity loop where every Crucible improvement is made by Crucible. Substrate is A.3 hybrid (custom pure-TS append-only WAL + better-sqlite3 for derived). Fork (c) rejected — pre-commit pause and unified Router restored.
 
@@ -1110,8 +1110,8 @@ never *inferred at consumption*.
 
 ## Pass A Review Closure (2026-05-29)
 
-**Role:** Crucible CTD design panel + triage  
-**Status:** See .squad/orchestration-log for detailed execution status  
+**Role:** Crucible CTD design panel + triage
+**Status:** See .squad/orchestration-log for detailed execution status
 **Disposition:** Graham fully executed, Valanice triaged (pending filesystem edits), Rosella/Gabriel/Roger/Laura silent (pending next session)
 
 See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-review.md for full context.
@@ -1140,7 +1140,7 @@ See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-rev
 - `docs/crucible-technical-design/03-l1-wal-substrate.md` (§3.15.1 threat-model stub)
 - `docs/crucible-technical-design/11-hermetic-replay.md` (§11.10.2 threat-model stub)
 
-**Decision drop:** `.squad/decisions/inbox/gabriel-pass-a-applier-infra.md`
+**Decision drop:** `decision inbox drop gabriel-pass-a-applier-infra.md`
 **Next Phase:** Phase 2 (live runtime verification) validates type contracts during SDK harness integration.
 
 ---

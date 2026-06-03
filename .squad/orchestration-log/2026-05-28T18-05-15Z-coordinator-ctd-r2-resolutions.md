@@ -1,8 +1,8 @@
 # Orchestration Log: Coordinator CTD R2 Resolutions
 
-**Date:** 2026-05-28T18-05-15Z  
-**Agent:** Coordinator (interactive Decision-Point gate)  
-**Task:** Triage 6 R2 open questions with Aaron Kubly  
+**Date:** 2026-05-28T18-05-15Z
+**Agent:** Coordinator (interactive Decision-Point gate)
+**Task:** Triage 6 R2 open questions with Aaron Kubly
 **Status:** COMPLETE
 
 ## Scope
@@ -39,5 +39,5 @@ These were small, non-hedging, structurally sound additions approved during the 
 
 ## Output
 
-- **Primary:** `.squad/decisions/inbox/coordinator-ctd-r2-resolutions.md` (lock summary + detailed rationale)
+- **Primary:** `decision inbox drop coordinator-ctd-r2-resolutions.md` (lock summary + detailed rationale)
 - **Status:** Ready for Scribe merge into decisions.md

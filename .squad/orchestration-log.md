@@ -34,7 +34,7 @@
 
 **Participants:** Aaron (user), Cassima (agent, spawning in parallel)
 
-**Work:** Aaron walked all 9 OQ (Open Questions) from Cassima v2 PRD; resolutions captured as directive files in `.squad/decisions/inbox/`. Cassima v3 spawned (background) to integrate all directives into final R5 PRD.
+**Work:** Aaron walked all 9 OQ (Open Questions) from Cassima v2 PRD; resolutions captured as directive files in `decision inbox drop `. Cassima v3 spawned (background) to integrate all directives into final R5 PRD.
 
 **Outcome:** All 9 OQs resolved. Cassima v3 in progress. Inbox protection maintained per Aaron's standing rule.
 

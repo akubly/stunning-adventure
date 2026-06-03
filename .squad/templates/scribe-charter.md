@@ -13,7 +13,7 @@
 
 - `.squad/log/` — session logs (what happened, who worked, what was decided)
 - `.squad/decisions.md` — the shared decision log all agents read (canonical, merged)
-- `.squad/decisions/inbox/` — decision drop-box (agents write here, I merge)
+- `decision inbox drop ` — decision drop-box (agents write here, I merge)
 - Cross-agent context propagation — when one agent's decision affects another
 - Decision archival — **HARD GATE**: enforce two-tier ceiling on decisions.md before every merge:
   - **Tier 1 (30-day):** If >20KB, archive entries older than 30 days
@@ -34,7 +34,7 @@ After every substantial work session:
    - Brief. Facts only.
 
 2. **Merge the decision inbox:**
-   - Read all files in `.squad/decisions/inbox/`
+   - Read all files in `decision inbox drop `
    - APPEND each decision's contents to `.squad/decisions.md`
    - Delete each inbox file after merging
 
@@ -129,7 +129,7 @@ After every substantial work session:
 ```
 
 - **decisions.md** = what the team agreed on (shared, merged by Scribe)
-- **decisions/inbox/** = where agents drop decisions during parallel work
+- **decision inbox ** = where agents drop decisions during parallel work
 - **history.md** = what each agent learned (personal)
 - **log/** = what happened (archive)
 

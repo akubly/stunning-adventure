@@ -41,8 +41,8 @@
 
 ---
 
-**Joined:** 2026-04-28  
-**Tech:** TypeScript/Node.js 20+, npm monorepo, Vitest, SQLite  
+**Joined:** 2026-04-28
+**Tech:** TypeScript/Node.js 20+, npm monorepo, Vitest, SQLite
 **Specialization:** Test architecture, contract-first testing, integration coverage, schema validation
 📌 **2026-05-28: Eureka M3 RED — composite-ranker ordering contract written** — M3 RED test added to recall.test.ts: "ranks results by FR-2 composite formula descending (§30 §1.2)". Fixture design: 4 facts with unambiguous score margins (B=0.960, C=0.620, D=0.440, A=0.168 per §30 §1.2). Seam decision: inline scoring (Option b). Ranker stays pure function; no new Ranker collaborator. Trust floor (0.15) preserved from M2. M3 next owner: Edgar (GREEN). — Scribe
 
@@ -82,8 +82,8 @@
 
 ## Role & Specialization
 
-**Title:** Tester  
-**Joined:** 2026-04-28  
+**Title:** Tester
+**Joined:** 2026-04-28
 **Tech:** TypeScript/Node.js 20+, npm monorepo, Vitest, SQLite
 
 **Specialization:**
@@ -115,7 +115,7 @@
 
 **Artifacts:**
 - Fixed test file: packages/forge/src/__tests__/wave4-pipeline.test.ts (14/14 passing)
-- Decision doc: .squad/decisions/inbox/laura-w4-4-infra-fix.md (to be written)
+- Decision doc: decision inbox drop laura-w4-4-infra-fix.md (to be written)
 
 **Commit:** 472e77d - "W4-4: fix integration test infrastructure → 14/14 green"
 
@@ -651,9 +651,9 @@ Multipliers: hot=1.20, warm=1.00, cold=0.80
 3. Structural tests read source code to assert: timeout numbers present in gitContext.ts, sync IO confined to `resolveAndReadSkill` (not leaking into other tool handler bodies).
 4. W5-5 handler test plan written as doc for Rosella; covers: Promise return check, CairnEvent fail-open, sequential re-use safety, forceRegenerate semantics, structural no-inline-fs assertion.
 
-**Branch:** `issue-17/async-io-sweep`  
-**Commit:** (see git log)  
-**Artifacts:** docs/issue-17-async-io-sweep-findings.md, .squad/decisions/inbox/laura-w5-5-async-test-plan.md, .squad/skills/async-io-audit/SKILL.md
+**Branch:** `issue-17/async-io-sweep`
+**Commit:** (see git log)
+**Artifacts:** docs/issue-17-async-io-sweep-findings.md, decision inbox drop laura-w5-5-async-test-plan.md, .squad/skills/async-io-audit/SKILL.md
 
 ## Learnings
 
@@ -977,9 +977,9 @@ Build (tsc --build): clean exit ✅.
 3. Structural tests read source code to assert: timeout numbers present in gitContext.ts, sync IO confined to `resolveAndReadSkill` (not leaking into other tool handler bodies).
 4. W5-5 handler test plan written as doc for Rosella; covers: Promise return check, CairnEvent fail-open, sequential re-use safety, forceRegenerate semantics, structural no-inline-fs assertion.
 
-**Branch:** `issue-17/async-io-sweep`  
-**Commit:** (see git log)  
-**Artifacts:** docs/issue-17-async-io-sweep-findings.md, .squad/decisions/inbox/laura-w5-5-async-test-plan.md, .squad/skills/async-io-audit/SKILL.md
+**Branch:** `issue-17/async-io-sweep`
+**Commit:** (see git log)
+**Artifacts:** docs/issue-17-async-io-sweep-findings.md, decision inbox drop laura-w5-5-async-test-plan.md, .squad/skills/async-io-audit/SKILL.md
 
 ## Learnings
 
@@ -1023,7 +1023,7 @@ Writing tests before implementation means import bindings for not-yet-exported s
 - `packages/cairn/src/__tests__/migration015.test.ts`
 - `packages/cairn/src/__tests__/worktreeSessions.test.ts`
 - `packages/cairn/src/__tests__/worktreeMcp.test.ts`
-- `.squad/decisions/inbox/laura-issue-11-tests.md`
+- `decision inbox drop laura-issue-11-tests.md`
 
 ## Session: 2026-05-28 Wave 6 Tail — WI-A Tests Complete
 
@@ -1058,7 +1058,7 @@ Writing tests before implementation means import bindings for not-yet-exported s
 
 **currentTrust read seam deferred:** Chose caller-provided `currentTrust` to keep M5 RED focused on the write seam (TrustUpdater). A read-seam (FactReader or FactStore extension) will be needed for the full round-trip in M5 GREEN.
 
-**Next owner:** Edgar — M5 GREEN. See `.squad/decisions/inbox/laura-m5-trust-feedback-red.md`.
+**Next owner:** Edgar — M5 GREEN. See `decision inbox drop laura-m5-trust-feedback-red.md`.
 
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
 **Key themes:**
@@ -1074,8 +1074,8 @@ Writing tests before implementation means import bindings for not-yet-exported s
 
 ## Role & Specialization
 
-**Title:** Tester  
-**Joined:** 2026-04-28  
+**Title:** Tester
+**Joined:** 2026-04-28
 **Tech:** TypeScript/Node.js 20+, npm monorepo, Vitest, SQLite
 
 **Specialization:**
@@ -1107,7 +1107,7 @@ Writing tests before implementation means import bindings for not-yet-exported s
 
 **Artifacts:**
 - Fixed test file: packages/forge/src/__tests__/wave4-pipeline.test.ts (14/14 passing)
-- Decision doc: .squad/decisions/inbox/laura-w4-4-infra-fix.md (to be written)
+- Decision doc: decision inbox drop laura-w4-4-infra-fix.md (to be written)
 
 **Commit:** 472e77d - "W4-4: fix integration test infrastructure → 14/14 green"
 

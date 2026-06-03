@@ -13,7 +13,7 @@ source: "multi-model-consensus (Opus 4.6, Sonnet 4.5, GPT-5.4)"
 1. **`mesh.json`** — Generated from user answers about zones and squads (which squads participate, what zone each is in, paths/URLs for each), using `mesh.json.example` in this skill's directory as the schema template
 2. **`sync-mesh.sh` and `sync-mesh.ps1`** — Copied from this skill's directory into the project root (these are bundled resources, NOT generated code)
 3. **Zone 2 state repo initialization** (if applicable) — If the user specified a Zone 2 shared state repo, run `sync-mesh.sh --init` to scaffold the state repo structure
-4. **A decision entry** in `.squad/decisions/inbox/` documenting the mesh configuration for team awareness
+4. **A decision entry** in `decision inbox drop ` documenting the mesh configuration for team awareness
 
 **❌ THIS SKILL DOES NOT PRODUCE:**
 
@@ -217,7 +217,7 @@ This scaffolds the state repo structure (squad directories, placeholder SUMMARY.
 
 ### Step 5: WRITE a decision entry
 
-Create a decision file at `.squad/decisions/inbox/<your-agent-name>-mesh-setup.md` with this content:
+Create a decision file at `decision inbox drop <your-agent-name>-mesh-setup.md` with this content:
 
 ```markdown
 ### <YYYY-MM-DD>: Mesh configuration
@@ -254,7 +254,7 @@ Output a simple completion message:
 ✅ Mesh configured. Created:
 - mesh.json (<N> squads)
 - sync-mesh.sh and sync-mesh.ps1 (copied from skill bundle)
-- Decision entry: .squad/decisions/inbox/<filename>
+- Decision entry: decision inbox drop <filename>
 
 Run `bash sync-mesh.sh` (or `.\sync-mesh.ps1` on Windows) before agents start to materialize remote state.
 ```

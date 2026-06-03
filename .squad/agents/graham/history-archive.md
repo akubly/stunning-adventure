@@ -501,9 +501,9 @@ Archived: 2026-06-01
 **Next:** Cassima on deck for v3.1 or v4 intake pending Aaron's architectural direction.
 ## 📋 SUMMARY (as of 2026-05-31)
 
-**Current Focus:** Crucible CTD final review + post-CTD ADR authoring  
-**Latest Major Work:** PR #33 cloud-review-cycle round 5 — 3 Copilot findings addressed (fork_resume schema, ADR-0019 payloads, predicate timing honesty); Scribe merged and staged  
-**Key Architectural Contributions:** Replay-determinism bug finding, childSid hybrid protocol review, L3.5 Scheduler Phase 0.5 stub acceptance, sub-kind governance completeness  
+**Current Focus:** Crucible CTD final review + post-CTD ADR authoring
+**Latest Major Work:** PR #33 cloud-review-cycle round 5 — 3 Copilot findings addressed (fork_resume schema, ADR-0019 payloads, predicate timing honesty); Scribe merged and staged
+**Key Architectural Contributions:** Replay-determinism bug finding, childSid hybrid protocol review, L3.5 Scheduler Phase 0.5 stub acceptance, sub-kind governance completeness
 
 ---
 
@@ -564,7 +564,7 @@ Archived: 2026-06-01
 
 Context: PR #34 review (Copilot threads 8, 9, 10) flagged `.squad/orchestration-log/` (34 files), `.squad/log/` (1 file), and `test_results.txt` as committed despite being gitignored.
 
-**Lesson 1 — gitignore does NOT untrack, only blocks new adds.**  
+**Lesson 1 — gitignore does NOT untrack, only blocks new adds.**
 Once a file is committed, `.gitignore` has no effect on it. The only way to untrack it:
 ```
 git rm -r --cached <path>   # removes from index, preserves local files (runtime state safe)
@@ -572,15 +572,15 @@ git rm <path>               # removes from index AND from disk (for junk files)
 ```
 Then commit the staged deletions. After the commit, `.gitignore` will prevent re-adds.
 
-**Lesson 2 — Coordinator spawn-prompt error that caused this.**  
+**Lesson 2 — Coordinator spawn-prompt error that caused this.**
 My spawn instructions to Scribe listed `orchestration-log/` and `log/` as allowed Scribe-write paths that should be committed. They are gitignored runtime state and must NOT be committed. The correct allowed-paths list for Scribe:
 - `decisions.md`, `decisions-archive.md`
 - `agents/{name}/history.md`, `agents/{name}/history-archive.md`
 - `identity/now.md`
 
-Any other `.squad/` paths (log, orchestration-log, sessions, decisions/inbox/, .scratch/) are runtime state — gitignored, local-only.
+Any other `.squad/` paths (log, orchestration-log, sessions, decision inbox , .scratch/) are runtime state — gitignored, local-only.
 
-**Lesson 3 — `test_results.txt` as tracked artifact.**  
+**Lesson 3 — `test_results.txt` as tracked artifact.**
 Local test captures with ANSI codes and machine-specific paths (D:/git/...) are never source artifacts. Add to `.gitignore` under `# Local test capture artifacts` and delete from disk.
 
 
@@ -594,7 +594,7 @@ Local test captures with ANSI codes and machine-specific paths (D:/git/...) are 
 
 **Key risk flags codified:**
 - File-deletion mystery event: WI-B mitigates via isolation
-- 
+-
 node_modules re-install: cleanup flow handles junction removal before git worktree remove
 - Pre-Spawn documentation-only: add ACTIVE status + enforcement language
 - Parallel dispatch guard: warning-only for v1

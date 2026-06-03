@@ -4,9 +4,9 @@
 
 ### 2026-06-02: M2 Cycle-2 Doc Alignment (Gabriel)
 
-**Author:** Gabriel (Infrastructure)  
-**Date:** 2026-06-02T00:16Z  
-**PR:** #44 (branch squad/m2-forge-mcp-bash-hooks)  
+**Author:** Gabriel (Infrastructure)
+**Date:** 2026-06-02T00:16Z
+**PR:** #44 (branch squad/m2-forge-mcp-bash-hooks)
 **Commit:** bacb3f4
 
 Cycle-2 review (APPROVE_WITH_NITS) confirmed all three cycle-1 code fixes are correct. Two doc-drift nits addressed: (1) SKILL.md pattern #7 replaced — the original taught the two-pass sed approach that cycle-1 rejected as buggy; the updated pattern now shows the `_remove_block` bash state-machine that was actually shipped, with a new Anti-Pattern entry documenting the specific sequencing failure mode (blank-line pass consumes MARKER_START, orphaning the block body) and the byte-identical roundtrip acceptance criterion. (2) README uninstall description updated from "using sed (GNU/BSD)" to "pure-bash line-by-line filter (no sed dependency; identical behavior on Linux, macOS, and Git Bash on Windows)". Both changes are doc-only; no code or behavior changed. M2 is now review-complete and ready to merge.
@@ -15,9 +15,9 @@ Cycle-2 review (APPROVE_WITH_NITS) confirmed all three cycle-1 code fixes are co
 
 ### 2026-06-02: M2 Cycle-1 Fixes (Gabriel)
 
-**Author:** Gabriel (Infrastructure)  
-**Date:** 2026-06-01T00:00Z  
-**PR:** #44 (branch squad/m2-forge-mcp-bash-hooks)  
+**Author:** Gabriel (Infrastructure)
+**Date:** 2026-06-01T00:00Z
+**PR:** #44 (branch squad/m2-forge-mcp-bash-hooks)
 **Commit:** e7ef8f3
 
 ## Findings addressed
@@ -58,10 +58,10 @@ Cycle-2 review (APPROVE_WITH_NITS) confirmed all three cycle-1 code fixes are co
 
 ### 2026-05-31: Decision Drop: M1 Hint Consumption MCP Tools (Roger)
 
-**Author:** Roger (Platform Dev)  
-**Date:** 2026-05-31T19:04:59Z  
-**Issue:** #39  
-**PR:** #40  
+**Author:** Roger (Platform Dev)
+**Date:** 2026-05-31T19:04:59Z
+**Issue:** #39
+**PR:** #40
 
 ---
 
@@ -75,7 +75,7 @@ Forge produces `optimization_hints` in the cairn DB but there was no way for Aar
 
 ### `list_optimization_hints`
 
-**Kind:** Read-only MCP tool  
+**Kind:** Read-only MCP tool
 **Inputs:**
 
 | Field | Type | Default | Notes |
@@ -84,14 +84,14 @@ Forge produces `optimization_hints` in the cairn DB but there was no way for Aar
 | `skill_id` | string | — | Optional filter by skill |
 | `limit` | integer 1–100 | 20 | Max hints returned |
 
-**Output fields per hint:** `id`, `skill_id`, `source`, `category`, `summary`, `recommendation`, `impact_score`, `confidence_level` (high/medium/emerging), `status`, `created_at`, `resolution_note`  
+**Output fields per hint:** `id`, `skill_id`, `source`, `category`, `summary`, `recommendation`, `impact_score`, `confidence_level` (high/medium/emerging), `status`, `created_at`, `resolution_note`
 **Envelope:** `{ count, active_count, hints[] }`
 
 ---
 
 ### `resolve_optimization_hint`
 
-**Kind:** Mutating MCP tool  
+**Kind:** Mutating MCP tool
 **Inputs:**
 
 | Field | Type | Required | Notes |
@@ -100,8 +100,8 @@ Forge produces `optimization_hints` in the cairn DB but there was no way for Aar
 | `resolution` | `resolved` \| `dismissed` | ✅ | `resolved` = manually addressed; `dismissed` = not acting on it |
 | `note` | string | — | Optional reason |
 
-**Output:** `{ hint_id, resolution, status, resolution_note, already_resolved, message }`  
-**Idempotent:** Yes — if hint is already in a terminal state, returns current state with `already_resolved: true` and no error.  
+**Output:** `{ hint_id, resolution, status, resolution_note, already_resolved, message }`
+**Idempotent:** Yes — if hint is already in a terminal state, returns current state with `already_resolved: true` and no error.
 **Internal mapping:** Both dispositions transition to `rejected` status; `resolution` field and `resolution_note` preserve user intent.
 
 ---
@@ -110,10 +110,10 @@ Forge produces `optimization_hints` in the cairn DB but there was no way for Aar
 
 **Migration 017** (`packages/cairn/src/db/migrations/017-hint-resolution-note.ts`)
 
-- Adds `resolution_note TEXT` column to `optimization_hints`  
-- **Version:** 17 (bumped from 16)  
-- **Guarded:** Checks `sqlite_master` for table existence before ALTER (partial-schema test DB safety)  
-- **Idempotent:** Uses `PRAGMA table_info` to skip if column already exists  
+- Adds `resolution_note TEXT` column to `optimization_hints`
+- **Version:** 17 (bumped from 16)
+- **Guarded:** Checks `sqlite_master` for table existence before ALTER (partial-schema test DB safety)
+- **Idempotent:** Uses `PRAGMA table_info` to skip if column already exists
 - **Timestamp convention:** No new timestamp column needed; existing `applied_at` pattern is sufficient
 
 ---
@@ -137,20 +137,20 @@ Forge produces `optimization_hints` in the cairn DB but there was no way for Aar
 | Added (hintMcp.test.ts) | +15 |
 | **After** | **708** |
 
-New tests cover: list backing logic, resolveOptimizationHint DB helper, migration 017 schema check.  
+New tests cover: list backing logic, resolveOptimizationHint DB helper, migration 017 schema check.
 Four other test files updated: version assertion 16 → 17 (db, discovery, migration012, prescriptions).
 
 ---
 
 ## Build / Test Status
 
-- `npm run build` — ✅ green  
+- `npm run build` — ✅ green
 - `npm test --workspace=@akubly/cairn` — ✅ 708/708 passing
 ### 2026-05-31: M7-A — Typed Error Hierarchy for applyFeedback / applyFeedbackById (Edgar)
 
-**Author:** Edgar (Learning Systems Specialist)  
-**Date:** 2026-05-31  
-**Branch:** `eureka/m7-a-typed-errors`  
+**Author:** Edgar (Learning Systems Specialist)
+**Date:** 2026-05-31
+**Branch:** `eureka/m7-a-typed-errors`
 **Status:** SHIPPED (PR #38 opened)
 
 **Decision:** Introduce a typed error class hierarchy in `packages/eureka/src/activities/errors.ts`, replacing all six generic `throw new Error/TypeError/RangeError(...)` sites in `applyFeedback` and `applyFeedbackById` with domain-specific typed subclasses.
@@ -182,9 +182,9 @@ Four other test files updated: version assertion 16 → 17 (db, discovery, migra
 
 ### 2026-05-31: Eureka M7-A Review Cycle — 3-Cycle Closure (Edgar, Correctness, Skeptic, Craft, Compliance)
 
-**Date:** 2026-05-31  
-**Branch:** `eureka/m7-a-typed-errors`  
-**PR:** #38  
+**Date:** 2026-05-31
+**Branch:** `eureka/m7-a-typed-errors`
+**PR:** #38
 **Status:** REVIEW-COMPLETE. Ready for ship decision.
 
 **Summary:** M7-A underwent a 3-cycle review process with a rotating 4-person panel (Correctness, Skeptic, Craft, Compliance). Each cycle ran independent reviews; findings were triaged and acted upon, followed by re-review to confirm closure. All 40 tests remained green throughout.
@@ -226,9 +226,9 @@ Four other test files updated: version assertion 16 → 17 (db, discovery, migra
 
 ### 2026-05-30: Coordinator Spawn Prompt — Gitignore Path Policy (Graham)
 
-**Author:** Graham (Lead)  
-**Date:** 2026-05-30  
-**Trigger:** PR #34 Copilot review threads 8, 9, 10 — gitignore violations  
+**Author:** Graham (Lead)
+**Date:** 2026-05-30
+**Trigger:** PR #34 Copilot review threads 8, 9, 10 — gitignore violations
 **Status:** Resolved (commit daf5f28 + concurrent cleanup in 4d4378b)
 
 **Decision:** The Coordinator's spawn prompt to Scribe **must not** list `.squad/orchestration-log/`, `.squad/log/`, or any other gitignored runtime-state path as an allowed write path.
@@ -243,7 +243,7 @@ Four other test files updated: version assertion 16 → 17 (db, discovery, migra
 **Explicitly prohibited (gitignored runtime state):**
 - `.squad/orchestration-log/` — agent orchestration logs
 - `.squad/log/` — session summary logs
-- `.squad/decisions/inbox/` — transient decision queue (consumed by Scribe, not committed)
+- `decision inbox drop ` — transient decision queue (consumed by Scribe, not committed)
 - `.squad/sessions/` — session data
 - `.squad/.scratch/` — scratch space
 
@@ -261,13 +261,13 @@ Four other test files updated: version assertion 16 → 17 (db, discovery, migra
 
 ### 2026-05-31: M7-B + M7-D Complete (Laura)
 
-**Author:** Laura (Tester)  
-**Date:** 2026-05-31  
-**Branch:** `eureka/m7-bd-narrowing-regression`  
+**Author:** Laura (Tester)
+**Date:** 2026-05-31
+**Branch:** `eureka/m7-bd-narrowing-regression`
 **Status:** COMPLETE — local branch, awaiting Aaron's ship decision
 
 #### M7-B — Exhaustive error narrowing tests
-**File:** `packages/eureka/src/activities/__tests__/feedback-error-narrowing.test.ts`  
+**File:** `packages/eureka/src/activities/__tests__/feedback-error-narrowing.test.ts`
 **Tests:** 14 new tests across 6 groups
 
 Proves the realm-safe narrowing contract for all 5 error classes in `errors.ts`:
@@ -279,7 +279,7 @@ Proves the realm-safe narrowing contract for all 5 error classes in `errors.ts`:
 - Group 6 (1 test): UnhandledFeedbackEventError runtime-cast path
 
 #### M7-D — applyFeedbackById user_correction regression locks
-**File:** `packages/eureka/src/activities/__tests__/feedback-by-id-regression.test.ts`  
+**File:** `packages/eureka/src/activities/__tests__/feedback-by-id-regression.test.ts`
 **Tests:** 8 new tests
 
 Locks the user_correction value-plumbing and error-ordering contracts.
@@ -306,10 +306,10 @@ All 62 pass. Build clean (tsc exits 0). No production code changes.
 
 ### 2026-05-31: Cycle 1 F7 Reversal — `as const` Restored (Edgar)
 
-**Date:** 2026-05-31  
-**Author:** Edgar (Learning Systems Specialist)  
-**PR:** #38 (`eureka/m7-a-typed-errors`)  
-**Branch:** `eureka/m7-a-typed-errors`  
+**Date:** 2026-05-31
+**Author:** Edgar (Learning Systems Specialist)
+**PR:** #38 (`eureka/m7-a-typed-errors`)
+**Branch:** `eureka/m7-a-typed-errors`
 **Status:** CLOSED — F7 reversal committed
 
 #### What
@@ -339,16 +339,16 @@ The enforced lint rule is the **authoritative voice** on code style. The F7 Craf
 
 ### 2026-05-31: Aaron's M7-C Direction Decision (Atomicity Contract)
 
-**Decision Owner:** Aaron (Lead)  
-**Date:** 2026-05-31  
-**Session:** M7 continuation (M7-B + M7-D landed; M7-C in flight)  
+**Decision Owner:** Aaron (Lead)
+**Date:** 2026-05-31
+**Session:** M7 continuation (M7-B + M7-D landed; M7-C in flight)
 **Status:** DIRECTION LOCKED — mutate callback pattern selected
 
 #### The Question
 How should `applyFeedbackById` address the non-atomic read-then-write sequence in FactReader → Trust Math → TrustUpdater? Three options were evaluated:
 
-**(a) Caller-side serialization:** Caller wraps `applyFeedbackById` in a lock/mutex before calling.  
-**(b) CAS token:** Return a token from read, require token in write; abort if token stale.  
+**(a) Caller-side serialization:** Caller wraps `applyFeedbackById` in a lock/mutex before calling.
+**(b) CAS token:** Return a token from read, require token in write; abort if token stale.
 **(c) Mutate callback:** Push read-modify-write logic into seam; receive callback that performs write inside read lock.
 
 #### Decision
@@ -420,9 +420,9 @@ export interface TrustUpdater {
 
 ### 2026-05-30: M5+M6 Branch Preparation (Graham)
 
-**Author:** Graham  
-**Date:** 2026-05-30  
-**Status:** Complete  
+**Author:** Graham
+**Date:** 2026-05-30
+**Status:** Complete
 **Branch:** `eureka/m5-m6-trust-feedback`
 
 After the M5+M6 RED→GREEN cascade, a working-tree loss incident occurred during branch creation. The sequence `git switch -c <feature>` → `git switch main` → `git reset --hard origin/main` wiped tracked modifications, leaving only untracked files. Recovery was performed via faithful reimplementation from test contracts (`recall-feedback.test.ts`).
@@ -439,8 +439,8 @@ After the M5+M6 RED→GREEN cascade, a working-tree loss incident occurred durin
 
 ### 2026-05-30: M6 RED — user_correction Contract Lock + Read-Seam (Laura)
 
-**Author:** Laura (Tester)  
-**Date:** 2026-05-30  
+**Author:** Laura (Tester)
+**Date:** 2026-05-30
 **Beat:** M6 RED — two sub-beats: M6-A (user_correction contract) + M6-B (FactReader read-seam)
 
 **Test counts:** 22 existing → 26 GREEN + 3 RED (29 total)
@@ -484,8 +484,8 @@ Rationale: Returns object (not bare number) to leave room for future fields with
 
 ### 2026-05-30: M5+M6 Review Wave — Code Panel Findings (Edgar)
 
-**Author:** Edgar (Learning Systems Specialist)  
-**Date:** 2026-05-30  
+**Author:** Edgar (Learning Systems Specialist)
+**Date:** 2026-05-30
 **Context:** 5-persona Code Panel review findings on M5+M6 (trust-feedback mutation)
 
 #### Finding Triage Summary
@@ -513,8 +513,8 @@ Rationale: Returns object (not bare number) to leave room for future fields with
 
 ### 2026-05-30: M5+M6 Review Wave — Code Panel Findings (Laura)
 
-**Author:** Laura (Tester)  
-**Date:** 2026-05-30  
+**Author:** Laura (Tester)
+**Date:** 2026-05-30
 **Context:** Code Panel review findings on RED tests + implementation. Laura owns `recall-feedback.test.ts`.
 
 #### Finding Triage Summary
@@ -543,9 +543,9 @@ Rationale: Returns object (not bare number) to leave room for future fields with
 
 ### 2026-05-30: M5+M6 Cycle 2 Review Findings (Edgar)
 
-**Author:** Edgar (Learning Systems Specialist)  
-**Date:** 2026-05-30  
-**Branch:** eureka/m5-m6-trust-feedback  
+**Author:** Edgar (Learning Systems Specialist)
+**Date:** 2026-05-30
+**Branch:** eureka/m5-m6-trust-feedback
 **Triggered by:** Review-cycle cycle 2 (Skeptic + Architect panels)
 
 #### Cycle 2 Findings
@@ -566,8 +566,8 @@ Rationale: Returns object (not bare number) to leave room for future fields with
 
 ### 2026-05-30: M5+M6 Cycle 2 Changes (Laura)
 
-**Author:** Laura (Tester)  
-**Date:** 2026-05-30  
+**Author:** Laura (Tester)
+**Date:** 2026-05-30
 **Branch:** eureka/m5-m6-trust-feedback
 
 Cycle 2 review consensus identified stale `clock: fixedClock` injections carried through all feedback-path call sites after Edgar removed `ClockProvider` from `ApplyFeedbackDeps` / `ApplyFeedbackByIdDeps` in cycle 1. Test dir excluded from tsc, so excess-property checking never fired.
@@ -585,9 +585,9 @@ Cycle 2 review consensus identified stale `clock: fixedClock` injections carried
 
 ### 2026-05-30: M6 GREEN — correctionDelta Guard + FactReader (Edgar)
 
-**Author:** Edgar (Learning Systems Specialist)  
-**Date:** 2026-05-30  
-**Beat:** M6 GREEN  
+**Author:** Edgar (Learning Systems Specialist)
+**Date:** 2026-05-30
+**Beat:** M6 GREEN
 **Status:** LANDED — GREEN (29/29 tests pass, tsc clean, all 37/37 after Laura's wave)
 
 #### Test Count Delta
@@ -639,9 +639,9 @@ Keeps `applyFeedback` purely unit-testable; orchestration stays in `applyFeedbac
 
 ### 2026-05-29: M4 RED — ClockProvider Seam Contract (Laura)
 
-**Author:** Laura (Tester)  
-**Date:** 2026-05-29  
-**Beat:** M4 RED — ClockProvider injection for recency decay over real time  
+**Author:** Laura (Tester)
+**Date:** 2026-05-29
+**Beat:** M4 RED — ClockProvider injection for recency decay over real time
 **Next owner:** Edgar owns M4 GREEN.
 
 ---
@@ -663,7 +663,7 @@ deferred per §30 §2.4 note on FR-12).
 **Citation:** §55 §1.2 — "Non-deterministic inputs (timestamps, random IDs)" →
 mock at seam.
 
-**Unit choice: milliseconds.**  
+**Unit choice: milliseconds.**
 The existing `compositeScore()` implementation divides by `86_400_000` (ms → days),
 and all M2/M3 fixtures use `EPOCH_MS = 0` (clearly ms). Using ms keeps the interface
 consistent with the live implementation.
@@ -815,9 +815,9 @@ Edgar's minimal implementation:
 
 ### 2026-05-29: M4 GREEN — ClockProvider Seam Wired (Edgar)
 
-**Author:** Edgar (Learning Systems Specialist)  
-**Date:** 2026-05-29  
-**Beat:** M4 GREEN — ClockProvider injection for recency decay over real time  
+**Author:** Edgar (Learning Systems Specialist)
+**Date:** 2026-05-29
+**Beat:** M4 GREEN — ClockProvider injection for recency decay over real time
 **Predecessor:** M4 RED (laura-m4-clock-red.md)
 
 ---
@@ -929,8 +929,8 @@ driving the trust-write seam into existence.
 
 ### 2026-05-28: Team Norm — London-School TDD Ownership
 
-**Date:** 2026-05-28T23:49:42Z  
-**Origin:** Aaron Kubly (via Scribe, coordinator mandate)  
+**Date:** 2026-05-28T23:49:42Z
+**Origin:** Aaron Kubly (via Scribe, coordinator mandate)
 **Status:** NORM — durable team discipline
 
 **Rule:** London-school TDD ownership:
@@ -946,9 +946,9 @@ driving the trust-write seam into existence.
 
 ### 2026-05-28: M3 RED — Composite-Ranker Ordering Contract
 
-**Author:** Laura (Tester)  
-**Date:** 2026-05-28  
-**Status:** LANDED — RED  
+**Author:** Laura (Tester)
+**Date:** 2026-05-28
+**Status:** LANDED — RED
 **Next owner:** Edgar (M3 GREEN)
 
 New test added to `packages/eureka/src/activities/__tests__/recall.test.ts`:
@@ -986,9 +986,9 @@ Score margins unambiguous: B−C=0.340, C−D=0.180, D−A=0.272.
 
 ### 2026-05-28: M3 GREEN — Composite-Ranker Ordering: Landing Record
 
-**Author:** Edgar (Learning Systems Specialist)  
-**Date:** 2026-05-28  
-**Status:** LANDED — GREEN  
+**Author:** Edgar (Learning Systems Specialist)
+**Date:** 2026-05-28
+**Status:** LANDED — GREEN
 **Next owner:** Laura owns M4 RED
 
 Both tests passed after implementing FR-2 composite scoring inline in `recall()`.
@@ -999,7 +999,7 @@ Both tests passed after implementing FR-2 composite scoring inline in `recall()`
 
 RecallResult extension: Added optional typed fields `relevance`, `importance`, `last_accessed` (preserve backward compat with M2 mocks).
 
-Inline composite scorer (pure helper): 
+Inline composite scorer (pure helper):
 ```
 rawScore = 0.50·relevance + 0.20·importance + 0.20·trust + 0.10·recency
 recency = max(0.1, (1+t)^-0.5) where t=days
@@ -1031,7 +1031,7 @@ Date.now() captured at entry; ready for ClockProvider injection M4.
 
 ### 2026-05-28: M2 Decision Drop — recall() GREEN
 
-**Author:** Edgar (Learning Systems Specialist)  
+**Author:** Edgar (Learning Systems Specialist)
 **Status:** LANDED — GREEN
 
 M2 London-school TDD beat complete. `recall()` is implemented and the AC-1.3 seed test passes.
@@ -1062,9 +1062,9 @@ M2 London-school TDD beat complete. `recall()` is implemented and the AC-1.3 see
 
 ### 2026-05-28: PR #26 — Copilot Review Doc Alignment (Cycle 1)
 
-**Date:** 2026-05-28  
-**Author:** Cassima (PM — Eureka)  
-**Context:** Copilot automated review on PR #26 (eureka/v1-design-package branch merge)  
+**Date:** 2026-05-28
+**Author:** Cassima (PM — Eureka)
+**Context:** Copilot automated review on PR #26 (eureka/v1-design-package branch merge)
 **Status:** ✅ All 5 threads addressed
 
 ---
@@ -1073,7 +1073,7 @@ M2 London-school TDD beat complete. `recall()` is implemented and the AC-1.3 see
 
 Post-merge alignment sweep to fix 5 documentation inconsistencies flagged by Copilot's automated review. Substrate ownership was decided (ADR-0002 Option A monorepo, accepted 2026-05-27), but several committed docs still:
 1. Referenced pre-decision state ("Four open decisions block...")
-2. Cited gitignored `.squad/decisions/inbox/` paths (broken for other contributors/CI)
+2. Cited gitignored `decision inbox drop ` paths (broken for other contributors/CI)
 3. Claimed "pnpm workspaces, turborepo" when repo uses npm workspaces + `tsc --build`
 4. Described user/project tiers as "stubbed" when PRD FR-7.2 says "NOT SHIPPED in v1 at all"
 
@@ -1105,8 +1105,8 @@ All edits were surgical — preserved doc structure, voice, and content except t
 
 **Before:**
 ```markdown
-- **Crucible Impact Analysis:** [`.squad/decisions/inbox/cassima-crucible-eureka-impact.md`](...)
-- **Substrate Blocker Memo:** [`.squad/decisions/inbox/cassima-t7-shared-substrate-blocker.md`](...)
+- **Crucible Impact Analysis:** [`decision inbox drop cassima-crucible-eureka-impact.md`](...)
+- **Substrate Blocker Memo:** [`decision inbox drop cassima-t7-shared-substrate-blocker.md`](...)
 ```
 
 **After:**
@@ -1115,7 +1115,7 @@ All edits were surgical — preserved doc structure, voice, and content except t
 - **Substrate Ownership:** See `.squad/decisions.md` § "Narrower Substrate Freeze Proposal" and ADR-0002 (2026-05-27)
 ```
 
-**Rationale:** `.squad/decisions/inbox/` is gitignored (local-only working memos). Committed docs must reference content that resolves for all contributors. Merged substrate analysis now lives in `.squad/decisions.md` and ADR-0002.
+**Rationale:** `decision inbox drop ` is gitignored (local-only working memos). Committed docs must reference content that resolves for all contributors. Merged substrate analysis now lives in `.squad/decisions.md` and ADR-0002.
 
 ---
 
@@ -1125,7 +1125,7 @@ All edits were surgical — preserved doc structure, voice, and content except t
 
 **Before:**
 ```markdown
-**Tension Reference:** §70 T7, `.squad/decisions/inbox/cassima-t7-shared-substrate-blocker.md`
+**Tension Reference:** §70 T7, `decision inbox drop cassima-t7-shared-substrate-blocker.md`
 ```
 
 **After:**
@@ -1155,7 +1155,7 @@ All edits were surgical — preserved doc structure, voice, and content except t
 > 2. **Monorepo scaffolding** (Roger + Gabriel) — npm workspace config (already present), unified `tsconfig` project references with `tsc --build`. Must complete before any package code moves.
 > 3. **CI/CD consolidation** — Single GitHub Actions workflow replacing per-repo CI. Leverage `tsc --build` incremental compilation to mitigate whole-repo build time.
 > ...
-> 
+>
 > *Note: Future migration to pnpm/turborepo could optimize build caching, but npm workspaces + `tsc --build` is sufficient for v1.*
 
 **Rationale:** Repo reality check confirmed:
@@ -1194,7 +1194,7 @@ Also updated "Recall Fan-Out Strategy" prose to note multi-tier fan-out is v1.5+
 
 **Committed docs must not cite paths under gitignored directories.**
 
-- `.squad/decisions/inbox/` is gitignored → broken for other contributors and CI.
+- `decision inbox drop ` is gitignored → broken for other contributors and CI.
 - References to decision content should point to:
   1. Merged content in `.squad/decisions.md` (cite section heading + date), OR
   2. Committed ADRs (`docs/eureka/adrs/*.md`), OR
@@ -1256,9 +1256,9 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 
 ### 2026-05-27: Eureka v0.1 Technical Design — Assembled & Blocked on 4 Critical Decisions
 
-**Status:** ✅ DESIGN ASSEMBLED — Implementation blocked  
-**Date:** 2026-05-27  
-**Initiated By:** Graham (Design Lead, Round 2 assembly) + Eureka team (Round 1 authorship)  
+**Status:** ✅ DESIGN ASSEMBLED — Implementation blocked
+**Date:** 2026-05-27
+**Initiated By:** Graham (Design Lead, Round 2 assembly) + Eureka team (Round 1 authorship)
 **Urgency:** 4 blockers identified; OQ-1 (substrate ownership) is CRITICAL
 
 **Summary:** Eight sections of Eureka v0.1 technical design are now drafted and assembled. All cross-section tensions have been surfaced, categorized, and either resolved or escalated as open questions. **Three critical blockers identified:**
@@ -1278,7 +1278,7 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 
 **Timeline:** OQ-1 decision needed THIS WEEK. OQ-2 resolved pre-sprint-2 (~3 weeks). OQ-3 resolved with Crucible team.
 
-**Design artifacts:** 
+**Design artifacts:**
 - `docs/eureka/technical-design.md` — canonical entry-point, v0.1 assembled
 - 8 sections (§00–§70, ~198KB total content)
 - 3 ADRs (0001, 0003, and proposed ADR 0002)
@@ -1290,9 +1290,9 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 
 ### 2026-05-27: Friction-Level UX Decisions — Gated by v1 Dogfood Evidence
 
-**Status:** ⏳ AWAITING EVIDENCE  
-**Date:** 2026-05-27  
-**Initiated By:** Valanice (UX Specialist)  
+**Status:** ⏳ AWAITING EVIDENCE
+**Date:** 2026-05-27
+**Initiated By:** Valanice (UX Specialist)
 **Urgency:** Four decisions gate v1.5 design; cannot lock until Aaron completes ≥10 dogfood sessions
 
 **Four friction-level decisions deferred to v1.5 pending observed human behavior:**
@@ -1315,9 +1315,9 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 
 ### 2026-05-27: Narrower Substrate Freeze Proposal — Accepted with Amendments
 
-**Status:** ✅ EVALUATED — Recommendation: ACCEPT  
-**Date:** 2026-05-27  
-**Initiated By:** Erasmus (Crucible team, via Cassima)  
+**Status:** ✅ EVALUATED — Recommendation: ACCEPT
+**Date:** 2026-05-27
+**Initiated By:** Erasmus (Crucible team, via Cassima)
 **Evaluated By:** Genesta (Activities Lead)
 
 **Proposal Summary:** Freeze only two cross-project contracts instead of full Cairn/Forge ownership:
@@ -1341,10 +1341,10 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 
 ### 2026-05-27: Crucible ↔ Eureka Cross-Project Overlap — Architectural Coordination Required
 
-**Status:** ⏳ AWAITING AARON DECISION  
-**Date:** 2026-05-26  
-**Initiated By:** Cross-project overlap analysis (Genesta, Crispin, Edgar, Cassima)  
-**Urgency:** BLOCKER — both projects ship v1 in parallel  
+**Status:** ⏳ AWAITING AARON DECISION
+**Date:** 2026-05-26
+**Initiated By:** Cross-project overlap analysis (Genesta, Crispin, Edgar, Cassima)
+**Urgency:** BLOCKER — both projects ship v1 in parallel
 
 **Decision Needed:** Aaron must lock repository ownership, schema collision resolution, and prescriber/substrate wiring before Crucible sprint 2 and Eureka v1 implementation phase begin.
 
@@ -1352,23 +1352,23 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 
 ### 2026-05-27: Eureka TD Re-Pass After §55 — §20/§30/§40/§50 Aligned with London-TDD Spine
 
-**Status:** ✅ AUDIT COMPLETE — Recommendations applied  
-**Date:** 2026-05-27  
-**Initiated By:** Aaron Kubly  
-**Question:** Should we do a TD re-pass after §55?  
-**Decision:** Full bounded pass (Option A) — parallel audits across §20/§30/§40/§50 + follow-up executions  
+**Status:** ✅ AUDIT COMPLETE — Recommendations applied
+**Date:** 2026-05-27
+**Initiated By:** Aaron Kubly
+**Question:** Should we do a TD re-pass after §55?
+**Decision:** Full bounded pass (Option A) — parallel audits across §20/§30/§40/§50 + follow-up executions
 
 **Summary:** Six-agent batch (Crispin/Roger/Laura/Edgar × 2 phases) verified that all four predecessor sections align with §55's London-school TDD mock contract discipline. All seams identified, all gaps addressed. No schema rewrites needed; seams are fundamentally sound with additive clarifications.
 
 **Phase 1 — Audits & Executions:**
 
-1. **Crispin (§20 Audit):** SEAMS HOLD — 5 findings, 1 interface addition (session_id to RecallQuery). No schema changes. **Deliverable:** `.squad/decisions/inbox/crispin-20-seam-audit-vs-55.md`
+1. **Crispin (§20 Audit):** SEAMS HOLD — 5 findings, 1 interface addition (session_id to RecallQuery). No schema changes. **Deliverable:** `decision inbox drop crispin-20-seam-audit-vs-55.md`
 
-2. **Roger (§40 DI Audit):** 80% injectable — 2 seams need extraction (`ClockProvider`, `RandomSource`), 1 correctly deferred (model). Forward-docs network boundary for v1.5. **Deliverable:** `.squad/decisions/inbox/roger-40-di-seam-audit-vs-55.md`
+2. **Roger (§40 DI Audit):** 80% injectable — 2 seams need extraction (`ClockProvider`, `RandomSource`), 1 correctly deferred (model). Forward-docs network boundary for v1.5. **Deliverable:** `decision inbox drop roger-40-di-seam-audit-vs-55.md`
 
 3. **Laura (§50 Reframe):** §50 positioned as design-time testability discipline; §55 as implementation-time TDD practice. Complementary pair. **Deliverable:** Edited `docs/eureka/sections/50-testability.md` (+9%)
 
-4. **Edgar (§30 Follow-Ups):** 3/3 executed — CuratorStore signature adopted, ClockProvider seam added, latency cross-refs established. **Deliverable:** `.squad/decisions/inbox/edgar-30-followups-executed.md`, edited `docs/eureka/sections/30-learning-systems.md`
+4. **Edgar (§30 Follow-Ups):** 3/3 executed — CuratorStore signature adopted, ClockProvider seam added, latency cross-refs established. **Deliverable:** `decision inbox drop edgar-30-followups-executed.md`, edited `docs/eureka/sections/30-learning-systems.md`
 
 **Phase 2 — Recommendations Applied:**
 
@@ -1391,7 +1391,7 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 
 **Timeline:** Complete. §20/§30/§40/§50 ship-ready with full seam documentation verified.
 
-**Session log:** `.squad/log/2026-05-27T15-30-00Z-td-repass-after-55.md`  
+**Session log:** `.squad/log/2026-05-27T15-30-00Z-td-repass-after-55.md`
 **Orchestration logs:** 6 logs per agent (`.squad/orchestration-log/2026-05-27T*-{agent}.md`)
 
 **Signed:** Scribe (orchestration logger), Crispin, Roger, Laura, Edgar
@@ -1447,7 +1447,7 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 ## Technical Findings (Cross-Referenced)
 
 ### Finding 1: Repository Dependency (Cassima)
-**Full analysis:** `.squad/decisions/inbox/cassima-crucible-eureka-impact.md` §1.2 (undeclared dependency), §4 (resourcing)
+**Full analysis:** `decision inbox drop cassima-crucible-eureka-impact.md` §1.2 (undeclared dependency), §4 (resourcing)
 
 - Crucible PRD §1 vocabulary, §2.4, §2.6, Appendix D assume Forge prescribers in `harness`.
 - Actual location: `D:\git\mem\packages\forge`.
@@ -1456,7 +1456,7 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 **Recommendation:** Stagger projects OR establish explicit dependency + versioning contract.
 
 ### Finding 2: Event Schema Collision (Genesta)
-**Full analysis:** `.squad/decisions/inbox/genesta-crucible-eureka-overlap.md` § Finding 1 + 2 + 5
+**Full analysis:** `decision inbox drop genesta-crucible-eureka-overlap.md` § Finding 1 + 2 + 5
 
 - Crucible §1: 5 typed events (Request, Artifact, Observation, Decision, Question)
 - Cairn today: `event_log` with existing `eventType` vocabulary
@@ -1470,7 +1470,7 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 **Gate:** Before Crucible sprint 2 (L1 substrate), convene Graham + Roger + Genesta to lock event-substrate topology.
 
 ### Finding 3: SessionId Brand + Decision Schema Collision (Crispin, Genesta)
-**Full analysis:** `.squad/decisions/inbox/crispin-crucible-kr-overlap.md` § 1 + 5, `genesta-...` § Finding 2
+**Full analysis:** `decision inbox drop crispin-crucible-kr-overlap.md` § 1 + 5, `genesta-...` § Finding 2
 
 **Collision 1 — SessionId Brand (BLOCKER):**
 - Eureka v5 (FR-13): `SessionId` branded type in `@akubly/types` (Aaron R8 directive).
@@ -1495,7 +1495,7 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 **Recommendation (Crispin):** Crucible rename to `ContentBlob` / `CapturedContent`. Eureka avoid "artifact" in public types.
 
 ### Finding 4: Learning-Loop Feedback Substrate (Edgar)
-**Full analysis:** `.squad/decisions/inbox/edgar-crucible-learning-overlap.md` § 1–4
+**Full analysis:** `decision inbox drop edgar-crucible-learning-overlap.md` § 1–4
 
 - **Crucible's loop:** Prescriber → Review-Gate → Apply/Inbox → Scorecard (minutes to hours per-session).
 - **Eureka's loop:** Sweep → Ranker → Trust/Confidence mutations (hours to days across sessions).
@@ -1544,10 +1544,10 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 
 All findings preserved in inbox for detailed review:
 
-- `.squad/decisions/inbox/genesta-crucible-eureka-overlap.md` (20.9 KB, 216 lines) — Architectural findings: 5 overlaps (3 high-risk, 2 safe).
-- `.squad/decisions/inbox/crispin-crucible-kr-overlap.md` (24.5 KB, 136 lines) — KR findings: 2 critical collisions, 1 integration opportunity.
-- `.squad/decisions/inbox/edgar-crucible-learning-overlap.md` (25.6 KB, 202 lines) — Learning-loop findings: parallel loops, feedback substrate, prescriber transition.
-- `.squad/decisions/inbox/cassima-crucible-eureka-impact.md` (25.0 KB, 200 lines) — PM findings: undeclared dependency, 3 strategic questions, resourcing risk.
+- `decision inbox drop genesta-crucible-eureka-overlap.md` (20.9 KB, 216 lines) — Architectural findings: 5 overlaps (3 high-risk, 2 safe).
+- `decision inbox drop crispin-crucible-kr-overlap.md` (24.5 KB, 136 lines) — KR findings: 2 critical collisions, 1 integration opportunity.
+- `decision inbox drop edgar-crucible-learning-overlap.md` (25.6 KB, 202 lines) — Learning-loop findings: parallel loops, feedback substrate, prescriber transition.
+- `decision inbox drop cassima-crucible-eureka-impact.md` (25.0 KB, 200 lines) — PM findings: undeclared dependency, 3 strategic questions, resourcing risk.
 
 ---
 
@@ -1555,9 +1555,9 @@ All findings preserved in inbox for detailed review:
 
 ### 2026-05-26: Eureka PRD v5-final LOCKED — R8 4-Reviewer Lock-In Panel (Session Identity Unification)
 
-**Status:** ✅ LOCKED (CANONICAL)  
-**Date:** 2026-05-26  
-**Locked By:** 4-reviewer panel (Graham Knight, Genesta, Crispin, Edgar) — unanimous LOCK, zero revisions  
+**Status:** ✅ LOCKED (CANONICAL)
+**Date:** 2026-05-26
+**Locked By:** 4-reviewer panel (Graham Knight, Genesta, Crispin, Edgar) — unanimous LOCK, zero revisions
 **Lock Status:** DO NOT EDIT — canonical specification; v4-final superseded
 
 **Decision:** Eureka PRD v5-final is ratified as canonical, shippable specification after R8 post-lock amendment. Aaron R8 session-identity directive: Cairn `Session` and Eureka `kind=session` fact share one identifier (Copilot CLI session UUID) via shared `SessionId` brand in `@akubly/types`, with normative lens framing as guard. All R8 changes landed correctly. R8 design cycle CLOSED.
@@ -1586,7 +1586,7 @@ All findings preserved in inbox for detailed review:
 
 **Key Technical Deltas (Summary):**
 - `@akubly/types/src/session.ts` (NEW): `SessionId` branded type + UUID validator + constructor
-- `bridge_ledger.session_id` (NEW): `TEXT NOT NULL` replaces `cairn_session_id_hint? TEXT` 
+- `bridge_ledger.session_id` (NEW): `TEXT NOT NULL` replaces `cairn_session_id_hint? TEXT`
 - FR-13 text: "isolated by design" deletion + shared brand framing + lens elevation to normative
 - FR-7.2: no-ATTACH rule consistency pass + type-level-only clarification
 - §14a: T-orphan reframe (same severity, clearer semantics)
@@ -1602,9 +1602,9 @@ All findings preserved in inbox for detailed review:
 
 **Artifacts:**
 - **Canonical PRD:** `.squad/decisions/eureka-prd-v5-final.md` (stable location, do not edit; supersedes v4-final)
-- **R8 Design Panel Verdicts:** `.squad/decisions/inbox/graham-r8-session-identity.md`, `genesta-r8-session-identity.md`, `crispin-r8-session-identity.md`, `edgar-r8-session-identity.md` (all ACCEPT/FOLD verdicts)
-- **Aaron R8 Directive:** `.squad/decisions/inbox/copilot-directive-r8-session-identity.md`
-- **R8 Lock Panel Verdicts:** `.squad/decisions/inbox/graham-r8-lock-verdict.md`, `genesta-r8-lock-verdict.md`, `crispin-r8-lock-verdict.md`, `edgar-r8-lock-verdict.md` (all LOCK, unanimous)
+- **R8 Design Panel Verdicts:** `decision inbox drop graham-r8-session-identity.md`, `genesta-r8-session-identity.md`, `crispin-r8-session-identity.md`, `edgar-r8-session-identity.md` (all ACCEPT/FOLD verdicts)
+- **Aaron R8 Directive:** `decision inbox drop copilot-directive-r8-session-identity.md`
+- **R8 Lock Panel Verdicts:** `decision inbox drop graham-r8-lock-verdict.md`, `genesta-r8-lock-verdict.md`, `crispin-r8-lock-verdict.md`, `edgar-r8-lock-verdict.md` (all LOCK, unanimous)
 - **Superseded Artifact:** `.squad/decisions/eureka-prd-v4-final.md` (historical reference; see header banner for migration note)
 
 **Implementation Readiness:**
@@ -1624,7 +1624,7 @@ All findings preserved in inbox for detailed review:
 **By:** Graham (Lead)
 **Status:** Implemented in cycles 4-6
 
-From .squad/decisions/inbox/graham-wi-b-cycle4-redesign.md
+From decision inbox drop graham-wi-b-cycle4-redesign.md
 
 **Thread analysis:** 51 unresolved threads across 4 files represent 5 distinct findings:
 - F8a: Wrong-branch reuse calls git worktree remove without unlinking junction first
@@ -1639,7 +1639,7 @@ From .squad/decisions/inbox/graham-wi-b-cycle4-redesign.md
 
 **Junction-unlink ordering (SAFETY-CRITICAL):**
 1. Resolve the branch name: git -C "{worktree}" rev-parse --abbrev-ref HEAD → save as {branch}
-2. Remove the 
+2. Remove the
 ode_modules junction/symlink (before git worktree remove)
 3. Remove the worktree: git worktree remove "{worktree}"
 4. Delete the branch: git branch -d {branch}
@@ -1652,7 +1652,7 @@ ode_modules junction/symlink (before git worktree remove)
 **By:** Graham (Lead)
 **Status:** Reviewed and approved for merge
 
-From .squad/decisions/inbox/graham-wi-b-review-approve.md
+From decision inbox drop graham-wi-b-review-approve.md
 
 **Scope adherence:** ✅ Gabriel implemented exactly what was scoped. Six change areas all map directly to concrete changes. No omissions.
 
@@ -1678,7 +1678,7 @@ From .squad/decisions/inbox/graham-wi-b-review-approve.md
 **By:** Graham (Lead)
 **Status:** Scoping complete, implemented
 
-From .squad/decisions/inbox/graham-wi-b-scope.md
+From decision inbox drop graham-wi-b-scope.md
 
 **Scope confirmation:** WI-B makes the coordinator CREATE worktrees per-issue instead of dispatching agents into shared main.
 
@@ -1703,7 +1703,7 @@ From .squad/decisions/inbox/graham-wi-b-scope.md
 
 **Risk flags:**
 1. File-deletion mystery event during session — WI-B mitigates via isolation
-2. 
+2.
 ode_modules re-install after worktree removal — cleanup flow handles junction removal BEFORE git worktree remove
 3. Pre-Spawn is documentation-only — Gabriel added ACTIVE status + enforcement language
 4. Parallel dispatch guard — warning-only recommended for v1
@@ -1713,7 +1713,7 @@ ode_modules re-install after worktree removal — cleanup flow handles junction 
 
 ### 2026-05-30: WI-A Implementation Log — Issue #11 (Roger history restoration)
 
-From .squad/decisions/inbox/roger-issue-11-implementation.md (WI-A history, cross-referenced)
+From decision inbox drop roger-issue-11-implementation.md (WI-A history, cross-referenced)
 
 **Cloud Review Cycles 1-5 completed** — Worktree-aware session resolution now in place. Schema version 16. Partial UNIQUE indexes for NULL-workdir case. All 1405 tests green. Ready for WI-B (coordinator dispatch).
 
@@ -1724,8 +1724,8 @@ From .squad/decisions/inbox/roger-issue-11-implementation.md (WI-A history, cros
 
 ## 2026-05-30: Squad Convention — Agent history.md Commits in Feature PRs Are In-Scope
 
-**Date:** 2026-05-30  
-**Source:** PR #32 / issue #25, Cycle 1 Skeptic review (F3 flagged as scope creep)  
+**Date:** 2026-05-30
+**Source:** PR #32 / issue #25, Cycle 1 Skeptic review (F3 flagged as scope creep)
 **Decision:** Agent-maintained history.md entries in feature PRs are **IN-SCOPE**, not scope creep.
 
 **Rationale:**
@@ -1752,8 +1752,8 @@ Example in-scope entry:
 
 ## 2026-05-30: Path A for Internal Helpers — Unexport and Shrink Test Surface
 
-**Date:** 2026-05-30  
-**Source:** PR #32 / issue #25, Cycle 2, C2-3 polish  
+**Date:** 2026-05-30
+**Source:** PR #32 / issue #25, Cycle 2, C2-3 polish
 **Decision:** When an `@internal` JSDoc tag cannot be enforced (no api-extractor or stripInternal pass), prefer unexporting the helper and shrinking the unit test surface over maintaining a false-promise export.
 
 **Rationale:**
@@ -1775,8 +1775,8 @@ Options:
 
 ## 2026-05-30: JSON.parse Boundary Discipline — Unknown Typing + Runtime Validation + Drift Guard
 
-**Date:** 2026-05-30  
-**Source:** PR #32 / issue #25, Cycle 1 F1 (Correctness) + Cycle 2 C2-1/C2-2 (verification)  
+**Date:** 2026-05-30
+**Source:** PR #32 / issue #25, Cycle 1 F1 (Correctness) + Cycle 2 C2-1/C2-2 (verification)
 **Decision:** When narrowing types that flow from `JSON.parse(eventLogPayload)`, enforce a three-tier boundary discipline:
 
 ### Tier 1: Type the payload as `unknown`
@@ -1818,8 +1818,8 @@ If a new reason is added and this helper is not updated, TypeScript will fail on
 
 ## 2026-05-30: PowerShell Here-String Convention — Use Single-Quoted @'...'@ for Code Content
 
-**Date:** 2026-05-30  
-**Source:** PR #32 / issue #25, PR body rendering issues (2 occurrences)  
+**Date:** 2026-05-30
+**Source:** PR #32 / issue #25, PR body rendering issues (2 occurrences)
 **Decision:** When building multi-line file content in PowerShell that contains backticks (markdown code spans, `` `tsc ``, `` `null ``), use single-quoted here-strings `@'...'@` instead of double-quoted `@"..."@`.
 
 **Rationale:**
@@ -1859,8 +1859,8 @@ Type:
 
 ## 2026-05-30: Forge Roadmap Priority — Dogfood-First (Aaron Directive)
 
-**Date:** 2026-05-30T23:55:00-07:00  
-**Author:** Aaron Kubly (via Copilot)  
+**Date:** 2026-05-30T23:55:00-07:00
+**Author:** Aaron Kubly (via Copilot)
 **Status:** ADOPTED
 
 ### What (1) — Eureka pace
@@ -1890,8 +1890,8 @@ User direction on roadmap sequencing. Dogfooding-first reflects the principle th
 
 ## 2026-05-30: Forge Next Load-Bearing Move — SQLite FactStore Adapter (Graham Decision)
 
-**Date:** 2026-05-30  
-**Author:** Graham (Architect)  
+**Date:** 2026-05-30
+**Author:** Graham (Architect)
 **Status:** PROPOSED FOR FUTURE DISPATCH (deferred by Aaron dogfood priority)
 
 ### Context
@@ -1926,8 +1926,8 @@ Deferred per Aaron's dogfood-first priority (2026-05-30). Will be picked up afte
 
 ## 2026-05-31: Cycle-2 Latent Lint Bug Pattern — Windows `npm run lint` Glob Failure
 
-**Date:** 2026-05-31  
-**Author:** Alexander (via Scribe, Issue #37)  
+**Date:** 2026-05-31
+**Author:** Alexander (via Scribe, Issue #37)
 **Status:** ROOT CAUSE IDENTIFIED; WORKAROUND DOCUMENTED; PERMANENT FIX TRACKED
 
 ### What
@@ -2125,10 +2125,10 @@ uninstall script removes the exact block. No manual editing required.
 
 # Decision Drop: M1 Cycle-1 Findings Fix Wave
 
-**Author:** Roger (Platform Dev)  
-**Date:** 2026-05-31T23:04:34-07:00  
-**Branch:** squad/39-hint-mcp-tools  
-**PR:** #40  
+**Author:** Roger (Platform Dev)
+**Date:** 2026-05-31T23:04:34-07:00
+**Branch:** squad/39-hint-mcp-tools
+**PR:** #40
 **Commit:** 4ca4542
 
 ---
@@ -2224,10 +2224,10 @@ Returns the raw JSON payload (not the MCP content wrapper). MCP handler calls th
 
 # Decision Drop: M1 Cycle-2 Polish Wave
 
-**Author:** Roger  
-**Date:** 2026-05-31T23:50:00-07:00  
-**Branch:** `squad/39-hint-mcp-tools`  
-**PR:** #40  
+**Author:** Roger
+**Date:** 2026-05-31T23:50:00-07:00
+**Branch:** `squad/39-hint-mcp-tools`
+**PR:** #40
 **Commit:** c5ffead
 
 ---
@@ -2252,8 +2252,8 @@ Location: `packages/cairn/src/mcp/server.ts` — private `buildHintSummary()` ~4
 
 ### N4 (Medium) — Follow-up issue for forge consumer
 
-**Filed.** GitHub issue **#42**: "M3 follow-up: Wire forge prescriber to consume hint_state_transition resolution_disposition"  
-URL: https://github.com/akubly/stunning-adventure/issues/42  
+**Filed.** GitHub issue **#42**: "M3 follow-up: Wire forge prescriber to consume hint_state_transition resolution_disposition"
+URL: https://github.com/akubly/stunning-adventure/issues/42
 Label: `squad`
 
 ### N5 (Low) — Remove vacuous type cast

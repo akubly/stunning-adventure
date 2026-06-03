@@ -240,7 +240,7 @@ Archived entries summarizing Wave 2–4 composition root development and integra
 
 **Key insight:** The Curator is not "just" a static rule engine. Phase 4.6 already made it a learning system (observe → measure → adapt). The fork/extend decision is really "do we believe pattern detection and agentic reasoning are the same problem?" I do. Extend, don't fork.
 
-**File written:** `.squad/decisions/inbox/roger-curator-overlap-analysis.md` (detailed 10-section analysis)
+**File written:** `decision inbox drop roger-curator-overlap-analysis.md` (detailed 10-section analysis)
 
 **Key file paths reviewed:**
 - `packages/cairn/src/agents/curator.ts` — 550-line pipeline, cursor-based, transactional, 3 pattern detectors + change vector sweep
@@ -282,7 +282,7 @@ Archived entries summarizing Wave 2–4 composition root development and integra
 
 **Key insight:** Curator is **one specialized agent** within a broader memory system, not the system itself. Extending it to ALL tiers + ALL kinds + ALL activities breaks package boundaries. The new system is a **meta-layer** that federates Cairn (project-tier practical patterns) along with other tiers/kinds/activities.
 
-**File written:** `.squad/decisions/inbox/roger-brain-refined.md` (detailed 8-section analysis with architecture options, Q&A on Aaron's four specific questions, and appendix on what I got wrong).
+**File written:** `decision inbox drop roger-brain-refined.md` (detailed 8-section analysis with architecture options, Q&A on Aaron's four specific questions, and appendix on what I got wrong).
 
 **Next steps if Aaron accepts:**
 - Phase 8: Create `packages/mem` structure (tiers/kinds/activities/properties/representation/acquisition).
@@ -297,9 +297,9 @@ Archived entries summarizing Wave 2–4 composition root development and integra
 
 ## Consultation: Brain/Memory System Repo Placement (Round 2)
 
-**Date:** 2026-05-22  
-**Session:** Refined recommendation following Aaron's brain dump clarification  
-**Artifact:** .squad/orchestration-log/2026-05-22T20-25-51-roger-*.md  
+**Date:** 2026-05-22
+**Session:** Refined recommendation following Aaron's brain dump clarification
+**Artifact:** .squad/orchestration-log/2026-05-22T20-25-51-roger-*.md
 **Merged into:** .squad/decisions.md as "Open Question: Brain/Memory/Learning System"
 
 ### Summary
@@ -318,7 +318,7 @@ Participated in Round 2 consulting on repo placement for new agentic brain/memor
 
 ### My Honest Answer
 
-**Infrastructure layers (TIERS, PROPERTIES, REPRESENTATION, ACQUISITION):** I'm ready. 9/10 confidence.  
+**Infrastructure layers (TIERS, PROPERTIES, REPRESENTATION, ACQUISITION):** I'm ready. 9/10 confidence.
 **Cognitive layers (ACTIVITIES like dream/meditate/pray; KINDS like linguistic/symbolic):** I'm not ready. 2/10 confidence.
 
 **What I'd do:** Own Phase 1–3 infrastructure. Bring in specialists for reasoning + knowledge modeling. Hand off after Phase 3 if brain becomes separate deployment.
@@ -376,7 +376,7 @@ Cairn is my sweet spot (operational event processing, pattern detection, prescri
 
 I'm the right person for the foundation. But bring in specialists for the cognition.
 
-**File written:** `.squad/decisions/inbox/roger-self-fit.md` (detailed 10-section self-assessment with energy breakdown, options, and honest readiness evaluation)
+**File written:** `decision inbox drop roger-self-fit.md` (detailed 10-section self-assessment with energy breakdown, options, and honest readiness evaluation)
 
 ---
 
@@ -410,8 +410,8 @@ I'm the right person for the foundation. But bring in specialists for the cognit
 
 ## 2026-05-27: London-School TDD Strategy Authored + OQ-1 Monorepo Resolution
 
-**Event:** London-school TDD spine delivered and reviewed  
-**Impact:** Substrate ownership clarified; implementation runway clear  
+**Event:** London-school TDD spine delivered and reviewed
+**Impact:** Substrate ownership clarified; implementation runway clear
 
 **For Roger's context:**
 - **OQ-1 RESOLVED:** Aaron chose Option A (monorepo). `mem/` and `harness/` merging into `@akubly/` with shared `packages/{cairn,forge,types}`. Substrate topology is now fixed — no coordination overhead from multiple repos. Platform Engineer role (your proposed Eureka Phase 1–3 infrastructure lead) can now design with monorepo as baseline.
@@ -425,9 +425,9 @@ I'm the right person for the foundation. But bring in specialists for the cognit
 
 ## Eureka Project Kickoff (2026-05-22)
 
-**Date:** 2026-05-22  
-**Event:** Aaron approved project name + hired 3 specialists; monorepo placement decided  
-**New Colleagues:** Genesta (Cognitive Systems Lead), Crispin (Knowledge Representation), Edgar (Learning Systems)  
+**Date:** 2026-05-22
+**Event:** Aaron approved project name + hired 3 specialists; monorepo placement decided
+**New Colleagues:** Genesta (Cognitive Systems Lead), Crispin (Knowledge Representation), Edgar (Learning Systems)
 **Role:** Platform Engineer (infrastructure) for Eureka Phase 1–3; continue Cairn as primary
 
 ### Context & Rationale
@@ -467,7 +467,7 @@ Aaron decided: Build Eureka in `packages/eureka/` (monorepo), not separate repo.
 - **Scope:** Check if dependency injection pattern (db-first-param, factory, etc.) aligns with §55's mock contract seams
 - **Verdict:** ✅ MINOR WIRING CHANGES NEEDED
 - **Key findings:** 80% injectable; 2 seams need explicit extraction (time, RNG), 1 correctly deferred (model), 2 fully prepared (storage, network)
-- **Deliverable:** `.squad/decisions/inbox/roger-40-di-seam-audit-vs-55.md` (full audit report with code examples)
+- **Deliverable:** `decision inbox drop roger-40-di-seam-audit-vs-55.md` (full audit report with code examples)
 - **Status:** ✅ PHASE 1 COMPLETE
 
 **Phase 2 — Apply §40 Recommendations After Aaron Approval:**
@@ -487,7 +487,7 @@ Aaron decided: Build Eureka in `packages/eureka/` (monorepo), not separate repo.
 3. **Monorepo simplifies test dependencies.** With `cairn` as `devDependency`, Eureka tests can import better-sqlite3 wrappers directly — impossible with npm-published packages.
 4. **Time injection enables determinism without mocking frameworks.** Just two interfaces (`ClockProvider`, `SystemClock` production impl) turn non-deterministic time-dependent code into testable pure functions.
 
-**Coordination:** 
+**Coordination:**
 - Coordinated with Edgar's §30 Time Injection section — single canonical `ClockProvider` pattern documented in both §30 and §40
 - Roger's §40.5.4 and Edgar's §30 §2.4 are complementary (§40 wiring, §30 usage) — verified no conflicts
 
@@ -510,8 +510,8 @@ Aaron decided: Build Eureka in `packages/eureka/` (monorepo), not separate repo.
 
 **Your attention:** ClockProvider is live in M4 GREEN. §40.5.4 time injection pattern validated in practice. M5 will add feedback event channels (observability seam). No blocker to parallel work; M5 allows 2-week planning cycle for event schema.
 
-**What Roger owns:** Storage layer, federation protocol, SQLite + Git infrastructure  
-**What specialists own:** Cognitive layers, ontology design, reasoning loops  
+**What Roger owns:** Storage layer, federation protocol, SQLite + Git infrastructure
+**What specialists own:** Cognitive layers, ontology design, reasoning loops
 **Interface:** Clean TIERS abstraction — Eureka calls `project_tier.get()` which delegates to Cairn; Eureka manages user/organizational tiers separately
 
 ---
@@ -603,7 +603,7 @@ Aaron decided: Build Eureka in `packages/eureka/` (monorepo), not separate repo.
 
 4. **Monorepo enables test-fixture sharing** — With Cairn as `devDependency`, Eureka tests import its `better-sqlite3` wrappers and migration helpers directly. No duplication. This is impossible with npm-published packages (can't make sqlite3 a devDep of a published package without bloating consumers).
 
-**Outcome:** Inbox file `.squad/decisions/inbox/roger-40-di-seam-audit-vs-55.md` documents minor changes (two new subsections for ClockProvider/RandomSource, two inline notes for model/network). Non-blocking; estimated 30 min to apply. All changes are additive clarifications, not redesigns.
+**Outcome:** Inbox file `decision inbox drop roger-40-di-seam-audit-vs-55.md` documents minor changes (two new subsections for ClockProvider/RandomSource, two inline notes for model/network). Non-blocking; estimated 30 min to apply. All changes are additive clarifications, not redesigns.
 
 ---
 
@@ -653,7 +653,7 @@ SQLite + FTS5 is enough for v1. Graph DB / LMDB / vector store deferred until v1
 
 3. **"Document seams even when deferred" applies to v1.5 prep** — `RandomSource` interface defined in v1 even though stochastic activities (`meditate`, `contemplate`) throw `NotImplementedError`. This prevents v1.5 from hardwiring `Math.random()` calls when they land.
 
-4. **Audit-then-apply workflow scales** — Roger wrote audit `.squad/decisions/inbox/roger-40-di-seam-audit-vs-55.md` (proposal), Aaron approved, Roger executed (this task). Separation of analysis from execution lets Aaron review tradeoffs before committing to changes.
+4. **Audit-then-apply workflow scales** — Roger wrote audit `decision inbox drop roger-40-di-seam-audit-vs-55.md` (proposal), Aaron approved, Roger executed (this task). Separation of analysis from execution lets Aaron review tradeoffs before committing to changes.
 
 **What changed from audit:**
 - Audit estimated 30 lines; actual was 132 lines (§40.6 grew from bullets to worked examples with code blocks).
@@ -667,7 +667,7 @@ SQLite + FTS5 is enough for v1. Graph DB / LMDB / vector store deferred until v1
 
 ## 2026-05-28: Cycle 2 Fix Wave — 7 Persona-Review Findings
 
-**Context:** Persona-review cycle 1 surfaced 19 findings (all accepted by Aaron). Canonical resolutions in `.squad/decisions/inbox/squad-cycle1-canon.md`. Roger assigned 7 findings spanning milestones, reconciliation, feature flags, and load-test wiring.
+**Context:** Persona-review cycle 1 surfaced 19 findings (all accepted by Aaron). Canonical resolutions in `decision inbox drop squad-cycle1-canon.md`. Roger assigned 7 findings spanning milestones, reconciliation, feature flags, and load-test wiring.
 
 **Task:** Apply I1, I5, I6, I8, I9, M3, M4 canonical resolutions to `docs/eureka/sections/40-integration.md`.
 

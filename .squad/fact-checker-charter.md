@@ -63,7 +63,7 @@ Every verified item gets one of:
 {proceed / revise / block with reasons}
 ```
 
-6. **Write decision** if I found issues: `.squad/decisions/inbox/fact-checker-{slug}.md`
+6. **Write decision** if I found issues: `decision inbox drop fact-checker-{slug}.md`
 
 ## Boundaries
 

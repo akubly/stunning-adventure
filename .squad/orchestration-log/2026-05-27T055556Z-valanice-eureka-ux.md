@@ -1,7 +1,7 @@
 # Orchestration Log: Valanice (UX) — Eureka ↔ Crucible UX Overlap
 
-**Date:** 2026-05-27T05:55:56Z  
-**Agent:** Valanice (UX / Human Factors)  
+**Date:** 2026-05-27T05:55:56Z
+**Agent:** Valanice (UX / Human Factors)
 **Task:** Human-facing surface analysis for two simultaneously-built tools
 
 ## Scope
@@ -10,7 +10,7 @@
 - Shared vocabulary (Session, Decision) and collision zones
 
 ## Outputs
-- **Inbox Decision:** `.squad/decisions/inbox/valanice-eureka-crucible-ux-overlap.md` (24.3 KB)
+- **Inbox Decision:** `decision inbox drop valanice-eureka-crucible-ux-overlap.md` (24.3 KB)
 - **Verdict:** LOW aggregate risk; 3 coordination zones:
   1. Session identity now shared (positive, requires vocabulary discipline)
   2. Decision pathways: two routes to same outcome (needs ONE mental model)

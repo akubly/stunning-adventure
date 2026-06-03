@@ -29,7 +29,7 @@ Colors are defined as constants at the top of `index.js`: `GREEN`, `RED`, `DIM`,
 - `.github/agents/squad.agent.md` — Coordinator prompt (Squad-owned, overwritten on upgrade)
 - `templates/` — Source templates shipped with the npm package
 - `.squad/skills/` — Team skills in SKILL.md format (user-owned)
-- `.squad/decisions/inbox/` — Drop-box for parallel decision writes
+- `decision inbox drop ` — Drop-box for parallel decision writes
 
 ### Windows Compatibility
 Always use `path.join()` for file paths — never hardcode `/` or `\` separators. Squad must work on Windows, macOS, and Linux. All tests must pass on all platforms.

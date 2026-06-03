@@ -1,7 +1,7 @@
 # Orchestration Log: Phase A + B Flush (2026-05-25T00:30Z)
 
-**Date:** 2026-05-25T00:30Z  
-**Agent:** Scribe  
+**Date:** 2026-05-25T00:30Z
+**Agent:** Scribe
 **Action:** Flushed all 13 pending inbox files into decisions.md
 
 ## Summary
@@ -11,8 +11,8 @@ Merged:
 - **9 Phase B reconciliations** (Alexander, Erasmus, Gabriel, Graham, Laura, Roger, Rosella, Sonny, Valanice vs D:\git\stunning-adventure monorepo)
 - **1 vocabulary cleanup** (prescription/trail/causal_read_set canonical; skillsmith-runtime rename queued)
 
-**Total inbox files processed:** 13  
-**Archive destination:** `.squad/decisions/inbox/archive/2026-05-24-phase-ab/`
+**Total inbox files processed:** 13
+**Archive destination:** `decision inbox drop archive/2026-05-24-phase-ab/`
 
 ## New sections added to decisions.md
 

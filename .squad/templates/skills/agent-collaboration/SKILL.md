@@ -19,7 +19,7 @@ Use the `TEAM ROOT` path provided in your spawn prompt. All `.squad/` paths are 
 
 ### Decision Recording
 After making a decision that affects other team members, write it to:
-`.squad/decisions/inbox/{your-name}-{brief-slug}.md`
+`decision inbox drop {your-name}-{brief-slug}.md`
 
 Format:
 ```

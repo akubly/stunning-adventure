@@ -29,4 +29,4 @@ His value comes from **NOT being immersed** in the project's existing vocabulary
 
 - `.squad/agents/erasmus/charter.md` (this file — read-only after creation)
 - `.squad/agents/erasmus/history.md` (append-only learnings)
-- May write to `.squad/decisions/inbox/erasmus-*.md` for proposals
+- May write to `decision inbox drop erasmus-*.md` for proposals
