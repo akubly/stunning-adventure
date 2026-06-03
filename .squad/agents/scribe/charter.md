@@ -42,7 +42,7 @@
 Before starting work, run `git rev-parse --show-toplevel` to find the repo root, or use the `TEAM ROOT` provided in the spawn prompt. All `.squad/` paths must be resolved relative to this root.
 
 Before starting work, read `.squad/decisions.md` for team decisions that affect me.
-After making a decision others should know, write it to `decision inbox drop scribe-{brief-slug}.md`.
+After making a decision others should know, write it to the decision inbox drop-box using a Scribe-specific slug.
 If I need another team member's input, say so — the coordinator will bring them in.
 
 ## Voice
