@@ -222,3 +222,22 @@ Phases 2–4.6 testing wave (2026-04-28 to 2026-05-03):
 Key learnings consolidated into § Core Patterns above.
 
 ## Learnings
+
+### 2026-06-02: Crucible Cycle 1 Persona Review — B1 Boundary Tests, Reset Hook, M4 Fix
+
+**Context:** Applied three improvements to `session-manager.test.ts` and `session-fork.test.ts` per Cycle 1 persona-review findings. Roger landed the `>=` bounds-check fix and `resetInMemoryDb` export in parallel; all 6 unit tests and 1 acceptance test are GREEN.
+
+**B1 Boundary-test pattern — equal-to is also out-of-bounds:**
+When a bounds check is `>=`, the boundary value itself must be explicitly tested. Two cases:
+1. `forkOffset === ledgerSize` (e.g., 47 with ledgerSize: 47) — exercises the boundary directly.
+2. Empty parent (`ledgerSize: 0, forkOffset: 0`) — validates that even "offset 0" is invalid when there are no events.
+Pattern: `mockDB.getSession.mockResolvedValue({ id: 'parent-id', ledgerSize: N })` then `expect(forkSession('parent-id', N)).rejects.toThrow(regex)`.
+
+**Permissive regex for error message freedom:**
+When testing error messages across parallel developer branches, use an `|`-alternation regex that covers all plausible phrasings: `/exceeds parent ledger size N|must be (less than|< parent ledger size)|>= ?N/i`. This lets Roger (or future contributors) rephrase the message without breaking the test, as long as the constraint is still communicated. Discovered live: Roger had already changed "exceeds" → "must be <" by the time tests first ran.
+
+**Reset-hook test-discipline pattern (I1):**
+Add a `beforeEach(() => { resetInMemoryDb(); })` in acceptance tests that use the module-level in-memory DB singleton. Even when only one test exists, establishing this pattern prevents state-bleed when the second test is added. Import `resetInMemoryDb` from `'@akubly/crucible-core'` at the acceptance level — not from a source path. Comment: `// Reset the module-level in-memory DB so each test starts from a clean slate.`
+
+**M4 beforeEach mock ordering:**
+`vi.resetAllMocks()` must run BEFORE `makeMockDB()`, not after. If `makeMockDB()` runs first and then `vi.resetAllMocks()` clears all mocks, the fresh `vi.fn()` instances created by `makeMockDB()` are reset before the test even starts — harmless today (no module-level mocks), but confusing to future contributors and silently wrong if module-level mocks are ever added. Correct order: reset first, construct fresh second. Comment: `// Reset first so vi.fn() instances created by makeMockDB() start pristine.`

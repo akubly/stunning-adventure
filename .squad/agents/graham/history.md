@@ -85,4 +85,17 @@
 Older detailed history (before 2026-05-30) archived to `history-archive.md`.
 
 
+## Learnings
+
+### 2026-06-02: Cycle 1 Persona Review Fixes (I4, I2, M1)
+
+**I4 — ForkLineage.root() removal (YAGNI):**
+Chose option (a): remove `ForkLineage.root()` rather than widen the constructor. Rationale: zero callers, and the sentinel it produced (`forkPointEventId = 0`) conflicted with the `session.ts` convention where `forkPointEventId === null` marks root sessions. Widening the constructor to accept `null` for `forkPointEventId` would have rippled into the guard clause (`forkPointEventId < 0` doesn't cover `null`) and `isRoot()` logic. YAGNI wins — when a real caller exists, we design root() with full knowledge of the null convention.
+
+**I2 — InMemoryDB coupling documentation:**
+Added a 5-line NOTE block to the `session.ts` file-header JSDoc, positioned between the existing Sprint 0 deferral note and the closing `*/`. Placement chosen to avoid merge conflicts with Roger's concurrent changes (imports, runtime logic below line 20). The comment explicitly names the four extended methods (getOwnEvents, getMetadata, insertRootSession, pushEvent) and frames the Refactor 3 decision: either the SQLite adapter satisfies InMemoryDB's surface or session.ts restructures to use DB.queryEvents.
+
+**M1 — SKILL doc drift annotation:**
+Chose option (b): annotated `london-tdd-first-green/SKILL.md` as "Sprint 0 variant" rather than updating the strategy doc. The strategy doc (`docs/crucible-tdd-strategy.md` §4.1) is the canonical reference showing full outside-in mocked-Ledger descent. The SKILL reflects our conscious Sprint 0 simplification (real in-memory, no mocks in GREEN). The annotation explains the divergence is intentional and when the full approach applies (Sprint 1+ when acceptance surface exceeds single-module reach).
+
 📌 **Crucible Sprint 0 — Walkthrough A REFACTOR CYCLE COMPLETE** (2026-06-02T06:43:01Z): Laura (RED) authored 4 unit tests with mocked DB collaborator; Roger (REFACTOR) extracted ForkLineage value object, introduced SessionManager service + DB interface, wired in-memory adapter. All tests GREEN (0 regression on acceptance layer). Monorepo builds clean. DB collaborator seam established, ready for L1-substrate swap when OQ-2 lands pre-sprint-2. Deferred: Refactor 3 (SQLite integration stub), Mock Drift Defense (shared fixture builder). Next candidates: (a) Refactor 3 integration test, (b) Walkthrough B (§4.2 Pre-Commit Hook Veto). — Scribe

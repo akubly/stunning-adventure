@@ -105,4 +105,17 @@ Phase 2 fan-out now unblocked. Full R2 locks in `.squad/decisions.md`.
 **Files created for `packages/crucible-cli`:** `package.json`, `tsconfig.json`, `src/index.ts`, `src/__tests__/acceptance/` (dir), `README.md`.
 
 
+### 2026-06-02 — Vitest Config Consistency Pattern
+
+**Pattern:** Explicit `vitest.config.ts` in each package ensures consistent test harness configuration across workspace members, even when test discovery is uniform.
+
+**Applied to:** Created `packages/crucible-cli/vitest.config.ts` mirrored from `packages/crucible-core/vitest.config.ts`:
+```
+{ globals: false, environment: 'node', include: ['src/**/*.test.ts'] }
+```
+
+**Why this matters:** Without explicit config, packages rely on vitest defaults, which can diverge. Single source of truth per package (even if identical to core) makes test environment changes atomic across the monorepo — one edit to crucible-core's config, update cli reference in next sweep.
+
+**Verification:** `npm test --workspace=@akubly/crucible-cli` passes (1 test green).
+
 📌 **Crucible Sprint 0 — Walkthrough A Dual-Package GREEN** (2026-06-02T06:43:01Z): Gabriel's dual-package scaffold remains green through Roger's REFACTOR cycle. @akubly/crucible-core (SessionManager + DB interface + ForkLineage) and @akubly/crucible-cli (acceptance tests) both passing. No scaffolding work this turn but architecture remains extension-ready for Refactor 3 (SQLite integration stub) and Walkthrough B. — Scribe

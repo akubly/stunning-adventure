@@ -989,3 +989,14 @@ This mirrors the offset assignment in uildSession: aseOffset = forkPointEventI
 
 The strategy doc snippet declared parentSessionId: string, but oot() needs to pass 
 ull. Accept string | null. Document with a comment in the file. This is a common pattern: the strategy snippet covers the happy-path shape; the sentinel case reveals the fuller type.
+
+## Learnings (2026-06-02 — Crucible Sprint 0 Cycle 1 fixes)
+
+**M3 decision — keep range:[a,b] tuple (Option B):**
+Chose Option B (JSDoc reinforcement) over Option A (rename to named-field API). The rename would cascade to the acceptance test and session.ts query internals with no Sprint 0 correctness benefit. The tuple is already documented as inclusive-inclusive; adding explicit startOffset/ndOffset position labelling in the JSDoc and a deferred-to-future-sprint note is enough signal for consumers. Key rule: don't burn API-churn budget in Cycle 1 on ergonomics when the semantics are already correct and documented.
+
+**I1 reset hook pattern — clear() on the InMemoryDB interface:**
+Test isolation for a module-level singleton requires a seam that test code can reach without constructing a private DB. The right pattern: add clear() to the interface (not a backdoor cast), implement as store.clear() on the factory closure, and export a thin esetInMemoryDb() wrapper from the module that calls db.clear(). The function name is fixed by the Laura contract — name it exactly right the first time. This pattern scales: any future DB adapter (SQLite) will implement clear() as a DELETE FROM ... sweep, keeping the test seam consistent.
+
+**I3 silent-drop fix rationale:**
+The optional-chain pattern store.get(id)?.ownEvents.push(event) is a silent data-loss footgun: a missing session produces no error and no diagnostic. The rule is: **throw at the storage boundary, not at the consumer**. The caller (session.ts ppend) can only make forward progress if the push succeeded; letting it silently no-op would corrupt the offset sequence without any observable signal until a later query returned wrong data. Explicit guard + throw surfaces the bug at the earliest possible point.
