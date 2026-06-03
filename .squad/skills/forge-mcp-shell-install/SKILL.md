@@ -73,20 +73,36 @@ order of any existing PowerShell equivalent so both platforms behave identically
 ```bash
 _my_hook_resolve() {
   local script=""
+
   # 1. User override
   [[ -f "$HOME/.tool/hook/entry.mjs" ]] && script="$HOME/.tool/hook/entry.mjs"
-  # 2. Global npm
+
+  # 2–3. Global npm — prefer the runtime package, then legacy package fallback.
   if [[ -z "$script" ]] && command -v npm &>/dev/null; then
     local root; root=$(npm root -g 2>/dev/null)
-    local c="$root/@scope/pkg/dist/hooks/entry.js"
-    [[ -f "$c" ]] && script="$c"
+    if [[ -n "$root" ]]; then
+      local runtime="$root/@scope/runtime-pkg/dist/hooks/entry.js"
+      local legacy="$root/@scope/legacy-pkg/dist/hooks/entry.js"
+      [[ -f "$runtime" ]] && script="$runtime"
+      [[ -z "$script" && -f "$legacy" ]] && script="$legacy"
+    fi
   fi
-  # 3. Repo checkout (relative to this script)
+
+  # 4–6. Repo checkout — mirror the PowerShell resolver exactly.
   if [[ -z "$script" ]]; then
     local sd; sd="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    local c="$sd/../../../packages/pkg/dist/hooks/entry.js"
-    [[ -f "$c" ]] && script="$(cd "$(dirname "$c")" && pwd)/$(basename "$c")"
+    local repo_runtime="$sd/../../../packages/runtime-pkg/dist/hooks/entry.js"
+    local repo_legacy="$sd/../../../packages/legacy-pkg/dist/hooks/entry.js"
+    local repo_dist="$sd/../../../dist/hooks/entry.js"
+    if [[ -f "$repo_runtime" ]]; then
+      script="$(cd "$(dirname "$repo_runtime")" && pwd)/$(basename "$repo_runtime")"
+    elif [[ -f "$repo_legacy" ]]; then
+      script="$(cd "$(dirname "$repo_legacy")" && pwd)/$(basename "$repo_legacy")"
+    elif [[ -f "$repo_dist" ]]; then
+      script="$(cd "$(dirname "$repo_dist")" && pwd)/$(basename "$repo_dist")"
+    fi
   fi
+
   printf '%s' "$script"
 }
 ```

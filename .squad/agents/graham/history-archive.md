@@ -595,7 +595,7 @@ Local test captures with ANSI codes and machine-specific paths (D:/git/...) are 
 **Key risk flags codified:**
 - File-deletion mystery event: WI-B mitigates via isolation
 - 
-ode_modules re-install: cleanup flow handles junction removal before git worktree remove
+node_modules re-install: cleanup flow handles junction removal before git worktree remove
 - Pre-Spawn documentation-only: add ACTIVE status + enforcement language
 - Parallel dispatch guard: warning-only for v1
 - Template drift: atomic updates across all three files

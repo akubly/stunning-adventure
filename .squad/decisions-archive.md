@@ -11253,13 +11253,9 @@ reflects v1 assuming a healthy corpus where low-trust facts are uncommon.
 
 ---
 
----
+## Archived 2026-06-01 Decisions
 
----
-
-# Squad Decisions Archive
-
-Archived: 2026-06-01 (entries older than 7 days)
+Entries older than 7 days.
 
 ### 2026-05-25: Eureka PRD v4-final LOCKED — R7 8-Reviewer Lock-In Panel
 
@@ -11366,7 +11362,7 @@ Archived: 2026-06-01 (entries older than 7 days)
 
 ---
 
-## Active Decisions
+## Archived Active Decisions (2026-06-01)
 
 ### W2-1: ChangeVectorSummary Category Field (Roger)
 

@@ -111,8 +111,13 @@ forge_mcp_check() {
     if command -v cygpath &>/dev/null; then
       node_pkg_json="$(cygpath -w "$pkg_json" 2>/dev/null || printf '%s' "$pkg_json")"
     fi
+    # Pass the path via argv to avoid quoting/escaping issues with MSYS2 paths.
     version=$(node -p "require(process.argv[1]).version" "$node_pkg_json" 2>/dev/null)
     echo "  package version: ${version:-unknown}"
+  fi
+
+  if [[ "$script" != "$HOME/.cairn/hook/sessionStart.mjs" && "$script" != *"/skillsmith-runtime/"* ]]; then
+    echo "  warning: using cairn fallback (Wave 2 behavior, no prescribers)"
   fi
 
   # Check node availability

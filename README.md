@@ -150,10 +150,12 @@ forge-mcp shell init: checking install...
   ✓ forge-mcp shell init is correctly installed.
 ```
 
-If `sessionStart script: NOT FOUND` is reported, install the runtime globally:
+If `sessionStart script: NOT FOUND` is reported, build the local repo or install
+the runtime globally:
 
 ```bash
-npm install -g @akubly/skillsmith-runtime
+npm run build
+# Or: npm install -g @akubly/skillsmith-runtime
 # Then re-run: forge_mcp_check
 ```
 
@@ -167,14 +169,14 @@ prompt. Non-interactive shells (scripts, CI) are skipped via
 
 **Script resolution order:**
 
-| Priority | Path |
-|----------|------|
-| 1 | `~/.cairn/hook/sessionStart.mjs` (user override) |
-| 2 | `$(npm root -g)/@akubly/skillsmith-runtime/dist/hooks/sessionStart.js` |
-| 3 | `$(npm root -g)/@akubly/cairn/dist/hooks/sessionStart.js` |
-| 4 | `<repo>/packages/skillsmith-runtime/dist/hooks/sessionStart.js` |
-| 5 | `<repo>/packages/cairn/dist/hooks/sessionStart.js` |
-| 6 | `<repo>/dist/hooks/sessionStart.js` |
+| Priority | Path | Notes |
+|----------|------|-------|
+| 1 | `~/.cairn/hook/sessionStart.mjs` (user override) | User-managed hook |
+| 2 | `$(npm root -g)/@akubly/skillsmith-runtime/dist/hooks/sessionStart.js` | Preferred runtime |
+| 3 | `$(npm root -g)/@akubly/cairn/dist/hooks/sessionStart.js` | Cairn fallback; Wave 2 behavior, no prescribers |
+| 4 | `<repo>/packages/skillsmith-runtime/dist/hooks/sessionStart.js` | Preferred local checkout |
+| 5 | `<repo>/packages/cairn/dist/hooks/sessionStart.js` | Cairn fallback; Wave 2 behavior, no prescribers |
+| 6 | `<repo>/dist/hooks/sessionStart.js` | Legacy cairn fallback; Wave 2 behavior, no prescribers |
 
 ### Uninstall
 
