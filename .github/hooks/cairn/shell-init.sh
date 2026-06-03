@@ -40,13 +40,22 @@ _forge_mcp_resolve_script() {
     fi
   fi
 
-  # 3. Repo checkout — relative to this script's location
+  # 3. Repo checkout — relative to this script's location.
+  # Keep this fallback chain in parity with curate.ps1:
+  # skillsmith-runtime first, then cairn package, then legacy repo-level dist.
   if [[ -z "$script" ]]; then
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    local repo_candidate="$script_dir/../../../packages/skillsmith-runtime/dist/hooks/sessionStart.js"
-    if [[ -f "$repo_candidate" ]]; then
-      script="$(cd "$(dirname "$repo_candidate")" && pwd)/$(basename "$repo_candidate")"
+    local repo_runtime_candidate="$script_dir/../../../packages/skillsmith-runtime/dist/hooks/sessionStart.js"
+    local repo_cairn_candidate="$script_dir/../../../packages/cairn/dist/hooks/sessionStart.js"
+    local repo_legacy_cairn_candidate="$script_dir/../../../dist/hooks/sessionStart.js"
+
+    if [[ -f "$repo_runtime_candidate" ]]; then
+      script="$(cd "$(dirname "$repo_runtime_candidate")" && pwd)/$(basename "$repo_runtime_candidate")"
+    elif [[ -f "$repo_cairn_candidate" ]]; then
+      script="$(cd "$(dirname "$repo_cairn_candidate")" && pwd)/$(basename "$repo_cairn_candidate")"
+    elif [[ -f "$repo_legacy_cairn_candidate" ]]; then
+      script="$(cd "$(dirname "$repo_legacy_cairn_candidate")" && pwd)/$(basename "$repo_legacy_cairn_candidate")"
     fi
   fi
 
@@ -97,8 +106,12 @@ forge_mcp_check() {
   local pkg_json
   pkg_json="$(dirname "$(dirname "$(dirname "$script")")")/package.json"
   if [[ -f "$pkg_json" ]]; then
-    local version
-    version=$(node -p "require('$pkg_json').version" 2>/dev/null)
+    local version node_pkg_json
+    node_pkg_json="$pkg_json"
+    if command -v cygpath &>/dev/null; then
+      node_pkg_json="$(cygpath -w "$pkg_json" 2>/dev/null || printf '%s' "$pkg_json")"
+    fi
+    version=$(node -p "require(process.argv[1]).version" "$node_pkg_json" 2>/dev/null)
     echo "  package version: ${version:-unknown}"
   fi
 
