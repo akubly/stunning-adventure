@@ -37,7 +37,9 @@ fi
 #   - Non-blank lines outside skip: flush the buffer, emit the line.
 _remove_block() {
   local file="$1" start="$2" end="$3"
-  local tmp="${file}.forge-mcp-bak"
+  local tmpfile
+  tmpfile=$(mktemp "${file}.forge-mcp-bak.XXXXXX")
+  trap '[[ -n "${tmpfile:-}" ]] && rm -f "$tmpfile"' EXIT INT TERM
 
   {
     local skip=0 held_blank=0
@@ -71,9 +73,9 @@ _remove_block() {
 
     # Flush a trailing blank line at EOF if present.
     [[ $held_blank -eq 1 ]] && printf '\n'
-  } > "$tmp"
+  } > "$tmpfile"
 
-  mv "$tmp" "$file"
+  mv "$tmpfile" "$file"
 }
 
 _remove_block "$SHELL_RC" "$MARKER_START" "$MARKER_END"

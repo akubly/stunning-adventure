@@ -7,6 +7,9 @@
 # Safe to source in non-interactive shells — the guard at the top is a no-op.
 # Idempotent — sourcing multiple times in one session fires the hook once only.
 
+# Must be sourced, not executed.
+(return 0 2>/dev/null) || { echo "shell-init.sh must be sourced, not executed: source $0" >&2; exit 1; }
+
 # Non-interactive guard: skip silently in scripts, CI, subshells.
 [[ $- != *i* ]] && return
 
