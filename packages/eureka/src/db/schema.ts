@@ -18,20 +18,24 @@ export function applyMigrations(db: Database.Database): void {
     )
   `);
 
-  const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as
-    | { version: number | null }
-    | undefined;
-  const currentVersion = row?.version ?? 0;
+  // BEGIN IMMEDIATE serializes two simultaneous first-opens on the same DB file:
+  // both processes see schema_version created above, but only one wins the
+  // IMMEDIATE lock and applies pending migrations; the second reads version=N
+  // and finds nothing to do.
+  db.transaction(() => {
+    const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as
+      | { version: number | null }
+      | undefined;
+    const currentVersion = row?.version ?? 0;
 
-  for (const migration of migrations) {
-    if (migration.version > currentVersion) {
-      db.transaction(() => {
+    for (const migration of migrations) {
+      if (migration.version > currentVersion) {
         migration.up(db);
         db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
           migration.version,
           migration.description,
         );
-      })();
+      }
     }
-  }
+  }).immediate();
 }
