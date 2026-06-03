@@ -73,7 +73,13 @@ _forge_mcp_run_hook() {
     local script
     script="$(_forge_mcp_resolve_script)"
     [[ -z "$script" ]] && exit 0
-    node "$script"
+    # sessionStart.js reads stdin to EOF before processing; pipe a finite JSON
+    # payload matching its HookInput schema so Node does not block on the TTY.
+    local payload_cwd="$PWD"
+    if command -v cygpath &>/dev/null; then
+      payload_cwd="$(cygpath -w "$payload_cwd" 2>/dev/null || printf '%s' "$payload_cwd")"
+    fi
+    node -e 'process.stdout.write(JSON.stringify({ toolName: "shellInit", cwd: process.argv[1] }) + "\n")' "$payload_cwd" | node "$script"
   ) &>/dev/null &
   disown 2>/dev/null || true
 }
