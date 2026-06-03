@@ -19,7 +19,7 @@
 **Eureka Status:**
 - v1 PRD locked; v3 PRD reconciled against Cairn/Forge substrate
 - R6 source-reading unblocked; trio (Genesta/Crispin/Edgar) aligned
-- M5+M6 branch prep complete (ureka/m5-m6-trust-feedback ready for review)
+- M5+M6 branch prep complete (eureka/m5-m6-trust-feedback ready for review)
 
 ## Key Learnings (Recent)
 
@@ -210,3 +210,5 @@ Aaron's priority reset: defer Eureka moves; get forge installable and dogfoodabl
 *Recommended sequence:* (1) Register `forge-mcp` in `.github/plugin/.mcp.json` + `.copilot/mcp-config.json` — S, Alexander; (2) Add `list_optimization_hints` + `resolve_optimization_hint` to cairn MCP — M, Alexander + Beatrix; (3) Bash hook equivalent — M, infrastructure; (4) README forge section — S, anyone, last (write after loop is testable).
 Older detailed history (before 2026-05-30) archived to `history-archive.md`.
 **For detailed history, see history-archive-2026-06-01.md**
+**For detailed history, see history-archive.md**
+
