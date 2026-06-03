@@ -22,13 +22,12 @@
  * InMemoryFactReader wired below → 5 contract tests total.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import type { FactReader } from '../../activities/recall.js';
 import type { SessionId } from '@akubly/types';
 import { InMemoryFactReader } from '../fact-reader.js';
-import { SqliteFactReader } from '../fact-reader-sqlite.js';
-import { applyMigrations } from '../../db/schema.js';
+import { SqliteFactReader, applyMigrations } from '../../sqlite/index.js';
 
 // ---------------------------------------------------------------------------
 // Shared contract harness type
