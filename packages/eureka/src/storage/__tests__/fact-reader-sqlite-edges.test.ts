@@ -15,6 +15,8 @@
  *   DB-CL-3  applyMigrations idempotence  (calling twice must not duplicate schema)
  *   DB-CL-4  WAL persistence              (fact survives db.close() + reopen)
  *   DB-CL-5  Boundary values              (empty content + trust=0 round-trip cleanly)
+ *   DB-CL-6  Concurrent first-open race   (two handles, applyMigrations twice → schema_version=1, no error)
+ *   DB-CL-7  M3 seed-twice (INSERT OR REPLACE)  (seed same (fact_id, session_id) twice must not throw)
  *
  * Each test uses a unique on-disk temp file (not :memory:) via os.tmpdir().
  * afterEach cleans up .db, .db-shm, and .db-wal files.
@@ -225,6 +227,80 @@ describe('SqliteFactReader — SQLite-specific edge cases', () => {
     // trust=0 must NOT be treated as NULL/falsy → NaN.
     expect(result!.trust).toBe(0);
     expect(Number.isNaN(result!.trust)).toBe(false);
+
+    db.close();
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // DB-CL-6: Concurrent first-open race
+  //
+  // Open two Database handles to the same file and call applyMigrations on
+  // each in sequence. The second call must not throw and must not insert a
+  // duplicate schema_version row.
+  //
+  // In a single-threaded process, better-sqlite3 serializes the two
+  // .immediate() transactions sequentially. The first wins the IMMEDIATE
+  // lock, applies migration 001, and records schema_version=1. The second
+  // reads currentVersion=1 and finds no pending migrations (1 > 1 is false),
+  // so it exits cleanly. Result: schema_version has exactly one row (version=1).
+  //
+  // This locks the IMMEDIATE + IF NOT EXISTS fix (I5) against the migration
+  // race described in the Architect findings.
+  // ─────────────────────────────────────────────────────────────────────────
+  it('DB-CL-6: concurrent first-open race — two handles + applyMigrations twice yields schema_version=1 and no error', () => {
+    const dbPath = tempDbPath(dbPaths);
+
+    const db1 = new Database(dbPath);
+    db1.pragma('journal_mode = WAL');
+
+    const db2 = new Database(dbPath);
+    db2.pragma('journal_mode = WAL');
+
+    // First open: creates schema_version table and applies migration 001.
+    expect(() => applyMigrations(db1)).not.toThrow();
+
+    // Second open (simulates the losing racer): reads version=1, no-ops.
+    expect(() => applyMigrations(db2)).not.toThrow();
+
+    // schema_version must have exactly one row — migration was not applied twice.
+    const count = db1.prepare('SELECT COUNT(*) AS c FROM schema_version').get() as { c: number };
+    expect(count.c).toBe(1);
+
+    const vRow = db1.prepare('SELECT MAX(version) AS v FROM schema_version').get() as {
+      v: number;
+    };
+    expect(vRow.v).toBe(1);
+
+    db1.close();
+    db2.close();
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // DB-CL-7 (M3): harness seed-twice — INSERT OR REPLACE semantics
+  //
+  // The SQLite contract harness uses INSERT OR REPLACE so that seeding the
+  // same (fact_id, session_id) twice is an upsert, not an error. This matches
+  // InMemoryFactReader's seed() semantics (M3 finding fix).
+  //
+  // Calling seed twice with the same pair must NOT throw; the second call
+  // overwrites the first. The reader returns the most-recently-seeded trust.
+  // ─────────────────────────────────────────────────────────────────────────
+  it('DB-CL-7 (M3): seeding same (fact_id, session_id) twice via INSERT OR REPLACE does not throw and last value wins', async () => {
+    const db = new Database(':memory:');
+    applyMigrations(db);
+
+    const insertStmt = db.prepare(
+      'INSERT OR REPLACE INTO facts (fact_id, session_id, trust) VALUES (?, ?, ?)',
+    );
+    const sessionId = 'session-seed-twice' as SessionId;
+
+    expect(() => insertStmt.run('fact-m3', sessionId, 0.3)).not.toThrow();
+    expect(() => insertStmt.run('fact-m3', sessionId, 0.7)).not.toThrow();
+
+    const reader = new SqliteFactReader(db);
+    const result = await reader.read({ factId: 'fact-m3', sessionId });
+    expect(result).not.toBeNull();
+    expect(result!.trust).toBeCloseTo(0.7);
 
     db.close();
   });
