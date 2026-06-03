@@ -25,4 +25,4 @@
 
 ---
 
-**For detailed history, see history-archive-2026-06-01.md**
+**For detailed history, see history-archive.md**
