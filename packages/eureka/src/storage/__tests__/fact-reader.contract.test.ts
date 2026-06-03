@@ -43,6 +43,8 @@ interface FactReaderHarness {
    * Must be async to accommodate both in-memory and I/O-backed implementations.
    */
   seed: SeedFact;
+  /** Optional teardown — release native handles (e.g. db.close() for SQLite). */
+  cleanup?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -62,11 +64,16 @@ export function runFactReaderContract(
   describe(`FactReader contract — ${implName}`, () => {
     let reader: FactReader;
     let seed: SeedFact;
+    let harness: FactReaderHarness;
 
     beforeEach(() => {
-      const harness = makeHarness();
+      harness = makeHarness();
       reader = harness.reader;
       seed = harness.seed;
+    });
+
+    afterEach(() => {
+      harness?.cleanup?.();
     });
 
     // -----------------------------------------------------------------------
@@ -186,7 +193,8 @@ runFactReaderContract('SqliteFactReader', () => {
   const db = new Database(':memory:');
   applyMigrations(db);
   const insertStmt = db.prepare(
-    'INSERT INTO facts (fact_id, session_id, trust) VALUES (?, ?, ?)',
+    // INSERT OR REPLACE matches InMemoryFactReader's upsert seed semantics (M3).
+    'INSERT OR REPLACE INTO facts (fact_id, session_id, trust) VALUES (?, ?, ?)',
   );
   const reader = new SqliteFactReader(db);
   return {
@@ -194,7 +202,9 @@ runFactReaderContract('SqliteFactReader', () => {
     seed: async (factId: string, sessionId: SessionId, trust: number) => {
       // Map NaN → NULL for storage (CL-4 round-trip: NULL re-hydrates as NaN on read).
       const stored = Number.isNaN(trust) ? null : trust;
+      // content omitted — defaults to '' per schema; FactReader.read() does not surface content
       insertStmt.run(factId, sessionId, stored);
     },
+    cleanup: () => db.close(),
   };
 });
