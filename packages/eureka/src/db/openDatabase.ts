@@ -18,7 +18,12 @@ export function openDatabase(
 ): Database.Database {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
+  const walMode = db.pragma('journal_mode = WAL', { simple: true }) as string;
+  if (walMode !== 'wal') {
+    process.stderr.write(
+      `[eureka] WAL mode not available (got '${walMode}'); database opened in ${walMode} journal mode\n`,
+    );
+  }
   db.pragma('busy_timeout = 5000');
   applyMigrations(db);
   return db;
