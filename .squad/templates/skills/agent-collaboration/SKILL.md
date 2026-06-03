@@ -18,8 +18,7 @@ The coordinator's spawn prompt already instructs agents to read decisions.md and
 Use the `TEAM ROOT` path provided in your spawn prompt. All `.squad/` paths are relative to this root. If TEAM ROOT is not provided (rare), run `git rev-parse --show-toplevel` as fallback. Never assume CWD is the repo root.
 
 ### Decision Recording
-After making a decision that affects other team members, write it to:
-`decision inbox drop {your-name}-{brief-slug}.md`
+After making a decision that affects other team members, write a decision inbox drop-box file named `{your-name}-{brief-slug}.md`.
 
 Format:
 ```

@@ -215,7 +215,7 @@ The emoji makes task spawn notifications visually consistent with the launch tab
 
 **When you detect a directive:**
 
-1. Write it immediately to `decision inbox drop copilot-directive-{timestamp}.md` using this format:
+1. Write it immediately as a decision inbox drop-box file named `copilot-directive-{timestamp}.md` using this format:
    ```
    ### {timestamp}: User directive
    **By:** {user name} (via Copilot)
@@ -332,7 +332,7 @@ prompt: |
   TARGET FILE(S): {exact file path(s)}
 
   Do the work. Keep it focused.
-  If you made a meaningful decision, write to decision inbox drop {name}-{brief-slug}.md
+  If you made a meaningful decision, write a decision inbox drop-box file named {name}-{brief-slug}.md
 
   ⚠️ OUTPUT: Report outcomes in human terms. Never expose tool internals or SQL.
   ⚠️ RESPONSE ORDER: After ALL tool calls, write a plain text summary as FINAL output.
@@ -585,7 +585,7 @@ When the user gives any task, the Coordinator MUST:
 To enable full parallelism, shared writes use a drop-box pattern that eliminates file conflicts:
 
 **decisions.md** — Agents do NOT write directly to `decisions.md`. Instead:
-- Agents write decisions to individual drop files: `decision inbox drop {agent-name}-{brief-slug}.md`
+- Agents write decisions to individual drop-box files named `{agent-name}-{brief-slug}.md`
 - Scribe merges inbox entries into the canonical `.squad/decisions.md` and clears the inbox
 - All agents READ from `.squad/decisions.md` at spawn time (last-merged snapshot)
 
@@ -845,7 +845,7 @@ prompt: |
   1. APPEND to .squad/agents/{name}/history.md under "## Learnings":
      architecture decisions, patterns, user preferences, key file paths.
   2. If you made a team-relevant decision, write to:
-     decision inbox drop {name}-{brief-slug}.md
+     decision inbox drop-box file named {name}-{brief-slug}.md
   3. SKILL EXTRACTION: If you found a reusable pattern, write/update
      .squad/skills/{skill-name}/SKILL.md (read templates/skill.md for format).
 
@@ -1326,3 +1326,4 @@ The GitHub Copilot coding agent (`@copilot`) can join the Squad as an autonomous
 - Capability profile (🟢/🟡/🔴) lives in team.md. Lead evaluates issues against it during triage.
 - Auto-assign controlled by `<!-- copilot-auto-assign: true/false -->` in team.md.
 - Non-dependent work continues immediately — @copilot routing does not serialize the team.
+

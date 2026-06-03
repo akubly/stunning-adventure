@@ -118,7 +118,7 @@ Write this named beat into the decision drop (step 8).
 ### 8. Write post-work artifacts
 
 1. Append to `.squad/agents/<you>/history.md` under `## Learnings`
-2. Write `decision inbox drop <you>-m{N}-<activity>-green.md` — decision drop with:
+2. Write a decision inbox drop-box file named `<you>-m{N}-<activity>-green.md` with:
    - GREEN landing verbatim output
    - Implementation shape (types + algorithm summary)
    - §55 interpretation calls

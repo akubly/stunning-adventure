@@ -41,6 +41,7 @@ When opening a PR:
 
 If you make a decision that affects other team members, write it to:
 ```
-decision inbox drop copilot-{brief-slug}.md
+decision inbox drop-box file named copilot-{brief-slug}.md
 ```
 The Scribe will merge it into the shared decisions file.
+
