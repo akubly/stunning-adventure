@@ -241,3 +241,5 @@ Add a `beforeEach(() => { resetInMemoryDb(); })` in acceptance tests that use th
 
 **M4 beforeEach mock ordering:**
 `vi.resetAllMocks()` must run BEFORE `makeMockDB()`, not after. If `makeMockDB()` runs first and then `vi.resetAllMocks()` clears all mocks, the fresh `vi.fn()` instances created by `makeMockDB()` are reset before the test even starts — harmless today (no module-level mocks), but confusing to future contributors and silently wrong if module-level mocks are ever added. Correct order: reset first, construct fresh second. Comment: `// Reset first so vi.fn() instances created by makeMockDB() start pristine.`
+
+- 2026-06-05 ✅ persona-review-cycle 2 complete: Crucible Sprint 0 Walkthrough A ready to ship (Cycle 1: 11 findings, 10 fixed; Cycle 2: 3 advisory, 2 fixed, 1 deferred)

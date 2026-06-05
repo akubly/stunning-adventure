@@ -87,6 +87,17 @@ Older detailed history (before 2026-05-30) archived to `history-archive.md`.
 
 ## Learnings
 
+### 2026-06-05: Cycle 2 Advisory Polish (N1, N2, N3)
+
+**N3 — fork() JSDoc ≤ → < (ACCEPT):**
+Most important of the three — active doc/behavior drift. `session.ts` fork() JSDoc said `offset ≤ ledger size` but `session-manager.ts` enforces strict `<` (line 24: `forkOffset >= parent.ledgerSize`). Fixed the docstring to match post-B1 behavior. Misleading docs on invariant boundaries are correctness bugs.
+
+**N1 — Barrel test-only marker (ACCEPT):**
+`resetInMemoryDb` sat on the same export line as `createSession`/`fork` in `index.ts` with no test-only signal at the barrel. The JSDoc in `session.ts` is invisible to barrel readers. Split onto its own export line with a `// Test isolation only` comment. Trivial, good hygiene.
+
+**N2 — clear() on InMemoryDB interface (DEFER):**
+Real design concern — `clear()` obligates all future `InMemoryDB` impls to a test-only method. However, `InMemoryDB` is explicitly documented as internal (not part of the public `DB` contract), and Sprint 0 will only ever have one impl. The refactor (moving `clear()` off the interface to a private helper) is clean but adds churn for zero current benefit. Logged to decision inbox for backlog consideration when Refactor 3 (SQLite adapter) lands.
+
 ### 2026-06-02: Cycle 1 Persona Review Fixes (I4, I2, M1)
 
 **I4 — ForkLineage.root() removal (YAGNI):**
@@ -99,3 +110,5 @@ Added a 5-line NOTE block to the `session.ts` file-header JSDoc, positioned betw
 Chose option (b): annotated `london-tdd-first-green/SKILL.md` as "Sprint 0 variant" rather than updating the strategy doc. The strategy doc (`docs/crucible-tdd-strategy.md` §4.1) is the canonical reference showing full outside-in mocked-Ledger descent. The SKILL reflects our conscious Sprint 0 simplification (real in-memory, no mocks in GREEN). The annotation explains the divergence is intentional and when the full approach applies (Sprint 1+ when acceptance surface exceeds single-module reach).
 
 📌 **Crucible Sprint 0 — Walkthrough A REFACTOR CYCLE COMPLETE** (2026-06-02T06:43:01Z): Laura (RED) authored 4 unit tests with mocked DB collaborator; Roger (REFACTOR) extracted ForkLineage value object, introduced SessionManager service + DB interface, wired in-memory adapter. All tests GREEN (0 regression on acceptance layer). Monorepo builds clean. DB collaborator seam established, ready for L1-substrate swap when OQ-2 lands pre-sprint-2. Deferred: Refactor 3 (SQLite integration stub), Mock Drift Defense (shared fixture builder). Next candidates: (a) Refactor 3 integration test, (b) Walkthrough B (§4.2 Pre-Commit Hook Veto). — Scribe
+
+- 2026-06-05 ✅ persona-review-cycle 2 complete: Crucible Sprint 0 Walkthrough A ready to ship (Cycle 1: 11 findings, 10 fixed; Cycle 2: 3 advisory, 2 fixed, 1 deferred)

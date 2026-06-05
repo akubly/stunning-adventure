@@ -1000,3 +1000,5 @@ Test isolation for a module-level singleton requires a seam that test code can r
 
 **I3 silent-drop fix rationale:**
 The optional-chain pattern store.get(id)?.ownEvents.push(event) is a silent data-loss footgun: a missing session produces no error and no diagnostic. The rule is: **throw at the storage boundary, not at the consumer**. The caller (session.ts ppend) can only make forward progress if the push succeeded; letting it silently no-op would corrupt the offset sequence without any observable signal until a later query returned wrong data. Explicit guard + throw surfaces the bug at the earliest possible point.
+
+- 2026-06-05 ✅ persona-review-cycle 2 complete: Crucible Sprint 0 Walkthrough A ready to ship (Cycle 1: 11 findings, 10 fixed; Cycle 2: 3 advisory, 2 fixed, 1 deferred)

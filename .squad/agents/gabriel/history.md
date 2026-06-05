@@ -119,3 +119,5 @@ Phase 2 fan-out now unblocked. Full R2 locks in `.squad/decisions.md`.
 **Verification:** `npm test --workspace=@akubly/crucible-cli` passes (1 test green).
 
 📌 **Crucible Sprint 0 — Walkthrough A Dual-Package GREEN** (2026-06-02T06:43:01Z): Gabriel's dual-package scaffold remains green through Roger's REFACTOR cycle. @akubly/crucible-core (SessionManager + DB interface + ForkLineage) and @akubly/crucible-cli (acceptance tests) both passing. No scaffolding work this turn but architecture remains extension-ready for Refactor 3 (SQLite integration stub) and Walkthrough B. — Scribe
+
+- 2026-06-05 ✅ persona-review-cycle 2 complete: Crucible Sprint 0 Walkthrough A ready to ship (Cycle 1: 11 findings, 10 fixed; Cycle 2: 3 advisory, 2 fixed, 1 deferred)
