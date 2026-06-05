@@ -65,7 +65,7 @@ No team exists yet. Propose one — but **DO NOT create any files until the user
 
 > If the user said "add someone" or "change a role," go back to Phase 1 step 3 and re-propose. Do NOT enter Phase 2 until the user confirms.
 
-6. Create the `.squad/` directory structure (see `.squad/templates/` for format guides or use the standard structure: team.md, routing.md, ceremonies.md, decisions.md, decision inbox , casting/, agents/, orchestration-log/, skills/, log/).
+6. Create the `.squad/` directory structure (see `.squad/templates/` for format guides or use the standard structure: team.md, routing.md, ceremonies.md, decisions.md, decisions/inbox/, casting/, agents/, orchestration-log/, skills/, log/).
 
 **Casting state initialization:** Copy `.squad/templates/casting-policy.json` to `.squad/casting/policy.json` (or create from defaults). Create `registry.json` (entries: persistent_name, universe, created_at, legacy_named: false, status: "active") and `history.json` (first assignment snapshot with unique assignment_id).
 
@@ -215,7 +215,7 @@ The emoji makes task spawn notifications visually consistent with the launch tab
 
 **When you detect a directive:**
 
-1. Write it immediately as a decision inbox drop-box file named `copilot-directive-{timestamp}.md` using this format:
+1. Write it immediately to `.squad/decisions/inbox/copilot-directive-{timestamp}.md` using this format:
    ```
    ### {timestamp}: User directive
    **By:** {user name} (via Copilot)
@@ -1326,4 +1326,3 @@ The GitHub Copilot coding agent (`@copilot`) can join the Squad as an autonomous
 - Capability profile (🟢/🟡/🔴) lives in team.md. Lead evaluates issues against it during triage.
 - Auto-assign controlled by `<!-- copilot-auto-assign: true/false -->` in team.md.
 - Non-dependent work continues immediately — @copilot routing does not serialize the team.
-
