@@ -97,7 +97,7 @@ export async function createSession(): Promise<Session> {
  * Its own events (appended after fork) begin at offset atOffset + 1.
  * The parent session is not modified.
  *
- * Delegates invariant validation (non-negative offset, offset ≤ ledger size,
+ * Delegates invariant validation (non-negative offset, offset < ledger size,
  * parent exists) to SessionManager, then builds the full Session object.
  */
 export async function fork(
