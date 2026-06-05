@@ -992,3 +992,33 @@ Never use `git add .` after manual file work — explicit per-file staging avoid
 **BEGIN IMMEDIATE is the migration race fix, not IF NOT EXISTS alone.** `IF NOT EXISTS` is defense-in-depth for crash recovery (partially-applied DDL); it does not serialize two simultaneous first-opens. IMMEDIATE lock ensures only one process applies migrations; the other reads `schema_version = 1` and skips cleanly. The two mechanisms solve different failure modes and should both be present.
 
 **Harness cleanup belongs in the contract helper, not implementation-specific blocks.** Making `cleanup?: () => void` optional on `FactReaderHarness` keeps the InMemoryFactReader harness backward-compatible (no native handles to close) while ensuring all native-backed implementations can register teardown. The `afterEach(() => harness?.cleanup?.())` pattern in `runFactReaderContract` guarantees cleanup fires even if a test throws. Pattern applies to any future harness that wraps a native resource (file, socket, worker thread).
+
+---
+
+## Learnings (2026-06-05 — M8 Slice B: SqliteTrustUpdater + shared contract refactor)
+
+**Branch:** `eureka/m8-slice-b-sqlite-trust-updater`  
+**Commits:** a7cab31 (SqliteTrustUpdater), 0a8bec2 (sqlite/index export), 0bdf7da (refactor + test wiring)  
+**Test delta:** +7 net new contract tests (C-1..C-7 for SqliteTrustUpdater). Total: 93 passing + 1 todo tombstone.
+
+### BEGIN IMMEDIATE choice
+
+Used `db.transaction(fn).immediate(args)` — the better-sqlite3 `.immediate()` method on a Transaction object. This acquires the SQLite write lock at the start of the transaction rather than at first write (which is what DEFERRED BEGIN does). WAL mode is single-writer regardless, but DEFERRED can trigger SQLITE_BUSY_SNAPSHOT if a concurrent writer upgrades between our read and write. IMMEDIATE eliminates that window. Combined with `busy_timeout=5000ms` (set in `openDatabase`, Slice A cycle-2), concurrent callers retry rather than fail. No JS-layer promise chain needed for SQLite — DB-level serialization is the whole point.
+
+Implementation detail: `db.transaction(fn)` returns a `Transaction<F>` object. The `.immediate` property is a bound method on that object — you call it as `rawTxn.immediate(args)`. Do NOT try to do `this.txn = rawTxn.immediate` as a bare property reference without binding or wrapping; the binding is fine on current better-sqlite3 but wrapping as `(args) => rawTxn.immediate(args)` is more explicit and future-proof.
+
+### InvalidTrustValueError propagation through the transaction wrapper
+
+The medium risk Aaron flagged was confirmed to be a non-issue: better-sqlite3's transaction wrapper propagates any thrown error out of the `.immediate()` call completely unchanged — no wrapping, no `TransactionError` nesting. `InvalidTrustValueError` thrown inside `db.transaction(fn)` lands on the caller as the same object instance, with the same `code`, `source`, `value`, and `message`. C-3 passes cleanly. Same for `FactNotFoundError` (C-4) and arbitrary fn errors (C-2). The only surprise to guard against: if you throw inside a transaction and the rollback itself throws (edge case with WAL + disk full), better-sqlite3 wraps that in its own error. In normal operation this does not occur.
+
+### Vitest 3.x requires ≥1 test per test file
+
+When relocating a contract suite from `activities/__tests__/` to `storage/__tests__/`, the old file cannot simply be emptied — vitest 3.x throws "No test suite found in file." Solution: add a single `it.todo(...)` tombstone in a describe block. The todo shows as 1 skipped test, satisfies vitest, and self-documents the move. This is the pattern for any future suite relocation.
+
+### Importing from a vitest test file causes test duplication
+
+If test file A imports from test file B, vitest loads B's module-level `describe`/`it` registrations TWICE (once from B directly, once from A's import). A module re-export like `export { runX } from '../storage/__tests__/x.contract.test.js'` in a test file will cause vitest to run all of B's tests a second time. Do NOT use test files as re-export modules. If a helper needs to be shared, put it in a non-test `.ts` helper file (no `.test.ts` suffix). For Slice B the fix was: strip the activities tombstone to a describe+it.todo with no imports from the storage test file.
+
+### C-5 (concurrent serialization) passes without JS locks
+
+SQLite WAL + BEGIN IMMEDIATE serializes 5 concurrent async mutate() calls at the DB level. The `Promise.all([...5 mutations...])` pattern in C-5 works because better-sqlite3 is synchronous: each `await impl.mutate(...)` resolves synchronously inside the event loop tick, so "concurrent" in terms of Promise.all means sequentially queued microtasks hitting the same synchronous SQLite lock. No JS-side per-key promise chain needed for the SQLite impl.
