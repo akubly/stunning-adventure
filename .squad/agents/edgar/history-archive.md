@@ -610,3 +610,10 @@ Interfaces that trail specs create invisible undersupply bugs. The FactStore int
 ---
 
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
+
+
+---
+
+Archival batch (2026-06-02): Pre-2026-06-01 learnings entries
+
+
