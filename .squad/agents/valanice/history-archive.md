@@ -86,7 +86,7 @@ Phase 2 fan-out now unblocked. Full r2 locks in `.squad/decisions.md`.
 - `docs/crucible-technical-design/decisions/childsid-collision-round2-user-stories.md`
 - `docs/crucible-technical-design/decisions/childsid-collision-options.md`
 
-**Decision written:** `.squad/decisions/inbox/valanice-review-childsid-hybrid.md`
+**Decision written:** (decision inbox drop — local-only)
 
 ### 2026-04-02: Phase 5 Decision — MCP Tool Naming and Vocabulary Contracts
 
@@ -297,7 +297,7 @@ Phase 2 fan-out now unblocked. Full r2 locks in `.squad/decisions.md`.
 - Redirect changed from top-level action to post-accept scope refinement
 
 **Key Files:**
-- `.squad/decisions/inbox/valanice-prescriber-ux.md` — full design document
+- (decision inbox drop — local-only) — full design document
 - `src/hooks/sessionStart.ts` — where Prescriber trigger integrates (after Curator)
 - `src/mcp/server.ts` — where 4 new MCP tools will be registered
 - `src/db/preferences.ts` — preference cascade for all Prescriber config
@@ -316,7 +316,7 @@ Phase 2 fan-out now unblocked. Full r2 locks in `.squad/decisions.md`.
 **Key Insight:** The parallel between UX and LX is structural, not metaphorical. Context window IS working memory (Miller's Law). Attention score decay IS recency bias. Tool selection ambiguity IS decision fatigue (Hick's Law). This enables us to port proven UX heuristics directly.
 
 **Artifacts Produced:**
-- `.squad/decisions/inbox/valanice-brainstorm-lx.md` — 10 LX Heuristics (parallel to Nielsen's 10), Decision Consequence Taxonomy, slop-as-upstream-LX-failure analysis, OOP mental model mapping, new LX vocabulary
+- (decision inbox drop — local-only) — 10 LX Heuristics (parallel to Nielsen's 10), Decision Consequence Taxonomy, slop-as-upstream-LX-failure analysis, OOP mental model mapping, new LX vocabulary
 - Proposed LX Heuristic Evaluation checklist as highest-leverage next action
 
 **Key LX Principles Identified:**
@@ -359,7 +359,7 @@ Phase 2 fan-out now unblocked. Full r2 locks in `.squad/decisions.md`.
 **The Flywheel:** Shiproom generates structured signal about decision quality → Curator detects patterns in overturned/amended decisions → Prescriber suggests improvements → Future decisions improve → Fewer Shiproom amendments → Lower ceremony cost → More time building.
 
 **Artifacts Produced:**
-- `.squad/decisions/inbox/valanice-shiproom-ceremony.md` — full design specification
+- (decision inbox drop — local-only) — full design specification
 
 **Open Questions:**
 - Auto-trigger threshold calibration (start at 3+ Altitude ≥ 2, adapt via amendment/overturn rates)
@@ -678,7 +678,7 @@ Layers 1 (Conductor+Ledger), 2 (Derived Query Layer), and 3 (Proposal Generators
 ---
 
 **Artifacts Produced:**
-- `.squad/decisions/inbox/valanice-brainstorm-lx.md` — 10 LX Heuristics (parallel to Nielsen's 10), Decision Consequence Taxonomy, slop-as-upstream-LX-failure analysis, OOP mental model mapping, new LX vocabulary
+- (decision inbox drop — local-only) — 10 LX Heuristics (parallel to Nielsen's 10), Decision Consequence Taxonomy, slop-as-upstream-LX-failure analysis, OOP mental model mapping, new LX vocabulary
 - Proposed LX Heuristic Evaluation checklist as highest-leverage next action
 
 **Key LX Principles Identified:**
@@ -721,7 +721,7 @@ Layers 1 (Conductor+Ledger), 2 (Derived Query Layer), and 3 (Proposal Generators
 **The Flywheel:** Shiproom generates structured signal about decision quality → Curator detects patterns in overturned/amended decisions → Prescriber suggests improvements → Future decisions improve → Fewer Shiproom amendments → Lower ceremony cost → More time building.
 
 **Artifacts Produced:**
-- `.squad/decisions/inbox/valanice-shiproom-ceremony.md` — full design specification
+- (decision inbox drop — local-only) — full design specification
 
 **Open Questions:**
 - Auto-trigger threshold calibration (start at 3+ Altitude ≥ 2, adapt via amendment/overturn rates)
@@ -802,7 +802,7 @@ Layers 1 (Conductor+Ledger), 2 (Derived Query Layer), and 3 (Proposal Generators
 4. Does brain need visual interface (text queries vs graph visualization)?
 
 **Artifacts:**
-- `.squad/decisions/inbox/valanice-brain-ux.md` — full UX analysis and recommendation
+- (decision inbox drop — local-only) — full UX analysis and recommendation
 
 ## Consultation: Brain/Memory System Repo Placement (Round 2)
 
@@ -851,7 +851,7 @@ Participated in Round 2 consulting on repo placement for new agentic brain/memor
    - Design graph structure and traversal semantics
    - Ground learning primitives in cognitive science / machine learning
 
-**Artifact:** `.squad/decisions/inbox/valanice-self-fit.md` — full confidence matrix, squad composition recommendation, and honest assessment of scope
+**Artifact:** (decision inbox drop — local-only) — full confidence matrix, squad composition recommendation, and honest assessment of scope
 
 **Recommendation:** Brain project is **70% interaction design (Valanice owns) + 30% cognitive science/IA (needs specialist)**. Proceed with prototype, but validate cognitive foundations BEFORE full design. Don't ask me to defend what "meditation" means — bring someone who can.
 
@@ -1032,7 +1032,7 @@ Phase 2 fan-out now unblocked. Full r2 locks in `.squad/decisions.md`.
 - `docs/crucible-technical-design/decisions/childsid-collision-round2-user-stories.md`
 - `docs/crucible-technical-design/decisions/childsid-collision-options.md`
 
-**Decision written:** `.squad/decisions/inbox/valanice-review-childsid-hybrid.md`
+**Decision written:** (decision inbox drop — local-only)
 
 ### 2026-04-02: Phase 5 Decision — MCP Tool Naming and Vocabulary Contracts
 
@@ -1243,7 +1243,7 @@ Phase 2 fan-out now unblocked. Full r2 locks in `.squad/decisions.md`.
 - Redirect changed from top-level action to post-accept scope refinement
 
 **Key Files:**
-- `.squad/decisions/inbox/valanice-prescriber-ux.md` — full design document
+- (decision inbox drop — local-only) — full design document
 - `src/hooks/sessionStart.ts` — where Prescriber trigger integrates (after Curator)
 - `src/mcp/server.ts` — where 4 new MCP tools will be registered
 - `src/db/preferences.ts` — preference cascade for all Prescriber config
@@ -1262,7 +1262,7 @@ Phase 2 fan-out now unblocked. Full r2 locks in `.squad/decisions.md`.
 **Key Insight:** The parallel between UX and LX is structural, not metaphorical. Context window IS working memory (Miller's Law). Attention score decay IS recency bias. Tool selection ambiguity IS decision fatigue (Hick's Law). This enables us to port proven UX heuristics directly.
 
 **Artifacts Produced:**
-- `.squad/decisions/inbox/valanice-brainstorm-lx.md` — 10 LX Heuristics (parallel to Nielsen's 10), Decision Consequence Taxonomy, slop-as-upstream-LX-failure analysis, OOP mental model mapping, new LX vocabulary
+- (decision inbox drop — local-only) — 10 LX Heuristics (parallel to Nielsen's 10), Decision Consequence Taxonomy, slop-as-upstream-LX-failure analysis, OOP mental model mapping, new LX vocabulary
 - Proposed LX Heuristic Evaluation checklist as highest-leverage next action
 
 **Key LX Principles Identified:**
@@ -1305,7 +1305,7 @@ Phase 2 fan-out now unblocked. Full r2 locks in `.squad/decisions.md`.
 **The Flywheel:** Shiproom generates structured signal about decision quality → Curator detects patterns in overturned/amended decisions → Prescriber suggests improvements → Future decisions improve → Fewer Shiproom amendments → Lower ceremony cost → More time building.
 
 **Artifacts Produced:**
-- `.squad/decisions/inbox/valanice-shiproom-ceremony.md` — full design specification
+- (decision inbox drop — local-only) — full design specification
 
 **Open Questions:**
 - Auto-trigger threshold calibration (start at 3+ Altitude ≥ 2, adapt via amendment/overturn rates)
@@ -1606,7 +1606,7 @@ T5 resolved — Crucible built on Copilot SDK, replaces Copilot CLI as Aaron's d
 
 ## 2026-05-24 Round 4: Reconciliation against D:\git\stunning-adventure
 
-**Scope:** Read-only audit of the existing monorepo (cairn + forge + skillsmith-runtime + runtime-cli + types) against my US-V-* stories and Round-2/3 commitments. Full detail in .squad/decisions/inbox/valanice-reconciliation-2026-05-24T2330Z.md.
+**Scope:** Read-only audit of the existing monorepo (cairn + forge + skillsmith-runtime + runtime-cli + types) against my US-V-* stories and Round-2/3 commitments. Full detail in (decision inbox drop — local-only).
 
 ### Headline findings
 
@@ -1664,7 +1664,7 @@ The existing repo has not built anything resembling Mirror — runtime-cli is a 
 
 **Trigger:** Aaron locked v1 framework 2026-05-25 — *"Aaron can run a one-week productivity loop where every improvement to Crucible is made by Crucible."* Tiers T1/T2/T3/T4/T5/T6/Park; my domain is T2 (investigation depth) but the triage discipline says **some L5 must be T1 or the bootstrap loop is unmeetable.**
 
-**Full triage:** .squad/decisions/inbox/valanice-triage-2026-05-25T0200Z.md.
+**Full triage:** (decision inbox drop — local-only).
 
 ### Headline calls
 
@@ -1752,7 +1752,7 @@ The trade is honest: my tier (T2) keeps the deep investigation work, but the min
 3. Unified `copilot config` for both tools, or separate config surfaces acceptable?
 
 **Artifacts:**
-- Full analysis: `.squad/decisions/inbox/valanice-eureka-crucible-ux-overlap.md`
+- Full analysis: (decision inbox drop — local-only)
 
 **Status:** Analysis complete. Awaiting Aaron disposition on three open questions. Attention-conflict matrix and vocabulary collision list documented.
 
@@ -1792,7 +1792,7 @@ Both §9 and §13 flag Sonny advisory consult per Appendix C consultant rows. Sp
 - `docs/crucible-technical-design/09-aperture.md` — FINAL.
 - `docs/crucible-technical-design/13-crucible-cli-shell.md` — FINAL.
 - `docs/crucible-technical-design/05-router-design.md` — surgical §5.3 patch (finding 6b).
-- `.squad/decisions/inbox/valanice-ctd-phase2-valanice.md` — decision drop.
+- (decision inbox drop — local-only) — decision drop.
 
 
 📌 Team update (2026-05-28T20-00-00Z): **Crucible CTD Phase 4 UIS Framing Lock — 8/8 STRENGTHENS + Rubber-Duck Reframing ADOPTED** — All 8 team weigh-ins returned STRENGTHENS verdicts; rubber-duck delivered precision reframing ("minimal typed trace algebra" vs "universal ISA"); Aaron locked three coupled decisions: (1) adopt reframing (ADR-0019), (2) adopt BOTH missing concepts (CALL/RET + Scheduler tier), (3) Phase 4 NOW. All 4 amendments SHIPPED (yours §1/§6/§19 FINAL; Roger §3/§10 FINAL; Gabriel §5/§17 FINAL; Laura §11/§16 FINAL). CTD structurally complete; synthesis review in flight. Merged to decisions.md. — Scribe

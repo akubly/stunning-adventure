@@ -535,7 +535,7 @@ T5 resolved — Crucible built on Copilot SDK, replaces Copilot CLI as Aaron's d
 
 ## 2026-05-24 Round 4: Phase B Reconciliation against D:\git\stunning-adventure
 
-**Inbox:** .squad/decisions/inbox/alexander-reconciliation-2026-05-24T2330Z.md.
+**Inbox:** (decision inbox drop — local-only).
 
 ### Counts
 - ALREADY-EXISTS: 0
@@ -619,6 +619,6 @@ Half-yes. The HookComposer error-isolation + merge engine + SDKSession.on(handle
 **See history-archive.md for full session learnings, design ceremony notes, Wave 0/1/2/3 progression, Phase 4.6 work, and CTD review cycles.**
 
 📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
-- 2026-06-05 📌 M3: Forge prescriber wired to HintDispositionProvider seam for disposition consumption (dismissed→suppress, resolved→boost). See .squad/decisions/inbox/graham-forge-m3-disposition-consumer.md.
+- 2026-06-05 📌 M3: Forge prescriber wired to HintDispositionProvider seam for disposition consumption (dismissed→suppress, resolved→boost). See (decision inbox drop — local-only).
 - 2026-06-06 📌 M3: HintDispositionProvider seam finalized on squad/42-forge-m3-disposition (3 commits, 1563 tests green, READY TO SHIP). Constants coupling: shared hintStateTransitionConstants.ts owns event format (type, source, payload keys, resolution values). Wave 2 autoApplyEligible propagation depends on disposition seam stability — this finalization unblocks downstream integration work.
 

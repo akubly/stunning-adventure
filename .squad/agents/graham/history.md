@@ -150,7 +150,7 @@ My spawn instructions to Scribe listed `orchestration-log/` and `log/` as allowe
 - `agents/{name}/history.md`, `agents/{name}/history-archive.md`
 - `identity/now.md`
 
-Any other `.squad/` paths (log, orchestration-log, sessions, decisions/inbox/, .scratch/) are runtime state — gitignored, local-only.
+Any other `.squad/` paths (log, orchestration-log, sessions, decision inbox, .scratch/) are runtime state — gitignored, local-only.
 
 **Lesson 3 — `test_results.txt` as tracked artifact.**  
 Local test captures with ANSI codes and machine-specific paths (D:/git/...) are never source artifacts. Add to `.gitignore` under `# Local test capture artifacts` and delete from disk.

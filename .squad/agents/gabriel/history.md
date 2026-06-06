@@ -24,7 +24,7 @@ the new `scheduler_*` sub-kinds; Graham owns §1 layer-stack diagram update.
    catalog rows; `scheduler_dispatched` on builtin tier is silent (same
    posture as `router.decision` apply); read-path perf-counter table for
    quanta consumed, queue depth, dispatch latency, defer rate.
-3. `.squad/decisions/inbox/gabriel-ctd-phase4-scheduler.md` — decision drop.
+3. (decision inbox drop — local-only) — decision drop.
 
 **Learning — boundary articulation as load-bearing.** The single sentence
 "Scheduler decides WHICH and IN WHAT ORDER; Router decides WHETHER" did more
@@ -55,7 +55,7 @@ and one diagram update in Graham's §1.
 
 **Files:** `docs/crucible-technical-design/05-router-design.md`,
 `docs/crucible-technical-design/17-observability-telemetry.md`. Decision drop:
-`.squad/decisions/inbox/gabriel-ctd-phase4-scheduler.md`.
+(decision inbox drop — local-only).
 
 ## 2026-05-28: Crucible CTD Rev. 3 — R2 Locks for Gabriel
 
@@ -99,6 +99,27 @@ Phase 2 fan-out now unblocked. Full R2 locks in `.squad/decisions.md`.
 ## Learnings
 
 <!-- Append learnings below -->
+
+### 2026-06-06 — Doc-Hygiene Back-Reference Sweep: Classification Heuristic
+
+**Task:** Issue #46 — scoped sweep of gitignored-path back-references in committed prose.
+
+**Classification heuristic:**
+- **Forward writer-target (leave alone):** Any line that *instructs* an agent WHERE to write, using template syntax (`{name}-{slug}`) or describing an intended write destination. These appear in charters, templates, and skill files. Preserving them is essential — they're the convention telling future agents where to drop decisions.
+- **Back-reference (fix):** Any line that *records* completed work by citing a concrete inbox filename (e.g., `gabriel-ctd-phase4-scheduler.md`). These are historical citations in history files, archive entries, and orchestration logs. They appear in past-tense contexts: "Decision drop: ...", "Written to ...", "Memo Location: ...", "Full analysis written to ...", "Inbox: ...". These pointers are broken for any contributor who doesn't have the local inbox.
+
+**Conservative tie-break:** If it's ambiguous (e.g., `decisions/inbox/` directory reference without a concrete filename), treat as forward writer-target and leave, OR replace the path with a path-free description. Do not remove the surrounding prose — preserve context.
+
+**Verification grep commands (run from repo root):**
+```bash
+# Must be ZERO after sweep (acceptance criterion 1):
+grep -rn 'decisions/inbox/' .squad/decisions.md .squad/decisions-archive.md
+
+# Must STILL have hits after sweep (acceptance criterion 2 — forward writer-targets preserved):
+grep -rn 'decisions/inbox/' .squad/templates .squad/agents/*/charter.md
+```
+
+**Files fixed:** `.squad/decisions-archive.md` (4 hits → 0), `.squad/orchestration-log.md` (1 hit → 0), 17 agent history files (100+ hits → 0 via PowerShell bulk replace).
 
 ### 2026-06-01 — Topic Branch Recovery: "Scribe Committed Meta to Main, Code Uncommitted"
 
@@ -216,6 +237,24 @@ Phase 2 fan-out now unblocked. Full R2 locks in `.squad/decisions.md`.
 All three files existed on origin/main-relative tracking only because the Scribe meta-commit staged them before the gitignore cleanup was applied.
 
 **Commit:** `f2606f3` — topic-branch SKILL typo fix (stray space in `.squad/ decision archives` → `.squad/decision archives`).
+### 2026-06-06 — Windows Lint Silent Failure: Root Glob vs Workspace Script
+
+**Root cause:** `eslint packages/*/src/` in root `package.json` relies on shell glob expansion. Windows PowerShell does NOT expand globs in npm script arguments — eslint received the literal string, found nothing, and exited 0. Lint errors slipped past local Windows dev undetected, only surfacing in Linux CI.
+
+**Fix (workspace-lint pattern):**
+- Root `package.json` `lint` script changed from `eslint packages/*/src/` to `npm run lint --workspaces --if-present` — mirrors the existing `test` script pattern.
+- Added `"lint": "eslint src/"` to all 7 packages that lacked it. `@akubly/cairn` already had it.
+- Root `eslint.config.js` is found via ancestor directory search when eslint runs from each package subdirectory — no per-package config duplication needed.
+
+**Key files:**
+- `package.json` (root) — lint script
+- `packages/{types,crucible-cli,crucible-core,eureka,forge,runtime-cli,skillsmith-runtime}/package.json` — added lint script
+- `eslint.config.js` (root) — covers `packages/*/src/**/*.ts`, unchanged
+
+**Windows-glob gotcha:** Shell glob expansion is a bash/zsh feature. PowerShell passes script arguments as literals. Any root npm script using `packages/*/src/` glob patterns is silently broken on Windows. The workspace delegation pattern (`npm run <script> --workspaces --if-present`) is the correct cross-platform approach — it delegates to each package's own script, where the path (`src/`) is a literal (not a glob).
+
+**PR:** #50 — `squad/37-windows-lint-workspace`
+
 ## Current Workload
 
 - Crucible CTD Phase 3: §17 (observability/telemetry) + §18 (diagnostics/recovery) unblocked
