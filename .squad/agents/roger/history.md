@@ -31,3 +31,16 @@
 **Slice A retrofit was low-risk but high-value.** The FactReader contract file had been stable since Slice A merged (~5 days), making the diff visible and reviewable. The actual change was small (extract helper + wiring-only test file + typed prepare), but it brings both contract suites to the same structural pattern before Slice C inherits them. Retrofitting AFTER Slice C would be harder (more files to touch, possibly conflicting edits). The lesson: harmonize sibling patterns at end-of-slice, not end-of-milestone.
 
 **`ReturnType<Database.Database['prepare']>` is the wrong field type for typed statements.** The broad type forces a runtime `as FactRow | undefined` cast on every `.get()` call. `db.prepare<BP, R>()` returns `Database.Statement<BP, R>` where `.get()` is typed as `R | undefined`. Using the typed generic form eliminates the cast, narrows errors at compile time, and documents the expected bind-parameter shape at the call site. This is the pattern SqliteTrustUpdater already used; the Slice A retrofit applied it retroactively to SqliteFactReader. Future SQLite implementations (SqliteFactStore) should use typed generics from the start.
+
+## Learnings (2026-06-05 — M8 Slice B cloud review cycle 1)
+
+**Branch:** `eureka/m8-slice-b-sqlite-trust-updater`  
+**Commits:** 0cdf205 (T1+T2), 418c146 (T3), 2ab52f3 (T4), 4ffdb73 (T5)
+
+**Docstring counts go stale when test-generation changes.** The `it.each` conversion in cycle-2 changed C-3b from 1 test to 2 per wiring, but the JSDoc on `runTrustUpdaterContract` (and the SKILL reference) still said 8. Copilot's review caught it. Fix: update docstrings in the same commit that changes the test structure, not after. The count is part of the contract surface — if it's wrong, it misleads the next person wiring a new impl.
+
+**The N2 comment pattern was TrustUpdater-specific.** The "InMemory impl lives inline here, test-only" comment is correct for TrustUpdater (the impl is literally defined in the wiring file, not imported). It's wrong for FactReader (which imports `InMemoryFactReader` from a production module). Copying patterns across similar-looking files without checking whether the premise still holds is how stale comments happen. Read before copy.
+
+**Append-not-rewrite is the right policy for decision logs.** The tombstone decision (Decision 2 in decisions.md) described a choice that was later reversed. Editing the original entry would erase the context for WHY we initially tombstoned (vitest 3.x no-empty-file requirement). The append-update preserves both the original reasoning and the reversal rationale. Future readers can follow the full arc. Applied this consistently.
+
+**CRLF in non-code files happens silently.** Rosella's history.md had 7 carriage-returns (CRLF sequences at 3 line endings). These come from editors or CI runners that don't respect `.gitattributes`. The fix is `ReadAllText / -replace / WriteAllText` in PowerShell — more reliable than `sed` on Windows. The git warning "LF will be replaced by CRLF" on commit is a `.gitattributes` artifact (text=auto); the file was cleanly committed as LF.
