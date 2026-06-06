@@ -367,8 +367,9 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
   // FS-SE-11: FTS5 unclosed-quote query → graceful empty results (FSE-1 fix)
   //
   // FIXED (FSE-1): SqliteFactStore now wraps stmt.all() in a try/catch that
-  // catches FTS5 parse errors (code==='SQLITE_ERROR' && message contains 'fts5')
-  // and returns { results: [] } instead of propagating the rejected Promise.
+  // catches FTS5 parse errors (code==='SQLITE_ERROR' && message matches
+  // /fts5|unterminated|syntax error|malformed MATCH/i) and returns
+  // { results: [] } instead of propagating the rejected Promise.
   //
   // This prevents user-supplied query strings containing FTS5 operator chars
   // (unclosed `"`, bare `*`, `-`, `NEAR`, etc.) from crashing callers.

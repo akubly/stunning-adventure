@@ -119,8 +119,12 @@ function decodeCursor(cursor: string): number {
 function normalizeRelevance(bm25Scores: number[]): number[] {
   if (bm25Scores.length === 0) return [];
   const raw = bm25Scores.map(s => -s); // flip: higher = better match
-  const min = Math.min(...raw);
-  const max = Math.max(...raw);
+  let min = raw[0];
+  let max = raw[0];
+  for (let i = 1; i < raw.length; i++) {
+    if (raw[i] < min) min = raw[i];
+    if (raw[i] > max) max = raw[i];
+  }
   if (max === min) return raw.map(() => 1.0); // all equal → top score
   return raw.map(s => (s - min) / (max - min));
 }
@@ -134,7 +138,8 @@ export class SqliteFactStore implements FactStore {
 
   constructor(db: Database.Database) {
     // ⚠️ BM25 footgun: bm25(facts_fts) is NEGATIVE (more negative = better match).
-    // ORDER BY (-bm25(facts_fts)) * f.trust DESC gives composite descending sort.
+    // ORDER BY (-bm25_score) * f.trust DESC gives composite descending sort.
+    // bm25_score is the SELECT alias — reused here to avoid recomputing bm25().
     // f.id ASC is a deterministic tie-breaker: when composite scores are equal,
     // pagination is stable (no skip/dup on page boundaries).
     this.stmt = db.prepare<SearchBindParams, SearchRow>(`
@@ -149,7 +154,7 @@ export class SqliteFactStore implements FactStore {
         AND f.session_id = $session_id
         AND f.trust IS NOT NULL
         AND f.trust >= $min_trust
-      ORDER BY (-bm25(facts_fts)) * f.trust DESC, f.id ASC
+      ORDER BY (-bm25_score) * f.trust DESC, f.id ASC
       LIMIT $limit
       -- OFFSET-based pagination is stable under a no-concurrent-writes assumption.
       -- If trust mutations or new inserts occur between pages, the composite order
