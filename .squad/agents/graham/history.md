@@ -1,3 +1,9 @@
+# SUMMARY (as of 2026-06-06)
+
+File size: 34712 bytes. See history-archive.md for earlier entries.
+
+---
+
 # Graham — History
 
 📌 **Role:** Lead / Architect (Overall vision, cross-system integration, tiebreak arbitration)  
@@ -27,6 +33,10 @@
 2. **Predicate timing honesty:** Promise.race() is not a sandboxing primitive. v1 uses cooperative measurement + telemetry + retry-budget quarantine; hard preemption belongs in v1.5+.
 3. **Replay-determinism pattern:** Record results, not just choices, when results depend on environment state.
 4. **Gitignore hygiene:** .gitignore blocks new adds only; committed files must be untracked with git rm --cached.
+5. **Worktree fallback warning convention (issue #31):** The coordinator's Pre-Spawn: Worktree Setup has two fallback paths that must BOTH log AND emit a user-visible warning:
+   - **Step 2(c) — worktree add failure** (lock/permissions/any error): log to `.squad/orchestration-log/{timestamp}-worktree-failed.md` AND emit `⚠️  Worktree creation failed — falling back to main checkout. Isolation disabled for this spawn.`
+   - **Step 2(d) — junction/symlink link failure**: log to `.squad/orchestration-log/{timestamp}-worktree-fallback.md` AND emit `⚠️  Worktree dependency linking failed — fell back to npm install. Dependency isolation is degraded for this spawn.`
+   - Convention: silent fallbacks are never acceptable when they degrade isolation guarantees the user opted into.
 
 ---
 
@@ -340,3 +350,17 @@ Pitfall #5 incorrectly stated that `resolveOptimizationHint` was not exported fr
 
 **Documentation debt pattern:** when a public API export is added as a review fix, also update any SKILL.md pitfalls that reference the non-exported version. Export additions don't automatically propagate to narrative documentation.
 
+---
+
+**[2026-06-06T19:23:48Z — Scribe Cross-Agent Update]**
+
+## Team Notifications
+
+Two infrastructure changes approved in PRs #50 and #52:
+
+1. **PR #50 — Root lint cross-platform fix (Issue #37, Gabriel):** Root package.json lint script now uses workspace delegation to enable cross-platform execution. Per-package lint scripts added to 7 packages. Windows developers will now see linting errors locally.
+
+2. **PR #52 — Doc-hygiene back-reference sweep (Issue #46, Gabriel):** Gitignored-path back-references removed from committed prose across decisions.md, decisions-archive.md, and agent history files. Forward writer-targets (charters, templates, skills) preserved. Classification heuristic documented for future hygiene sweeps.
+
+**Action for you:** No immediate action required. Lint workspace changes take effect after merge and 
+pm install restart. Doc-hygiene scope established for future improvements.

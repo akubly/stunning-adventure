@@ -708,6 +708,146 @@ Added JSDoc at two locations:
 - **`attentionTier` / `importance` / `lastAccessed` columns:** Future migration.
 - **Cross-session aggregation:** `FactStore.search()` is session-scoped in M8. Querying across sessions is a later milestone.
 - **Embeddings/semantic search:** BM25 via FTS5 only. Vector similarity is out of scope.
+### 2026-06-06: Ralph Round 1 — PRs #50, #52, #53 Orchestration Outcomes
+
+# Decision: Switch Root Lint to Workspace Iteration for Windows Compatibility
+
+**Agent:** Gabriel (Infrastructure)  
+**Date:** 2026-06-06  
+**Issue:** #37  
+**PR:** #50 (`squad/37-windows-lint-workspace`)
+
+## What Changed
+
+**Root `package.json`:**
+- Before: `"lint": "eslint packages/*/src/"`
+- After: `"lint": "npm run lint --workspaces --if-present"`
+
+**Per-package `package.json` files** (7 packages updated — cairn already had it):
+- Added `"lint": "eslint src/"` to: `types`, `crucible-cli`, `crucible-core`, `eureka`, `forge`, `runtime-cli`, `skillsmith-runtime`
+
+## Why
+
+The root glob `packages/*/src/` is not expanded by Windows PowerShell — eslint received the literal string, found no matching files, and silently exited 0. Lint errors were invisible to local Windows developers and only caught by Linux CI.
+
+The workspace delegation pattern (`npm run lint --workspaces --if-present`) is cross-platform: it calls each package's own `lint` script, where the path `src/` is a literal, not a glob. This mirrors how `test` and other cross-package scripts already work in this monorepo.
+
+## Impact
+
+- `npm run lint` now correctly invokes eslint in all 8 workspace packages on both Windows and Linux.
+- The `--if-present` flag ensures future packages without a lint script do not fail the root command.
+- Pre-existing `any` type warnings in `cairn` and `eureka` surface (out of scope for this fix — tracked separately).
+- Exit code remains 0 (warnings only, no errors introduced by this change).
+
+---
+
+# Decision: Scoped Doc-Hygiene Sweep — Gitignored Back-References (Issue #46)
+
+**Date:** 2026-06-06  
+**Author:** Gabriel (Infrastructure)  
+**Status:** FINAL  
+**Related:** Issue #46, PR to be opened from `squad/46-doc-hygiene-backref-sweep`
+
+## Decision
+
+Performed the correctly-scoped sweep of gitignored-path back-references in committed prose, as specified in Issue #46. Preserved all forward writer-target paths in charters, templates, and skill files.
+
+## Scope
+
+**Fixed (back-references):**
+- `.squad/decisions-archive.md` — 4 occurrences → 0
+- `.squad/orchestration-log.md` — 1 occurrence → 0
+- 17 agent history files (`history.md` / `history-archive.md`) — 100+ occurrences → 0
+
+**Preserved (forward writer-targets):**
+- All `agents/*/charter.md` files — writer-target paths intact (25 hits confirmed)
+- All `templates/*.md` files — writer-target paths intact
+- All skill files — writer-target paths intact
+- `.squad/skills/doc-references-respect-gitignore/SKILL.md` — not modified per task instructions
+
+## Classification Heuristic
+
+**Forward writer-target (leave alone):** Lines using template syntax (`{name}-{slug}`) or imperative instructions telling agents WHERE to write. Context: charters, templates, skills.
+
+**Back-reference (fix):** Lines recording completed work by citing a concrete inbox filename. Context: history files, archive entries, orchestration logs. Past-tense patterns: "Decision drop: ...", "Written to ...", "Memo Location: ...", "Full analysis written to ...", "Inbox: ...".
+
+**Directory-only references** (`.squad/decisions/inbox/` without a filename) in committed prose: replaced with "Scribe decision inbox" or "decision inbox" — path-free description that preserves the meaning.
+
+## Verification Results
+
+| Criterion | Result |
+|-----------|--------|
+| `grep -rn 'decisions/inbox/' .squad/decisions.md .squad/decisions-archive.md` | **ZERO hits** ✅ |
+| `grep -rn 'decisions/inbox/' .squad/templates .squad/agents/*/charter.md` | **25 hits** (forward writer-targets preserved) ✅ |
+
+## Why This Matters
+
+Broken inbox links in committed prose cause:
+- Confusion for contributors who don't have local inbox files
+- CI link-checker failures (if ever enabled)
+- Eroded trust in the documentation as a navigable resource
+
+The carve-out for forward writer-targets ensures agents continue to know where to drop decisions during parallel work sessions.
+
+---
+
+# Decision: Worktree Fallback Must Emit User-Visible Warning
+
+**Author:** Graham (Lead / Architect)  
+**Date:** 2026-06-06  
+**Issue:** #31  
+**PR:** #53  
+**Status:** Proposed (pending merge)
+
+## Context
+
+When `SQUAD_WORKTREES=1` is set, the coordinator's Pre-Spawn: Worktree Setup flow can silently degrade isolation in two ways:
+
+1. **Step 2(c):** `git worktree add` fails (lock error, permissions error, or any other error) → coordinator falls back to the main checkout with `WORKTREE_MODE=false`.
+2. **Step 2(d):** Junction/symlink dependency linking fails → coordinator falls back to `npm install` in the worktree, losing the shared-`node_modules` isolation model.
+
+In both cases the existing behavior was to write a log entry to `.squad/orchestration-log/` only. The user received no signal.
+
+## Decision
+
+**Both fallback paths MUST emit a one-line user-visible warning in addition to the existing log entry.** The log entry is preserved unchanged.
+
+### Warning text
+
+**Step 2(c) — worktree creation failure:**
+```
+⚠️  Worktree creation failed — falling back to main checkout. Isolation disabled for this spawn.
+```
+
+**Step 2(d) — dependency linking failure:**
+```
+⚠️  Worktree dependency linking failed — fell back to npm install. Dependency isolation is degraded for this spawn.
+```
+
+## Rationale
+
+The user opted into worktree isolation by setting `SQUAD_WORKTREES=1`. Silent degradation violates the principle of least surprise — the user's assumption (isolation is active) diverges from reality (isolation is disabled) with no signal. This is especially dangerous in multi-agent parallel dispatch where the user is relying on per-issue isolation to avoid cross-contamination.
+
+The chosen fix is additive (log + warn, not log → warn): the log entry stays for post-hoc debugging, and the warning surfaces the degradation in real time.
+
+## Alternatives Considered
+
+1. **Block on failure instead of falling back** — too disruptive; some lock errors are transient and the step-2(c) retry already handles that. Fallback with warning is the right UX.
+2. **Warn only, remove log** — removes auditability. Rejected.
+3. **Add a config flag to suppress warning** — YAGNI at this scale; skip for now.
+
+## Scope
+
+Change is confined to `.github/agents/squad.agent.md` (governance/documentation), steps 2(c) and 2(d) error-handling bullets. No code changes required.
+
+## ⚠️ Coordinator Restart Note
+
+Because this change modifies the coordinator's own governance file, any running coordinator session will operate on stale instructions until it is restarted. Inform the user when this PR is merged.
+
+---
+
+### 2026-06-01: Crucible Sprint 0 — First GREEN Cycle (Roger)
+
 # Roger: Crucible First GREEN — Decision Inbox
 
 **Date:** 2026-06-01  
