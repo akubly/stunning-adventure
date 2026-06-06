@@ -14,6 +14,7 @@
 import {
   ATTENUATION_FLOOR,
   NEGATIVE_IMPACT_AUTO_APPLY_GATE,
+  type DispositionSummary,
 } from "@akubly/types";
 import { classifyDriftLevel } from "../telemetry/drift.js";
 import type { ExecutionProfile } from "../telemetry/types.js";
@@ -126,4 +127,42 @@ export function applyHistoricalVectorOrdering(hints: OptimizationHint[]): Optimi
   matched.sort((a, b) => (b.predictedImpact ?? 0) - (a.predictedImpact ?? 0));
   unmatched.sort((a, b) => b.impactScore - a.impactScore);
   return [...matched, ...unmatched];
+}
+
+/** Confidence multiplier applied to hints whose category has source='mcp' resolved transitions. */
+export const RESOLVED_CONFIDENCE_BOOST = 1.2;
+
+/**
+ * Apply user-disposition feedback to a hint list.
+ *
+ * Rules (M3 — Forge Phase feedback loop):
+ *  - dismissed (source='mcp'): suppress all hints for the dismissed category.
+ *    The provider only returns mcp-sourced transitions, so any
+ *    DispositionSummary.dismissedCount > 0 represents a real user signal.
+ *  - resolved  (source='mcp'): boost confidence by RESOLVED_CONFIDENCE_BOOST.
+ *  - Absent/null dispositionProvider → no-op (backward compatible).
+ *
+ * Pure function — does not mutate input.
+ */
+export function applyDispositions(
+  hints: OptimizationHint[],
+  dispositions: DispositionSummary[],
+): OptimizationHint[] {
+  if (!dispositions.length) return hints;
+
+  const byCategory = new Map<string, DispositionSummary>();
+  for (const d of dispositions) {
+    byCategory.set(d.category, d);
+  }
+
+  return hints
+    .filter((hint) => {
+      const d = byCategory.get(hint.category);
+      return !d || d.dismissedCount === 0;
+    })
+    .map((hint) => {
+      const d = byCategory.get(hint.category);
+      if (!d || d.resolvedCount === 0) return hint;
+      return { ...hint, confidence: Math.min(1, hint.confidence * RESOLVED_CONFIDENCE_BOOST) };
+    });
 }

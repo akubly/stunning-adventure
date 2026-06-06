@@ -1,0 +1,255 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { getDb, closeDb } from '../db/index.js';
+import { createSession } from '../db/sessions.js';
+import { insertHintIfNew, resolveOptimizationHint } from '../db/optimizationHints.js';
+import { logEvent } from '../db/events.js';
+import { ensureSystemSession } from '../db/sessions.js';
+import { SqliteHintDispositionProvider } from '../db/sqliteHintDispositionProvider.js';
+import type { OptimizationHintInsert } from '../db/optimizationHints.js';
+
+let db: ReturnType<typeof getDb>;
+let counter = 0;
+
+function hint(category: string, overrides: Partial<OptimizationHintInsert> = {}): OptimizationHintInsert {
+  counter += 1;
+  return {
+    id: `disp-hint-${counter}`,
+    source: 'prompt-optimizer',
+    skillId: 'skill-disp',
+    category,
+    description: `Hint ${counter}`,
+    recommendation: 'Fix it',
+    impactScore: 0.5,
+    confidence: 0.8,
+    evidence: {},
+    metricSnapshot: {},
+    generatedAt: '2026-06-05T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+beforeEach(() => {
+  closeDb();
+  counter = 0;
+  db = getDb(':memory:');
+  createSession(db, 'test-repo', 'main');
+});
+
+afterEach(() => {
+  closeDb();
+});
+
+describe('SqliteHintDispositionProvider', () => {
+  it('returns empty array when no hint_state_transition events exist', async () => {
+    const provider = new SqliteHintDispositionProvider(db);
+    await expect(provider.getDispositions('skill-disp')).resolves.toEqual([]);
+  });
+
+  it('returns empty array when no mcp-sourced transitions exist', async () => {
+    // Insert a hint and a non-mcp transition (state change from insertion, no source='mcp')
+    insertHintIfNew(db, hint('convergence'));
+    const provider = new SqliteHintDispositionProvider(db);
+    const result = await provider.getDispositions('skill-disp');
+    expect(result).toEqual([]);
+  });
+
+  it('counts dismissed mcp transitions', async () => {
+    const h = hint('convergence');
+    insertHintIfNew(db, h);
+    resolveOptimizationHint(db, h.id, 'dismissed', 'not relevant');
+
+    const provider = new SqliteHintDispositionProvider(db);
+    const result = await provider.getDispositions('skill-disp');
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      skillId: 'skill-disp',
+      category: 'convergence',
+      dismissedCount: 1,
+      resolvedCount: 0,
+    });
+  });
+
+  it('counts resolved mcp transitions', async () => {
+    const h = hint('prompt-structure');
+    insertHintIfNew(db, h);
+    resolveOptimizationHint(db, h.id, 'resolved', 'applied the fix');
+
+    const provider = new SqliteHintDispositionProvider(db);
+    const result = await provider.getDispositions('skill-disp');
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      skillId: 'skill-disp',
+      category: 'prompt-structure',
+      dismissedCount: 0,
+      resolvedCount: 1,
+    });
+  });
+
+  it('does NOT count transitions where source is not mcp', async () => {
+    // Emit a hint_state_transition event manually with a different source
+    const h = hint('tool-guidance');
+    insertHintIfNew(db, h);
+    const sessionId = ensureSystemSession(db);
+    logEvent(db, sessionId, 'hint_state_transition', {
+      skill_id: 'skill-disp',
+      hint_id: h.id,
+      from_state: 'pending',
+      to_state: 'rejected',
+      timestamp: new Date().toISOString(),
+      resolution_disposition: 'dismissed',
+      source: 'system',  // NOT 'mcp'
+    });
+
+    const provider = new SqliteHintDispositionProvider(db);
+    const result = await provider.getDispositions('skill-disp');
+    expect(result).toEqual([]);
+  });
+
+  it('does NOT count transitions with null resolution_disposition', async () => {
+    // Plain status-change transition (no disposition, no source)
+    const h = hint('cache-optimization');
+    insertHintIfNew(db, h);
+    // The insertHintIfNew emits a hint_state_transition with no disposition — should not be counted
+
+    const provider = new SqliteHintDispositionProvider(db);
+    const result = await provider.getDispositions('skill-disp');
+    expect(result).toEqual([]);
+  });
+
+  it('aggregates multiple hints in the same category', async () => {
+    const h1 = hint('convergence');
+    const h2 = hint('convergence', { source: 'token-optimizer' }); // different source to bypass dedup
+    insertHintIfNew(db, h1);
+    insertHintIfNew(db, h2);
+    resolveOptimizationHint(db, h1.id, 'dismissed');
+    resolveOptimizationHint(db, h2.id, 'dismissed');
+
+    const provider = new SqliteHintDispositionProvider(db);
+    const result = await provider.getDispositions('skill-disp');
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      category: 'convergence',
+      dismissedCount: 2,
+      resolvedCount: 0,
+    });
+  });
+
+  it('groups by category across mixed dispositions', async () => {
+    const h1 = hint('convergence');
+    const h2 = hint('prompt-structure');
+    insertHintIfNew(db, h1);
+    insertHintIfNew(db, h2);
+    resolveOptimizationHint(db, h1.id, 'dismissed');
+    resolveOptimizationHint(db, h2.id, 'resolved');
+
+    const provider = new SqliteHintDispositionProvider(db);
+    const result = await provider.getDispositions('skill-disp');
+
+    expect(result).toHaveLength(2);
+    const convergence = result.find((r) => r.category === 'convergence');
+    const promptStructure = result.find((r) => r.category === 'prompt-structure');
+    expect(convergence).toMatchObject({ dismissedCount: 1, resolvedCount: 0 });
+    expect(promptStructure).toMatchObject({ dismissedCount: 0, resolvedCount: 1 });
+  });
+
+  it('only returns dispositions for the requested skillId', async () => {
+    // Hint for skill-disp
+    const h1 = hint('convergence', { skillId: 'skill-disp' });
+    // Hint for a different skill
+    const h2 = hint('convergence', { skillId: 'skill-other', id: 'other-hint-1' });
+    insertHintIfNew(db, h1);
+    insertHintIfNew(db, h2);
+    resolveOptimizationHint(db, h1.id, 'dismissed');
+    resolveOptimizationHint(db, h2.id, 'dismissed');
+
+    const provider = new SqliteHintDispositionProvider(db);
+    const result = await provider.getDispositions('skill-other');
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ skillId: 'skill-other', category: 'convergence', dismissedCount: 1 });
+  });
+
+  // Adversarial: absent source key (no 'source' field in payload at all).
+  // The SQL requires json_extract(payload, '$.source') = 'mcp'.
+  // Missing source → json_extract returns NULL → NULL = 'mcp' is NULL (falsy) → not counted.
+  it('does NOT count transitions where source key is entirely absent from payload', async () => {
+    const h = hint('prompt-structure');
+    insertHintIfNew(db, h);
+    const sessionId = ensureSystemSession(db);
+    // Emit a transition event with resolution_disposition but NO source key.
+    logEvent(db, sessionId, 'hint_state_transition', {
+      skill_id: 'skill-disp',
+      hint_id: h.id,
+      from_state: 'pending',
+      to_state: 'rejected',
+      timestamp: new Date().toISOString(),
+      resolution_disposition: 'dismissed',
+      // source key deliberately omitted
+    });
+
+    const provider = new SqliteHintDispositionProvider(db);
+    const result = await provider.getDispositions('skill-disp');
+    expect(result).toEqual([]);
+  });
+
+  // Adversarial: mixed mcp + system transitions for the same category.
+  // The system transition has resolution_disposition='dismissed' — must NOT be counted.
+  // The mcp transition has resolution_disposition='resolved' — MUST be counted.
+  // Expected: dismissedCount=0, resolvedCount=1.
+  it('counts only mcp transitions when system and mcp transitions coexist for the same category', async () => {
+    const h1 = hint('tool-guidance');
+    const h2 = hint('tool-guidance', { source: 'token-optimizer' }); // second hint, same category
+    insertHintIfNew(db, h1);
+    insertHintIfNew(db, h2);
+
+    // System dismissal — must not be counted.
+    const sessionId = ensureSystemSession(db);
+    logEvent(db, sessionId, 'hint_state_transition', {
+      skill_id: 'skill-disp',
+      hint_id: h1.id,
+      from_state: 'pending',
+      to_state: 'rejected',
+      timestamp: new Date().toISOString(),
+      resolution_disposition: 'dismissed',
+      source: 'system',
+    });
+
+    // MCP resolution — must be counted.
+    resolveOptimizationHint(db, h2.id, 'resolved', 'applied');
+
+    const provider = new SqliteHintDispositionProvider(db);
+    const result = await provider.getDispositions('skill-disp');
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      skillId: 'skill-disp',
+      category: 'tool-guidance',
+      dismissedCount: 0, // system dismissal not counted
+      resolvedCount: 1,  // mcp resolution counted
+    });
+  });
+
+  // Adversarial: hint_id in the event does not exist in optimization_hints (JOIN fails).
+  // The SQL uses INNER JOIN — orphan transition events must not produce a row.
+  it('does NOT count transition events whose hint_id has no matching optimization_hints row', async () => {
+    const sessionId = ensureSystemSession(db);
+    // Emit a well-formed mcp transition that references a non-existent hint id.
+    logEvent(db, sessionId, 'hint_state_transition', {
+      skill_id: 'skill-disp',
+      hint_id: 'non-existent-hint-id',
+      from_state: 'pending',
+      to_state: 'rejected',
+      timestamp: new Date().toISOString(),
+      resolution_disposition: 'dismissed',
+      source: 'mcp',
+    });
+
+    const provider = new SqliteHintDispositionProvider(db);
+    const result = await provider.getDispositions('skill-disp');
+    // INNER JOIN with optimization_hints should filter this out — no row returned.
+    expect(result).toEqual([]);
+  });
+});

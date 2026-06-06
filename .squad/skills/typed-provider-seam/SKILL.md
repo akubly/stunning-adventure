@@ -136,7 +136,33 @@ const hints = await forge.runForgePrescribers(profile, skillId, { provider, myPr
 - [ ] Guard: `if (data && data.length > 0)` before applying the data
 - [ ] Provider wired in `skillsmith-runtime/src/runtime.ts`
 - [ ] Unit tests: data → effect, empty → no-op, throws → fail-open, null provider → no-op
+- [ ] Integration test: seed real events via `cairn.insertHintIfNew` + `cairn.logEvent`, call `executePrescriberRun`, assert effect
 - [ ] Build clean after each step
+
+---
+
+## Integration Test Pattern (Tester-Added, Laura — M3 Hardening)
+
+Integration tests for typed provider seams must verify the full Cairn→runtime→forge chain. See `packages/skillsmith-runtime/src/__tests__/dispositionIntegration.test.ts` for the reference implementation.
+
+### Critical pitfalls
+
+**1. Seed order matters:** Seed the underlying data rows AND emit events BEFORE calling `executePrescriberRun`. The DB is queried at call time.
+
+**2. INNER JOIN awareness:** The SQLite adapter uses INNER JOIN on the source table (e.g., `optimization_hints`). A well-formed event that references a non-existent row will be silently excluded. Always seed the referenced row first.
+
+**3. `result.hints` vs inserted hints:** `executePrescriberRun` sets `result.hints` before the hint-insertion loop. Assertions on hint content (category, confidence) reflect the post-`applyDispositions` state — insertion deduplication does NOT affect them.
+
+**4. No "dispositionless baseline" through `executePrescriberRun`:** The runtime always wires the provider. If you need a before/after comparison, run the baseline BEFORE seeding any events, OR use the known prescriber thresholds to reason about expected output without a dynamic baseline.
+
+**5. Non-exported helper functions:** `resolveOptimizationHint` is not exported from `@akubly/cairn`. Use `cairn.insertHintIfNew` + `cairn.logEvent` + `cairn.ensureSystemSession` to emit events directly. This is also more precise for adversarial tests (lets you set source='system', absent source, etc.).
+
+### Confidence ceiling fixture
+
+To test the `Math.min(1, ...)` clamp in a hint boost:
+- Use `sessionCount=9` → prescriber generates hints with `confidence = Math.min(1, 9/10) = 0.9`
+- With `RESOLVED_CONFIDENCE_BOOST = 1.2`: `0.9 * 1.2 = 1.08` → clamped to `1.0`
+- Assert `confidence === 1.0` (exact equality, not `toBeCloseTo`)
 
 ---
 

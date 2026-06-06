@@ -278,6 +278,39 @@ export interface ChangeVectorProvider {
 }
 
 // ---------------------------------------------------------------------------
+// M3 — Hint disposition feedback
+// ---------------------------------------------------------------------------
+
+/**
+ * Aggregated user-disposition data for a category+skillId pair.
+ * Only source='mcp' transitions (i.e. user-driven via the Cairn resolve tool)
+ * are counted — system-generated transitions must NOT influence suppression.
+ */
+export interface DispositionSummary {
+  skillId: string;
+  category: string;
+  /**
+   * Number of source='mcp' dismissed transitions for this skill+category.
+   * dismissedCount > 0 → suppress recurring hints for this category.
+   */
+  dismissedCount: number;
+  /**
+   * Number of source='mcp' resolved transitions for this skill+category.
+   * resolvedCount > 0 → confidence boost for hints in this category.
+   */
+  resolvedCount: number;
+}
+
+/**
+ * Async source of user-disposition feedback for optimization hints.
+ * Implemented by SqliteHintDispositionProvider in @akubly/cairn.
+ * Phase 5 may fetch from remote telemetry.
+ */
+export interface HintDispositionProvider {
+  getDispositions(skillId: string): Promise<DispositionSummary[]>;
+}
+
+// ---------------------------------------------------------------------------
 // Wave 3 — Prescriber orchestration contracts
 // ---------------------------------------------------------------------------
 

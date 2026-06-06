@@ -290,7 +290,8 @@ export async function executePrescriberRun({
   }
 
   const provider = new cairn.SqliteChangeVectorProvider(db);
-  const hints = await forge.runForgePrescribers(profile, skillId, { provider });
+  const dispositionProvider = new cairn.SqliteHintDispositionProvider(db);
+  const hints = await forge.runForgePrescribers(profile, skillId, { provider, dispositionProvider });
   const result: ExecutedPrescriberRun = {
     skillId,
     hints,
