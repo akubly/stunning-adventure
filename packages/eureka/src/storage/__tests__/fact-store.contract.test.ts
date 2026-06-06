@@ -7,10 +7,10 @@
  * The helper definition (runFactStoreContract + FactStoreHarness) lives in:
  *   ./fact-store-contract.helper.ts
  *
- * Each call to runFactStoreContract adds 6 tests (FS-1 through FS-6).
- * InMemoryFactStore wired below → 6 contract tests.
- * SqliteFactStore wired below   → 6 contract tests.
- * Total: 12
+ * Each call to runFactStoreContract adds 9 tests (FS-1 through FS-8, FS-8 contributing 3 via it.each).
+ * InMemoryFactStore wired below → 9 contract tests.
+ * SqliteFactStore wired below   → 9 contract tests.
+ * Total: 18
  */
 
 import Database from 'better-sqlite3';
@@ -60,9 +60,15 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
   const impl: FactStore = {
     async search(args) {
       const { query, sessionId, limit, minTrust = 0.15, cursor } = args;
-      const offset = cursor !== undefined ? decodeCursorInMemory(cursor) : 0;
 
-      if (!query.trim()) return { results: [] };
+  // F4: validate limit — mirrors SqliteFactStore validation.
+  if (!Number.isFinite(limit) || !Number.isInteger(limit) || limit <= 0) {
+    throw new TypeError(`InMemoryFactStore.search: limit must be a positive integer, got ${limit}`);
+  }
+
+  const offset = cursor !== undefined ? decodeCursorInMemory(cursor) : 0;
+
+  if (!query.trim()) return { results: [] };
 
       const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
 
@@ -77,7 +83,7 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
           }, 0);
           return { ...f, score: termCount * f.trust };
         })
-        .sort((a, b) => b.score - a.score);
+        .sort((a, b) => b.score - a.score || a.factId.localeCompare(b.factId));
 
       const page = scored.slice(offset, offset + limit);
       const hasMore = scored.length > offset + limit;

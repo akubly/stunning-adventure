@@ -11,7 +11,8 @@
  *
  * ## Invariants locked
  *
- *   FS-SE-1  BM25 normalization — top result gets relevance=1.0; descending order
+ *   FS-SE-1  BM25 normalization — top result gets relevance=1.0; all results ∈ [0,1]
+ *   FS-SE-1b Heterogeneous trust — high-trust/low-BM25 sorts before low-trust/high-BM25 (relevance ≠ order by design)
  *   FS-SE-2  BM25 normalization — single matching result always gets relevance=1.0
  *   FS-SE-3  Garbage cursor → safe fallback to offset=0 (no crash, no reject)
  *   FS-SE-4  Cursor with negative offset field → fallback to offset=0
@@ -23,6 +24,7 @@
  *   FS-SE-10 Final page → nextCursor absent
  *   FS-SE-11 FTS5 unclosed quote → graceful empty results (FSE-1 fix applied)
  *   FS-SE-12 Per-page normalization distortion: sole result on sparse page gets relevance=1.0
+ *   FS-SE-13 Non-FTS SQLITE_ERROR (e.g. missing table) propagates as rejected Promise
  *
  * All tests use :memory: databases (no disk I/O needed — disk/WAL edges are
  * already covered by fact-reader-sqlite-edges.test.ts).
@@ -79,7 +81,7 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
   // the top result).
   // ─────────────────────────────────────────────────────────────────────────
 
-  it('FS-SE-1: BM25 normalization — top result gets relevance=1.0 and all results are in descending relevance order', async () => {
+  it('FS-SE-1: BM25 normalization — top result gets relevance=1.0; all results ∈ [0,1]', async () => {
     // Seed with very different term frequencies for the query keyword so BM25
     // score differences are large enough to distinguish top from bottom.
     seed('se1-high', 'cache cache cache cache cache cache', 0.8); // 6× — high BM25
@@ -93,14 +95,45 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
     // Top result must have relevance=1.0 (max of normalized range).
     expect(results[0].relevance).toBe(1.0);
 
-    // All relevance scores must be ∈ [0,1] and in non-increasing order.
+    // All relevance scores must be ∈ [0,1].
     for (const r of results) {
       expect(r.relevance).toBeGreaterThanOrEqual(0);
       expect(r.relevance).toBeLessThanOrEqual(1.0);
     }
-    for (let i = 0; i < results.length - 1; i++) {
-      expect(results[i].relevance!).toBeGreaterThanOrEqual(results[i + 1].relevance!);
-    }
+    // NOTE: relevance order is NOT asserted here. Page ORDER uses the composite
+    // heuristic (-bm25 × trust); relevance is pure BM25 quality. With equal trust
+    // they coincide — but that is coincidental, not a contract. See FS-SE-1b.
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // FS-SE-1b: Heterogeneous trust — high-trust/low-BM25 fact sorts ahead of
+  //           low-trust/high-BM25, but carries lower relevance.
+  //
+  // Locks the F1 design decision: relevance = pure BM25 quality; result ORDER
+  // = composite (-bm25 × trust). These are INDEPENDENT signals. When trust
+  // varies, a fact can sort first in page order while scoring lower on relevance.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  it('FS-SE-1b: high-trust/low-BM25 fact sorts before low-trust/high-BM25 — but carries lower relevance (relevance ≠ sort order by design)', async () => {
+    // Fact A: 6× "delta" → very high BM25, but low trust (0.20).
+    // Fact B: 1× "delta" → lower BM25,     but high trust (0.90).
+    // Composite: -bm25_B × 0.90 > -bm25_A × 0.20 → Fact B sorts FIRST.
+    // Relevance:  -bm25_A > -bm25_B (BM25 only, no trust) → Fact A has higher relevance.
+    seed('se1b-a', 'delta delta delta delta delta delta', 0.20);
+    seed('se1b-b', 'delta baseline',                     0.90);
+
+    const { results } = await impl.search({ query: 'delta', sessionId: SESSION, limit: 10 });
+
+    expect(results).toHaveLength(2);
+    const bIdx = results.findIndex(r => r.content === 'delta baseline');
+    const aIdx = results.findIndex(r => r.content.includes('delta delta delta'));
+    expect(bIdx).not.toBe(-1);
+    expect(aIdx).not.toBe(-1);
+
+    // High-trust Fact B must sort first in page order (composite advantage).
+    expect(bIdx).toBeLessThan(aIdx);
+    // High-BM25 Fact A must carry higher relevance (BM25 quality signal).
+    expect(results[aIdx].relevance!).toBeGreaterThan(results[bIdx].relevance!);
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -321,26 +354,6 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // FS-SE-11: FTS5 unclosed-quote query → rejects with SQLite parse error
-  //
-  // FINDING FSE-1 (MEDIUM): SqliteFactStore passes queries directly to the
-  // FTS5 MATCH operator without sanitization. A query containing an unclosed
-  // double-quote (e.g., `"unclosed phrase`) triggers an FTS5 syntax error
-  // in SQLite, which propagates as a rejected Promise rather than a graceful
-  // empty-results response.
-  //
-  // Current behavior: rejects. Desired behavior: return { results: [] }.
-  //
-  // Recommend follow-up: wrap stmt.all() in a try/catch; on any FTS5 parse
-  // error (SQLite error code SQLITE_ERROR / message contains "fts5"), return
-  // { results: [] }. This prevents user-supplied query strings that contain
-  // FTS5 operator characters (", AND, OR, NOT, NEAR) from crashing callers.
-  //
-  // Severity: MEDIUM — crash path for user-supplied queries, but not a data-
-  // correctness or isolation issue. File as follow-up, not a blocker.
-  // ─────────────────────────────────────────────────────────────────────────
-
-  // ─────────────────────────────────────────────────────────────────────────
   // FS-SE-11: FTS5 unclosed-quote query → graceful empty results (FSE-1 fix)
   //
   // FIXED (FSE-1): SqliteFactStore now wraps stmt.all() in a try/catch that
@@ -413,5 +426,28 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
 
     // The weak match content should be the long-doc fact (weakest BM25 match).
     expect(page2.results[0].content).toContain('serverless');
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // FS-SE-13: Non-FTS SQLITE_ERROR propagates (F2 narrowing regression lock)
+  //
+  // FSE-1 fix narrows the catch to FTS5-pattern errors only. A non-FTS
+  // SQLITE_ERROR — here caused by dropping facts_fts to induce a schema
+  // mismatch — must NOT be swallowed and must reject the search() Promise.
+  //
+  // This locks that SqliteFactStore.search() does not silently eat real errors.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  it('FS-SE-13: non-FTS SQLITE_ERROR (e.g. missing table) propagates as rejected Promise', async () => {
+    seed('se13-fact', 'observable telemetry metrics tracing', 0.8);
+
+    // Drop the FTS virtual table to force a SQLITE_ERROR on the next search.
+    // This simulates a schema corruption / migration mismatch — a real bug,
+    // not an FTS parse error.
+    db.prepare('DROP TABLE IF EXISTS facts_fts').run();
+
+    await expect(
+      impl.search({ query: 'observable', sessionId: SESSION, limit: 10 }),
+    ).rejects.toThrow();
   });
 });

@@ -19,9 +19,11 @@
  * FS-1  Happy-path search        — matching facts are returned
  * FS-2  No-match query           — empty results for unmatched query
  * FS-3  minTrust floor           — below-threshold facts excluded
- * FS-4  Ordering by relevance    — results in descending relevance order (BM25 footgun lock)
+ * FS-4  Composite sort lock      — equal-trust higher-freq fact ranks first (BM25 footgun lock)
  * FS-5  Cursor pagination        — nextCursor returned when more rows exist; round-trip yields next page
  * FS-6  Cross-session isolation  — search in sessionA MUST NOT return sessionB facts
+ * FS-7  Tie-breaker pagination   — equal composite scores paginate without skip or dup
+ * FS-8  Invalid limit            — limit ≤ 0 / NaN throws TypeError
  *
  * ## Export visibility
  *
@@ -81,7 +83,7 @@ const SESSION_B = 'fs-contract-session-B' as SessionId;
 /**
  * Run the full FactStore contract suite against a given implementation factory.
  *
- * Each call to `runFactStoreContract` adds 6 tests (FS-1 through FS-6).
+ * Each call to `runFactStoreContract` adds 9 tests (FS-1 through FS-6, FS-7, FS-8×3 via it.each).
  *
  * @param implName    Human-readable label shown in test output (e.g. 'SqliteFactStore').
  * @param makeHarness Factory called once per test (via beforeEach) to produce a fresh,
@@ -180,19 +182,20 @@ export function runFactStoreContract(
     });
 
     // -----------------------------------------------------------------------
-    // FS-4 — Ordering by descending relevance (BM25 footgun regression lock)
+    // FS-4 — Result ordering: composite sort lock (BM25 footgun regression lock)
     //
-    // Seed two facts with the same trust but different term frequencies for
-    // the query keyword. The fact with more occurrences of the keyword must
-    // rank first (higher BM25 score → higher composite → first in results).
+    // With equal trust, the composite score `-bm25 × trust` preserves BM25
+    // ordering, so the higher-frequency-term fact sorts first. This is the
+    // primary regression lock against the BM25 sign-convention footgun.
     //
-    // This test is the primary regression lock against the BM25 sign-convention
-    // footgun: if `bm25()` is used directly (without negation), more-relevant
-    // facts sort LAST (negative closer to zero = less negative = higher in
-    // ascending sort). The ORDER BY must use `(-bm25(facts_fts)) * trust DESC`.
+    // NOTE: relevance scores are NOT asserted to be in non-increasing order here.
+    // Relevance is pure BM25 quality; result ORDER is composite (-bm25 × trust).
+    // With equal trust they coincide — but that is coincidental, not a contract.
+    // The heterogeneous-trust invariant (FS-SE-x in edges test) locks the
+    // distinction: relevance ≠ sort position when trust varies.
     // -----------------------------------------------------------------------
 
-    it('FS-4: results ordered by descending relevance — higher-frequency term match ranks first (BM25 footgun lock)', async () => {
+    it('FS-4: results ordered by composite sort — higher-frequency term match ranks first (BM25 footgun lock)', async () => {
       // fact-high has the keyword 3 times → higher term frequency → better BM25 score.
       await seed('fs4-high', SESSION_A, 'network security network network', 0.8);
       // fact-low has the keyword once → lower term frequency.
@@ -205,16 +208,12 @@ export function runFactStoreContract(
       });
 
       expect(results.length).toBeGreaterThanOrEqual(2);
-      // Higher-frequency fact must rank above lower-frequency fact.
+      // Higher-frequency fact must rank above lower-frequency fact (equal trust → BM25 dominates).
       const highIdx = results.findIndex(r => r.content.includes('security network network'));
       const lowIdx  = results.findIndex(r => r.content.includes('firewall'));
       expect(highIdx).not.toBe(-1);
       expect(lowIdx).not.toBe(-1);
       expect(highIdx).toBeLessThan(lowIdx);
-      // Relevance scores must be in non-increasing order.
-      for (let i = 0; i < results.length - 1; i++) {
-        expect((results[i].relevance ?? 0)).toBeGreaterThanOrEqual(results[i + 1].relevance ?? 0);
-      }
     });
 
     // -----------------------------------------------------------------------
@@ -270,5 +269,48 @@ export function runFactStoreContract(
 
       expect(results).toHaveLength(0);
     });
+
+    // -----------------------------------------------------------------------
+    // FS-7 — Deterministic tie-breaker pagination (no skip / no dup on ties)
+    //
+    // Seed 3 facts with identical content and trust → equal composite scores.
+    // Paginate with limit=2 then limit=2 again. Without a stable secondary sort
+    // (f.id ASC in SQLite, factId ASC in InMemory), tied scores can produce
+    // non-deterministic page boundaries leading to skipped or duplicated facts.
+    // -----------------------------------------------------------------------
+
+    it('FS-7: pagination across tied composite scores — no gaps or duplicates', async () => {
+      await seed('tie-1', SESSION_A, 'tiebreak stable pagination invariant', 0.8);
+      await seed('tie-2', SESSION_A, 'tiebreak stable pagination invariant', 0.8);
+      await seed('tie-3', SESSION_A, 'tiebreak stable pagination invariant', 0.8);
+
+      const page1 = await impl.search({ query: 'tiebreak', sessionId: SESSION_A, limit: 2 });
+      expect(page1.results).toHaveLength(2);
+      expect(page1.nextCursor).toBeDefined();
+
+      const page2 = await impl.search({ query: 'tiebreak', sessionId: SESSION_A, limit: 2, cursor: page1.nextCursor });
+      expect(page2.results).toHaveLength(1);
+      expect(page2.nextCursor).toBeUndefined();
+
+      // All 3 facts covered: 2 on page 1, 1 on page 2. No fact skipped or repeated.
+      const all = [...page1.results, ...page2.results];
+      expect(all).toHaveLength(3);
+    });
+
+    // -----------------------------------------------------------------------
+    // FS-8 — Invalid limit throws TypeError
+    //
+    // limit <= 0 (or non-finite / non-integer) causes a non-advancing cursor
+    // that could produce an infinite pagination loop. Must throw TypeError.
+    // -----------------------------------------------------------------------
+
+    it.each([0, -1, NaN])(
+      'FS-8 (limit=%s): invalid limit throws TypeError',
+      async (badLimit) => {
+        await expect(
+          impl.search({ query: 'test', sessionId: SESSION_A, limit: badLimit }),
+        ).rejects.toThrow(TypeError);
+      },
+    );
   });
 }

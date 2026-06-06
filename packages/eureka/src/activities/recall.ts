@@ -19,10 +19,16 @@ export interface RecallResult {
   content: string;
   trust: number;
   attentionTier: 'hot' | 'warm' | 'cold';
-  /** Normalized BM25 relevance score ∈ [0,1] returned by FactStore.search().
-   * **Per-page only:** normalized via min-max across the current result page.
-   * Values are NOT comparable across pages — a sole result on a sparse last
-   * page always receives 1.0. Treat as an intra-page ranking signal only. */
+  /** Pure BM25 text-match quality, normalized per-page to [0,1] (min-max).
+   *
+   * **Independent of result/page order.** Page ordering uses the composite
+   * heuristic `(-bm25) × trust`; relevance is `(-bm25)` only (no trust factor).
+   * A high-trust/low-BM25 fact can sort ahead of a low-trust/high-BM25 fact
+   * while carrying a LOWER relevance — this is by design, not a bug.
+   *
+   * **Per-page only.** Min-max is computed across the current page; a sole
+   * result on a sparse last page always receives 1.0. NOT comparable across
+   * pages — treat as an intra-page ranking signal only. */
   relevance?: number;
   /** Importance signal ∈ [0,1]. */
   importance?: number;
@@ -55,9 +61,11 @@ export interface FactStore {
     /**
      * Opaque cursor for the next page. Absent when no further results exist.
      * Consumers MUST NOT parse cursor internals.
-     * @note `results[].relevance` is normalized per-page (min-max across this
-     *   page only). It is NOT comparable across pages — an intra-page rank
-     *   signal, not an absolute score.
+     *
+     * @note `results[].relevance` is pure BM25 text-match quality, normalized
+     *   per-page (min-max across THIS page only). Page ORDER is determined by
+     *   the composite heuristic `(-bm25) × trust`; relevance does NOT control
+     *   order and is NOT comparable across pages. Treat as intra-page signal only.
      */
     nextCursor?: string;
   }>;

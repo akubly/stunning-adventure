@@ -7,11 +7,14 @@
  *
  * SQLite FTS5 `bm25(facts_fts)` returns NEGATIVE scores where more-negative = better
  * match. This is the primary footgun. This implementation:
- *   1. Orders by `(-bm25(facts_fts)) * trust DESC` — composite score where
- *      `-bm25(...)` is positive (larger = better) multiplied by trust weight.
- *   2. Normalizes to `relevance ∈ [0,1]` via min-max across the result page:
- *      `(rawScore - min) / (max - min)`. All-equal scores → relevance 1.0.
- *   The ordering column is the regression lock (FS-4 in runFactStoreContract).
+ *   1. Orders by `(-bm25(facts_fts)) * trust DESC, f.id ASC` — composite primary sort
+ *      (positive larger = better × trust weight), with f.id as a deterministic
+ *      tie-breaker so offset pagination can't skip/dup when composite scores tie.
+ *   2. `relevance` = pure BM25 text-match quality; normalized per-page via min-max.
+ *      This is INDEPENDENT of result order: page order uses the composite heuristic;
+ *      relevance uses only the BM25 component. A high-trust/low-BM25 fact can sort
+ *      ahead of a low-trust/high-BM25 fact while carrying a lower relevance — by design.
+ *   The ordering footgun lock is FS-4 in runFactStoreContract.
  *
  * ## Schema gaps (Slice C deferred fields)
  *
@@ -25,9 +28,17 @@
  * ## Cursor design
  *
  * v1 uses a base64-encoded JSON offset cursor: `{ offset: number }`.
- * Offset-based pagination is deterministic for a given query + session + minTrust
- * combination when the underlying data does not change between pages. Cross-session
- * keyset cursors (rank+rowid form) are a Slice D+ concern.
+ * IMPORTANT: the cursor encodes only an offset integer. It is NOT bound to the
+ * query string, sessionId, minTrust, or limit arguments. Passing a cursor from
+ * one search call to a different query/session/minTrust/limit is undefined behavior.
+ * Slice D should add cursor versioning + a scope fingerprint (query hash, sessionId,
+ * minTrust, limit) to detect and reject cross-parameter cursor reuse.
+ *
+ * Offset-based pagination is deterministic within a request (same params, no writes
+ * between pages). It is NOT stable under concurrent writes between pages — the
+ * composite + f.id order can shift if new facts are inserted or trust is mutated.
+ * A keyset cursor (last rank + last f.id) would resist concurrent writes; that
+ * migration is deferred to Slice D+.
  *
  * ## Session scoping
  *
@@ -70,7 +81,13 @@ type SearchBindParams = {
 };
 
 // ---------------------------------------------------------------------------
-// Cursor encoding (opaque base64 JSON — consumers MUST NOT parse internals)
+// Cursor encoding
+//
+// IMPORTANT: offset-only cursor — encodes only an integer page offset.
+// It is NOT bound to query/sessionId/minTrust/limit. Passing a cursor from
+// one search call's result into a different call with changed parameters is
+// undefined behavior. Slice D should add a scope fingerprint (query hash,
+// sessionId, minTrust, limit) to detect and reject cross-parameter reuse.
 // ---------------------------------------------------------------------------
 
 interface CursorPayload {
@@ -116,6 +133,8 @@ export class SqliteFactStore implements FactStore {
   constructor(db: Database.Database) {
     // ⚠️ BM25 footgun: bm25(facts_fts) is NEGATIVE (more negative = better match).
     // ORDER BY (-bm25(facts_fts)) * f.trust DESC gives composite descending sort.
+    // f.id ASC is a deterministic tie-breaker: when composite scores are equal,
+    // pagination is stable (no skip/dup on page boundaries).
     this.stmt = db.prepare<SearchBindParams, SearchRow>(`
       SELECT
         f.id,
@@ -128,8 +147,12 @@ export class SqliteFactStore implements FactStore {
         AND f.session_id = $session_id
         AND f.trust IS NOT NULL
         AND f.trust >= $min_trust
-      ORDER BY (-bm25(facts_fts)) * f.trust DESC
+      ORDER BY (-bm25(facts_fts)) * f.trust DESC, f.id ASC
       LIMIT $limit
+      -- OFFSET-based pagination is stable under a no-concurrent-writes assumption.
+      -- If trust mutations or new inserts occur between pages, the composite order
+      -- can shift and OFFSET may skip or duplicate rows. Keyset pagination (last
+      -- rank + last f.id as cursor) would resist this; deferred to Slice D+.
       OFFSET $offset
     `);
   }
@@ -143,6 +166,12 @@ export class SqliteFactStore implements FactStore {
   }): Promise<{ results: RecallResult[]; nextCursor?: string }> {
     const { query, sessionId, limit, minTrust = 0.15, cursor } = args;
 
+    // F4: validate limit — non-positive or non-integer causes a non-advancing
+    // cursor (infinite-loop risk for callers that paginate until nextCursor absent).
+    if (!Number.isFinite(limit) || !Number.isInteger(limit) || limit <= 0) {
+      throw new TypeError(`SqliteFactStore.search: limit must be a positive integer, got ${limit}`);
+    }
+
     // FTS5 MATCH with an empty string throws — short-circuit to empty results.
     if (!query.trim()) {
       return { results: [] };
@@ -153,12 +182,12 @@ export class SqliteFactStore implements FactStore {
     // Fetch limit+1 rows to detect whether a next page exists without a
     // separate COUNT query. The extra row is never returned to the caller.
     //
-    // FSE-1: FTS5 parse guard — user-supplied query strings may contain FTS5
-    // operators (unclosed `"`, bare `*`, `-`, `NEAR`, etc.) that SQLite rejects
-    // at parse time. We catch SQLITE_ERROR (the code SQLite uses for all query-
-    // parse failures) and return empty results rather than propagating a rejected
-    // Promise. Non-parse failures use distinct codes (SQLITE_CORRUPT=11,
-    // SQLITE_IOERR=10, SQLITE_BUSY=5, …) and are rethrown unchanged.
+    // FSE-1 / F2: FTS5 parse guard — user-supplied query strings may contain FTS5
+    // operators that SQLite rejects at parse time (unclosed `"`, bare `*`, `-`,
+    // `NEAR`, etc.). We catch those errors and return empty results rather than
+    // propagating a rejected Promise. Narrowing: code === SQLITE_ERROR AND message
+    // matches the known FTS5 parse-error patterns below. Other SQLITE_ERROR
+    // messages ("no such table", "CHECK constraint failed", etc.) still rethrow.
     let rows: SearchRow[];
     try {
       rows = this.stmt.all({
@@ -172,13 +201,19 @@ export class SqliteFactStore implements FactStore {
       if (
         err instanceof Error &&
         'code' in err &&
-        (err as { code: string }).code === 'SQLITE_ERROR'
+        (err as { code: string }).code === 'SQLITE_ERROR' &&
+        /fts5|unterminated|syntax error|malformed MATCH/i.test(err.message)
       ) {
-        // SQLITE_ERROR (code 1) covers FTS5 parse/syntax failures from
-        // user-supplied query text (unclosed quotes, bare operators, malformed
-        // NEAR expressions, etc.). Storage/IO failures use different codes
-        // (SQLITE_CORRUPT=11, SQLITE_IOERR=10, SQLITE_BUSY=5, …) and are
-        // still rethrown so genuine bugs remain visible.
+        // FTS5 parse/syntax error from user-supplied query text. Known patterns:
+        //   "fts5: syntax error near ..."   — operator/token syntax failures
+        //   "unterminated string"           — unclosed double-quote in phrase query
+        //   "syntax error" / "malformed MATCH" — other FTS5 parser rejections
+        // Non-FTS SQLITE_ERROR messages ("no such table", "CHECK constraint", etc.)
+        // do NOT match and fall through to the rethrow below.
+        // TODO: replace console.warn with an injected logger once one exists.
+        console.warn(
+          `[SqliteFactStore] FTS5 query parse error (returning empty results): ${err.message}`,
+        );
         return { results: [] };
       }
       throw err;
