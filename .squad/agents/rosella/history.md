@@ -1,12 +1,12 @@
 7. ✅ Preimage: timestamp variant for --new, reuse existing childSid for --resume
-8. ✅ Observation row: ork_resume sub-kind added to §6.3
+8. ✅ Observation row: ork_resume sub-kind added to §6.3
 9. ✅ Keep both --resume flag AND crucible session resume verb (Roger finding: orthogonal workflows)
 10. ✅ Closed-session metadata appends: clarification added to §10.1 ("closed ≠ sealed for metadata")
 
 **Reviewer findings incorporated:**
 - **Graham (Architect):** Parent-ledger Decision row is idiomatic (RFC+Decision pattern); wall-clock heuristic inappropriate (replay-instability); L3.5 Scheduler has no coupling to fork protocol; recommend offset-based heuristic or drop entirely. **Outcome:** Dropped heuristic entirely per Aaron ruling.
 - **Valanice (UX):** "New" instead of "Fresh" (natural language + parallel structure); relative time ("3 days ago") critical for attention capture (US-4); 1-hour threshold is cognitive boundary but turn-count heuristic would strengthen it. **Outcome:** "New" naming adopted; relative time added to prompt spec; heuristic dropped per Aaron ruling (always-prompt with neutral presentation).
-- **Laura (Tester):** All 4 user stories are testable; replay determinism requires Decision row recording (covered); time-aware nudge requires logical-time injection (hermetic replay); ork_resume sub-kind required for ledger trace. **Outcome:** All findings incorporated; 8 acceptance scenarios added to §16.9; ork_resume added to §6.3.
+- **Laura (Tester):** All 4 user stories are testable; replay determinism requires Decision row recording (covered); time-aware nudge requires logical-time injection (hermetic replay); ork_resume sub-kind required for ledger trace. **Outcome:** All findings incorporated; 8 acceptance scenarios added to §16.9; ork_resume added to §6.3.
 - **Roger (CLI):** --new/--resume flags consistent with CLI taxonomy; --disambiguator flag redundant (timestamp variant handles collision); TTY detection + exit codes required; keep both flag and verb (orthogonal use cases). **Outcome:** All findings incorporated; --disambiguator rejected; TTY/exit-code spec added to §10.4 pseudocode; both flag and verb documented in §13.1.
 
 ### Key Learnings

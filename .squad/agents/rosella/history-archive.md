@@ -403,9 +403,9 @@ Proposed incremental stack cache mitigation for O(N) linear scan. `ReconstructIn
 
 **Work completed:**
 1. **ADR-0019 created** (docs/adr/0019-childsid-collision-hybrid.md) — comprehensive ADR documenting the always-prompt hybrid design with 10 design points, acceptance signals, security implications, resolved questions.
-2. **§10.4 fork protocol updated** — rewrote fork pseudocode with collision detection, interactive prompt UX, Decision row recording on PARENT ledger, preimage rules (timestamp variant for --new, reuse existing childSid for --resume), ork_resume Observation append.
-3. **§10.1 session state machine updated** — added borted → resumed transition; added status value 'resumed' to schema; added "closed ≠ sealed for metadata" clarification (closed sessions accept metadata appends, refuse work-session appends).
-4. **§6.3 Observation taxonomy updated** — added ork_resume sub-kind to Observation enum.
+2. **§10.4 fork protocol updated** — rewrote fork pseudocode with collision detection, interactive prompt UX, Decision row recording on PARENT ledger, preimage rules (timestamp variant for --new, reuse existing childSid for --resume), ork_resume Observation append.
+3. **§10.1 session state machine updated** — added borted → resumed transition; added status value 'resumed' to schema; added "closed ≠ sealed for metadata" clarification (closed sessions accept metadata appends, refuse work-session appends).
+4. **§6.3 Observation taxonomy updated** — added ork_resume sub-kind to Observation enum.
 5. **§13.1 CLI verb table updated** — updated crucible fork row with [--new | --resume] [--no-interactive] flags + collision handling description; added crucible session resume <sid> verb row (alternative path for resuming discovered aborted sessions).
 6. **§16.9 acceptance signals updated** — added 8 new acceptance scenarios (A-Fork-1 through A-Fork-8) covering all 4 user stories (US-1 quick retry, US-2 crash recovery, US-3 side-by-side, US-4 accidental resume prevention) plus replay determinism, non-TTY behavior, --no-interactive flag, direct resume verb.
 7. **Options docs marked as superseded** — prepended "SUPERSEDED by ADR-0019 (2026-05-30)" banner to both docs/crucible-technical-design/decisions/childsid-collision-options.md and docs/crucible-technical-design/decisions/childsid-collision-round2-user-stories.md.
@@ -914,9 +914,9 @@ Proposed incremental stack cache mitigation for O(N) linear scan. `ReconstructIn
 
 **Work completed:**
 1. **ADR-0019 created** (docs/adr/0019-childsid-collision-hybrid.md) — comprehensive ADR documenting the always-prompt hybrid design with 10 design points, acceptance signals, security implications, resolved questions.
-2. **§10.4 fork protocol updated** — rewrote fork pseudocode with collision detection, interactive prompt UX, Decision row recording on PARENT ledger, preimage rules (timestamp variant for --new, reuse existing childSid for --resume), ork_resume Observation append.
-3. **§10.1 session state machine updated** — added borted → resumed transition; added status value 'resumed' to schema; added "closed ≠ sealed for metadata" clarification (closed sessions accept metadata appends, refuse work-session appends).
-4. **§6.3 Observation taxonomy updated** — added ork_resume sub-kind to Observation enum.
+2. **§10.4 fork protocol updated** — rewrote fork pseudocode with collision detection, interactive prompt UX, Decision row recording on PARENT ledger, preimage rules (timestamp variant for --new, reuse existing childSid for --resume), ork_resume Observation append.
+3. **§10.1 session state machine updated** — added borted → resumed transition; added status value 'resumed' to schema; added "closed ≠ sealed for metadata" clarification (closed sessions accept metadata appends, refuse work-session appends).
+4. **§6.3 Observation taxonomy updated** — added ork_resume sub-kind to Observation enum.
 5. **§13.1 CLI verb table updated** — updated crucible fork row with [--new | --resume] [--no-interactive] flags + collision handling description; added crucible session resume <sid> verb row (alternative path for resuming discovered aborted sessions).
 6. **§16.9 acceptance signals updated** — added 8 new acceptance scenarios (A-Fork-1 through A-Fork-8) covering all 4 user stories (US-1 quick retry, US-2 crash recovery, US-3 side-by-side, US-4 accidental resume prevention) plus replay determinism, non-TTY behavior, --no-interactive flag, direct resume verb.
 7. **Options docs marked as superseded** — prepended "SUPERSEDED by ADR-0019 (2026-05-30)" banner to both docs/crucible-technical-design/decisions/childsid-collision-options.md and docs/crucible-technical-design/decisions/childsid-collision-round2-user-stories.md.
@@ -929,14 +929,14 @@ Proposed incremental stack cache mitigation for O(N) linear scan. `ReconstructIn
 5. ✅ Flags: --new | --resume mutually exclusive, --no-interactive, --label kept
 6. ✅ Determinism: Decision row in PARENT ledger with {chosenOption, existingChildSid, collisionDetectedAt}
 7. ✅ Preimage: timestamp variant for --new, reuse existing childSid for --resume
-8. ✅ Observation row: ork_resume sub-kind added to §6.3
+8. ✅ Observation row: ork_resume sub-kind added to §6.3
 9. ✅ Keep both --resume flag AND crucible session resume verb (Roger finding: orthogonal workflows)
 10. ✅ Closed-session metadata appends: clarification added to §10.1 ("closed ≠ sealed for metadata")
 
 **Reviewer findings incorporated:**
 - **Graham (Architect):** Parent-ledger Decision row is idiomatic (RFC+Decision pattern); wall-clock heuristic inappropriate (replay-instability); L3.5 Scheduler has no coupling to fork protocol; recommend offset-based heuristic or drop entirely. **Outcome:** Dropped heuristic entirely per Aaron ruling.
 - **Valanice (UX):** "New" instead of "Fresh" (natural language + parallel structure); relative time ("3 days ago") critical for attention capture (US-4); 1-hour threshold is cognitive boundary but turn-count heuristic would strengthen it. **Outcome:** "New" naming adopted; relative time added to prompt spec; heuristic dropped per Aaron ruling (always-prompt with neutral presentation).
-- **Laura (Tester):** All 4 user stories are testable; replay determinism requires Decision row recording (covered); time-aware nudge requires logical-time injection (hermetic replay); ork_resume sub-kind required for ledger trace. **Outcome:** All findings incorporated; 8 acceptance scenarios added to §16.9; ork_resume added to §6.3.
+- **Laura (Tester):** All 4 user stories are testable; replay determinism requires Decision row recording (covered); time-aware nudge requires logical-time injection (hermetic replay); ork_resume sub-kind required for ledger trace. **Outcome:** All findings incorporated; 8 acceptance scenarios added to §16.9; ork_resume added to §6.3.
 - **Roger (CLI):** --new/--resume flags consistent with CLI taxonomy; --disambiguator flag redundant (timestamp variant handles collision); TTY detection + exit codes required; keep both flag and verb (orthogonal use cases). **Outcome:** All findings incorporated; --disambiguator rejected; TTY/exit-code spec added to §10.4 pseudocode; both flag and verb documented in §13.1.
 
 ### Key Learnings

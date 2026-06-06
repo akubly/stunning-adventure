@@ -64,7 +64,7 @@ function makeHint(
 }
 
 function makeDisposition(
-  category: string,
+  category: DispositionSummary['category'],
   dismissedCount: number,
   resolvedCount: number,
 ): DispositionSummary {
