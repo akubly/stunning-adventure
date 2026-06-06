@@ -121,3 +121,28 @@ Phase 2 fan-out now unblocked. Full R2 locks in `.squad/decisions.md`.
 📌 **Crucible Sprint 0 — Walkthrough A Dual-Package GREEN** (2026-06-02T06:43:01Z): Gabriel's dual-package scaffold remains green through Roger's REFACTOR cycle. @akubly/crucible-core (SessionManager + DB interface + ForkLineage) and @akubly/crucible-cli (acceptance tests) both passing. No scaffolding work this turn but architecture remains extension-ready for Refactor 3 (SQLite integration stub) and Walkthrough B. — Scribe
 
 - 2026-06-05 ✅ persona-review-cycle 2 complete: Crucible Sprint 0 Walkthrough A ready to ship (Cycle 1: 11 findings, 10 fixed; Cycle 2: 3 advisory, 2 fixed, 1 deferred)
+
+### 2026-06-05 — Merge-Conflict Resolution: main Advancing While Feature Branch Is In Review
+
+**Pattern:** When `origin/main` advances (via merged PRs) while a feature branch is open in review and reported CONFLICTING:
+
+1. **Never rebase — always `git merge origin/main`.** Rebase rewrites history and breaks the union merge-driver semantics configured in `.gitattributes` for `.squad/` append-only files. `git merge` preserves the union driver, which auto-resolves `.squad/decisions.md`, `.squad/agents/*/history.md`, etc. without human intervention.
+
+2. **`package-lock.json` conflicts: regenerate, never hand-merge.** JSON lockfiles are not human-mergeable. Strategy:
+   - `git checkout origin/main -- package-lock.json` (take main's lockfile as the deterministic base)
+   - `npm install` from repo root — npm picks up all workspaces in `package.json → workspaces: ["packages/*"]` and adds any new packages from the feature branch automatically.
+   - `git add -- package-lock.json`
+
+3. **Modify/delete conflicts in `.squad/` files:** If main deleted a file that our branch modified (e.g., `crispin/history.md`), union semantics = keep HEAD. Resolve with `git add -- <file>` (no edits needed).
+
+4. **`.gitignore` pattern precision:** Trailing-slash glob patterns (`.squad/health-report-*/`) only match directories. Scribe health reports are FILES. Pattern must omit the trailing slash: `.squad/health-report-*`. Fix before the merge to avoid the conflict "staged change blocks merge" error, then commit separately.
+
+5. **Commit `.gitignore` before merging** if you staged it — `git merge` will refuse to proceed if the working tree/index has changes to a file that the merge would also touch.
+
+**Verification gates after merge:**
+- `git status --porcelain | Where-Object { $_ -match '^(UU|AA|DD|AU|UA|DU|UD)' }` — must be empty before committing.
+- `Get-Content tsconfig.json` — verify feature-branch project references (e.g., crucible packages) survived.
+- `npm run build` — must succeed for ALL workspaces.
+- `npm test --workspace=@akubly/crucible-core` and `npm test --workspace=@akubly/crucible-cli` — feature branch tests must stay green.
+
+**PR state after push:** `gh pr view <n> --json mergeable,mergeStateStatus,state` should return `mergeable: MERGEABLE`. `UNSTABLE` for mergeStateStatus is acceptable while Copilot review re-runs.
