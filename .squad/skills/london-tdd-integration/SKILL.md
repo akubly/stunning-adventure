@@ -237,5 +237,5 @@ The `(0 , createSQLiteDB)` pattern is vitest/Vite's CJS-interop indirect call fo
 - `docs/crucible-tdd-strategy.md §4.1` — Refactor 3 (integration stub)
 - `packages/crucible-cli/src/__tests__/integration/session-fork.integration.ts` — first application
 - `packages/crucible-cli/src/__tests__/fixtures/test-db.ts` — first application fixture
-- `.squad/decisions/inbox/laura-refactor3-red.md` — first application handoff
-- `.squad/decisions/inbox/squad-oq2-lock.md` — OQ-2 FEDERATE decision (drives schema independence)
+- `.squad/decisions.md` § "Handoff: Crucible Refactor 3 RED — Integration Test for Real SQLite" (2026-06-06) — first application handoff
+- `.squad/decisions.md` § "2026-06-06: OQ-2 LOCKED — Event-substrate topology = FEDERATE (Option B)" (2026-06-06) — OQ-2 FEDERATE decision (drives schema independence)
