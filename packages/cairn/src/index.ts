@@ -75,6 +75,11 @@ export {
   listOptimizationHints,
   updateOptimizationHintStatus,
   deleteOptimizationHint,
+  // resolveOptimizationHint, HINT_RESOLUTIONS, HintResolution, ResolveHintResult are
+  // intentional public API: resolveOptimizationHint is the primary user-driven
+  // closure operation and HINT_RESOLUTIONS/HintResolution/ResolveHintResult are
+  // its input and output contract.  Consumers (e.g. MCP handler, integration tests)
+  // are expected to import from the public root rather than internal paths.
   resolveOptimizationHint,
   ACTIVE_HINT_STATUSES,
   HINT_RESOLUTIONS,

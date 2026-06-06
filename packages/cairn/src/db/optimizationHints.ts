@@ -5,6 +5,8 @@ import {
   HINT_STATE_TRANSITION_EVENT_TYPE,
   HINT_TRANSITION_SOURCE_MCP,
   HINT_TRANSITION_PAYLOAD_KEYS as K,
+  HINT_RESOLUTION_RESOLVED,
+  HINT_RESOLUTION_DISMISSED,
 } from './hintStateTransitionConstants.js';
 
 // ---------------------------------------------------------------------------
@@ -83,10 +85,10 @@ export interface ReplaceActiveHintsAtomicallyResult {
   results: InsertHintIfNewResult[];
 }
 
-export type HintResolution = 'resolved' | 'dismissed';
+export type HintResolution = typeof HINT_RESOLUTION_RESOLVED | typeof HINT_RESOLUTION_DISMISSED;
 
 /** All valid hint resolution dispositions — single source of truth for Zod enum and type guards. */
-export const HINT_RESOLUTIONS = ['resolved', 'dismissed'] as const;
+export const HINT_RESOLUTIONS = [HINT_RESOLUTION_RESOLVED, HINT_RESOLUTION_DISMISSED] as const;
 
 export interface ResolveHintResult {
   id: string;

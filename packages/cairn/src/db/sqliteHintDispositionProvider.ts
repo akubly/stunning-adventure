@@ -4,6 +4,8 @@ import {
   HINT_STATE_TRANSITION_EVENT_TYPE,
   HINT_TRANSITION_SOURCE_MCP,
   HINT_TRANSITION_PAYLOAD_KEYS as K,
+  HINT_RESOLUTION_DISMISSED,
+  HINT_RESOLUTION_RESOLVED,
 } from './hintStateTransitionConstants.js';
 
 interface DispositionRow {
@@ -17,8 +19,8 @@ interface DispositionRow {
 const DISPOSITION_SQL = `
   SELECT
     h.category,
-    SUM(CASE WHEN json_extract(e.payload, '$.${K.RESOLUTION_DISPOSITION}') = 'dismissed' THEN 1 ELSE 0 END) AS dismissed_count,
-    SUM(CASE WHEN json_extract(e.payload, '$.${K.RESOLUTION_DISPOSITION}') = 'resolved'  THEN 1 ELSE 0 END) AS resolved_count
+    SUM(CASE WHEN json_extract(e.payload, '$.${K.RESOLUTION_DISPOSITION}') = '${HINT_RESOLUTION_DISMISSED}' THEN 1 ELSE 0 END) AS dismissed_count,
+    SUM(CASE WHEN json_extract(e.payload, '$.${K.RESOLUTION_DISPOSITION}') = '${HINT_RESOLUTION_RESOLVED}'  THEN 1 ELSE 0 END) AS resolved_count
   FROM event_log e
   JOIN optimization_hints h
     ON json_extract(e.payload, '$.${K.HINT_ID}') = h.id

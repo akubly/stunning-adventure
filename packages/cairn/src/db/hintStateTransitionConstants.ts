@@ -36,3 +36,15 @@ export const HINT_TRANSITION_PAYLOAD_KEYS = {
   RESOLUTION_NOTE: 'resolution_note',
   SOURCE: 'source',
 } as const;
+
+/**
+ * Canonical resolution disposition values for hint_state_transition events.
+ *
+ * BOTH the writer (optimizationHints.ts — which derives HintResolution and
+ * HINT_RESOLUTIONS from these) AND the SQL consumer (sqliteHintDispositionProvider.ts)
+ * must reference these constants.  Adding a new value here AND to HINT_RESOLUTIONS
+ * will surface compile-time failures in all three files simultaneously, preventing
+ * silent drift between producer and consumer.
+ */
+export const HINT_RESOLUTION_RESOLVED = 'resolved' as const;
+export const HINT_RESOLUTION_DISMISSED = 'dismissed' as const;
