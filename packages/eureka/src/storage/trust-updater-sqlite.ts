@@ -48,17 +48,17 @@ export class SqliteTrustUpdater implements TrustUpdater {
   private readonly runTxn: (args: MutateArgs) => void;
 
   constructor(db: Database.Database) {
-    const selectStmt = db.prepare<[string, string], FactRow>(
-      'SELECT trust FROM facts WHERE fact_id = ? AND session_id = ?',
+    const selectStmt = db.prepare<{ fact_id: string; session_id: string }, FactRow>(
+      'SELECT trust FROM facts WHERE fact_id = $fact_id AND session_id = $session_id',
     );
-    const updateStmt = db.prepare<[number, string, string]>(
-      "UPDATE facts SET trust = ?, updated_at = datetime('now') WHERE fact_id = ? AND session_id = ?",
+    const updateStmt = db.prepare<{ trust: number; fact_id: string; session_id: string }>(
+      "UPDATE facts SET trust = $trust, updated_at = datetime('now') WHERE fact_id = $fact_id AND session_id = $session_id",
     );
 
     // BEGIN IMMEDIATE serializes read-modify-write at the DB lock level.
     // See module JSDoc for rationale over DEFERRED.
     const rawTxn = db.transaction((args: MutateArgs) => {
-      const row = selectStmt.get(args.factId, args.sessionId);
+      const row = selectStmt.get({ fact_id: args.factId, session_id: args.sessionId });
       if (row === undefined) {
         throw new FactNotFoundError(args.factId);
       }
@@ -79,7 +79,7 @@ export class SqliteTrustUpdater implements TrustUpdater {
       }
 
       // newTrust is validated finite [0,1] here — null is unreachable.
-      updateStmt.run(newTrust, args.factId, args.sessionId);
+      updateStmt.run({ trust: newTrust, fact_id: args.factId, session_id: args.sessionId });
     });
 
     // Bind the immediate variant so each call gets BEGIN IMMEDIATE semantics.
