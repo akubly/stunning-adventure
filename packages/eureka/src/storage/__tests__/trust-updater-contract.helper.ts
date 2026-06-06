@@ -201,9 +201,15 @@ export function runTrustUpdaterContract(
     // mutations are applied and the final value equals startTrust + N * delta
     // (no writes were lost). The order of execution is implementation-defined.
     //
-    // What C-5 DOES verify: the impl's per-key serialization mechanism
-    // (promise-chain for InMemory; BEGIN IMMEDIATE write-lock for SQLite)
-    // prevents lost writes under same-process concurrency.
+    // What C-5 DOES verify: each impl's mutate() never produces interleaved
+    // reads/writes when N mutations run via Promise.all() in the SAME
+    // process. The serialization mechanism differs by impl:
+    //   * InMemory:  per-(sessionId,factId) promise-chain in JS
+    //   * SQLite:    better-sqlite3 is synchronous — JS event-loop ordering
+    //                already serializes calls before BEGIN IMMEDIATE can
+    //                play any role. The transaction wrapper is what enforces
+    //                read-modify-write atomicity within a single mutate(),
+    //                not what serializes across mutate() calls.
     //
     // What C-5 does NOT verify: SQLite's BEGIN IMMEDIATE behaviour under
     // contention from a *separate* Database connection or OS process. That
