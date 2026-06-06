@@ -24,14 +24,9 @@
  *   B2    Bounds: negative fork offset is rejected
  *   B3    Child ledgerSize = forkPointEventId + 1 immediately after fork (no own events)
  *
- * 🔴 RED PHASE: These tests FAIL because createTestDatabase() depends on
- *   `createSQLiteDB` which is not yet exported from @akubly/crucible-core.
- *   See packages/crucible-cli/src/__tests__/fixtures/test-db.ts for the full
- *   specification of what Roger must implement.
- *
- * Expected RED failure:
- *   TypeError: createSQLiteDB is not a function
- *   (at createTestDatabase → beforeEach → all tests in this file)
+ * // GREEN — Refactor 3 complete, 2026-06-06. Roger's commit a57f95f:
+ * //   better-sqlite3 promoted to dependencies, SCHEMA_V1_SQL single-sourced in
+ * //   crucible-core/schema.ts, createSQLiteDB exported — all tests GREEN.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -68,8 +63,7 @@ describe('Session Fork — Integration (real SQLite :memory:)', () => {
   let manager: SessionManager;
 
   beforeEach(() => {
-    // 🔴 RED: throws `TypeError: createSQLiteDB is not a function`
-    //   until Roger implements packages/crucible-core/src/sqlite-db.ts.
+    // GREEN: createSQLiteDB is exported and functional — Roger's a57f95f.
     db = createTestDatabase();
     manager = new SessionManager(db);
   });
@@ -187,6 +181,38 @@ describe('Session Fork — Integration (real SQLite :memory:)', () => {
       expect(child).not.toBeNull();
       // forkPointEventId=23, ownEvents=0 → ledgerSize = 24
       expect(child!.ledgerSize).toBe(24);
+    },
+  );
+
+  // ── SQLite-C1: Duplicate (session_id, offset) violates PK constraint ──────
+  //
+  // The events table has PRIMARY KEY (session_id, "offset"). A map-backed fake
+  // could silently overwrite a duplicate offset; only a real SQLite engine
+  // enforces the constraint and surfaces an error. This assertion proves the
+  // adapter is backed by a genuine DB, not a fake.
+
+  it(
+    'Integration: duplicate (session_id, offset) insertion throws SQLite PK constraint error [SQLite-C1]',
+    () => {
+      db.insertRootSession('constraint-test', 1_000_000);
+      db.pushEvent('constraint-test', {
+        primitiveKind: 'observation',
+        primitivePayload: { content: 'first' },
+        causalReadSet: [],
+        offset: 0,
+      });
+
+      // A second pushEvent at offset=0 MUST throw — SQLite enforces the
+      // composite PK (session_id, "offset"). A map-backed fake would silently
+      // overwrite and this expect would never trigger.
+      expect(() =>
+        db.pushEvent('constraint-test', {
+          primitiveKind: 'observation',
+          primitivePayload: { content: 'duplicate' },
+          causalReadSet: [],
+          offset: 0,
+        }),
+      ).toThrow();
     },
   );
 });
