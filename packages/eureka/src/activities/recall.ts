@@ -41,7 +41,20 @@ export interface FactStore {
     limit: number;
     /** Trust floor predicate per §20 §7.4 — store applies WHERE trust >= minTrust. Default 0.15. */
     minTrust?: number;
-  }): Promise<RecallResult[]>;
+    /**
+     * Opaque pagination cursor returned by a prior search call.
+     * Absent on first page. Consumers MUST NOT parse cursor internals.
+     * Q2-locked: included now to avoid a breaking change when cross-session queries arrive.
+     */
+    cursor?: string;
+  }): Promise<{
+    results: RecallResult[];
+    /**
+     * Opaque cursor for the next page. Absent when no further results exist.
+     * Consumers MUST NOT parse cursor internals.
+     */
+    nextCursor?: string;
+  }>;
 }
 
 export interface RecallOptions {
@@ -175,7 +188,7 @@ export async function recallWithScores(
   }
 
   // C3: Overfetch so the post-BM25 ranker has a meaningful candidate set to reorder.
-  const candidates = await factStore.search({ query, sessionId, limit: k * RANKER_OVERFETCH_FACTOR, minTrust: TRUST_FLOOR });
+  const { results: candidates } = await factStore.search({ query, sessionId, limit: k * RANKER_OVERFETCH_FACTOR, minTrust: TRUST_FLOOR });
   const nowMs = clock.now();
 
   // Belt-and-suspenders: FactStore.search() now receives minTrust and filters at the data

@@ -61,13 +61,13 @@ describe('recall', () => {
     // §20 §7.4 — FactStore.search() is the canonical storage seam.
     // Inline structural mock — FactStore interface will be formalised in M2.
     const factStore = {
-      search: vi.fn().mockResolvedValue([
+      search: vi.fn().mockResolvedValue({ results: [
         { content: 'User authenticated with JWT token',         trust: 0.8, attentionTier: 'warm' },
         { content: 'Login endpoint validates credentials',      trust: 0.9, attentionTier: 'hot'  },
         { content: 'OAuth2 flow requires client ID',            trust: 0.7, attentionTier: 'warm' },
         { content: 'Authentication middleware checks bearer',   trust: 0.8, attentionTier: 'warm' },
         { content: 'Session expired after 1 hour of inactivity', trust: 0.6, attentionTier: 'cold' },
-      ]),
+      ] }),
     };
 
     // §55 §1.3: activity signature drives collaborator injection shape.
@@ -112,7 +112,7 @@ describe('recall', () => {
     const EPOCH_MS = 0; // lastAccessed far in past → recency floor 0.1 for all
 
     const factStore = {
-      search: vi.fn().mockResolvedValue([
+      search: vi.fn().mockResolvedValue({ results: [
         // Fact A — stored 1st, should rank 4th
         // rawScore = 0.50×0.2 + 0.20×0.2 + 0.20×0.3 + 0.10×0.1 = 0.21
         // finalScore = 0.21 × 0.80 (cold) = 0.168
@@ -157,7 +157,7 @@ describe('recall', () => {
           attentionTier: 'warm',
           lastAccessed: EPOCH_MS,
         },
-      ]),
+      ] }),
     };
 
     const results = await recall(
@@ -216,7 +216,7 @@ describe('recall', () => {
     const stubClock = { now: () => BASE_MS };
 
     const factStore = {
-      search: vi.fn().mockResolvedValue([
+      search: vi.fn().mockResolvedValue({ results: [
         // STALE — stored 1st, should rank 2nd with stub clock
         // tDays = 100 → recency = max(0.1, (101)^−0.5) = 0.1  (floor)
         // raw   = 0.50×0.9 + 0.20×0.8 + 0.20×0.9 + 0.10×0.1 = 0.800
@@ -241,7 +241,7 @@ describe('recall', () => {
           attentionTier: 'hot',
           lastAccessed:  BASE_MS,
         },
-      ]),
+      ] }),
     };
 
     const results = await recall(
@@ -287,12 +287,12 @@ describe('recall', () => {
     const stubClock = { now: () => BASE_MS };
 
     const factStore = {
-      search: vi.fn().mockResolvedValue([
+      search: vi.fn().mockResolvedValue({ results: [
         // Future fact: tDays clamped to 0 → recency=1.0, but lower trust → ranks second
         { content: 'Future-dated fact',  trust: 0.3, attentionTier: 'warm' as const, lastAccessed: FUTURE_MS },
         // Present fact: tDays=0 → recency=1.0, higher trust → ranks first
         { content: 'Present-dated fact', trust: 0.8, attentionTier: 'warm' as const, lastAccessed: BASE_MS  },
-      ]),
+      ] }),
     };
 
     const results = await recall(
@@ -343,12 +343,12 @@ describe('recall', () => {
     const stubClock = { now: () => BASE_MS };
 
     const factStore = {
-      search: vi.fn().mockResolvedValue([
+      search: vi.fn().mockResolvedValue({ results: [
         // Never-accessed: absent lastAccessed → tDays=Infinity → recency=0.1 (floor)
         { content: 'Never-accessed fact',   trust: 0.8, attentionTier: 'warm' as const },
         // Recently accessed: lastAccessed=BASE_MS → tDays=0 → recency=1.0
         { content: 'Recently accessed fact', trust: 0.8, attentionTier: 'warm' as const, lastAccessed: BASE_MS },
-      ]),
+      ] }),
     };
 
     const results = await recall(
@@ -374,7 +374,7 @@ describe('recall', () => {
 
   it('passes minTrust: 0.15 to factStore.search so trust filtering happens at the data layer (F6)', async () => {
     const factStore = {
-      search: vi.fn().mockResolvedValue([]),
+      search: vi.fn().mockResolvedValue({ results: [] }),
     };
 
     await recall(
@@ -412,7 +412,7 @@ describe('recall', () => {
       { content: 'Warm medium-relevance fact',      relevance: 0.5, importance: 0.4, trust: 0.5, attentionTier: 'warm', lastAccessed: EPOCH_MS },
     ];
 
-    const makeStore = () => ({ search: vi.fn().mockResolvedValue([...fixture]) });
+    const makeStore = () => ({ search: vi.fn().mockResolvedValue({ results: [...fixture] }) });
 
     // No-op ranker: calls compositeScore inline AND sorts descending — semantically
     // identical to the inline path, but exercises the ranker code branch.
@@ -454,7 +454,7 @@ describe('recall', () => {
       facts.map(f => ({ fact: f, score: compositeScore(f, nowMs) }))
            .sort((a, b) => a.score - b.score); // ascending = reverse of natural descending
 
-    const factStore = { search: vi.fn().mockResolvedValue([...fixture]) };
+    const factStore = { search: vi.fn().mockResolvedValue({ results: [...fixture] }) };
 
     const results = await recall(
       { query: 'ranker order test', sessionId, k: 4 },
@@ -515,12 +515,12 @@ describe('recall', () => {
       const stubClock = { now: () => BASE_MS };
 
       const factStore = {
-        search: vi.fn().mockResolvedValue([
+        search: vi.fn().mockResolvedValue({ results: [
           // Known tier — ranks normally
           { content: 'Known-tier fact',   trust: 0.9, attentionTier: 'hot'  as any, lastAccessed: BASE_MS },
           // Unknown tier 'Hot' (legacy casing) — must not NaN-corrupt the sort
           { content: 'Unknown-tier fact', trust: 0.3, attentionTier: 'Hot'  as any, lastAccessed: BASE_MS },
-        ]),
+        ] }),
       };
 
       const results = await recall(
@@ -554,7 +554,7 @@ describe('recall', () => {
 
   it('passes limit: k * 3 (RANKER_OVERFETCH_FACTOR) to factStore.search so ranker sees more candidates (C3 — overfetch)', async () => {
     const factStore = {
-      search: vi.fn().mockResolvedValue([]),
+      search: vi.fn().mockResolvedValue({ results: [] }),
     };
 
     await recall(
