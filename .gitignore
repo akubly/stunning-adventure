@@ -56,7 +56,7 @@ temp/
 # Squad: ignore runtime state (logs, inbox, sessions)
 .squad/.scratch/
 # Squad: Scribe health report scratch files
-.squad/health-report-*/
+.squad/health-report-*
 .squad/scribe-health-report-*/
 
 # Local test capture artifacts
