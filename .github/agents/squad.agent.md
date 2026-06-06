@@ -754,9 +754,9 @@ c. **Create the worktree:**
    - Run: `git worktree add "{worktree}" -b {branch} {baseBranch}`
    - Example: `git worktree add "C:\src\squad-42" -b squad/42-fix-login main`
    - **Error handling:**
-     - Lock file error (`fatal: ... is locked`) → wait 5s, retry once; if still failing, log to `.squad/orchestration-log/{timestamp}-worktree-failed.md`, set `WORKTREE_MODE` to `false` and `WORKTREE_PATH` to `"n/a"`, fall back to main repo
-     - Permissions error → log to `.squad/orchestration-log/{timestamp}-worktree-failed.md`, set `WORKTREE_MODE` to `false` and `WORKTREE_PATH` to `"n/a"`, fall back to main repo
-     - Any other error → log to `.squad/orchestration-log/{timestamp}-worktree-failed.md`, set `WORKTREE_MODE` to `false` and `WORKTREE_PATH` to `"n/a"`, fall back to main repo
+     - Lock file error (`fatal: ... is locked`) → wait 5s, retry once; if still failing, log to `.squad/orchestration-log/{timestamp}-worktree-failed.md`, set `WORKTREE_MODE` to `false` and `WORKTREE_PATH` to `"n/a"`, fall back to main repo, and emit to the user: `⚠️  Worktree creation failed — falling back to main checkout. Isolation disabled for this spawn.`
+     - Permissions error → log to `.squad/orchestration-log/{timestamp}-worktree-failed.md`, set `WORKTREE_MODE` to `false` and `WORKTREE_PATH` to `"n/a"`, fall back to main repo, and emit to the user: `⚠️  Worktree creation failed — falling back to main checkout. Isolation disabled for this spawn.`
+     - Any other error → log to `.squad/orchestration-log/{timestamp}-worktree-failed.md`, set `WORKTREE_MODE` to `false` and `WORKTREE_PATH` to `"n/a"`, fall back to main repo, and emit to the user: `⚠️  Worktree creation failed — falling back to main checkout. Isolation disabled for this spawn.`
 
 d. **Set up dependencies:**
    - Link `node_modules` from main repo to avoid reinstalling:
@@ -765,6 +765,7 @@ d. **Set up dependencies:**
    - **Error handling:** If linking fails (permissions, cross-device, or any error):
      - Fall back: `cd "{worktree}" && npm install`
      - Log the fallback to `.squad/orchestration-log/{timestamp}-worktree-fallback.md`: `[worktree-setup] junction link failed — fell back to npm install in {worktree}`
+     - Emit to the user: `⚠️  Worktree dependency linking failed — fell back to npm install. Dependency isolation is degraded for this spawn.`
 
 e. **Include worktree context in spawn:**
    - Set `WORKTREE_PATH` to the resolved worktree path
