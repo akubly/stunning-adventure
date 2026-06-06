@@ -44,10 +44,11 @@ export class ForkLineage {
   constructor(public readonly parentSessionId: string | null, public readonly forkPointEventId: number) {
     if (forkPointEventId < 0) throw new Error('Fork point must be non-negative');
   }
-  static root() { return new ForkLineage(null, 0); }
   isRoot() { return this.parentSessionId === null; }
 }
 ```
+
+> **Note:** There is no `static root()` factory — root sessions are represented by `forkPointEventId === null` in `SessionMetadata` (see `session.ts`), not by a `ForkLineage` sentinel.
 
 **Tip:** If the strategy doc types a field as `string` but a sentinel factory requires `null`, accept `string | null` and document the choice.
 
@@ -76,8 +77,9 @@ export class SessionManager {
   async forkSession(parentId: string, forkOffset: number): Promise<string> {
     const parent = await this.db.getSession(parentId);
     if (!parent) throw new Error(`Parent session ${parentId} not found`);
-    if (forkOffset > parent.ledgerSize)
-      throw new Error(`Fork point ${forkOffset} exceeds parent ledger size ${parent.ledgerSize}`);
+    if (forkOffset >= parent.ledgerSize)
+      throw new Error(`Fork point ${forkOffset} must be < parent ledger size ${parent.ledgerSize}`);
+    // Valid offsets are 0..ledgerSize-1; >= rejects the equal-to-boundary case.
     const lineage = new ForkLineage(parentId, forkOffset); // validates non-negative
     const childId = crypto.randomUUID();
     await this.db.insertSession({ id: childId, parentSessionId: lineage.parentSessionId, ... });
