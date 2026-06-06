@@ -369,6 +369,14 @@ Yes — it used "should" language, omitted error handling entirely, and had no s
 
 📌 Team update (2026-06-02T06:13:21Z): **Crucible Sprint 0 Kickoff — MERGED** — Gabriel's crucible-cli Package Scaffold decision merged to `.squad/decisions.md`. Inbox file deleted. Orchestration log created. Infrastructure decisions locked: vitest (inherited from eureka), TypeScript project references (../types only), acceptance test directory (src/__tests__/acceptance/). Both packages scaffolded; workspace wired. — Scribe
 
+
+
+---
+
+# Gabriel — History Archive
+
+Archived: 2026-06-01
+
 📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Gabriel (PA-B6 fence-violation retry counter + staleness detection + threat-model stubs). Concrete params: max 5 retries, jittered backoff 2^N, 100-event staleness threshold, 50ms catch-up budget. All Pass A agents complete. — Scribe
 
 📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
@@ -384,6 +392,127 @@ Yes — it used "should" language, omitted error handling entirely, and had no s
 
 ---
 # Archived History: 2026-06-01T23:29:00Z
+
+## 2026-05-29: Crucible CTD Phase 4 — L3.5 Scheduler Tier Promotion
+
+**Task:** Author the L3.5 Scheduler tier promoted from `B-revisit-deferred` to
+v1 (Aaron lock; Erasmus US-E-13 + rubber-duck convergence on the OoO-execution
+/ dispatch-unit analog). Owner of §5 + §17; Roger owns §3 WAL acceptance of
+the new `scheduler_*` sub-kinds; Graham owns §1 layer-stack diagram update.
+
+**Deliverables:**
+1. `docs/crucible-technical-design/05-router-design.md` — new §5.A subsection
+   (~1.3pp, under the 1.5pp ceiling) covering responsibility, the four v1
+   sub-kinds (`scheduler_dispatched` / `_deferred` / `_cancelled` /
+   `_quanta_exhausted`), round-robin-with-quanta budget policy, back-pressure
+   threshold protocol, Hook Bus L1Subscriber interaction, replay determinism
+   (dispatch stream recorded, not recomputed), and three acceptance signals.
+   §5.2 state machine amended with `dispatched_pending` precursor state and a
+   paragraph documenting L3 → L3.5 → L4 flow.
+2. `docs/crucible-technical-design/17-observability-telemetry.md` — four new
+   catalog rows; `scheduler_dispatched` on builtin tier is silent (same
+   posture as `router.decision` apply); read-path perf-counter table for
+   quanta consumed, queue depth, dispatch latency, defer rate.
+3. `.squad/decisions/inbox/gabriel-ctd-phase4-scheduler.md` — decision drop.
+
+**Learning — boundary articulation as load-bearing.** The single sentence
+"Scheduler decides WHICH and IN WHAT ORDER; Router decides WHETHER" did more
+work than any other paragraph in the spec. Once that line existed, every
+sub-decision (does the Scheduler re-evaluate on replay? does it interact with
+hook verdicts? what sub-kinds does it emit?) collapsed to "if it's a
+which/order question, it's mine; if it's a whether question, it's the
+Router's." Boundary articulation pays for itself — the cost is one sentence,
+the benefit is the rest of the section writing itself.
+
+**Learning — replay-determinism discipline generalises.** §5.5 ("no live
+policy reload") and §5.A.6 ("dispatch order recorded, not recomputed") are
+the same doctrine applied to two different control-plane surfaces. Both
+flow from §6.5 Hook Verdict Consistency: any decision whose re-derivation
+would depend on wall-clock or non-deterministic ordering MUST be captured
+as an L1 Decision and replayed verbatim. This is a reusable test for any
+new control-plane tier — apply it before specifying any "scheduler /
+arbiter / coordinator" component in future revisions.
+
+**Learning — additive-sub-kind contract keeps cross-section work cheap.**
+The four `scheduler_*` sub-kinds slot into Roger's existing §3.3.1
+`(primitiveKind, subKind)` index without a new primitive kind. The whole
+tier ships as Decision sub-kind extensions plus a read-path projection
+(perf counters). This is the same pattern §17 itself uses — "harvest, don't
+define." When a new tier reuses the existing primitive/sub-kind contract,
+the cross-section coordination cost is one row in Roger's append validator
+and one diagram update in Graham's §1.
+
+**Files:** `docs/crucible-technical-design/05-router-design.md`,
+`docs/crucible-technical-design/17-observability-telemetry.md`. Decision drop:
+`.squad/decisions/inbox/gabriel-ctd-phase4-scheduler.md`.
+
+## 2026-05-28: Crucible CTD Rev. 3 — R2 Locks for Gabriel
+
+**Locked decisions** impact your execution model and bisect infra. Your tasks:
+1. **R2-3 (Queue Mechanics):** Aperture↔Router ack/resume handshake event shapes (Gabriel ↔ Valanice cross-section sync pair during Phase 2 authoring)
+2. **R2-5 (Env Snapshot):** Coordinate on nonDominatedReason field usage across layers (Rosella generates, Valanice renders)
+3. **R2-4 & R2-6:** Bisect env-snapshot stamping and transitive-dep pinning may inform CI policy.
+
+Phase 2 fan-out now unblocked. Full R2 locks in `.squad/decisions.md`.
+
+## Core Context
+
+- **Project:** A Copilot plugin marketplace for iterating on personal agentic engineering infrastructure
+- **Role:** Infrastructure
+- **Joined:** 2026-03-28T06:21:47.381Z
+
+## Learnings
+
+<!-- Append learnings below -->
+
+### 2026-06-01 — M2: forge-mcp Bash Shell Init Hooks
+
+**Task:** Deliver M2 of the forge-mcp dogfood plan — bash shell init integration
+so a developer who clones the repo can wire Cairn's session-start telemetry into
+their interactive bash sessions with a single command.
+
+**Shipped (PR #44, branch squad/m2-forge-mcp-bash-hooks):**
+- `.github/hooks/cairn/shell-init.sh` — sourceable bash hook
+- `.github/hooks/cairn/install.sh` — idempotent `~/.bashrc` wiring
+- `.github/hooks/cairn/uninstall.sh` — clean marker-block removal
+- `README.md` — new forge-mcp Bash Shell Init (M2) section
+- `.squad/skills/forge-mcp-shell-install/SKILL.md` — reusable pattern
+
+**Design choices:**
+
+1. **Hook location: `.github/hooks/cairn/`** — the natural home, parallel to
+   `curate.ps1` / `record.ps1`. Users exploring the hooks directory find all
+   variants together. The package (`skillsmith-runtime`) already owns its concern
+   (MCP server, sessionStart.ts); shell integration is a repo/infra concern.
+
+2. **Idempotency — two-layer guard:** install script uses marker-block grep before
+   appending; shell-init.sh uses `_FORGE_MCP_SHELL_INIT_LOADED` env var so
+   re-sourcing the rc file mid-session doesn't double-fire.
+
+3. **Non-interactive safety: `[[ $- != *i* ]] && return`** — this one line makes
+   the hook safe for CI, git hooks, and scripts that source rc files. It's not
+   optional; without it the hook fires in every subshell.
+
+4. **Script resolution mirrors curate.ps1 exactly:** user override →
+   global npm (skillsmith-runtime preferred, cairn fallback) → repo checkout.
+   Cross-platform behavioral parity is worth the duplication of the discovery
+   logic. Future changes to discovery order should update both.
+
+5. **Detached execution:** `node "$script" &>/dev/null & disown 2>/dev/null || true`
+   — `disown` is bash-specific and may fail in other shells, so `|| true` is
+   non-negotiable. The `&>/dev/null` silences both stdout and stderr so hook
+   noise never reaches the user's prompt.
+
+6. **Portable uninstall:** the sed-free bash state machine is the
+   battle-tested pattern. It avoids GNU/BSD `sed -i` differences and sequencing
+   footguns around blank-line removal plus marker-range deletion.
+
+**Cross-platform reality:** The bash hooks work in Git Bash on Windows (tested
+syntax via `bash -n`). The main risk is `node` not being on the Git Bash PATH —
+documented in README. No deeper Windows work needed since the Copilot CLI
+plugin already handles Windows via `curate.ps1`.
+
+**Build/test:** tsc clean, 49/49 tests pass. No TypeScript changes — pure infra.
 
 ### Phase 3 — §17/§18 Cross-Section Harvesting Pattern
 
@@ -1095,3 +1224,5 @@ Filed GitHub issue #31 to capture Graham's PR #29 review follow-up: emit user-vi
 
 
 📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
+
+

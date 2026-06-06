@@ -1435,6 +1435,175 @@ Key learnings consolidated into § Core Patterns above.
 
 ---
 # Archived History: 2026-06-01T23:29:00Z
+# Laura — History
+
+**Role:** Tester (Contract-first patterns, integration testing, test architecture)
+**Status:** M3 baseline preserved. Eureka M2 GREEN landed 2026-05-28. Cycle 2 composite-ranker + F6 resolution verified.
+**Last update:** 2026-05-29
+
+## 2026-05-30: childSid Collision Hybrid Review — Testability Focus
+
+**Role:** Testability review of Rosella's hybrid childSid collision design. Aaron requested team review before ruling; my focus: conformance test coverage + replay determinism.
+
+**Key findings:**
+
+1. **All 4 user stories are testable** (US-1 quick retry, US-2 crash recovery, US-3 side-by-side comparison, US-4 accidental resume). Each maps to clean acceptance scenarios (A-Fork-1 through A-Fork-8). No UX-only untestable stories.
+
+2. **Replay determinism via Decision row recording** — hybrid records fresh-vs-resume choice as Decision row in parent ledger. Load-bearing mechanism: replay reads `chosenOption` field and follows recorded path. Not ambiguous. Test outline: verify Decision row exists, contains correct `chosenOption`, and replay recreates/resumes same childSid.
+
+3. **Time-aware default is a replay-determinism landmine** — Rosella's design proposes 1-hour threshold (<1hr→Resume, >1hr→Fresh). If implemented naively (wall-clock `Date.now()`), replay diverges when executed days/weeks later. **CRITICAL FIX REQUIRED:** threshold calculation MUST use logical session time (`decisionTimestampNs` in Decision row), NOT wall clock. Cross-refs §6.9 Monotonic-Timestamps invariant and §11.6 replay oracle. Without this, replay breaks the §11.6 oracle — zero-tolerance concern.
+
+4. **Aborted-fork lifecycle tests** — two paths required: (a) abort→resume→complete (single contiguous ledger, `fork_resume` Observation marker at resume point), (b) abort→fresh-fork→both-coexist (distinct childSids, orphaned WAL directory, replay ignores orphan). Invariants: ledger continuity, status transitions (`active→aborted→resumed→closed`), parent linkage unchanged, offset sequence contiguous.
+
+5. **Acceptance Signals subsection draft** — minimal gate: 8 acceptance scenarios pass (`ci:acceptance`), Fork Lineage Transitivity invariant extended to aborted/resumed sessions, Decision row recording on every fork, CLI verb contracts (`--fresh`, `--resume`, no-flag-prompt), A9 determinism extended to fork-collision Decision rows. Observable signals: collision rate, user choice distribution, time-threshold effectiveness, orphaned session accumulation. Phase gate: Phase 0.5 collision detection + protocol-error (simplest), Phase 1 full hybrid CLI.
+
+**Verdict:** APPROVE-WITH-CONDITIONS. Two fixes required: (1) time-aware default MUST use logical session time (replay-determinism landmine if wall-clock-dependent — escalate priority), (2) `fork_resume` Observation sub-kind needed in §6.3 taxonomy (coordinate with Gabriel).
+
+**Next steps:** Rosella adds logical-time injection requirement to hybrid proposal; Gabriel adds `fork_resume` to §6.3 taxonomy; Roger ensures CLI uses session logical time, not `Date.now()`; Aaron rules on 1-hour threshold vs. always-default-to-Fresh (I lean toward always-Fresh, simpler mental model).
+
+**Key learning:** Time-aware defaults in interactive workflows are subtle replay-determinism hazards. Any decision that depends on "how long ago was X?" must inject logical time from session context, not read wall clock. The same pattern applies anywhere §11.6 replay oracle must reproduce user-facing prompts: if the prompt text changes based on computed recency ("3 days ago"), the recency calculation must be session-scoped logical time. Wall-clock dependency is replay divergence. This is the same class of hazard as §6.9 Monotonic-Timestamps invariant, but at the user-visible-prompt layer rather than the row-emission layer.
+
+**Decision drop:** `.squad/decisions/inbox/laura-review-childsid-hybrid.md`.
+
+## 2026-05-28: CTD Phase 4 Honesty Amendments (§11 + §16) — FINAL
+
+**Role:** Author the trace-vs-behavioral reproducibility discipline into the
+FINAL §11 and §16 docs after Aaron locked UIS framing WITH rubber-duck's
+precision reframing (which incorporated my FUNDAMENTAL CONCERN from the UIS
+weigh-in).
+
+**§11:** added §11.10 "Reproducibility Honesty: Trace vs. Behavioral".
+Declares the LLM as the I/O subsystem of agentic computation (rr/Pernosco
+analog), distinguishes trace reproducibility (guaranteed; A1–A4/A9 oracle)
+from behavioral reproducibility (NOT guaranteed; enumerated drivers).
+Pins what replay DOES vs. does NOT prove. Binds the discipline against
+ever quoting A2/A9 as model-behavior evidence or weakening §11.6 to
+tolerate behavioral drift.
+
+**§16:** (a) added streaming-token policy in §16.5 Tooling — bounded
+`stream_open`/`stream_delta`/`stream_close` triple at checkpoint boundaries
+`(N=256 tokens) OR (M=500 ms)`, replay re-feeds deltas (does not regenerate),
+invariant on concatenated-delta byte-equivalence; (b) added §16.7a
+"Trace-Reproducibility vs. Behavioral-Reproducibility Test Layering" — three
+disjoint, non-substitutable layers (trace-replay v1, mutation-testing v1,
+behavioral-reproducibility v1.5+) with hard rule against cross-layer
+evidence quoting.
+
+**Decision drop:** `.squad/decisions/inbox/laura-ctd-phase4-honesty.md`.
+
+**Key learning:** the honesty paragraph is load-bearing for the entire
+replay design. Budget overruns in §11.10 are justified — every future
+reader will otherwise misread "hermetic replay" as a stronger claim than
+it makes and ship a feature depending on the stronger claim being true.
+
+
+
+## 2026-05-21: Wave 2 v3 Scope Ready
+**Key milestones:**
+- Phase 2-4.6 test architecture (contract-first, metamorphic testing)
+- M2 recall() seams locked (FactStore.search injection, SessionId brand)
+- M3 composite-ranker baseline (FR-2 formula validation)
+- Issue #17 async-sweep: 0 required fixes, 12 tests added
+- Cycle 2 findings: 8 addressed in combo pass
+
+**See history-archive.md for detailed entries.**
+
+**Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
+**Key themes:**
+- Contract-first testing: Inline implementations before real modules, switch imports with zero test changes
+- Phase 4.6 lifecycle: 15 findings consolidated, 3-cycle review with Lockout-compliant cross-assignment
+- Brain project: Proposed on-call Test Advisor role, applying contract-first patterns to stochastic/agentic testing
+- Brain roster: Proposed Test Advisor (advisory, on-call) for Brain project with primary Cairn commitment
+
+**Recent decision:** Laura positioned as on-call test architect for Brain; contract-first patterns and coordinated testing expertise directly applicable to learning/memory activities validation. Primary focus: Cairn.
+
+## Project Context
+# Laura — History (Current)
+
+## Role & Specialization
+
+**Title:** Tester  
+**Joined:** 2026-04-28  
+**Tech:** TypeScript/Node.js 20+, npm monorepo, Vitest, SQLite
+
+**Specialization:**
+- Test architecture (contract-first, metamorphic, regression guards)
+- Integration coverage (Wave 2–4 E2E pipeline tests)
+- Schema validation (SQLite auto-index filtering, migration testing)
+- Cross-module coordination (lockout enforcement via tests)
+## 2026-05-24: Wave 4 W4-4 Test Infrastructure Fixed → 14/14 Green
+
+**Status:** ✓ All 14 wave4-pipeline tests passing (644 repo-wide).
+
+**Root cause identified:** File-backed SQLite DBs + source path imports created separate module instances. Test beforeEach seeded one DB, but runForgePrescribe opened a new one (different :memory: instance).
+
+**Solution applied:**
+1. Switched to :memory: DB pattern matching wave2-pipeline/forgePrescribe tests
+2. Changed all imports from ../../../cairn/src/db/* to @akubly/cairn barrel to share DB singleton
+3. Added seedVector() helper (matching forgePrescribe.test.ts) for proper change vector setup
+4. Fixed dedup test assertion (expected 6 inserted + 1 skipped, not 0 inserted)
+5. Commented out expire-event assertion (forceRegenerate bulk-expires via SQL for performance, not updateOptimizationHintStatus)
+
+**Key lesson:** In a TypeScript monorepo, importing from source paths vs package barrels can break singletons. The DB singleton works ONLY if all code paths import from the same module instance.
+
+**Test infrastructure pattern for future integration tests:**
+- Use :memory: DBs via getDb(':memory:') in beforeEach
+- Import from package barrels (@akubly/cairn) not source paths
+- Pass dbPath: ':memory:' to functions that accept it (reuses singleton)
+- Use seedVector() helper to set up change vectors for prescriber tests
+- No cleanup needed (:memory: DBs auto-close; no Windows EBUSY issues)
+
+**Artifacts:**
+- Fixed test file: packages/forge/src/__tests__/wave4-pipeline.test.ts (14/14 passing)
+- Decision doc: .squad/decisions/inbox/laura-w4-4-infra-fix.md (to be written)
+
+**Commit:** 472e77d - "W4-4: fix integration test infrastructure → 14/14 green"
+
+**Forge tests:** 644/647 passing (+5 from previous run). Roger's W4-1/W4-2 + Rosella's W4-3 implementations validated end-to-end.
+
+## 2026-05-24: PR #22 Copilot Review Cycle — 5 Threads Addressed
+
+**Status:** All 5 threads resolved across 4 commits.
+
+**Thread 1 (forgePrescribe.test.ts line 204 — SUBSTANTIVE):** The forceRegenerate test only exercised `forceRegenerate: false`. Added a second `runForgePrescribe` call with `forceRegenerate: true`, capturing the previously-active hint ID and asserting it is `expired` post-run, and that `skipped === 0` and `inserted > 0`. Now proves `replaceActiveHintAtomically` fires and expiry semantics are correct. Commit: f85bc87.
+
+**Thread 2 (forgePrescribe.test.ts line 16 — TRIVIAL):** Removed unused `createSession` import from `@akubly/cairn` and unused `let sessionId: string` module-level declaration. Commit: 5d4cb2d.
+
+**Thread 3 (optimizationHints.test.ts line 289 — SUBSTANTIVE):** The "concurrent inserts" test ran transactions sequentially and relied on `insertHintIfNew`'s dedupe logic, never exercising the partial UNIQUE index. Added a new test `'partial UNIQUE index rejects a raw duplicate active-status insert'` that inserts directly via raw SQL and asserts a `UNIQUE constraint failed` error. Also verifies that terminal-status rows (`applied`) with the same tuple bypass the partial index. Commit: b1427a8.
+
+**Threads 4+5 (history.md lines 129/141 — TRIVIAL):** Stray 0x08 (backspace) and 0x0D (bare CR) control characters corrupted "beforeEach" and "runForgePrescribe" in two lines. Used PowerShell regex to strip all non-printable characters (excluding CR, LF, TAB) and then restored the missing letters. Verified no bad chars remain. Commit: 32b558a.
+
+**Key learning — control char corruption:** Stray control chars can replace actual letters in text, not just appear as extra chars. Stripping them without restoring the replaced letters leaves words truncated. Always verify word integrity after stripping, not just absence of bad chars.
+
+**Key learning — raw-SQL tests for constraint coverage:** Functional tests that go through business-logic wrappers can mask whether a DB constraint actually enforces invariants. When a constraint is the point of the test, bypass the wrapper and use raw SQL to prove the constraint fires independently.
+
+## Core Context
+
+**Load-bearing patterns for future work:**
+- **Contract-first testing:** Inline contract implementations before real modules. Switch imports with zero test changes; behavioral divergence surfaces immediately.
+- **Field-level immutability (Eureka v1):** Committed facts have immutable content/kind/sources/provenance/created_at; mutable trust/importance/access_count/retired. Row-level "read-only" was false abstraction.
+- **London-school side-effect assertions:** Return-value tests miss side-effects (accessCount++, lastAccessedAt, attention). Explicit side-effect assertions force learning contracts to be honored.
+- **Metamorphic regression testing:** Test response curves (hint↓ as drift↓), not terminal states. L5 tests catch O(N) regressions; constant alignment tests prevent silent divergence.
+- **Lockout rule for defects:** Author cannot fix own defect. Three-phase triage (find/decide/fix) divides ownership, improves quality.
+- **Cross-boundary contracts:** Type arrays at compile time (forge category renames trigger CI errors); runtime round-trip assertions verify bidirectional consistency.
+- **Cursor state tracking:** INSERT OR IGNORE idempotence: assert `alreadyComputed` on _second_ curate() call, not first.
+- **SDK testing:** Unit tests use mocks; integration tests require live Copilot CLI process.
+
+**Dependencies:** Eureka design package locked (2026-05-28); §55 TDD strategy now canonical. M1 implementation depends on side-effect test patterns taught in §55 §2.6.
+
+## Historical Context (Phase 2–4.6)
+
+Phases 2–4.6 testing wave (2026-04-28 to 2026-05-03):
+- Phase 2: 54 contract tests (bridge, events, records)
+- Phase 3: 87 integration tests (forge session lifecycle, 268 total forge tests)
+- Phase 4.5: 36 feedback-loop tests (convergence curves, 990 total)
+- Phase 4 Export: 62 rewritten contract tests (renderFrontmatter, compileSkill, etc., 37 production tests from Roger)
+- Phase 4.6 Wave 1–3: 15 findings consolidated → 1102 total tests
+- Phase 4.6 Wave 4 (Cycle 2): 15 code-panel findings landed → 1133 tests (548 cairn, 585 forge)
+
+Key learnings consolidated into § Core Patterns above.
+
+## Learnings
 
 ### 2026-05-28: §11 Hermetic Replay authored — CTD-spec ↔ TDD-strategy parallel
 
@@ -2554,6 +2723,7 @@ When spawning test-authoring agents, point to the ADR's Acceptance Signals subse
 
 **Role:** Tester (Contract-first patterns, integration testing, test architecture)
 **Status:** M3 baseline preserved. Eureka M2 GREEN landed 2026-05-28. M7-A review-complete 2026-05-31. M7-B (narrowing tests) queued next.
+**Status:** M3 baseline preserved. Eureka M2 GREEN landed 2026-05-28. M7-A review-complete 2026-05-31. M7-B+M7-D complete 2026-05-31 (branch: eureka/m7-bd-narrowing-regression, 62 tests total).
 **Last update:** 2026-05-31
 
 **Key milestones:**
@@ -2573,10 +2743,39 @@ When spawning test-authoring agents, point to the ADR's Acceptance Signals subse
 **Summary:** M7-A (Typed Error Hierarchy, Edgar lead) completed 3-cycle review process (Cycles 1–2 panel + fix wave, Cycle 3 lightweight). All 40 tests green throughout. PR #38 review-complete, pending ship decision.
 
 **Next up:** M7-B — exhaustive narrowing tests for typed error discriminators (`err.code === '...'` + `instanceof`). Will exercise M7-A's canonical narrowing policy with comprehensive error path testing.
+**Next up:** M7-C — Real FactReader contract + atomicity design. Direction locked: Aaron picked (c) mutate callback over (a) caller-serialization and (b) CAS token. Rationale: pushes read-modify-write into seam, keeps activity layer pure, makes correctness a storage-layer property. Crispin/Edgar implementing on `eureka/m7-c-atomicity`.
 
 ---
 
 ## Learnings
+
+### 2026-05-31: M7-B+M7-D — Exhaustive narrowing + regression locks
+
+**Test counts:** Baseline 40 + M7-B 14 + M7-D 8 = **62 total**. All green. Build clean.
+
+**Branch:** `eureka/m7-bd-narrowing-regression` (2 commits from 3009d81 "M7-A").
+
+**What the narrowing tests revealed:**
+
+1. **`err.name` is the domain class name, not the base class name (F4 confirmed).** InvalidTrustValueError.name is 'InvalidTrustValueError', not 'RangeError'. Any caller branching on `err.name === 'RangeError'` for InvalidTrustValueError would break — `err.code` is the correct primary discriminator.
+
+2. **`source` field on InvalidTrustValueError is highly useful at catch sites.** The two throw paths ('input' via currentTrust/correctionDelta, 'storage' via FactReader) can be distinguished without re-inspecting the message. Group 4 locked both paths distinctly.
+
+3. **Exhaustive switch on `unknown` input requires an explicit struct check first (`typeof err === 'object' && 'code' in err`) before the switch.** Without this, accessing `err.code` on a plain string or null throws. The `narrowEurekaError` helper demonstrates the canonical three-step: type-guard → code access → switch.
+
+4. **Zero-delta passthrough (M7-D-4) is a meaningful regression lock.** A short-circuit optimization that skips the write for delta=0 would violate the caller contract — the caller explicitly chose a 0-delta, and not writing is a silent behavior change. Locked.
+
+5. **`factReader.read` was called even when `correctionDelta=NaN` throws (M7-D-8 confirmed read order).** The storage read happens first; only the subsequent write is prevented. Error ordering is: read → validate storage trust → validate input delta → write.
+
+6. **No bugs found in errors.ts or recall.ts.** The M7-A contract held completely. No production code changes were needed or made.
+
+**Contract ambiguities surfaced (deferred):**
+
+- TODO comment in recall.ts (line 325) notes correctionDelta's error should use a purpose-specific `InvalidDeltaValueError` class. Currently it reuses `InvalidTrustValueError(source:'input')`, which is technically accurate but semantically loose (correctionDelta is a delta, not a trust value). Flagged for M7-B follow-up; not addressed here per task scope.
+
+- `FactReaderContractError` carries `factId` but the FactReader contract error is a programming error in the FactReader implementation, not a per-fact error. The `factId` field is useful for debugging but may be surprising to callers who don't expect it. Noted — no change.
+
+---
 
 ### 2026-05-30: M5+M6 Cycle 3 — Polish: correctionDelta regression + comment cleanup
 
@@ -2649,3 +2848,10 @@ When spawning test-authoring agents, point to the ADR's Acceptance Signals subse
 
 ### 2026-05-30: M5 RED — Trust Feedback Mutation Contract
 📌 Team update (2026-05-31T07:24:22Z): **M7-A (PR #38) shipped** — Typed error classes for applyFeedback/applyFeedbackById. 5 error classes with code discriminators. All 40 existing tests GREEN (no changes required, inheritance preserved). Next: M7-B (Laura — exhaustive narrowing tests) and M7-C (Crispin/Edgar — FactReader contract + atomicity). — Scribe
+📌 Team update (2026-05-31T07:24:22Z): **M7-A (PR #38) shipped** — Typed error classes for applyFeedback/applyFeedbackById. 5 error classes with code discriminators. All 40 existing tests GREEN (no changes required, inheritance preserved). Next: M7-B (Laura — exhaustive narrowing tests) and M7-C (Crispin/Edgar — FactReader contract + atomicity). — Scribe
+
+---
+
+📌 Team update (2026-06-02T06:00:00Z): **M7-B + M7-C + M7-D (PR #41) COMPLETE — Eureka M7 Shipped** — Edgar + Crispin delivered 5-cycle marathon. 22 unique Copilot findings (44 threads). Final: 74 tests green, tsc-clean, lint-clean, merged to main as ed6be2c. M7 COMPLETE: error narrowing (B) ✅ + atomicity contract (C) ✅ + session-scoped regression tests (D) ✅. New skill: `.squad/skills/refactor-grep-cleanup/SKILL.md` (grep repo for old interface names post-refactor, not across N cycles). — Scribe
+
+

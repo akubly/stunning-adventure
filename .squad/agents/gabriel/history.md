@@ -59,6 +59,30 @@ and one diagram update in Graham's §1.
 3. **R2-4 & R2-6:** Bisect env-snapshot stamping and transitive-dep pinning may inform CI policy.
 
 Phase 2 fan-out now unblocked. Full R2 locks in `.squad/decisions.md`.
+📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Gabriel (PA-B6 fence-violation retry counter + staleness detection + threat-model stubs). Concrete params: max 5 retries, jittered backoff 2^N, 100-event staleness threshold, 50ms catch-up budget. All Pass A agents complete. — Scribe
+
+# Gabriel — History
+
+📌 **Role:** Infrastructure  
+📌 **Joined:** 2026-03-28T06:21:47.381Z  
+
+## Recent Summary (Last 30 Days)
+
+**Crucible CTD Phase 4 (2026-05-29):** L3.5 Scheduler Tier promotion, §5+§17+§18 authoring, Aperture↔Router ack/resume handshake event shapes locked.
+
+**Crucible CTD Rev. 3 (2026-05-28):** R2 locks finalized (Queue Mechanics, Env Snapshot coordination). Phase 2 fan-out unblocked.
+
+**Pass A Execution (2026-05-30):** Fence-violation retry counter + staleness detection + threat-model stubs (PA-B6). All Pass A agents complete.
+
+**M2: forge-mcp Bash Shell Init Hooks (2026-06-01):** Shipped PR #44 — .github/hooks/cairn/ scripts (init/install/uninstall), README M2 section, skill extraction. Design: idempotent marker-block strategy, co-location with PowerShell hooks. All tests passing (49/49). Ready for review.
+
+**M2 Cycle-1 Fixes (2026-06-01):** Addressed 3 review findings on PR #44 (commit e7ef8f3): (1) BLOCKING — replaced broken two-pass sed in uninstall.sh with a bash state-machine loop; byte-identical roundtrip verified on Git Bash. (2) IMPORTANT — moved npm resolution into background subshell so nothing blocks shell startup. (3) MEDIUM — fixed pkg_json dirname depth (2→3) so forge_mcp_check prints correct version 0.1.0. Build clean, 49/49 tests passing.
+
+**M2 Cycle-3 Fixes (2026-06-02):** Addressed 8 active Copilot threads on PR #44. Bucket A `b16a485`: bash resolver now matches `curate.ps1` fallbacks and Git Bash smoke reports package version. Bucket B `c831e64`: README now documents Node >=20, exact resolver order, and bash/Git Bash support boundary. Bucket C `19f35e9`: removed Graham history ESC artifact. Bucket D `a5f1e17`: consolidated date-stamped squad archives into canonical archive files. Persona-review follow-up `3245fc1`: refreshed shell-install skill parity, README troubleshooting/fallback notes, smoke-check fallback warning, and archive cleanup details. Verification: `npm run build`, `npm test`, and Git Bash `forge_mcp_check` all clean.
+
+**M2 Cycle-4 Fix (2026-06-02):** Addressed blocking process-leak thread `PRRT_kwDORy1V9M6GqI4o` in commit `ac524c3`. Root cause: interactive bash launched `node "$script"` with stdin inherited from the terminal, so `runSessionStartHook()` waited forever for EOF. Fix: pipe finite `{"toolName":"shellInit","cwd":"..."}` JSON into Node, with Git Bash cwd converted through `cygpath -w`, so stdin reaches EOF and repo/workdir attribution remains deterministic. Verification: `npm run build`, `npm test`, Git Bash `forge_mcp_check`, and process-leak smoke clean; transient Node PID exited before the 5-second recheck.
+
+**M2 Cycle-5 Fixes (2026-06-02):** Addressed 4 Copilot threads. Shell commit `94a66fb`: `shell-init.sh` now fails clearly when executed instead of sourced, and `uninstall.sh` uses adjacent `mktemp` plus cleanup trap. Doc hygiene commit `05bc54e`: removed tracked `.squad` markdown references to gitignored decision inbox paths. Review follow-ups `591843a`/`7c9433e`/`e5d929a`: hardened trap scope and removed remaining broken/ambiguous inbox wording. Verification: `npm run build`, `npm test`, direct-exec source-only error, source smoke with `forge_mcp_check`, install/uninstall byte-identical roundtrip with no `.forge-mcp-bak*` leftovers, and tracked grep clean.
 
 ## Core Context
 
@@ -186,3 +210,13 @@ Phase 2 fan-out now unblocked. Full R2 locks in `.squad/decisions.md`.
 All three files existed on origin/main-relative tracking only because the Scribe meta-commit staged them before the gitignore cleanup was applied.
 
 **Commit:** `f2606f3` — topic-branch SKILL typo fix (stray space in `.squad/ decision archives` → `.squad/decision archives`).
+## Current Workload
+
+- Crucible CTD Phase 3: §17 (observability/telemetry) + §18 (diagnostics/recovery) unblocked
+- M2 PR #44: Cycle-5 fixes shipped; awaiting coordinator thread resolution/merge
+- Dogfood scope: M2 complete; M3+ planning pending
+
+---
+
+**For detailed history, see history-archive.md**
+
