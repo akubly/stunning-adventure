@@ -15,3 +15,4 @@ export { ForkLineage } from './ledger/fork-lineage.js';
 export { createInMemoryDB } from './in-memory-db.js';
 export type { InMemoryDB } from './in-memory-db.js';
 export { createSQLiteDB } from './sqlite-db.js';
+export { SCHEMA_V1_SQL } from './schema.js';

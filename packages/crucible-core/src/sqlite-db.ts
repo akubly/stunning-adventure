@@ -1,16 +1,19 @@
 import Database from 'better-sqlite3';
 import type { InMemoryDB } from './in-memory-db.js';
+import { SCHEMA_V1_SQL } from './schema.js';
 import type { Primitive } from './types.js';
 
 /**
- * createSQLiteDB — real SQLite adapter for Crucible's own two-table schema.
+ * createSQLiteDB — Sprint-0 / transitional compatibility substrate for Crucible's
+ * two-table schema. This is NOT the canonical L1 WAL (CTD §3 segment+CAS WAL);
+ * it is a derived SQLite projection used as a compatibility shim until the canonical
+ * WAL substrate is introduced. Do not treat this adapter as the canonical storage layer
+ * for future work — bias future work toward the L1 WAL, not SQLite-as-canonical.
  *
  * OQ-2 FEDERATE (locked 2026-06-06): Crucible owns this schema entirely.
  * Zero Cairn imports, zero coupling to packages/cairn's event_log.
  *
- * Schema:
- *   sessions (id, parent_session_id, fork_point_event_id, plugin_versions, created_at)
- *   events   (session_id, offset, primitive_kind, primitive_payload, causal_read_set)
+ * Schema: see SCHEMA_V1_SQL in schema.ts.
  *
  * Satisfies the full InMemoryDB interface:
  *   - DB base methods (async): getSession, insertSession, queryEvents
@@ -22,24 +25,7 @@ export function createSQLiteDB(path: ':memory:' | string): InMemoryDB {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      id                  TEXT    PRIMARY KEY,
-      parent_session_id   TEXT,
-      fork_point_event_id INTEGER,
-      plugin_versions     TEXT,
-      created_at          INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS events (
-      session_id          TEXT    NOT NULL REFERENCES sessions(id),
-      "offset"            INTEGER NOT NULL,
-      primitive_kind      TEXT    NOT NULL,
-      primitive_payload   TEXT    NOT NULL,
-      causal_read_set     TEXT    NOT NULL,
-      PRIMARY KEY (session_id, "offset")
-    );
-  `);
+  db.exec(SCHEMA_V1_SQL);
 
   // ── Prepared statements ───────────────────────────────────────────────────
 
@@ -167,6 +153,8 @@ export function createSQLiteDB(path: ':memory:' | string): InMemoryDB {
     },
 
     pushEvent(sessionId, event) {
+      const exists = stmtGetSession.get(sessionId);
+      if (!exists) throw new Error(`pushEvent: session '${sessionId}' not found`);
       stmtInsertEvent.run({
         sessionId,
         offset: event.offset,
