@@ -1,3 +1,4 @@
+## Current & Recent
 # Edgar — History
 
 **Role:** Learning Systems Specialist (Plasticity, trust, recency, recall algorithms)
@@ -52,6 +53,9 @@
 
 - **F7 reversal (2026-05-31, PR #38 Cycle 4):** The Cycle 1 F7 finding that switched discriminator declarations from `readonly code = 'X' as const` to the explicit-annotation form `readonly code: 'X' = 'X'` was reversed. Root cause: the repo's ESLint config enforces `@typescript-eslint/prefer-as-const` as an error — the explicit-annotation form violates it, breaking CI on both Node 20 and Node 22. The `as const` form was correct all along. Lesson: **the repo's enforced lint config is authoritative over Craft-persona stylistic opinions**. Local Windows lint failed to catch this because the root `npm run lint` glob doesn't match workspace files on Windows — use `npm run lint --workspace=@akubly/eureka` for the gate the CI actually runs.
 
+📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
+
+📌 **Crucible Sprint 0 — DB Collaborator Seam ESTABLISHED** (2026-06-02T06:43:01Z): Roger's REFACTOR cycle introduces explicit DB interface (getSession, insertSession, queryEvents) + in-memory adapter (createInMemoryDB). Seam ready for L1-substrate swap (real SQLite integration stub via Refactor 3, then OQ-2 Cairn event_log integration pre-sprint-2). Edgar/Genesta/Crispin: Coordinate on L1 substrate decisions + schema overlap when OQ-2 lands. — Scribe
 - **M7-C (2026-05-31): Variant B removes `currentTrust` from caller API entirely.** The key insight behind Variant B over Variant A: when atomicity is a storage guarantee, the caller *cannot* provide `currentTrust` — the storage impl reads it inside `mutate()`. Forcing callers to supply `currentTrust` would create a false interface that ignores the supplied value. Variant B is the only shape consistent with the contract.
 
 - **Pre-flight vs. fn-time validation — two distinct seams:** Pre-flight validation (event type, correctionDelta presence/finiteness) fires BEFORE `mutate()` is called. Storage-trust validation fires INSIDE `fn` when storage calls `fn(currentTrust)`. This creates two observable test patterns: (1) pre-flight errors → mutate never called; (2) fn-time errors → mutate WAS called, fn threw, write aborted. Tests must differentiate these.

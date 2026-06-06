@@ -1398,6 +1398,18 @@ Key learnings consolidated into § Core Patterns above.
 
 
 
+---
+# Archived History: 2026-06-01T23:28:28Z
+
+📌 Team update (2026-06-02T06:26:54Z): **Crucible Sprint 0 — First GREEN CYCLE COMPLETE** — Roger's implementation landed. Acceptance scenario A1 satisfied; all 4 invariants GREEN (A1-1 through A1-4). Range convention: inclusive-inclusive [a,b]. In-memory parent-registry approach (logical delegation, no copy). Session types (PrimitiveKind, PrimitiveInput, Session, SessionMetadata) finalized. Packages: `@akubly/crucible-core` (NEW), `@akubly/crucible-cli` (updated). Inbox merged to decisions.md; orchestration + session logs created. Laura's RED contract unchanged (contract anchor); descent into REFACTOR phase next. OQ-2 deferred pre-sprint-2. — Scribe
+
+📌 Team update (2026-06-02T06:13:21Z): **Crucible Sprint 0 Kickoff — FIRST RED CONFIRMED** — Laura's first RED test for Crucible (session fork, 47 primitives, fork at offset 23) merged to decisions.md. Inbox file deleted. RED confirmed: `TypeError: (0 , createSession) is not a function` (correct failure mode). Test file: `packages/crucible-cli/src/__tests__/acceptance/session-fork.test.ts`. Next: GREEN descent (outside-in, layer by layer). Contract anchor: test must not be modified between RED and GREEN. Orchestration log created. — Scribe
+
+📌 **ADR-0019 CONTRIBUTION** (2026-05-30T194147Z): Wall-clock replay-determinism bug finding (independent convergence with Graham) + 8 A-Fork-* acceptance scenarios added to §16.9. Key insight: hermetic replay requires logical-time (offset), not wall-clock time. Multi-persona convergence on this correctness violation made the blocker non-negotiable. Test tier coverage: contract (A-Fork-1/2/3), component (A-Fork-4/6/7), acceptance (A-Fork-5/8). Capture for future: Cross-persona review with distinct lenses (Architect + Tester) surfaces correctness bugs that unit tests or single-reviewer design alone would miss.
+
+📌 Team update (2026-05-30T122214Z): **childSid collision hybrid review DONE** — Laura testability review complete. Verdict: APPROVE-WITH-CONDITIONS. Two required fixes: (1) time-aware default MUST use logical session time (replay-determinism landmine if wall-clock-dependent), (2) fork_resume Observation sub-kind needed in §6.3. Test coverage: 8 new acceptance scenarios (A-Fork-1 through A-Fork-8), all 4 user stories testable, replay determinism via Decision row recording. Review doc: `.squad/decisions/inbox/laura-review-childsid-hybrid.md`. Awaiting Aaron ruling on time-threshold vs. always-default-to-Fresh. — Laura
+
+📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Laura (C-9 conformance threading in §16.9 + ADR template with Acceptance Signals subsection). Coordinate with Rosella on C-9 forward-compatibility note; coordinate with Graham on ADR template socialization. All Pass A agents complete. — Scribe
 
 📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
 
@@ -1412,6 +1424,17 @@ Key learnings consolidated into § Core Patterns above.
 📌 Team update (2026-05-22T20:29:36Z): **Wave 1 complete** — canonical type adopted across packages, SqliteChangeVectorProvider live, zero-vector summaries filtered. Alexander (W2-2) + Rosella (W2-3/W2-7) complete. Forge 599 + Cairn 564 tests green. — Scribe
 📌 Team update (2026-05-22T20:16:40Z): **Wave 0 complete** — canonical types in @akubly/types, getAllCategories helper in Cairn. category field reconciled to OptimizationCategory union. — Scribe
 📌 Team update (2026-05-22T20:03:56Z): Wave 2 v3.1 scope final — autoApplyEligible propagates through OptimizationHint; constants NEGATIVE_IMPACT_AUTO_APPLY_GATE=-0.2 and ATTENUATION_FLOOR=0.1; CLI surface only — no MCP in Wave 2. — Graham Knight
+---
+# Archived History: 2026-06-01T23:28:48Z
+
+# Laura — History
+
+**Role:** Tester (Contract-first patterns, integration testing, test architecture)
+**Status:** M3 baseline preserved. Eureka M2 GREEN landed 2026-05-28. Cycle 2 composite-ranker + F6 resolution verified. Crucible first RED test written 2026-06-01.
+**Last update:** 2026-06-01
+
+---
+# Archived History: 2026-06-01T23:29:00Z
 # Laura — History
 
 **Role:** Tester (Contract-first patterns, integration testing, test architecture)
@@ -2699,6 +2722,7 @@ When spawning test-authoring agents, point to the ADR's Acceptance Signals subse
 # Laura — History
 
 **Role:** Tester (Contract-first patterns, integration testing, test architecture)
+**Status:** M3 baseline preserved. Eureka M2 GREEN landed 2026-05-28. M7-A review-complete 2026-05-31. M7-B (narrowing tests) queued next.
 **Status:** M3 baseline preserved. Eureka M2 GREEN landed 2026-05-28. M7-A review-complete 2026-05-31. M7-B+M7-D complete 2026-05-31 (branch: eureka/m7-bd-narrowing-regression, 62 tests total).
 **Last update:** 2026-05-31
 
@@ -2718,6 +2742,7 @@ When spawning test-authoring agents, point to the ADR's Acceptance Signals subse
 
 **Summary:** M7-A (Typed Error Hierarchy, Edgar lead) completed 3-cycle review process (Cycles 1–2 panel + fix wave, Cycle 3 lightweight). All 40 tests green throughout. PR #38 review-complete, pending ship decision.
 
+**Next up:** M7-B — exhaustive narrowing tests for typed error discriminators (`err.code === '...'` + `instanceof`). Will exercise M7-A's canonical narrowing policy with comprehensive error path testing.
 **Next up:** M7-C — Real FactReader contract + atomicity design. Direction locked: Aaron picked (c) mutate callback over (a) caller-serialization and (b) CAS token. Rationale: pushes read-modify-write into seam, keeps activity layer pure, makes correctness a storage-layer property. Crispin/Edgar implementing on `eureka/m7-c-atomicity`.
 
 ---
@@ -2822,6 +2847,7 @@ When spawning test-authoring agents, point to the ADR's Acceptance Signals subse
 **Pattern reinforced:** Skill documentation is a contract. When the shipped implementation deviates from a required-but-unused dep pattern, update the skill immediately so future RED beats aren't taught the wrong interface shape.
 
 ### 2026-05-30: M5 RED — Trust Feedback Mutation Contract
+📌 Team update (2026-05-31T07:24:22Z): **M7-A (PR #38) shipped** — Typed error classes for applyFeedback/applyFeedbackById. 5 error classes with code discriminators. All 40 existing tests GREEN (no changes required, inheritance preserved). Next: M7-B (Laura — exhaustive narrowing tests) and M7-C (Crispin/Edgar — FactReader contract + atomicity). — Scribe
 📌 Team update (2026-05-31T07:24:22Z): **M7-A (PR #38) shipped** — Typed error classes for applyFeedback/applyFeedbackById. 5 error classes with code discriminators. All 40 existing tests GREEN (no changes required, inheritance preserved). Next: M7-B (Laura — exhaustive narrowing tests) and M7-C (Crispin/Edgar — FactReader contract + atomicity). — Scribe
 
 ---

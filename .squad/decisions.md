@@ -1719,7 +1719,6 @@ From .squad/decisions/inbox/roger-issue-11-implementation.md (WI-A history, cros
 
 
 
-
 ---
 
 ## 2026-05-30: Squad Convention — Agent history.md Commits in Feature PRs Are In-Scope
@@ -1747,7 +1746,6 @@ Example in-scope entry:
 
 **Future:** If history bloat becomes a problem (file ≥15360 bytes), summarization rules apply (per Task 6). This is a hygiene gate, not a scope gate.
 
-
 ---
 
 ## 2026-05-30: Path A for Internal Helpers — Unexport and Shrink Test Surface
@@ -1769,7 +1767,6 @@ Options:
 **Applied to:** `normalizeProfileSource()` in PR #32. Reduced unit test count from 28→26; integration tests retain coverage.
 
 **Implication:** Team preference: explicit enforcement (unexport) > convention-based promises (@internal tag).
-
 
 ---
 
@@ -1812,7 +1809,6 @@ If a new reason is added and this helper is not updated, TypeScript will fail on
 **Citation:** Cycle 1 F1 raised that `JSON.parse` cast to `UnionType` was unguarded. Cycle 2 C2-1/C2-2 verified the drift-guard pattern resolves it.
 
 **Impact:** Ensures JSON.parse payloads cannot silently accept malformed data or diverge from enum reality.
-
 
 ---
 
@@ -1973,6 +1969,523 @@ Add CI check to detect `npm run lint` (bare) in agent logs and fail CI with help
 
 **Applied to:** PR #32 body re-render in alexander-5. Prevents escape-sequence garble in future multiline content.
 
+
+### 2026-06-01: Crucible Sprint 0 — First GREEN Cycle (Roger)
+
+# Roger: Crucible First GREEN — Decision Inbox
+
+**Date:** 2026-06-01  
+**Author:** Roger (Platform Dev)  
+**Status:** GREEN confirmed — acceptance test passing
+
+---
+
+## 1. Packages Scaffolded
+
+### `packages/crucible-core/`
+New package `@akubly/crucible-core` v0.1.0.
+
+Files created:
+- `package.json` — name `@akubly/crucible-core`, type module, `main/types` → `dist/`, scripts: build/test/typecheck/clean, deps: `@akubly/types: *`, devDeps: `@types/node ^25.5.0`, `vitest ^3`
+- `tsconfig.json` — mirrors crucible-cli: ES2022, Node16 module, composite, strict, references `../types`
+- `README.md` — one paragraph description
+- `vitest.config.ts` — standard node environment, `include: ['src/**/*.test.ts']`
+- `src/types.ts` — types-only module (no runtime code)
+- `src/session.ts` — createSession + fork implementation
+- `src/index.ts` — barrel re-export
+
+### `packages/crucible-cli/` (modified)
+- `src/index.ts` — now re-exports `{ createSession, fork }` from `@akubly/crucible-core`
+- `package.json` — added `"@akubly/crucible-core": "*"` to dependencies
+- `tsconfig.json` — added `{ "path": "../crucible-core" }` to references
+
+### Root `tsconfig.json`
+Added references: `packages/crucible-core` and `packages/crucible-cli`.
+
+---
+
+## 2. Public Types and Functions — Shapes
+
+```ts
+// §6 five-kind vocabulary
+type PrimitiveKind = 'request' | 'artifact' | 'observation' | 'decision' | 'question';
+
+interface PrimitiveInput {
+  primitiveKind: PrimitiveKind;
+  primitivePayload: unknown;
+  causalReadSet: string[];
+}
+
+// Committed primitive — PrimitiveInput + logical offset
+interface Primitive extends PrimitiveInput {
+  offset: number;
+}
+
+interface SessionMetadata {
+  parentSessionId: string | null;
+  forkPointEventId: number | null;
+  createdAt: number;
+}
+
+interface Session {
+  id: string;
+  metadata: SessionMetadata;
+  append(p: PrimitiveInput): Promise<void>;
+  query(opts: { range: [number, number] }): Promise<Primitive[]>;
+}
+
+function createSession(): Promise<Session>;
+function fork(parentId: string, opts: { atOffset: number }): Promise<Session>;
+```
+
+---
+
+## 3. Range Convention: Inclusive-Inclusive
+
+**Decision:** `query({ range: [a, b] })` is **inclusive on both ends**:  
+- `[0, 46]` returns 47 primitives (offsets 0, 1, …, 46)  
+- `[0, 23]` returns 24 primitives  
+
+**Evidence from test:** `query({ range: [0, 46] })` → `toHaveLength(47)` → 47 = 46 − 0 + 1 ✓
+
+---
+
+## 4. In-Memory Parent-Registry Approach
+
+A module-level `Map<string, Primitive[]>` holds each session's **own events**:
+
+- **Root sessions:** own events are the complete event log; offset = array index.
+- **Child (forked) sessions:** own events contain only primitives appended *after* the fork. Events at offset ≤ `forkPointEventId` are served by **delegating to the parent registry entry** — no physical copy.
+
+**Rationale:** This satisfies A1 invariant 3 (child prefix equals parent prefix [0..23]) and invariant 4 (parent unmodified) without copying. The parent's `registry` entry remains untouched; the child's `query` reads from it transparently.
+
+**Offset assignment for child append:**
+```ts
+const baseOffset = forkPointEventId === null ? 0 : forkPointEventId + 1;
+const offset = baseOffset + ownEvents.length;
+```
+
+---
+
+## 5. GREEN Confirmation
+
+```
+> @akubly/crucible-cli@0.1.0 test
+> vitest run
+
+ RUN  v3.2.4 D:/git/harness/packages/crucible-cli
+
+ ✓ src/__tests__/acceptance/session-fork.test.ts (1 test) 3ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  23:22:14
+   Duration  436ms (transform 71ms, setup 0ms, collect 73ms, tests 3ms, environment 0ms, prepare 148ms)
+```
+
+**Invariants confirmed GREEN:**
+- A1-1: `childSession.metadata.parentSessionId === parentSession.id` ✓
+- A1-2: `childSession.metadata.forkPointEventId === 23` ✓
+- A1-3: `childPrefix.toEqual(parentPrefix)` for range [0,23] ✓
+- A1-4: `parentEventsAfter.toHaveLength(47)` for range [0,46] ✓
+
+---
+
+## 6. Deferred: Ledger Abstraction
+
+No `Ledger` class, no `WAL` interface, no Cairn integration in this turn. This is the **GREEN phase only** — simplest correct implementation behind the acceptance API. The REFACTOR step (next TDD cycle) is where a Ledger collaborator abstraction would be introduced, followed by the London-school descent to introduce an L1 mock layer. Deferred per Graham's sprint plan (OQ-2).
+
+---
+
+# Decision Drop: Crucible REFACTOR Cycle — SessionManager Unit Tests (RED)
+
+**Author:** Laura (Tester)  
+**Date:** 2026-06-01  
+**Beat:** REFACTOR cycle RED — SessionManager unit tests with mocked DB collaborator  
+**Status:** RED — 4 tests failing (`TypeError: SessionManager is not a constructor`)
+
+---
+
+## What Landed
+
+**File:** `packages/crucible-core/src/__tests__/unit/session-manager.test.ts`
+
+4 unit tests authored per §4.1 Refactor 2, London-school style with a mocked `DB` collaborator:
+
+| # | Test name | Invariant locked |
+|---|---|---|
+| 1 | `Unit: SessionManager.forkSession() rejects fork beyond parent ledger size` | Fork offset > parent ledger size throws with message matching `/exceeds parent ledger size 47/` |
+| 2 | `Unit: SessionManager.forkSession() rejects negative fork offset` | Fork offset < 0 throws with message matching `/non-negative\|negative/` |
+| 3 | `Unit: SessionManager.forkSession() child session inherits transitive dependency graph from parent` | `DB.insertSession` called with full `pluginVersions` map (transitive graph intact) |
+| 4 | `Unit: SessionManager.forkSession() child fork lineage records parentSessionId and forkPointEventId` | `DB.insertSession` called with `{ parentSessionId: 'parent-id', forkPointEventId: 23 }` |
+
+---
+
+## MockDB Shape Locked
+
+```typescript
+type MockDB = {
+  getSession:    ReturnType<typeof vi.fn>;  // → { id, ledgerSize, pluginVersions? }
+  insertSession: ReturnType<typeof vi.fn>;  // ← { id, parentSessionId, forkPointEventId, pluginVersions, createdAt }
+  queryEvents:   ReturnType<typeof vi.fn>;  // reserved — not yet called in these scenarios
+};
+```
+
+`mockDB.getSession.mockResolvedValue({ id: 'parent-id', ledgerSize: 47, pluginVersions?: {...} })`  
+`mockDB.insertSession.mockResolvedValue('child-id')` — for success-path tests.
+
+**`queryEvents` is present on the shape** so negative-path tests can assert it was NOT called (validation fails before any event query).
+
+---
+
+## RED Confirmation
+
+```
+TypeError: SessionManager is not a constructor
+  ❯ src/__tests__/unit/session-manager.test.ts:77:23
+  ❯ src/__tests__/unit/session-manager.test.ts:96:23
+  ❯ src/__tests__/unit/session-manager.test.ts:120:23
+  ❯ src/__tests__/unit/session-manager.test.ts:144:23
+
+Test Files  1 failed (1)
+     Tests  4 failed (4)
+```
+
+`SessionManager` imported from `../../index.js` — not yet exported from Roger's in-memory sprint 0 implementation. Correct RED signal.
+
+---
+
+## Proactive Edge Case (Test #2)
+
+Test #2 (`rejects negative fork offset`) is not in §4.1 verbatim — it is a proactive extension of the `ForkLineage` invariant ("Fork point must be non-negative"). The regex `/non-negative|negative/` gives Roger phrasing freedom. This is Laura's charter: edge cases aren't optional.
+
+---
+
+## Next Steps
+
+### Immediate — Roger (REFACTOR)
+
+Roger's REFACTOR cycle must:
+
+1. **Extract `SessionManager` class** from the module-level functions in `session.ts`.
+   - Constructor signature: `new SessionManager(db: DB)` where `DB` matches the mockDB shape above.
+   - `forkSession(parentId: string, forkOffset: number): Promise<string>` — returns child session ID string.
+
+2. **Implement validation** in `forkSession`:
+   - Call `db.getSession(parentId)` → get `{ ledgerSize }`.
+   - If `forkOffset < 0` → throw with message matching `/non-negative|negative/`.
+   - If `forkOffset > ledgerSize` → throw with message matching `/exceeds parent ledger size <N>/`.
+
+3. **Implement happy path** in `forkSession`:
+   - Generate a new child UUID.
+   - Call `db.insertSession({ id, parentSessionId, forkPointEventId, pluginVersions, createdAt })`.
+   - Return child `id`.
+
+4. **Export `SessionManager`** from `packages/crucible-core/src/index.ts`.
+
+5. **Keep acceptance test GREEN**: `packages/crucible-cli/src/__tests__/acceptance/session-fork.test.ts` (1 test) must remain passing. Roger's in-memory `fork` function can coexist or be internalized into `SessionManager`.
+
+### Follow-up — Laura (§4.1 Refactor 3 + §7 Mock Drift)
+
+- **Integration test**: `packages/crucible-cli/src/__tests__/integration/session-fork.integration.ts` — real SQLite DB (`:memory:`), verify schema correctness and ledger prefix semantics.
+- **Mock Drift Defense (§7)**: Extract `makeMockDB()` from inline to `packages/crucible-core/src/__tests__/fixtures/mock-db-builder.ts` once Roger's `DB` interface is formally typed.
+
+---
+
+## Acceptance Test Guard
+
+The existing acceptance test **must remain GREEN** after Roger's REFACTOR:
+
+```
+packages/crucible-cli/src/__tests__/acceptance/session-fork.test.ts (1 test) ✅
+```
+
+Roger's refactor must not change the public `fork` / `createSession` API surface.
+
+---
+
+# Decision: Crucible Sprint 0 — REFACTOR Phase: SessionManager + ForkLineage
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-06-01  
+**Sprint:** 0 — REFACTOR cycle (§4.1 Refactor 1 + 2)  
+**Status:** COMPLETE — both test layers GREEN
+
+---
+
+## What was done
+
+### Refactor 1: ForkLineage value object extracted
+
+**File:** `packages/crucible-core/src/ledger/fork-lineage.ts`
+
+Extracted a `ForkLineage` value object that encapsulates fork ancestry invariants:
+
+- Constructor `(parentSessionId: string | null, forkPointEventId: number)` — typed `string | null` (not just `string`) so `ForkLineage.root()` can produce a valid sentinel without a non-null assertion.
+- Throws `"Fork point must be non-negative"` when `forkPointEventId < 0`.
+- `static root()` — returns `new ForkLineage(null, 0)`, sentinel for root sessions.
+- `isRoot(): boolean` — returns `parentSessionId === null`.
+
+The `string | null` deviation from the strategy snippet's `string` type is intentional and documented with a comment in the file: the strategy snippet declares `parentSessionId: string` but `root()` passes `null`, so we accept both.
+
+---
+
+### Refactor 2: SessionManager class + DB interface introduced
+
+**Files:**
+- `packages/crucible-core/src/db.ts` — `DB` interface
+- `packages/crucible-core/src/session-manager.ts` — `SessionManager` class
+
+#### DB interface (locked shape — must match Laura's mockDB)
+
+```ts
+export interface DB {
+  getSession(
+    id: string,
+  ): Promise<{ id: string; ledgerSize: number; pluginVersions?: Record<string, string> } | null>;
+
+  insertSession(session: {
+    id: string;
+    parentSessionId: string | null;
+    forkPointEventId: number | null;
+    pluginVersions?: Record<string, string>;
+    createdAt: number;
+  }): Promise<void>;
+
+  queryEvents(id: string, opts: { range: [number, number] }): Promise<unknown[]>;
+}
+```
+
+#### SessionManager.forkSession() validation order
+
+1. `db.getSession(parentId)` → throw `"Parent session {id} not found"` if null.
+2. `forkOffset > parent.ledgerSize` → throw `"Fork point {n} exceeds parent ledger size {m}"`.
+3. `new ForkLineage(parentId, forkOffset)` → throws `"Fork point must be non-negative"` if negative.
+4. `db.insertSession(...)` — forwards `parent.pluginVersions` verbatim (transitive dep graph).
+5. Returns `crypto.randomUUID()` child id.
+
+---
+
+### Refactor 2b: In-memory DB adapter (`createInMemoryDB`)
+
+**File:** `packages/crucible-core/src/in-memory-db.ts`
+
+Created `createInMemoryDB(): InMemoryDB` factory that backs the Sprint 0 in-memory state. `InMemoryDB` extends `DB` with internal helpers (`insertRootSession`, `pushEvent`, `getOwnEvents`, `getMetadata`) used only by `session.ts` composition layer — not visible to `SessionManager`.
+
+`ledgerSize` computation:
+- Root sessions: `ownEvents.length`
+- Child sessions: `forkPointEventId + 1 + ownEvents.length`
+
+---
+
+### Backward compatibility: session.ts wired to singleton adapter
+
+`session.ts` was refactored to:
+- Create a module-level `db = createInMemoryDB()` + `manager = new SessionManager(db)`.
+- `createSession()` calls `db.insertRootSession()` directly (no DB interface; root sessions don't go through SessionManager).
+- `fork()` calls `manager.forkSession()` for all invariant checks + DB insert, then builds the `Session` object using `db.getMetadata()` + `db.getOwnEvents()`.
+- `buildSession()` uses `db.pushEvent()` / `db.getOwnEvents()` instead of the old module-level `registry` Map.
+
+The old `registry` Map is gone; the in-memory DB owns all state.
+
+---
+
+### Barrel update
+
+`packages/crucible-core/src/index.ts` now exports:
+- `createSession`, `fork` (unchanged public surface)
+- `SessionManager` (class)
+- `DB` (interface — type-only)
+- `ForkLineage` (class)
+- `createInMemoryDB` (factory)
+- `InMemoryDB` (interface — type-only)
+- Existing types (`PrimitiveKind`, `PrimitiveInput`, `Primitive`, `SessionMetadata`, `Session`)
+
+---
+
+## Test results
+
+### Unit tests (Laura's file — verified GREEN)
+
+```
+✓ src/__tests__/unit/session-manager.test.ts (4 tests)
+  ✓ Unit: SessionManager.forkSession() rejects fork beyond parent ledger size
+  ✓ Unit: SessionManager.forkSession() rejects negative fork offset
+  ✓ Unit: SessionManager.forkSession() child session inherits transitive dependency graph from parent
+  ✓ Unit: SessionManager.forkSession() child fork lineage records parentSessionId and forkPointEventId
+Test Files 1 passed (1)
+Tests 4 passed (4)
+```
+
+### Acceptance tests (no regression)
+
+```
+✓ src/__tests__/acceptance/session-fork.test.ts (1 test)
+  ✓ Acceptance: Fork session creates child with inherited ledger prefix [parentId, forkOffset, childLineage]
+Test Files 1 passed (1)
+Tests 1 passed (1)
+```
+
+### Full monorepo build
+
+`npm run build` — exit 0, no TypeScript errors.
+
+---
+
+## Decisions and tradeoffs
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| `ForkLineage.parentSessionId` type | `string \| null` | `root()` requires null; typed string in strategy snippet but null is the correct sentinel value |
+| Validation order in forkSession | getSession → ledgerSize check → ForkLineage (negative) | Matches spec; negative check last because ForkLineage is constructed after parent lookup |
+| InMemoryDB internal helpers | `InMemoryDB extends DB` interface | Clean separation: DB interface is the mock contract; internal helpers only exist in the concrete adapter |
+| `createSession` bypasses SessionManager | Yes — calls `db.insertRootSession` directly | SessionManager.forkSession is the only operation requiring invariant validation; root sessions need no parent lookup |
+
+---
+
+## Deferred
+
+- **Refactor 3: Real SQLite integration stub** — `packages/crucible-cli/src/__tests__/integration/session-fork.integration.ts` + `createTestDatabase()`. Not this turn.
+- **Shared-fixture mockDB builder** — `packages/crucible-core/src/__tests__/fixtures/mock-db-builder.ts` (§7 Mock Drift Defense). Not this turn; mockDB is inline in Laura's test file per her note.
+- **`SessionManager.createSession()`** — not introduced; root session creation stays in `session.ts` for now. Move to SessionManager when the integration stub lands.
+
+
+---
+
+# Decision: Crucible Sprint 0 Topic Branch Recovery
+
+**Date:** 2026-06-01T23:58:20Z  
+**Author:** Gabriel (Infrastructure)  
+**Upstream Context:** Scribe committed 3 meta-files directly to main while Crucible code work remained uncommitted in the working tree.
+
+## What Happened
+
+Scribe's session consolidation produced:
+- **3 meta-commits on main:** b19b683, 193a441, 7cfe8ad (archived decisions, merged inbox, consolidated session logs)
+- **Uncommitted code:** packages/crucible-cli, packages/crucible-core, london-tdd-* skills, updated workspace refs
+
+This left main 3 commits ahead of origin/main with unreviewed code still in the working tree.
+
+## Resolution
+
+**Created topic branch:** `squad/crucible-sprint-0-walkthrough-a`
+
+**Committed work on topic branch:**
+- **Commit 92a8c2e** — `feat(crucible): Sprint 0 Walkthrough A — RED test + GREEN impl + REFACTOR (SessionManager/ForkLineage)`
+  - Staged: packages/crucible-cli, packages/crucible-core, tsconfig.json (workspace refs), package-lock.json
+  - Result: 19 files added, 758 insertions
+  
+- **Commit 01afeb6** — `docs(squad): London-school TDD skills from Crucible Sprint 0`
+  - Staged: .squad/skills/london-tdd-first-green, london-tdd-first-red-test, london-tdd-layer-descent, london-tdd-refactor-extract-collaborator
+  - Result: 5 files added, 605 insertions
+
+**Reset main:** `git reset --hard origin/main` (HEAD now at c8d7bc7, no commits ahead)
+
+**Final state:**
+- Branch `squad/crucible-sprint-0-walkthrough-a`: 5 commits ahead of origin/main (3 Scribe meta + 2 new code)
+- Branch `main`: Clean, back at origin/main (c8d7bc7)
+- Working tree: Empty (all WIP committed)
+
+## Artifacts Updated
+
+- `.gitignore`: Added patterns `.squad/health-report-*/` and `.squad/scribe-health-report-*/` to exclude Scribe scratch files
+- `.squad/agents/gabriel/history.md`: Documented the topic-branch recovery pattern under Learnings
+
+## Test Results
+
+- `npm test --workspace=@akubly/crucible-cli`: ✓ 1 passed
+- `npm test --workspace=@akubly/crucible-core`: ✓ 4 passed
+
+## Next Steps
+
+Topic branch is ready for review-cycle skill execution.
+
+---
+
+# Graham — Cycle 1 Persona Review Fixes
+
+**Date:** 2026-06-02T23:43:43-07:00
+**Branch:** squad/crucible-sprint-0-walkthrough-a
+**Triggered by:** Cycle 1 persona review findings (I4, I2, M1)
+
+---
+
+## I4: ForkLineage.root() — Chosen Option (a): Remove (YAGNI)
+
+**Alternatives considered:**
+- **(a) Remove root() entirely** — zero callers, eliminates inconsistency.
+- **(b) Widen constructor to (string | null, number | null)** — makes root() type-correct but ripples into guard clause and isRoot() logic.
+
+**Decision:** Option (a).
+
+**Rationale:** `root()` has zero callers and produces a sentinel (`forkPointEventId = 0`) that conflicts with the `session.ts` convention (`forkPointEventId === null` marks roots). Option (b) would require changing the constructor guard (`forkPointEventId < 0` doesn't handle `null`), updating `isRoot()` to also check `forkPointEventId === null`, and reasoning about whether `ForkLineage(null, null)` is a meaningful state distinct from `ForkLineage(null, 0)`. All that complexity for zero callers. YAGNI — re-introduce when a caller exists and the null semantics are settled.
+
+**Files changed:** `packages/crucible-core/src/ledger/fork-lineage.ts`
+
+---
+
+## I2: InMemoryDB Coupling Documentation
+
+**Placement:** File-header JSDoc in `session.ts`, lines 15–19 (after Sprint 0 deferral note, before `const db = createInMemoryDB()`). Chosen to avoid merge conflicts with Roger's concurrent imports/runtime changes.
+
+**Wording:** 5-line NOTE block naming the four extended methods (getOwnEvents, getMetadata, insertRootSession, pushEvent) and framing the Refactor 3 decision point.
+
+**Files changed:** `packages/crucible-core/src/session.ts` (comment only, no runtime change)
+
+---
+
+## M1: SKILL Doc Drift — Chosen Option (b): Annotate as Sprint 0 Variant
+
+**Alternatives considered:**
+- **(a) Update strategy doc** to match Sprint 0's simpler approach — risky, strategy doc is canonical for all sprints.
+- **(b) Annotate SKILL as Sprint 0 variant** — lighter, preserves strategy doc as the canonical reference.
+
+**Decision:** Option (b).
+
+**Rationale:** `docs/crucible-tdd-strategy.md` §4.1 shows the full London-school outside-in GREEN with mocked Ledger at each layer. That's the correct general approach. Sprint 0's simpler GREEN (real in-memory, no mocks) was a conscious scope reduction because the acceptance surface fits in a single module. Annotating the SKILL preserves the strategy doc's authority while making the divergence explicit and explaining when the full approach applies.
+
+**Files changed:** `.squad/skills/london-tdd-first-green/SKILL.md`
+
+---
+
+## Build & Test Status
+
+- **Build:** ✅ `npm run build` passes (tsc --build clean)
+- **crucible-core tests:** 3 passed, 3 failed (pre-existing — error message wording mismatch in session-manager.test.ts, Laura's domain)
+- **crucible-cli tests:** 1 failed (pre-existing — same root cause, not introduced by these changes)
+
+---
+
+# Cycle 2 Advisory Close-Out — Graham
+
+**Date:** 2026-06-05T10:54:00Z
+**Context:** Persona-review Cycle 2 surfaced 3 advisory (NEW) findings on Crucible Sprint 0 Walkthrough A.
+
+## Triage Outcomes
+
+| ID | Category | Disposition | Reasoning |
+|----|----------|-------------|-----------|
+| N3 | Skeptic, minor | **ACCEPT** | Doc/behavior drift — fork() JSDoc said `≤` but enforcement is strict `<`. Active lie; fixed in-place. |
+| N1 | Craft, minor | **ACCEPT** | Barrel export lacked test-only marker. One-line comment added; trivial, good hygiene. |
+| N2 | Craft, minor | **DEFER** | `clear()` on InMemoryDB interface obligates future impls to test-only method. Interface is internal-only with one impl. Revisit at Refactor 3 (SQLite adapter). |
+
+## Files Changed
+
+- `packages/crucible-core/src/session.ts` — N3: `≤` → `<` in fork() JSDoc (line 100)
+- `packages/crucible-core/src/index.ts` — N1: Split `resetInMemoryDb` export with test-only comment
+
+## Commit
+
+`fix(crucible): Cycle 2 advisory polish — N3 docstring + N1 barrel marker`
+
+---
+
+# Laura — Cycle 1 Test Updates
+
+**Date:** 2026-06-02  
+**Author:** Laura (Tester)  
+**Sprint:** Crucible Sprint 0 — Cycle 1 Persona Review  
+**Branch:** squad/crucible-sprint-0-walkthrough-a
 
 
 
@@ -2150,6 +2663,147 @@ impl and understands the passthrough contract).
 ---
 
 ## Summary
+
+Applied three categories of test improvements per Cycle 1 persona-review findings. All changes are confined to the two test files; no source was modified.
+
+---
+
+## New Tests Added (B1 Boundary)
+
+**File:** `packages/crucible-core/src/__tests__/unit/session-manager.test.ts`
+
+### `Unit: SessionManager rejects forkOffset equal to parent ledger size`
+- `mockDB.getSession.mockResolvedValue({ id: 'parent-id', ledgerSize: 47 })`
+- Expects `forkSession('parent-id', 47)` to reject.
+- Regex: `/exceeds parent ledger size 47|must be (less than|< parent ledger size)|>= ?47/i`
+- Verifies that the off-by-one boundary (equal-to, not just greater-than) is rejected.
+
+### `Unit: SessionManager rejects fork on empty parent at offset 0`
+- `mockDB.getSession.mockResolvedValue({ id: 'parent-id', ledgerSize: 0 })`
+- Expects `forkSession('parent-id', 0)` to reject.
+- Regex: `/exceeds parent ledger size 0|must be (less than|< parent ledger size)|>= ?0/i`
+- Exercises the edge case where the parent has no events at all.
+
+**Contracts locked with Roger:** These tests went GREEN because Roger landed his `>=` bounds-check fix and updated the error message to "must be < parent ledger size N" before this cycle completed. Regexes updated to cover both old "exceeds" and new "must be <" phrasings.
+
+---
+
+## Reset-Hook Pattern Adopted (I1)
+
+**File:** `packages/crucible-cli/src/__tests__/acceptance/session-fork.test.ts`
+
+Added:
+```typescript
+import { beforeEach } from 'vitest';
+import { resetInMemoryDb } from '@akubly/crucible-core';
+
+beforeEach(() => {
+  // Reset the module-level in-memory DB so each test starts from a clean slate.
+  resetInMemoryDb();
+});
+```
+
+**Rationale:** The current single acceptance test passes regardless (no prior state). This establishes the isolation discipline so the next acceptance test added does not inherit DB state from this one. The `resetInMemoryDb` function is exported by Roger's parallel work from `@akubly/crucible-core`.
+
+---
+
+## M4 Fix — beforeEach Mock Ordering
+
+**File:** `packages/crucible-core/src/__tests__/unit/session-manager.test.ts` (lines ~60–63)
+
+**Before:**
+```typescript
+beforeEach(() => {
+  mockDB = makeMockDB();
+  vi.resetAllMocks();
+});
+```
+
+**After:**
+```typescript
+beforeEach(() => {
+  // Reset first so vi.fn() instances created by makeMockDB() start pristine.
+  vi.resetAllMocks();
+  mockDB = makeMockDB();
+});
+```
+
+**Rationale:** The old order reset `vi.fn()` instances immediately after creating them — a no-op today (no module-level mocks) but confusing and semantically wrong. The correct pattern is: clear all mock state first, then construct fresh mocks on the clean slate. Added comment explains the ordering intent for future contributors.
+
+---
+
+## Test Results
+
+| Suite | Tests | Status |
+|-------|-------|--------|
+| `@akubly/crucible-core` | 6 (4 existing + 2 new B1) | ✅ All GREEN |
+| `@akubly/crucible-cli` | 1 | ✅ GREEN |
+
+---
+
+# Roger — Cycle 1 Fix Decisions
+
+**Date:** 2026-06-02T23:43:43-07:00
+**Branch:** squad/crucible-sprint-0-walkthrough-a
+**Author:** Roger (Platform Dev)
+
+---
+
+## B1 — Off-by-one in forkSession bounds check
+
+**File:** `packages/crucible-core/src/session-manager.ts:23`
+
+**Change:** `forkOffset > parent.ledgerSize` → `forkOffset >= parent.ledgerSize`
+
+**Rationale:** `forkPointEventId` is the inclusive last-included offset. With `ledgerSize=N`, valid fork offsets are `0..N-1`. The old `>` guard allowed `forkOffset===ledgerSize` (phantom slot past end) and allowed `fork(0)` on an empty parent (`ledgerSize=0`). The `>=` guard closes both cases. Error message updated to "must be < parent ledger size" to match the new semantics precisely.
+
+---
+
+## I1 — Singleton DB reset seam
+
+**Files:** `packages/crucible-core/src/in-memory-db.ts`, `session.ts`, `index.ts`
+
+**Contract:** `resetInMemoryDb()` exported from `@akubly/crucible-core` public surface. Zero args, void return. Clears all session state in the module-level singleton. After call, `createSession()` starts blank.
+
+**Implementation:** Added `clear(): void` to `InMemoryDB` interface; implemented as `store.clear()` in the factory closure. Added `export function resetInMemoryDb(): void { db.clear(); }` in `session.ts`; re-exported from `index.ts`. This is the simplest seam that lets Laura isolate tests without instantiating a private DB — she imports one function and the singleton is clean.
+
+---
+
+## I3 — pushEvent silent drop on missing session
+
+**File:** `packages/crucible-core/src/in-memory-db.ts:78-80`
+
+**Change:** Replaced optional-chain silent no-op with explicit guard + throw.
+
+**Rationale:** Silent drops are a data-loss footgun — callers can't distinguish "event appended" from "session didn't exist and the append was silently discarded." Making the missing-session case throw surfaces bugs at the earliest possible point (the append call), not at query time or never. Consistent with the principle: fail loudly at the boundary, not silently at the consumer.
+
+---
+
+## M2 — SessionMetadata invariant JSDoc
+
+**File:** `packages/crucible-core/src/types.ts`
+
+**Change:** Expanded the `SessionMetadata` JSDoc to document the both-null / both-non-null invariant explicitly, and noted that a TypeScript discriminated union is deferred to ForkLineage.
+
+---
+
+## M3 — range:[a,b] tuple API shape
+
+**Decision: Option B — keep tuple, add clarifying JSDoc.**
+
+**Rationale:** Option A (rename to `{startOffset, endOffset}`) would cascade to the acceptance test and `session.ts` query implementation, pulling in surface-area changes that aren't load-bearing for Sprint 0 correctness. The tuple `[a, b]` is already documented as inclusive-inclusive; the Sprint 0 goal is behavioural correctness, not API polish. The JSDoc on `Session.query` now explicitly names the two positions (`startOffset`, `endOffset`, both inclusive) and notes that a named-field API is under consideration for a future sprint. This documents intent without committing to a migration timeline or creating merge friction with Laura's test edits.
+
+**Future consideration:** A `{startOffset, endOffset, inclusiveEnd?: boolean}` shape would improve discoverability. Defer to post-Sprint-0 API review cycle.
+
+---
+
+## M5 — crypto.randomUUID() explicit import
+
+**Files:** `packages/crucible-core/src/session-manager.ts`, `session.ts`
+
+**Change:** Added `import { randomUUID } from 'node:crypto'` at top of each file; replaced `crypto.randomUUID()` with `randomUUID()`.
+
+**Rationale:** Relying on the global `crypto` object is fragile — the global is available in modern Node.js (≥19) and browser environments but is not guaranteed in all test runners or older Node targets. The `node:crypto` named import is explicit, tree-shakeable, and makes the runtime dependency visible. No behaviour change; same UUID output.
 
 All 9 mandatory checks pass. Roger's cycle-2 fixes are correct and no regressions were
 introduced. Two new edge tests (DB-CL-6 and DB-CL-7/M3) were added and committed.
