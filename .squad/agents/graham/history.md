@@ -75,3 +75,21 @@ Earlier entries (209 lines) archived to history-archive.md on 2026-06-05.
 
 Resolution values are now owned by `hintStateTransitionConstants.ts` (the event format spec file). `optimizationHints.ts` derives its exported surface from those constants. This forms a compile-enforced triangle: constants → types → SQL. Future additions must update all three vertices, which TypeScript will enforce at build time.
 
+---
+
+## Learnings — 2026-06-06: Forge M3 Copilot Review Address (PR #49)
+
+### Thread 1 — Prepared statement caching in `SqliteHintDispositionProvider`
+
+The comment said the prepared statement was re-used, but `this.db.prepare(...).all(...)` was called inline on every `getDispositions` invocation — creating a new statement object each time. Fixed by adding a `private dispositionStmt` field and using `??=` to lazily prepare once on the instance, then reuse. Comment updated to be accurate: "SQL is built at module load time so the constants are inlined once. The prepared statement is cached on the instance and re-used on every call."
+
+The `SqliteChangeVectorProvider` doesn't offer a caching precedent (it delegates to free functions), so the pattern was derived from the standard better-sqlite3 idiom. `Database.Statement<Params, Row>` is the correct field type — no extra imports needed since `Database` was already imported as a type.
+
+**Pattern to apply to future SQLite providers:** cache `db.prepare(SQL)` in a nullable instance field, initialize with `??=` on first call. Never `prepare()` inside a hot call path.
+
+### Thread 2 — SKILL.md pitfall #5: `resolveOptimizationHint` export status
+
+Pitfall #5 incorrectly stated that `resolveOptimizationHint` was not exported from `@akubly/cairn`. It was added to `cairn/src/index.ts` as part of the Cycle-1 panel review hardening (Finding H). Updated pitfall #5 to call it the **recommended path** (single call handles lookup + transition + event), with `insertHintIfNew` + `logEvent` reserved for adversarial tests needing fine-grained source/payload control.
+
+**Documentation debt pattern:** when a public API export is added as a review fix, also update any SKILL.md pitfalls that reference the non-exported version. Export additions don't automatically propagate to narrative documentation.
+

@@ -14,8 +14,8 @@ interface DispositionRow {
   resolved_count: number;
 }
 
-// SQL is built at module load time so the constants are inlined once and the
-// prepared statement is re-used on every call.
+// SQL is built at module load time so the constants are inlined once.
+// The prepared statement is cached on the instance and re-used on every call.
 const DISPOSITION_SQL = `
   SELECT
     h.category,
@@ -49,10 +49,13 @@ const DISPOSITION_SQL = `
  * directly so the JOIN dependency can be removed.
  */
 export class SqliteHintDispositionProvider implements HintDispositionProvider {
+  private dispositionStmt: Database.Statement<[string], DispositionRow> | undefined;
+
   constructor(private readonly db: Database.Database) {}
 
   async getDispositions(skillId: string): Promise<DispositionSummary[]> {
-    const rows = this.db.prepare<[string], DispositionRow>(DISPOSITION_SQL).all(skillId);
+    this.dispositionStmt ??= this.db.prepare<[string], DispositionRow>(DISPOSITION_SQL);
+    const rows = this.dispositionStmt.all(skillId);
 
     return rows.map((row) => ({
       skillId,
