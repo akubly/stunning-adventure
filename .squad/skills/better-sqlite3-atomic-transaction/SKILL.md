@@ -137,6 +137,22 @@ when external consumers materialize.
 
 ---
 
+## Forward Note — FactStore.search() Contract (Slice C)
+
+This SKILL prescribes the **read-modify-write** mutation pattern. Slice C
+(`SqliteFactStore.search()` with FTS5 BM25 ranking) will introduce a
+**search-and-paginate** pattern with its own contract surface (query +
+sessionId + minTrust + cursor → `{ results, nextCursor }`). That contract
+needs its own SKILL — not an extension of this one — because the invariants
+are different (relevance ordering, cursor stability, FTS5 score sign-bit).
+
+The contract test helper pattern from this SKILL (extract to
+`*-contract.helper.ts`, fully async harness, `@internal` exports) IS
+reusable for `runFactStoreContract`. The atomicity-via-BEGIN-IMMEDIATE
+prescription is NOT — FactStore.search() is read-only.
+
+---
+
 ## When NOT to Use This Pattern
 
 - **Read-only queries** — no transaction needed; `stmt.get(...)` is already atomic.
