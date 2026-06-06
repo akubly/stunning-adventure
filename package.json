@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc --build",
     "test": "npm run test --workspaces --if-present",
-    "lint": "eslint packages/*/src/",
+    "lint": "npm run lint --workspaces --if-present",
     "clean": "npm run clean --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
