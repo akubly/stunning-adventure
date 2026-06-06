@@ -1,8 +1,8 @@
 # Composition Root Pattern
 
-**Pattern Name:** Composition Root (Explicit Boundary Crossing)
-**Context:** Multi-package system where two packages must collaborate but must remain decoupled for clarity and testability.
-**Problem:** How to import two packages in the same runtime without creating direct coupling, build-order issues, or test isolation problems.
+**Pattern Name:** Composition Root (Explicit Boundary Crossing)  
+**Context:** Multi-package system where two packages must collaborate but must remain decoupled for clarity and testability.  
+**Problem:** How to import two packages in the same runtime without creating direct coupling, build-order issues, or test isolation problems.  
 **Solution:** Create an explicit composition root package (or module) whose only job is to import both and wire them together.
 
 ---
@@ -78,7 +78,7 @@ curate({ minSessionsObserved: 3 }, orchestrator);
 
 **Why this pattern:**
 - ✅ Cairn imports zero Forge code
-- ✅ Forge has zero Cairn dependency
+- ✅ Forge has zero Cairn dependency  
 - ✅ Composition root is the only place importing both
 - ✅ Orchestrator is a plain function, not a class (lightweight, testable)
 - ✅ Curator can be tested with a mock orchestrator (no Forge needed)
@@ -136,7 +136,7 @@ export function curate(config?: CurateConfig) {
 
 ## References
 
-- **ADR:** `decision inbox drop alexander-wave3-composition-adr-input.md` (Wave 3 Composition Root ADR input from Alexander)
+- **ADR:** `.squad/decisions/inbox/alexander-wave3-composition-adr-input.md` (Wave 3 Composition Root ADR input from Alexander)
 - **Integration Analysis:** `.squad/agents/alexander/wave3-integration-analysis.md` (Curator + MCP wiring surface)
 - **Precedent:** `@akubly/runtime-cli` (Wave 2 stepping stone). Demonstrates the pattern at CLI scale.
 

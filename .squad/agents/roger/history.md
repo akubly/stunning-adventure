@@ -40,7 +40,7 @@
 **Verdict: APPROVE-WITH-CONDITIONS.** Verb/flag shape is consistent with §13.1 taxonomy. Help text mirrors `defer` conventions. `--disambiguator` flag from Option B is **redundant** (timestamp-variant preimage in `--fresh` handles collision prevention). Interactive prompt mechanics need tightening: TTY detection, `--no-interactive` flag, exit codes (0, 1, 2, 130).
 
 **Deliverables:**
-- Review document: `decision inbox drop roger-review-childsid-hybrid.md` (16.4 KB, comprehensive analysis)
+- Review document: `.squad/decisions/inbox/roger-review-childsid-hybrid.md` (16.4 KB, comprehensive analysis)
 - Draft help text for `crucible fork --help` (mirrors §13 conventions + L1 semantics)
 - Condition #1: Keep both flag-based `--resume` and verb-based `crucible session resume <childSid>` (orthogonal use cases)
 - Condition #2: Spec TTY detection + exit codes (Table: 0=success, 1=generic error, 2=non-TTY needs flag, 130=user cancel)
@@ -99,7 +99,7 @@
 
 **Context:** Aaron preparing simultaneous Eureka + Crucible implementation in this repo (`D:\git\harness`). Task was to map data-layer overlaps between Eureka's PRD (from sibling `D:\git\mem` repo) and Crucible's L1 substrate (A.3 hybrid append-log, per-row content-addressed WAL, group-commit).
 
-**Verdict: FORK storage entirely.** Eureka and Crucible are architectural siblings with non-overlapping persistence needs. Full analysis written to `decision inbox drop roger-eureka-crucible-data-overlap.md`.
+**Verdict: FORK storage entirely.** Eureka and Crucible are architectural siblings with non-overlapping persistence needs. Full analysis written to `.squad/decisions/inbox/roger-eureka-crucible-data-overlap.md`.
 
 **Eureka's data shape (from PRD v5-final):**
 - Three independent SQLite DBs (via `better-sqlite3`): `~/.copilot/eureka/agent.db` (v1), `~/.copilot/eureka/user.db` (v1.5+), `<repo>/.eureka/project.db` (v1.5+). Only agent-tier fully wired in v1.
@@ -128,7 +128,7 @@
 
 ## 2026-05-25 Round 7: v1-tier triage of all Roger-authored stories
 
-Triaged every user story I authored across the deliberation against Aaron's locked v1 framing ("Aaron can run a one-week productivity loop where every improvement to Crucible is made by Crucible"). Written to `.squad/decisions/inbox/roger-triage-2026-05-25T0200Z.md`. Headline cut: **8 substrate items go T1, 1 story (R-4) is enabled-for-free, everything else falls to T2–T5 or splits.**
+Triaged every user story I authored across the deliberation against Aaron's locked v1 framing ("Aaron can run a one-week productivity loop where every improvement to Crucible is made by Crucible"). Written to `decisions/inbox/roger-triage-2026-05-25T0200Z.md`. Headline cut: **8 substrate items go T1, 1 story (R-4) is enabled-for-free, everything else falls to T2–T5 or splits.**
 
 T1 set: WAL with read-set hash + hook bus (Round 3 locked), `withShadowEvent` discipline + replay invariant (Open #4), CBOR-dcbor + BLAKE3 (Open #5), CAS + observation capture (Ro-NEW-2 — gates hermetic replay, this is the keystone), minimum-viable snapshot (Ro-NEW-1 T1 slice), branch/ref metadata schema (Ro-NEW-3 T1 slice), replay harness + linear `cairn fork --at` (R-3 T1 slice), drift ProposalGenerator (R-4, free). Plus `tenant_id` cheap-insurance migration (R-6 enabling) — hours now, weeks later.
 
@@ -140,7 +140,7 @@ Seven open questions for Cassima: rolling-buffer bound for capture store, `chang
 
 ## 2026-05-25 Round 6: Phase B Opens #4 and #5 resolved
 
-Closed both substrate-owned Phase B contradictions in one inbox file (`.squad/decisions/inbox/roger-opens-4-and-5-2026-05-25T0130Z.md`). For #4 (7-tables UPDATE vs. backward causal slice): enumerated all seven tables from `packages/cairn/src/db/` and `agents/`, classified 6 as derived projections of `event_log` (`sessions`, `insights`, `prescriptions`, `prescriber_state`, `curator_state`, `optimization_hints`) and 1 as external filesystem mirror (`managed_artifacts.current_checksum`). Recommended killing `prescriber_state.pending_count` entirely (replace with a SQL view), wrapping all other lifecycle UPDATEs in a `withShadowEvent()` repository helper, banning raw `UPDATE` outside `db/` via a custom ESLint rule with cursor/mirror allow-list, and locking the discipline in CI with a snapshot→truncate→replay→deep-equal invariant test. Rejected SQLite triggers (would couple us to a substrate primitive in violation of v1 commitment #10) and rejected the "move everything to append-only" alternative on the evidence that the source of truth is already the event log. ~14 hours of work for Alexander in the first Crucible sprint.
+Closed both substrate-owned Phase B contradictions in one inbox file (`decisions/inbox/roger-opens-4-and-5-2026-05-25T0130Z.md`). For #4 (7-tables UPDATE vs. backward causal slice): enumerated all seven tables from `packages/cairn/src/db/` and `agents/`, classified 6 as derived projections of `event_log` (`sessions`, `insights`, `prescriptions`, `prescriber_state`, `curator_state`, `optimization_hints`) and 1 as external filesystem mirror (`managed_artifacts.current_checksum`). Recommended killing `prescriber_state.pending_count` entirely (replace with a SQL view), wrapping all other lifecycle UPDATEs in a `withShadowEvent()` repository helper, banning raw `UPDATE` outside `db/` via a custom ESLint rule with cursor/mirror allow-list, and locking the discipline in CI with a snapshot→truncate→replay→deep-equal invariant test. Rejected SQLite triggers (would couple us to a substrate primitive in violation of v1 commitment #10) and rejected the "move everything to append-only" alternative on the evidence that the source of truth is already the event log. ~14 hours of work for Alexander in the first Crucible sprint.
 
 For #5 (canonical serialization): picked **CBOR-dcbor + BLAKE3** (`cbor2` + `@noble/hashes/blake3`) for the new L1 read-set hash — matches Phase A's existing `blake3` columns, ~5-7µs per hash (well inside the 80µs hook-bus envelope I told Gabriel about), pure-JS so no native binding requirement. **Left DBOM on SHA-256 + JSON** — different audit consumer, committed artifacts already in production, migration not worth it. Established the per-column rule: hash algorithm fixed at column creation, never migrated; new columns BLAKE3; named legacy SHA-256 columns frozen. Specified all canonicalization edge cases (forbid bignums/tags/indefinite-length/NaN/non-NFC, definite-length only, bytewise-encoded key sort). ~9 hours of work, with Laura's A3 conformance assertion now writable without further design. Anti-anchoring rule honored on both — considered and explicitly rejected the obvious alternative for each.
 
@@ -202,7 +202,7 @@ Ready for Wave 2 implementation (computation + ranking only; runtime wiring foll
 
 ## 2026-05-23: 📌 Wave 3 Complete — Curator-Driven Prescriber Orchestration Shipped
 
-**Status:** ✓ All 7 work items shipped
+**Status:** ✓ All 7 work items shipped  
 
 **Final Test Counts:**
 - Cairn: 576/576 passing
@@ -210,8 +210,8 @@ Ready for Wave 2 implementation (computation + ranking only; runtime wiring foll
 - Runtime-CLI: 5/5 passing
 - Skillsmith-Runtime: 6/6 passing
 
-**W3-1 & W3-2 shipped:** Scaffolding + thin CLI done.
-**W3-6 shipped:** Hook wiring complete — always-on bootstrap via injected config. Composition boundary preserved (cairn ↔ skillsmith-runtime acyclic).
+**W3-1 & W3-2 shipped:** Scaffolding + thin CLI done.  
+**W3-6 shipped:** Hook wiring complete — always-on bootstrap via injected config. Composition boundary preserved (cairn ↔ skillsmith-runtime acyclic).  
 
 Wave 3 implementation delivered autonomous Curator-driven orchestration. Composition root (R2: `@akubly/skillsmith-runtime`) is the only place importing both `@akubly/cairn` and `@akubly/forge`. Phase 5-ready architecture in place.
 
@@ -223,58 +223,58 @@ Wave 3 implementation delivered autonomous Curator-driven orchestration. Composi
 
 ### 9 Delivered Stories
 
-**US-R-1: Cairn Pattern Mining Across Session Boundaries**
-As Aaron, query Cairn ledger to surface recurring Decision patterns, code-smell-to-fix chains, and decision reversals across 100+ sessions for Curator tuning and Forge heuristic calibration.
-*Ambition:* Accumulated telemetry becomes self-tuning feedback loop; harness learns from its own history.
-*Chambers:* Crucible, Cairn, Forge, Mirror
+**US-R-1: Cairn Pattern Mining Across Session Boundaries**  
+As Aaron, query Cairn ledger to surface recurring Decision patterns, code-smell-to-fix chains, and decision reversals across 100+ sessions for Curator tuning and Forge heuristic calibration.  
+*Ambition:* Accumulated telemetry becomes self-tuning feedback loop; harness learns from its own history.  
+*Chambers:* Crucible, Cairn, Forge, Mirror  
 *Data implication:* Append-only versioning + efficient graph traversal across millions of Primitives.
 
-**US-R-2: GitHub Issue Auto-Coupling via Curator**
-Curator detects when a session solves/relates to open GitHub issues, auto-proposes linking (never auto-approves), leaving Mirror-check gate.
-*Ambition:* Break silo between coding-agent telemetry and project tracking; external systems as first-class signal inputs.
-*Chambers:* Crucible, Cairn, Curator, Mirror
+**US-R-2: GitHub Issue Auto-Coupling via Curator**  
+Curator detects when a session solves/relates to open GitHub issues, auto-proposes linking (never auto-approves), leaving Mirror-check gate.  
+*Ambition:* Break silo between coding-agent telemetry and project tracking; external systems as first-class signal inputs.  
+*Chambers:* Crucible, Cairn, Curator, Mirror  
 *Data implication:* Bidirectional webhooks + GitHub API polling; Cairn stores sync state + proposal backpressure.
 
-**US-R-3: Cairn Replay & Variant Branching**
-Export session (or sub-chain) and replay with Alchemist variants—different model, decision tree, tool choices—to compare outcomes without reracking work.
-*Ambition:* Replay-as-first-class-primitive; harness becomes experimentation platform. Replay + variant = A/B testing coding decisions.
-*Chambers:* Cairn, Alchemist, Crucible
+**US-R-3: Cairn Replay & Variant Branching**  
+Export session (or sub-chain) and replay with Alchemist variants—different model, decision tree, tool choices—to compare outcomes without reracking work.  
+*Ambition:* Replay-as-first-class-primitive; harness becomes experimentation platform. Replay + variant = A/B testing coding decisions.  
+*Chambers:* Cairn, Alchemist, Crucible  
 *Data implication:* Portable serialization (JSON-LD/SQLite) with deterministic replay semantics + seeded RNG injection.
 
-**US-R-4: Long-Session Drift Detection & Prescribing**
-Forge detects token-budget creep, context-window saturation, decision-reversal clustering in sessions >2hr; auto-proposes checkpoint/reset patterns.
-*Ambition:* Make invisible resource constraints visible before degrading session quality; Forge as canary.
-*Chambers:* Forge, Crucible, Cairn, Mirror
+**US-R-4: Long-Session Drift Detection & Prescribing**  
+Forge detects token-budget creep, context-window saturation, decision-reversal clustering in sessions >2hr; auto-proposes checkpoint/reset patterns.  
+*Ambition:* Make invisible resource constraints visible before degrading session quality; Forge as canary.  
+*Chambers:* Forge, Crucible, Cairn, Mirror  
 *Data implication:* Granular token/context-window/latency tracking per turn; time-series queries on Cairn.
 
-**US-R-5: Mirror-Backed Cross-Session Provenance**
-Mirror surfaces decision chain (why that tool chosen, which prior session influenced heuristic) across boundaries, building legible accountability for harness autonomy.
-*Ambition:* Epistemic trust-building—audit *reasoning* behind Curator proposals, not just outputs.
-*Chambers:* Mirror, Cairn, Curator
+**US-R-5: Mirror-Backed Cross-Session Provenance**  
+Mirror surfaces decision chain (why that tool chosen, which prior session influenced heuristic) across boundaries, building legible accountability for harness autonomy.  
+*Ambition:* Epistemic trust-building—audit *reasoning* behind Curator proposals, not just outputs.  
+*Chambers:* Mirror, Cairn, Curator  
 *Data implication:* Rich metadata linking each Primitive to prior-session provenance (parent Decisions, Forge signals, Curator confidence).
 
-**US-R-6: Scalable MCP Ecosystem as Forge Input**
-Federate tool success/failure/latency across Aaron's entire MCP ecosystem; Forge ranks tool choices; share anonymized insights with Skillsmith community.
-*Ambition:* Harness becomes collective learning engine; aggregate signal from thousands of tool invocations into shared optimization surface.
-*Chambers:* Forge, Cairn, Curator, Crucible
+**US-R-6: Scalable MCP Ecosystem as Forge Input**  
+Federate tool success/failure/latency across Aaron's entire MCP ecosystem; Forge ranks tool choices; share anonymized insights with Skillsmith community.  
+*Ambition:* Harness becomes collective learning engine; aggregate signal from thousands of tool invocations into shared optimization surface.  
+*Chambers:* Forge, Cairn, Curator, Crucible  
 *Data implication:* Multi-tenant telemetry ingestion + differential-privacy aggregation; Forge ranking scoped to cohort.
 
-**US-R-7: Curator-Driven Code Review Automation**
-Curator detects mutations of core APIs or high-fan-out subsystems; auto-proposes async code review (MCP agents or GitHub PR); track review-to-ship latency in Cairn.
-*Ambition:* Blur autonomy and accountability; let them coexist.
-*Chambers:* Curator, Cairn, Crucible, Mirror
+**US-R-7: Curator-Driven Code Review Automation**  
+Curator detects mutations of core APIs or high-fan-out subsystems; auto-proposes async code review (MCP agents or GitHub PR); track review-to-ship latency in Cairn.  
+*Ambition:* Blur autonomy and accountability; let them coexist.  
+*Chambers:* Curator, Cairn, Crucible, Mirror  
 *Data implication:* Parse Artifact diffs, compute module-graph impact, integrate GitHub PR API + MCP code-review servers.
 
-**US-R-8: Multi-Tenant Cairn Export & Legal Hold**
-Export filtered Cairn views (by project, time window, Primitive type) as immutable ledger snapshots for compliance, legal hold, or sharing—without exposing private sessions.
-*Ambition:* Audit-ready from day one; data residency + portability as core, not bolted-on.
-*Chambers:* Cairn, Mirror, Crucible
+**US-R-8: Multi-Tenant Cairn Export & Legal Hold**  
+Export filtered Cairn views (by project, time window, Primitive type) as immutable ledger snapshots for compliance, legal hold, or sharing—without exposing private sessions.  
+*Ambition:* Audit-ready from day one; data residency + portability as core, not bolted-on.  
+*Chambers:* Cairn, Mirror, Crucible  
 *Data implication:* Column-level access control, zero-knowledge proof of ledger integrity, deterministic export fingerprinting.
 
-**US-R-9: Sessions as Reusable Templates**
-Mature Crucible sessions packaged as reusable templates—decision trees, tool chains, Curator tunings—spin up new projects with pre-tuned harness behavior.
-*Ambition:* Session-as-code; codify best practices by capturing harness *state itself*.
-*Chambers:* Cairn, Crucible, Alchemist, Forge
+**US-R-9: Sessions as Reusable Templates**  
+Mature Crucible sessions packaged as reusable templates—decision trees, tool chains, Curator tunings—spin up new projects with pre-tuned harness behavior.  
+*Ambition:* Session-as-code; codify best practices by capturing harness *state itself*.  
+*Chambers:* Cairn, Crucible, Alchemist, Forge  
 *Data implication:* Session versioning, MCP tool dependency resolution, semantic diffing of Cairn ledgers.
 
 ---
@@ -705,7 +705,7 @@ If it compiles and fsyncs cleanly, that's a win.
 
 
 ## 2026-05-24 Round 4: Phase B reconciliation against `D:\git\stunning-adventure`
-Full audit inbox: `decision inbox drop roger-reconciliation-2026-05-24T2330Z.md`.
+Full audit inbox: `.squad/decisions/inbox/roger-reconciliation-2026-05-24T2330Z.md`.
 
 **Headline:** Cairn already ships a working append log (SQLite `event_log`), a real 8-state proposal/approval lifecycle (`prescriptions` + `optimization_hints` with 8 statuses each, partial UNIQUE index dedup as built-in backpressure via migration 013), pluggable ProposalGenerators (Forge `promptOptimizer`/`tokenOptimizer` emitting `OptimizationHint`), a Merkle-like hash chain over Decision events (`dbom_artifacts`/`dbom_decisions` + `spike/dbom-generator.ts`), per-skill PGO-style derived rollups (`execution_profiles`), an outcome-learning loop (`change_vectors` Phase 4.6), drift signal substrate (`signal_samples` + `forge/telemetry/drift`), pre-persist secret redaction (`agents/secretScrubber.ts`), and a 5-vector x 3-tier validator surface (`skillLinter`/`skillValidator`) -- so US-R-4 and US-Ro-NEW-4 are essentially ALREADY-EXISTS and US-R-1/2/7/8/9 plus US-Ro-NEW-3 are PARTIALLY-EXISTS. What's pure greenfield: US-R-3 (fork/replay/branch metadata over ledger positions), US-R-5 (transitive provenance -- falls out of R-3), US-R-6 (federation), US-Ro-NEW-1 (snapshot+compaction), US-Ro-NEW-2 (observation capture/CAS), and both round-3 lock items (`causal_read_set_hash` on WAL rows; per-row pre-commit hook bus with 80us envelope). The last two also **CONTRADICT-EXISTING** because Cairn rides `better-sqlite3` (SQLite's built-in WAL journal-mode -- no app-exposed group-commit window, no per-row pre-fsync hook insertion point, no 80us-row-stage budget to honor). Migration path is friendly (linear, integer-versioned, transaction-wrapped, currently at v13): v14 introduces `wal_records` alongside legacy `event_log`, v15 stands up a CAS blob store, v16 snapshots+refs, v17 observation_capture, v18 tenant namespacing -- all additive.
 
@@ -715,7 +715,7 @@ Full audit inbox: `decision inbox drop roger-reconciliation-2026-05-24T2330Z.md`
 
 
 ## 2026-05-25 Round 5: SPIKE fork (a) — port Cairn to a custom storage engine
-Full spike inbox: decision inbox drop roger-spike-fork-a-port-2026-05-25T0030Z.md.
+Full spike inbox: .squad/decisions/inbox/roger-spike-fork-a-port-2026-05-25T0030Z.md.
 
 **Executive summary.** Surveyed the existing Cairn SQLite surface (87 src files, 31 in db/, 13 linear migrations, 16 tables, 188 prepared/transaction call sites, 80 join/groupby query sites, 478-ish tests, one load-bearing partial UNIQUE index for backpressure, zero use of FTS/virtual-tables/triggers/UDFs/triggers — relational but shallow) and three engine candidates: A.1 pure-Rust edb via NAPI-RS (12-16 weeks, ~100% SQL-ergonomics loss, strongest correctness story, adds a Rust toolchain to a Node monorepo), A.2 Kris Zyp's lmdb Node binding with its eforeCommit hook (8-12 weeks, ~100% SQL loss, 80us-budget at risk under JS dispatch), and A.3 hybrid — custom append-only WAL file in pure TS for L1 only, keep etter-sqlite3 for the other 15 tables and all derived views (5-9 weeks, ~5-10% SQL loss, forward-compatible migration). **Verdict: REJECT A.1, ENDORSE-WITH-CAVEATS A.3, A.2 only as fallback if the JS predicate budget fails in integration.** Phase A's hard contracts bind only L1; rewriting the other six tiers to honor a contract that does not bind them is over-correction. Anti-anchoring alternative reading: if Crucible is heading toward regulatory determinism, 10^9+ rows, or WASM-runtime distribution, A.1's "one substrate, contracts enforced by construction" wins despite the cost — I'd flip if any of those three become true. Tagged Alexander (fork (b) is a contract-amendment, not a contract-honor — sqlite3_update_hook fires post-write not pre-fsync) and Gabriel (fork (c) breaks causal_read_set_hash globality the moment you shard across multiple SQLite files — contract (4) needs amendment).
 
@@ -800,8 +800,8 @@ Phase 2:
 
 ## Pass A Review Closure (2026-05-29)
 
-**Role:** Crucible CTD design panel + triage
-**Status:** See .squad/orchestration-log for detailed execution status
+**Role:** Crucible CTD design panel + triage  
+**Status:** See .squad/orchestration-log for detailed execution status  
 **Disposition:** Graham fully executed, Valanice triaged (pending filesystem edits), Rosella/Gabriel/Roger/Laura silent (pending next session)
 
 See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-review.md for full context.

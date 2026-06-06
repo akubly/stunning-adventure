@@ -31,8 +31,8 @@
 
 ---
 
-**Joined:** ~2026-05-01
-**Tech:** TypeScript/Node.js, architecture design, schema coordination, integration seams
+**Joined:** ~2026-05-01  
+**Tech:** TypeScript/Node.js, architecture design, schema coordination, integration seams  
 **Specialization:** System architecture, substrate integration, guardrail design, cross-package boundaries
 # Genesta — History (Summarized)
 
@@ -123,7 +123,7 @@
 - Aperture push/pull model (notification + dashboard) is prior art for Eureka v1.5 commitment surfacing UX
 - Conformance corpus infrastructure (curated sessions + CI replay + drift measurement) is exactly what Eureka US-1 eval needs — reuse, don't rebuild
 
-**Memo Location:** `decision inbox drop genesta-crucible-eureka-overlap.md`
+**Memo Location:** `.squad/decisions/inbox/genesta-crucible-eureka-overlap.md`
 
 **Key Learning:** When two PRDs land simultaneously, substrate-level coordination MUST happen before sprint 2 (when storage layers lock). Waiting until "both ship, then integrate" guarantees one system's retrofit. The coordination cost is O(hours); the retrofit cost is O(weeks). Front-load the hard decisions.
 
@@ -179,7 +179,7 @@
 
 **Key Learning:** Shared-from-start is architecturally simpler than extract-later (no migration), but operationally requires active coordination. G4 protocol is the price of parallel dev on shared substrate. Without it, one team breaks the other. With it, cost is <30min/week. Coordination is cheap; retrofit is expensive.
 
-**Memo Location:** `decision inbox drop genesta-shared-substrate-revision.md`
+**Memo Location:** `.squad/decisions/inbox/genesta-shared-substrate-revision.md`
 
 ### 2026-05-26T19:30:00-07:00: Shared-substrate revision round merged — G4 protocol is load-bearing, dogfood timing and schema freeze pending Aaron
 
@@ -210,7 +210,7 @@
 
 **Key Learning:** Schema freeze with sign-off elevates both project teams to co-equal authorities — neither can unilaterally break the other. G4 is the enforcement mechanism for that agreement. Crucible-first doesn't reduce G4's importance; it increases it by making Eureka dependent on stable Crucible schema during parallel v1 work. Coordination at commit time (15-min fix) prevents retrofit at integration time (2-week blocking work).
 
-**Memo Location:** `decision inbox drop genesta-g4-scope.md`
+**Memo Location:** `.squad/decisions/inbox/genesta-g4-scope.md`
 
 ### 2026-05-26: G4 Scope & Ownership Recommendation — Logged to Decisions + Directives Adopted
 
@@ -235,7 +235,7 @@
 
 **Key Learning:** When storage fork resolves substrate collision, coordination surface shrinks dramatically. Original G4 assumed shared storage (Cairn/Forge mutations affect both teams). With fork, only explicit type contracts (SessionId, DecisionRecord) need coordination. Narrower freeze eliminates 80-90% of G4 overhead while preserving safety. This is the right tradeoff: guard the contracts that cross boundaries; trust teams on internal implementation. Coordination cost drops from 30min/week to ~5min/change (only when touching frozen contracts).
 
-**Memo Location:** `decision inbox drop genesta-erasmus-evaluation.md`
+**Memo Location:** `.squad/decisions/inbox/genesta-erasmus-evaluation.md`
 
 ### 2025-01-21: Activity & Tier Design Specification — §10 Technical Section
 **Task:** Write `docs/eureka/sections/10-activities-and-tiers.md` specifying activity semantics (7 v1 + 2 v1.5 verbs) and tier boundary system (agent/user/project) per locked PRD v5-final.
@@ -291,7 +291,7 @@
 
 **Key Learning:** When reviewing test strategy, **absence of tests** can be as important as presence. Missing coverage may reflect correct deferral (v1 scoping) rather than oversight. Always cross-check scope boundaries before flagging gaps. Staying in review scope (activity semantics only) required resisting urge to comment on TDD methodology (Laura's expertise) or algorithmic assumptions (Edgar's slice) — bounded review prevents scope creep.
 
-**Pattern for Future Cross-Section Reviews:**
+**Pattern for Future Cross-Section Reviews:** 
 - Flag cross-cutting concerns as "Notes for [Other Reviewer]" rather than findings — signal potential overlaps without making verdicts outside my authority.
 - Positive findings (e.g., correct tier deferral) are as valuable as issues — document what was verified as correct, not just what needs fixing.
 - Reviewer Rejection Protocol creates healthy pressure to be precise: findings must cite specific line numbers and explain *why* they matter, not just list observations.

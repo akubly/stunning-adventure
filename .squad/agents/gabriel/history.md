@@ -21,16 +21,15 @@
 
 **M2 Cycle-5 Fixes (2026-06-02):** Addressed 4 Copilot threads. Shell commit `94a66fb`: `shell-init.sh` now fails clearly when executed instead of sourced, and `uninstall.sh` uses adjacent `mktemp` plus cleanup trap. Doc hygiene commit `05bc54e`: removed tracked `.squad` markdown references to gitignored decision inbox paths. Review follow-ups `591843a`/`7c9433e`/`e5d929a`: hardened trap scope and removed remaining broken/ambiguous inbox wording. Verification: `npm run build`, `npm test`, direct-exec source-only error, source smoke with `forge_mcp_check`, install/uninstall byte-identical roundtrip with no `.forge-mcp-bak*` leftovers, and tracked grep clean.
 
-**M2 Cycle-6 Fixes (2026-06-05):** Addressed the cycle-4 carve-out correction on PR #44. Restored explicit decision-inbox writer-target paths in squad templates/conventions and Roger's chartered writer-target notes while leaving `decisions-archive.md` back-references clean. Also changed `shell-init.sh` source-only remediation from `$0` to `${BASH_SOURCE[0]}`. Verification: `npm run build`, `npm test`, Git Bash direct-exec error path, Git Bash sourced `forge_mcp_check`, restored-file grep, and archive grep clean.
-
 ---
 
 ## Current Workload
 
 - Crucible CTD Phase 3: §17 (observability/telemetry) + §18 (diagnostics/recovery) unblocked
-- M2 PR #44: Cycle-6 review corrections shipped; awaiting coordinator thread resolution/merge
+- M2 PR #44: Cycle-5 fixes shipped; awaiting coordinator thread resolution/merge
 - Dogfood scope: M2 complete; M3+ planning pending
 
 ---
 
 **For detailed history, see history-archive.md**
+

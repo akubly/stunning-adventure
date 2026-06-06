@@ -104,7 +104,7 @@
 4. **marketplace.json is trivial.** Same format as `github/copilot-plugins`. We can make this repo a marketplace source immediately.
 5. **12-item prioritized checklist** produced. P0: install script + hook scripts in repo. P1: plugin.json + marketplace.json + CLI expansion. P2: uninstall + docs. P3: bash wrappers.
 
-**Blueprint delivered:** `decision inbox drop rosella-plugin-packaging.md`
+**Blueprint delivered:** `.squad/decisions/inbox/rosella-plugin-packaging.md`
 
 #
 
@@ -198,7 +198,7 @@ ode dist/hooks/...\ commands in hooks.json for cross-platform compatibility
 
 **Critical insight from critic review:** Hook directory names encode ownership (e.g., `cairn-archivist` → owned by `cairn`). This is the strongest ownership signal available without a registry.
 
-**Deliverable:** `decision inbox drop rosella-prescriber-plugin.md`
+**Deliverable:** `.squad/decisions/inbox/rosella-prescriber-plugin.md`
 
 #
 
@@ -228,8 +228,8 @@ ode dist/hooks/...\ commands in hooks.json for cross-platform compatibility
 
 ## 2026-05-01: Phase 4.5 Local Feedback Loop — Round 2 Brainstorm
 
-**Session:** `.squad/log/2026-05-01T18-14-00Z-brainstorm-round2.md`
-**Orchestration:** `.squad/orchestration-log/2026-05-01T18-14-00Z-rosella-round2.md`
+**Session:** `.squad/log/2026-05-01T18-14-00Z-brainstorm-round2.md`  
+**Orchestration:** `.squad/orchestration-log/2026-05-01T18-14-00Z-rosella-round2.md`  
 **Decisions:** Merged to `.squad/decisions.md`
 
 **Topic:** Follow-up on Karpathy wiki integration, knowledge graphs, ancestry integration, and caching layers.
@@ -303,7 +303,7 @@ ode dist/hooks/...\ commands in hooks.json for cross-platform compatibility
 
 ## 2026-05-02: Phase 4.5 — Prescribers + Applier (Complete)
 
-**Session:** 2026-05-02T04:35:00Z
+**Session:** 2026-05-02T04:35:00Z  
 **Outcome:** ✅ SUCCESS
 
 **Delivered:** Prescribers (promptOptimizer.ts, tokenOptimizer.ts) + Applier (optimizer.ts, selfTuning.ts). 27 new tests, all passing. Determinism gate at 0.3 (hard gate: zero token hints when drift >= RED).
@@ -397,7 +397,7 @@ ode dist/hooks/...\ commands in hooks.json for cross-platform compatibility
 2. Agent-authored-agents via Factory pattern extension to the Prescriber. Capability ceiling principle for containment. Provenance chain as "blockchain of decisions."
 3. Compiler metaphor mapped to plugin architecture: Skills = types, resolution rules = linker, marketplace = package manager, event log = debug symbols.
 
-**Deliverable:** `decision inbox drop rosella-brainstorm-extensibility.md`
+**Deliverable:** `.squad/decisions/inbox/rosella-brainstorm-extensibility.md`
 
 #
 

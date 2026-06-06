@@ -118,7 +118,7 @@ Write this named beat into the decision drop (step 8).
 ### 8. Write post-work artifacts
 
 1. Append to `.squad/agents/<you>/history.md` under `## Learnings`
-2. Write a decision inbox drop-box file named `<you>-m{N}-<activity>-green.md` with:
+2. Write `.squad/decisions/inbox/<you>-m{N}-<activity>-green.md` — decision drop with:
    - GREEN landing verbatim output
    - Implementation shape (types + algorithm summary)
    - §55 interpretation calls
@@ -161,7 +161,7 @@ When a RED test fixture contains **inline arithmetic comments** (e.g., `// rawSc
 
 When adding new typed fields to a return type that was locked by a previous beat:
 1. Make them **optional** (`field?: type`) — locks don't extend to new fields
-2. Provide safe defaults in the scorer (`field ?? defaultValue`)
+2. Provide safe defaults in the scorer (`field ?? defaultValue`)  
 3. Choose defaults that preserve the locked beat's behavior (M2 facts without `relevance` should still be returned; default 0 keeps them in results, just at lower score)
 
 ### Pattern: Unit lock from fixture naming

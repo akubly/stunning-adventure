@@ -1,8 +1,8 @@
 # Cross-PRD Overlap Analysis
 
-**Pattern Name:** Cross-PRD Overlap Analysis
-**Context:** Two or more PRDs target the same repository for simultaneous implementation.
-**Problem:** Without explicit overlap analysis, teams build duplicate substrate, conflicting schemas, and bridges to moving targets.
+**Pattern Name:** Cross-PRD Overlap Analysis  
+**Context:** Two or more PRDs target the same repository for simultaneous implementation.  
+**Problem:** Without explicit overlap analysis, teams build duplicate substrate, conflicting schemas, and bridges to moving targets.  
 **Solution:** Before design begins, systematically map overlap, conflict, and coupling risk across the PRDs.
 
 ---
@@ -146,5 +146,4 @@ Short (1-2 pages max) memo that:
 - When one PRD assumes the other's substrate is stable, but Aaron's recent directives forked/restructured it
 - When meeting invite arrives before overlap analysis complete
 
-**Output:** Two artifacts (position paper + memo) in `decision inbox drop-box`. Counterparty reads before meeting. Meeting agenda revised based on position.
-
+**Output:** Two artifacts (position paper + memo) in `.squad/decisions/inbox/`. Counterparty reads before meeting. Meeting agenda revised based on position.

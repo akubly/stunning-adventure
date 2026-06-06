@@ -1,8 +1,8 @@
 # Orchestration Log — laura-q1-refinement-validation
 
-**Date:** 2026-05-27
-**Agent:** Laura Bow (Tester)
-**Model:** Claude Sonnet 4.5
+**Date:** 2026-05-27  
+**Agent:** Laura Bow (Tester)  
+**Model:** Claude Sonnet 4.5  
 **Task:** Second validation pass on Aaron's structural-commitment refinement (Option E evolved)
 
 ## Context
@@ -32,4 +32,4 @@ New invariant introduced: **Bootstrap-Capture-Completeness** — extra-ledger co
 
 No new ambiguities flagged. Structural commitment model ready for technical design.
 
-Document: `decision inbox drop laura-q1-refinement-validation.md`
+Document: `.squad/decisions/inbox/laura-q1-refinement-validation.md`

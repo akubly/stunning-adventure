@@ -8,9 +8,9 @@
 
 # Phase 4.6 Kickoff — Change Vector Learning
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-03
-**Status:** Kickoff — ready for team spawn
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-03  
+**Status:** Kickoff — ready for team spawn  
 **Branch:** `squad/phase4.6-change-vectors`
 
 ---
@@ -185,9 +185,9 @@ All ambiguities resolved. Work items are concrete. No blockers.
 
 # Decision: Weight Constants in Cairn (ADR-P4.6-003 Implementation)
 
-**Author:** Alexander (SDK/Runtime Dev)
-**Date:** 2026-05-03
-**Status:** Decided
+**Author:** Alexander (SDK/Runtime Dev)  
+**Date:** 2026-05-03  
+**Status:** Decided  
 **Relates to:** ADR-P4.6-003 (same weights as drift score, single source of truth)
 
 ---
@@ -281,8 +281,8 @@ at computation time, giving downstream consumers full context.
 
 # R5 — Drift Weight Export Verification + Alexander Coordination
 
-**Author:** Rosella (Plugin Dev)
-**Date:** 2026-05-03
+**Author:** Rosella (Plugin Dev)  
+**Date:** 2026-05-03  
 **Status:** Decision documented — no code change needed
 
 ---
@@ -360,10 +360,10 @@ source of truth:
 
 # Defect Flag: `summarizeChangeVectors` confidence=0 inconsistency
 
-**From:** Laura (Tester)
-**Date:** 2026-05-03
-**Phase:** 4.6 — Change Vector Learning
-**Severity:** Latent risk (not a production path today)
+**From:** Laura (Tester)  
+**Date:** 2026-05-03  
+**Phase:** 4.6 — Change Vector Learning  
+**Severity:** Latent risk (not a production path today)  
 **Assigned to:** Team (Graham to triage)
 
 ---
@@ -565,9 +565,9 @@ value 1.0. Prescribers apply it as `hint.confidence *= summary.confidenceBoost`.
 
 ### 2026-05-01: Phase 4 Export Pipeline Architecture
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-01
-**Type:** Architecture
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-01  
+**Type:** Architecture  
 **Status:** Implemented
 
 Phase 4 introduces the Export Pipeline — the third integration seam from the Forge build kickoff. It converts persisted `CairnBridgeEvent`s into certified SKILL.md files with DBOM provenance in YAML frontmatter.
@@ -600,9 +600,9 @@ All Phase 4 types stay package-internal. Continues ADR-P3-004 precedent.
 
 ### 2026-05-01: Export Pipeline — Function Types over Shared Interfaces
 
-**Author:** Roger Wilco (Platform Dev)
-**Date:** 2026-05-01
-**Type:** Architecture
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-05-01  
+**Type:** Architecture  
 **Status:** Implemented
 
 Phase 4 export pipeline needs a quality gate that runs Cairn's linter/validator on compiled SKILL.md content. Forge must never import @akubly/cairn directly (acyclic dependency graph constraint).
@@ -627,9 +627,9 @@ All Phase 4 types (`ExportDiagnostic`, `QualityGateResult`, `CompiledSkill`, `Sk
 
 ### 2026-05-01: Export Pipeline Quality Gate Semantics
 
-**Author:** Laura (Tester)
-**Type:** Test Contract
-**Status:** Implemented
+**Author:** Laura (Tester)  
+**Type:** Test Contract  
+**Status:** Implemented  
 **Date:** 2026-05-01 (updated from 2026-04-30)
 
 Phase 4 export pipeline uses quality gates before emitting a compiled SKILL.md. Now aligned with `docs/forge-phase4-spec.md` §4.4, §4.5, §7.
@@ -755,8 +755,8 @@ Telemetry observers are now safe in production. Error in one observer cannot cas
 
 ### 2026-04-28: Alexander — SDK Interface Types for Runtime Module
 
-**Author:** Alexander (SDK/Runtime Dev)
-**Type:** Architecture
+**Author:** Alexander (SDK/Runtime Dev)  
+**Type:** Architecture  
 **Status:** Implemented
 
 ForgeClient and ForgeSession depend on thin interface types (`SDKClient`, `SDKSession`) rather than importing CopilotClient/CopilotSession classes directly.
@@ -781,9 +781,9 @@ ForgeClient and ForgeSession depend on thin interface types (`SDKClient`, `SDKSe
 
 ### 2026-05-01T18:14:00Z: Phase 4.5 Local Feedback Loop — Aaron's Scope Decisions
 
-**Author:** Aaron Kubly (via Copilot)
-**Date:** 2026-05-01T18:14:00Z
-**Type:** Direction / Scope
+**Author:** Aaron Kubly (via Copilot)  
+**Date:** 2026-05-01T18:14:00Z  
+**Type:** Direction / Scope  
 **Status:** Active
 
 Phase 4.5 brainstorm Round 2 follow-up captured six major decisions:
@@ -834,9 +834,9 @@ All six wild cards from brainstorm are approved as future backlog items:
 
 ### 2026-04-30T22:25:00Z: Phase 5 (PGO Telemetry) Deferred — Budget & Data Protection
 
-**Author:** Aaron Kubly (via Copilot)
-**Date:** 2026-04-30T22:25:00Z
-**Type:** Scope / Risk
+**Author:** Aaron Kubly (via Copilot)  
+**Date:** 2026-04-30T22:25:00Z  
+**Type:** Scope / Risk  
 **Status:** Active
 
 Phase 5 (PGO Telemetry) is deferred as future work.
@@ -860,9 +860,9 @@ Phase 5 (PGO Telemetry) is deferred as future work.
 ---
 ### 2026-05-02: Phase 4.5 Architecture — Local Feedback Loop
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-02
-**Type:** Architecture
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-02  
+**Type:** Architecture  
 **Status:** Proposed
 
 Phase 4.5 introduces the Local Feedback Loop — a profile-guided optimization engine that runs entirely on local SQLite. Sessions produce telemetry → collectors aggregate signals → prescribers generate optimization hints → the applier writes improved SKILL.md v2 artifacts.
@@ -1259,7 +1259,7 @@ description:
 - **7D, 7E** depend on 7A + 7B (can run in parallel after 7B)
 - **7F** depends on 7C + 7D + 7E (final integration phase)
 
-**Critical path:** 7A → 7B → 7D → 7F
+**Critical path:** 7A → 7B → 7D → 7F  
 **Parallel opportunities:** 7B ∥ 7C, then 7D ∥ 7E
 
 ---
@@ -1377,14 +1377,14 @@ The auto-suppression check (deferCount >= threshold → suppress) is exported as
 
 ### 2026-04-30: Phase 3 Architecture — ForgeClient & SDK Abstraction (Graham)
 
-**Author:** Graham Knight (Lead)
-**Type:** Architecture
+**Author:** Graham Knight (Lead)  
+**Type:** Architecture  
 **Status:** Active
 
 # Graham — Phase 3 Architecture Decisions
 
-**Date:** 2026-04-30
-**Author:** Graham Knight (Lead / Architect)
+**Date:** 2026-04-30  
+**Author:** Graham Knight (Lead / Architect)  
 **Context:** Phase 3 architecture specification for `@akubly/forge` — live SDK integration
 
 ---
@@ -1461,8 +1461,8 @@ The auto-suppression check (deferCount >= threshold → suppress) is exported as
 
 ### 2026-04-29: Phase 3 Test Strategy — Inline Contract Testing (Laura)
 
-**Author:** Laura (Tester)
-**Type:** Testing
+**Author:** Laura (Tester)  
+**Type:** Testing  
 **Status:** Active
 
 # Laura — Phase 3 Test Strategy: Inline Contract Testing
@@ -1515,9 +1515,9 @@ These extensions are backward-compatible — existing Phase 2 tests continue to 
 
 ### 2026-04-30: Phase 3 Persona Review Fixes — Runtime (Alexander)
 
-**Author:** Alexander (SDK/Runtime Dev)
-**Type:** Implementation
-**Status:** Implemented
+**Author:** Alexander (SDK/Runtime Dev)  
+**Type:** Implementation  
+**Status:** Implemented  
 **Date:** 2026-04-30
 
 ## Summary
@@ -1564,9 +1564,9 @@ All 268 tests pass. Zero regressions.
 
 ### 2026-04-30: Phase 3 Persona Review Fixes — Models (Roger)
 
-**Author:** Roger (Platform Dev)
-**Type:** Implementation
-**Status:** Implemented
+**Author:** Roger (Platform Dev)  
+**Type:** Implementation  
+**Status:** Implemented  
 **Date:** 2026-04-30
 
 ## Summary
@@ -1605,9 +1605,9 @@ The Architect flagged `sort()` in `cheapest`/`smartest` strategies as mutating t
 
 ### 2026-05-01: Telemetry Collector ↔ Bridge Event-Name Contract
 
-**Author:** Roger Wilco (Platform Dev)
-**Date:** 2026-05-01
-**Type:** Contract + Telemetry
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-05-01  
+**Type:** Contract + Telemetry  
 **Status:** Implemented
 
 Context: Persona review F4 caught that telemetry collectors checked for event type strings that never appear in the bridge's EVENT_MAP. Bridge maps SDK events to different vocabulary (	ool_use vs 	ool_call_started, etc.). Result: collectors silently received nothing in production.
@@ -1639,9 +1639,9 @@ New optional signals field on ExecutionProfile carries individual means for conv
 
 ### 2026-05-01: Persona Review Fixes — Prescribers + Applier (F3, F6b, F9, F10)
 
-**Author:** Rosella (Plugin Dev)
-**Date:** 2026-05-01
-**Type:** Implementation
+**Author:** Rosella (Plugin Dev)  
+**Date:** 2026-05-01  
+**Type:** Implementation  
 **Status:** Implemented
 
 Four findings from Phase 4.5 persona review.
@@ -1671,9 +1671,9 @@ GREEN → * 0.9 (decay), RED → * 1.1 (grow), YELLOW → hold. Hard floor EXPLO
 
 ### 2026-05-02: Phase 4.5 Persona Review — All 11 Findings Fixed
 
-**Author:** Scribe (Session Log)
-**Date:** 2026-05-02
-**Type:** Meta
+**Author:** Scribe (Session Log)  
+**Date:** 2026-05-02  
+**Type:** Meta  
 **Status:** Complete
 
 Phase 4.5 persona review findings consolidated and resolved across three team members:
@@ -1855,7 +1855,7 @@ hints.sort((a, b) => {
 });
 ```
 
-**Pro:** Single pass, no array copy.
+**Pro:** Single pass, no array copy.  
 **Con:** The four-branch comparator obscures the semantic intent. The sort guarantee for unmatched items requires understanding that `b.impactScore - a.impactScore` preserves Phase 4.5 order *only* when input is already sorted by impactScore — which it is in the current implementation, but that's an implicit assumption.
 
 ### Option B: Explicit partition then concatenate ✅ CHOSEN
@@ -1869,7 +1869,7 @@ hints.length = 0;
 hints.push(...matched, ...unmatched);
 ```
 
-**Pro:** The invariant is explicit and self-documenting — matched first, unmatched after, each with its own clear sort key. No implicit reliance on pre-existing hint order.
+**Pro:** The invariant is explicit and self-documenting — matched first, unmatched after, each with its own clear sort key. No implicit reliance on pre-existing hint order.  
 **Con:** Two filter passes + two sorts + array reassignment. At the scale of prescriber hints (≤10 items typically), this is not a performance concern.
 
 ---
@@ -1924,9 +1924,9 @@ The optional field means the type doesn't enforce the invariant at compile time.
 
 # ADR: Wave 2 Wiring Shape — ChangeVectorProvider Port
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-20
-**Status:** Decision filed
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-20  
+**Status:** Decision filed  
 **Related to:** Phase 4.6 Wave 2 — Wiring Curator change vectors → prescriber `historicalVectors`
 
 ---
@@ -2014,9 +2014,9 @@ Slightly more wiring than extending `FeedbackSource` (adding a new interface, ne
 
 # ADR: Wave 2 Wiring Shape — ChangeVectorProvider Port + PrescriberOrchestrator Port
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-20
-**Status:** Approved — ready for implementation
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-20  
+**Status:** Approved — ready for implementation  
 **Phase:** 4.6 Wave 2
 
 ---
@@ -2059,9 +2059,9 @@ Slightly more wiring than extending `FeedbackSource` (adding a new interface, ne
 
 # ADR: Wave 2 v3 — Wiring Shape + Scope Split + Safety Gates
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-21
-**Status:** Approved — ready for implementation
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-21  
+**Status:** Approved — ready for implementation  
 **Phase:** 4.6 Wave 2 v3 (revision of 2026-05-20 ADR, incorporates duck critique and scope refinement)
 
 ---
@@ -2159,9 +2159,9 @@ Full path: `ChangeVectorSummary` (computed at summary time) → prescriber copie
 
 # Phase 4.6 Kickoff — Change Vector Learning
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-03
-**Status:** Kickoff — ready for team spawn
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-03  
+**Status:** Kickoff — ready for team spawn  
 **Branch:** `squad/phase4.6-change-vectors`
 
 ---
@@ -2336,9 +2336,9 @@ All ambiguities resolved. Work items are concrete. No blockers.
 
 # Decision: Weight Constants in Cairn (ADR-P4.6-003 Implementation)
 
-**Author:** Alexander (SDK/Runtime Dev)
-**Date:** 2026-05-03
-**Status:** Decided
+**Author:** Alexander (SDK/Runtime Dev)  
+**Date:** 2026-05-03  
+**Status:** Decided  
 **Relates to:** ADR-P4.6-003 (same weights as drift score, single source of truth)
 
 ---
@@ -2432,8 +2432,8 @@ at computation time, giving downstream consumers full context.
 
 # R5 — Drift Weight Export Verification + Alexander Coordination
 
-**Author:** Rosella (Plugin Dev)
-**Date:** 2026-05-03
+**Author:** Rosella (Plugin Dev)  
+**Date:** 2026-05-03  
 **Status:** Decision documented — no code change needed
 
 ---
@@ -2511,10 +2511,10 @@ source of truth:
 
 # Defect Flag: `summarizeChangeVectors` confidence=0 inconsistency
 
-**From:** Laura (Tester)
-**Date:** 2026-05-03
-**Phase:** 4.6 — Change Vector Learning
-**Severity:** Latent risk (not a production path today)
+**From:** Laura (Tester)  
+**Date:** 2026-05-03  
+**Phase:** 4.6 — Change Vector Learning  
+**Severity:** Latent risk (not a production path today)  
 **Assigned to:** Team (Graham to triage)
 
 ---
@@ -2716,9 +2716,9 @@ value 1.0. Prescribers apply it as `hint.confidence *= summary.confidenceBoost`.
 
 ### 2026-05-01: Phase 4 Export Pipeline Architecture
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-01
-**Type:** Architecture
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-01  
+**Type:** Architecture  
 **Status:** Implemented
 
 Phase 4 introduces the Export Pipeline — the third integration seam from the Forge build kickoff. It converts persisted `CairnBridgeEvent`s into certified SKILL.md files with DBOM provenance in YAML frontmatter.
@@ -2751,9 +2751,9 @@ All Phase 4 types stay package-internal. Continues ADR-P3-004 precedent.
 
 ### 2026-05-01: Export Pipeline — Function Types over Shared Interfaces
 
-**Author:** Roger Wilco (Platform Dev)
-**Date:** 2026-05-01
-**Type:** Architecture
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-05-01  
+**Type:** Architecture  
 **Status:** Implemented
 
 Phase 4 export pipeline needs a quality gate that runs Cairn's linter/validator on compiled SKILL.md content. Forge must never import @akubly/cairn directly (acyclic dependency graph constraint).
@@ -2778,9 +2778,9 @@ All Phase 4 types (`ExportDiagnostic`, `QualityGateResult`, `CompiledSkill`, `Sk
 
 ### 2026-05-01: Export Pipeline Quality Gate Semantics
 
-**Author:** Laura (Tester)
-**Type:** Test Contract
-**Status:** Implemented
+**Author:** Laura (Tester)  
+**Type:** Test Contract  
+**Status:** Implemented  
 **Date:** 2026-05-01 (updated from 2026-04-30)
 
 Phase 4 export pipeline uses quality gates before emitting a compiled SKILL.md. Now aligned with `docs/forge-phase4-spec.md` §4.4, §4.5, §7.
@@ -2906,8 +2906,8 @@ Telemetry observers are now safe in production. Error in one observer cannot cas
 
 ### 2026-04-28: Alexander — SDK Interface Types for Runtime Module
 
-**Author:** Alexander (SDK/Runtime Dev)
-**Type:** Architecture
+**Author:** Alexander (SDK/Runtime Dev)  
+**Type:** Architecture  
 **Status:** Implemented
 
 ForgeClient and ForgeSession depend on thin interface types (`SDKClient`, `SDKSession`) rather than importing CopilotClient/CopilotSession classes directly.
@@ -2932,9 +2932,9 @@ ForgeClient and ForgeSession depend on thin interface types (`SDKClient`, `SDKSe
 
 ### 2026-05-01T18:14:00Z: Phase 4.5 Local Feedback Loop — Aaron's Scope Decisions
 
-**Author:** Aaron Kubly (via Copilot)
-**Date:** 2026-05-01T18:14:00Z
-**Type:** Direction / Scope
+**Author:** Aaron Kubly (via Copilot)  
+**Date:** 2026-05-01T18:14:00Z  
+**Type:** Direction / Scope  
 **Status:** Active
 
 Phase 4.5 brainstorm Round 2 follow-up captured six major decisions:
@@ -2985,9 +2985,9 @@ All six wild cards from brainstorm are approved as future backlog items:
 
 ### 2026-04-30T22:25:00Z: Phase 5 (PGO Telemetry) Deferred — Budget & Data Protection
 
-**Author:** Aaron Kubly (via Copilot)
-**Date:** 2026-04-30T22:25:00Z
-**Type:** Scope / Risk
+**Author:** Aaron Kubly (via Copilot)  
+**Date:** 2026-04-30T22:25:00Z  
+**Type:** Scope / Risk  
 **Status:** Active
 
 Phase 5 (PGO Telemetry) is deferred as future work.
@@ -3011,9 +3011,9 @@ Phase 5 (PGO Telemetry) is deferred as future work.
 ---
 ### 2026-05-02: Phase 4.5 Architecture — Local Feedback Loop
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-02
-**Type:** Architecture
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-02  
+**Type:** Architecture  
 **Status:** Proposed
 
 Phase 4.5 introduces the Local Feedback Loop — a profile-guided optimization engine that runs entirely on local SQLite. Sessions produce telemetry → collectors aggregate signals → prescribers generate optimization hints → the applier writes improved SKILL.md v2 artifacts.
@@ -3410,7 +3410,7 @@ description:
 - **7D, 7E** depend on 7A + 7B (can run in parallel after 7B)
 - **7F** depends on 7C + 7D + 7E (final integration phase)
 
-**Critical path:** 7A → 7B → 7D → 7F
+**Critical path:** 7A → 7B → 7D → 7F  
 **Parallel opportunities:** 7B ∥ 7C, then 7D ∥ 7E
 
 ---
@@ -3528,14 +3528,14 @@ The auto-suppression check (deferCount >= threshold → suppress) is exported as
 
 ### 2026-04-30: Phase 3 Architecture — ForgeClient & SDK Abstraction (Graham)
 
-**Author:** Graham Knight (Lead)
-**Type:** Architecture
+**Author:** Graham Knight (Lead)  
+**Type:** Architecture  
 **Status:** Active
 
 # Graham — Phase 3 Architecture Decisions
 
-**Date:** 2026-04-30
-**Author:** Graham Knight (Lead / Architect)
+**Date:** 2026-04-30  
+**Author:** Graham Knight (Lead / Architect)  
 **Context:** Phase 3 architecture specification for `@akubly/forge` — live SDK integration
 
 ---
@@ -3612,8 +3612,8 @@ The auto-suppression check (deferCount >= threshold → suppress) is exported as
 
 ### 2026-04-29: Phase 3 Test Strategy — Inline Contract Testing (Laura)
 
-**Author:** Laura (Tester)
-**Type:** Testing
+**Author:** Laura (Tester)  
+**Type:** Testing  
 **Status:** Active
 
 # Laura — Phase 3 Test Strategy: Inline Contract Testing
@@ -3666,9 +3666,9 @@ These extensions are backward-compatible — existing Phase 2 tests continue to 
 
 ### 2026-04-30: Phase 3 Persona Review Fixes — Runtime (Alexander)
 
-**Author:** Alexander (SDK/Runtime Dev)
-**Type:** Implementation
-**Status:** Implemented
+**Author:** Alexander (SDK/Runtime Dev)  
+**Type:** Implementation  
+**Status:** Implemented  
 **Date:** 2026-04-30
 
 ## Summary
@@ -3715,9 +3715,9 @@ All 268 tests pass. Zero regressions.
 
 ### 2026-04-30: Phase 3 Persona Review Fixes — Models (Roger)
 
-**Author:** Roger (Platform Dev)
-**Type:** Implementation
-**Status:** Implemented
+**Author:** Roger (Platform Dev)  
+**Type:** Implementation  
+**Status:** Implemented  
 **Date:** 2026-04-30
 
 ## Summary
@@ -3756,9 +3756,9 @@ The Architect flagged `sort()` in `cheapest`/`smartest` strategies as mutating t
 
 ### 2026-05-01: Telemetry Collector ↔ Bridge Event-Name Contract
 
-**Author:** Roger Wilco (Platform Dev)
-**Date:** 2026-05-01
-**Type:** Contract + Telemetry
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-05-01  
+**Type:** Contract + Telemetry  
 **Status:** Implemented
 
 Context: Persona review F4 caught that telemetry collectors checked for event type strings that never appear in the bridge's EVENT_MAP. Bridge maps SDK events to different vocabulary (	ool_use vs 	ool_call_started, etc.). Result: collectors silently received nothing in production.
@@ -3790,9 +3790,9 @@ New optional signals field on ExecutionProfile carries individual means for conv
 
 ### 2026-05-01: Persona Review Fixes — Prescribers + Applier (F3, F6b, F9, F10)
 
-**Author:** Rosella (Plugin Dev)
-**Date:** 2026-05-01
-**Type:** Implementation
+**Author:** Rosella (Plugin Dev)  
+**Date:** 2026-05-01  
+**Type:** Implementation  
 **Status:** Implemented
 
 Four findings from Phase 4.5 persona review.
@@ -3822,9 +3822,9 @@ GREEN → * 0.9 (decay), RED → * 1.1 (grow), YELLOW → hold. Hard floor EXPLO
 
 ### 2026-05-02: Phase 4.5 Persona Review — All 11 Findings Fixed
 
-**Author:** Scribe (Session Log)
-**Date:** 2026-05-02
-**Type:** Meta
+**Author:** Scribe (Session Log)  
+**Date:** 2026-05-02  
+**Type:** Meta  
 **Status:** Complete
 
 Phase 4.5 persona review findings consolidated and resolved across three team members:
@@ -4006,7 +4006,7 @@ hints.sort((a, b) => {
 });
 ```
 
-**Pro:** Single pass, no array copy.
+**Pro:** Single pass, no array copy.  
 **Con:** The four-branch comparator obscures the semantic intent. The sort guarantee for unmatched items requires understanding that `b.impactScore - a.impactScore` preserves Phase 4.5 order *only* when input is already sorted by impactScore — which it is in the current implementation, but that's an implicit assumption.
 
 ### Option B: Explicit partition then concatenate ✅ CHOSEN
@@ -4020,7 +4020,7 @@ hints.length = 0;
 hints.push(...matched, ...unmatched);
 ```
 
-**Pro:** The invariant is explicit and self-documenting — matched first, unmatched after, each with its own clear sort key. No implicit reliance on pre-existing hint order.
+**Pro:** The invariant is explicit and self-documenting — matched first, unmatched after, each with its own clear sort key. No implicit reliance on pre-existing hint order.  
 **Con:** Two filter passes + two sorts + array reassignment. At the scale of prescriber hints (≤10 items typically), this is not a performance concern.
 
 ---
@@ -4075,9 +4075,9 @@ The optional field means the type doesn't enforce the invariant at compile time.
 
 # ADR: Wave 2 Wiring Shape — ChangeVectorProvider Port
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-20
-**Status:** Decision filed
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-20  
+**Status:** Decision filed  
 **Related to:** Phase 4.6 Wave 2 — Wiring Curator change vectors → prescriber `historicalVectors`
 
 ---
@@ -4165,9 +4165,9 @@ Slightly more wiring than extending `FeedbackSource` (adding a new interface, ne
 
 # ADR: Wave 2 Wiring Shape — ChangeVectorProvider Port + PrescriberOrchestrator Port
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-20
-**Status:** Approved — ready for implementation
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-20  
+**Status:** Approved — ready for implementation  
 **Phase:** 4.6 Wave 2
 
 ---
@@ -4210,9 +4210,9 @@ Slightly more wiring than extending `FeedbackSource` (adding a new interface, ne
 
 # ADR: Wave 2 v3 — Wiring Shape + Scope Split + Safety Gates
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-21
-**Status:** Approved — ready for implementation
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-21  
+**Status:** Approved — ready for implementation  
 **Phase:** 4.6 Wave 2 v3 (revision of 2026-05-20 ADR, incorporates duck critique and scope refinement)
 
 ---
@@ -4417,7 +4417,7 @@ Slightly more wiring than extending `FeedbackSource` (adding a new interface, ne
 
 **Scope:** How should `curate()` accept and orchestrate the prescriber config?
 
-**Decision:**
+**Decision:** 
 1. `curate()` is now `async`, returns `Promise<CurateResult>`
 2. Qualifying skills sourced from `ChangeVectorSweepResult.computedSkillIds` — distinct, sorted skill IDs whose vectors were newly inserted this cycle
 3. Per-skill `runForSkill(skillId, minSessions)` receives `minSessions` from existing Curator chain: `changeVectorConfig?.minSessionsObserved ?? DEFAULT_MIN_SESSIONS`
@@ -4454,7 +4454,7 @@ Slightly more wiring than extending `FeedbackSource` (adding a new interface, ne
 
 **Rationale:** Smallest change preserving W3-D1 boundary. Cairn owns hook mechanics and Curator invocation but does not import `skillsmith-runtime`, avoiding cairn ↔ skillsmith-runtime cycle. Always-on guaranteed by composition root bootstrap logic.
 
-**Implementation:**
+**Implementation:** 
 - Cairn hook runner: optional `PrescriberOrchestrationConfig` parameter
 - `skillsmith-runtime/src/hooks/sessionStart.ts`: production bootstrap wrapper
 - `.github/hooks/cairn/curate.ps1`: updated to prefer runtime hook for both global-install and repo-checkout paths
@@ -4529,7 +4529,7 @@ Investigation into Laura's flagged ambiguity surfaced a deeper architectural fin
 
 ### Research: Composition Root Audit (Roger)
 
-**Date:** 2026-05-23
+**Date:** 2026-05-23  
 **Status:** Research input, delivered to ADR synthesis
 
 **Scope:** Five options for where the runtime that imports both `@akubly/cairn` and `@akubly/forge` should live.
@@ -4558,7 +4558,7 @@ Investigation into Laura's flagged ambiguity surfaced a deeper architectural fin
 
 ### Research: Curator/MCP Integration Surface (Alexander)
 
-**Date:** 2026-05-22
+**Date:** 2026-05-22  
 **Status:** Research input, delivered to ADR synthesis
 
 **Scope:** Wave 3 Curator–MCP integration requirements, architectural decisions, and open questions.
@@ -4578,7 +4578,7 @@ Investigation into Laura's flagged ambiguity surfaced a deeper architectural fin
 **Curator API Changes:**
 ```typescript
 export interface PrescriberOrchestrationConfig {
-  runForSkill: (skillId: string, minSessions: number)
+  runForSkill: (skillId: string, minSessions: number) 
     => Promise<{ skillId, hintsGenerated, hintsInserted, hintsDuplicated, hintsError }>;
   loadProfile?: (skillId: string) => ExecutionProfile | null;
 }
@@ -4717,7 +4717,7 @@ export function curate(
 
 ### Decision: Harness Vision Document Drafted (2026-05-23)
 
-**Author:** Graham Knight (Lead / Architect)
+**Author:** Graham Knight (Lead / Architect)  
 **Status:** Awaiting Aaron's review
 
 **Artifact:** `docs/harness-vision.md` (3,200+ words, 14 sections)
@@ -4765,9 +4765,9 @@ export function curate(
 
 # Phase 4.6 Kickoff — Change Vector Learning
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-03
-**Status:** Kickoff — ready for team spawn
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-03  
+**Status:** Kickoff — ready for team spawn  
 **Branch:** `squad/phase4.6-change-vectors`
 
 ---
@@ -4942,9 +4942,9 @@ All ambiguities resolved. Work items are concrete. No blockers.
 
 # Decision: Weight Constants in Cairn (ADR-P4.6-003 Implementation)
 
-**Author:** Alexander (SDK/Runtime Dev)
-**Date:** 2026-05-03
-**Status:** Decided
+**Author:** Alexander (SDK/Runtime Dev)  
+**Date:** 2026-05-03  
+**Status:** Decided  
 **Relates to:** ADR-P4.6-003 (same weights as drift score, single source of truth)
 
 ---
@@ -5038,8 +5038,8 @@ at computation time, giving downstream consumers full context.
 
 # R5 — Drift Weight Export Verification + Alexander Coordination
 
-**Author:** Rosella (Plugin Dev)
-**Date:** 2026-05-03
+**Author:** Rosella (Plugin Dev)  
+**Date:** 2026-05-03  
 **Status:** Decision documented — no code change needed
 
 ---
@@ -5117,10 +5117,10 @@ source of truth:
 
 # Defect Flag: `summarizeChangeVectors` confidence=0 inconsistency
 
-**From:** Laura (Tester)
-**Date:** 2026-05-03
-**Phase:** 4.6 — Change Vector Learning
-**Severity:** Latent risk (not a production path today)
+**From:** Laura (Tester)  
+**Date:** 2026-05-03  
+**Phase:** 4.6 — Change Vector Learning  
+**Severity:** Latent risk (not a production path today)  
 **Assigned to:** Team (Graham to triage)
 
 ---
@@ -5322,9 +5322,9 @@ value 1.0. Prescribers apply it as `hint.confidence *= summary.confidenceBoost`.
 
 ### 2026-05-01: Phase 4 Export Pipeline Architecture
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-01
-**Type:** Architecture
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-01  
+**Type:** Architecture  
 **Status:** Implemented
 
 Phase 4 introduces the Export Pipeline — the third integration seam from the Forge build kickoff. It converts persisted `CairnBridgeEvent`s into certified SKILL.md files with DBOM provenance in YAML frontmatter.
@@ -5357,9 +5357,9 @@ All Phase 4 types stay package-internal. Continues ADR-P3-004 precedent.
 
 ### 2026-05-01: Export Pipeline — Function Types over Shared Interfaces
 
-**Author:** Roger Wilco (Platform Dev)
-**Date:** 2026-05-01
-**Type:** Architecture
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-05-01  
+**Type:** Architecture  
 **Status:** Implemented
 
 Phase 4 export pipeline needs a quality gate that runs Cairn's linter/validator on compiled SKILL.md content. Forge must never import @akubly/cairn directly (acyclic dependency graph constraint).
@@ -5384,9 +5384,9 @@ All Phase 4 types (`ExportDiagnostic`, `QualityGateResult`, `CompiledSkill`, `Sk
 
 ### 2026-05-01: Export Pipeline Quality Gate Semantics
 
-**Author:** Laura (Tester)
-**Type:** Test Contract
-**Status:** Implemented
+**Author:** Laura (Tester)  
+**Type:** Test Contract  
+**Status:** Implemented  
 **Date:** 2026-05-01 (updated from 2026-04-30)
 
 Phase 4 export pipeline uses quality gates before emitting a compiled SKILL.md. Now aligned with `docs/forge-phase4-spec.md` §4.4, §4.5, §7.
@@ -5512,8 +5512,8 @@ Telemetry observers are now safe in production. Error in one observer cannot cas
 
 ### 2026-04-28: Alexander — SDK Interface Types for Runtime Module
 
-**Author:** Alexander (SDK/Runtime Dev)
-**Type:** Architecture
+**Author:** Alexander (SDK/Runtime Dev)  
+**Type:** Architecture  
 **Status:** Implemented
 
 ForgeClient and ForgeSession depend on thin interface types (`SDKClient`, `SDKSession`) rather than importing CopilotClient/CopilotSession classes directly.
@@ -5538,9 +5538,9 @@ ForgeClient and ForgeSession depend on thin interface types (`SDKClient`, `SDKSe
 
 ### 2026-05-01T18:14:00Z: Phase 4.5 Local Feedback Loop — Aaron's Scope Decisions
 
-**Author:** Aaron Kubly (via Copilot)
-**Date:** 2026-05-01T18:14:00Z
-**Type:** Direction / Scope
+**Author:** Aaron Kubly (via Copilot)  
+**Date:** 2026-05-01T18:14:00Z  
+**Type:** Direction / Scope  
 **Status:** Active
 
 Phase 4.5 brainstorm Round 2 follow-up captured six major decisions:
@@ -5591,9 +5591,9 @@ All six wild cards from brainstorm are approved as future backlog items:
 
 ### 2026-04-30T22:25:00Z: Phase 5 (PGO Telemetry) Deferred — Budget & Data Protection
 
-**Author:** Aaron Kubly (via Copilot)
-**Date:** 2026-04-30T22:25:00Z
-**Type:** Scope / Risk
+**Author:** Aaron Kubly (via Copilot)  
+**Date:** 2026-04-30T22:25:00Z  
+**Type:** Scope / Risk  
 **Status:** Active
 
 Phase 5 (PGO Telemetry) is deferred as future work.
@@ -5617,9 +5617,9 @@ Phase 5 (PGO Telemetry) is deferred as future work.
 ---
 ### 2026-05-02: Phase 4.5 Architecture — Local Feedback Loop
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-02
-**Type:** Architecture
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-02  
+**Type:** Architecture  
 **Status:** Proposed
 
 Phase 4.5 introduces the Local Feedback Loop — a profile-guided optimization engine that runs entirely on local SQLite. Sessions produce telemetry → collectors aggregate signals → prescribers generate optimization hints → the applier writes improved SKILL.md v2 artifacts.
@@ -6016,7 +6016,7 @@ description:
 - **7D, 7E** depend on 7A + 7B (can run in parallel after 7B)
 - **7F** depends on 7C + 7D + 7E (final integration phase)
 
-**Critical path:** 7A → 7B → 7D → 7F
+**Critical path:** 7A → 7B → 7D → 7F  
 **Parallel opportunities:** 7B ∥ 7C, then 7D ∥ 7E
 
 ---
@@ -6134,14 +6134,14 @@ The auto-suppression check (deferCount >= threshold → suppress) is exported as
 
 ### 2026-04-30: Phase 3 Architecture — ForgeClient & SDK Abstraction (Graham)
 
-**Author:** Graham Knight (Lead)
-**Type:** Architecture
+**Author:** Graham Knight (Lead)  
+**Type:** Architecture  
 **Status:** Active
 
 # Graham — Phase 3 Architecture Decisions
 
-**Date:** 2026-04-30
-**Author:** Graham Knight (Lead / Architect)
+**Date:** 2026-04-30  
+**Author:** Graham Knight (Lead / Architect)  
 **Context:** Phase 3 architecture specification for `@akubly/forge` — live SDK integration
 
 ---
@@ -6218,8 +6218,8 @@ The auto-suppression check (deferCount >= threshold → suppress) is exported as
 
 ### 2026-04-29: Phase 3 Test Strategy — Inline Contract Testing (Laura)
 
-**Author:** Laura (Tester)
-**Type:** Testing
+**Author:** Laura (Tester)  
+**Type:** Testing  
 **Status:** Active
 
 # Laura — Phase 3 Test Strategy: Inline Contract Testing
@@ -6272,9 +6272,9 @@ These extensions are backward-compatible — existing Phase 2 tests continue to 
 
 ### 2026-04-30: Phase 3 Persona Review Fixes — Runtime (Alexander)
 
-**Author:** Alexander (SDK/Runtime Dev)
-**Type:** Implementation
-**Status:** Implemented
+**Author:** Alexander (SDK/Runtime Dev)  
+**Type:** Implementation  
+**Status:** Implemented  
 **Date:** 2026-04-30
 
 ## Summary
@@ -6321,9 +6321,9 @@ All 268 tests pass. Zero regressions.
 
 ### 2026-04-30: Phase 3 Persona Review Fixes — Models (Roger)
 
-**Author:** Roger (Platform Dev)
-**Type:** Implementation
-**Status:** Implemented
+**Author:** Roger (Platform Dev)  
+**Type:** Implementation  
+**Status:** Implemented  
 **Date:** 2026-04-30
 
 ## Summary
@@ -6362,9 +6362,9 @@ The Architect flagged `sort()` in `cheapest`/`smartest` strategies as mutating t
 
 ### 2026-05-01: Telemetry Collector ↔ Bridge Event-Name Contract
 
-**Author:** Roger Wilco (Platform Dev)
-**Date:** 2026-05-01
-**Type:** Contract + Telemetry
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-05-01  
+**Type:** Contract + Telemetry  
 **Status:** Implemented
 
 Context: Persona review F4 caught that telemetry collectors checked for event type strings that never appear in the bridge's EVENT_MAP. Bridge maps SDK events to different vocabulary (	ool_use vs 	ool_call_started, etc.). Result: collectors silently received nothing in production.
@@ -6396,9 +6396,9 @@ New optional signals field on ExecutionProfile carries individual means for conv
 
 ### 2026-05-01: Persona Review Fixes — Prescribers + Applier (F3, F6b, F9, F10)
 
-**Author:** Rosella (Plugin Dev)
-**Date:** 2026-05-01
-**Type:** Implementation
+**Author:** Rosella (Plugin Dev)  
+**Date:** 2026-05-01  
+**Type:** Implementation  
 **Status:** Implemented
 
 Four findings from Phase 4.5 persona review.
@@ -6428,9 +6428,9 @@ GREEN → * 0.9 (decay), RED → * 1.1 (grow), YELLOW → hold. Hard floor EXPLO
 
 ### 2026-05-02: Phase 4.5 Persona Review — All 11 Findings Fixed
 
-**Author:** Scribe (Session Log)
-**Date:** 2026-05-02
-**Type:** Meta
+**Author:** Scribe (Session Log)  
+**Date:** 2026-05-02  
+**Type:** Meta  
 **Status:** Complete
 
 Phase 4.5 persona review findings consolidated and resolved across three team members:
@@ -6612,7 +6612,7 @@ hints.sort((a, b) => {
 });
 ```
 
-**Pro:** Single pass, no array copy.
+**Pro:** Single pass, no array copy.  
 **Con:** The four-branch comparator obscures the semantic intent. The sort guarantee for unmatched items requires understanding that `b.impactScore - a.impactScore` preserves Phase 4.5 order *only* when input is already sorted by impactScore — which it is in the current implementation, but that's an implicit assumption.
 
 ### Option B: Explicit partition then concatenate ✅ CHOSEN
@@ -6626,7 +6626,7 @@ hints.length = 0;
 hints.push(...matched, ...unmatched);
 ```
 
-**Pro:** The invariant is explicit and self-documenting — matched first, unmatched after, each with its own clear sort key. No implicit reliance on pre-existing hint order.
+**Pro:** The invariant is explicit and self-documenting — matched first, unmatched after, each with its own clear sort key. No implicit reliance on pre-existing hint order.  
 **Con:** Two filter passes + two sorts + array reassignment. At the scale of prescriber hints (≤10 items typically), this is not a performance concern.
 
 ---
@@ -6681,9 +6681,9 @@ The optional field means the type doesn't enforce the invariant at compile time.
 
 # ADR: Wave 2 Wiring Shape — ChangeVectorProvider Port
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-20
-**Status:** Decision filed
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-20  
+**Status:** Decision filed  
 **Related to:** Phase 4.6 Wave 2 — Wiring Curator change vectors → prescriber `historicalVectors`
 
 ---
@@ -6771,9 +6771,9 @@ Slightly more wiring than extending `FeedbackSource` (adding a new interface, ne
 
 # ADR: Wave 2 Wiring Shape — ChangeVectorProvider Port + PrescriberOrchestrator Port
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-20
-**Status:** Approved — ready for implementation
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-20  
+**Status:** Approved — ready for implementation  
 **Phase:** 4.6 Wave 2
 
 ---
@@ -6816,9 +6816,9 @@ Slightly more wiring than extending `FeedbackSource` (adding a new interface, ne
 
 # ADR: Wave 2 v3 — Wiring Shape + Scope Split + Safety Gates
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-21
-**Status:** Approved — ready for implementation
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-21  
+**Status:** Approved — ready for implementation  
 **Phase:** 4.6 Wave 2 v3 (revision of 2026-05-20 ADR, incorporates duck critique and scope refinement)
 
 ---
@@ -6916,9 +6916,9 @@ Full path: `ChangeVectorSummary` (computed at summary time) → prescriber copie
 
 # Phase 4.6 Kickoff — Change Vector Learning
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-03
-**Status:** Kickoff — ready for team spawn
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-03  
+**Status:** Kickoff — ready for team spawn  
 **Branch:** `squad/phase4.6-change-vectors`
 
 ---
@@ -7093,9 +7093,9 @@ All ambiguities resolved. Work items are concrete. No blockers.
 
 # Decision: Weight Constants in Cairn (ADR-P4.6-003 Implementation)
 
-**Author:** Alexander (SDK/Runtime Dev)
-**Date:** 2026-05-03
-**Status:** Decided
+**Author:** Alexander (SDK/Runtime Dev)  
+**Date:** 2026-05-03  
+**Status:** Decided  
 **Relates to:** ADR-P4.6-003 (same weights as drift score, single source of truth)
 
 ---
@@ -7189,8 +7189,8 @@ at computation time, giving downstream consumers full context.
 
 # R5 — Drift Weight Export Verification + Alexander Coordination
 
-**Author:** Rosella (Plugin Dev)
-**Date:** 2026-05-03
+**Author:** Rosella (Plugin Dev)  
+**Date:** 2026-05-03  
 **Status:** Decision documented — no code change needed
 
 ---
@@ -7268,10 +7268,10 @@ source of truth:
 
 # Defect Flag: `summarizeChangeVectors` confidence=0 inconsistency
 
-**From:** Laura (Tester)
-**Date:** 2026-05-03
-**Phase:** 4.6 — Change Vector Learning
-**Severity:** Latent risk (not a production path today)
+**From:** Laura (Tester)  
+**Date:** 2026-05-03  
+**Phase:** 4.6 — Change Vector Learning  
+**Severity:** Latent risk (not a production path today)  
 **Assigned to:** Team (Graham to triage)
 
 ---
@@ -7473,9 +7473,9 @@ value 1.0. Prescribers apply it as `hint.confidence *= summary.confidenceBoost`.
 
 ### 2026-05-01: Phase 4 Export Pipeline Architecture
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-01
-**Type:** Architecture
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-01  
+**Type:** Architecture  
 **Status:** Implemented
 
 Phase 4 introduces the Export Pipeline — the third integration seam from the Forge build kickoff. It converts persisted `CairnBridgeEvent`s into certified SKILL.md files with DBOM provenance in YAML frontmatter.
@@ -7508,9 +7508,9 @@ All Phase 4 types stay package-internal. Continues ADR-P3-004 precedent.
 
 ### 2026-05-01: Export Pipeline — Function Types over Shared Interfaces
 
-**Author:** Roger Wilco (Platform Dev)
-**Date:** 2026-05-01
-**Type:** Architecture
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-05-01  
+**Type:** Architecture  
 **Status:** Implemented
 
 Phase 4 export pipeline needs a quality gate that runs Cairn's linter/validator on compiled SKILL.md content. Forge must never import @akubly/cairn directly (acyclic dependency graph constraint).
@@ -7535,9 +7535,9 @@ All Phase 4 types (`ExportDiagnostic`, `QualityGateResult`, `CompiledSkill`, `Sk
 
 ### 2026-05-01: Export Pipeline Quality Gate Semantics
 
-**Author:** Laura (Tester)
-**Type:** Test Contract
-**Status:** Implemented
+**Author:** Laura (Tester)  
+**Type:** Test Contract  
+**Status:** Implemented  
 **Date:** 2026-05-01 (updated from 2026-04-30)
 
 Phase 4 export pipeline uses quality gates before emitting a compiled SKILL.md. Now aligned with `docs/forge-phase4-spec.md` §4.4, §4.5, §7.
@@ -7663,8 +7663,8 @@ Telemetry observers are now safe in production. Error in one observer cannot cas
 
 ### 2026-04-28: Alexander — SDK Interface Types for Runtime Module
 
-**Author:** Alexander (SDK/Runtime Dev)
-**Type:** Architecture
+**Author:** Alexander (SDK/Runtime Dev)  
+**Type:** Architecture  
 **Status:** Implemented
 
 ForgeClient and ForgeSession depend on thin interface types (`SDKClient`, `SDKSession`) rather than importing CopilotClient/CopilotSession classes directly.
@@ -7689,9 +7689,9 @@ ForgeClient and ForgeSession depend on thin interface types (`SDKClient`, `SDKSe
 
 ### 2026-05-01T18:14:00Z: Phase 4.5 Local Feedback Loop — Aaron's Scope Decisions
 
-**Author:** Aaron Kubly (via Copilot)
-**Date:** 2026-05-01T18:14:00Z
-**Type:** Direction / Scope
+**Author:** Aaron Kubly (via Copilot)  
+**Date:** 2026-05-01T18:14:00Z  
+**Type:** Direction / Scope  
 **Status:** Active
 
 Phase 4.5 brainstorm Round 2 follow-up captured six major decisions:
@@ -7742,9 +7742,9 @@ All six wild cards from brainstorm are approved as future backlog items:
 
 ### 2026-04-30T22:25:00Z: Phase 5 (PGO Telemetry) Deferred — Budget & Data Protection
 
-**Author:** Aaron Kubly (via Copilot)
-**Date:** 2026-04-30T22:25:00Z
-**Type:** Scope / Risk
+**Author:** Aaron Kubly (via Copilot)  
+**Date:** 2026-04-30T22:25:00Z  
+**Type:** Scope / Risk  
 **Status:** Active
 
 Phase 5 (PGO Telemetry) is deferred as future work.
@@ -7768,9 +7768,9 @@ Phase 5 (PGO Telemetry) is deferred as future work.
 ---
 ### 2026-05-02: Phase 4.5 Architecture — Local Feedback Loop
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-02
-**Type:** Architecture
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-02  
+**Type:** Architecture  
 **Status:** Proposed
 
 Phase 4.5 introduces the Local Feedback Loop — a profile-guided optimization engine that runs entirely on local SQLite. Sessions produce telemetry → collectors aggregate signals → prescribers generate optimization hints → the applier writes improved SKILL.md v2 artifacts.
@@ -8167,7 +8167,7 @@ description:
 - **7D, 7E** depend on 7A + 7B (can run in parallel after 7B)
 - **7F** depends on 7C + 7D + 7E (final integration phase)
 
-**Critical path:** 7A → 7B → 7D → 7F
+**Critical path:** 7A → 7B → 7D → 7F  
 **Parallel opportunities:** 7B ∥ 7C, then 7D ∥ 7E
 
 ---
@@ -8285,14 +8285,14 @@ The auto-suppression check (deferCount >= threshold → suppress) is exported as
 
 ### 2026-04-30: Phase 3 Architecture — ForgeClient & SDK Abstraction (Graham)
 
-**Author:** Graham Knight (Lead)
-**Type:** Architecture
+**Author:** Graham Knight (Lead)  
+**Type:** Architecture  
 **Status:** Active
 
 # Graham — Phase 3 Architecture Decisions
 
-**Date:** 2026-04-30
-**Author:** Graham Knight (Lead / Architect)
+**Date:** 2026-04-30  
+**Author:** Graham Knight (Lead / Architect)  
 **Context:** Phase 3 architecture specification for `@akubly/forge` — live SDK integration
 
 ---
@@ -8369,8 +8369,8 @@ The auto-suppression check (deferCount >= threshold → suppress) is exported as
 
 ### 2026-04-29: Phase 3 Test Strategy — Inline Contract Testing (Laura)
 
-**Author:** Laura (Tester)
-**Type:** Testing
+**Author:** Laura (Tester)  
+**Type:** Testing  
 **Status:** Active
 
 # Laura — Phase 3 Test Strategy: Inline Contract Testing
@@ -8423,9 +8423,9 @@ These extensions are backward-compatible — existing Phase 2 tests continue to 
 
 ### 2026-04-30: Phase 3 Persona Review Fixes — Runtime (Alexander)
 
-**Author:** Alexander (SDK/Runtime Dev)
-**Type:** Implementation
-**Status:** Implemented
+**Author:** Alexander (SDK/Runtime Dev)  
+**Type:** Implementation  
+**Status:** Implemented  
 **Date:** 2026-04-30
 
 ## Summary
@@ -8472,9 +8472,9 @@ All 268 tests pass. Zero regressions.
 
 ### 2026-04-30: Phase 3 Persona Review Fixes — Models (Roger)
 
-**Author:** Roger (Platform Dev)
-**Type:** Implementation
-**Status:** Implemented
+**Author:** Roger (Platform Dev)  
+**Type:** Implementation  
+**Status:** Implemented  
 **Date:** 2026-04-30
 
 ## Summary
@@ -8513,9 +8513,9 @@ The Architect flagged `sort()` in `cheapest`/`smartest` strategies as mutating t
 
 ### 2026-05-01: Telemetry Collector ↔ Bridge Event-Name Contract
 
-**Author:** Roger Wilco (Platform Dev)
-**Date:** 2026-05-01
-**Type:** Contract + Telemetry
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-05-01  
+**Type:** Contract + Telemetry  
 **Status:** Implemented
 
 Context: Persona review F4 caught that telemetry collectors checked for event type strings that never appear in the bridge's EVENT_MAP. Bridge maps SDK events to different vocabulary (	ool_use vs 	ool_call_started, etc.). Result: collectors silently received nothing in production.
@@ -8547,9 +8547,9 @@ New optional signals field on ExecutionProfile carries individual means for conv
 
 ### 2026-05-01: Persona Review Fixes — Prescribers + Applier (F3, F6b, F9, F10)
 
-**Author:** Rosella (Plugin Dev)
-**Date:** 2026-05-01
-**Type:** Implementation
+**Author:** Rosella (Plugin Dev)  
+**Date:** 2026-05-01  
+**Type:** Implementation  
 **Status:** Implemented
 
 Four findings from Phase 4.5 persona review.
@@ -8579,9 +8579,9 @@ GREEN → * 0.9 (decay), RED → * 1.1 (grow), YELLOW → hold. Hard floor EXPLO
 
 ### 2026-05-02: Phase 4.5 Persona Review — All 11 Findings Fixed
 
-**Author:** Scribe (Session Log)
-**Date:** 2026-05-02
-**Type:** Meta
+**Author:** Scribe (Session Log)  
+**Date:** 2026-05-02  
+**Type:** Meta  
 **Status:** Complete
 
 Phase 4.5 persona review findings consolidated and resolved across three team members:
@@ -8763,7 +8763,7 @@ hints.sort((a, b) => {
 });
 ```
 
-**Pro:** Single pass, no array copy.
+**Pro:** Single pass, no array copy.  
 **Con:** The four-branch comparator obscures the semantic intent. The sort guarantee for unmatched items requires understanding that `b.impactScore - a.impactScore` preserves Phase 4.5 order *only* when input is already sorted by impactScore — which it is in the current implementation, but that's an implicit assumption.
 
 ### Option B: Explicit partition then concatenate ✅ CHOSEN
@@ -8777,7 +8777,7 @@ hints.length = 0;
 hints.push(...matched, ...unmatched);
 ```
 
-**Pro:** The invariant is explicit and self-documenting — matched first, unmatched after, each with its own clear sort key. No implicit reliance on pre-existing hint order.
+**Pro:** The invariant is explicit and self-documenting — matched first, unmatched after, each with its own clear sort key. No implicit reliance on pre-existing hint order.  
 **Con:** Two filter passes + two sorts + array reassignment. At the scale of prescriber hints (≤10 items typically), this is not a performance concern.
 
 ---
@@ -8832,9 +8832,9 @@ The optional field means the type doesn't enforce the invariant at compile time.
 
 # ADR: Wave 2 Wiring Shape — ChangeVectorProvider Port
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-20
-**Status:** Decision filed
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-20  
+**Status:** Decision filed  
 **Related to:** Phase 4.6 Wave 2 — Wiring Curator change vectors → prescriber `historicalVectors`
 
 ---
@@ -8922,9 +8922,9 @@ Slightly more wiring than extending `FeedbackSource` (adding a new interface, ne
 
 # ADR: Wave 2 Wiring Shape — ChangeVectorProvider Port + PrescriberOrchestrator Port
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-20
-**Status:** Approved — ready for implementation
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-20  
+**Status:** Approved — ready for implementation  
 **Phase:** 4.6 Wave 2
 
 ---
@@ -8967,9 +8967,9 @@ Slightly more wiring than extending `FeedbackSource` (adding a new interface, ne
 
 # ADR: Wave 2 v3 — Wiring Shape + Scope Split + Safety Gates
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-05-21
-**Status:** Approved — ready for implementation
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-05-21  
+**Status:** Approved — ready for implementation  
 **Phase:** 4.6 Wave 2 v3 (revision of 2026-05-20 ADR, incorporates duck critique and scope refinement)
 
 ---
@@ -9174,7 +9174,7 @@ Slightly more wiring than extending `FeedbackSource` (adding a new interface, ne
 
 **Scope:** How should `curate()` accept and orchestrate the prescriber config?
 
-**Decision:**
+**Decision:** 
 1. `curate()` is now `async`, returns `Promise<CurateResult>`
 2. Qualifying skills sourced from `ChangeVectorSweepResult.computedSkillIds` — distinct, sorted skill IDs whose vectors were newly inserted this cycle
 3. Per-skill `runForSkill(skillId, minSessions)` receives `minSessions` from existing Curator chain: `changeVectorConfig?.minSessionsObserved ?? DEFAULT_MIN_SESSIONS`
@@ -9211,7 +9211,7 @@ Slightly more wiring than extending `FeedbackSource` (adding a new interface, ne
 
 **Rationale:** Smallest change preserving W3-D1 boundary. Cairn owns hook mechanics and Curator invocation but does not import `skillsmith-runtime`, avoiding cairn ↔ skillsmith-runtime cycle. Always-on guaranteed by composition root bootstrap logic.
 
-**Implementation:**
+**Implementation:** 
 - Cairn hook runner: optional `PrescriberOrchestrationConfig` parameter
 - `skillsmith-runtime/src/hooks/sessionStart.ts`: production bootstrap wrapper
 - `.github/hooks/cairn/curate.ps1`: updated to prefer runtime hook for both global-install and repo-checkout paths
@@ -9286,7 +9286,7 @@ Investigation into Laura's flagged ambiguity surfaced a deeper architectural fin
 
 ### Research: Composition Root Audit (Roger)
 
-**Date:** 2026-05-23
+**Date:** 2026-05-23  
 **Status:** Research input, delivered to ADR synthesis
 
 **Scope:** Five options for where the runtime that imports both `@akubly/cairn` and `@akubly/forge` should live.
@@ -9315,7 +9315,7 @@ Investigation into Laura's flagged ambiguity surfaced a deeper architectural fin
 
 ### Research: Curator/MCP Integration Surface (Alexander)
 
-**Date:** 2026-05-22
+**Date:** 2026-05-22  
 **Status:** Research input, delivered to ADR synthesis
 
 **Scope:** Wave 3 Curator–MCP integration requirements, architectural decisions, and open questions.
@@ -9335,7 +9335,7 @@ Investigation into Laura's flagged ambiguity surfaced a deeper architectural fin
 **Curator API Changes:**
 ```typescript
 export interface PrescriberOrchestrationConfig {
-  runForSkill: (skillId: string, minSessions: number)
+  runForSkill: (skillId: string, minSessions: number) 
     => Promise<{ skillId, hintsGenerated, hintsInserted, hintsDuplicated, hintsError }>;
   loadProfile?: (skillId: string) => ExecutionProfile | null;
 }
@@ -9474,7 +9474,7 @@ export function curate(
 
 ### Decision: Harness Vision Document Drafted (2026-05-23)
 
-**Author:** Graham Knight (Lead / Architect)
+**Author:** Graham Knight (Lead / Architect)  
 **Status:** Awaiting Aaron's review
 
 **Artifact:** `docs/harness-vision.md` (3,200+ words, 14 sections)
@@ -9586,8 +9586,8 @@ CREATE UNIQUE INDEX idx_optimization_hints_active_dedup
 
 ### 2026-05-22: Eureka Project Kickoff — Name + Repo Placement Decided
 
-**Status:** ✅ CLOSED (Aaron decided)
-**Date:** 2026-05-22
+**Status:** ✅ CLOSED (Aaron decided)  
+**Date:** 2026-05-22  
 **Decision:** Project named **Eureka**; built in `packages/eureka/` (monorepo); 3 specialists hired into existing squad
 
 **What Was Decided:**
@@ -9610,7 +9610,7 @@ CREATE UNIQUE INDEX idx_optimization_hints_active_dedup
 **Artifacts:**
 - Orchestration log: `.squad/orchestration-log/2026-05-22T20-49-46-onboarding-eureka-hires.md`
 - Session log: `.squad/log/2026-05-22T20-49-46-eureka-hires.md`
-- Decision directive: `decision inbox drop copilot-directive-eureka-name.md` (merged here)
+- Decision directive: `.squad/decisions/inbox/copilot-directive-eureka-name.md` (merged here)
 - New agent folders: `.squad/agents/{genesta,crispin,edgar}/` with charters + history
 - Team roster updated: 14 members (was 11)
 
@@ -9620,9 +9620,9 @@ CREATE UNIQUE INDEX idx_optimization_hints_active_dedup
 
 # Open Question: Brain/Memory/Learning System — Repo Placement
 
-**Status:** Deliberation (Round 2 consulting, no final decision)
-**Date:** 2026-05-22
-**Requestor:** Aaron
+**Status:** Deliberation (Round 2 consulting, no final decision)  
+**Date:** 2026-05-22  
+**Requestor:** Aaron  
 **Consulting Agents:** Graham Knight (Lead), Roger Wilco (Platform), Alexander (SDK/Runtime), Valanice (UX)
 ### Wave 4 Scope Approved (Graham, 2026-05-23)
 
@@ -9697,7 +9697,7 @@ Should a new agentic brain/memory/thinking/learning system be:
 
 **Why:**
 - Brain is **infrastructure** (like Git, Redis) that follows the user globally and hooks per-repo
-- Installation story:
+- Installation story: 
 pm install -g @akubly/brain (not embedded in Cairn)
 - Branding independence signals "infrastructure for any agentic system," not "Cairn feature"
 - UX principle: Mental model boundaries should match repo boundaries
@@ -9798,10 +9798,10 @@ See .squad/orchestration-log/2026-05-22T20-25-51-*.md for individual agent analy
 
 # R5 PRD v3: Eureka v1 Product Requirements Document (Canonical Specification)
 
-**Author:** Cassima (Product Manager)
-**Date:** 2026-05-24
-**Status:** Draft v3 — incorporates Aaron's 9 R5 round-3 OQ resolutions
-**Ceremony Context:** R5 (Requirements) round 3 — supersedes v2 on every point of conflict
+**Author:** Cassima (Product Manager)  
+**Date:** 2026-05-24  
+**Status:** Draft v3 — incorporates Aaron's 9 R5 round-3 OQ resolutions  
+**Ceremony Context:** R5 (Requirements) round 3 — supersedes v2 on every point of conflict  
 **Canonical note:** This specification is preserved verbatim as the ground truth for R6 reconciliation work. See R6 sections below for substrate reconciliation findings.
 
 *[Full PRD v3 text preserved below]*
@@ -9810,9 +9810,9 @@ See .squad/orchestration-log/2026-05-22T20-25-51-*.md for individual agent analy
 
 # Open Question: Squad Fit for Brain/Memory/Learning System
 
-**Status:** Self-assessment complete (Round 3)
-**Date:** 2026-05-22
-**Requestor:** Aaron
+**Status:** Self-assessment complete (Round 3)  
+**Date:** 2026-05-22  
+**Requestor:** Aaron  
 **Self-Assessing Agents:** Graham Knight (Lead), Roger Wilco (Platform), Alexander (SDK/Runtime), Valanice (UX)
 
 ---
@@ -9827,7 +9827,7 @@ See .squad/orchestration-log/2026-05-22T20-25-51-*.md for individual agent analy
 
 ## The Core Mismatch
 
-**This squad was assembled for:** Cairn (observability/event pipeline) + Forge (SDK deterministic runtime) — a platform team
+**This squad was assembled for:** Cairn (observability/event pipeline) + Forge (SDK deterministic runtime) — a platform team  
 **Brain needs:** Cognitive infrastructure, knowledge representation, agentic reasoning loops, epistemology — a cognitive systems team
 
 **These are orthogonal problem domains.** Adding brain to this squad splits focus and dooms both Cairn/Forge stabilization and brain delivery.
@@ -10006,10 +10006,10 @@ These are opposing philosophies. Knowledge representation, learning loops, agent
 **Session log (1 file):** `.squad/log/2026-05-22T20-32-55Z-brain-squad-fit.md`
 
 **Inbox files to delete (merged):**
-- `decision inbox drop graham-squad-fit.md`
-- `decision inbox drop roger-self-fit.md`
-- `decision inbox drop alexander-self-fit.md`
-- `decision inbox drop valanice-self-fit.md`
+- `.squad/decisions/inbox/graham-squad-fit.md`
+- `.squad/decisions/inbox/roger-self-fit.md`
+- `.squad/decisions/inbox/alexander-self-fit.md`
+- `.squad/decisions/inbox/valanice-self-fit.md`
 
 **Status:** OPEN QUESTION — Strong recommendation toward fresh squad, awaiting Aaron's input on budget, timeline, and scope.
 
@@ -10038,8 +10038,8 @@ Every delta below cites the OQ directive that drove it.
 
 ## 2026-05-24: Aaron's R6 Signals (Post-Trio Reconciliation)
 
-**By:** Aaron Kubly (via Copilot)
-**Date:** 2026-05-24
+**By:** Aaron Kubly (via Copilot)  
+**Date:** 2026-05-24  
 **What:** After reading Genesta/Crispin/Edgar's R6 reconciliation reports, Aaron contributed four signals to fold into Cassima's synthesis
 
 ### Four R6 Signals
@@ -10074,9 +10074,9 @@ Aaron's four signals serve as constraints + a new Path D to evaluate, combined w
 
 ## 2026-05-27: OQ-1 Resolved — Monorepo Accepted (ADR-0002)
 
-**Status:** ✅ DECIDED
-**Date:** 2026-05-27
-**Decided By:** Aaron
+**Status:** ✅ DECIDED  
+**Date:** 2026-05-27  
+**Decided By:** Aaron  
 **Documented By:** Graham (Lead/Architect)
 
 **Decision:** Merge `mem/` and `harness/` into a single `@akubly/` monorepo with shared `packages/{cairn,forge,types}` and project-specific `packages/{eureka,crucible}`.
@@ -10097,9 +10097,9 @@ Aaron's four signals serve as constraints + a new Path D to evaluate, combined w
 
 ## 2026-05-27: §55 Review Discovered §30 Updates (Edgar Follow-ups)
 
-**Date:** 2026-05-27
-**Author:** Edgar (Learning Systems Specialist)
-**Context:** Review of Laura's §55 TDD Strategy against §30 Learning Systems
+**Date:** 2026-05-27  
+**Author:** Edgar (Learning Systems Specialist)  
+**Context:** Review of Laura's §55 TDD Strategy against §30 Learning Systems  
 **Status:** Three non-blocking improvements identified for §30
 
 ### Background
@@ -10178,7 +10178,7 @@ export interface ClockProvider {
      closeDb();
      getDb(':memory:');  // Creates singleton
    });
-
+   
    afterEach(() => {
      closeDb();  // No file cleanup needed
    });
@@ -10196,8 +10196,8 @@ export interface ClockProvider {
 
 **Implementation:** Commit 472e77d
 
-**Test Results Before Fix:** 9/14 passing (5 infrastructure failures in Groups C & D)
-**Test Results After Fix:** 14/14 passing Γ£à
+**Test Results Before Fix:** 9/14 passing (5 infrastructure failures in Groups C & D)  
+**Test Results After Fix:** 14/14 passing Γ£à  
 **Repo-wide:** 644/647 tests passing
 
 **Files Modified:**
@@ -10228,7 +10228,7 @@ export interface ClockProvider {
 
 **Rationale:** Functional wrappers can mask constraint failures. If `insertHintIfNew` is refactored to check existence differently, the old "concurrent inserts" test would still pass even if the UNIQUE index was accidentally dropped.
 
-**Implementation:**
+**Implementation:** 
 - Added `'partial UNIQUE index rejects a raw duplicate active-status insert'` test in `packages/cairn/src/__tests__/optimizationHints.test.ts`
 - Uses raw `db.prepare().run()` to insert a second active-status row for the same `(skill_id, source, category)` tuple and asserts `UNIQUE constraint failed`
 - Also verifies terminal-status rows bypass the partial index
@@ -10243,7 +10243,7 @@ export interface ClockProvider {
 
 **Decision:** Any feature with a boolean fork (`forceRegenerate: true/false`) should have assertions on both branches in the same test or closely related tests. For the `true` path specifically, assert behavioral consequences (state change) not just return values.
 
-**Implementation:**
+**Implementation:** 
 - Extended the existing test to add a second call with `forceRegenerate: true`, capturing the previously-active hint ID
 - Asserts `status === 'expired'` post-run, plus `skipped === 0` and `inserted > 0`
 
@@ -10364,7 +10364,7 @@ The active-dedup partial index is `idx_optimization_hints_active_dedup` on `(ski
 
 **Schema Changes:**
 ```sql
-ALTER TABLE sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'user'
+ALTER TABLE sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'user' 
   CHECK (session_kind IN ('user', 'system'));
 ```
 
@@ -10453,7 +10453,7 @@ ALTER TABLE sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'user'
      modelId?: string;      // Enables per-model tier lookup
      userId?: string;       // Enables per-user tier lookup
    }
-
+   
    function loadExecutionProfile(
      db: RuntimeDb,
      skillId: string,
@@ -10602,7 +10602,7 @@ staleness: {
 }
 ```
 
-Fresh profiles (not stale): `confidence: 1` (unchanged).
+Fresh profiles (not stale): `confidence: 1` (unchanged).  
 Stale profiles: `confidence * 0.5` (attenuated exactly once, even when both thresholds trip).
 
 **Threshold Defaults:**
@@ -10694,7 +10694,7 @@ Stale profiles: `confidence * 0.5` (attenuated exactly once, even when both thre
 
 **Schema Changes:**
 ```sql
-ALTER TABLE sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'user'
+ALTER TABLE sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'user' 
   CHECK (session_kind IN ('user', 'system'));
 ```
 
@@ -10802,7 +10802,7 @@ function loadExecutionProfile(
   fallbackContext?: TierFallbackContext
 ): LoadedExecutionProfile | null;
 
-export type LoadedProfileSource =
+export type LoadedProfileSource = 
   | 'per-skill'
   | 'per-model'
   | 'per-user'
@@ -10811,7 +10811,7 @@ export type LoadedProfileSource =
 
 **Chain-Walking Algorithm:**
 1. Always query `per-skill` first
-2. If `modelId` present, query `per-model`
+2. If `modelId` present, query `per-model` 
 3. If `userId` present, query `per-user`
 4. Always query `global` last
 5. Return first non-null row as complete profile; do not blend tiers
@@ -10849,7 +10849,7 @@ staleness: {
 }
 ```
 
-Fresh profiles: `confidence: 1` (unchanged).
+Fresh profiles: `confidence: 1` (unchanged).  
 Stale profiles: `confidence * 0.5` (attenuated exactly once, even when both thresholds trip).
 
 **Threshold Defaults:**
@@ -10953,9 +10953,9 @@ if tier_filter is provided:
 
 ## Cycle 1 Review Disposition — recall.ts (ea05e62)
 
-**Author:** Edgar (Learning Systems Specialist)
-**Date:** 2026-05-29
-**Review source:** 5-persona Code Panel, commit ea05e62
+**Author:** Edgar (Learning Systems Specialist)  
+**Date:** 2026-05-29  
+**Review source:** 5-persona Code Panel, commit ea05e62  
 **Branch:** eureka/v1-m1-m4
 
 ---
@@ -11007,8 +11007,8 @@ All tests pass; build clean.
   `recallWithScores(options, deps): Promise<ScoredResult[]>` is the underlying function that
   returns facts paired with their FR-2 scores. `recall(options, deps): Promise<RecallResult[]>`
   becomes a thin convenience wrapper that calls `recallWithScores` and strips scores.
-
-  **Rationale for (a) over (b):**
+  
+  **Rationale for (a) over (b):**  
   Option (b) (debug flag: `RecallOptions.debug?: boolean`) conflates the return type contract
   with a runtime flag, creating a union return type `Fact[] | ScoredResult[]` that callers must
   narrow. Option (a) gives each concern its own function with a clear, stable type signature.
@@ -11099,7 +11099,7 @@ Test Files  1 passed (1)
      Tests  7 passed (7)
 ```
 
-**Cairn (609 tests):** 609 passed ✅
+**Cairn (609 tests):** 609 passed ✅  
 **Forge (647 tests):** 644 passed | 3 todo ✅
 
 ---
@@ -11114,18 +11114,18 @@ Test Files  1 passed (1)
 
 ### Commit
 
-All changes in one commit on `eureka/v1-m1-m4`.
-Commit message: `Eureka review cycle 1 fixes: F1,F2,F3,F4,F5,F9,F10,F12`
+All changes in one commit on `eureka/v1-m1-m4`.  
+Commit message: `Eureka review cycle 1 fixes: F1,F2,F3,F4,F5,F9,F10,F12`  
 SHA: 0f83dcf
 
 ---
 
 ## F6 Escalation — recall() Trust-Filter Undersupply
 
-**Author:** Edgar (Learning Systems Specialist)
-**Date:** 2026-05-29
-**Origin:** F6 — Trust filter undersupply (Correctness+Craft finding, cycle 1 review of ea05e62)
-**Status:** ESCALATED — awaiting PM (Cassima) + Knowledge Rep (Crispin) input
+**Author:** Edgar (Learning Systems Specialist)  
+**Date:** 2026-05-29  
+**Origin:** F6 — Trust filter undersupply (Correctness+Craft finding, cycle 1 review of ea05e62)  
+**Status:** ESCALATED — awaiting PM (Cassima) + Knowledge Rep (Crispin) input  
 **Reviewers needed:** Cassima (product semantics), Crispin (FactStore contract)
 
 ---
@@ -11160,7 +11160,7 @@ the trust floor."
 
 Pass `limit: k * 3` to `FactStore.search()`. After trust filtering, slice to `k`.
 
-**Pros:** Simple. Likely yields full `k` in practice (low-trust facts are rare at steady state).
+**Pros:** Simple. Likely yields full `k` in practice (low-trust facts are rare at steady state).  
 **Cons:** Wastes storage I/O (fetches 3× what is needed in the happy path). The multiplier
 `3` is a magic number with no principled derivation. Brittle if the corpus is dominated by
 low-trust facts (post-contemplate penalties, Path 2 ingest). Over-fetching obscures the
@@ -11175,7 +11175,7 @@ ranking and returning `k` results. The filter happens where the data lives.
 **Pros:** Semantically cleanest — storage returns exactly `k` post-filter results.
 Enables future index optimization (partial index on `trust >= 0.15`). Eliminates the
 over-fetch problem at source. Aligns with London-school seam discipline: FactStore.search()
-owns its own filtering contract.
+owns its own filtering contract.  
 **Cons:** Requires a FactStore interface change → Crispin's domain (§20 storage contract).
 Requires a FactStore contract test update (§55 §3.3).
 
@@ -11184,7 +11184,7 @@ Requires a FactStore contract test update (§55 §3.3).
 Add JSDoc: `@returns up to k results; may return fewer if trust floor filters candidates`.
 No code change.
 
-**Pros:** Minimal. Honest about current behavior.
+**Pros:** Minimal. Honest about current behavior.  
 **Cons:** Callers cannot tell how many results were suppressed. UX: if the agent asks for
 `k=5` and gets 2, it has no signal to retry with lower trust floor or fallback. Brittle
 for downstream pipelines that assume exactly-k semantics.
@@ -11196,7 +11196,7 @@ storage layer applies it as a `WHERE` predicate only when provided.
 
 **Pros:** Backwards compatible — existing calls without `trustFloor` continue to work.
 FactStore implementors can choose to filter at SQL level or fall back to application-level
-filter for implementations that don't support it.
+filter for implementations that don't support it.  
 **Cons:** Optional parameter creates two code paths; implementors may implement inconsistently.
 Less precise than (b)'s mandatory contract.
 
@@ -11259,9 +11259,9 @@ Entries older than 7 days.
 
 ### 2026-05-25: Eureka PRD v4-final LOCKED — R7 8-Reviewer Lock-In Panel
 
-**Status:** ✅ LOCKED (CANONICAL)
-**Date:** 2026-05-25
-**Locked By:** 8-reviewer panel (4 Squad domain + 4 persona-review Design Panel personas)
+**Status:** ✅ LOCKED (CANONICAL)  
+**Date:** 2026-05-25  
+**Locked By:** 8-reviewer panel (4 Squad domain + 4 persona-review Design Panel personas)  
 **Lock Status:** DO NOT EDIT — implementation phase begins
 
 **Decision:** Eureka PRD v4-final is ratified as canonical, shippable specification after R7 lock-in. All 4 blockers resolved. All 9 important findings synthesized. Ready for implementation phase. R7 design cycle CLOSED.
@@ -11529,7 +11529,7 @@ Entries older than 7 days.
 
 **Scope:** How should `curate()` accept and orchestrate the prescriber config?
 
-**Decision:**
+**Decision:** 
 1. `curate()` is now `async`, returns `Promise<CurateResult>`
 2. Qualifying skills sourced from `ChangeVectorSweepResult.computedSkillIds` — distinct, sorted skill IDs whose vectors were newly inserted this cycle
 3. Per-skill `runForSkill(skillId, minSessions)` receives `minSessions` from existing Curator chain: `changeVectorConfig?.minSessionsObserved ?? DEFAULT_MIN_SESSIONS`
@@ -11566,7 +11566,7 @@ Entries older than 7 days.
 
 **Rationale:** Smallest change preserving W3-D1 boundary. Cairn owns hook mechanics and Curator invocation but does not import `skillsmith-runtime`, avoiding cairn ↔ skillsmith-runtime cycle. Always-on guaranteed by composition root bootstrap logic.
 
-**Implementation:**
+**Implementation:** 
 - Cairn hook runner: optional `PrescriberOrchestrationConfig` parameter
 - `skillsmith-runtime/src/hooks/sessionStart.ts`: production bootstrap wrapper
 - `.github/hooks/cairn/curate.ps1`: updated to prefer runtime hook for both global-install and repo-checkout paths
@@ -11594,9 +11594,9 @@ Entries older than 7 days.
 
 ### Crucible-TDD-1: London-School TDD Strategy for Agentic Runtime (Laura)
 
-**Date:** 2026-05-27
-**Author:** Laura Bow (Tester)
-**Status:** DRAFT (Awaiting Aaron Review — 8 Open Questions)
+**Date:** 2026-05-27  
+**Author:** Laura Bow (Tester)  
+**Status:** DRAFT (Awaiting Aaron Review — 8 Open Questions)  
 **Artifact:** `docs/crucible-tdd-strategy.md`
 
 **Scope:** Define outside-in London-school TDD discipline for Crucible runtime, PRD-derived, firewalled from technical design.
@@ -11608,7 +11608,7 @@ Entries older than 7 days.
 - **8 invariant property tests:** Append-only, hash-chain determinism, replay equivalence, fork lineage, hook verdict determinism, projection purity, trust-tier monotonicity (via fast-check)
 - **5-layer mock drift defense:** Contract tests (PR-time), shared fixture builders (build-time), golden files (nightly), CI double-check (PR-time), interface stability tracking
 
-**Rationale:**
+**Rationale:** 
 1. London-school (outside-in) forces explicit interface design (matches immutable primitives)
 2. Tell-don't-ask interaction pattern aligns with event-ledger semantics
 3. Collaborator contracts enforce L0–L5 layer boundaries (prevents accidental coupling)
@@ -11639,7 +11639,7 @@ Entries older than 7 days.
 
 **Impact:** TDD strategy locked for PRD scope (12 acceptance scenarios), collaborator contract inventory complete, test layering blueprint ready. Implementation awaits Aaron resolution of Q1–Q8.
 
-**Next Steps:**
+**Next Steps:** 
 1. Aaron reviews strategy, resolves 8 open questions
 2. Laura updates strategy based on resolutions
 3. Decision merges to decisions.md
@@ -11648,9 +11648,9 @@ Entries older than 7 days.
 
 ### Crucible-CTD-1: Technical Design Plan Decomposition + Sequencing (Graham)
 
-**Date:** 2026-05-27 (Updated after Aaron locks blocking questions)
-**Author:** Graham Knight (Lead / Architect)
-**Status:** ACTIVE (Approved for fan-out; blocking questions resolved)
+**Date:** 2026-05-27 (Updated after Aaron locks blocking questions)  
+**Author:** Graham Knight (Lead / Architect)  
+**Status:** ACTIVE (Approved for fan-out; blocking questions resolved)  
 **Artifact:** `docs/crucible-technical-design-plan.md`
 
 **Scope:** Decompose full technical design into 19 sections, 7 team members + 2 consultants, 4 authoring phases + 1 review round (~9 working days).
@@ -11678,10 +11678,10 @@ Entries older than 7 days.
 
 ### Phase 4 Synthesis — CTD CLOSE GREEN-FINAL (2026-05-28)
 
-**Date:** 2026-05-28 (Synthesis Review completed 2026-05-29T072142Z)
-**Author:** Graham Knight (Lead / Architect)
-**Status:** FINAL — CTD v1 STRUCTURALLY COMPLETE
-**Artifact:** Merged from `decision inbox drop graham-ctd-phase4-synthesis.md`
+**Date:** 2026-05-28 (Synthesis Review completed 2026-05-29T072142Z)  
+**Author:** Graham Knight (Lead / Architect)  
+**Status:** FINAL — CTD v1 STRUCTURALLY COMPLETE  
+**Artifact:** Merged from `.squad/decisions/inbox/graham-ctd-phase4-synthesis.md`
 
 **Scope:** Final pre-close interface-coherence synthesis across the four Phase 4 authoring lanes (Graham framing §1/§6/§19; Roger CALL/RET + Scheduler WAL §3/§10; Gabriel L3.5 Scheduler §5/§5.A/§17; Laura reproducibility honesty §11.10 + §16.5/§16.7a). Two minor errata resolved inline during synthesis gate.
 
@@ -11816,9 +11816,9 @@ Current test `'getActiveSession without workdir arg returns most recent active s
 
 # Roger → Laura: WI-A API Shapes (Issue #11)
 
-**Date:** 2026-05-27
-**From:** Roger
-**To:** Laura
+**Date:** 2026-05-27  
+**From:** Roger  
+**To:** Laura  
 
 ## What shipped in WI-A source files
 
@@ -11905,7 +11905,7 @@ export interface SessionSummary {
 
 ### MCP `get_status` shape (BREAKING)
 
-Old: `{ session: Session | null, curator: CuratorStatus }`
+Old: `{ session: Session | null, curator: CuratorStatus }`  
 New: `{ sessions: Session[], curator: CuratorStatus }`
 
 New input params:
@@ -11914,8 +11914,8 @@ New input params:
 
 ### MCP `get_session` shape
 
-Old input: `{ session_id: string }` (required)
-New input:
+Old input: `{ session_id: string }` (required)  
+New input: 
 - `session_id?: string` (now optional)
 - `repo_key?: string` (NEW — alternative lookup)
 - `workdir?: string` (NEW — used with repo_key for (repo_key, workdir) identity lookup)
@@ -11925,7 +11925,7 @@ At least one of `session_id` OR `repo_key` must be provided.
 ## Note on `getActiveSession` behavior
 
 After back-and-forth with your updated test, the final semantic is:
-- No workdir arg → no workdir filter (returns most recent active session regardless of workdir)
+- No workdir arg → no workdir filter (returns most recent active session regardless of workdir)  
 - Workdir string arg → `AND workdir IS ?` filter (exact worktree match)
 
 Your test `"getActiveSession without workdir arg returns most recent active session"` captures this correctly.
@@ -11937,19 +11937,19 @@ The `getActiveSessionByWorkdir` internal helper exists for when you need `IS NUL
 
 # WI-A Implementation Summary — Issue #11
 
-**Author:** Roger
-**Date:** 2026-05-27
-**Branch:** `squad/11-worktree-aware-sessions`
+**Author:** Roger  
+**Date:** 2026-05-27  
+**Branch:** `squad/11-worktree-aware-sessions`  
 **Status:** Complete — build green, 647/647 tests passing
 
 ## What Shipped
 
 ### Migration
 
-**Number:** 015 (as locked by Graham — issue body is stale at "005")
-**File:** `packages/cairn/src/db/migrations/015-workdir-sessions.ts`
+**Number:** 015 (as locked by Graham — issue body is stale at "005")  
+**File:** `packages/cairn/src/db/migrations/015-workdir-sessions.ts`  
 **Changes:**
-- Adds `workdir TEXT` column to `sessions` table (NULL-tolerant, no DEFAULT needed)
+- Adds `workdir TEXT` column to `sessions` table (NULL-tolerant, no DEFAULT needed)  
 - Creates partial index `idx_sessions_repo_workdir ON sessions (repo_key, workdir) WHERE status = 'active'` to support `getActiveSession` and `listActiveSessionsForRepo` efficiently
 - Wired into `packages/cairn/src/db/schema.ts` alongside migration014
 
@@ -11965,7 +11965,7 @@ listActiveSessionsForRepo(db, repoKey)          // NEW: all active user sessions
 
 **`getActiveSession` semantics (final — Aaron-confirmed Q1 locked decision):**
 - No workdir arg → `AND workdir IS NULL` → only NULL-workdir rows (backcompat; old callers cannot pick up worktree sessions)
-- Workdir string arg → `AND workdir IS workdir` → exact worktree match
+- Workdir string arg → `AND workdir IS workdir` → exact worktree match  
 
 > **Correction applied 2026-05-27:** The initial WI-A commit used "no filter" for the no-arg path (per Laura's reconciled test). Aaron confirmed the correct semantic per the locked Q1 decision is `AND workdir IS NULL`. Fixed in commit `ea9ab58` — `getActiveSession` now delegates to `getActiveSessionByWorkdir(db, repoKey, null)` when workdir is `undefined`. `worktreeSessions.test.ts` updated accordingly (18 tests all green).
 
@@ -11988,8 +11988,8 @@ New export — `git rev-parse --show-toplevel` via execSync, same stdio/timeout 
 
 ### Types
 
-`Session.workdir?: string` added to `packages/cairn/src/types/index.ts`
-`SessionSummary.workdir?: string` added to `packages/cairn/src/agents/sessionState.ts`
+`Session.workdir?: string` added to `packages/cairn/src/types/index.ts`  
+`SessionSummary.workdir?: string` added to `packages/cairn/src/agents/sessionState.ts`  
 `getSessionSummary` queries `workdir` from sessions table
 
 ### MCP (`packages/cairn/src/mcp/server.ts`)
@@ -12021,13 +12021,13 @@ Updated schema version assertions from 14 → 15 in:
 
 ## Validation
 
-- `npm run build --workspace=@akubly/cairn`: ✅ clean
-- `npm test --workspace=@akubly/cairn` (direct vitest run): ✅ 647/647 passed
+- `npm run build --workspace=@akubly/cairn`: ✅ clean  
+- `npm test --workspace=@akubly/cairn` (direct vitest run): ✅ 647/647 passed  
 - `@akubly/types` untouched (no shared types changed; `Session` is cairn-internal)
 
 ## Coordination
 
-- API shapes summary written to `decision inbox drop roger-issue-11-api.md` for Laura
+- API shapes summary written to `.squad/decisions/inbox/roger-issue-11-api.md` for Laura
 - WI-B (Gabriel, coordinator dispatch policy) holds until this branch merges
 
 
@@ -12037,11 +12037,11 @@ Updated schema version assertions from 14 → 15 in:
 ## laura-m5-trust-feedback-red
 # Decision Drop: M5 RED — Trust Feedback Mutation Contract
 
-**Author:** Laura (Tester)
-**Date:** 2026-05-30
-**Beat:** M5 RED — trust mutation from feedback event
-**Next owner:** Edgar — M5 GREEN
-**Status:** LANDED — RED
+**Author:** Laura (Tester)  
+**Date:** 2026-05-30  
+**Beat:** M5 RED — trust mutation from feedback event  
+**Next owner:** Edgar — M5 GREEN  
+**Status:** LANDED — RED  
 
 ---
 
@@ -12196,10 +12196,10 @@ it('applies user-correction delta (+0.30) clamped to 1.0 ceiling (§30 §2.3)', 
 ## edgar-m5-green
 # Decision Drop: M5 GREEN — Trust Feedback Mutation Implementation
 
-**Author:** Edgar (Learning Systems Specialist)
-**Date:** 2026-05-30
-**Beat:** M5 GREEN — `applyFeedback` + `TrustUpdater` landed in `recall.ts`
-**Status:** COMPLETE
+**Author:** Edgar (Learning Systems Specialist)  
+**Date:** 2026-05-30  
+**Beat:** M5 GREEN — `applyFeedback` + `TrustUpdater` landed in `recall.ts`  
+**Status:** COMPLETE  
 
 ---
 
@@ -12266,17 +12266,17 @@ Section added to `docs/eureka/sections/30-learning-systems.md` between §2.2.1 a
 
 ### M6-A: `user_correction` event test (deferred from M5)
 
-**Beat:** user_correction delta with ceiling clamp
-**Owner:** Laura (RED)
-**Contract:** `applyFeedback` with `event: 'user_correction'`, `currentTrust: 0.80`, `correctionDelta: +0.30` → `trust: 1.0`
-**Also needed:** floor-clamp case (e.g., `currentTrust: 0.05`, `correctionDelta: -0.30` → `trust: 0.0`)
+**Beat:** user_correction delta with ceiling clamp  
+**Owner:** Laura (RED)  
+**Contract:** `applyFeedback` with `event: 'user_correction'`, `currentTrust: 0.80`, `correctionDelta: +0.30` → `trust: 1.0`  
+**Also needed:** floor-clamp case (e.g., `currentTrust: 0.05`, `correctionDelta: -0.30` → `trust: 0.0`)  
 **Note:** The activity implementation already handles `user_correction` correctly — these tests verify the shape is wired and clamped at both ends.
 
 ### M6-B: Read-seam (currentTrust source in production)
 
-**Beat:** How does a caller obtain `currentTrust` before calling `applyFeedback`?
-**Owner:** Laura (RED) — after design decision
-**Decision needed first:** Option (a) extend FactStore.read(), (b) FactReader interface, or (c) callers always have it from recall()
+**Beat:** How does a caller obtain `currentTrust` before calling `applyFeedback`?  
+**Owner:** Laura (RED) — after design decision  
+**Decision needed first:** Option (a) extend FactStore.read(), (b) FactReader interface, or (c) callers always have it from recall()  
 **Recommendation:** Option (c) first — callers that just ran recall() already have the trust value. Extend FactStore only when a non-recall pathway (e.g., scheduled trust decay) needs it.
 
 ---
@@ -12573,9 +12573,9 @@ Five new tests in `describe('k input validation (C4)')`:
 ## roger-issue-11-implementation
 # WI-A Implementation Log — Issue #11: Worktree-aware sessions
 
-**Author:** Roger (Platform Dev)
-**Branch:** `squad/11-worktree-aware-sessions`
-**Worktree:** `D:\git\stunning-adventure-11`
+**Author:** Roger (Platform Dev)  
+**Branch:** `squad/11-worktree-aware-sessions`  
+**Worktree:** `D:\git\stunning-adventure-11`  
 **Status:** Cloud review cycle 5 applied — ready for push
 
 ---

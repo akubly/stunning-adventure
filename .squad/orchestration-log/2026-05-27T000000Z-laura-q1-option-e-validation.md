@@ -1,8 +1,8 @@
 # Orchestration Log — laura-q1-option-e-validation
 
-**Date:** 2026-05-27
-**Agent:** Laura Bow (Tester)
-**Model:** Claude Sonnet 4.5
+**Date:** 2026-05-27  
+**Agent:** Laura Bow (Tester)  
+**Model:** Claude Sonnet 4.5  
 **Task:** First validation pass on Aaron's locked Q1 resolution (Option E + tool-call scale)
 
 ## Context
@@ -29,7 +29,7 @@ Impact on acceptance scenarios:
 - A3 (Pre-Commit Hook Veto): NO CHANGE
 - A4 (Backward Causal Slice): STRONGER — data lineage + authorization lineage available
 
-Document: `decision inbox drop laura-q1-option-e-validation.md`
+Document: `.squad/decisions/inbox/laura-q1-option-e-validation.md`
 
 ## Next Step
 

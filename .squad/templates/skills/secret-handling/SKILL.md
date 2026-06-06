@@ -67,10 +67,10 @@ Spawned agents have read access to the entire repository, including `.env` files
    - Report to user:
      ```
      🚨 SECRET DETECTED — commit blocked
-
-     File: decision inbox drop river-db-config.md
+     
+     File: .squad/decisions/inbox/river-db-config.md
      Pattern: DATABASE_URL=postgres://user:password@localhost:5432/prod
-
+     
      This file contains credentials and MUST NOT be committed.
      Please remove the secret, replace with placeholder, and try again.
      ```
@@ -92,17 +92,17 @@ Spawned agents have read access to the entire repository, including `.env` files
 2. **Alert the user:**
    ```
    🚨 CREDENTIAL LEAK DETECTED
-
+   
    A secret was found in git history:
    Commit: abc1234
-   File: decision inbox drop agent-config.md
+   File: .squad/decisions/inbox/agent-config.md
    Pattern: API_KEY=sk-proj-...
-
+   
    This requires immediate remediation:
    1. Revoke the exposed credential (regenerate API key, rotate password)
    2. Remove from git history (git filter-repo or BFG)
    3. Force-push the cleaned history
-
+   
    Do NOT proceed with new work until this is resolved.
    ```
 3. **Do NOT attempt to fix it yourself** — secret removal requires specialized tools
@@ -121,7 +121,7 @@ Agent: "What environment variables does this app need?"
     DATABASE_URL=postgres://user:pass@localhost:5432/db
     REDIS_URL=redis://localhost:6379
 
-→ Writes to decision inbox drop river-env-setup.md:
+→ Writes to .squad/decisions/inbox/river-env-setup.md:
     "App requires three environment variables:
     - OPENAI_API_KEY (OpenAI API key, format: sk-...)
     - DATABASE_URL (Postgres connection string)
@@ -137,9 +137,9 @@ Agent: "What environment variables does this app need?"
 Agent: (reads .env)
     DATABASE_URL=postgres://admin:super_secret_pw@prod.example.com:5432/appdb
 
-→ Writes to decision inbox drop river-db-schema.md:
+→ Writes to .squad/decisions/inbox/river-db-schema.md:
     "Database connection: postgres://admin:super_secret_pw@prod.example.com:5432/appdb"
-
+    
 🚨 VIOLATION: Live credential written to committed file
 ```
 
@@ -148,7 +148,7 @@ Agent: (reads .env)
 Agent: (reads .env.example OR asks user)
 User: "It's a Postgres database, schema is in migrations/"
 
-→ Writes to decision inbox drop river-db-schema.md:
+→ Writes to .squad/decisions/inbox/river-db-schema.md:
     "Database: Postgres (connection configured in .env). Schema defined in db/migrations/."
 ```
 

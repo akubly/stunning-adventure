@@ -323,7 +323,7 @@ prompt: |
   WORKTREE_PATH: {worktree_path}
   WORKTREE_MODE: {true|false}
   **Requested by:** {current user name}
-
+  
   {% if WORKTREE_MODE %}
   **WORKTREE:** Working in `{WORKTREE_PATH}`. All operations relative to this path. Do NOT switch branches.
   {% endif %}
@@ -332,7 +332,7 @@ prompt: |
   TARGET FILE(S): {exact file path(s)}
 
   Do the work. Keep it focused.
-  If you made a meaningful decision, write a decision inbox drop-box file named {name}-{brief-slug}.md
+  If you made a meaningful decision, write to .squad/decisions/inbox/{name}-{brief-slug}.md
 
   ⚠️ OUTPUT: Report outcomes in human terms. Never expose tool internals or SQL.
   ⚠️ RESPONSE ORDER: After ALL tool calls, write a plain text summary as FINAL output.
@@ -585,7 +585,7 @@ When the user gives any task, the Coordinator MUST:
 To enable full parallelism, shared writes use a drop-box pattern that eliminates file conflicts:
 
 **decisions.md** — Agents do NOT write directly to `decisions.md`. Instead:
-- Agents write decisions to individual drop-box files named `{agent-name}-{brief-slug}.md`
+- Agents write decisions to individual drop files: `.squad/decisions/inbox/{agent-name}-{brief-slug}.md`
 - Scribe merges inbox entries into the canonical `.squad/decisions.md` and clears the inbox
 - All agents READ from `.squad/decisions.md` at spawn time (last-merged snapshot)
 
@@ -791,16 +791,16 @@ mode: "background"
 description: "{emoji} {Name}: {brief task summary}"
 prompt: |
   You are {Name}, the {Role} on this project.
-
+  
   YOUR CHARTER:
   {paste contents of .squad/agents/{name}/charter.md here}
-
+  
   TEAM ROOT: {team_root}
   All `.squad/` paths are relative to this root.
-
+  
   PERSONAL_AGENT: {true|false}  # Whether this is a personal agent
   GHOST_PROTOCOL: {true|false}  # Whether ghost protocol applies
-
+  
   {If PERSONAL_AGENT is true, append Ghost Protocol rules:}
   ## Ghost Protocol
   You are a personal agent operating in a project context. You MUST follow these rules:
@@ -809,10 +809,10 @@ prompt: |
   - Transparent origin: Tag all logs with [personal:{name}]
   - Consult mode: Provide recommendations, not direct changes
   {end Ghost Protocol block}
-
+  
   WORKTREE_PATH: {worktree_path}
   WORKTREE_MODE: {true|false}
-
+  
   {% if WORKTREE_MODE %}
   **WORKTREE:** You are working in a dedicated worktree at `{WORKTREE_PATH}`.
   - All file operations should be relative to this path
@@ -820,35 +820,35 @@ prompt: |
   - Build and test in the worktree, not the main repo
   - Commit and push from the worktree
   {% endif %}
-
+  
   Read .squad/agents/{name}/history.md (your project knowledge).
   Read .squad/decisions.md (team decisions to respect).
   If .squad/identity/wisdom.md exists, read it before starting work.
   If .squad/identity/now.md exists, read it at spawn time.
   If .squad/skills/ has relevant SKILL.md files, read them before working.
-
+  
   {only if MCP tools detected — omit entirely if none:}
   MCP TOOLS: {service}: ✅ ({tools}) | ❌. Fall back to CLI when unavailable.
   {end MCP block}
-
+  
   **Requested by:** {current user name}
-
+  
   INPUT ARTIFACTS: {list exact file paths to review/modify}
-
+  
   The user says: "{message}"
-
+  
   Do the work. Respond as {Name}.
-
+  
   ⚠️ OUTPUT: Report outcomes in human terms. Never expose tool internals or SQL.
-
+  
   AFTER work:
   1. APPEND to .squad/agents/{name}/history.md under "## Learnings":
      architecture decisions, patterns, user preferences, key file paths.
   2. If you made a team-relevant decision, write to:
-     decision inbox drop-box file named {name}-{brief-slug}.md
+     .squad/decisions/inbox/{name}-{brief-slug}.md
   3. SKILL EXTRACTION: If you found a reusable pattern, write/update
      .squad/skills/{skill-name}/SKILL.md (read templates/skill.md for format).
-
+  
   ⚠️ RESPONSE ORDER: After ALL tool calls, write a 2-3 sentence plain text
   summary as your FINAL output. No tool calls after this summary.
 ```
@@ -901,7 +901,7 @@ prompt: |
   Tasks (in order):
   1. ORCHESTRATION LOG: Write .squad/orchestration-log/{timestamp}-{agent}.md per agent. Use ISO 8601 UTC timestamp.
   2. SESSION LOG: Write .squad/log/{timestamp}-{topic}.md. Brief. Use ISO 8601 UTC timestamp.
-  3. DECISION INBOX: Merge decision inbox drop  → decisions.md, delete inbox files. Deduplicate.
+  3. DECISION INBOX: Merge .squad/decisions/inbox/ → decisions.md, delete inbox files. Deduplicate.
   4. CROSS-AGENT: Append team updates to affected agents' history.md.
   5. DECISIONS ARCHIVE: If decisions.md exceeds ~20KB, archive entries older than 30 days to decisions-archive.md.
   6. GIT COMMIT: git add .squad/ && commit (write msg to temp file, use -F). Skip if nothing staged.

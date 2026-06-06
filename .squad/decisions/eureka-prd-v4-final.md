@@ -113,7 +113,7 @@ As an agent that makes decisions inline during normal LLM exchange (without expl
 
 ### US-7: Squad Migration (deferred to v1.5+)
 
-(Deferred per R5-Q3.) The eventual replacement of charter/journal/history/decision-drop workflow with Eureka. Out of v1 scope; informs schema design only.
+(Deferred per R5-Q3.) The eventual replacement of charter/journal/history/decisions/inbox with Eureka. Out of v1 scope; informs schema design only.
 
 ---
 
@@ -754,11 +754,11 @@ Authors of subsequent revisions should extend this table when adding new cross-s
 | Decision in v4 | Origin |
 |---|---|
 | Path D blessing (kernel-shaped, ship standalone) | Aaron R6 signal (d); `.squad/decisions.md` → Path D thread |
-| Bidirectional adapter directive (Path 1 + Path 2 first-class) | Aaron R7 directive; `decision inbox drop aaron-r7-bidirectional.md` (or successor) |
+| Bidirectional adapter directive (Path 1 + Path 2 first-class) | Aaron R7 directive; `.squad/decisions/inbox/aaron-r7-bidirectional.md` (or successor) |
 | Session naming convergence (Cairn + Eureka both own "session") | Aaron R6 signal (a) + Genesta amendment; FR-13 thread |
 | Decision-record kinship across stack | Aaron R6 signal (b); §7.3 thread |
 | Substrate overlap framing | Aaron R6 signal (c); revised in rev-2 per Crispin + Genesta |
-| Confidence vs Trust orthogonality | `decision inbox drop crispin-confidence-trust.md` + `decision inbox drop genesta-confidence-trust.md` |
+| Confidence vs Trust orthogonality | `.squad/decisions/inbox/crispin-confidence-trust.md` + `.squad/decisions/inbox/genesta-confidence-trust.md` |
 | FR-12 split into FR-12 + FR-14 | Aaron R7 finalization directive (this revision series) |
 | OQ #5 closure (Cairn → Eureka session-fact triggers, manual-only) | Aaron R7 finalization directive |
 | DecisionPayload dual-axis (`input_trust_min` + `reasoning_confidence`) | Genesta substrate analysis + Aaron approval; rev-2 rename per Skeptic F5 |

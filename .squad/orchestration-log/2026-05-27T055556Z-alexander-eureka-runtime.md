@@ -1,7 +1,7 @@
 # Orchestration Log: Alexander (SDK/Runtime Dev) — Eureka ↔ Crucible Runtime
 
-**Date:** 2026-05-27T05:55:56Z
-**Agent:** Alexander (SDK/Runtime Dev)
+**Date:** 2026-05-27T05:55:56Z  
+**Agent:** Alexander (SDK/Runtime Dev)  
 **Task:** SDK/runtime overlap analysis and integration-shape recommendation
 
 ## Scope
@@ -10,7 +10,7 @@
 - Session model coupling and lifecycle coordination
 
 ## Outputs
-- **Inbox Decision:** `decision inbox drop alexander-eureka-crucible-runtime-overlap.md` (23.5 KB)
+- **Inbox Decision:** `.squad/decisions/inbox/alexander-eureka-crucible-runtime-overlap.md` (23.5 KB)
 - **Recommended Integration:** Shape #1 (Eureka-as-library-to-Crucible); preserves hermetic replay
 - **Flagged BLOCKERS:** 3 critical triggers (flushHints, replay-snapshot scope, session-end hook)
 - **Conflicts:** 4 concrete breaks (session model, model-selection ownership, lifecycle coordination, callback wiring)

@@ -28,8 +28,8 @@
 
 ---
 
-**Joined:** ~2026-05-01
-**Tech:** TypeScript/Node.js, Eureka design, power-law algorithms, trust modeling
+**Joined:** ~2026-05-01  
+**Tech:** TypeScript/Node.js, Eureka design, power-law algorithms, trust modeling  
 **Specialization:** Learning systems, recency gradient, plasticity mechanisms, extraction-ready architecture
 # Edgar — History
 
@@ -70,7 +70,7 @@
 
 **Event:** Scribe ceremony — lock R8 verdicts into `.squad/decisions.md`, move v5-final to canonical location, archive R8 inbox files.
 
-**Your role:** Lock-review verification (item-by-item sign-off in `decision inbox drop edgar-r8-lock-verdict.md`).
+**Your role:** Lock-review verification (item-by-item sign-off in `.squad/decisions/inbox/edgar-r8-lock-verdict.md`).
 
 **Status:** ✅ R8 LOCKED — all learning-systems precision gains verified, verdict documented and integrated into decisions.md.
 
@@ -80,7 +80,7 @@
 
 **Event:** Aaron request — analyze overlap between Crucible's prescriber/scorecard loop and Eureka's recall/integrate/sweep loop. Both have self-improvement mechanisms; need coordination before parallel development starts.
 
-**Your verdict:** **Complementary, not redundant** (`decision inbox drop edgar-crucible-learning-overlap.md`)
+**Your verdict:** **Complementary, not redundant** (`.squad/decisions/inbox/edgar-crucible-learning-overlap.md`)
 
 **Five focus areas analyzed:**
 
@@ -163,7 +163,7 @@
 
 4. **Lightweight coordination suffices for non-blocking hygiene work** — These three edits crossed Laura's domain (§55 test strategy) and potentially Crispin's domain (§20 representation boundaries). Checking for conflicts (read inbox files, verify no active audits) took 2 minutes; no synchronous meeting needed. Principle: coordinate by reading artifacts, not by scheduling.
 
-**Post-work:** Documented execution in `decision inbox drop edgar-30-followups-executed.md` for Scribe merge.
+**Post-work:** Documented execution in `.squad/decisions/inbox/edgar-30-followups-executed.md` for Scribe merge.
 
 **Status:** ✅ COMPLETE — §30 ready for next phase.
 
@@ -233,7 +233,7 @@
 
 **Confidence:** HIGH (95%) — edits are documentation hygiene, zero algorithm changes.
 
-**Post-work:** Documented execution in `decision inbox drop edgar-30-followups-executed.md` for Scribe merge.
+**Post-work:** Documented execution in `.squad/decisions/inbox/edgar-30-followups-executed.md` for Scribe merge.
 
 **Timeline:** Phase 1 complete. §30 now London-school-aligned with §55 spine. Ready for implementation.
 
@@ -367,7 +367,7 @@ Lesson: Document why `Infinity` is the correct sentinel for absent data (very st
 
 3. **Extraction-ready designs need extraction-ready semantics** — If learning-kernel is extracted (Path D), the trust=0/retirement distinction becomes a kernel contract. External consumers (Cairn, Crucible, future adoption) need to know whether trust=0 has lifecycle implications. Documenting this in §30 (not just implementation comments) makes it visible at the API level.
 
-**Post-work:** Recorded decision in `decision inbox drop edgar-cycle3-zombie-policy.md` for Scribe merge. Updated Edgar history (this entry).
+**Post-work:** Recorded decision in `.squad/decisions/inbox/edgar-cycle3-zombie-policy.md` for Scribe merge. Updated Edgar history (this entry).
 
 **Confidence:** HIGH (90%) — Option 2 aligns with B2's epistemic/lifecycle separation. No edge cases found where conflation is simpler.
 

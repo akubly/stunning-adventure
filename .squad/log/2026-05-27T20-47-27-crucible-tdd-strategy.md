@@ -1,7 +1,7 @@
 # Session Log: Crucible TDD Strategy Authoring
 
-**Date:** 2026-05-27
-**Timestamp:** 2026-05-27T20:47:27Z
+**Date:** 2026-05-27  
+**Timestamp:** 2026-05-27T20:47:27Z  
 **Session Type:** Agent handoff (orchestration merge)
 
 ## Summary
@@ -25,7 +25,7 @@ Aaron pivoted from CTD fan-out orchestration to parallel TDD strategy authoring 
 - `docs/crucible-tdd-strategy.md` (~2900 lines, 12 sections)
 
 **Decision documentation:**
-- `decision inbox drop laura-crucible-tdd-strategy.md`
+- `.squad/decisions/inbox/laura-crucible-tdd-strategy.md`
 
 **Orchestration log:**
 - `.squad/orchestration-log/2026-05-27T20-47-27-laura.md`

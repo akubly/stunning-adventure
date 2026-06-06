@@ -1,9 +1,9 @@
 # Skill: trust-mutation-green-beat
 
-**Author:** Edgar (Learning Systems Specialist)
-**Created:** 2026-05-30
-**Status:** ACTIVE
-**Sibling:** `trust-mutation-red-beat/SKILL.md` (Laura's RED pattern)
+**Author:** Edgar (Learning Systems Specialist)  
+**Created:** 2026-05-30  
+**Status:** ACTIVE  
+**Sibling:** `trust-mutation-red-beat/SKILL.md` (Laura's RED pattern)  
 **Context:** Eureka v1 — but pattern is reusable for any event-driven scalar-property mutation seam
 
 ---
@@ -120,10 +120,10 @@ export async function applyMutation(
 
 For each deferred ambiguity in Laura's decision drop, document your decision:
 
-- **Option confirmed:** State which option and why.
+- **Option confirmed:** State which option and why.  
 - **Option pushed back:** State why and what you'd prefer instead; this becomes a design discussion with the team before GREEN proceeds.
 
-Write your decisions in the GREEN decision drop (`decision inbox drop edgar-<beat>-green.md`), not inline in source.
+Write your decisions in the GREEN decision drop (`.squad/decisions/inbox/edgar-<beat>-green.md`), not inline in source.
 
 ### 5. clock dep: required ONLY when the activity reads time
 
@@ -176,7 +176,7 @@ If the spec section cited in the RED beat does not exist in the spec doc:
 ## Post-Work Artifacts
 
 1. **`history.md`** — append under `## Learnings`: implementation choices, interface decisions, deviations from Laura's proposed shape
-2. **Decision drop** — `decision inbox drop edgar-<beat>-green.md`: what landed, test counts, named next RED target, spec-gap disposition
+2. **Decision drop** — `.squad/decisions/inbox/edgar-<beat>-green.md`: what landed, test counts, named next RED target, spec-gap disposition
 3. **Skills** — update RED-beat skill's "Applied In" section if a reusable pattern emerged; add GREEN-beat sibling (this file) if not already present
 
 ---

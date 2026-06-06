@@ -108,7 +108,7 @@ Aaron's brief: "Think big" on extensibility, customization, and ecosystem for Sk
 
 Cross-pollination round against 6 internal peers + Erasmus. Read all peer histories, Erasmus's 4-layer critique, Aaron's post-Erasmus insights (branching = functional requirement; agentic-debugger = vision seed; determinism = load-bearing), and the vocabulary slate.
 
-**Position delivered to inbox:** `decision inbox drop rosella-deliberation-position.md`
+**Position delivered to inbox:** `.squad/decisions/inbox/rosella-deliberation-position.md`
 
 **Headline moves:**
 - KEPT US-Ro-1, US-Ro-4. REVISED US-Ro-2 (MCP as generator-source, not just tool-binding), US-Ro-3 (promote priority — owns hermetic replay boundary), US-Ro-5 (flagged structural-mutation leak). WITHDREW US-Ro-6 (federation deferred). Added 4 new stories (Generator SDK, plugin-pinned branching, registry+trust tiers, structural-proposal channel).
@@ -125,13 +125,13 @@ T5 resolved — Crucible built on Copilot SDK, replaces Copilot CLI as Aaron's d
 
 ## Round 4 — Phase B Reconciliation against `stunning-adventure` (2026-05-24T23:30Z)
 
-**Inbox:** `decision inbox drop rosella-reconciliation-2026-05-24T2330Z.md`
+**Inbox:** `.squad/decisions/inbox/rosella-reconciliation-2026-05-24T2330Z.md`
 
 ---
 
 ## Round 6 — Open #7 resolution: US-A-NEW-5 vs `event_log` (2026-05-25T01:30Z)
 
-**Inbox:** `decision inbox drop rosella-open-7-2026-05-25T0130Z.md`
+**Inbox:** `.squad/decisions/inbox/rosella-open-7-2026-05-25T0130Z.md`
 
 Resolved the contradiction my Round 4 surfaced. Re-quoted Alexander's
 US-A-NEW-5 verbatim from `agents/alexander/history.md:332-334` (ledger-append
@@ -189,7 +189,7 @@ Read-only sweep across `cairn/`, `forge/`, `skillsmith-runtime/`, `runtime-cli/`
 
 ## Round 7 — v1 Triage (2026-05-25T02:00Z)
 
-**Inbox:** `decision inbox drop rosella-triage-2026-05-25T0200Z.md`
+**Inbox:** `.squad/decisions/inbox/rosella-triage-2026-05-25T0200Z.md`
 
 Triaged 10 authored stories + Round-6 #7 work + 2 new stories
 (Mirror Projector, DBOM-frontmatter-for-exports) against Aaron-locked v1
@@ -239,7 +239,7 @@ confirmation, Sonny per-row lineage decision.
 ## Learnings — CTD Phase 1 Lane 2: §7 Generators (L3) (2026-05-28)
 
 **Artifact:** `docs/crucible-technical-design/07-generators-l3.md` (21.2 KB, ≤3pp §7 + ≤1pp Appendix 7-E).
-**Decision drop:** `decision inbox drop rosella-ctd-phase1-lane2.md`.
+**Decision drop:** `.squad/decisions/inbox/rosella-ctd-phase1-lane2.md`.
 
 ### GenericL3AdapterContract design patterns
 
@@ -272,8 +272,8 @@ confirmation, Sonny per-row lineage decision.
 
 ## Pass A Review Closure (2026-05-29)
 
-**Role:** Crucible CTD design panel + triage
-**Status:** See .squad/orchestration-log for detailed execution status
+**Role:** Crucible CTD design panel + triage  
+**Status:** See .squad/orchestration-log for detailed execution status  
 **Disposition:** Graham fully executed, Valanice triaged (pending filesystem edits), Rosella/Gabriel/Roger/Laura silent (pending next session)
 
 See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-review.md for full context.
@@ -330,30 +330,30 @@ Aaron requested UX clarification after seeing original Options A/C doc, leaning 
 - `docs/crucible-technical-design/decisions/pa-b4-ancestry-replay-options.md` (8.7 KB)
 - `docs/crucible-technical-design/decisions/childsid-collision-options.md` (11.4 KB)
 
-**PA-B4 ancestry/replay divergence:**
+**PA-B4 ancestry/replay divergence:**  
 Identified divergence between §7 generator reads and §10/§11 replay semantics. Two options: (A) unify ancestry-aware reads under one API (`ReadSetBuilder.ancestry()` mirrors `readAncestry()`); (B) split APIs cleanly with documented divergence (`ancestry-dependent` proposal category + Router escalation). Recommended **Option A** — uniform capture in `causalReadSet` is more robust for replay correctness; lower v1 implementation cost (no Router escalation protocol); acceptable ergonomic friction (95% of generators never need parent history).
 
-**childSid collision:**
+**childSid collision:**  
 Identified deterministic collision risk when forking the same `(parentSid, offset)` twice (retry after abort). Three options: (A) add counter/timestamp to preimage (preserves determinism within session, different childSid per attempt); (B) protocol-error semantics (user resolves collision manually); (C) resume-aborted-session semantics (idempotent fork, same childSid resumes same ledger). Recommended **Option A (timestamp variant)** — `created_at_ns` already exists in `sessions` table, nanosecond resolution makes collision practically impossible, transparent to user, orphaned directories are GC-able.
 
-**Tradeoff analysis:**
+**Tradeoff analysis:**  
 Both docs include detailed tradeoff matrices (replay correctness, ergonomics, implementation cost, alignment with append-only philosophy). Both flag cross-team coordination points: PA-B4 touches Laura (conformance C-6b), Gabriel (Router escalation if Option B); childSid touches Roger (fork protocol implementation), Laura (if C-9 acceptance signals reference fork semantics).
 
 ### Phase 2: Execute 5 Non-Blocked Items (§7/§10)
 
-**3. Trust-tier promotion persistence (§7.4.1):**
+**3. Trust-tier promotion persistence (§7.4.1):**  
 Added derived `plugin_trust_history` table keyed on `manifestSha256`. Captures promotion clock (30-day + 10-invocation + 0-violation), promotion events as Decision primitives, violation tracking as Observation rows. Rebuildable from L1 audit trail. Promotion logic triggers on every generator emission; violations reset the 30-day clock. Schema: 7 columns (manifest_sha256 PK, plugin_id, current_tier, first_seen_at_ns, promoted_to_community_at_ns, invocation_count, violation_count, last_invocation_at_ns).
 
-**4. Conformance suite C-8 → C-9 drift (§7.A):**
+**4. Conformance suite C-8 → C-9 drift (§7.A):**  
 Extended conformance contract from eight to nine property classes. Added C-9 (structural-proposal supersede contract): generators emitting `supersede` replacements MUST set `envelope.parentId` to the obsoleted proposal's EventId (§7.D item 6). Observable signal: §5.A.2 Scheduler resolves `supersededBy` deterministically via `parentId`. Applies to both `StructuralProposalGenerator` and `DataProposalGenerator` when they supersede in-flight proposals. Updated §7.A table + prose to reflect C-1…C-9.
 
-**5. Pareto eval perf budget (§7.5.1):**
+**5. Pareto eval perf budget (§7.5.1):**  
 Specified concrete budget constraints: ≤5ms p99 for up to 50 concurrent proposals (O(N²) worst case, O(N log N) typical with sparse axis sets), ≤10 MiB heap allocation ceiling, 20ms timeout with fail-open (emit all as `incomparable` + log `perf_budget_exceeded` Observation). Laura's §16 perf conformance suite (`ci:conformance:perf`) includes dedicated `pareto-eval-latency` test (1000 runs, synthetic 50-proposal fixture, parameterized by axis-set sparsity 10%/50%/90% overlap). v1 baseline: Forge + Curator emit ≤5 proposals per turn, well below ceiling; budget is forward-looking for v1.5 Eureka (20–30 proposals/turn) and v2 marketplace plugins.
 
-**6. `alternatives[]` unbounded (§7.5.2):**
+**6. `alternatives[]` unbounded (§7.5.2):**  
 Bounded `PrescriptionResult.incomparableWith[]` to top-K=10 inline + CAS spill. Pathological case (50 proposals all incomparable) = 50 × 49 = 2,450 comparisons → unbounded arrays bloat Decision payloads. Mitigation: evaluator inlines first 10 (sorted lexicographically by `prescriptionId` for determinism), spills full array to CAS as JSON when `|incomparableWith| > 10`, sets `incomparableWithRef` CAS digest. Decision payload size ceiling: 10 × 64-byte IDs + 32-byte CAS ref = 672 bytes max. Aperture/CLI render "...and N more" suffix; full list via `crucible decision show <id> --full`. Replay does NOT compare `incomparableWith[]` (informational metadata, not structural per §11.6 oracle).
 
-**7. Invocation-stack O(N) reconstruction (§10.6.1.1):**
+**7. Invocation-stack O(N) reconstruction (§10.6.1.1):**  
 Proposed incremental stack cache mitigation for O(N) linear scan. `ReconstructInvocationStack(sessionId, N)` scans all `task_start`/`task_end` rows from offset 0 to N — for 10K-row session at offset 9,999, scans 9,999 rows. Acceptable for replay (one-time) and CLI `bt` (user-initiated), but bottleneck if reconstructed on every commit for Aperture rendering. Added optional L2 cache table `invocation_stack_cache` (session_id, checkpoint_offset, stack_json PK) checkpointing at 100-row intervals. Cost: O(100) scan per reconstruction (99 rows worst case between checkpoints), ~1 KiB per checkpoint × (session length / 100) = 100 KiB for 10K-row session. Cache is **derived only** (rebuildable from L1, cache miss falls back to full scan). **v1 optional** — cache not required for correctness, only performance; mandatory in v1.5 when Sonny's debugger queries stack on every breakpoint or Aperture renders live stack depth. Alternative considered (event-sourced stack delta log) rejected — doubles storage, duplicates WAL rows.
 
 ### Cross-Team Coordination Points

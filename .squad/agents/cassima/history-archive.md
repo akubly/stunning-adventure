@@ -90,7 +90,7 @@
 - **De-scope Eureka US-7 "Squad Migration"** — Squad tooling should migrate to Crucible (operational), not Eureka (epistemological). Eureka learns *from* Squad sessions.
 - **Open question for Aaron:** Do you agree with "separate at v1, integrate at v1.5"? Or do you want Eureka built into Crucible from day one?
 
-**Deliverable:** `decision inbox drop cassima-crucible-eureka-impact.md` (24.8KB, 8 sections, 3 top questions, 7 recommendations)
+**Deliverable:** `.squad/decisions/inbox/cassima-crucible-eureka-impact.md` (24.8KB, 8 sections, 3 top questions, 7 recommendations)
 
 **Status:** Analysis complete. Awaiting Aaron's direction on the 3 top questions before either v1 ships.
 
@@ -106,7 +106,7 @@
 
 **Key findings:**
 - **Roadmap: v1 scope unchanged.** Eureka v5-final (617 lines, R8 LOCKED) remains canonical. All 4 user stories (US-1 through US-4) ship as designed. Crucible being a sibling changes Eureka's v1.5+ integration path (consumes Crucible WAL) but not v1 deliverables.
-- **Coordination: Schema freeze gates + async memos.** Graham is cross-project schema czar; locks SessionId brand, Cairn sessions table, Forge DecisionRecord before either implementation starts. No recurring syncs; substrate changes require Graham sign-off via `decision inbox drop-box` memos. Genesta (Eureka) + Roger (Crucible) coordinate on DB migrations; Crispin (Eureka) + Alexander (Crucible) coordinate on dependency bumps.
+- **Coordination: Schema freeze gates + async memos.** Graham is cross-project schema czar; locks SessionId brand, Cairn sessions table, Forge DecisionRecord before either implementation starts. No recurring syncs; substrate changes require Graham sign-off via `.squad/decisions/inbox/` memos. Genesta (Eureka) + Roger (Crucible) coordinate on DB migrations; Crispin (Eureka) + Alexander (Crucible) coordinate on dependency bumps.
 - **Dogfood timing: Cassima recommends Eureka SECOND.** If Crucible ships first, Eureka's US-1 trains on real Crucible session logs (higher fidelity). If Eureka ships first, it trains on Copilot CLI logs (ephemeral data). Crucible's v1 success bar is existential (months-long bootstrap loop); Eureka's is incremental (2-session validation). Parallel dogfood viable but higher-friction (context-switching tax, merge conflicts, tool-boundary confusion).
 - **Non-problems dissolved:** (1) Forge ownership crisis is moot (same repo = no duplication/drift); (2) Resourcing concern overstated (Cassima/Graham are gates, not bottlenecks); (3) "Is Eureka a Crucible feature?" answered (separate v1s, integrate v1.5+); (4) Bootstrap order delegated (whichever ships first gets dogfooded first).
 
@@ -122,7 +122,7 @@
 - Doubling down on: Eureka should ship SECOND (Crucible's bootstrap loop is existential; Eureka's demos are incremental; Crucible-first de-risks both).
 - New risks identified: merge conflicts in shared substrate (mitigated by schema freeze + separate branches), "which tool for X?" confusion during parallel dogfood (resolves at v1.5 integration).
 
-**Deliverable:** `decision inbox drop cassima-shared-substrate-revision.md` (19.7KB, 8 sections, 2 immediate actions, revised stance)
+**Deliverable:** `.squad/decisions/inbox/cassima-shared-substrate-revision.md` (19.7KB, 8 sections, 2 immediate actions, revised stance)
 
 **Status:** Awaiting Aaron's 2 immediate decisions (schema freeze approval + dogfood timing call). Eureka v1 implementation blocks until schema freeze lands.
 
@@ -180,7 +180,7 @@
 
 ### 2026-05-28: Cycle 2 Fix Wave — Canonical Resolutions Landed
 
-**Context:** Squad persona-review Design Panel (Architect/Skeptic/Pragmatist/Compliance) completed cycle 1 on Eureka v1 design package with 19 findings, all accepted by Aaron. Canonical resolutions documented in `decision inbox drop squad-cycle1-canon.md`. Cycle 2 fix wave assigned 5 findings to Cassima (PM) for `eureka-prd-v5-final.md`.
+**Context:** Squad persona-review Design Panel (Architect/Skeptic/Pragmatist/Compliance) completed cycle 1 on Eureka v1 design package with 19 findings, all accepted by Aaron. Canonical resolutions documented in `.squad/decisions/inbox/squad-cycle1-canon.md`. Cycle 2 fix wave assigned 5 findings to Cassima (PM) for `eureka-prd-v5-final.md`.
 
 **Findings landed (all from canon):**
 
@@ -219,15 +219,15 @@
 **Changes landed:**
 1. **technical-design.md exec summary (line 14):** Updated three-tier description from "agent fully wired; user/project stubbed" to "agent tier only in v1; user/project tiers reserved in schema, adapters deferred to v1.5 per PRD FR-7.2." Replaced "Four open decisions block implementation" with "OQ-1 resolved via ADR-0002; remaining open decisions tracked in §00 ADR index."
 
-2. **technical-design.md References (lines 163-166):** Replaced `decision inbox drop-box` links (gitignored, broken for other contributors) with references to merged content in `.squad/decisions.md` (Crucible Impact → "Crucible ↔ Eureka Cross-Project Overlap"; Substrate Blocker → "Narrower Substrate Freeze Proposal" + ADR-0002).
+2. **technical-design.md References (lines 163-166):** Replaced `.squad/decisions/inbox/` links (gitignored, broken for other contributors) with references to merged content in `.squad/decisions.md` (Crucible Impact → "Crucible ↔ Eureka Cross-Project Overlap"; Substrate Blocker → "Narrower Substrate Freeze Proposal" + ADR-0002).
 
-3. **ADR-0002 header (line 8):** Replaced `decision inbox drop cassima-t7-shared-substrate-blocker.md` reference with merged decision reference: "§70 T7; merged substrate analysis in `.squad/decisions.md` 'Narrower Substrate Freeze Proposal' (2026-05-27)."
+3. **ADR-0002 header (line 8):** Replaced `.squad/decisions/inbox/cassima-t7-shared-substrate-blocker.md` reference with merged decision reference: "§70 T7; merged substrate analysis in `.squad/decisions.md` 'Narrower Substrate Freeze Proposal' (2026-05-27)."
 
 4. **ADR-0002 toolchain claims (lines 50-55, 138-145):** Corrected "pnpm workspaces, turborepo" to reflect repository reality: "npm workspaces with `tsc --build` project references — already in use across mem/." Updated M0 prerequisites to reference `tsc --build` incremental compilation. Added note: "Future migration to pnpm/turborepo could optimize build caching, but npm workspaces + `tsc --build` is sufficient for v1."
 
 5. **00-overview.md tier table (lines 242-246):** Changed user/project v1 Status from "Stub (throws on write, empty on read)" to "Not shipped in v1 — schema reserved, adapter deferred to v1.5" per PRD FR-7.2 canonical wording. Updated "Recall Fan-Out Strategy" to note v1.5+ for multi-tier fan-out.
 
-**Rule extracted:** Committed docs must not cite paths under gitignored directories (`decision inbox drop-box` is gitignored → broken for other contributors/CI). References to decision content should point to merged locations in `.squad/decisions.md` or committed ADRs.
+**Rule extracted:** Committed docs must not cite paths under gitignored directories (`.squad/decisions/inbox/` is gitignored → broken for other contributors/CI). References to decision content should point to merged locations in `.squad/decisions.md` or committed ADRs.
 
 **Toolchain reality check:** Confirmed repo uses npm workspaces (root `package.json` + `package-lock.json`), not pnpm/turborepo. Build command is `tsc --build`. ADR-0002 now reflects actual tooling rather than aspirational claims.
 
@@ -238,7 +238,7 @@
 
 **What I learned:**
 - Post-merge alignment sweeps are PM scope when they affect PRD/design consistency.
-- `decision inbox drop-box` is for local-only working memos; references from committed docs must resolve for all team members.
+- `.squad/decisions/inbox/` is for local-only working memos; references from committed docs must resolve for all team members.
 - Toolchain claims in ADRs should match repository evidence, not aspirational future state (or clearly label as "future migration").
 
 **Status:** All 5 threads addressed. Skill documented. Ready for next work.
@@ -269,7 +269,7 @@
 15. `.squad/decisions/eureka-prd-v5-final.md:861` → Same (SessionId R8 panel verdicts all merged into decisions.md entry)
 
 **Group B — Content Corrections:**
-1. `docs/eureka/sections/20-knowledge-representation.md:449` → **DecisionRecord naming disambiguation (Rule R2)**. Forge `DecisionRecord` wrongly described as "materialized markdown file under `decision inbox drop *.md`" — that conflates the TS interface with Squad workflow artifacts. Fixed to: "Forge DecisionRecord: Runtime TypeScript interface in `@akubly/types` representing audited decision metadata." Added note distinguishing Squad decision dotfiles (markdown memos) from Forge DecisionRecord (TS type).
+1. `docs/eureka/sections/20-knowledge-representation.md:449` → **DecisionRecord naming disambiguation (Rule R2)**. Forge `DecisionRecord` wrongly described as "materialized markdown file under `.squad/decisions/inbox/*.md`" — that conflates the TS interface with Squad workflow artifacts. Fixed to: "Forge DecisionRecord: Runtime TypeScript interface in `@akubly/types` representing audited decision metadata." Added note distinguishing Squad decision dotfiles (markdown memos) from Forge DecisionRecord (TS type).
 2. `docs/eureka/sections/30-learning-systems.md:967` → Stale date `2025-01-24` updated to `2026-05-27` (Eureka v0.1 Technical Design).
 3. `docs/eureka/technical-design.md:66` → **OQ-5 rewritten**. Originally framed as contingency "if OQ-1 NOT resolved" — OQ-1 IS resolved (ADR-0002 accepted). Marked OQ-5 **CLOSED/MOOT** with note: "OQ-1 resolved via ADR-0002 (monorepo accepted 2026-05-27); OQ-5 contingency no longer applicable."
 
@@ -294,7 +294,7 @@ Added "Pitfalls" section to `.squad/skills/doc-references-respect-gitignore/SKIL
 - Large-scale citation cleanup requires grep to map topics → decisions.md headings efficiently (15 threads = 15 searches; grep was faster than manual scan).
 - Machine paths are easy to miss (only 2 threads but they're visually subtle in long file paths).
 
-**Deliverable:** `decision inbox drop cassima-pr26-cycle2-doc-alignment.md` (this file) + 18 surgical edits.
+**Deliverable:** `.squad/decisions/inbox/cassima-pr26-cycle2-doc-alignment.md` (this file) + 18 surgical edits.
 
 **Status:** All Group A/B/C threads addressed. Group D threads deferred per plan. SKILL.md enhanced with pitfall warning. Ready for coordinator to close review cycle.
 
@@ -360,7 +360,7 @@ I explicitly evaluated option (a) overfetch from a v1 scope perspective: it intr
 
 **Sequencing:** M4, current cycle. Unblocked. Edgar owns the call site + test mock updates; Crispin reviews interface shape.
 
-**Deliverable:** `decision inbox drop cassima-crispin-recall-undersupply-resolution.md`
+**Deliverable:** `.squad/decisions/inbox/cassima-crispin-recall-undersupply-resolution.md`
 
 
 ---

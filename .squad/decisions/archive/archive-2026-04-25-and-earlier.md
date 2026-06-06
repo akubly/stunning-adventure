@@ -8,8 +8,8 @@ Archived entries older than 2026-04-25 (7 days before 2026-05-02).
 
 ### 2026-03-28T07-22-14: User Directive — Claude Opus 4.6 Context Window
 
-**Author:** Aaron (via Copilot)
-**Type:** Infrastructure
+**Author:** Aaron (via Copilot)  
+**Type:** Infrastructure  
 **Status:** Active
 
 Always use Claude Opus 4.6 (1M context) model for agents that might have large contexts. Ensures agents working on substantive tasks have the full 1M token context window available.
@@ -18,8 +18,8 @@ Always use Claude Opus 4.6 (1M context) model for agents that might have large c
 
 ### 2026-03-28: Copilot Extensibility Architecture — Plugin System as Primary Distribution Unit
 
-**Author:** Graham Knight (Lead)
-**Type:** Architecture
+**Author:** Graham Knight (Lead)  
+**Type:** Architecture  
 **Status:** Active
 
 The team should design around the **plugin system** as the primary distribution format, with `plugin.json` + `marketplace.json` as our core data models.
@@ -42,8 +42,8 @@ The team should design around the **plugin system** as the primary distribution 
 
 ### 2026-03-28: Copilot SDK & API Landscape — Integration Depth Decision Required
 
-**Author:** Roger Wilco (Platform Dev)
-**Type:** Technical
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical  
 **Status:** Active
 
 The Copilot extensibility ecosystem has three distinct SDK layers. The team needs to understand which layer(s) apply to our vision.
@@ -71,8 +71,8 @@ The Copilot extensibility ecosystem has three distinct SDK layers. The team need
 
 ### 2026-03-28: Plugin Marketplace Landscape — Standardize & Integrate, Don't Rebuild
 
-**Author:** Rosella Chen (Plugin Dev)
-**Type:** Strategy
+**Author:** Rosella Chen (Plugin Dev)  
+**Type:** Strategy  
 **Status:** Active
 
 **Key Findings:**
@@ -96,8 +96,8 @@ The Copilot extensibility ecosystem has three distinct SDK layers. The team need
 
 ### 2026-03-28: Prior Infrastructure Reuse & Best Practices Adoption
 
-**Author:** Gabriel Knight (Infrastructure)
-**Type:** Architecture
+**Author:** Gabriel Knight (Infrastructure)  
+**Type:** Architecture  
 **Status:** Active
 
 **Directly Reusable from Prior Infrastructure (akubly/.copilot):**
@@ -132,8 +132,8 @@ The Copilot extensibility ecosystem has three distinct SDK layers. The team need
 
 ### 2026-03-28T23-32-36: User Directives — Round 3 Course Corrections
 
-**Author:** Aaron (via Copilot)
-**Type:** Platform Direction
+**Author:** Aaron (via Copilot)  
+**Type:** Platform Direction  
 **Status:** Active
 
 1. **Squad Decoupling** — squad is a 3rd-party solution/CLI plugin — not part of our platform. Decouple naming/concepts.
@@ -153,8 +153,8 @@ The Copilot extensibility ecosystem has three distinct SDK layers. The team need
 
 ### 2026-03-29T00-15-58: User Insight — Queryable Session State
 
-**Author:** Aaron (via Copilot)
-**Type:** UX Requirement
+**Author:** Aaron (via Copilot)  
+**Type:** UX Requirement  
 **Status:** Active
 
 The platform should support queryable session state. Humans should be able to ask "Have we done a review yet? Have we run the tests?" and get an instant answer.
@@ -191,14 +191,14 @@ Defined 5-module structure under `packages/forge/src/` and Phase 2 vs Phase 3 bo
 
 **Type Migration Rule:** Delete spike-local type redefinitions; use `@akubly/types` imports exclusively.
 
-**Full Report:** `decision inbox drop graham-forge-phase2-architecture.md`
+**Full Report:** `.squad/decisions/inbox/graham-forge-phase2-architecture.md`
 
 ---
 
 ### 2026-03-29T00-30-44: Architectural Decision — Platform vs. Pure Plugins
 
-**Author:** Aaron (via Copilot)
-**Type:** Architecture
+**Author:** Aaron (via Copilot)  
+**Type:** Architecture  
 **Status:** Active
 
 The unreliable sessionEnd hook is a solid argument FOR a platform layer, not just standalone plugins. Something needs to initiate subagent/background tasks reliably and specifically when it's most valuable. Pure plugins can't orchestrate their own lifecycle — they need a coordinator that understands timing, sequencing, and reliability.
@@ -211,8 +211,8 @@ The unreliable sessionEnd hook is a solid argument FOR a platform layer, not jus
 
 ### 2026-03-29T00-47-40: Architectural Decisions + R4 Direction
 
-**Author:** Aaron (via Copilot)
-**Type:** Platform Direction
+**Author:** Aaron (via Copilot)  
+**Type:** Platform Direction  
 **Status:** Active
 
 **Eight Sub-Decisions:**
@@ -234,8 +234,8 @@ The unreliable sessionEnd hook is a solid argument FOR a platform layer, not jus
 
 ### 2026-03-29T01-04-09: R4 Additional Inputs
 
-**Author:** Aaron (via Copilot)
-**Type:** Architecture
+**Author:** Aaron (via Copilot)  
+**Type:** Architecture  
 **Status:** Active
 
 **Four Sub-Decisions:**
@@ -253,8 +253,8 @@ The unreliable sessionEnd hook is a solid argument FOR a platform layer, not jus
 
 ### 2026-03-29T01-31-29: Open Items Resolved
 
-**Author:** Aaron (via Copilot)
-**Type:** Architecture
+**Author:** Aaron (via Copilot)  
+**Type:** Architecture  
 **Status:** Active
 
 **Curator Event Processing:**
@@ -274,8 +274,8 @@ The unreliable sessionEnd hook is a solid argument FOR a platform layer, not jus
 
 ### 2026-03-29T01-35-11: Round 5 Seeds — Dual Environment + Sidecar Storage
 
-**Author:** Aaron (via Copilot)
-**Type:** Architecture
+**Author:** Aaron (via Copilot)  
+**Type:** Architecture  
 **Status:** Active
 
 **Three New Design Requirements:**
@@ -294,8 +294,8 @@ The unreliable sessionEnd hook is a solid argument FOR a platform layer, not jus
 
 ### 2026-03-29T08-25-00: Brainstorm Round 4 Convergence — Composable Toolkit Architecture
 
-**Author:** Graham Knight (Lead), Roger Wilco, Rosella Chen, Gabriel Knight, Valanice Chen
-**Type:** Architecture
+**Author:** Graham Knight (Lead), Roger Wilco, Rosella Chen, Gabriel Knight, Valanice Chen  
+**Type:** Architecture  
 **Status:** Active
 
 **Converged Decisions (R4 Outcomes):**
@@ -346,8 +346,8 @@ The unreliable sessionEnd hook is a solid argument FOR a platform layer, not jus
 
 ### 2026-03-30T09-00-00: Brainstorm Round 5 Convergence — Sidecar Architecture + Dual Environments
 
-**Author:** Graham Knight (Lead), Roger Wilco, Rosella Chen, Gabriel Knight, Valanice Chen
-**Type:** Architecture
+**Author:** Graham Knight (Lead), Roger Wilco, Rosella Chen, Gabriel Knight, Valanice Chen  
+**Type:** Architecture  
 **Status:** Active
 
 **Converged Decisions (R5 Outcomes):**
@@ -413,8 +413,8 @@ The unreliable sessionEnd hook is a solid argument FOR a platform layer, not jus
 
 ### 2026-03-29T01-53-50: Final Brainstorm Decisions Before Planning
 
-**Author:** Aaron (via Copilot)
-**Type:** Architecture
+**Author:** Aaron (via Copilot)  
+**Type:** Architecture  
 **Status:** Active
 
 1. **Auto-Roam Personal Profile** — Option to sync personal sidecar via akubly/.copilot repo. Personal profile is portable.
@@ -429,8 +429,8 @@ The unreliable sessionEnd hook is a solid argument FOR a platform layer, not jus
 
 ### 2026-03-29T01-56-52: Corporate Deployment Model Clarification
 
-**Author:** Aaron (via Copilot)
-**Type:** Architecture
+**Author:** Aaron (via Copilot)  
+**Type:** Architecture  
 **Status:** Active
 
 Corporate is NOT a profile switch — it's a FORKED DERIVATIVE of the core platform. The core platform IS the personal version. The corporate fork adds enforcement/restrictions on top.
@@ -449,8 +449,8 @@ Corporate is NOT a profile switch — it's a FORKED DERIVATIVE of the core platf
 
 ### 2026-03-29T02-00-09: Platform Naming + Sierra Casting Notes
 
-**Author:** Aaron (via Copilot)
-**Type:** Product Identity
+**Author:** Aaron (via Copilot)  
+**Type:** Product Identity  
 **Status:** Active
 
 1. **Platform Naming** — Codename is "Stunning Adventure" (random GitHub suggestion that stuck). Need a real product name.
@@ -463,8 +463,8 @@ Corporate is NOT a profile switch — it's a FORKED DERIVATIVE of the core platf
 
 ### 2026-03-29T02-05-48: Vision Statement Seeds + HTML Knowledge Visualizer Backlog
 
-**Author:** Aaron (via Copilot)
-**Type:** Product Vision
+**Author:** Aaron (via Copilot)  
+**Type:** Product Vision  
 **Status:** Active
 
 **Vision Seeds:**
@@ -484,8 +484,8 @@ Corporate is NOT a profile switch — it's a FORKED DERIVATIVE of the core platf
 
 ### 2026-03-29T02-06-25: Natural Language Search Over Sidecar History
 
-**Author:** Aaron (via Copilot)
-**Type:** Feature Requirement
+**Author:** Aaron (via Copilot)  
+**Type:** Feature Requirement  
 **Status:** Active
 
 Natural language searchable query of user's sidecar history. "What have I learned about auth?" searches across all repos, all sessions, all knowledge — powered by the copilot-intelligence MCP server's embed_text + query_knowledge tools.
@@ -497,9 +497,9 @@ Natural language searchable query of user's sidecar history. "What have I learne
 ### 2026-03-31T06-38-00: Session-Start Hook (preToolUse Gate) - IMPLEMENTED
 # Decision: Session-Start Hook (preToolUse Gate)
 
-**Author:** Graham Knight (Lead)
-**Type:** Architecture
-**Status:** Implemented
+**Author:** Graham Knight (Lead)  
+**Type:** Architecture  
+**Status:** Implemented  
 **Implemented:** 2025-07-19
 
 ## Decision
@@ -533,9 +533,9 @@ postToolUse (record.ps1 → postToolUse.ts)
 
 ### 2026-04-02: Phase 6 Roadmap Assessment — Option C (Plugin Packaging) Chosen
 
-**Author:** Graham Knight (Lead / Architect), Aaron (Decision)
-**Date:** 2026-04-02
-**Type:** Roadmap
+**Author:** Graham Knight (Lead / Architect), Aaron (Decision)  
+**Date:** 2026-04-02  
+**Type:** Roadmap  
 **Status:** Accepted
 
 Graham presented three Phase 6 options:
@@ -557,9 +557,9 @@ Graham presented three Phase 6 options:
 
 ### 2026-04-02: Installation Architecture — npm link + cairn install Strategy
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-04-02
-**Type:** Architecture
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-04-02  
+**Type:** Architecture  
 **Status:** Active
 
 Four installation surfaces identified:
@@ -594,9 +594,9 @@ Four installation surfaces identified:
 
 ### 2026-04-02: Plugin Packaging Blueprint — Comprehensive Distribution Architecture
 
-**Author:** Rosella Chen (Plugin Dev)
-**Date:** 2026-04-02
-**Type:** Architecture
+**Author:** Rosella Chen (Plugin Dev)  
+**Date:** 2026-04-02  
+**Type:** Architecture  
 **Status:** In Progress
 
 **Core Design:**
@@ -642,9 +642,9 @@ Four installation surfaces identified:
 
 ### 2026-04-02: hooks.json Ownership — Plugin Manifest, Not Wrapper Script
 
-**Author:** Rosella Chen (Plugin Dev)
-**Date:** 2026-04-02
-**Type:** Coordination
+**Author:** Rosella Chen (Plugin Dev)  
+**Date:** 2026-04-02  
+**Type:** Coordination  
 **Status:** Active
 
 `hooks.json` is a **plugin manifest file** (Rosella's domain), not a wrapper script (Roger's domain).
@@ -663,9 +663,9 @@ Four installation surfaces identified:
 
 ### 2026-04-02: Hook Wrapper Scripts — Two-Tier Path Resolution Design
 
-**Author:** Roger Wilco (Platform Dev)
-**Date:** 2026-04-02
-**Type:** Implementation
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-04-02  
+**Type:** Implementation  
 **Status:** In Progress
 
 **Files Created:**
@@ -722,10 +722,10 @@ $raw | node $hookScript 2>$null
 
 ### 2026-04-02T04-58-00: Phase 5 — MCP Server (Cairn Conversational Intelligence)
 
-**Author:** Graham Knight (Lead)
-**Type:** Architecture / Roadmap
-**Status:** Ready for Implementation
-**Date:** 2026-04-02
+**Author:** Graham Knight (Lead)  
+**Type:** Architecture / Roadmap  
+**Status:** Ready for Implementation  
+**Date:** 2026-04-02  
 **Supersedes:** graham-phase5-recommendation.md (CLI-first approach withdrawn)
 
 **Decision:** Phase 5 is the MCP Server. Build Cairn as an MCP server that exposes knowledge directly into Copilot conversation. Skip the CLI.
@@ -763,8 +763,8 @@ $raw | node $hookScript 2>$null
 
 ### 2026-04-02T04-58-32: User Directive — MCP Tool Naming Convention
 
-**Author:** Aaron (via Copilot)
-**Type:** Design / Naming
+**Author:** Aaron (via Copilot)  
+**Type:** Design / Naming  
 **Status:** Active
 
 Use verb_noun naming for MCP tool names (e.g., get_status, list_insights), not noun_verb. Tool names should be short and unprefixed — the MCP host adds the server name prefix automatically.
@@ -790,10 +790,10 @@ Use verb_noun naming for MCP tool names (e.g., get_status, list_insights), not n
 
 ### 2026-04-02T04-58-00: Phase 5 — MCP Server (Cairn Conversational Intelligence)
 
-**Author:** Graham Knight (Lead)
-**Type:** Architecture / Roadmap
-**Status:** Ready for Implementation
-**Date:** 2026-04-02
+**Author:** Graham Knight (Lead)  
+**Type:** Architecture / Roadmap  
+**Status:** Ready for Implementation  
+**Date:** 2026-04-02  
 **Supersedes:** graham-phase5-recommendation.md (CLI-first approach withdrawn)
 
 **Decision:** Phase 5 is the MCP Server. Build Cairn as an MCP server that exposes knowledge directly into Copilot conversation. Skip the CLI.
@@ -831,8 +831,8 @@ Use verb_noun naming for MCP tool names (e.g., get_status, list_insights), not n
 
 ### 2026-04-02T04-58-32: User Directive — MCP Tool Naming Convention
 
-**Author:** Aaron (via Copilot)
-**Type:** Design / Naming
+**Author:** Aaron (via Copilot)  
+**Type:** Design / Naming  
 **Status:** Active
 
 Use verb_noun naming for MCP tool names (e.g., get_status, list_insights), not noun_verb. Tool names should be short and unprefixed — the MCP host adds the server name prefix automatically.
@@ -858,8 +858,8 @@ Use verb_noun naming for MCP tool names (e.g., get_status, list_insights), not n
 
 ### 2026-04-02T05-05-00: MCP Server: Tool Logic Tested via Backing APIs
 
-**Author:** Roger (Platform Dev)
-**Type:** Implementation / Testing
+**Author:** Roger (Platform Dev)  
+**Type:** Implementation / Testing  
 **Status:** Active
 
 **Decision:** MCP tool tests validate the backing query functions directly (getSessionSummary, getCuratorStatus, findEvents, etc.) rather than testing through the MCP stdio transport layer.
@@ -878,9 +878,9 @@ Use verb_noun naming for MCP tool names (e.g., get_status, list_insights), not n
 
 ### 2026-04-02T05-13-00: Code Quality — MCP Server Import Guard Pattern
 
-**Author:** Graham Knight (Lead)
-**Type:** Code Quality / Convention Enforcement
-**Status:** Resolved ✓
+**Author:** Graham Knight (Lead)  
+**Type:** Code Quality / Convention Enforcement  
+**Status:** Resolved ✓  
 **Date:** 2026-04-02
 
 **Decision:** `src/mcp/server.ts` must wrap its `main().catch()` call in the same `isScript` guard pattern established in PR #9 for all hook entry points.
@@ -916,10 +916,10 @@ if (isScript) {
 
 ### 2026-04-04T06-24-00: CLI Extensions Investigation — Round 3 Correction
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-04-04
-**Requested by:** Aaron
-**Type:** Research / Backlog Investigation
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-04-04  
+**Requested by:** Aaron  
+**Type:** Research / Backlog Investigation  
 **Status:** Complete — Decision Point for Aaron
 
 ---
@@ -953,7 +953,7 @@ single unified process. This directly addresses three pain points in Cairn's
 current architecture:
 
 1. **400ms MCP startup overhead** — Extensions run persistent, keep DB open
-2. **PS1 hook wrapper fragility** — Unified process eliminates separate hook pipeline
+2. **PS1 hook wrapper fragility** — Unified process eliminates separate hook pipeline  
 3. **Hooks-vs-tools split** — Single process handles both
 
 **However, extensions have a critical distribution limitation:** file-copy only,
@@ -1058,7 +1058,7 @@ communicating over JSON-RPC via stdio:
 2. **Unified hooks + tools.** Currently Cairn has two separate surfaces:
    - Hooks: `hooks.json` → PS1 wrappers → node
    - Tools: `mcp/server.ts` via MCP protocol
-
+   
    An extension collapses to one process.
 
 3. **No PS1 wrappers.** The entire `record.ps1` → `curate.ps1` pipeline
@@ -1129,9 +1129,9 @@ distribution. Too much portability sacrifice.
 
 ### 2026-04-06: Prescriber Architecture — Design & Phased Implementation Plan
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-04-06
-**Type:** Architecture
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-04-06  
+**Type:** Architecture  
 **Status:** Proposal — awaiting team review
 
 **Decision:** The Prescriber closes the feedback loop from pattern detection (Curator) through actionable recommendations (Prescriber) to user-approved changes. It is Cairn's third core agent.
@@ -1180,15 +1180,15 @@ Events → Insights → Prescriptions → Human Approval → Applied Changes
 4. Compiler integration timing — validate before apply (V1) or after-verify (V2)?
 5. Conflicting prescriptions — detection and resolution mechanism?
 
-**Full Report:** `decision inbox drop graham-prescriber-architecture.md`
+**Full Report:** `.squad/decisions/inbox/graham-prescriber-architecture.md`
 
 ---
 
 ### 2026-04-06: Prescriber Data Model & Integration Points
 
-**Author:** Roger Wilco (Platform Dev)
-**Date:** 2026-04-06
-**Type:** Technical / Data Model
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-04-06  
+**Type:** Technical / Data Model  
 **Status:** Proposal — awaiting team review
 
 **Decision:** Comprehensive data model for prescriptions with 7-state lifecycle, artifact topology discovery, and integration points to Curator and Archivist.
@@ -1232,15 +1232,15 @@ Events → Insights → Prescriptions → Human Approval → Applied Changes
 4. Plugin ownership convention — how plugins declare owned files
 5. MCP tool granularity — keep 2 tools or split resolve into 3?
 
-**Full Report:** `decision inbox drop roger-prescriber-datamodel.md`
+**Full Report:** `.squad/decisions/inbox/roger-prescriber-datamodel.md`
 
 ---
 
 ### 2026-04-06: Prescriber Plugin Architecture & Artifact Discovery
 
-**Author:** Rosella Chen (Plugin Dev)
-**Date:** 2026-04-06
-**Type:** Architecture / Plugin Design
+**Author:** Rosella Chen (Plugin Dev)  
+**Date:** 2026-04-06  
+**Type:** Architecture / Plugin Design  
 **Status:** Proposal — awaiting team review
 
 **Decision:** Artifact discovery mechanism for the Prescriber, enabling it to understand the CLI artifact topology and apply prescriptions to the right locations.
@@ -1283,15 +1283,15 @@ Events → Insights → Prescriptions → Human Approval → Applied Changes
 4. Discovery scope expansion — future phases (system plugins, marketplace)?
 5. Fingerprinting — checksum and lastModified for drift detection on apply?
 
-**Full Report:** `decision inbox drop rosella-prescriber-plugin.md`
+**Full Report:** `.squad/decisions/inbox/rosella-prescriber-plugin.md`
 
 ---
 
 ### 2026-04-06: Prescriber UX Design — Interaction, Attention, and Growth
 
-**Author:** Valanice Chen (UX / Human Factors)
-**Date:** 2026-04-06
-**Type:** UX / Design
+**Author:** Valanice Chen (UX / Human Factors)  
+**Date:** 2026-04-06  
+**Type:** UX / Design  
 **Status:** Proposal — awaiting team review
 
 **Decision:** Prescriber interaction model framed as a coaching relationship, not a notification system. Design for human attention scarcity and decision fatigue.
@@ -1360,15 +1360,15 @@ Events → Insights → Prescriptions → Human Approval → Applied Changes
 3. LLM re-ranking — should consuming agent re-rank priorities?
 4. Session continuity — carry over deferred from previous session?
 
-**Full Report:** `decision inbox drop valanice-prescriber-ux.md`
+**Full Report:** `.squad/decisions/inbox/valanice-prescriber-ux.md`
 
 ---
 
 ### 2026-04-06: Prescriber Infrastructure Analysis — Hook Performance & MCP Tools
 
-**Author:** Gabriel Knight (Infrastructure)
-**Date:** 2026-04-06
-**Type:** Infrastructure / Performance
+**Author:** Gabriel Knight (Infrastructure)  
+**Date:** 2026-04-06  
+**Type:** Infrastructure / Performance  
 **Status:** Proposal — awaiting team review
 
 **Decision:** Performance analysis of preToolUse hook, MCP tool design, and infrastructure requirements for Prescriber without impacting existing budgets.
@@ -1432,15 +1432,15 @@ Events → Insights → Prescriptions → Human Approval → Applied Changes
 4. Compiler validation before apply (V1) or after (V2)?
 5. Conflicting prescriptions detection and handling?
 
-**Full Report:** `decision inbox drop gabriel-prescriber-hooks.md`
+**Full Report:** `.squad/decisions/inbox/gabriel-prescriber-hooks.md`
 
 
 ---
 
 ### 2026-04-06T07:38: Decision Point 1 — Prescriber Trigger Architecture
 
-**By:** Aaron Kubly (via Copilot)
-**Type:** Architecture
+**By:** Aaron Kubly (via Copilot)  
+**Type:** Architecture  
 **Status:** Active
 
 **What:** Hybrid (C1): Prescriber generates prescriptions automatically at session start (conditional in preToolUse, chaining after curate() when insights change) AND via MCP (run_curate chains prescribe() automatically when it finds new insights). Prerequisites: cap curate() at 3s. No separate generate_prescriptions tool — run_curate handles both.
@@ -1454,8 +1454,8 @@ Events → Insights → Prescriptions → Human Approval → Applied Changes
 
 ### 2026-04-06T07:45: Decision Point 2 — Prescription State Machine
 
-**By:** Aaron Kubly (via Copilot)
-**Type:** Architecture
+**By:** Aaron Kubly (via Copilot)  
+**Type:** Architecture  
 **Status:** Active
 
 **What:** 8-state lifecycle: generated → accepted → applied | failed; generated → rejected; generated → deferred (resurfaces after cooldown); generated → expired (session cleanup); generated → suppressed (after 3 deferrals). Re-prescription after insight reinforcement handled by expiring old + generating new. Deferred has configurable cooldown (default 3 sessions). Rejected is terminal with optional freeform reason. Suppressed is reversible via MCP.
@@ -1469,8 +1469,8 @@ Events → Insights → Prescriptions → Human Approval → Applied Changes
 
 ### 2026-04-06T07:50: Decision Point 3 — MCP Tool Surface
 
-**By:** Aaron Kubly (via Copilot)
-**Type:** API
+**By:** Aaron Kubly (via Copilot)  
+**Type:** API  
 **Status:** Active
 
 **What:** 4 new MCP tools: list_prescriptions (read-only, filter by status), get_prescription (read-only, full detail + diff preview), esolve_prescription (write, unified action with disposition enum: accept/reject/defer/suppress), show_growth (read-only, growth summary and trends). Accept disposition triggers apply logic inline. Follows existing naming convention (get_*, list_*). Total MCP tools: 10 (6 existing + 4 new).
@@ -1484,8 +1484,8 @@ Events → Insights → Prescriptions → Human Approval → Applied Changes
 
 ### 2026-04-06T07:55: Decision Point 4 — Artifact Discovery Scope
 
-**By:** Aaron Kubly (via Copilot)
-**Type:** Architecture
+**By:** Aaron Kubly (via Copilot)  
+**Type:** Architecture  
 **Status:** Active
 
 **What:** Build Rosella's full 4-phase artifact discovery scanner for MVP: user-level (~/.copilot/), project-level (.github/), installed plugins, marketplace metadata. Includes per-artifact-type resolution rules, conflict detection, ownership tracking via path heuristics, checksum + mtime for drift detection. Cache with 5-minute TTL in SQLite artifact_cache table.
@@ -1499,8 +1499,8 @@ Events → Insights → Prescriptions → Human Approval → Applied Changes
 
 ### 2026-04-06T08:00: Decision Point 5 — UX Principles (Full Set)
 
-**By:** Aaron Kubly (via Copilot)
-**Type:** Product
+**By:** Aaron Kubly (via Copilot)  
+**Type:** Product  
 **Status:** Active
 
 **What:** Adopt ALL of Valanice's 10 UX principles for MVP:
@@ -1525,8 +1525,8 @@ Events → Insights → Prescriptions → Human Approval → Applied Changes
 
 ### 2026-04-06T08:05: Decision Point 6 — managed_artifacts Table & Sidecar Strategy
 
-**By:** Aaron Kubly (via Copilot)
-**Type:** Architecture
+**By:** Aaron Kubly (via Copilot)  
+**Type:** Architecture  
 **Status:** Active
 
 **What:** Include managed_artifacts table tracking Prescriber-written files (path, artifact_type, logical_id, scope, original_checksum, prescription_id, rollback_content). Use sidecar instruction files (e.g., cairn-prescribed.instructions.md) instead of modifying user-owned instruction files. Rollback enabled by storing original file state. Drift detection via checksum comparison.
@@ -1542,9 +1542,9 @@ Events → Insights → Prescriptions → Human Approval → Applied Changes
 
 # Prescriber Implementation Plan — FINAL
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-04-06
-**Status:** APPROVED — Ready for execution
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-04-06  
+**Status:** APPROVED — Ready for execution  
 **Baseline:** 134 tests, 24 source files, 4 migrations, 6 MCP tools
 
 ---
@@ -1575,8 +1575,8 @@ dependencies, ownership, dogfood gates, and file manifests.
 
 **Goal:** Establish the schema, types, DAL, and preference surface that every subsequent phase builds on.
 
-**Owner:** Roger (Platform Dev)
-**Dependencies:** None (first phase)
+**Owner:** Roger (Platform Dev)  
+**Dependencies:** None (first phase)  
 **Estimated new tests:** ~25
 
 ### Deliverables
@@ -1871,8 +1871,8 @@ npm run build && npm run test && npm run lint
 
 **Goal:** Build the 4-phase artifact discovery scanner that maps the CLI installation topology, with SQLite-backed caching.
 
-**Owner:** Rosella (Plugin Dev)
-**Dependencies:** Phase 7A (types: `DiscoveredArtifact`, `ArtifactTopology`, `ArtifactConflict`)
+**Owner:** Rosella (Plugin Dev)  
+**Dependencies:** Phase 7A (types: `DiscoveredArtifact`, `ArtifactTopology`, `ArtifactConflict`)  
 **Estimated new tests:** ~20
 
 ### Deliverables
@@ -1982,8 +1982,8 @@ npm run build && npm run test
 
 **Goal:** Add the 3-second time cap to `curate()` and wire the hybrid trigger so prescriptions generate automatically when insights change.
 
-**Owner:** Gabriel (Infrastructure)
-**Dependencies:** Phase 7A (prescriptions DAL for `prescribe()` call)
+**Owner:** Gabriel (Infrastructure)  
+**Dependencies:** Phase 7A (prescriptions DAL for `prescribe()` call)  
 **Estimated new tests:** ~10
 
 ### Deliverables
@@ -2106,8 +2106,8 @@ npm run build && npm run test
 
 **Goal:** Build the core Prescriber agent that transforms Curator insights into concrete, prioritized prescriptions.
 
-**Owner:** Roger (Platform Dev)
-**Dependencies:** Phase 7A (DAL), Phase 7B (topology scanner)
+**Owner:** Roger (Platform Dev)  
+**Dependencies:** Phase 7A (DAL), Phase 7B (topology scanner)  
 **Estimated new tests:** ~25
 
 ### Deliverables
@@ -2256,8 +2256,8 @@ npm run build && npm run test
 
 **Goal:** Build the sidecar file writing, rollback, and drift detection system that makes prescriptions actionable.
 
-**Owner:** Rosella (Plugin Dev)
-**Dependencies:** Phase 7A (managed_artifacts DAL), Phase 7B (topology for target resolution)
+**Owner:** Rosella (Plugin Dev)  
+**Dependencies:** Phase 7A (managed_artifacts DAL), Phase 7B (topology for target resolution)  
 **Estimated new tests:** ~15
 
 ### Deliverables
@@ -2304,9 +2304,9 @@ Instead of modifying user-owned files:
 
 ### 2026-04-06: Automatic `pending_count` Synchronization
 
-**Author:** Roger Wilco (Platform Dev)
-**Type:** Technical
-**Status:** Active
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical  
+**Status:** Active  
 **Phase:** 7A — Data Foundation
 
 The `prescriber_state.pending_count` field tracks how many prescriptions are in 'generated' status. Every DAL function that changes prescription status (create, updateStatus, defer, suppress, unsuppress, expire) also updates `pending_count`.
@@ -2322,17 +2322,17 @@ The `prescriber_state.pending_count` field tracks how many prescriptions are in 
 
 ### 2026-04-06: `detectDrift()` Returns `undefined` for Missing Paths
 
-**Author:** Roger Wilco (Platform Dev)
-**Type:** Technical
-**Status:** Active
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical  
+**Status:** Active  
 
 ---
 
 ### 2026-04-07 Phase 7B: Marketplace Artifacts Excluded from Conflict Detection
 
-**Author:** Rosella (Plugin Dev)
-**Type:** Technical
-**Phase:** 7B — Artifact Discovery
+**Author:** Rosella (Plugin Dev)  
+**Type:** Technical  
+**Phase:** 7B — Artifact Discovery  
 **Status:** Active
 
 Marketplace artifacts are included in `ArtifactTopology.artifacts` for completeness, but excluded from conflict detection. Marketplace is read-only reference data, not active artifacts.
@@ -2347,9 +2347,9 @@ Marketplace artifacts are included in `ArtifactTopology.artifacts` for completen
 
 ### 2026-04-07 Phase 7B: Dual MCP Config Path Support
 
-**Author:** Rosella (Plugin Dev)
-**Type:** Technical
-**Phase:** 7B — Artifact Discovery
+**Author:** Rosella (Plugin Dev)  
+**Type:** Technical  
+**Phase:** 7B — Artifact Discovery  
 **Status:** Active
 
 Scan both `.copilot/mcp.json` and `.copilot/mcp-config.json` for project-level MCP discovery. This repo and Aaron's machine use `.copilot/mcp-config.json`; spec references `.copilot/mcp.json`.
@@ -2362,9 +2362,9 @@ Scan both `.copilot/mcp.json` and `.copilot/mcp-config.json` for project-level M
 
 ### 2026-04-07 Phase 7B: Project MCP Scanning Independent of .github/
 
-**Author:** Rosella (Plugin Dev)
-**Type:** Technical
-**Phase:** 7B — Artifact Discovery
+**Author:** Rosella (Plugin Dev)  
+**Type:** Technical  
+**Phase:** 7B — Artifact Discovery  
 **Status:** Active
 
 Project MCP config lives at `.copilot/` (project root), not under `.github/`. A project could have MCP servers configured without any `.github/` directory.
@@ -2377,9 +2377,9 @@ Project MCP config lives at `.copilot/` (project root), not under `.github/`. A 
 
 ### 2026-04-07 Phase 7B: Plugin ownerPlugin from manifest name
 
-**Author:** Rosella (Plugin Dev)
-**Type:** Technical
-**Phase:** 7B — Artifact Discovery
+**Author:** Rosella (Plugin Dev)  
+**Type:** Technical  
+**Phase:** 7B — Artifact Discovery  
 **Status:** Active
 
 Plugin directory names may differ from the plugin's declared name in `plugin.json`.
@@ -2392,9 +2392,9 @@ Plugin directory names may differ from the plugin's declared name in `plugin.jso
 
 ### 2026-04-07 Phase 7C: Time Cap is Soft (Between-Batch Check)
 
-**Author:** Gabriel (Infrastructure)
-**Type:** Technical
-**Phase:** 7C — Infrastructure
+**Author:** Gabriel (Infrastructure)  
+**Type:** Technical  
+**Phase:** 7C — Infrastructure  
 **Status:** Active
 
 The 3-second TIME_BUDGET_MS is checked between batches, not mid-batch. A single batch of 1000 events runs to completion before the check fires.
@@ -2409,9 +2409,9 @@ The 3-second TIME_BUDGET_MS is checked between batches, not mid-batch. A single 
 
 ### 2026-04-07 Phase 7C: `capped` Flag Set Only When Full Batches Remain
 
-**Author:** Gabriel (Infrastructure)
-**Type:** Technical
-**Phase:** 7C — Infrastructure
+**Author:** Gabriel (Infrastructure)  
+**Type:** Technical  
+**Phase:** 7C — Infrastructure  
 **Status:** Active
 
 The `capped` flag is set only when full batches remain after the time cap fires. If the last batch is partial (`events.length < BATCH_SIZE`), `capped` is `false` even if elapsed > TIME_BUDGET_MS.
@@ -2424,9 +2424,9 @@ The `capped` flag is set only when full batches remain after the time cap fires.
 
 ### 2026-04-07 Phase 7C: MCP `run_curate` Output Shape is Breaking
 
-**Author:** Gabriel (Infrastructure)
-**Type:** Technical
-**Phase:** 7C — Infrastructure
+**Author:** Gabriel (Infrastructure)  
+**Type:** Technical  
+**Phase:** 7C — Infrastructure  
 **Status:** Active
 
 Changed from flat `{ eventsProcessed, insightsCreated, insightsReinforced }` to nested `{ curate: {...}, prescriptions: {...} | null }`. This is per the Phase 7C spec.
@@ -2441,9 +2441,9 @@ Changed from flat `{ eventsProcessed, insightsCreated, insightsReinforced }` to 
 
 ### 2026-04-07T05-43: State Guard on resolve_prescription
 
-**Author:** Roger Wilco (Platform Dev)
-**Type:** Technical
-**Phase:** 7F — MCP Tools + UX
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical  
+**Phase:** 7F — MCP Tools + UX  
 **Status:** Active
 
 Only prescriptions in `generated` status can be resolved. Attempting to resolve a prescription in any other state returns an error. This prevents lifecycle corruption (e.g., re-rejecting an already-applied prescription).
@@ -2456,9 +2456,9 @@ Only prescriptions in `generated` status can be resolved. Attempting to resolve 
 
 ### 2026-04-07T05-43: Accept Failure Handling
 
-**Author:** Roger Wilco (Platform Dev)
-**Type:** Technical
-**Phase:** 7F — MCP Tools + UX
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical  
+**Phase:** 7F — MCP Tools + UX  
 **Status:** Active
 
 When `applyPrescription()` fails after `updatePrescriptionStatus(id, 'accepted')`, the tool explicitly marks the prescription as `failed`. This prevents prescriptions stuck in `accepted` state with no applied artifact.
@@ -2473,9 +2473,9 @@ When `applyPrescription()` fails after `updatePrescriptionStatus(id, 'accepted')
 
 ### 2026-04-07T05-43: Proactive Hint Counter — Process Lifetime
 
-**Author:** Roger Wilco (Platform Dev)
-**Type:** Design
-**Phase:** 7F — MCP Tools + UX
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Design  
+**Phase:** 7F — MCP Tools + UX  
 **Status:** Active
 
 Used a module-level `proactiveHintsShown` counter (reset per process lifecycle) rather than DB-based tracking. MCP server processes are short-lived, so this is sufficient for "max 1 per session" and avoids unnecessary DB writes.
@@ -2490,9 +2490,9 @@ Used a module-level `proactiveHintsShown` counter (reset per process lifecycle) 
 
 ### 2026-04-07T05-43: Exported UX Helpers for Testing
 
-**Author:** Roger Wilco (Platform Dev)
-**Type:** Design
-**Phase:** 7F — MCP Tools + UX
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Design  
+**Phase:** 7F — MCP Tools + UX  
 **Status:** Active
 
 Exported `confidenceToWords()` and `resetProactiveHintCounter()` from server.ts to enable unit testing of UX formatting without requiring MCP transport.
@@ -2507,9 +2507,9 @@ Exported `confidenceToWords()` and `resetProactiveHintCounter()` from server.ts 
 
 ### 2026-04-07T06-43: Phase 7 Code Review — Prescriber Implementation Approved
 
-**Author:** Graham Knight (Lead/Architect)
-**Type:** Code Review / Approval
-**Phase:** 7 — Code Review
+**Author:** Graham Knight (Lead/Architect)  
+**Type:** Code Review / Approval  
+**Phase:** 7 — Code Review  
 **Status:** Active
 
 Prescriber implementation (Phase 7) code review completed. All 7 blocking/important issues identified have been fixed inline. Architecture assessed as sound.
@@ -2538,9 +2538,9 @@ Prescriber implementation (Phase 7) code review completed. All 7 blocking/import
 
 ### 2026-04-07T05-43: Added getInsight(id) to Insights DAL
 
-**Author:** Roger Wilco (Platform Dev)
-**Type:** Technical
-**Phase:** 7F — MCP Tools + UX
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical  
+**Phase:** 7F — MCP Tools + UX  
 **Status:** Active
 
 The `get_prescription` tool needs insight context (title, description, origin pattern), but no single-insight lookup existed. Added `getInsight(id: number): Insight | undefined` to `src/db/insights.ts`.
@@ -2555,9 +2555,9 @@ The `get_prescription` tool needs insight context (title, description, origin pa
 
 ### 2026-04-07T05-43: show_growth Resolved Patterns as Heuristic
 
-**Author:** Roger Wilco (Platform Dev)
-**Type:** Design
-**Phase:** 7F — MCP Tools + UX
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Design  
+**Phase:** 7F — MCP Tools + UX  
 **Status:** Active
 
 "Applied prescription + insight is stale" is presented as a heuristic, not definitive proof of resolution. The insight status table lacks a "resolved because of prescription" signal, so this is the best available proxy.
@@ -2583,9 +2583,9 @@ The `get_prescription` tool needs insight context (title, description, origin pa
 
 ### 2026-04-07 Phase 7C: `incrementSessionCounter()` Unconditional on Slow Path
 
-**Author:** Gabriel (Infrastructure)
-**Type:** Technical
-**Phase:** 7C — Infrastructure
+**Author:** Gabriel (Infrastructure)  
+**Type:** Technical  
+**Phase:** 7C — Infrastructure  
 **Status:** Active
 
 The spec says "On slow path (new session), increment." There is a theoretical edge case where multiple slow-path calls happen before postToolUse creates a session, which could double-increment.
@@ -2667,8 +2667,8 @@ npm run build && npm run test
 
 **Goal:** Register all 4 new MCP tools, modify `run_curate`, and apply Valanice's full UX specification including growth tracking.
 
-**Owner:** Roger (MCP wiring) + Valanice (UX formatting + growth design)
-**Dependencies:** Phase 7C (trigger wiring), Phase 7D (prescription engine), Phase 7E (apply engine)
+**Owner:** Roger (MCP wiring) + Valanice (UX formatting + growth design)  
+**Dependencies:** Phase 7C (trigger wiring), Phase 7D (prescription engine), Phase 7E (apply engine)  
 **Estimated new tests:** ~20
 
 ### Deliverables
@@ -2926,9 +2926,9 @@ npm run build && npm run test && npm run lint
 
 ## 2026-04-07: Decision — Copilot SDK Spike Scope
 
-**Author:** Graham (Lead / Architect)
-**Date:** 2026-04-07
-**Status:** Approved (Aaron chose Option C — "Spike First")
+**Author:** Graham (Lead / Architect)  
+**Date:** 2026-04-07  
+**Status:** Approved (Aaron chose Option C — "Spike First")  
 **Branch:** `squad/copilot-sdk-spike`
 
 ### Context
@@ -2972,17 +2972,17 @@ model/token control, and end-to-end integration.
 
 ### Go/No-Go Threshold
 
-**Go** if Q1 + Q2 + Q4 + Q5 = ✅ (core loop works).
-Q3 and Q7 can be ⚠️.
+**Go** if Q1 + Q2 + Q4 + Q5 = ✅ (core loop works).  
+Q3 and Q7 can be ⚠️.  
 Only Q1 = ❌ is a hard no-go.
 
 ---
 
 ## 2026-04-07: SDK Spike Findings — Proceeding with Harness Development
 
-**Author:** Roger Wilco (Platform Dev)
-**Date:** 2026-04-07
-**Type:** Technical spike results
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-04-07  
+**Type:** Technical spike results  
 **Urgency:** Normal — informational, no blocking decisions
 
 ### What I Found
@@ -3285,8 +3285,8 @@ server.registerTool('list_prescriptions', {
 
 ### 2026-04-15T23-17-39: Phase 8D Design Decisions — Skill Test Harness
 
-**Author:** Aaron (via Copilot)
-**Type:** Architecture
+**Author:** Aaron (via Copilot)  
+**Type:** Architecture  
 **Status:** Active
 
 **Decisions:**
@@ -3303,8 +3303,8 @@ server.registerTool('list_prescriptions', {
 
 ### 2026-04-07: Phase 8D Architectural Design — Graham Knight
 
-**Author:** Graham Knight (Lead/Architect)
-**Type:** Architecture
+**Author:** Graham Knight (Lead/Architect)  
+**Type:** Architecture  
 **Status:** Approved
 
 **Executive Summary:**
@@ -3316,24 +3316,24 @@ The linter validates *structure*. The test harness validates *behavior* — the 
 1. **Test Scenarios:** YAML format (Option B) with TypeScript execution engine
    - Scenarios are declarative data, executable by both Vitest and MCP tools
    - Clean separation: YAML = what to test, TS = how to test
-
+   
 2. **Tier 1 Implementation:** 12-15 deterministic rules across 5 C's vectors
    - CLARITY: no-hedge-words, no-vague-refs, imperative-voice, sentence-length
    - COMPLETENESS: tools-referenced, context-patterns-flow, section-depth, missing-examples
    - CONCRETENESS: actionable-verbs, has-specifics, no-abstractions
    - CONSISTENCY: domain-content-match, tool-section-agreement, name-heading-match, no-contradictions
    - CONTAINMENT: scope-bounded, tool-scope
-
+   
 3. **Data Persistence:** Hybrid approach (Option D)
    - **Expectations** in git-versioned YAML (reviewed in PRs)
    - **Results** in SQLite DB (historical, queryable, trend-capable)
    - New table: skill_test_results (migration 009)
-
+   
 4. **Validator Architecture:** Option B — Separate content analysis engine
    - New module `skillValidator.ts` with pure rule functions
    - Unified interface: `(skill: ParsedSkill) => ValidationResult[]`
    - Same pattern as linter — composable, extensible rules
-
+   
 5. **Tiered Roadmap:**
    - **Phase 8D:** Tier 1 deterministic rules, YAML scenarios, DB persistence, test_skill MCP tool
    - **Phase 8E (future):** Tier 2 LLM-as-judge rules (same interface, async evaluate)
@@ -3364,8 +3364,8 @@ Three-tier architecture is architecturally correct even without LLM access. Sepa
 
 ### 2026-04-06: Skill Validator Heuristic Thresholds — Roger Wilco
 
-**Author:** Roger Wilco (Platform Dev)
-**Type:** Implementation
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Implementation  
 **Status:** Approved
 
 **Context:**
@@ -3413,10 +3413,10 @@ These are brainstorm outputs from parallel agent analysis of 9 ideas for Cairn f
 
 ### PROPOSED: Cairn as Runtime + Debugger in Compiler Metaphor
 
-**Author:** Graham Knight (Lead / Architect)
-**Type:** Architecture
-**Status:** Proposed (Brainstorm 2026-04-23)
-**Source:** `decision inbox drop graham-brainstorm-vision.md`
+**Author:** Graham Knight (Lead / Architect)  
+**Type:** Architecture  
+**Status:** Proposed (Brainstorm 2026-04-23)  
+**Source:** `.squad/decisions/inbox/graham-brainstorm-vision.md`
 
 **Proposal:** Formalize Cairn's boundary as "runtime instrumentation + debugger" within the compiler metaphor:
 - **Archivist** = trace/debug symbol emitter
@@ -3433,10 +3433,10 @@ Cairn is NOT the compiler (LLM + harness is). This framing clarifies ownership: 
 
 ### PROPOSED: Decision Chain Data Model (Content-Addressable Audit Trail)
 
-**Author:** Graham Knight (Lead / Architect)
-**Type:** Architecture
-**Status:** Proposed (Brainstorm 2026-04-23)
-**Source:** `decision inbox drop graham-brainstorm-vision.md`
+**Author:** Graham Knight (Lead / Architect)  
+**Type:** Architecture  
+**Status:** Proposed (Brainstorm 2026-04-23)  
+**Source:** `.squad/decisions/inbox/graham-brainstorm-vision.md`
 
 **Proposal:** Create formalized `decisions` table as first-class chain:
 
@@ -3466,10 +3466,10 @@ Content-addressable IDs (like git SHA) create immutable audit trail. Parent-chil
 
 ### PROPOSED: Platform Feasibility Analysis — Sensory Pervasion & Signal Expansion
 
-**Author:** Roger Wilco (Platform Dev)
-**Type:** Technical Analysis
-**Status:** Proposed (Brainstorm 2026-04-23)
-**Source:** `decision inbox drop roger-brainstorm-platform.md`
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical Analysis  
+**Status:** Proposed (Brainstorm 2026-04-23)  
+**Source:** `.squad/decisions/inbox/roger-brainstorm-platform.md`
 
 **Proposal:** Platform is ready for signal expansion today:
 - `event_log` table is schemaless append-only (event_type + JSON payload)
@@ -3493,10 +3493,10 @@ Content-addressable IDs (like git SHA) create immutable audit trail. Parent-chil
 
 ### PROPOSED: LX Design Principles — Nielsen-Parallel Heuristics for LLM Interfaces
 
-**Author:** Valanice (UX / Human Factors)
-**Type:** Design Framework
-**Status:** Proposed (Brainstorm 2026-04-23)
-**Source:** `decision inbox drop valanice-brainstorm-lx.md`
+**Author:** Valanice (UX / Human Factors)  
+**Type:** Design Framework  
+**Status:** Proposed (Brainstorm 2026-04-23)  
+**Source:** `.squad/decisions/inbox/valanice-brainstorm-lx.md`
 
 **Proposal:** Apply traditional UX design principles to LLM-facing harness. Structural parallels:
 - **Context window** = working memory (Miller's Law)
@@ -3529,10 +3529,10 @@ Content-addressable IDs (like git SHA) create immutable audit trail. Parent-chil
 
 ### PROPOSED: Extensibility Analysis — OOP Type Hierarchy for Agentic Primitives
 
-**Author:** Rosella Chen (Plugin Dev)
-**Type:** Architecture
-**Status:** Proposed (Brainstorm 2026-04-23)
-**Source:** `decision inbox drop rosella-brainstorm-extensibility.md`
+**Author:** Rosella Chen (Plugin Dev)  
+**Type:** Architecture  
+**Status:** Proposed (Brainstorm 2026-04-23)  
+**Source:** `.squad/decisions/inbox/rosella-brainstorm-extensibility.md`
 
 **Proposal:** Unify Cairn's extensible components under `AgenticPrimitive` base class:
 
@@ -3570,10 +3570,10 @@ Four Primitive Families:
 
 ### PROPOSED: Organizational Paradigm Mapping — Future Agent Roadmap
 
-**Author:** Graham Knight (Lead / Architect)
-**Type:** Strategy
-**Status:** Proposed (Brainstorm 2026-04-23)
-**Source:** `decision inbox drop graham-brainstorm-vision.md`
+**Author:** Graham Knight (Lead / Architect)  
+**Type:** Strategy  
+**Status:** Proposed (Brainstorm 2026-04-23)  
+**Source:** `.squad/decisions/inbox/graham-brainstorm-vision.md`
 
 **Proposal:** Map Cairn agents to organizational roles. Current agents already map:
 - **Archivist** → Scribe / Minutes-taker
@@ -3612,11 +3612,11 @@ Four Primitive Families:
 
 ### PROPOSED: Compiler + Debugger Architecture — Cairn and Forge
 
-**Author:** Graham Knight (Lead / Architect)
-**Date:** 2026-04-23
-**Type:** Architectural recommendation
-**Status:** PROPOSED — awaiting discussion
-**Source:** `decision inbox drop graham-compiler-debugger.md`
+**Author:** Graham Knight (Lead / Architect)  
+**Date:** 2026-04-23  
+**Type:** Architectural recommendation  
+**Status:** PROPOSED — awaiting discussion  
+**Source:** `.squad/decisions/inbox/graham-compiler-debugger.md`  
 **Orchestration Log:** `.squad/orchestration-log/2026-04-23T06-30-00Z-graham-brainstorm-r2.md`
 
 **Context:** Revised boundary statement addressing Aaron's challenge to the Cairn boundary test. The Decision Chain data model blurs the line between observability (debugger) and execution (compiler): instrumenting decision points and placing the human in the loop are execution-layer concerns.
@@ -3690,11 +3690,11 @@ Phase 2: **Sister Squad (Forge)** (after spike)
 
 ### PROPOSED: Copilot SDK Harness — Platform Feasibility Assessment
 
-**Author:** Roger Wilco (Platform Dev)
-**Date:** 2026-04-23
-**Type:** Technical Feasibility / Platform Analysis
-**Status:** PROPOSED — open for discussion
-**Source:** `decision inbox drop roger-copilot-sdk-harness.md`
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-04-23  
+**Type:** Technical Feasibility / Platform Analysis  
+**Status:** PROPOSED — open for discussion  
+**Source:** `.squad/decisions/inbox/roger-copilot-sdk-harness.md`  
 **Orchestration Log:** `.squad/orchestration-log/2026-04-23T06-30-00Z-roger-brainstorm-r2.md`
 
 **Executive Summary:** Building an agentic harness on `@github/copilot-sdk` is feasible and high-leverage. The SDK already emits exactly the event stream Cairn needs but currently can't see. Owning the harness closes every observability gap and transforms Cairn from a passive observer (scraping hook JSON) into a first-class participant in the agentic loop.
@@ -3750,11 +3750,11 @@ Phase 2: **Sister Squad (Forge)** (after spike)
 
 ### PROPOSED: Shiproom Ceremony — Decision Record Schema and Ceremonial Process
 
-**Author:** Valanice (UX / Human Factors)
-**Date:** 2026-04-23
-**Type:** Ceremony Design / LX + UX Specification
-**Status:** DRAFT — for team discussion
-**Source:** `decision inbox drop valanice-shiproom-ceremony.md`
+**Author:** Valanice (UX / Human Factors)  
+**Date:** 2026-04-23  
+**Type:** Ceremony Design / LX + UX Specification  
+**Status:** DRAFT — for team discussion  
+**Source:** `.squad/decisions/inbox/valanice-shiproom-ceremony.md`  
 **Orchestration Log:** `.squad/orchestration-log/2026-04-23T06-30-00Z-valanice-brainstorm-r2.md`
 
 **What Shiproom Is (And Isn't):**
@@ -3827,8 +3827,8 @@ Three complementary proposals from different angles:
 
 ### 2026-04-23T20-13-00: Architectural Concept — Workflow Portability via Forge as Compiler
 
-**Author:** Graham Knight (Lead/Architect) — from Day 1-2 spawn session
-**Type:** Architecture
+**Author:** Graham Knight (Lead/Architect) — from Day 1-2 spawn session  
+**Type:** Architecture  
 **Status:** Proposed
 
 **What:** Position Forge as a **workflow compiler**, not just an artifact package tool. Compile certified workflows (SKILL.md + verified metadata → DBOM) into portable, deployable artifacts that can be exported to corporate/EMU environments. Trust model: Decision Bill of Materials (DBOM) — companion document to SKILL.md that lists all architectural decisions, dependencies, and assumptions. Export pipeline: Extract (audit trail) → Strip (remove env-specific bindings) → Attach (environment config layer) → Validate (Copilot SDK LLM-as-judge on 5 correctness vectors).
@@ -3852,8 +3852,8 @@ Three complementary proposals from different angles:
 
 ### 2026-04-23T20-13-00: Architectural Concept — PGO Telemetry Loop via Continuous Profile-Guided Optimization
 
-**Author:** Graham Knight (Lead/Architect) — from Day 1-2 spawn session
-**Type:** Architecture
+**Author:** Graham Knight (Lead/Architect) — from Day 1-2 spawn session  
+**Type:** Architecture  
 **Status:** Proposed
 
 **What:** Deployed artifacts (workflows, agents, skills) emit telemetry to Application Insights (aggregate signals only, no PII). Telemetry feeds back to Cairn as a continuous optimization input. Cairn's Prescriber learns from production patterns: which decisions work, which workflows get abandoned, which patterns emerge at scale. Creates a closed loop: Deploy → Emit → Ingest → Profile → Prescribe. Cairn becomes "profile-guided optimization" for workflows — same pattern as compiler PGO (profile → recompile → redeploy for speed gains). Here: profile → prescribe → rearchitect for correctness and user fit.
@@ -3883,10 +3883,10 @@ Three complementary proposals from different angles:
 ---
 ### 2026-04-23T20-25-00Z: SDK Spike Day 2 Complete — Tool Hooks, Decision Gates, Model Selection All Viable
 
-**Author:** Roger Wilco (Platform Dev)
-**Type:** Technical/Findings
-**Status:** Confirmed
-**Date:** 2026-04-23T20:25:00Z
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Technical/Findings  
+**Status:** Confirmed  
+**Date:** 2026-04-23T20:25:00Z  
 **Branch:** `squad/copilot-sdk-spike`
 
 **Context:** Day 2 exploration of Copilot SDK @github/copilot-sdk (v0.2.2) for Forge instrumentation requirements. Three critical research questions: Q2 (tool hooks), Q3 (decision gates), Q7 (model selection). All confirmed viable. All 427 tests pass. Event bridge extended with provenance tagging.
@@ -3950,9 +3950,9 @@ SDK provides complete feature set for Forge instrumentation layer. Non-invasive 
 
 ### 2026-04-08: Copilot SDK Spike Assessment — GO
 
-**Author:** Graham Knight (Lead/Architect)
-**Type:** Decision
-**Status:** Approved
+**Author:** Graham Knight (Lead/Architect)  
+**Type:** Decision  
+**Status:** Approved  
 **Date:** 2026-04-08
 
 **Decision:** GO — Proceed with building Forge on @github/copilot-sdk v0.2.2.
@@ -4016,9 +4016,9 @@ Monorepo with three packages:
 
 ### 2026-04-09: Spike Complete — All 8 Questions Answered, E2E Integration Proven
 
-**Author:** Roger Wilco (Platform Dev)
-**Type:** Decision
-**Status:** Confirmed
+**Author:** Roger Wilco (Platform Dev)  
+**Type:** Decision  
+**Status:** Confirmed  
 **Date:** 2026-04-09
 
 **Decision:** ✅ GO — Build on `@github/copilot-sdk` v0.2.2. The 3-day spike validated every load-bearing assumption.
@@ -4105,8 +4105,8 @@ Monorepo with three packages:
 
 ### 2026-04-23: Monorepo Foundation — npm Workspaces with Three Packages
 
-**Author:** Graham Knight (Lead / Architect)
-**Type:** Architecture
+**Author:** Graham Knight (Lead / Architect)  
+**Type:** Architecture  
 **Status:** Implemented
 
 **Context**

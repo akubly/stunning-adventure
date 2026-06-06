@@ -82,8 +82,8 @@ When a proposal invalidates existing wave structure:
 ```
 ### 1. Terminal UI Library: `ink` (recommended) or alternatives?
 
-**Recommendation:** `ink`
-**Alternatives:** `blessed`, raw readline
+**Recommendation:** `ink`  
+**Alternatives:** `blessed`, raw readline  
 **Decision rationale:** Component model enables testable UI. Battle-tested ecosystem.
 
 **Needs sign-off from:** Brady (product direction), Fortier (runtime performance)
@@ -101,8 +101,8 @@ When a proposal invalidates existing wave structure:
 ```
 ### Risk 2: SDK Streaming Reliability
 
-**Risk:** SDK streaming events might drop messages or arrive out of order.
-**Likelihood:** Low (SDK is production-grade).
+**Risk:** SDK streaming events might drop messages or arrive out of order.  
+**Likelihood:** Low (SDK is production-grade).  
 **Impact:** High — broken streaming makes shell unusable.
 
 **Mitigation:**
@@ -115,7 +115,7 @@ When a proposal invalidates existing wave structure:
 
 **File references from interactive shell proposal:**
 - Full proposal: `docs/proposals/squad-interactive-shell.md`
-- User directive: `decision inbox drop copilot-directive-2026-02-21T202535Z.md`
+- User directive: `.squad/decisions/inbox/copilot-directive-2026-02-21T202535Z.md`
 - Team decisions: `.squad/decisions.md`
 - Current architecture: `docs/architecture/module-map.md`, `docs/prd-23-release-readiness.md`
 

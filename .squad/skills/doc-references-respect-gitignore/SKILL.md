@@ -1,7 +1,7 @@
 # Skill: Respect Gitignore Boundaries in Committed Docs
 
-**Category:** Documentation Hygiene
-**Discovered:** 2026-05-28 (Cassima — PR #26 post-merge alignment sweep)
+**Category:** Documentation Hygiene  
+**Discovered:** 2026-05-28 (Cassima — PR #26 post-merge alignment sweep)  
 **Applicable:** All Squad agents, all repos with gitignored working-memo directories
 
 ---
@@ -19,9 +19,9 @@ Broken links to gitignored files are invisible to the author (who has the local 
 
 ## Context
 
-`decision inbox drop-box` is gitignored in the `mem/` repo. It's a local-only working-memo directory where agents draft decision documents before they're merged into `.squad/decisions.md` (the committed, canonical team decision log).
+`.squad/decisions/inbox/` is gitignored in the `mem/` repo. It's a local-only working-memo directory where agents draft decision documents before they're merged into `.squad/decisions.md` (the committed, canonical team decision log).
 
-During Eureka v1 design phase, several committed docs (ADRs, technical design) referenced `decision inbox drop cassima-*.md` files. These references worked for Cassima (who had the local files) but were broken for other contributors and CI.
+During Eureka v1 design phase, several committed docs (ADRs, technical design) referenced `.squad/decisions/inbox/cassima-*.md` files. These references worked for Cassima (who had the local files) but were broken for other contributors and CI.
 
 Copilot's automated review on PR #26 flagged 3 instances:
 1. `docs/eureka/technical-design.md` lines 164-165 — two inbox links
@@ -36,7 +36,7 @@ All three were replaced with references to merged content in `.squad/decisions.m
 **Before committing any doc that references another file:**
 
 1. Check if the referenced path is under a gitignored directory.
-   - In `mem/` repo: `decision inbox drop-box` is gitignored.
+   - In `mem/` repo: `.squad/decisions/inbox/` is gitignored.
    - Check `.gitignore` if unsure.
 
 2. If yes, replace the reference with one of:
@@ -56,10 +56,10 @@ All three were replaced with references to merged content in `.squad/decisions.m
 ### ❌ Bad (Broken for Other Contributors)
 
 ```markdown
-**Tension Reference:** §70 T7, `decision inbox drop <memo-slug>.md`
+**Tension Reference:** §70 T7, `.squad/decisions/inbox/<memo-slug>.md`
 ```
 
-**Why broken:** `decision inbox drop-box` is gitignored → file doesn't exist in other contributors' checkouts or CI.
+**Why broken:** `.squad/decisions/inbox/` is gitignored → file doesn't exist in other contributors' checkouts or CI.
 
 ### ✅ Good (Points to Merged Content)
 
@@ -74,7 +74,7 @@ All three were replaced with references to merged content in `.squad/decisions.m
 ### ❌ Bad (Broken Link in References Section)
 
 ```markdown
-- **Crucible Impact Analysis:** [`decision inbox drop <memo-slug>.md`](decision inbox drop <memo-slug>.md)
+- **Crucible Impact Analysis:** [`.squad/decisions/inbox/<memo-slug>.md`](../../.squad/decisions/inbox/<memo-slug>.md)
 ```
 
 **Why broken:** Link target is gitignored → 404 for other contributors.
@@ -98,7 +98,7 @@ All three were replaced with references to merged content in `.squad/decisions.m
 git diff --cached | grep 'inbox/'
 ```
 
-If any committed docs reference `decision inbox drop-box`, replace with merged-content references.
+If any committed docs reference `.squad/decisions/inbox/`, replace with merged-content references.
 
 **When sweeping for violations, search the ENTIRE repository** — not just `docs/`:
 - `.squad/agents/*/history.md` (agent audit trails)
@@ -138,7 +138,7 @@ Inbox memos are working drafts. Once decisions are locked, merge them into `.squ
 **Writing examples in skill docs:**
 If you write examples in this skill that illustrate the rule, **lint those examples against the rule itself**. Examples that violate the rule undermine credibility. For instance, if this skill's "Learning Source" or "Deliverable" section cites an inbox path, that's a self-violation.
 
-Use generic placeholders (e.g., `decision inbox drop <memo-slug>.md`) or wrap concrete paths in inline code that's clearly labeled as "what NOT to do" — not clickable markdown links to real files.
+Use generic placeholders (e.g., `.squad/decisions/inbox/<memo-slug>.md`) or wrap concrete paths in inline code that's clearly labeled as "what NOT to do" — not clickable markdown links to real files.
 
 **Not sweeping broadly enough:**
 When fixing violations, don't just fix the specific flagged lines. Search the entire repository (including `.squad/agents/`, `.squad/orchestration-log/`, `.squad/log/`, `.squad/handoffs/`) for the same pattern. Partial sweeps leave broken links that surface in later review cycles.
@@ -147,7 +147,7 @@ When fixing violations, don't just fix the specific flagged lines. Search the en
 
 ## Related
 
-- **Inbox merge workflow:** `decision inbox drop *.md` → `.squad/decisions.md` (Scribe owns merge ceremony)
+- **Inbox merge workflow:** `.squad/decisions/inbox/*.md` → `.squad/decisions.md` (Scribe owns merge ceremony)
 - **ADR template:** ADR headers have "Tension Reference" field — use merged decision locations, not inbox paths
 - **Technical design References section:** All cited decisions must be in committed files
 
@@ -155,9 +155,8 @@ When fixing violations, don't just fix the specific flagged lines. Search the en
 
 ## Learning Source
 
-**PR #26 post-merge alignment sweep (2026-05-28):**
+**PR #26 post-merge alignment sweep (2026-05-28):**  
 Copilot automated review flagged 3 broken inbox references in committed Eureka docs. All replaced with merged-content references. Rule extracted to prevent recurrence.
 
 **Cycle 1 Summary:** See `.squad/decisions.md` § "PR #26 — Copilot Review Doc Alignment (Cycle 1)" (2026-05-28) for full fix sweep documentation.
-
 

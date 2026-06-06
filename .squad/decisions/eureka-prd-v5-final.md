@@ -111,7 +111,7 @@ As an agent that makes decisions inline during normal LLM exchange (without expl
 
 ### US-7: Squad Migration (deferred to v1.5+)
 
-(Deferred per R5-Q3.) The eventual replacement of charter/journal/history/decision-drop workflow with Eureka. Out of v1 scope; informs schema design only.
+(Deferred per R5-Q3.) The eventual replacement of charter/journal/history/decisions/inbox with Eureka. Out of v1 scope; informs schema design only.
 
 ---
 
