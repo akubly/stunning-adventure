@@ -1,9 +1,10 @@
 /**
- * DB — minimal storage collaborator interface required by SessionManager.
+ * DB — persistence port for crucible-core.
  *
- * Both production implementations (e.g. SQLite via Refactor 3) and unit-test
- * mocks satisfy this shape. The interface is intentionally narrow — only the
- * operations SessionManager actually needs.
+ * SessionManager uses a subset of this interface: getSession (validation) and
+ * insertSession (fork creation). queryEvents is retained for session-level query
+ * needs and the forthcoming SQLite adapter (Refactor 3); it is not called by
+ * SessionManager today but is part of the intended port contract.
  */
 export interface DB {
   getSession(

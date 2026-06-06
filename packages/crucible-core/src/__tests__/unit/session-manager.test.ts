@@ -111,8 +111,8 @@ describe('SessionManager', () => {
         ledgerSize: 47,
         pluginVersions: parentPlugins,
       });
-      // insertSession must resolve so forkSession can return a child id.
-      mockDB.insertSession.mockResolvedValue('child-id');
+      // insertSession resolves undefined — matches Promise<void> contract.
+      mockDB.insertSession.mockResolvedValue(undefined);
 
       const manager = new SessionManager(mockDB);
 
@@ -170,7 +170,7 @@ describe('SessionManager', () => {
     async () => {
       // Arrange
       mockDB.getSession.mockResolvedValue({ id: 'parent-id', ledgerSize: 47 });
-      mockDB.insertSession.mockResolvedValue('child-id');
+      mockDB.insertSession.mockResolvedValue(undefined);
 
       const manager = new SessionManager(mockDB);
 
