@@ -1,3 +1,9 @@
+## Learnings
+
+**Union-only merges auto-resolve cleanly.** When the only overlapping files between branches are `.squad/` append-only files covered by `merge=union` in `.gitattributes`, `git merge` completes without stopping and leaves no conflict markers. Always verify with a full build + test pass that newly merged code compiles and all workspace tests remain green — even when no source files conflicted.
+
+---
+
 ## 2026-05-29: Crucible CTD Phase 4 — L3.5 Scheduler Tier Promotion
 
 **Task:** Author the L3.5 Scheduler tier promoted from `B-revisit-deferred` to
