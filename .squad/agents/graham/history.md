@@ -1,42 +1,32 @@
----
+# Graham — History
 
-**Role:** Lead / Architect (Overall vision, cross-system integration, tiebreak arbitration)
-**Status:** M0/M1 dogfood scope in flight. M0 shipped; M1 PR #40 open (not merged).
-**Last update:** 2026-05-31
-**Status:** M5+M6 branch prep complete. Feature branch `eureka/m5-m6-trust-feedback` ready for review-cycle.
-**Last update:** 2026-05-30
+📌 **Role:** Lead / Architect (Overall vision, cross-system integration, tiebreak arbitration)  
+📌 **Last update:** 2026-06-02
 
-**Key contributions:**
-- Phase 4.6 wave orchestration: 5 waves integrated (0-6)
-- Brain system: ADR-pending (Curator-driven orchestration, composition root)
-- M0/M1/M2 dogfood scope delivered: 3 strategic synthesis passes (turns G1/G2/G3)
+## Current Status
 
-## Dogfood Scope Synthesis (2026-05-31, 3 turns)
+**M0/M1/M2 Dogfood Scope:**
+- M0 (Alexander, PR #36): ✅ Shipped — forge-mcp registration + plugin config
+- M1 (Roger, PR #40): ✅ Open — hint consumption MCP tools (list_optimization_hints, resolve_optimization_hint)
+- M2 (Gabriel, PR #44): ✅ Review-Complete (2-cycle + doc sweep) — bash shell-init hooks + install README; ready to merge
 
-**Summary:** After PR #32 shipped, Aaron asked "what's next for Forge?" → Graham completed 3-pass synthesis. Aaron set priority: packaging + dogfooding first.
+**Recent Major Work:**
+- PR #33 Cloud-Review-Cycle round 6 — Crucible CTD ADR final fixes (cycle 2–6 complete)
+- PR #34 gitignore hygiene findings — .squad/ committed artifacts should not be tracked
+- Designed-but-unbuilt audit — Forge Phase 4.6 surface fully implemented; Phase 5+ deferred
+- Packaging/dogfood readiness audit — Blockers identified: forge-mcp registration, hint consumption tools, bash hooks
 
-**Turn G1 (Synthesis: strategic next moves):**
-- Forge Phase 4.6 surface fully implemented (9 work items shipped)
-- Eureka v1 landing `recall` with injectable `FactStore` seam
-- Next fork: (a) Eureka-pull integration or (b) dogfood packaging
-- Consensus emerging toward dogfood-first (real signal > further design)
+**Eureka Status:**
+- v1 PRD locked; v3 PRD reconciled against Cairn/Forge substrate
+- R6 source-reading unblocked; trio (Genesta/Crispin/Edgar) aligned
+- M5+M6 branch prep complete (eureka/m5-m6-trust-feedback ready for review)
 
-**Turn G2 (Backlog inventory):**
-- 6 hard-designed items (FactStore adapter, forge→Eureka wiring, trustFloor seam, etc.)
-- 5 soft-designed items (GP-tournament, Meta-optimization, etc.)
-- 5 aspirational (long-term vision)
-- **Conclusion:** Phase 4.6 surface closure confirmed — no missing load-bearing pieces
+## Key Learnings (Recent)
 
-**Turn G3 (Dogfood scope post-priority-reset):**
-- Aaron directive: "Packaging + installability + dogfooding is priority #1"
-- Aaron directive: "Defer aggressive Eureka-pull integration moves until Eureka stabilizes"
-- Aaron directive: "GP-tournament + Meta-optimization noted as compelling-but-deferred"
-- **Deliverable:** M0/M1/M2 plan:
-  - **M0** (alexander): forge-mcp registration in plugin + copilot configs → PR #36 ✅ shipped b22c8e7
-  - **M1** (roger): hint consumption MCP tools (cairn MCP expand recall hints → decision hints) → PR #40 ✅ open
-  - **M2** (gabriel): bash hooks + README (install forge-mcp, shell init integration)
-
-**M1 Status (2026-05-31):** Roger dispatched M1 PR #40 (list_optimization_hints + resolve_optimization_hint). Migration 017 (resolution_note column). +15 tests → 708 total. Build clean. Orchestration log: 2026-05-31T19-19-47Z.
+1. **Sub-kind schema governance:** Payload schema + effects + causal-edge contract required, not just enum membership.
+2. **Predicate timing honesty:** Promise.race() is not a sandboxing primitive. v1 uses cooperative measurement + telemetry + retry-budget quarantine; hard preemption belongs in v1.5+.
+3. **Replay-determinism pattern:** Record results, not just choices, when results depend on environment state.
+4. **Gitignore hygiene:** .gitignore blocks new adds only; committed files must be untracked with git rm --cached.
 
 ---
 
@@ -219,3 +209,5 @@ Aaron's priority reset: defer Eureka moves; get forge installable and dogfoodabl
 
 *Recommended sequence:* (1) Register `forge-mcp` in `.github/plugin/.mcp.json` + `.copilot/mcp-config.json` — S, Alexander; (2) Add `list_optimization_hints` + `resolve_optimization_hint` to cairn MCP — M, Alexander + Beatrix; (3) Bash hook equivalent — M, infrastructure; (4) README forge section — S, anyone, last (write after loop is testable).
 Older detailed history (before 2026-05-30) archived to `history-archive.md`.
+**For detailed history, see history-archive.md**
+
