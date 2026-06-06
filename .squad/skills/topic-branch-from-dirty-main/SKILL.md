@@ -9,7 +9,7 @@
 ## Problem
 
 Scribe's session consolidation sometimes produces:
-- **Meta-commits on main:** .squad/ decision archives, session logs, inbox merges pushed to main
+- **Meta-commits on main:** .squad/decision archives, session logs, inbox merges pushed to main
 - **Uncommitted code:** Real work (new packages, skills, config changes) still in the working tree
 - **Result:** main is several commits ahead of origin/main; code is unreviewed; main is "dirty" from a review-cycle perspective
 
