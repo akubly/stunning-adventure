@@ -67,6 +67,30 @@
 
 # Graham — Key Learnings (Recent)
 
+## 2026-06-06: Refactor 3 GREEN Review — APPROVE
+
+**Verdict:** ✅ APPROVE — Roger's `createSQLiteDB` implementation reviewed and approved.
+
+**Checklist summary:**
+1. **FEDERATE invariant:** PASS — zero Cairn imports in `sqlite-db.ts`; comment reference only. ESLint clean on the new file.
+2. **Oracle parity:** PASS — `ledgerSize` formula, inclusive-inclusive `queryEvents` range, fork lineage storage, and all 5 InMemoryDB extensions match `in-memory-db.ts` semantics exactly. FK-safe `clear()` order (events first, then sessions). No off-by-one issues.
+3. **SQL safety:** PASS — all prepared statements, no string interpolation.
+4. **Resource handling:** PASS — fresh `:memory:` instance per `createSQLiteDB` call = perfect test isolation. WAL harmless on in-memory.
+5. **Lint claim verified:** PASS — the single ESLint `import/named` error is in Laura's `test-db.ts` (untracked, created in RED phase), not in Roger's `sqlite-db.ts` (zero errors). Claim confirmed accurate.
+6. **Tests:** 8/8 green — 6/6 crucible-core unit, 1/1 acceptance, 7/7 integration (A1-1…A1-4, B1, B2, B3). Zero regressions.
+
+**Non-blocking nits:** WAL pragma no-op on `:memory:` (harmless intent signal); `?? null` redundant on typed `string | null`; stale `@ts-expect-error` in Laura's test-db.ts (her cleanup item).
+
+**Architectural note:** Port-and-adapter boundary clean. `SessionManager`/`session.ts` unchanged — the `InMemoryDB` seam absorbs the Map→SQLite swap completely. FEDERATE boundary solid; foundation for file-backed Refactor 4.
+
+## 2026-06-06: OQ-2 Event-Substrate Topology — Decision Brief Filed
+
+📌 **OQ-2 BRIEF DELIVERED** (2026-06-06): Filed `graham-oq2-substrate-brief.md` in decisions inbox. Recommendation: Option B (FEDERATE). Key reasoning: (1) Replay determinism is non-negotiable — append-only + hash-chain + content-addressing is incompatible with CRUD semantics; merging destroys `fsck` and hermetic replay. (2) §15 already locks FEDERATE in substance across three FINAL sections; MERGE would require relitigating §3/§14/§15 at weeks of cost. (3) Reversibility is asymmetric — B→A is moderate effort, A→B risks permanent replay-determinism loss. (4) Refactor 3 proceeds as planned under B with minimal rework; under A, the DB interface, integration test, and schema all change.
+
+**Learnings:**
+- **Storage-semantics incompatibility as a first-order decision driver:** When two systems have fundamentally different write patterns (append-only vs CRUD), substrate merging doesn't save complexity — it forces one system to simulate the other's semantics, creating a fragile abstraction. The right test: can both systems' invariants survive in a shared substrate without either losing load-bearing properties?
+- **Reversibility asymmetry matters more than initial cost:** When one direction of reversal risks permanent data-fidelity loss (hash-chain corruption from CRUD operations on what was an append-only log), the safe default is the more reversible option, even if it has higher ongoing tax.
+
 ## 2026-06-02: Crucible Sprint 0 Kickoff — MERGED (Session Logger)
 
 📌 **INBOX MERGED** (2026-06-02T06:13:21Z): Graham's Crucible Sprint 0 Kickoff decision merged to `.squad/decisions.md`. Inbox file deleted. Orchestration log created: `.squad/orchestration-log/2026-06-02T06-13-21Z-graham.md`. Session log: `.squad/log/2026-06-02T06-13-21Z-crucible-first-red.md`.

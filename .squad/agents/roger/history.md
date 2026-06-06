@@ -4,6 +4,34 @@ File size: 103960 bytes. See history-archive.md for earlier entries.
 
 ---
 
+## Learnings (2026-06-06, Refactor 3 GREEN — real SQLite adapter)
+
+**Schema chosen (Crucible-owned, OQ-2 FEDERATE):** Two tables — `sessions` (`id`, `parent_session_id`, `fork_point_event_id`, `plugin_versions` TEXT/JSON blob, `created_at`) and `events` (`session_id`, `"offset"`, `primitive_kind`, `primitive_payload` JSON, `causal_read_set` JSON, PRIMARY KEY on `(session_id, offset)`). The quoted `"offset"` is required because `offset` is an SQLite reserved word.
+
+**Adapter file:** `packages/crucible-core/src/sqlite-db.ts` — exports `createSQLiteDB(path: ':memory:' | string): InMemoryDB`. Each call returns an independent DB instance (no singleton pattern — correct for test isolation). Uses prepared statements for all queries.
+
+**Dep versions:** `better-sqlite3@^12.8.0` + `@types/better-sqlite3@^7.6.13` added to devDependencies in both `packages/crucible-core` and `packages/crucible-cli`. These match the versions already present in `packages/cairn` and `packages/eureka`; workspace hoisting resolved them to the same native binary at `node_modules/better-sqlite3/build/Release/better_sqlite3.node`. The native .node binary was already built (cairn/eureka had already triggered it); no rebuild was needed.
+
+**Windows native module gotcha:** `npm install --ignore-scripts` does NOT build the native add-on — only use it if the binary is already present. When adding `better-sqlite3` to a new package in the workspace, a plain `npm install` is sufficient if another workspace package already has it (hoisting reuses the built binary).
+
+**`@ts-expect-error` lifecycle:** Laura's fixture correctly used `@ts-expect-error` during RED phase (createSQLiteDB undefined). The directive becomes "unused" once the export is present but vitest uses esbuild transpilation (not tsc), so it doesn't error on unused suppressors at test time. The `__tests__` dirs are excluded from tsconfig compilation so typecheck also stays clean. No change to the fixture file was needed.
+
+**Pre-existing ESLint issue (not mine):** `packages/crucible-cli/src/__tests__/fixtures/test-db.ts` line 73 has `eslint-disable-line import/named` but the `import/named` ESLint plugin is not installed in the workspace — the error predates Refactor 3 and is present in the committed baseline. Not caused by my changes.
+
+---
+
+## Learnings (2026-06-06, OQ-2 substrate analysis)
+
+**MERGE does not eliminate dual-write; it adds a second incompatible writer.** Crucible's canonical store is the binary `.seg` WAL files — SQLite is a derived projection. If Crucible writes Primitives to Cairn's `event_log`, it still must write to `.seg` segments for hash-chain integrity. Two writers. The only way to collapse them is to abandon the WAL's replay properties entirely, which guts §3. "Merge to one substrate" only works if the merged substrate IS the authoritative store; it doesn't work when the authoritative store is already a custom binary format.
+
+**Substrate incompatibility is concrete, not philosophical.** Cairn's `event_log` has no `offset` column (uses AUTOINCREMENT cursor id), no `fork_point_event_id`, no `parent_session_id` on sessions, and no `plugin_versions`. Crucible's `DB` interface's three methods — `getSession` (returns `ledgerSize`), `insertSession` (takes full fork lineage), `queryEvents` (range by offset) — cannot be satisfied against Cairn's schema without either extending Cairn's schema with Crucible-specific columns or introducing a translation layer. Both paths are FEDERATE with extra steps.
+
+**`§15` "two event-log tax" is already on the books — collect it, don't fight it.** The accepted-tax framing in §15 was the right call. Trying to merge the substrates to avoid the tax introduces migration coupling, interface restructuring, and cross-package test dependencies that cost more than the tax they avoid.
+
+**Port interfaces define the readiness floor for the next TDD cycle.** The existing `DB` interface (`getSession` / `insertSession` / `queryEvents`) is already the right contract for the SQLite adapter. When an interface already describes the correct behavior with the right types, the Refactor cycle cost is just "write the impl" — not "redesign the interface." This is the payoff of London-school design: the mock you built against defines the real adapter's entry criteria for free.
+
+---
+
 ## Learnings (2026-06-06, PR #45 final fixes)
 
 **Prefer domain types over `unknown[]` in port interfaces.** `DB.queryEvents` was typed `Promise<unknown[]>`, erasing the `Primitive` type that the in-memory impl already returned correctly. Port interfaces are contracts — they should reflect the actual domain type, not a widening escape hatch. When the impl already returns the right type, the fix is purely additive and compile-safe.

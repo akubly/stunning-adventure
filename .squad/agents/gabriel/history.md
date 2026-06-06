@@ -226,3 +226,5 @@ All three files existed on origin/main-relative tracking only because the Scribe
 
 **For detailed history, see history-archive.md**
 
+
+- 2026-06-06 📌 scribe: OQ-2 LOCKED (FEDERATE) + Refactor 3 complete (real SQLite adapter, 14/14 green)

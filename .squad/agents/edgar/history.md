@@ -107,3 +107,5 @@
 - **Gitignored files can slip through cross-branch merges.** Crispin's inbox files became committed. Guard: `git status` review, not just trusting gitignore.
 
 **Outcome:** Eureka M7 (B+C+D) complete. Shipped to main as ed6be2c (squash). All learnings documented in `.squad/decisions.md` PR #41 section. New skill: `.squad/skills/refactor-grep-cleanup/SKILL.md`. Branches cleaned. Ready for next sprint.
+
+- 2026-06-06 📌 scribe: OQ-2 LOCKED (FEDERATE) + Refactor 3 complete (real SQLite adapter, 14/14 green)

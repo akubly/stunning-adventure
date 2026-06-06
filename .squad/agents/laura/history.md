@@ -13,6 +13,51 @@ File size: 17270 bytes. See history-archive.md for earlier entries.
 
 ## Learnings
 
+### 2026-06-06: Crucible REFACTOR 3 RED — Integration Test with Real SQLite (london-tdd-integration descent)
+
+**Context:** Authored 7 failing integration tests for `SessionManager` + real SQLite per §4.1 Refactor 3. OQ-2 FEDERATE locked 2026-06-06 — Crucible owns its own SQLite schema, no Cairn dependency.
+
+**Invariants asserted (7 tests):**
+
+| ID | Test | Invariant locked |
+|----|------|------------------|
+| A1-1 | `stores parentSessionId in real SQLite rows` | `db.getMetadata(childId).parentSessionId === parentId` |
+| A1-2 | `stores forkPointEventId=23 in real SQLite rows` | `db.getMetadata(childId).forkPointEventId === 23` |
+| A1-3 | `parent prefix [0..23] contains exactly 24 events` | inclusive-inclusive `[a,b]` range; `queryEvents(parentId,{range:[0,23]}).length === 24` |
+| A1-4 | `parent ledgerSize remains 47 after fork` | `db.getSession(parentId).ledgerSize === 47` |
+| B1 | `rejects fork at offset equal to ledger size` | strict `<` bound with real DB `getSession` |
+| B2 | `rejects negative fork offset` | ForkLineage invariant with real DB |
+| B3 | `freshly forked child ledgerSize = forkPointEventId + 1` | `23 + 1 + 0 = 24` with real DB |
+
+**File paths:**
+- Integration test: `packages/crucible-cli/src/__tests__/integration/session-fork.integration.ts`
+- Test fixture: `packages/crucible-cli/src/__tests__/fixtures/test-db.ts`
+- vitest config updated: `packages/crucible-cli/vitest.config.ts` (added `*.integration.ts` to include pattern)
+- Handoff: `.squad/decisions/inbox/laura-refactor3-red.md`
+
+**RED failure:**
+```
+TypeError: (0 , createSQLiteDB) is not a function
+  ❯ createTestDatabase src/__tests__/fixtures/test-db.ts:87:11
+Test Files  1 failed | 1 passed (2)
+     Tests  7 failed | 1 passed (8)
+```
+Root cause: `createSQLiteDB` is not exported from `@akubly/crucible-core` (not yet implemented). vitest resolves the named import as `undefined`; calling `undefined(':memory:')` throws `TypeError`.
+
+**What Roger must implement to go GREEN:**
+1. `packages/crucible-core/src/sqlite-db.ts` — `export function createSQLiteDB(path: ':memory:' | string): InMemoryDB` using better-sqlite3 with two-table schema (sessions + events).
+2. Export `createSQLiteDB` from crucible-core barrel (`index.ts`).
+3. Add `"better-sqlite3": "^12.8.0"` + `"@types/better-sqlite3": "^7.6.13"` to devDependencies in both `crucible-cli` and `crucible-core`.
+4. `ledgerSize` formula: root → `COUNT(own events)`; fork → `forkPointEventId + 1 + COUNT(own events)`.
+5. `queryEvents` must filter by session's OWN rows (inclusive-inclusive offset range); parent delegation is `session.ts`'s responsibility.
+
+**vitest config pattern for mixed test-type layouts:**
+Adding `*.integration.ts` to `include` in `vitest.config.ts` alongside `*.test.ts` allows separation of unit/acceptance/integration suites without naming collisions. Same pattern can be used for contract or e2e layers.
+
+**Fixture placement decision:** `createTestDatabase()` goes in `packages/crucible-cli/src/__tests__/fixtures/` (cli-level test support). If crucible-core tests also need SQLite fixtures later, extract to a shared test-support file exported from the barrel (following the `resetInMemoryDb` precedent — marked "test isolation only").
+
+---
+
 ### 2026-06-01: Crucible REFACTOR RED — SessionManager Unit Tests (London-school with mocked DB)
 
 **Context:** Authored 4 failing unit tests for `SessionManager` per §4.1 Refactor 2, one turn after Roger's GREEN acceptance test landed.
@@ -1017,6 +1062,10 @@ They overlap in practice (a cited prior decision is usually also in the read-set
 ### 4. Compatibility with v1 commitments #5 (Pareto fitness) and #12 (determinism conformance).
 
 **#5 (Pareto fitness):** No conflict. `causalReadSet` adds an input dimension I''ll use — read-set size and composition become axes for cost/complexity scoring. A generator that reads 3 primitives to make a Decision Pareto-dominates one that reads 30 for the same outcome quality. New leaderboard column: `mean read-set cardinality | dispersion`. Free signal.
+
+### 2026-06-06: ESLint import/named rule cleanup — disabling non-existent rules
+
+Removed stale `// eslint-disable-line import/named` comment from `test-db.ts` line 73; the rule doesn''t exist in eslint config so ESLint complained about the disable directive itself, not the import. When a rule is not configured, remove the disable comment rather than adding config — keeps linting intent visible in comments only when enforced.
 
 **#12 (determinism conformance):** Direct strengthening. Conformance suite gains **four assertions** on every replayed slice:
 
