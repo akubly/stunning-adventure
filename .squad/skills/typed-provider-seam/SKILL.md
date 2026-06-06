@@ -136,7 +136,7 @@ const hints = await forge.runForgePrescribers(profile, skillId, { provider, myPr
 - [ ] Guard: `if (data && data.length > 0)` before applying the data
 - [ ] Provider wired in `skillsmith-runtime/src/runtime.ts`
 - [ ] Unit tests: data → effect, empty → no-op, throws → fail-open, null provider → no-op
-- [ ] Integration test: seed real events via `cairn.insertHintIfNew` + `cairn.logEvent`, call `executePrescriberRun`, assert effect
+- [ ] Integration test: seed real events via `cairn.resolveOptimizationHint` (preferred end-to-end path — see pitfall #5; drop to `cairn.insertHintIfNew` + `cairn.logEvent` only for adversarial cases needing direct `source`/payload control), call `executePrescriberRun`, assert effect
 - [ ] Build clean after each step
 
 ---
