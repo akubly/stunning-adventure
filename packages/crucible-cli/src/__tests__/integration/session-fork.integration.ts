@@ -63,7 +63,7 @@ describe('Session Fork — Integration (real SQLite :memory:)', () => {
   let manager: SessionManager;
 
   beforeEach(() => {
-    // GREEN: createSQLiteDB is exported and functional — Roger's a57f95f.
+    // GREEN: createSQLiteDB is exported and functional.
     db = createTestDatabase();
     manager = new SessionManager(db);
   });
@@ -205,6 +205,12 @@ describe('Session Fork — Integration (real SQLite :memory:)', () => {
       // A second pushEvent at offset=0 MUST throw — SQLite enforces the
       // composite PK (session_id, "offset"). A map-backed fake would silently
       // overwrite and this expect would never trigger.
+      //
+      // The session already exists (insertRootSession above), so the pushEvent
+      // session-exists guard does NOT fire — only the SQLite PK constraint can
+      // throw here. better-sqlite3 surfaces PK violations as a SqliteError with
+      // message "UNIQUE constraint failed: ..." (SQLite uses UNIQUE indexes for
+      // PKs) and code SQLITE_CONSTRAINT_PRIMARYKEY.
       expect(() =>
         db.pushEvent('constraint-test', {
           primitiveKind: 'observation',
@@ -212,7 +218,7 @@ describe('Session Fork — Integration (real SQLite :memory:)', () => {
           causalReadSet: [],
           offset: 0,
         }),
-      ).toThrow();
+      ).toThrow(/UNIQUE constraint failed|SQLITE_CONSTRAINT/i);
     },
   );
 });
