@@ -9,6 +9,7 @@ import {
   HINT_STATE_TRANSITION_EVENT_TYPE,
   HINT_TRANSITION_SOURCE_MCP,
   HINT_TRANSITION_PAYLOAD_KEYS as K,
+  HINT_RESOLUTION_DISMISSED,
 } from '../db/hintStateTransitionConstants.js';
 import type { OptimizationHintInsert } from '../db/optimizationHints.js';
 
@@ -97,14 +98,14 @@ describe('SqliteHintDispositionProvider', () => {
     const h = hint('tool-guidance');
     insertHintIfNew(db, h);
     const sessionId = ensureSystemSession(db);
-    logEvent(db, sessionId, 'hint_state_transition', {
-      skill_id: 'skill-disp',
-      hint_id: h.id,
-      from_state: 'pending',
-      to_state: 'rejected',
-      timestamp: new Date().toISOString(),
-      resolution_disposition: 'dismissed',
-      source: 'system',  // NOT 'mcp'
+    logEvent(db, sessionId, HINT_STATE_TRANSITION_EVENT_TYPE, {
+      [K.SKILL_ID]: 'skill-disp',
+      [K.HINT_ID]: h.id,
+      [K.FROM_STATE]: 'pending',
+      [K.TO_STATE]: 'rejected',
+      [K.TIMESTAMP]: new Date().toISOString(),
+      [K.RESOLUTION_DISPOSITION]: HINT_RESOLUTION_DISMISSED,
+      [K.SOURCE]: 'system',  // NOT 'mcp'
     });
 
     const provider = new SqliteHintDispositionProvider(db);
@@ -185,13 +186,13 @@ describe('SqliteHintDispositionProvider', () => {
     insertHintIfNew(db, h);
     const sessionId = ensureSystemSession(db);
     // Emit a transition event with resolution_disposition but NO source key.
-    logEvent(db, sessionId, 'hint_state_transition', {
-      skill_id: 'skill-disp',
-      hint_id: h.id,
-      from_state: 'pending',
-      to_state: 'rejected',
-      timestamp: new Date().toISOString(),
-      resolution_disposition: 'dismissed',
+    logEvent(db, sessionId, HINT_STATE_TRANSITION_EVENT_TYPE, {
+      [K.SKILL_ID]: 'skill-disp',
+      [K.HINT_ID]: h.id,
+      [K.FROM_STATE]: 'pending',
+      [K.TO_STATE]: 'rejected',
+      [K.TIMESTAMP]: new Date().toISOString(),
+      [K.RESOLUTION_DISPOSITION]: HINT_RESOLUTION_DISMISSED,
       // source key deliberately omitted
     });
 
@@ -212,14 +213,14 @@ describe('SqliteHintDispositionProvider', () => {
 
     // System dismissal — must not be counted.
     const sessionId = ensureSystemSession(db);
-    logEvent(db, sessionId, 'hint_state_transition', {
-      skill_id: 'skill-disp',
-      hint_id: h1.id,
-      from_state: 'pending',
-      to_state: 'rejected',
-      timestamp: new Date().toISOString(),
-      resolution_disposition: 'dismissed',
-      source: 'system',
+    logEvent(db, sessionId, HINT_STATE_TRANSITION_EVENT_TYPE, {
+      [K.SKILL_ID]: 'skill-disp',
+      [K.HINT_ID]: h1.id,
+      [K.FROM_STATE]: 'pending',
+      [K.TO_STATE]: 'rejected',
+      [K.TIMESTAMP]: new Date().toISOString(),
+      [K.RESOLUTION_DISPOSITION]: HINT_RESOLUTION_DISMISSED,
+      [K.SOURCE]: 'system',
     });
 
     // MCP resolution — must be counted.
@@ -242,14 +243,14 @@ describe('SqliteHintDispositionProvider', () => {
   it('does NOT count transition events whose hint_id has no matching optimization_hints row', async () => {
     const sessionId = ensureSystemSession(db);
     // Emit a well-formed mcp transition that references a non-existent hint id.
-    logEvent(db, sessionId, 'hint_state_transition', {
-      skill_id: 'skill-disp',
-      hint_id: 'non-existent-hint-id',
-      from_state: 'pending',
-      to_state: 'rejected',
-      timestamp: new Date().toISOString(),
-      resolution_disposition: 'dismissed',
-      source: 'mcp',
+    logEvent(db, sessionId, HINT_STATE_TRANSITION_EVENT_TYPE, {
+      [K.SKILL_ID]: 'skill-disp',
+      [K.HINT_ID]: 'non-existent-hint-id',
+      [K.FROM_STATE]: 'pending',
+      [K.TO_STATE]: 'rejected',
+      [K.TIMESTAMP]: new Date().toISOString(),
+      [K.RESOLUTION_DISPOSITION]: HINT_RESOLUTION_DISMISSED,
+      [K.SOURCE]: HINT_TRANSITION_SOURCE_MCP,
     });
 
     const provider = new SqliteHintDispositionProvider(db);
@@ -288,7 +289,7 @@ describe('SqliteHintDispositionProvider — producer/consumer payload contract',
   expect(payload[K.SOURCE]).toBe(HINT_TRANSITION_SOURCE_MCP);
   expect(payload[K.SKILL_ID]).toBe('skill-disp');
   expect(payload[K.HINT_ID]).toBe(h.id);
-  expect(payload[K.RESOLUTION_DISPOSITION]).toBe('dismissed');
+  expect(payload[K.RESOLUTION_DISPOSITION]).toBe(HINT_RESOLUTION_DISMISSED);
   expect(payload[K.RESOLUTION_NOTE]).toBe('contract-test-note');
 
   // And verify the provider can actually read it (round-trip).
