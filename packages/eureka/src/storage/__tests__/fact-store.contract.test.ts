@@ -7,10 +7,10 @@
  * The helper definition (runFactStoreContract + FactStoreHarness) lives in:
  *   ./fact-store-contract.helper.ts
  *
- * Each call to runFactStoreContract adds 11 tests (FS-1 through FS-8, FS-5b×2, FS-8 contributing 3 via it.each).
- * InMemoryFactStore wired below → 11 contract tests.
- * SqliteFactStore wired below   → 11 contract tests.
- * Total: 22
+ * Each call to runFactStoreContract adds 16 tests (FS-1..FS-9; FS-5b×2, FS-8×3, FS-9×4 via it.each).
+ * InMemoryFactStore wired below → 16 contract tests.
+ * SqliteFactStore wired below   → 16 contract tests.
+ * Total: 32
  */
 
 import Database from 'better-sqlite3';
@@ -70,6 +70,11 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
       // F4: validate limit — mirrors SqliteFactStore validation.
       if (!Number.isFinite(limit) || !Number.isInteger(limit) || limit <= 0) {
         throw new TypeError(`InMemoryFactStore.search: limit must be a positive integer, got ${limit}`);
+      }
+
+      // Validate minTrust when explicitly provided — mirrors SqliteFactStore validation.
+      if (args.minTrust !== undefined && (!Number.isFinite(minTrust) || minTrust < 0 || minTrust > 1)) {
+        throw new TypeError(`InMemoryFactStore.search: minTrust must be a finite number in [0, 1], got ${minTrust}`);
       }
 
       const offset = cursor !== undefined ? decodeCursorInMemory(cursor) : 0;

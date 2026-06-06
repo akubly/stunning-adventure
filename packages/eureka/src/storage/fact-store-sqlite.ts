@@ -174,6 +174,12 @@ export class SqliteFactStore implements FactStore {
       throw new TypeError(`SqliteFactStore.search: limit must be a positive integer, got ${limit}`);
     }
 
+    // Validate minTrust when explicitly provided — NaN/Infinity silently makes
+    // WHERE trust >= ? filter out everything, masking upstream bugs.
+    if (args.minTrust !== undefined && (!Number.isFinite(minTrust) || minTrust < 0 || minTrust > 1)) {
+      throw new TypeError(`SqliteFactStore.search: minTrust must be a finite number in [0, 1], got ${minTrust}`);
+    }
+
     // FTS5 MATCH with an empty string throws — short-circuit to empty results.
     if (!query.trim()) {
       return { results: [] };

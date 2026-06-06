@@ -21,9 +21,11 @@
  * FS-3  minTrust floor           — below-threshold facts excluded
  * FS-4  Composite sort lock      — equal-trust higher-freq fact ranks first (BM25 footgun lock)
  * FS-5  Cursor pagination        — nextCursor returned when more rows exist; round-trip yields next page
+ * FS-5b Bad-offset cursor        — structurally-valid cursor with bad offset clamps to page 0
  * FS-6  Cross-session isolation  — search in sessionA MUST NOT return sessionB facts
  * FS-7  Tie-breaker pagination   — equal composite scores paginate without skip or dup
  * FS-8  Invalid limit            — limit ≤ 0 / NaN throws TypeError
+ * FS-9  Invalid minTrust         — NaN / Infinity / out-of-range throws TypeError
  *
  * ## Export visibility
  *
@@ -83,7 +85,7 @@ const SESSION_B = 'fs-contract-session-B' as SessionId;
 /**
  * Run the full FactStore contract suite against a given implementation factory.
  *
- * Each call to `runFactStoreContract` adds 11 tests (FS-1 through FS-8, FS-5b×2, FS-8×3 via it.each).
+ * Each call to `runFactStoreContract` adds 16 tests (FS-1..FS-9; FS-5b×2, FS-8×3, FS-9×4 via it.each).
  *
  * @param implName    Human-readable label shown in test output (e.g. 'SqliteFactStore').
  * @param makeHarness Factory called once per test (via beforeEach) to produce a fresh,
@@ -271,8 +273,8 @@ export function runFactStoreContract(
         const withoutCursor = await impl.search({ query: 'fallback', sessionId: SESSION_A, limit: 10 });
         const withBadCursor = await impl.search({ query: 'fallback', sessionId: SESSION_A, limit: 10, cursor: badCursor });
 
-        // Bad cursor falls back to offset=0 → same results as no cursor.
-        expect(withBadCursor.results).toHaveLength(withoutCursor.results.length);
+        // Bad cursor falls back to offset=0 → identical content and order as no-cursor baseline.
+        expect(withBadCursor.results.map(r => r.content)).toEqual(withoutCursor.results.map(r => r.content));
       },
     );
 
@@ -337,6 +339,23 @@ export function runFactStoreContract(
       async (badLimit) => {
         await expect(
           impl.search({ query: 'test', sessionId: SESSION_A, limit: badLimit }),
+        ).rejects.toThrow(TypeError);
+      },
+    );
+
+    // -----------------------------------------------------------------------
+    // FS-9 — Invalid minTrust throws TypeError
+    //
+    // minTrust is optional (default 0.15, always valid). When explicitly
+    // supplied, NaN / Infinity / out-of-range values silently make WHERE
+    // trust >= ? filter out everything — masking upstream bugs. Must throw.
+    // -----------------------------------------------------------------------
+
+    it.each([NaN, Infinity, -0.1, 1.1])(
+      'FS-9 (minTrust=%s): invalid minTrust throws TypeError',
+      async (badMinTrust) => {
+        await expect(
+          impl.search({ query: 'test', sessionId: SESSION_A, limit: 10, minTrust: badMinTrust }),
         ).rejects.toThrow(TypeError);
       },
     );
