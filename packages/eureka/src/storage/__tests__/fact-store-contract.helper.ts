@@ -273,16 +273,18 @@ export function runFactStoreContract(
     // -----------------------------------------------------------------------
     // FS-7 — Deterministic tie-breaker pagination (no skip / no dup on ties)
     //
-    // Seed 3 facts with identical content and trust → equal composite scores.
-    // Paginate with limit=2 then limit=2 again. Without a stable secondary sort
-    // (f.id ASC in SQLite, factId ASC in InMemory), tied scores can produce
-    // non-deterministic page boundaries leading to skipped or duplicated facts.
+    // Seed 3 facts with distinct-but-equal-score content in non-lexicographic
+    // insertion order (tie-c, tie-a, tie-b). Equal composite scores must be
+    // broken by insertion order so OFFSET pagination never skips or duplicates
+    // a row. The content is distinguishable so a dup would fail the Set check.
     // -----------------------------------------------------------------------
 
     it('FS-7: pagination across tied composite scores — no gaps or duplicates', async () => {
-      await seed('tie-1', SESSION_A, 'tiebreak stable pagination invariant', 0.8);
-      await seed('tie-2', SESSION_A, 'tiebreak stable pagination invariant', 0.8);
-      await seed('tie-3', SESSION_A, 'tiebreak stable pagination invariant', 0.8);
+      // Insert in non-lexicographic order so the test fails if either impl
+      // falls back to lexicographic (factId) rather than insertion-order sort.
+      await seed('tie-c', SESSION_A, 'tiebreak pagination fact-c', 0.8);
+      await seed('tie-a', SESSION_A, 'tiebreak pagination fact-a', 0.8);
+      await seed('tie-b', SESSION_A, 'tiebreak pagination fact-b', 0.8);
 
       const page1 = await impl.search({ query: 'tiebreak', sessionId: SESSION_A, limit: 2 });
       expect(page1.results).toHaveLength(2);
@@ -292,9 +294,10 @@ export function runFactStoreContract(
       expect(page2.results).toHaveLength(1);
       expect(page2.nextCursor).toBeUndefined();
 
-      // All 3 facts covered: 2 on page 1, 1 on page 2. No fact skipped or repeated.
+      // Exactly 3 distinct facts across both pages — no skip, no dup.
       const all = [...page1.results, ...page2.results];
       expect(all).toHaveLength(3);
+      expect(new Set(all.map(r => r.content)).size).toBe(3);
     });
 
     // -----------------------------------------------------------------------

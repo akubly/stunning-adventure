@@ -35,6 +35,8 @@ interface StoredFact {
   sessionId: string;
   content: string;
   trust: number;
+  /** Monotonically-increasing insertion index — mirrors f.id (autoincrement) in SQLite. */
+  insertionOrder: number;
 }
 
 /** Composite key — null-byte separator prevents accidental collisions. */
@@ -56,17 +58,18 @@ function decodeCursorInMemory(cursor: string): number {
 
 function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['seed'] } {
   const store = new Map<string, StoredFact>();
+  let insertionCounter = 0;
 
   const impl: FactStore = {
     async search(args) {
       const { query, sessionId, limit, minTrust = 0.15, cursor } = args;
 
-  // F4: validate limit — mirrors SqliteFactStore validation.
-  if (!Number.isFinite(limit) || !Number.isInteger(limit) || limit <= 0) {
-    throw new TypeError(`InMemoryFactStore.search: limit must be a positive integer, got ${limit}`);
-  }
+      // F4: validate limit — mirrors SqliteFactStore validation.
+      if (!Number.isFinite(limit) || !Number.isInteger(limit) || limit <= 0) {
+        throw new TypeError(`InMemoryFactStore.search: limit must be a positive integer, got ${limit}`);
+      }
 
-  const offset = cursor !== undefined ? decodeCursorInMemory(cursor) : 0;
+      const offset = cursor !== undefined ? decodeCursorInMemory(cursor) : 0;
 
   if (!query.trim()) return { results: [] };
 
@@ -83,7 +86,7 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
           }, 0);
           return { ...f, score: termCount * f.trust };
         })
-        .sort((a, b) => b.score - a.score || a.factId.localeCompare(b.factId));
+        .sort((a, b) => b.score - a.score || a.insertionOrder - b.insertionOrder);
 
       const page = scored.slice(offset, offset + limit);
       const hasMore = scored.length > offset + limit;
@@ -108,7 +111,7 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
   };
 
   const seed: FactStoreHarness['seed'] = async (factId, sessionId, content, trust) => {
-    store.set(storeKey(sessionId, factId), { factId, sessionId: sessionId as string, content, trust });
+    store.set(storeKey(sessionId, factId), { factId, sessionId: sessionId as string, content, trust, insertionOrder: insertionCounter++ });
   };
 
   return { impl, seed };

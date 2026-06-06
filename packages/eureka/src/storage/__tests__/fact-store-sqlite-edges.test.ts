@@ -119,6 +119,11 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
     // Fact B: 1× "delta" → lower BM25,     but high trust (0.90).
     // Composite: -bm25_B × 0.90 > -bm25_A × 0.20 → Fact B sorts FIRST.
     // Relevance:  -bm25_A > -bm25_B (BM25 only, no trust) → Fact A has higher relevance.
+    //
+    // Why the 6× repetition doesn't overcome the 4.5× trust gap:
+    // BM25 TF saturation (k1≈1.2 in SQLite FTS5) caps the 6× repetition
+    // advantage to ~1.3× on this corpus; the 4.5× trust ratio dominates.
+    // If trust values or content change, re-verify the composite ordering.
     seed('se1b-a', 'delta delta delta delta delta delta', 0.20);
     seed('se1b-b', 'delta baseline',                     0.90);
 

@@ -90,3 +90,13 @@ The v1 cursor is minimal by Aaron's Q2 approval. Slice D MUST add:
 1. **Scope fingerprint:** hash of (query, sessionId, minTrust, limit) embedded in the cursor. Reject cursors with mismatched fingerprint to prevent cross-parameter reuse bugs.
 2. **Cursor version byte:** allows future format migrations without breaking in-flight cursors.
 3. Consider **keyset cursor** (last composite score + last f.id) for write-stable pagination, replacing offset.
+
+## §C2-E: FTS5 error-classification regex is message-text based (v1 tradeoff)
+
+The F2 catch uses `/fts5|unterminated|syntax error|malformed MATCH/i` matched against SQLite error messages. This was verified against real better-sqlite3 / SQLite error output (2026-06-05). The risk: SQLite or better-sqlite3 can change error message wording across versions, silently widening or narrowing the catch.
+
+**Known v1 tradeoff** — ships as-is because:
+- The pattern was empirically verified against actual errors on the current SQLite/better-sqlite3 versions in this repo.
+- The failure mode for drift is conservative: a message-text miss causes a real FTS5 parse error to propagate rather than be swallowed — a visible crash rather than a silent wrong answer.
+
+**Slice D follow-up:** Consider a version-anchored test that asserts the error message for an unclosed-quote query matches the expected pattern, and/or a more structured FTS5-error signal if better-sqlite3 exposes one in a future release.

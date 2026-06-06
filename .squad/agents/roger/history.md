@@ -93,3 +93,13 @@
 **F4 limit validation prevents infinite pagination loops.** `limit=0` produces OFFSET 0, LIMIT 0, returns 0 results, `nextCursor` defined, next call produces the same state — infinite loop for any consumer that auto-paginates. `limit=-1` makes SQLite treat it as unlimited (implementation quirk). Both are bugs, not edge cases. `TypeError` is the right signal because `limit` is a misuse of the API contract, not a data error. Apply at both SqliteFactStore AND the InMemory reference impl so the contract test catches both.
 
 **F5 cursor versioning is Slice D work.** The v1 offset cursor is NOT bound to query params, session, minTrust, or limit. Cross-parameter reuse is undefined behavior (silently returns wrong page). The right fix (scope fingerprint: hash of query+sessionId+minTrust+limit) is deferred to Slice D when we add cursor validation. Document with code comments NOW so the next author doesn't have to rediscover the gap.
+
+## Learnings (2026-06-06 — M8 Slice C cycle-2 C2-A/B/C/D/E)
+
+**Branch:** `eureka/m8-slice-c-factstore` (final fix pass, PR #48)
+
+**Insertion-order tie-break must be explicit, not coincidental.** `localeCompare` on factId produces a different order than `f.id ASC` (autoincrement) whenever factIds are inserted in non-alphabetical order. The two impls were only "equivalent" because the test data happened to align. The fix: add an explicit `insertionOrder` counter to `StoredFact`, increment on each `seed()` call, sort ties by `a.insertionOrder - b.insertionOrder`. Then seed FS-7 in non-lexicographic order (`tie-c`, `tie-a`, `tie-b`) so the test would fail under `localeCompare` semantics. Cross-impl contract tests must use data that DISTINGUISHES the implementations they're testing — otherwise they miss the divergence they exist to prevent.
+
+**Duplicates need distinguishable content.** A tie-breaking test that seeds identical content and only asserts `length === 3` would pass even if the impl returned the same row twice (three identical items would still have length 3 and Set.size 1 vs expected 3 — but only if you check the Set). FS-7's fix: seed content `'tiebreak pagination fact-c/a/b'` and assert `new Set(all.map(r => r.content)).size === 3`. A no-dup assertion requires uniquely-identifiable results.
+
+**FTS5 error-message regex is a v1 tradeoff.** The `/fts5|unterminated|syntax error|malformed MATCH/i` pattern was verified against real SQLite errors on 2026-06-05. The conservative failure mode (miss → real error propagates, not swallowed) is acceptable for v1. Slice D should version-anchor the test or look for a more structured FTS5 error signal from better-sqlite3. Noted in decision drop §C2-E.
