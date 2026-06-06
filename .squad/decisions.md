@@ -3855,6 +3855,8 @@ describe('XYZ contract suite — tombstone (suite moved)', () => {
 
 **Anti-pattern to avoid:** Importing from the new test file for re-export. If a test file imports from another test file, vitest registers that file's top-level `describe`/`it` calls TWICE, causing test duplication. Do NOT use test files as re-export modules.
 
+**Update 2026-06-05:** Tombstone removed in commit b9185de — the value of pointing future readers to the new location was deemed lower than the noise cost of a permanent `it.todo` skipped test in every run. `git log --follow` on `packages/eureka/src/storage/__tests__/trust-updater-contract.helper.ts` traces the move. The anti-pattern note above (no test-file re-exports) remains valid and was the actual learning.
+
 ---
 
 ## Decision 3: `TrustUpdaterHarness` shape extends `TrustUpdaterTestImpl` with optional cleanup
