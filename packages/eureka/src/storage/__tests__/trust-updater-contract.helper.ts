@@ -156,11 +156,13 @@ export function runTrustUpdaterContract(
     //         AND MUST NOT mutate storage
     //
     // Covers the finite-but-out-of-range case not exercised by C-3 (NaN).
-    // Both upper-bound (1.5) and lower-bound (-0.1) are checked.
+    // Each parameterization (1.5, -0.1) runs as a separate test case so a
+    // first-failure on one bound doesn't shadow the other.
     // -----------------------------------------------------------------------
 
-    it('C-3b: fn returns out-of-range value — InvalidTrustValueError(source:storage), storage unchanged', async () => {
-      for (const badValue of [1.5, -0.1]) {
+    it.each([1.5, -0.1])(
+      'C-3b (%f): fn returns out-of-range value — InvalidTrustValueError(source:storage), storage unchanged',
+      async (badValue) => {
         await setTrust(SESSION, FACT_ID, 0.50);
 
         await expect(
@@ -172,8 +174,8 @@ export function runTrustUpdaterContract(
         ).rejects.toMatchObject({ code: 'INVALID_TRUST_VALUE', source: 'storage' });
 
         expect(await getTrust(SESSION, FACT_ID)).toBeCloseTo(0.50, 5);
-      }
-    });
+      },
+    );
 
     // -----------------------------------------------------------------------
     // C-4 — Fact missing: FactNotFoundError before fn is called

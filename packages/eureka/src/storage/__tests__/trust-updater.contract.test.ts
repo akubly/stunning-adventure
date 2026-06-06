@@ -7,10 +7,10 @@
  * The helper definition (runTrustUpdaterContract + TrustUpdaterHarness) lives in:
  *   ./trust-updater-contract.helper.ts
  *
- * Each call to runTrustUpdaterContract adds 8 tests (C-1 through C-7 + C-3b).
- * InMemoryTrustUpdater wired below → 8 contract tests.
- * SqliteTrustUpdater wired below   → 8 contract tests.
- * Total: 16
+ * Each call to runTrustUpdaterContract adds 9 tests (C-1 through C-7, C-3 + C-3b×2).
+ * InMemoryTrustUpdater wired below → 9 contract tests.
+ * SqliteTrustUpdater wired below   → 9 contract tests.
+ * Total: 18
  */
 
 import Database from 'better-sqlite3';
@@ -33,6 +33,7 @@ function storeKey(sessionId: SessionId, factId: string): string {
   return `${sessionId}\0${factId}`;
 }
 
+// Reference InMemory impl lives inline here by design — test-only, not exported from any production module.
 function makeInMemoryTrustUpdaterHarness(): TrustUpdaterHarness {
   const store = new Map<string, number>();
   const locks = new Map<string, Promise<void>>();
