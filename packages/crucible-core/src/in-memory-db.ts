@@ -84,7 +84,7 @@ export function createInMemoryDB(): InMemoryDB {
     },
 
     getOwnEvents(sessionId) {
-      return store.get(sessionId)?.ownEvents ?? [];
+      return [...(store.get(sessionId)?.ownEvents ?? [])];
     },
 
     getMetadata(sessionId) {

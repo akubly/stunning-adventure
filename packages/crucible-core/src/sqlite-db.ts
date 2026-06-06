@@ -1,4 +1,5 @@
-import Database from 'better-sqlite3';
+import { createRequire } from 'node:module';
+import type Database from 'better-sqlite3';
 import type { InMemoryDB } from './in-memory-db.js';
 import { SCHEMA_V1_SQL } from './schema.js';
 import type { Primitive } from './types.js';
@@ -20,7 +21,8 @@ import type { Primitive } from './types.js';
  *   - InMemoryDB extensions (sync): insertRootSession, pushEvent, getOwnEvents, getMetadata, clear
  */
 export function createSQLiteDB(path: ':memory:' | string): InMemoryDB {
-  const db = new Database(path);
+  const DatabaseCtor = createRequire(import.meta.url)('better-sqlite3') as typeof Database;
+  const db = new DatabaseCtor(path);
 
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
