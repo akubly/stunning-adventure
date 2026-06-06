@@ -1,642 +1,3 @@
-# Squad Decisions
-
-## Open Decisions (Current Session)
-
-### 2026-06-02: M2 Cycle-2 Doc Alignment (Gabriel)
-
-**Author:** Gabriel (Infrastructure)  
-**Date:** 2026-06-02T00:16Z  
-**PR:** #44 (branch squad/m2-forge-mcp-bash-hooks)  
-**Commit:** bacb3f4
-
-Cycle-2 review (APPROVE_WITH_NITS) confirmed all three cycle-1 code fixes are correct. Two doc-drift nits addressed: (1) SKILL.md pattern #7 replaced — the original taught the two-pass sed approach that cycle-1 rejected as buggy; the updated pattern now shows the `_remove_block` bash state-machine that was actually shipped, with a new Anti-Pattern entry documenting the specific sequencing failure mode (blank-line pass consumes MARKER_START, orphaning the block body) and the byte-identical roundtrip acceptance criterion. (2) README uninstall description updated from "using sed (GNU/BSD)" to "pure-bash line-by-line filter (no sed dependency; identical behavior on Linux, macOS, and Git Bash on Windows)". Both changes are doc-only; no code or behavior changed. M2 is now review-complete and ready to merge.
-
----
-
-### 2026-06-02: M2 Cycle-1 Fixes (Gabriel)
-
-**Author:** Gabriel (Infrastructure)  
-**Date:** 2026-06-01T00:00Z  
-**PR:** #44 (branch squad/m2-forge-mcp-bash-hooks)  
-**Commit:** e7ef8f3
-
-## Findings addressed
-
-### F1 — BLOCKING — uninstall.sh two-pass sed
-
-**Root cause:** The first sed pass consumed MARKER_START when it appeared immediately after a blank line (the two patterns match the same region). This made the second range-delete pass a no-op — block body and MARKER_END stayed in the file. Subsequent install runs appended a new block on top of the orphan.
-
-**Fix:** Replaced both sed passes with a single bash state-machine loop. Buffers blank lines one-deep; suppresses the separator blank only when MARKER_START immediately follows.
-
-**Verification:** install → uninstall → byte-identical (cycle 1 and cycle 2) against a synthetic bashrc with existing content, ran via Git Bash.
-
-### F2 — IMPORTANT — shell-init.sh: npm root -g on foreground path
-
-**Root cause:** `_forge_mcp_resolve_script` was called before the `&` so the 150ms–1s+ `npm root -g` shell-out blocked every new interactive session.
-
-**Fix:** Moved both resolution and `node` execution into the background subshell (`( ... ) &>/dev/null &`). Subshell inherits `_forge_mcp_resolve_script` (bash forks copy parent functions). Shell startup path is now a single `( ) &` with no blocking work.
-
-### F3 — MEDIUM — shell-init.sh: pkg_json dirname depth
-
-**Root cause:** Two `dirname` calls landed in `dist/` (no package.json there). Path: `dist/hooks/sessionStart.js` → `dist/hooks` → `dist`.
-
-**Fix:** Three `dirname` calls reach the package root: `dist/hooks` → `dist` → `skillsmith-runtime`. `forge_mcp_check` now prints `version: 0.1.0`. Verified against the actual `packages/skillsmith-runtime/package.json`.
-
----
-
-## Build / test status
-
-- `npm run build` — ✅ clean
-- `npm test` — ✅ 49/49 passing
-
-## Files changed
-
-- `.github/hooks/cairn/uninstall.sh` — replaced two-pass sed with bash loop
-- `.github/hooks/cairn/shell-init.sh` — background resolution (F2) + pkg_json depth (F3)
-
----
-
-### 2026-05-31: Decision Drop: M1 Hint Consumption MCP Tools (Roger)
-
-**Author:** Roger (Platform Dev)  
-**Date:** 2026-05-31T19:04:59Z  
-**Issue:** #39  
-**PR:** #40  
-
----
-
-## Context
-
-Forge produces `optimization_hints` in the cairn DB but there was no way for Aaron to see or act on them from Copilot. `get_status` mentioned "N new suggestions" but the content was invisible. This PR closes that gap.
-
----
-
-## Final Tool Surfaces
-
-### `list_optimization_hints`
-
-**Kind:** Read-only MCP tool  
-**Inputs:**
-
-| Field | Type | Default | Notes |
-|-------|------|---------|-------|
-| `status` | enum (pending/accepted/applied/rejected/deferred/expired/suppressed/failed) | — | Omit to return active hints (pending+accepted+deferred) |
-| `skill_id` | string | — | Optional filter by skill |
-| `limit` | integer 1–100 | 20 | Max hints returned |
-
-**Output fields per hint:** `id`, `skill_id`, `source`, `category`, `summary`, `recommendation`, `impact_score`, `confidence_level` (high/medium/emerging), `status`, `created_at`, `resolution_note`  
-**Envelope:** `{ count, active_count, hints[] }`
-
----
-
-### `resolve_optimization_hint`
-
-**Kind:** Mutating MCP tool  
-**Inputs:**
-
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| `hint_id` | string | ✅ | Hint ID from `list_optimization_hints` |
-| `resolution` | `resolved` \| `dismissed` | ✅ | `resolved` = manually addressed; `dismissed` = not acting on it |
-| `note` | string | — | Optional reason |
-
-**Output:** `{ hint_id, resolution, status, resolution_note, already_resolved, message }`  
-**Idempotent:** Yes — if hint is already in a terminal state, returns current state with `already_resolved: true` and no error.  
-**Internal mapping:** Both dispositions transition to `rejected` status; `resolution` field and `resolution_note` preserve user intent.
-
----
-
-## Schema / Migration
-
-**Migration 017** (`packages/cairn/src/db/migrations/017-hint-resolution-note.ts`)
-
-- Adds `resolution_note TEXT` column to `optimization_hints`  
-- **Version:** 17 (bumped from 16)  
-- **Guarded:** Checks `sqlite_master` for table existence before ALTER (partial-schema test DB safety)  
-- **Idempotent:** Uses `PRAGMA table_info` to skip if column already exists  
-- **Timestamp convention:** No new timestamp column needed; existing `applied_at` pattern is sufficient
-
----
-
-## New DB Helper
-
-`resolveOptimizationHint(db, id, resolution, note?)` in `optimizationHints.ts`
-
-- Explicit `db: Database.Database` injection (per project convention)
-- New types: `HintResolution = 'resolved' | 'dismissed'`, `ResolveHintResult`
-- `OptimizationHintRow` extended with `resolutionNote: string | null`
-- Wraps in `db.transaction().immediate()` for atomicity
-
----
-
-## Test Counts
-
-| | Count |
-|---|---|
-| Before (cairn suite) | 693 |
-| Added (hintMcp.test.ts) | +15 |
-| **After** | **708** |
-
-New tests cover: list backing logic, resolveOptimizationHint DB helper, migration 017 schema check.  
-Four other test files updated: version assertion 16 → 17 (db, discovery, migration012, prescriptions).
-
----
-
-## Build / Test Status
-
-- `npm run build` — ✅ green  
-- `npm test --workspace=@akubly/cairn` — ✅ 708/708 passing
-### 2026-05-31: M7-A — Typed Error Hierarchy for applyFeedback / applyFeedbackById (Edgar)
-
-**Author:** Edgar (Learning Systems Specialist)  
-**Date:** 2026-05-31  
-**Branch:** `eureka/m7-a-typed-errors`  
-**Status:** SHIPPED (PR #38 opened)
-
-**Decision:** Introduce a typed error class hierarchy in `packages/eureka/src/activities/errors.ts`, replacing all six generic `throw new Error/TypeError/RangeError(...)` sites in `applyFeedback` and `applyFeedbackById` with domain-specific typed subclasses.
-
-**Error classes introduced:**
-- `FactNotFoundError` (extends `Error`) — FactReader returns `null`
-- `InvalidFeedbackOptionsError` (extends `Error`) — `correctionDelta` undefined for `user_correction`
-- `InvalidTrustValueError` (extends `RangeError`) — value non-finite/out-of-range
-- `FactReaderContractError` (extends `TypeError`) — FactReader returns `undefined`
-- `UnhandledFeedbackEventError` (extends `TypeError`) — exhaustive `switch` `never` branch
-
-**Discriminator pattern:** Every class carries `readonly code: '<CODE>'` for narrowing without `instanceof`.
-
-**Canonical narrowing policy (M7-A Cycle 1):** Use `err.code === '...'` as the **primary** discriminator. `instanceof` is convenience-only — it can fail across ESM realms. `code` is realm-safe. M7-B narrowing tests will exercise `code` exclusively.
-
-**Rationale:** (1) Caller narrowing — generic throws are indistinguishable. (2) Zero behavior change — all 40 existing tests pass without modification. (3) M7-B prep — `code` discriminators are the primary hook for exhaustive narrowing. (4) Message preservation. (5) `Object.setPrototypeOf` defensive call in constructors.
-
-**Open Follow-ups:**
-- M7-B: Exhaustive instanceof + code narrowing tests (Laura)
-- M7-C: Real FactReader contract test; atomicity contract design (Crispin/Edgar)
-- M7-D: `applyFeedbackById` user_correction regression locks (Laura)
-
-**Files Changed:**
-- `packages/eureka/src/activities/errors.ts` — NEW (5 typed error classes)
-- `packages/eureka/src/activities/recall.ts` — updated imports, throw sites, JSDoc @throws
-- `packages/eureka/src/index.ts` — barrel exports for all 5 error classes
-
----
-
-### 2026-05-31: Eureka M7-A Review Cycle — 3-Cycle Closure (Edgar, Correctness, Skeptic, Craft, Compliance)
-
-**Date:** 2026-05-31  
-**Branch:** `eureka/m7-a-typed-errors`  
-**PR:** #38  
-**Status:** REVIEW-COMPLETE. Ready for ship decision.
-
-**Summary:** M7-A underwent a 3-cycle review process with a rotating 4-person panel (Correctness, Skeptic, Craft, Compliance). Each cycle ran independent reviews; findings were triaged and acted upon, followed by re-review to confirm closure. All 40 tests remained green throughout.
-
-| Cycle | Findings | Breakdown | Disposition | Commits |
-|-------|----------|-----------|-------------|---------|
-| **Cycle 1** | 13 total | 1 Blocking, 5 Important, 7 Minor | 11 ACCEPT, 2 REJECT-defer | 09710dc |
-| **Cycle 2** | 3 total | 0 Blocking, 1 Important, 2 Minor | 3 ACCEPT, 0 REJECT | 6563ca3, 927a508 |
-| **Cycle 3** | — | (lightweight fix-only, no re-review) | — | — |
-
-**Cycle 1 Findings (11 ACCEPT, 2 REJECT):**
-- **F1 [Correctness] ACCEPT:** Added `readonly event: string` field to `UnhandledFeedbackEventError`.
-- **F2 [Skeptic] ACCEPT:** Declared canonical narrowing policy: `err.code === '...'` as primary discriminator; secondary: `instanceof`.
-- **F3 [Skeptic] REJECT-defer:** Base class `EurekaError` deferred to M7-B (narrowing tests phase).
-- **F4 [Skeptic] ACCEPT:** Documented `.name` behavior change with explicit acknowledgment.
-- **F5 [Compliance] ACCEPT:** Added missing `@throws` entries for `applyFeedbackById`.
-- **F6 [Craft] ACCEPT:** Clarified `Object.setPrototypeOf` rationale comment (defensive for ES5 bundlers).
-- **F7 [Craft] ACCEPT:** Removed redundant `as const` on readonly discriminators.
-- **F8 [Craft] ACCEPT:** Documented open signature on `InvalidFeedbackOptionsError` constructor.
-- **F9 [Craft] ACCEPT:** Merged duplicate `@throws {InvalidTrustValueError}` entries.
-- **F10 [Craft] ACCEPT:** Reordered `@throws` to match runtime check sequence.
-- **F11 [Craft] ACCEPT:** Added TODO comment for M7-B: purpose-specific `InvalidDeltaValueError`.
-- **F12 [Skeptic] ACCEPT:** Updated "dual-pkg" comment to reflect ESM-only reality.
-- **F13 [Correctness] REJECT:** JSON serialization edge case flagged for information only.
-
-**Cycle 2 Findings (3 ACCEPT, 0 REJECT):**
-- **F14 [Craft/Documentation] ACCEPT:** Corrected `@throws` order inversion from Cycle 1 F10 (FactReaderContractError before FactNotFoundError).
-- **F15 [Craft] ACCEPT:** Consolidated `Object.setPrototypeOf` rationale to file header (DRY).
-- **F16 [Craft] ACCEPT:** Replaced non-idiomatic "open signature" phrasing with clearer language.
-
-**Files Changed (Cycles 1+2):**
-- `packages/eureka/src/activities/errors.ts` — All 5 error classes + comments
-- `packages/eureka/src/activities/recall.ts` — All throw sites + JSDoc
-- `.squad/decisions.md` — Canonical narrowing policy line
-
-**Test Result:** 40/40 passing throughout all cycles. Build clean.
-
----
-
-### 2026-05-30: Coordinator Spawn Prompt — Gitignore Path Policy (Graham)
-
-**Author:** Graham (Lead)  
-**Date:** 2026-05-30  
-**Trigger:** PR #34 Copilot review threads 8, 9, 10 — gitignore violations  
-**Status:** Resolved (commit daf5f28 + concurrent cleanup in 4d4378b)
-
-**Decision:** The Coordinator's spawn prompt to Scribe **must not** list `.squad/orchestration-log/`, `.squad/log/`, or any other gitignored runtime-state path as an allowed write path.
-
-**Allowed Scribe-write paths (exhaustive list):**
-- `.squad/decisions.md`
-- `.squad/decisions-archive.md`
-- `.squad/agents/{name}/history.md`
-- `.squad/agents/{name}/history-archive.md`
-- `.squad/identity/now.md`
-
-**Explicitly prohibited (gitignored runtime state):**
-- `.squad/orchestration-log/` — agent orchestration logs
-- `.squad/log/` — session summary logs
-- `.squad/decisions/inbox/` — transient decision queue (consumed by Scribe, not committed)
-- `.squad/sessions/` — session data
-- `.squad/.scratch/` — scratch space
-
-**Context:** In the M5+M6 review cycle (PR #34), spawn instructions to Scribe incorrectly listed `log/` and `orchestration-log/` as committed paths. Scribe committed 35 files across these directories, all covered by `.gitignore` lines 49-52. This is a coordinator error — Scribe followed instructions correctly.
-
-**Remediation Applied:**
-- `git rm -r --cached .squad/orchestration-log/ .squad/log/` — untracked 34 + 1 files
-- `git rm test_results.txt` — removed local junk artifact
-- `.gitignore` updated for `test_results.txt`
-
-**Action Required:** Coordinator (Graham) — Update Scribe spawn prompt template to enforce allowed-paths list and add note that runtime-state directories are never committed.
-
----
-
-
-### 2026-05-31: M7-B + M7-D Complete (Laura)
-
-**Author:** Laura (Tester)  
-**Date:** 2026-05-31  
-**Branch:** `eureka/m7-bd-narrowing-regression`  
-**Status:** COMPLETE — local branch, awaiting Aaron's ship decision
-
-#### M7-B — Exhaustive error narrowing tests
-**File:** `packages/eureka/src/activities/__tests__/feedback-error-narrowing.test.ts`  
-**Tests:** 14 new tests across 6 groups
-
-Proves the realm-safe narrowing contract for all 5 error classes in `errors.ts`:
-- Group 1 (5 tests): Code-based narrowing (primary) — code, fields, message, name per class
-- Group 2 (1 test): Exhaustive code-discriminator switch — canonical caller pattern
-- Group 3 (3 tests): Inheritance preservation — instanceof (realm-convenience, documented)
-- Group 4 (3 tests): source discrimination on InvalidTrustValueError — 'input' × 2, 'storage' × 1
-- Group 5 (1 test): InvalidFeedbackOptionsError.field discriminator
-- Group 6 (1 test): UnhandledFeedbackEventError runtime-cast path
-
-#### M7-D — applyFeedbackById user_correction regression locks
-**File:** `packages/eureka/src/activities/__tests__/feedback-by-id-regression.test.ts`  
-**Tests:** 8 new tests
-
-Locks the user_correction value-plumbing and error-ordering contracts.
-
-#### Test Counts
-| Baseline (pre-M7-B/D) | M7-B | M7-D | Total |
-|-----------------------|------|------|-------|
-| 40                    | 14   | 8    | **62** |
-
-All 62 pass. Build clean (tsc exits 0). No production code changes.
-
-#### Deferred Items Uncovered
-- **InvalidDeltaValueError purpose-specific class:** Currently `correctionDelta` non-finite path reuses `InvalidTrustValueError(source:'input')`. A TODO at recall.ts:325 flags this for M7-B follow-up — deferred, not blocking.
-- **M7-C atomicity contract:** Unchanged. Crispin/Edgar ownership.
-
-**Files Added (test files only):**
-- `packages/eureka/src/activities/__tests__/feedback-error-narrowing.test.ts` — NEW
-- `packages/eureka/src/activities/__tests__/feedback-by-id-regression.test.ts` — NEW
-
-**Files Modified:**
-- `.squad/agents/laura/history.md` — updated status, appended M7-B+M7-D learnings
-
----
-
-### 2026-05-31: Cycle 1 F7 Reversal — `as const` Restored (Edgar)
-
-**Date:** 2026-05-31  
-**Author:** Edgar (Learning Systems Specialist)  
-**PR:** #38 (`eureka/m7-a-typed-errors`)  
-**Branch:** `eureka/m7-a-typed-errors`  
-**Status:** CLOSED — F7 reversal committed
-
-#### What
-Reverted Cycle 1 F7 finding and all downstream documentation that propagated it. F7 had instructed switching discriminator declarations from:
-```typescript
-readonly code = 'FACT_NOT_FOUND' as const;
-```
-to:
-```typescript
-readonly code: 'FACT_NOT_FOUND' = 'FACT_NOT_FOUND';
-```
-
-Cycle 3 (commit f8f94c3) further propagated that preference into SKILL.md with explicit "Do not use `as const`" callouts. This revert restores `as const` form in both `errors.ts` (5 sites) and `SKILL.md`.
-
-#### Why
-The repo's ESLint config enforces **`@typescript-eslint/prefer-as-const` as an error**. The explicit-annotation form violates that rule — CI on Node 20 and Node 22 failed with 5 identical errors:
-```
-  42:18  error  Expected a `const` assertion instead of a literal type annotation  @typescript-eslint/prefer-as-const
-```
-
-The enforced lint rule is the **authoritative voice** on code style. The F7 Craft persona critique was reasonable stylistically but missed the enforced rule entirely. The `as const` form was correct all along.
-
-#### Lesson
-**Personas can have stylistic opinions; the repo's enforced lint config trumps them.** Before accepting any Code Panel finding that changes code form/style, cross-check it against the repo's actual ESLint/TypeScript config. A finding that produces a lint violation is automatically incorrect, regardless of how reasonable it sounds.
-
----
-
-### 2026-05-31: Aaron's M7-C Direction Decision (Atomicity Contract)
-
-**Decision Owner:** Aaron (Lead)  
-**Date:** 2026-05-31  
-**Session:** M7 continuation (M7-B + M7-D landed; M7-C in flight)  
-**Status:** DIRECTION LOCKED — mutate callback pattern selected
-
-#### The Question
-How should `applyFeedbackById` address the non-atomic read-then-write sequence in FactReader → Trust Math → TrustUpdater? Three options were evaluated:
-
-**(a) Caller-side serialization:** Caller wraps `applyFeedbackById` in a lock/mutex before calling.  
-**(b) CAS token:** Return a token from read, require token in write; abort if token stale.  
-**(c) Mutate callback:** Push read-modify-write logic into seam; receive callback that performs write inside read lock.
-
-#### Decision
-**Aaron selected option (c) — mutate callback pattern.**
-
-#### Rationale
-Pushing read-modify-write into the seam (FactReader/TrustUpdater boundary) keeps the activity layer pure and makes correctness a storage-layer property. This is the most maintainable pattern:
-- Activity layer doesn't need to know about atomicity concerns
-- Storage layer becomes the source of truth for atomic compound operations
-- Callback captures the exact semantics ("given current trust, apply this delta")
-- No leaky abstractions — caller doesn't need to understand serialization
-
-#### Implementation Status
-- Crispin (FactReader Specialist): Implementing mutate callback interface in FactReader
-- Edgar (Learning Systems Specialist): Integrating callback into applyFeedbackById call site
-- Tracking branch: `eureka/m7-c-atomicity`
-
-#### Next Coordination
-Scribe will log completion once Edgar and Crispin finish. Coordinator will spawn verification when both agents report COMPLETE.
-
----
-
-### 2026-05-31: M7-C Complete — Edgar (TrustUpdater.mutate atomicity)
-
-**Author:** Edgar (Learning Systems Specialist)
-**Date:** 2026-05-31
-**Branch:** `eureka/m7-c-atomicity`
-**Status:** COMPLETE — PR #41
-
-**Contract shape:**
-```ts
-export interface TrustUpdater {
-  mutate(args: {
-    factId: string;
-    sessionId: SessionId;
-    fn: (currentTrust: number) => number;
-  }): Promise<void>;
-}
-```
-
-**Atomicity guarantee:** The storage implementation MUST execute read, fn-application, and write as a single atomic operation per (sessionId, factId) pair. Storage MUST scope state by (sessionId, factId); a mutate on one sessionId MUST NOT affect another. If `fn` throws, write is aborted. If `fn` returns non-finite or out-of-range [0,1], storage MUST throw `InvalidTrustValueError(source:'storage')`. Variant B: `currentTrust` removed from `ApplyFeedbackOptions`; `applyFeedbackById` is a zero-logic thin wrapper.
-
-**Test count delta:** 62 → 69 (+7 contract tests, C-1..C-7). All green.
-
-**Breaking API changes:** `TrustUpdater.update` → `TrustUpdater.mutate`; `ApplyFeedbackOptions.currentTrust` removed; `ApplyFeedbackByIdDeps.factReader` removed.
-
----
-
-### 2026-05-31: M7-C Complete — Crispin (InMemoryFactReader + contract suite)
-
-**Author:** Crispin (Knowledge Representation Specialist)
-**Date:** 2026-05-31
-**Branch:** `eureka/m7-c-factreader` (merged into `eureka/m7-c-atomicity` via PR #41)
-**Status:** COMPLETE
-
-**Decision:** In-memory FactReader (option i). No SQLite — Eureka has no persistence layer yet; SQLite deferred to M8-storage when FactStore.search() schema is locked.
-
-**Implementation:** `packages/eureka/src/storage/fact-reader.ts` — `InMemoryFactReader` backed by `Map<factId, Array<{trust, sessionId}>>`. Session-scoped; trust passthrough (NaN returned as-is; validation is caller's job).
-
-**Contract test pattern:** `runFactReaderContract(implName, makeHarness)` — shared helper in `fact-reader.contract.test.ts`. Invariants: CL-1 read existing fact, CL-2 read missing → null, CL-3 session isolation, CL-4 trust passthrough, CL-5 shape contract. Adding a new impl requires one `runFactReaderContract(...)` call — zero test duplication.
-
-**Test count delta:** 62 → 67 (+5 contract tests).
-
-**Rationale for in-memory choice:** No DB idiom exists in Eureka; introducing SQLite pre-FactStore schema would be premature. The contract suite is designed so SQLite wires in trivially in M8+ by passing a factory to `runFactReaderContract`.
-
----
-
-## Eureka M5+M6 Review Cycle
-
-### 2026-05-30: M5+M6 Branch Preparation (Graham)
-
-**Author:** Graham  
-**Date:** 2026-05-30  
-**Status:** Complete  
-**Branch:** `eureka/m5-m6-trust-feedback`
-
-After the M5+M6 RED→GREEN cascade, a working-tree loss incident occurred during branch creation. The sequence `git switch -c <feature>` → `git switch main` → `git reset --hard origin/main` wiped tracked modifications, leaving only untracked files. Recovery was performed via faithful reimplementation from test contracts (`recall-feedback.test.ts`).
-
-**Correct sequence going forward:** Commit implementation on feature branch BEFORE switching back to main to reset, or use `git stash`.
-
-**Final state:**
-- Branch created at commit ac8c845
-- 29/29 tests green, build clean
-- Two-commit structure: implementation+tests+spec (commit A) + team metadata (commit B)
-- main branch reset to origin/main at ef06238 (clean, no force-push)
-
----
-
-### 2026-05-30: M6 RED — user_correction Contract Lock + Read-Seam (Laura)
-
-**Author:** Laura (Tester)  
-**Date:** 2026-05-30  
-**Beat:** M6 RED — two sub-beats: M6-A (user_correction contract) + M6-B (FactReader read-seam)
-
-**Test counts:** 22 existing → 26 GREEN + 3 RED (29 total)
-
-#### M6-A: user_correction Contract
-
-M6-A1–A4 are regression locks on arithmetic already implemented in M5 (mild §55 deviation — implementation preceded contract). M6-A5 is the true RED: missing `correctionDelta` when `event='user_correction'` must throw.
-
-**Fixtures verified:**
-- M6-A1: 0.50 + 0.30 → 0.80 (no clamp)
-- M6-A2: 0.80 + 0.30 → 1.00 (ceiling clamp)
-- M6-A3: 0.50 - 0.30 → 0.20 (no clamp)
-- M6-A4: 0.20 - 0.30 → 0.00 (floor clamp)
-
-**M6-A5 contract:** `correctionDelta` is REQUIRED when `event='user_correction'`. Omitting it is a programming error; activity must throw rather than silently apply 0-delta.
-
-#### M6-B: Read-Seam (FactReader)
-
-**Shape decision:** New `applyFeedbackById` function (higher-level orchestrator) rather than extending `applyFeedback`.
-
-**FactReader interface:**
-```typescript
-interface FactReader {
-  read(args: { factId: string; sessionId: SessionId }): Promise<{ trust: number } | null>;
-}
-```
-
-Rationale: Returns object (not bare number) to leave room for future fields without signature change. Null means fact not found.
-
-**applyFeedbackById tests:**
-- M6-B1 (happy path): FactReader returns `{ trust: 0.60 }`, corroboration → TrustUpdater called with 0.70
-- M6-B2 (null guard): FactReader returns `null` → activity throws, TrustUpdater NOT called
-
-**Edgar's implementation guidance (M6 GREEN):**
-1. Call `deps.factReader.read({ factId, sessionId })`
-2. If null, throw (fact not found)
-3. Call `applyFeedback` with current trust from result
-4. All 29 tests (26 existing + 3 RED) must pass
-
----
-
-### 2026-05-30: M5+M6 Review Wave — Code Panel Findings (Edgar)
-
-**Author:** Edgar (Learning Systems Specialist)  
-**Date:** 2026-05-30  
-**Context:** 5-persona Code Panel review findings on M5+M6 (trust-feedback mutation)
-
-#### Finding Triage Summary
-
-| ID | Finding | Verdict | Key Details |
-|---|---------|---------|-------------|
-| F1 | Public API not exported | ACCEPT | Barrel-export `applyFeedback`, `applyFeedbackById`, `FeedbackEvent`, `TrustUpdater`, `FactReader` via `index.ts` |
-| F2 | TOCTOU in applyFeedbackById | ACCEPT (doc) | Non-atomic read-then-write. JSDoc `@concurrency` clause added. Deferred: M7-C (backend-side atomicity). |
-| F3 | Unused `clock` dep | ACCEPT | Removed `clock: ClockProvider` from `ApplyFeedbackDeps` and `ApplyFeedbackByIdDeps`. Clock stays in `recallWithScores`. |
-| F4 | No exhaustiveness check | ACCEPT | Converted `applyFeedback` `if/else if/else` to exhaustive `switch` with `never` branch. |
-| F5 | Inline types break pattern | ACCEPT | Extracted all 4 interfaces: `ApplyFeedbackOptions`, `ApplyFeedbackDeps`, `ApplyFeedbackByIdOptions`, `ApplyFeedbackByIdDeps`. |
-| F6 | No input validation on currentTrust | ACCEPT | Added `RangeError` guard: `currentTrust` must be in [0,1]. Fires before `TrustUpdater.update()`. |
-| F7 | Stale comment | ACCEPT | Removed "Trust score updates..." bullet from `recallWithScores` JSDoc (already implemented). |
-| F11 | Incomplete @throws JSDoc | ACCEPT | Added `@throws` clauses covering propagated errors from `applyFeedback` and new `RangeError` guards. |
-| F12 | Stricter null/undefined guard | ACCEPT (combined with F6) | Changed to strict null checks; expanded guard contracts in spec. |
-
-**Changes made:**
-- `packages/eureka/src/activities/recall.ts`: F1-exports, F2-TOCTOU JSDoc, F3-clock removed, F4-switch exhaustive, F5-named interfaces, F6-input validation, F7-stale comment, F11-@throws
-- `packages/eureka/src/index.ts`: F1+F5 barrel-export additions (9 new exports)
-- `docs/eureka/sections/30-learning-systems.md` §2.3: F3-clock scope, F5-interface shapes, F6-guard contracts
-
-**Build/Test Status:** ✅ clean build, 29/29 tests passing
-
----
-
-### 2026-05-30: M5+M6 Review Wave — Code Panel Findings (Laura)
-
-**Author:** Laura (Tester)  
-**Date:** 2026-05-30  
-**Context:** Code Panel review findings on RED tests + implementation. Laura owns `recall-feedback.test.ts`.
-
-#### Finding Triage Summary
-
-| ID | Finding | Verdict | Action |
-|---|---------|---------|--------|
-| F8 | Idempotent boundary not pinned | ACCEPT | Added 2 tests: ceiling (currentTrust=1.0 → 1.0), floor (0.0 → 0.0) |
-| F9 | Float equality fragility | ACCEPT | Wrapped all 9 trust assertions in `expect.closeTo(value, 5)` |
-| F10 | Stale `±0.30` header comment | ACCEPT | Updated to actual formula: `min(1.0, max(0.0, trust + correctionDelta))` |
-| F-NEW-EXHAUSTIVE | Unknown event type TypeError | ACCEPT | Added regression lock for exhaustiveness guard |
-| F-NEW-RANGE | Input validation RangeError | ACCEPT | Added 4 regression locks (NaN, <0, >1 on currentTrust + delegation path) |
-| F-NEW-PROPAGATION | Missing correctionDelta via byId | ACCEPT | Added test: `applyFeedbackById` with missing delta propagates error |
-
-**Float precision decision (F9):** Chose `closeTo(value, 5)` over suggested 10. Reasoning:
-- 5 decimal digits (±0.000005) is strict enough to catch wrong delta calculations
-- IEEE-754 jitter for these operands is 1e-16 — well inside 1e-5 tolerance
-- 10 digits is overkill; 5 is defensible middle ground
-
-**Test count delta:** 29 → 37 (+8 tests). Target per brief: 36+. Achieved 37.
-
-**Clock coordination note (for Edgar):** All new tests retain `clock: fixedClock` pending Edgar's F3 commit (clock removal). Once F3 lands, drop clock from all 16 applyFeedback/applyFeedbackById call sites and remove `fixedClock` helper.
-
-**Validation:** `npm test --workspace=@akubly/eureka` → 37/37 passed
-
----
-
-### 2026-05-30: M5+M6 Cycle 2 Review Findings (Edgar)
-
-**Author:** Edgar (Learning Systems Specialist)  
-**Date:** 2026-05-30  
-**Branch:** eureka/m5-m6-trust-feedback  
-**Triggered by:** Review-cycle cycle 2 (Skeptic + Architect panels)
-
-#### Cycle 2 Findings
-
-| ID | Finding | Triage | Summary |
-|---|---------|--------|---------|
-| F-C2-1 | correctionDelta unvalidated for NaN/Infinity | ACCEPT | Added `RangeError` guard after `undefined` check, before trust math. Guards consistency with M5 `currentTrust` validation. |
-| F-C2-2 | @concurrency JSDoc overpromises | ACCEPT | Rewrote to present both options: (1) caller-side serialization (v1), (2) backend-side atomicity (deferred M7-C). Clarified M7-C scope. |
-| F-C2-3 | FactReader contract drift | ACCEPT (Option A) | Three-layer misalignment (interface vs impl vs spec). Chose strict null: interface `Promise<{trust:number}\|null>`, guard `fact === null`, spec updated. |
-
-**Build/Test Status:** ✅ clean build, 37/37 tests passing
-
-**Coordination notes for Laura:**
-- Suggest adding `correctionDelta` NaN guard test (low priority, can land with current wave)
-- F-C2-3 impact on Laura's tests: zero — all existing null tests use `mockResolvedValue(null)`
-
----
-
-### 2026-05-30: M5+M6 Cycle 2 Changes (Laura)
-
-**Author:** Laura (Tester)  
-**Date:** 2026-05-30  
-**Branch:** eureka/m5-m6-trust-feedback
-
-Cycle 2 review consensus identified stale `clock: fixedClock` injections carried through all feedback-path call sites after Edgar removed `ClockProvider` from `ApplyFeedbackDeps` / `ApplyFeedbackByIdDeps` in cycle 1. Test dir excluded from tsc, so excess-property checking never fired.
-
-**Changes (recall-feedback.test.ts only):**
-- `applyFeedback` call sites cleaned: 15
-- `applyFeedbackById` call sites cleaned: 4
-- `fixedClock` const removed: yes
-- `FIXED_NOW_MS` const removed: yes
-- Block comment updated: clock now scoped to recall/recallWithScores only, NOT feedback path
-
-**Validation:** `npm test --workspace=@akubly/eureka` → 37/37 passed
-
----
-
-### 2026-05-30: M6 GREEN — correctionDelta Guard + FactReader (Edgar)
-
-**Author:** Edgar (Learning Systems Specialist)  
-**Date:** 2026-05-30  
-**Beat:** M6 GREEN  
-**Status:** LANDED — GREEN (29/29 tests pass, tsc clean, all 37/37 after Laura's wave)
-
-#### Test Count Delta
-
-| Suite | Before M6 | After M6 | Delta |
-|---|---|---|---|
-| `recall.test.ts` (M1–M4) | 18 | 18 | — |
-| `recall-feedback.test.ts` M5 (C1/C2) | 4 | 4 | — |
-| `recall-feedback.test.ts` M6-A1–A4 (regression locks) | 4 | 4 | — |
-| `recall-feedback.test.ts` M6-A5 (correctionDelta guard) | 0 RED | 1 GREEN | +1 |
-| `recall-feedback.test.ts` M6-B1–B2 (applyFeedbackById) | 0 RED | 2 GREEN | +2 |
-| **Total** | **26 (3 RED)** | **29 GREEN** | **+3** |
-
-#### Error Semantics Chosen
-
-**M6-A5 — Missing correctionDelta:**
-- Error: base `Error` (not typed)
-- Message: `'applyFeedback: correctionDelta is required when event is user_correction'`
-- Placement: top of function, before event-branch switch
-- Rationale: Input-validation concern; guards before any side effects
-
-**M6-B2 — FactReader returns null:**
-- Error: base `Error`
-- Message: `'applyFeedbackById: fact not found — factId=<factId>'`
-- Guarantee: `trustUpdater.update` NOT called
-- Future refinement (M7): typed error narrowing (e.g., `FactNotFoundError`)
-
-#### Implementation Pattern: Delegation Over Modification
-
-`applyFeedbackById` delegates to `applyFeedback` after reading:
-```typescript
-const factData = await factReader.read({ factId, sessionId });
-if (factData === null) throw new Error(...);
-await applyFeedback({ factId, sessionId, event, currentTrust: factData.trust, correctionDelta }, { trustUpdater });
-```
-
-Keeps `applyFeedback` purely unit-testable; orchestration stays in `applyFeedbackById`. Consistent with "orchestrator over modifier" pattern.
-
-#### Named Next RED Targets (M7)
-
-| Name | Description | Priority |
-|---|---|---|
-| M7-A | null-fact error contract | High |
-| M7-B | typed error narrowing (missing correctionDelta) | Medium |
-| M7-C | FactReader contract test (real Crispin impl) | Medium |
-| M7-D | applyFeedbackById user_correction path | Low |
-
----
-
 ### 2026-05-29: M4 RED — ClockProvider Seam Contract (Laura)
 
 **Author:** Laura (Tester)  
@@ -2306,3 +1667,932 @@ Net -1: merged the two migration schema `it()` tests (one for 017, one for 018) 
 - `packages/cairn/src/__tests__/discovery.test.ts` — version 18 → 17
 - `packages/cairn/src/__tests__/migration012.test.ts` — version 18 → 17 (2 assertions)
 - `packages/cairn/src/__tests__/prescriptions.test.ts` — version 18 → 17
+
+# Gabriel M2 Cycle 3 Design Drop
+
+**Author:** Gabriel Knight (Infrastructure)  
+**Date:** 2026-06-02  
+**Requested by:** Aaron (akubly)  
+**Scope:** PR #44 Copilot cloud-review cycle 3
+
+## Bucket A — shell-init resolver parity
+
+Investigation confirmed `curate.ps1` resolves `sessionStart` in this order:
+1. `~/.cairn/hook/sessionStart.mjs` user override.
+2. Global npm `@akubly/skillsmith-runtime/dist/hooks/sessionStart.js`.
+3. Global npm `@akubly/cairn/dist/hooks/sessionStart.js` fallback.
+4. Repo checkout `packages/skillsmith-runtime/dist/hooks/sessionStart.js`.
+5. Repo checkout `packages/cairn/dist/hooks/sessionStart.js` fallback.
+6. Repo checkout `dist/hooks/sessionStart.js` legacy cairn fallback.
+
+`shell-init.sh` already had 1, 2, 3, and 4, but not the repo checkout cairn fallbacks (5, 6). I will preserve skillsmith-runtime priority and add the two cairn fallback candidates after the repo runtime candidate, with a comment documenting exact parity with `curate.ps1`.
+
+## Bucket B — README disposition
+
+Node prerequisite will change from Node.js >=18 to >=20. Root `package.json`, `packages/cairn/package.json`, and `packages/eureka/package.json` declare Node >=20; `@akubly/skillsmith-runtime` depends on `@akubly/cairn`, so installs require Node 20 in practice.
+
+For zsh, I choose option (i): scope the documentation to bash-only and remove the aspirational zsh support claim. Alternative (ii) would add zsh self-location via `${(%):-%N}`, but the hook's canonical install path and smoke validation are bash/Git Bash, and honest support scope is safer than cross-shell claims I cannot fully verify in this cycle.
+
+The resolution-order table will become the single source of truth matching the updated resolver.
+
+## Bucket C — mechanical cleanup
+
+No design decision needed. This is a one-byte Scribe artifact cleanup with explicit coordinator authorization for Gabriel to touch Graham's history in this cycle.
+
+## Bucket D — archive policy disposition
+
+I choose option (a): consolidate date-stamped archives into the canonical archive files and remove the date-stamped files. The policy in `.squad/decisions.md` explicitly allows only `.squad/decisions-archive.md` and `.squad/agents/{name}/history-archive.md`; date-stamped files were a Scribe chunking artifact, not a deliberate policy change. Single canonical archives are easier to reason about and avoid long-term file proliferation.
+
+Required Scribe behavior change: future archiving should append to canonical archive files only, never create date-stamped archives. I will note this in the closeout drop for Scribe/coordinator follow-up.
+
+# Gabriel M2 Cycle 3 Shipped
+
+**Author:** Gabriel Knight (Infrastructure)  
+**Date:** 2026-06-02  
+**Requested by:** Aaron (akubly)  
+**PR:** #44  
+**Branch:** `squad/m2-forge-mcp-bash-hooks`  
+**New HEAD:** `962a3a224b3bd8e9349e2abe618bed0c69eda2fc`
+
+## Verification
+
+- `npm run build` — clean
+- `npm test` — clean
+- Git Bash smoke: `source .github/hooks/cairn/shell-init.sh; forge_mcp_check` — clean, resolved repo `@akubly/skillsmith-runtime` hook and package version `0.1.0`
+- Branch pushed: `24454a7..962a3a224b3bd8e9349e2abe618bed0c69eda2fc`
+
+## Per-bucket dispositions
+
+### Bucket A — CODE FIX
+
+Addressed in `b16a4851a27e6ff467e13ba54c708e1df6604c6e` (`Align bash hook resolution fallbacks`).
+
+`_forge_mcp_resolve_script` now matches `curate.ps1` fallback parity:
+1. user override
+2. global `@akubly/skillsmith-runtime`
+3. global `@akubly/cairn`
+4. repo `packages/skillsmith-runtime`
+5. repo `packages/cairn`
+6. repo `dist/hooks`
+
+Fixed Git Bash smoke-check behavior by converting package paths through `cygpath` and passing the path via `process.argv[1]` instead of interpolating it into a JavaScript string literal.
+
+### Bucket B — DOC FIX
+
+Addressed in `c831e64a3121abc2f28148ed041820f4a5a243e3` (`Correct bash hook documentation`).
+
+README now documents Node.js >=20, the exact six-step resolution order, and bash/Git Bash as the supported shell boundary. Chose the bash-only documentation path over zsh compatibility because the current hook relies on bash-specific `${BASH_SOURCE[0]}` for repo-checkout fallback resolution; honest support scope is safer than aspirational zsh support.
+
+### Bucket C — TINY CLEANUP
+
+Addressed in `19f35e91b1a6b9d8559c732028e660a7b637ce83` (`Remove Graham history control character`).
+
+Removed the stray ESC/control byte from Graham's Eureka branch note and updated the archive pointer to the canonical archive file.
+
+### Bucket D — META/POLICY
+
+Addressed in `a5f1e1731c70abf3e58d78b3cf57d90905848c49` (`Consolidate dated squad archives`).
+
+Consolidated date-stamped decision and history archives into the canonical files allowed by `.squad/decisions.md` and deleted the date-stamped archive files. Chose consolidation over policy expansion because the documented Scribe-write allowlist is intentionally exhaustive and single canonical archives avoid policy drift/file proliferation.
+
+Follow-up for Scribe/coordinator: future archive behavior should append to `.squad/decisions-archive.md` and `.squad/agents/{name}/history-archive.md` only, not create date-stamped archive files.
+
+
+### Persona-review follow-up
+
+Addressed in `962a3a224b3bd8e9349e2abe618bed0c69eda2fc` (`Address cycle 3 persona review findings`).
+
+Updated the shell-install skill resolver pattern, README local-build troubleshooting and cairn fallback notes, `forge_mcp_check` fallback warning, and archive cleanup details. Re-ran `npm run build`, `npm test`, and Git Bash `forge_mcp_check` clean after the follow-up.
+
+## Thread to SHA map
+
+| Thread ID | Disposition | Commit |
+|---|---|---|
+| `PRRT_kwDORy1V9M6GVym2` | Addressed — bash resolver now mirrors `curate.ps1` repo checkout fallbacks | `b16a4851a27e6ff467e13ba54c708e1df6604c6e` |
+| `PRRT_kwDORy1V9M6GpxXF` | Addressed — README prerequisite changed to Node.js >=20 | `c831e64a3121abc2f28148ed041820f4a5a243e3` |
+| `PRRT_kwDORy1V9M6GVynv` | Addressed — same Node.js >=20 README fix | `c831e64a3121abc2f28148ed041820f4a5a243e3` |
+| `PRRT_kwDORy1V9M6GVynO` | Addressed — README resolver table updated to match implementation | `c831e64a3121abc2f28148ed041820f4a5a243e3` |
+| `PRRT_kwDORy1V9M6GVynd` | Addressed — zsh support claim removed; bash/Git Bash support boundary documented | `c831e64a3121abc2f28148ed041820f4a5a243e3` |
+| `PRRT_kwDORy1V9M6GpxX1` | Addressed — same shell compatibility documentation fix | `c831e64a3121abc2f28148ed041820f4a5a243e3` |
+| `PRRT_kwDORy1V9M6GpxXf` | Addressed — removed Graham history ESC/control byte | `19f35e91b1a6b9d8559c732028e660a7b637ce83` |
+| `PRRT_kwDORy1V9M6GpxXr` | Addressed — consolidated dated archives into canonical archive files and removed dated files | `a5f1e1731c70abf3e58d78b3cf57d90905848c49` |
+
+## History
+
+Gabriel history updated through `962a3a224b3bd8e9349e2abe618bed0c69eda2fc` with cycle-3 summary, persona-review follow-up, and verification state.
+
+# Gabriel M2 Cycle 4 Design Drop
+
+**Author:** Gabriel Knight (Infrastructure)  
+**Date:** 2026-06-02  
+**Requested by:** Aaron (akubly)  
+**Scope:** PR #44 Copilot cloud-review cycle 4 — `PRRT_kwDORy1V9M6GqI4o`
+
+## Investigation
+
+Confirmed the finding. `packages/cairn/src/hooks/sessionStart.ts` implements `runSessionStartHook()` by asynchronously reading `process.stdin` until EOF, returning early when the payload is empty, parsing JSON otherwise, and then deriving repo/workdir context from `hookData.cwd` or `process.cwd()`. `packages/skillsmith-runtime/src/hooks/sessionStart.ts` calls the same Cairn `runSessionStartHook()` wrapper with prescriber orchestration attached.
+
+`curate.ps1` is a Copilot hook wrapper, not an interactive-shell wrapper. It reads its own stdin with `OpenStandardInput().ReadToEnd()`, exits immediately if the hook payload is empty, and otherwise pipes that original hook JSON into `node $script`. That means PowerShell never launches Node against an inherited interactive TTY.
+
+The bash shell-init wrapper currently launches `node "$script"` from an interactive shell with no stdin redirection or payload. Because stdin is the terminal, `runSessionStartHook()` waits for EOF indefinitely. Result: one leaked background Node process per sourced interactive session, and the hook never reaches session-start logic.
+
+## Fix shape
+
+I choose a variant of option (iii): mirror the PowerShell contract by piping a JSON payload into Node, but synthesize the minimal shell-init payload because no Copilot hook JSON exists in an interactive shell startup. The payload will be:
+
+```json
+{"toolName":"shellInit"}
+```
+
+`cwd` is included explicitly so repo/workdir attribution does not depend on an inherited Node process cwd. On Git Bash, `$PWD` is converted through `cygpath -w` before JSON encoding so Node child-process `cwd` receives a native Windows path. The JSON is generated with `node -e` to avoid unsafe shell string interpolation. This avoids `/dev/null` no-op behavior and preserves the intended session-start execution rather than merely stopping the leak.
+
+Rejected alternatives:
+- Redirecting stdin from `/dev/null` would stop the leak, but `runSessionStartHook()` would take the empty-payload no-op branch, so the hook would still never run.
+- Piping `{}` would work today because `toolName` is not used at runtime, but including `toolName: shellInit` and `cwd` better matches the declared `HookInput` shape and keeps repo/workdir attribution deterministic.
+
+## Verification plan
+
+- `npm run build`
+- `npm test`
+- Git Bash smoke: source `shell-init.sh`, run `forge_mcp_check`
+- Required process-leak smoke: record Node PIDs before sourcing, source the hook in a new Git Bash interactive shell, wait, then compare Node PIDs immediately and again after 5 seconds. Expected: no new persistent Node PIDs.
+
+# Gabriel M2 Cycle 4 Shipped
+
+**Author:** Gabriel Knight (Infrastructure)  
+**Date:** 2026-06-02  
+**Requested by:** Aaron (akubly)  
+**PR:** #44  
+**Branch:** `squad/m2-forge-mcp-bash-hooks`  
+**New HEAD:** `1e68a789ed314a17a6bdb012bc78bfc2755b0794`
+
+## Disposition
+
+Thread `PRRT_kwDORy1V9M6GqI4o` is addressed in `ac524c3bdc138c25a73e5b2caf7a6ad579194ef4` (`Fix shell init stdin leak`).
+
+Root cause confirmed: both `@akubly/cairn` and `@akubly/skillsmith-runtime` enter `runSessionStartHook()`, which reads `process.stdin` until EOF and returns early on empty input. The interactive bash hook launched `node "$script"` with stdin inherited from the terminal, so Node waited indefinitely and leaked a background process.
+
+Fix shape: pipe finite JSON with an explicit cwd into the Node hook:
+
+```bash
+node -e 'process.stdout.write(JSON.stringify({ toolName: "shellInit", cwd: process.argv[1] }) + "\n")' "$payload_cwd" | node "$script"
+```
+
+This mirrors the PowerShell wrapper's contract of providing finite hook JSON to Node, while adding explicit `cwd` so repo/workdir attribution is deterministic. Git Bash paths are converted with `cygpath -w` before JSON encoding.
+
+## Verification
+
+- `npm run build` — clean
+- `npm test` — clean
+- Git Bash `source .github/hooks/cairn/shell-init.sh; forge_mcp_check` — clean, resolved repo `@akubly/skillsmith-runtime` hook and package version `0.1.0`
+- Process-leak smoke — clean:
+  - Before sourcing: captured existing Node PID set
+  - After sourcing + 1 second: no new Node PIDs remained
+  - After 5 seconds: no new Node PIDs remained
+
+## Thread to SHA map
+
+| Thread ID | Disposition | Commit |
+|---|---|---|
+| `PRRT_kwDORy1V9M6GqI4o` | Addressed — shell init now pipes finite JSON with explicit cwd to Node so stdin reaches EOF and the hook executes/exits | `ac524c3bdc138c25a73e5b2caf7a6ad579194ef4` |
+
+## History
+
+Gabriel history updated in `1e68a789ed314a17a6bdb012bc78bfc2755b0794` with cycle-4 root cause, fix rationale, and verification state.
+
+# Gabriel M2 Cycle 5 Design Drop
+
+**Author:** Gabriel Knight (Infrastructure)  
+**Date:** 2026-06-02  
+**Requested by:** Aaron (akubly)  
+**Scope:** PR #44 Copilot cloud-review cycle 5
+
+## Investigation
+
+### Thread PRRT_kwDORy1V9M6GqaVI — shell-init execution mode
+
+Confirmed `shell-init.sh` is source-only but has a shebang and top-level `return` statements. Direct execution currently reaches the non-interactive guard and produces bash's generic `return: can only 'return' from a function or sourced script` failure. I will add the standard source-detection idiom immediately after the header comments and before any top-level `return`:
+
+```bash
+(return 0 2>/dev/null) || { echo "shell-init.sh must be sourced, not executed: source $0" >&2; exit 1; }
+```
+
+This keeps sourced behavior unchanged and gives direct execution a clear exit-1 error.
+
+### Thread PRRT_kwDORy1V9M6GqaVx — uninstall temp file
+
+Confirmed `uninstall.sh` writes to a fixed adjacent temp path `${file}.forge-mcp-bak`. I will switch to an adjacent `mktemp "${file}.forge-mcp-bak.XXXXXX"` path and install an EXIT/INT/TERM cleanup trap. This satisfies the robustness request while avoiding system temp directories; the temp file stays beside the target rc file.
+
+### Threads PRRT_kwDORy1V9M6GqaWS / PRRT_kwDORy1V9M6GqaWx — inbox references
+
+Tracked `.squad` files containing `decision inbox path pattern` before cleanup:
+
+- `.squad/agents/alexander/charter.md` — 1 occurrence(s)
+- `.squad/agents/alexander/history.md` — 4 occurrence(s)
+- `.squad/agents/cassima/charter.md` — 2 occurrence(s)
+- `.squad/agents/cassima/history-archive.md` — 11 occurrence(s)
+- `.squad/agents/crispin/history-archive.md` — 3 occurrence(s)
+- `.squad/agents/edgar/history-archive.md` — 5 occurrence(s)
+- `.squad/agents/edgar/history.md` — 1 occurrence(s)
+- `.squad/agents/erasmus/charter.md` — 1 occurrence(s)
+- `.squad/agents/gabriel/charter.md` — 1 occurrence(s)
+- `.squad/agents/gabriel/history-archive.md` — 8 occurrence(s)
+- `.squad/agents/genesta/history-archive.md` — 4 occurrence(s)
+- `.squad/agents/graham/charter.md` — 1 occurrence(s)
+- `.squad/agents/graham/history-archive.md` — 1 occurrence(s)
+- `.squad/agents/laura/charter.md` — 1 occurrence(s)
+- `.squad/agents/laura/history-archive.md` — 6 occurrence(s)
+- `.squad/agents/laura/history.md` — 15 occurrence(s)
+- `.squad/agents/ralph/charter.md` — 1 occurrence(s)
+- `.squad/agents/roger/charter.md` — 1 occurrence(s)
+- `.squad/agents/roger/history-archive.md` — 7 occurrence(s)
+- `.squad/agents/roger/history.md` — 6 occurrence(s)
+- `.squad/agents/rosella/charter.md` — 1 occurrence(s)
+- `.squad/agents/rosella/history-archive.md` — 3 occurrence(s)
+- `.squad/agents/rosella/history.md` — 5 occurrence(s)
+- `.squad/agents/scribe/charter.md` — 1 occurrence(s)
+- `.squad/agents/sonny/history.md` — 3 occurrence(s)
+- `.squad/agents/valanice/charter.md` — 1 occurrence(s)
+- `.squad/agents/valanice/history-archive.md` — 4 occurrence(s)
+- `.squad/agents/valanice/history.md` — 8 occurrence(s)
+- `.squad/charter.md` — 1 occurrence(s)
+- `.squad/copilot-instructions.md` — 1 occurrence(s)
+- `.squad/decisions-archive.md` — 7 occurrence(s)
+- `.squad/decisions.md` — 25 occurrence(s)
+- `.squad/decisions/archive/archive-2026-04-25-and-earlier.md` — 15 occurrence(s)
+- `.squad/decisions/decisions.md` — 1 occurrence(s)
+- `.squad/decisions/eureka-prd-v4-final.md` — 2 occurrence(s)
+- `.squad/fact-checker-charter.md` — 1 occurrence(s)
+- `.squad/log/2026-05-27T20-47-27-crucible-tdd-strategy.md` — 1 occurrence(s)
+- `.squad/orchestration-log.md` — 1 occurrence(s)
+- `.squad/orchestration-log/2026-05-24T2133Z-alexander.md` — 1 occurrence(s)
+- `.squad/orchestration-log/2026-05-24T2133Z-erasmus.md` — 1 occurrence(s)
+- `.squad/orchestration-log/2026-05-24T2133Z-gabriel.md` — 1 occurrence(s)
+- `.squad/orchestration-log/2026-05-24T2133Z-graham.md` — 1 occurrence(s)
+- `.squad/orchestration-log/2026-05-24T2133Z-laura.md` — 1 occurrence(s)
+- `.squad/orchestration-log/2026-05-24T2133Z-roger.md` — 1 occurrence(s)
+- `.squad/orchestration-log/2026-05-24T2133Z-rosella.md` — 1 occurrence(s)
+- `.squad/orchestration-log/2026-05-24T2133Z-sonny.md` — 2 occurrence(s)
+- `.squad/orchestration-log/2026-05-24T2133Z-valanice.md` — 1 occurrence(s)
+- `.squad/orchestration-log/2026-05-25T0030Z-scribe-phase-ab-flush.md` — 1 occurrence(s)
+- `.squad/orchestration-log/2026-05-27T000000Z-laura-q1-option-e-validation.md` — 1 occurrence(s)
+- `.squad/orchestration-log/2026-05-27T000001Z-laura-q1-refinement-validation.md` — 1 occurrence(s)
+- `.squad/orchestration-log/2026-05-27T055556Z-alexander-eureka-runtime.md` — 1 occurrence(s)
+- `.squad/orchestration-log/2026-05-27T055556Z-erasmus-two-harnesses.md` — 1 occurrence(s)
+- `.squad/orchestration-log/2026-05-27T055556Z-graham-eureka-overlap.md` — 1 occurrence(s)
+- `.squad/orchestration-log/2026-05-27T055556Z-roger-eureka-data.md` — 1 occurrence(s)
+- `.squad/orchestration-log/2026-05-27T055556Z-valanice-eureka-ux.md` — 1 occurrence(s)
+- `.squad/orchestration-log/2026-05-27T070746Z-erasmus.md` — 1 occurrence(s)
+- `.squad/orchestration-log/2026-05-27T20-47-27-laura.md` — 3 occurrence(s)
+- `.squad/orchestration-log/2026-05-28T18-05-15Z-coordinator-ctd-r2-resolutions.md` — 1 occurrence(s)
+- `.squad/scribe-charter.md` — 3 occurrence(s)
+- `.squad/skills/composition-root-pattern/SKILL.md` — 1 occurrence(s)
+- `.squad/skills/cross-package-type-promotion/SKILL.md` — 1 occurrence(s)
+- `.squad/skills/cross-prd-overlap-analysis/SKILL.md` — 1 occurrence(s)
+- `.squad/skills/doc-references-respect-gitignore/SKILL.md` — 9 occurrence(s)
+- `.squad/skills/london-school-green-beat/SKILL.md` — 1 occurrence(s)
+- `.squad/skills/trust-mutation-green-beat/SKILL.md` — 2 occurrence(s)
+- `.squad/templates/charter.md` — 1 occurrence(s)
+- `.squad/templates/copilot-instructions.md` — 1 occurrence(s)
+- `.squad/templates/fact-checker-charter.md` — 1 occurrence(s)
+- `.squad/templates/scribe-charter.md` — 3 occurrence(s)
+- `.squad/templates/skills/agent-collaboration/SKILL.md` — 1 occurrence(s)
+- `.squad/templates/skills/architectural-proposals/SKILL.md` — 1 occurrence(s)
+- `.squad/templates/skills/distributed-mesh/SKILL.md` — 3 occurrence(s)
+- `.squad/templates/skills/init-mode/SKILL.md` — 1 occurrence(s)
+- `.squad/templates/skills/release-process/SKILL.md` — 1 occurrence(s)
+- `.squad/templates/skills/secret-handling/SKILL.md` — 5 occurrence(s)
+- `.squad/templates/skills/squad-conventions/SKILL.md` — 1 occurrence(s)
+- `.squad/templates/squad.agent.md` — 6 occurrence(s)
+- `.squad/templates/squad.agent.md.template` — 6 occurrence(s)
+
+The pattern is broader than the two flagged archive lines. To satisfy the requested verification (`grep -rn 'decision inbox path pattern' .squad/ --include='*.md'` returns nothing for tracked docs), I will sweep committed `.squad` markdown and replace concrete/gitignored inbox path strings with path-free wording (`decision inbox drop ...`) or committed-location descriptions where local context is obvious. This is doc hygiene only; no Scribe behavior code changes in this cycle.
+
+## Scribe behavior follow-up
+
+The closeout will note that Scribe should strip or rewrite inbox paths when merging drops into committed docs, not preserve local-only path references.
+
+## Verification plan
+
+- `npm run build`
+- `npm test`
+- `bash .github/hooks/cairn/shell-init.sh` returns friendly source-only error and exit code 1
+- Git Bash source smoke: `source .github/hooks/cairn/shell-init.sh; forge_mcp_check`
+- Install/uninstall roundtrip using project-local scratch HOME/BASH_RC_PATH: byte-identical rc file and no leftover `.forge-mcp-bak*`
+- Tracked grep: `git grep -n 'decision inbox path pattern' -- .squad` returns no matches
+
+# Gabriel M2 Cycle 5 Shipped
+
+**Author:** Gabriel Knight (Infrastructure)  
+**Date:** 2026-06-02  
+**Requested by:** Aaron (akubly)  
+**PR:** #44  
+**Branch:** `squad/m2-forge-mcp-bash-hooks`  
+**New HEAD:** `5b2dbb0a9f90f20cb9602f212ffbd81d8367474e`
+
+## Disposition
+
+### Shell script fixes
+
+Addressed in `94a66fb98eba84f73e20094674a537182ee19a29` (`Harden bash hook script entrypoints`).
+
+- `shell-init.sh` now explicitly rejects direct execution with a friendly source-only error and exit code 1 before any top-level `return` can run.
+- `uninstall.sh` now uses an adjacent `mktemp` path (`${file}.forge-mcp-bak.XXXXXX`) plus EXIT/INT/TERM cleanup trap instead of a fixed temp path.
+
+### Documentation hygiene sweep
+
+Addressed in `05bc54e982c4dda987aec1c28ebb629a0e4b26ab` (`Remove gitignored inbox path references`) , `591843aea8a4e3d1ce04786b67c73fe878c7d0b8` (`Address cycle 5 review findings`), and `7c9433ebbd81c9dfa27688c1895d519707d6d409` (`Finish cycle 5 inbox wording cleanup`), and `e5d929a0b4bd8cf4109c23ec7491b02cb0dd83ae` (`Clarify decision drop-box instructions`).
+
+Swept tracked `.squad` markdown for references to gitignored decision inbox paths and replaced them with path-free decision-drop wording. The two flagged `decisions-archive.md` ranges now cite path-free decision-drop descriptions instead of local-only paths; review follow-up removed remaining broken `./inbox` links and ambiguous drop-box wording, including the remaining Scribe charter pseudo-path and active template pseudo-path instructions.
+
+## Verification
+
+- `npm run build` — clean
+- `npm test` — clean
+- Direct execution: `bash .github/hooks/cairn/shell-init.sh` prints `shell-init.sh must be sourced, not executed: source .github/hooks/cairn/shell-init.sh` and exits 1
+- Source smoke: Git Bash `source .github/hooks/cairn/shell-init.sh; forge_mcp_check` — clean, resolved repo `@akubly/skillsmith-runtime` hook and package version `0.1.0`
+- Install/uninstall roundtrip: project-local scratch rc file was byte-identical after `install.sh && uninstall.sh`; no `.forge-mcp-bak*` leftovers
+- Tracked grep for the exact slash-separated inbox path pattern under `.squad` → no tracked matches
+
+## Thread to SHA map
+
+| Thread ID | Disposition | Commit |
+|---|---|---|
+| `PRRT_kwDORy1V9M6GqaVI` | Addressed — source-only guard added to `shell-init.sh` | `94a66fb98eba84f73e20094674a537182ee19a29` |
+| `PRRT_kwDORy1V9M6GqaVx` | Addressed — fixed temp path replaced with adjacent `mktemp` plus cleanup trap, then trap scope hardened | `94a66fb98eba84f73e20094674a537182ee19a29`, `591843aea8a4e3d1ce04786b67c73fe878c7d0b8` |
+| `PRRT_kwDORy1V9M6GqaWS` | Addressed — gitignored inbox-path references removed from archive docs and remaining broken links swept | `05bc54e982c4dda987aec1c28ebb629a0e4b26ab`, `591843aea8a4e3d1ce04786b67c73fe878c7d0b8`, `7c9433ebbd81c9dfa27688c1895d519707d6d409`, `e5d929a0b4bd8cf4109c23ec7491b02cb0dd83ae` |
+| `PRRT_kwDORy1V9M6GqaWx` | Addressed — same `.squad` inbox-reference hygiene sweep and follow-up cleanup | `05bc54e982c4dda987aec1c28ebb629a0e4b26ab`, `591843aea8a4e3d1ce04786b67c73fe878c7d0b8`, `7c9433ebbd81c9dfa27688c1895d519707d6d409`, `e5d929a0b4bd8cf4109c23ec7491b02cb0dd83ae` |
+
+## Scribe behavior follow-up
+
+When Scribe merges decision inbox drops into committed decision/history/archive files, it should strip or rewrite any local-only inbox paths inside the body. Committed docs should cite merged sections or use path-free descriptions, not preserve gitignored working-drop paths.
+
+## History
+
+Gabriel history updated in `5b2dbb0a9f90f20cb9602f212ffbd81d8367474e` with cycle-5 dispositions and verification state.
+
+### 2026-06-05T10:57:00-07:00: M2 Cycle 6 targeted review fixes
+
+**Author:** Gabriel (Infrastructure)
+**PR:** #44
+
+## Carve-out understanding
+
+The gitignored-path rule still applies to committed back-references in archived prose. It does not apply to forward writer-target instructions where `.squad/decisions/inbox/{name}-{slug}.md` is the contract telling future agents where to write.
+
+## Original vs current wording
+
+1. `.squad/templates/squad.agent.md` structure list
+   - Original: `team.md, routing.md, ceremonies.md, decisions.md, decisions/inbox/, casting/, agents/, orchestration-log/, skills/, log/`
+   - Current: `team.md, routing.md, ceremonies.md, decisions.md, decision inbox , casting/, agents/, orchestration-log/, skills/, log/`
+   - Decision: restore `decisions/inbox/` because this is a future directory creation instruction.
+
+2. `.squad/templates/squad.agent.md` directive capture
+   - Original: `Write it immediately to .squad/decisions/inbox/copilot-directive-{timestamp}.md`
+   - Current: `Write it immediately as a decision inbox drop-box file named copilot-directive-{timestamp}.md`
+   - Decision: restore the explicit `.squad/decisions/inbox/` write target.
+
+3. `.squad/templates/squad.agent.md.template` structure list
+   - Original: `team.md, routing.md, ceremonies.md, decisions.md, decisions/inbox/, casting/, agents/, orchestration-log/, skills/, log/`
+   - Current: `team.md, routing.md, ceremonies.md, decisions.md, decision inbox , casting/, agents/, orchestration-log/, skills/, log/`
+   - Decision: restore `decisions/inbox/` because this is a future directory creation instruction.
+
+4. `.squad/templates/squad.agent.md.template` directive capture
+   - Original: `Write it immediately to .squad/decisions/inbox/copilot-directive-{timestamp}.md`
+   - Current: `Write it immediately to decision inbox drop copilot-directive-{timestamp}.md`
+   - Decision: restore the explicit `.squad/decisions/inbox/` write target.
+
+5. `.squad/templates/skills/squad-conventions/SKILL.md` file structure
+   - Original: `.squad/decisions/inbox/ — Drop-box for parallel decision writes`
+   - Current: `decision inbox drop-box — Drop-box for parallel decision writes`
+   - Decision: restore `.squad/decisions/inbox/` because this is a forward team structure/write-target convention.
+
+6. `.squad/agents/roger/history.md` Round 7 write target
+   - Original before the sweep: `decisions/inbox/roger-triage-2026-05-25T0200Z.md`
+   - Current: `decision inbox roger-triage-2026-05-25T0200Z.md`
+   - Decision: restore as `.squad/decisions/inbox/roger-triage-2026-05-25T0200Z.md` to match Aaron's clarified writer-target carve-out.
+
+7. `.squad/agents/roger/history.md` Round 6 write target
+   - Original before the sweep: `decisions/inbox/roger-opens-4-and-5-2026-05-25T0130Z.md`
+   - Current: `decision inbox roger-opens-4-and-5-2026-05-25T0130Z.md`
+   - Decision: restore as `.squad/decisions/inbox/roger-opens-4-and-5-2026-05-25T0130Z.md` to match Aaron's clarified writer-target carve-out.
+
+## Non-doc code fix
+
+For `.github/hooks/cairn/shell-init.sh`, the source-only guard should print `${BASH_SOURCE[0]}` instead of `$0` so direct execution remediation names the hook script rather than the invoking shell.
+
+### 2026-06-05T10:57:00-07:00: M2 Cycle 6 shipped
+
+**Author:** Gabriel (Infrastructure)
+**PR:** #44
+**Commit:** 04f05555f44bb716deadeec48407b83cdd17f6ec
+
+## Thread to SHA map
+
+- `PRRT_kwDORy1V9M6Gq_vS` → `04f05555f44bb716deadeec48407b83cdd17f6ec`
+- `PRRT_kwDORy1V9M6Gq_v9` → `04f05555f44bb716deadeec48407b83cdd17f6ec`
+- `PRRT_kwDORy1V9M6Gq_wW` → `04f05555f44bb716deadeec48407b83cdd17f6ec`
+- `PRRT_kwDORy1V9M6Gq_wt` → `04f05555f44bb716deadeec48407b83cdd17f6ec`
+- `PRRT_kwDORy1V9M6Gq_xA` → `04f05555f44bb716deadeec48407b83cdd17f6ec`
+- `PRRT_kwDORy1V9M6Gq_xe` → `04f05555f44bb716deadeec48407b83cdd17f6ec`
+- `PRRT_kwDORy1V9M6Gq_yV` → `04f05555f44bb716deadeec48407b83cdd17f6ec`
+- `PRRT_kwDORy1V9M6Gq_yr` → `04f05555f44bb716deadeec48407b83cdd17f6ec`
+
+## Verification
+
+- `npm run build` — clean
+- `npm test` — clean
+- `bash .github/hooks/cairn/shell-init.sh` via Git Bash — exits 1 and prints `source .github/hooks/cairn/shell-init.sh`
+- `source .github/hooks/cairn/shell-init.sh; forge_mcp_check` via Git Bash — clean
+- Restored files contain forward writer-target `.squad/decisions/inbox/` paths
+- `.squad/decisions-archive.md` contains no `.squad/decisions/inbox/` back-references
+
+`PRRT_kwDORy1V9M6Gq_x1` is intentionally excluded because Aaron owns the PR-description meta thread.
+
+# Gabriel M2 polish shipped — 2026-06-05
+
+- Fix 1: `uninstall.sh` keeps `tmpfile` local inside `_remove_block`; verified install/uninstall leaves bashrc byte-identical with no `.forge-mcp-bak*` leftovers.
+- Fix 2: `decisions-archive.md` back-reference now describes the Phase 4 synthesis draft without citing the gitignored inbox path.
+- Fix 3: Graham history now points only at the canonical `history-archive.md`.
+- Fix 4: Gabriel archive now describes uninstall portability as the sed-free bash state machine.
+- Fix 5: README smoke-test output label changed from Expected to Example.
+
+# ADR: Forge M3 — Disposition Consumer Design
+
+**Date:** 2026-06-05  
+**Author:** Graham (Lead / Architect)  
+**Status:** Accepted  
+**Issue:** #42 — Wire forge prescriber to consume hint_state_transition resolution_disposition
+
+---
+
+## Context
+
+The Cairn MCP `resolve_optimization_hint` tool writes a `hint_state_transition` event with `resolution_disposition` ('resolved'|'dismissed') and `source: 'mcp'` when a Copilot agent acts on an optimization hint. Forge's prescriber must read these back to avoid re-surfacing dismissed hints and to weight up resolved ones — closing the dogfood feedback loop.
+
+---
+
+## Decision: Sibling `HintDispositionProvider` (Option A)
+
+### Options Considered
+
+**Option A — Sibling `HintDispositionProvider` interface (chosen)**  
+A new interface `HintDispositionProvider { getDispositions(skillId): Promise<DispositionSummary[]> }` lives in `@akubly/types`. The concrete `SqliteHintDispositionProvider` lives in `@akubly/cairn`. Forge imports the interface from `@akubly/types` only — never from cairn. Injected into `ForgePrescriberOrchestratorOptions` alongside the existing `provider?: ChangeVectorProvider`.
+
+- **Pro:** Strict SRP. Change vectors and dispositions are orthogonal signals (telemetry outcomes vs. user intent).  
+- **Pro:** Exactly mirrors the `ChangeVectorProvider` seam — no new pattern to learn.  
+- **Pro:** Independent fail-open; disposition failures don't affect vector enrichment.  
+- **Pro:** Independently testable; forge tests inject mock `HintDispositionProvider`.  
+- **Con:** One more interface in `@akubly/types` (minor overhead).
+
+**Option B — Extend `ChangeVectorProvider`**  
+Add optional `getDispositions?` method to the existing `ChangeVectorProvider` interface.
+
+- **Pro:** No new interface.  
+- **Con:** Violates SRP — conflates outcome telemetry with user-intent feedback.  
+- **Con:** Every `ChangeVectorProvider` implementer now has a second responsibility.  
+- **Con:** Changes a stable contract with multiple test fixtures depending on it.  
+- **Rejected.**
+
+---
+
+## Disposition Logic
+
+### `dismissed` (source='mcp')
+Suppress (filter out) all hints for the dismissed `(skillId, category)` pair on the **next** prescriber run.  
+Rationale: The user explicitly said "I don't want this category of hint." Re-surfacing it on the next run is noise.
+
+### `resolved` (source='mcp')
+Boost the confidence of hints for the resolved `(skillId, category)` pair by `RESOLVED_CONFIDENCE_BOOST = 1.2` (20%).  
+Rationale: The user acted on the hint — it was useful. Weight up similar hints to appear earlier.
+
+### `source != 'mcp'` gating rule  
+System-driven transitions (`source = 'system'`, or absent source) must NOT drive suppression or boosting. This is enforced at the provider layer: `SqliteHintDispositionProvider` filters `WHERE json_extract(payload, '$.source') = 'mcp'` before counting transitions. The forge-side `applyDispositions` function operates on already-filtered `DispositionSummary` objects and has no source field — the gating is the provider's responsibility.
+
+### `null`/absent disposition
+If `dispositionProvider` is not injected, or returns an empty array, `applyDispositions` is a no-op. Existing behavior is fully preserved (backward compatible).
+
+---
+
+## Fail-Open Guarantee
+
+`runForgePrescribers` wraps `getDispositions()` in a `try/catch`. A failing disposition provider logs a `[forge] HintDispositionProvider.getDispositions failed` warning and proceeds without disposition data — identical pattern to `ChangeVectorProvider`.
+
+---
+
+## Files Changed
+
+| File | Change |
+|------|--------|
+| `packages/types/src/index.ts` | +`DispositionSummary`, `HintDispositionProvider` interfaces |
+| `packages/cairn/src/db/sqliteHintDispositionProvider.ts` | New: concrete provider — queries event_log JOIN optimization_hints |
+| `packages/cairn/src/index.ts` | +export `SqliteHintDispositionProvider` |
+| `packages/cairn/src/__tests__/sqliteHintDispositionProvider.test.ts` | New: 9 unit tests |
+| `packages/forge/src/prescribers/utils.ts` | +`applyDispositions`, `RESOLVED_CONFIDENCE_BOOST` |
+| `packages/forge/src/prescribers/forgePrescriberOrchestrator.ts` | +`dispositionProvider?` option, fail-open fetch, apply |
+| `packages/forge/src/prescribers/forgePrescriberOrchestrator.test.ts` | +7 disposition tests |
+| `packages/skillsmith-runtime/src/runtime.ts` | Wire `SqliteHintDispositionProvider` in `executePrescriberRun` |
+
+---
+
+## Test Counts (after)
+
+| Package | Before | After |
+|---------|--------|-------|
+| cairn | 716 | 725 (+9) |
+| forge | 644 | 651 (+7) |
+| runtime-cli | 26 | 26 (unchanged) |
+| skillsmith-runtime | 49 | 49 (unchanged) |
+
+---
+
+## Open Questions / Deferreds
+
+- **Boost magnitude:** `RESOLVED_CONFIDENCE_BOOST = 1.2` is a flat 20%. A future beat could make this proportional to `resolvedCount` (more resolutions → stronger signal). Deferred to M3.1.
+- **Suppression decay:** Currently, dismissed hints are suppressed indefinitely (for all future prescriber runs). A future beat could add a TTL or "only suppress for N runs" — deferred.
+- **Per-hint vs per-category suppression:** The current design suppresses by category. A future beat could suppress by `(source, category)` for finer granularity — deferred.
+
+# M8 Slice A — FactReader Contract Audit
+
+**Author:** Laura (Tester)
+**Date:** 2026-06-01
+**Branch:** `eureka/m8-slice-a-sqlite-factreader`
+**Status:** COMPLETE — audit filed, CL-4 tightened, edge test file committed
+
+---
+
+## Purpose
+
+Audit CL-1 through CL-5 in `fact-reader.contract.test.ts` for SQLite-semantic
+completeness before Roger's `SqliteFactReader` impl is declared done. SQLite
+introduces real serialization/deserialization (NaN→NULL, WAL on-disk state,
+shared DB file for all sessions) that the in-memory impl trivially sidesteps.
+Each invariant below states whether it survives SQLite semantics unchanged, and
+if not, what was tightened.
+
+---
+
+## CL-1 — Happy Path: seeded fact is readable
+
+**Verdict: SURVIVES UNCHANGED.**
+
+The test seeds `trust=0.5` and asserts `{trust: 0.5}`. SQLite's `REAL` column
+stores IEEE 754 doubles; `0.5` is exactly representable and round-trips without
+rounding error. The SQL query `WHERE fact_id = ? AND session_id = ?` maps
+directly to the M8 schema's columns. No SQLite-specific failure mode here. The
+test will exercise the full INSERT→SELECT cycle once Roger's harness `seed`
+writes via raw SQL (or an internal method) and `reader.read()` queries the DB.
+
+---
+
+## CL-2 — Missing fact returns null (not undefined)
+
+**Verdict: SURVIVES UNCHANGED.**
+
+The test reads a factId that was never seeded and asserts `expect(result).toBeNull()`.
+For SQLite, a `SELECT` that matches zero rows returns no rows; the impl maps that
+to `null`. Vitest's `toBeNull()` is strict — it rejects `undefined`. The test
+will catch both "returns undefined" and "throws on miss" bugs. No special
+handling needed.
+
+---
+
+## CL-3 — Session isolation: wrong-session reads return null
+
+**Verdict: SURVIVES UNCHANGED — and is a STRONGER validator for SQLite than for InMemory.**
+
+The in-memory impl uses a `Map<factId, FactRecord[]>` scoped per-process; an
+off-by-one on session filtering is contained in the JS heap. For SQLite, both
+sessionA and sessionB share a **single DB file**. The `UNIQUE(fact_id,
+session_id)` constraint means `(factA, sessionA)` and `(factA, sessionB)` are
+distinct rows — but a SQL query that omits `AND session_id = ?` from the WHERE
+clause would silently return sessionA's row when sessionB asks for the same
+factId. CL-3 catches exactly that bug: seed under sessionA, read under sessionB
+→ must be null. This invariant is load-bearing for SQLite correctness and
+already covers the cross-session DB-sharing scenario without modification.
+
+---
+
+## CL-4 — NaN passthrough (trust corruption round-trip)
+
+**Verdict: TIGHTENED. Comment strengthened; test title updated.**
+
+**Finding:** CL-4 was silent on whether the harness `seed` function must write
+to the backing store before `read` is called. The test name was `"returns
+{trust: NaN} for a NaN-seeded fact — read layer does NOT validate"` — framed as
+a validation policy test, not a persistence test. For the in-memory impl, seed
+and read are both JS-heap operations and there is no serialization gap. For
+SQLite, this is the critical failure mode: SQLite has no NaN literal and stores
+`NULL` for NaN; `read` must re-hydrate `NULL → NaN`. A naive SQLite harness that
+caches the seed value in memory (bypassing the INSERT) would pass the old CL-4
+while allowing a real NULL-handling bug to ship silently.
+
+**Before:**
+
+```
+// CL-4 — Trust passthrough: corrupt value (NaN)
+//
+// Seed a fact with trust=NaN → read must return {trust: NaN}.
+// The read layer is NOT responsible for validating trust; that is the
+// caller's job (applyFeedbackById throws InvalidTrustValueError(source:'storage')).
+// Silently clamping or filtering at read time would hide storage corruption.
+
+it('CL-4: returns {trust: NaN} for a NaN-seeded fact — read layer does NOT validate', ...)
+```
+
+**After:**
+
+```
+// CL-4 — Trust passthrough: corrupt value (NaN)
+//
+// Seed a fact with trust=NaN → read must return {trust: NaN}.
+// The read layer is NOT responsible for validating trust; that is the
+// caller's job (applyFeedbackById throws InvalidTrustValueError(source:'storage')).
+// Silently clamping or filtering at read time would hide storage corruption.
+//
+// Storage round-trip requirement: the harness `seed` function MUST write
+// NaN to the backing store before `read` is called — not cache it in memory.
+// For SQLite implementations, NaN has no native literal and is stored as NULL;
+// `read` must re-hydrate NULL → NaN. This test is the primary regression lock
+// for that NaN→NULL→NaN conversion path. A seed implementation that bypasses
+// the backing store (e.g., caches in-memory) would let a silent conversion
+// bug slip through.
+
+it('CL-4: NaN trust round-trips through the storage write/read cycle — read layer does NOT validate', ...)
+```
+
+The assertion (`expect(Number.isNaN(result!.trust)).toBe(true)`) is already
+correct and catches both `null` and `0` returns. The change is to the comment
+and test name, which are now explicit contracts on `seed` semantics. The deeper
+NaN-through-disk regression lock lives in `DB-CL-1` (edges file).
+
+---
+
+## CL-5 — Result shape: numeric trust field
+
+**Verdict: SURVIVES UNCHANGED.**
+
+The test seeds `trust=0.75` and asserts `typeof result!.trust === 'number'`.
+SQLite's `REAL` column comes back as a JS `number` via `better-sqlite3`. Note:
+if CL-4's NULL→NaN path were broken (returning `null`), `typeof null` is
+`'object'`, which would also fail CL-5 — but CL-4 fires first and is the
+correct catch-point. No change needed to CL-5.
+
+---
+
+## Summary Table
+
+| Invariant | SQLite verdict | Action |
+|-----------|---------------|--------|
+| CL-1 | Survives unchanged | None |
+| CL-2 | Survives unchanged | None |
+| CL-3 | Survives unchanged (stronger validator) | None |
+| CL-4 | **Tightened** | Comment + title updated to require seed→store before read |
+| CL-5 | Survives unchanged | None |
+
+**4 of 5 invariants survive audit unchanged. 1 tightened (CL-4).**
+
+---
+
+## Rejection Trigger
+
+If Roger's `SqliteFactReader` ships with a `seed` function that caches NaN
+in memory rather than writing NULL to the DB, CL-4 will pass (false green) but
+DB-CL-1 will FAIL on the close/reopen cycle. That constitutes a contract
+violation. Reviewer protocol: REJECT Roger's PR and route the fix to a
+**different agent** (not Roger). Proposed: Crispin (owns the InMemory reference
+impl and understands the passthrough contract).
+
+---
+
+## Related files
+
+- `packages/eureka/src/storage/__tests__/fact-reader.contract.test.ts` — CL-4 tightened (this audit)
+- `packages/eureka/src/storage/__tests__/fact-reader-sqlite-edges.test.ts` — DB-CL-1 through DB-CL-5 (companion)
+
+# Laura — M8 Slice A Cycle-2 Audit
+
+**Author:** Laura (Tester)
+**Date:** 2026-06-02
+**Branch:** `eureka/m8-slice-a-sqlite-factreader`
+**PR:** #43
+**Verdict:** ✅ **ACCEPT**
+
+---
+
+## Summary
+
+All 9 mandatory checks pass. Roger's cycle-2 fixes are correct and no regressions were
+introduced. Two new edge tests (DB-CL-6 and DB-CL-7/M3) were added and committed.
+Test count increased from 84 → 86.
+
+---
+
+## Check Results
+
+### 1. Test Count — ✅ PASS
+
+```
+Tests  86 passed (86)   [was 84; +2 new edge tests added by this audit]
+Test Files  7 passed (7)
+```
+
+No regressions. All previous 84 tests remain green.
+
+### 2. Subpath Export Smoke Test (I6) — ✅ PASS
+
+- `packages/eureka/dist/sqlite/index.js` **exists** after `npm run build`.
+- Smoke script at repo root (`tmp-smoke.mjs`, deleted after run) output:
+  ```
+  function function function
+  ```
+  All three exports (`SqliteFactReader`, `openDatabase`, `applyMigrations`) resolve as
+  `function` from `@akubly/eureka/sqlite`.
+- Root path `@akubly/eureka` does **NOT** export `SqliteFactReader` — Node.js ESM raises:
+  ```
+  SyntaxError: The requested module '@akubly/eureka' does not provide an export named 'SqliteFactReader'
+  ```
+  Type leak is confirmed gone from the public surface.
+- **Note:** Smoke file had to be placed inside the repo root (`D:\git\mem\tmp-smoke.mjs`) rather
+  than `D:\tmp-smoke.mjs` as specified; ESM resolution walks from file location and `D:\` has no
+  workspace `node_modules`. File was deleted after successful run. This is a minor test-methodology
+  note, not a product defect.
+
+### 3. better-sqlite3 optionalDependencies (I6/M2) — ✅ PASS
+
+`packages/eureka/package.json` confirms:
+
+```json
+"dependencies": {
+  "@akubly/types": "*"
+},
+"optionalDependencies": {
+  "better-sqlite3": "^12.8.0"
+}
+```
+
+`better-sqlite3` is in `optionalDependencies`, NOT `dependencies`. ✅
+
+### 4. I5 Migration Race Verification — ✅ PASS
+
+**`src/db/schema.ts`:** Migration loop is wrapped in `db.transaction(() => { ... }).immediate()` —
+this is the better-sqlite3 API for `BEGIN IMMEDIATE`. The `.immediate()` at the end is the function
+CALL (equivalent to `txFn.immediate(args)`), not a method returning a new function. Verified by
+the fact that DB-CL-3 (idempotence) passes: migrations DO run inside the IMMEDIATE transaction.
+
+**`src/db/migrations/001-facts.ts`:** Confirmed `IF NOT EXISTS` on every DDL object:
+- `CREATE TABLE IF NOT EXISTS facts`
+- `CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts`
+- `CREATE TRIGGER IF NOT EXISTS facts_ai`
+- `CREATE TRIGGER IF NOT EXISTS facts_au`
+- `CREATE TRIGGER IF NOT EXISTS facts_ad`
+- `CREATE TABLE IF NOT EXISTS trust_history`
+
+**DB-CL-3** idempotence test: ✅ still passes.
+
+**DB-CL-6 (NEW):** Added `concurrent first-open race` test — two `Database` handles to the same
+file, `applyMigrations(db1)` then `applyMigrations(db2)`. Verified: no error thrown, `schema_version`
+has exactly one row with `version=1`. ✅ PASSES. Migration race fix is locked.
+
+### 5. I4 WAL Fallback Verification — ✅ PASS
+
+`src/db/openDatabase.ts` line 38–43:
+
+```typescript
+const walMode = db.pragma('journal_mode = WAL', { simple: true }) as string;
+if (walMode !== 'wal') {
+  process.stderr.write(
+    `[eureka] WAL mode not available (got '${walMode}'); database opened in ${walMode} journal mode\n`,
+  );
+}
+```
+
+- Return value is captured in `walMode`. ✅
+- Warn path uses `process.stderr.write(...)` — goes to **stderr**, not stdout. ✅
+  (MCP stdio rule: diagnostic output must not pollute stdout.)
+
+### 6. I1 busy_timeout — ✅ PASS
+
+`src/db/openDatabase.ts` line 44:
+
+```typescript
+db.pragma('busy_timeout = 5000');
+```
+
+Present immediately after the WAL pragma. ✅
+
+### 7. M3 Harness Seed (INSERT OR REPLACE) — ✅ PASS
+
+`fact-reader.contract.test.ts` line 197:
+
+```typescript
+'INSERT OR REPLACE INTO facts (fact_id, session_id, trust) VALUES (?, ?, ?)',
+```
+
+Confirmed. Comment reads: `// INSERT OR REPLACE matches InMemoryFactReader's upsert seed semantics (M3).`
+
+**DB-CL-7 (NEW):** Added seed-twice test — seeds same `(fact_id, session_id)` twice via
+`INSERT OR REPLACE`; second call must NOT throw; last value wins. ✅ PASSES.
+
+### 8. M4 Cleanup Wiring — ✅ PASS
+
+`fact-reader.contract.test.ts` lines 46–47 / 75–77:
+
+```typescript
+cleanup?: () => void;  // FactReaderHarness interface
+
+afterEach(() => {
+  harness?.cleanup?.();
+});
+```
+
+SQLite harness returns `cleanup: () => db.close()` (line 208). `afterEach` calls it. ✅
+No handle leaks.
+
+### 9. I2 Deferral Comment — ✅ PASS
+
+`src/db/migrations/001-facts.ts` lines 15–16:
+
+```sql
+-- NOTE: trust nullable + NULL=NaN sentinel. Slice B will lock writer discipline;
+-- see graham-m8-scope-proposal.md §5 Q1.
+```
+
+Comment is present adjacent to the `trust` column definition. ✅
+
+---
+
+## New Tests Added
+
+| Test ID | File | Description |
+|---------|------|-------------|
+| DB-CL-6 | `fact-reader-sqlite-edges.test.ts` | Concurrent first-open race: two handles + applyMigrations twice → schema_version=1, no error |
+| DB-CL-7 (M3) | `fact-reader-sqlite-edges.test.ts` | Seed-twice via INSERT OR REPLACE: must not throw, last value wins |
+
+Both committed on this branch. Test count: **84 → 86**.
+
+---
+
+## Known Follow-Ups (Non-Blocking)
+
+None opened this cycle. All cycle-1 findings that were in scope for cycle-2 are addressed.
+I2 (trust nullable / NaN sentinel) remains deferred to Slice B per Aaron's disposition —
+the comment in `001-facts.ts` is the tracking artifact.
+
+---
+
+## Verdict
+
+✅ **ACCEPT** — PR #43 is ready to merge. All 9 checks pass. No blocking failures.
+Two new regression-locking tests added (DB-CL-6, DB-CL-7). Baseline: **86/86 green**.
+
+# Roger M8 Slice A Decision Drop
+
+**Author:** Roger (Platform Dev)
+**Date:** 2026-06-02
+**Branch:** `eureka/m8-slice-a-sqlite-factreader`
+**Status:** COMPLETE
+
+---
+
+## Decisions Made
+
+### DB Path Default
+
+`~/.eureka/eureka.db` — per Aaron's Q3 approval. Implementation:
+`path.join(os.homedir(), '.eureka', 'eureka.db')` in `openDatabase.ts`.
+Parent directory created with `fs.mkdirSync(..., { recursive: true })` at open-time.
+
+### NaN Handling — Nullable Column (satisfies CL-4)
+
+**Resolution: nullable column, `NULL ↔ NaN` mapping at the JS layer.**
+
+The `trust` column in `facts` is declared `REAL` (nullable, no `NOT NULL`
+constraint), deviating from Graham's sketch which shows `REAL NOT NULL DEFAULT 0.5`.
+
+**Why:** CL-4 in the contract suite requires that a fact seeded with `NaN` trust
+round-trips as `{trust: NaN}` on read. SQLite has no NaN literal — if the column
+were `NOT NULL`, an INSERT of NaN would store `0.0` (IEEE 754 quiet NaN
+coerced to 0 by SQLite's type rules). The only correct round-trip path is
+`NULL ↔ NaN` as specified in Graham's §3 NaN handling note.
+
+Mapping in `SqliteFactReader.read`: `row.trust === null ? NaN : row.trust`.
+Mapping in test harness seed: `Number.isNaN(trust) ? null : trust`.
+
+### Schema Deviations from Graham's §3 Sketch
+
+| Column | Sketch | Actual | Reason |
+|--------|--------|--------|--------|
+| `trust` | `REAL NOT NULL DEFAULT 0.5` | `REAL` (nullable, no default) | CL-4 NaN round-trip requires NULL storage |
+
+All other table definitions, triggers, and `trust_history` scaffold match the
+§3 sketch verbatim.
+
+`trust_history` is scaffolded but no code writes to it in Slice A, per Aaron's
+Q1 approval. Writes come in Slice B.
+
+---
+
+## Test Count
+
+74 → 79 (+5 SqliteFactReader contract tests via `runFactReaderContract`).

@@ -1,368 +1,100 @@
-# Cassima — History (Summarized)
+# Agent History Archive — cassima
 
-## Core Context
-
-**Project:** Eureka — agentic brain/memory/learning system for `packages/eureka/`.
-**Role:** Product Manager. Ideate, draft, refine PRD. Synthesize review feedback, arbitration directives, architectural paths into coherent specifications.
-**Current status:** Eureka v5-final LOCKED — CANONICAL. R8 design cycle CLOSED.
+Archived entries (pre-summarization).
 
 ---
 
-## Key Design Decisions Locked
+---
 
-- **R5 arbitration:** Importance vs Trust (separate), Storage (stored column), Scope vs Temperature (two columns), Community detection (defer v2), pray semantics (split to rerank/contemplate/decide)
-- **R6 path:** Path D chosen — Eureka standalone but kernel-shaped; Cairn adopts learning modules later
-- **R7 lock:** v4-final canonical (555 lines); bidirectional adapter framework; confidence/trust orthogonality; 7-mechanism extraction-readiness
-- **R8 amendment:** SessionId brand unification; FR-13 "isolated by design" relaxation; shared `SessionId` in `@akubly/types`; bridge_ledger simplification
+## 📋 SUMMARY (as of 2026-05-31)
+
+**Role:** Product Manager (v1 framework)  
+**Current Focus:** Post-triage PRD refinement and team onboarding documentation  
+**Latest Work:** v1 PRD Round 9 revision; thesis-vs-scope tension resolved (solo-bootstrap + squad deferred); success bars split into Bar A (solo v1) + Bar B (squad integration T2+)  
+**Charter Note:** Manually edited by Aaron during PR #33 merge conflict resolution (2026-05-30); onboarding role finalized  
+**File Size Note:** 21KB
 
 ---
 
-## Recent Work
+📌 **Charter Manual Edit by Aaron** (2026-05-31T06:15:00Z): In PR #33 cloud-review-cycle round 1, Aaron manually edited cassima/charter.md as part of merge conflict resolution. Charter onboarding role finalized. — Scribe
 
-### 2026-05-25: R7 Lock-In — v4-final Revision #2 CANONICAL
-**Event:** Cassima rev#2. Resolved 4 blockers + 9 important findings from 8-reviewer panel (4 Squad domain + 4 persona-review Design Panel).
+# Cassima — History
 
-**Blockers resolved:**
-1. DecisionSource adapter mapping (verified packages/types/src/index.ts:47) ✅
-2. FR-14 Path 2 cadence, idempotency, dedup, initial trust ✅
-3. FR-7.4 ↔ FR-7.2 contradiction (bridge_ledger + offline CLI coexistence) ✅
-4. Security Threat Model (§14a added with attack vectors + mitigations) ✅
+Each round, append a 1-2 paragraph summary of what you contributed.
 
-**Status:** v4-final LOCKED — CANONICAL. R7 design cycle CLOSED. Implementation ready.
+---
 
-### 2026-05-26: R8 Amendment — v5-final (Session Identity Unification)
-**Event:** Aaron R8 reopen. Cairn `Session` and Eureka `kind=session` fact share one identifier (Copilot CLI session UUID) via shared `SessionId` brand.
+## Round 6 — Onboarding (2026-05-25)
 
-**Changes authored (617 lines total, +62 lines from v4-final):**
-1. SessionId brand definition in @akubly/types/src/session.ts (NEW)
-2. FR-13 amendment: "isolated by design" deleted; replaced with lens framing as normative guard
-3. FR-7.2 consistency pass: no-ATTACH rule preserved (type-level-only clarification)
-4. Bridge ledger simplification: cairn_session_id_hint? → session_id (required, not optional)
-5. §14a T-orphan reframing: "dangling cairn_session_id" → "stale session_id reference" (severity unchanged)
-6. FR-12 mechanism #8 (NEW): ESLint guardrail bans cross-system session-type imports except SessionId
-7. Glossary update: "linked via shared SessionId brand" (was "opaque cairn_session_id")
-8. §15 Lineage: Aaron R8 directive + Graham/Genesta/Crispin/Edgar R8 verdicts cited
+Hired into the Skillsmith Harness squad as PM after Aaron locked the v1 framework (MVP thesis-validation + capability tiers). Repo-mate of my Eureka residency in `d:\git\mem` — same person, same voice, distinct project. Waiting on the 9 authors' triage outputs before drafting the v1 PRD.
 
-**Judgment calls applied:**
-- Leaned on Crispin's KR model (edges reference fact.id; session_id is content field) over Edgar's "3-hop → 1-hop" phrasing
-- T6 row added to §14a per lock-review disposition (also in §13 per JC1 belt-and-suspenders)
-- SessionId ships v1 (FR-12 #8, cross-package boundary); Trust/Confidence brands stay v1.5 (single-package internals)
-- Defensive pessimism → honest design: v4-final "isolated by design" was white lie; Aaron's shared brand is honest + has explicit guardrails
 
-**Status:** v5-final authored. All 8 R8 enforcement items landed correctly.
+---
 
-### 2026-05-26: R8 Lock-Review — v5-final CANONICAL
-**Event:** Scribe ceremony. Graham/Genesta/Crispin/Edgar lock review.
+## Round 7 — v1 PRD draft (2026-05-25, resumed)
 
-**Panel verdicts (all unanimous LOCK):**
-- Graham (Architect): 8/8 enforcement items landed; no new concerns; surgical pass, no scope creep
-- Genesta (Storage): All 5 guardrails verified; lens framing normative; no drift detected
-- Crispin (KR): All 6 spec items verified; schema sound; confident in implementation readiness
-- Edgar (Learning): All precision-gain items verified; zero new risks; Path D preserved
-
-**Status:** ✅ R8 LOCKED — v5-final CANONICAL supersedes v4-final. R8 design cycle CLOSED. Implementation ready.
-
-### 2026-05-26: Cross-Project Impact Analysis — Crucible ↔ Eureka
-
-**Event:** Aaron requested cross-project product analysis. Sibling project Crucible (D:\git\harness) shipping v1 in parallel with Eureka. Both authored by Cassima-named PM agents (separate instances).
-
-**Analysis scope:**
-1. Scope overlap (mission, features, session model, decision storage)
-2. Dependency direction (Cairn/Forge ownership, shared packages)
-3. Shared packages / shared fate (`@akubly/types`, `cairn`, `forge`, `skillsmith-prescriber`)
-4. Resourcing (team overlap, Aaron's dogfood time)
-5. Strategic framing (Eureka as Crucible feature vs. standalone)
-
-**Key findings:**
-- **HIGH collision:** Both record "everything that happens" — Crucible via L1 WAL (replay-focused), Eureka via `facts` table (recall-focused). Session lifecycle and decision storage overlap significantly.
-- **Undeclared dependency:** Crucible PRD assumes Forge prescribers exist and will be "inherited" (§2.6, Appendix D), but file structure shows both repos have `packages/forge/`. Duplication risk or missing cross-repo dependency declaration.
-- **Bootstrap conflict:** Both v1s assume Aaron is sole dogfooder. Crucible v1 success bar = "build v2 with v1" (weeks/months). Eureka killer demos = multi-session codebase familiarization (2+ sessions). No sequencing plan.
-- **Team bottleneck:** Cassima and Graham are on both teams. Cross-project design decisions (session identity, prescriber ownership) require their time. If either project blocks, both wait.
-- **Shared `SessionId` is load-bearing:** Eureka v5 R8 amendment added `SessionId` brand to `@akubly/types`. Crucible depends on `@akubly/types` for plugin manifests. Shared identifier is intentional (lens framing) but coupling is not acknowledged in Crucible PRD.
-
-**Recommendations delivered:**
-1. **IMMEDIATE:** Resolve Cairn/Forge ownership (monorepo, git submodule, or npm packages). Current duplication is unsustainable.
-2. **IMMEDIATE:** Sequence Aaron's dogfood (Crucible-first, Eureka-first, or staggered). Cassima recommends: Crucible early → Eureka killer demos → Crucible bootstrap loop.
-3. **STRATEGIC:** Ship v1s separately; design Crucible → Eureka integration at v1.5. Eureka should consume Crucible WAL as learning source. Integration is architecturally obvious but operationally premature at v1.
-
-**Cassima's judgment:**
-- **Separate at v1, integrate at v1.5.** Crucible solves "record + replay"; Eureka solves "learn + recall". Both are valuable standalone. Integration requires dogfood data from both.
-- **De-scope Eureka US-7 "Squad Migration"** — Squad tooling should migrate to Crucible (operational), not Eureka (epistemological). Eureka learns *from* Squad sessions.
-- **Open question for Aaron:** Do you agree with "separate at v1, integrate at v1.5"? Or do you want Eureka built into Crucible from day one?
-
-**Deliverable:** `.squad/decisions/inbox/cassima-crucible-eureka-impact.md` (24.8KB, 8 sections, 3 top questions, 7 recommendations)
-
-**Status:** Analysis complete. Awaiting Aaron's direction on the 3 top questions before either v1 ships.
-
-### 2026-05-26: Revised Stance — Shared Substrate Reality
-
-**Event:** Aaron directive response. Three corrections to Cassima's cross-project impact analysis: (1) mem/ and harness/ are same repo, not separate (substrate already shared by topology, no extraction needed); (2) separate v1s confirmed (recommendation 5.1 was correct); (3) dogfood whenever ready (no sequential lock-in, overrides recommendation 4.2).
-
-**Analysis scope:**
-1. Roadmap adjustment — Does Eureka v1 plan change now that Crucible is a sibling consuming same Cairn/Forge/Types?
-2. Coordination cost — PM-level sync requirements, changelog conventions, who talks to whom and when?
-3. Dogfood timing risk — If Eureka ships first vs. second, what's the tradeoff? Which should it try to be?
-4. What does NOT change — Confirm what's off the table (stop worrying about non-problems).
-
-**Key findings:**
-- **Roadmap: v1 scope unchanged.** Eureka v5-final (617 lines, R8 LOCKED) remains canonical. All 4 user stories (US-1 through US-4) ship as designed. Crucible being a sibling changes Eureka's v1.5+ integration path (consumes Crucible WAL) but not v1 deliverables.
-- **Coordination: Schema freeze gates + async memos.** Graham is cross-project schema czar; locks SessionId brand, Cairn sessions table, Forge DecisionRecord before either implementation starts. No recurring syncs; substrate changes require Graham sign-off via `.squad/decisions/inbox/` memos. Genesta (Eureka) + Roger (Crucible) coordinate on DB migrations; Crispin (Eureka) + Alexander (Crucible) coordinate on dependency bumps.
-- **Dogfood timing: Cassima recommends Eureka SECOND.** If Crucible ships first, Eureka's US-1 trains on real Crucible session logs (higher fidelity). If Eureka ships first, it trains on Copilot CLI logs (ephemeral data). Crucible's v1 success bar is existential (months-long bootstrap loop); Eureka's is incremental (2-session validation). Parallel dogfood viable but higher-friction (context-switching tax, merge conflicts, tool-boundary confusion).
-- **Non-problems dissolved:** (1) Forge ownership crisis is moot (same repo = no duplication/drift); (2) Resourcing concern overstated (Cassima/Graham are gates, not bottlenecks); (3) "Is Eureka a Crucible feature?" answered (separate v1s, integrate v1.5+); (4) Bootstrap order delegated (whichever ships first gets dogfooded first).
-
-**Recommendations delivered:**
-1. **IMMEDIATE (this session):** Graham locks shared schema (SessionId, Cairn sessions, Forge DecisionRecord). Both projects block until freeze lands.
-2. **IMMEDIATE (this session):** Aaron picks Eureka dogfood timing (A: Crucible first [Cassima rec], B: Eureka first, C: parallel).
-3. **v1 scope (unchanged):** Eureka ships all 4 user stories per v5-final. Optional v1.5 seed: US-BRIDGE-1 stub ("ingest Crucible WAL" returns "not yet wired") — defer if time-constrained.
-4. **Coordination (low-overhead):** Async memos, not recurring syncs. Migration lockstep (Genesta + Roger coordinate .sql file order).
-5. **v1.5+ integration (not v1 scope):** Eureka consumes Crucible WAL at v1.5. Design after both v1s dogfood, not before.
-
-**Cassima's updated conviction:**
-- Earlier memo was 90% correct, 10% wrong. Got right: separate v1s, v1.5 integration, Cassima/Graham coordination. Got wrong: "extract to shared substrate repo" (Aaron: already same repo), "sequence dogfood Crucible-first" (Aaron: dogfood whenever ready).
-- Doubling down on: Eureka should ship SECOND (Crucible's bootstrap loop is existential; Eureka's demos are incremental; Crucible-first de-risks both).
-- New risks identified: merge conflicts in shared substrate (mitigated by schema freeze + separate branches), "which tool for X?" confusion during parallel dogfood (resolves at v1.5 integration).
-
-**Deliverable:** `.squad/decisions/inbox/cassima-shared-substrate-revision.md` (19.7KB, 8 sections, 2 immediate actions, revised stance)
-
-**Status:** Awaiting Aaron's 2 immediate decisions (schema freeze approval + dogfood timing call). Eureka v1 implementation blocks until schema freeze lands.
-
-### 2026-05-26: G4 Scope Analysis — Logged to Decisions + PM Recommendations Adopted
-
-### 2026-05-26T19:30:00-07:00: Shared-substrate revision round merged — Eureka v1 scope firm, G4 protocol critical for sprint 2, dogfood timing pending Aaron
+Picked up after the prior Cassima session was lost mid-stream. The cluster-walk discovery doc (cassima-prd-v1-discovery.md, 89KB, 783 lines) was intact and carried all 8 Aaron-facing cluster locks (A, B, C, D′, E′, F, G, H) plus Graham's Cluster I (10 architect-routed micros, 8 his calls + 2 confirmed by Aaron). Drafted `cassima-prd-v1-DRAFT.md` to the inbox: 9 sections, 55 T1 stories across 7 capability areas, 11–13 week T1 calendar, 3 named non-goals (single-agent, single-repo, Router-crash-mid-pause-requires-re-issue), explicit T2–T6 + Parking tiers with author attribution preserved.
 
 ## Learnings
 
-### 2026-05-27: PRD–Design Alignment Review Completed; Shared Substrate Ownership is v1 Implementation Blocker
+**What I carried from the prior session.** The discovery doc was the load-bearing artifact. All 9 clusters had structured `Concrete week-one narrative → Options table → My recommendation → Tradeoffs named → Cost summary → LOCKED` shape, so the PRD essentially writes itself from the lock blocks. The framing investment (Cluster A's strong-bounded read; the 3 explicit non-goals; the falsifiable bar's pass/fail criteria) is what makes §3 land — without that, T1 scope reads as a wishlist instead of a sized bet. Aaron's verbatim quotes are gold for §3 non-goals — quoting his Cluster B verbatim *"multi-agent is a critical part of my normal workflow"* makes the trade legible.
 
-**Session:** Tech design phase alignment validation (70-prd-alignment.md).
+**What worked about the cluster-walk approach.** Posing 8 Aaron-facing clusters one at a time, each with concrete week-one narratives + recommendation + tradeoffs + cost, produced an artifact where the PRD just has to *transcribe and organize*, not re-decide. Bundling small items (E′ 6-item bundle, F 4-item bundle, G 3-item bundle, H 5-item bundle) kept Aaron's decision count down to ~8 cluster-level calls instead of ~45 atomic questions. Routing Cluster I to Graham instead of Aaron preserved Aaron's attention for product-shape calls and let an architect handle architecture-shape calls. The 'I recommend X because Y' shape never hedges — Aaron accepted-as-recommended on most bundles, which is the signal the framing was tight.
 
-**Key findings:**
-1. **17/17 acceptance criteria covered.** All US-1…US-6 ACs addressed in design sections; US-7 appropriately deferred to v1.5+.
-2. **Twelve non-goals defended.** No design section contradicts the v1 non-goals list (§12). Scope is tight and honest.
-3. **Five R5 arbitrations confirmed.** Importance vs Trust, importance storage, scope vs temperature, community detection timing, `pray` semantics — all remain locked post-R8. No new contradictions.
-4. **Seven design tensions surfaced and resolved.** T1–T5 are architectural trade-offs with mitigations in place. T6 (BM25 quality bar) is honest — keyword-overlap eval set is rigged to BM25's strengths; disjoint queries are v1.5 gap. T7 is a BLOCKER: shared-substrate ownership.
+**What I'd do differently next PRD.** Two things. (1) Capture the per-author day-budget rough cut earlier — I built §6.3 by inference from the triages, but if I'd asked each author for a one-line `T1 days = N` during their triage, the calendar arithmetic would be more defensible and I could surface squad capacity earlier. (2) The §4 user-stories section is by far the longest, and it's mostly transcription from triages. Next time, structure the triage template so each story already lands in a `(ID, owner, story-text, source-citation, lock-citation)` row — then PRD §4 is literally a table import, not a manual re-write. Both are pre-discovery-phase investments that pay back at PRD-drafting time.
 
-**The critical blocker — OQ-1:**
-- Eureka v5 R8 introduces `SessionId` brand in `@akubly/types` (shared).
-- Crucible analysis flagged that cairn/, forge/, types/ are duplicated across mem/ and harness/ repos.
-- **Implementation cannot start until Aaron resolves: monorepo, git submodule, or npm packages?**
-- Graham's R8 enforcement gate (FR-12 #8, ESLint guardrail on session-type imports) requires clarity on shared substrate.
-
-**Three immediate decisions Aaron must make (open questions OQ-1 through OQ-5):**
-1. Substrate ownership (monorepo/submodule/npm) — **blocks both Eureka + Crucible**.
-2. Eureka v5 R8 commitment (shared SessionId framing) — **locks FR-13 design**.
-3. Dogfood sequencing (Crucible-first vs. Eureka-first) — **affects US-1/US-2 validation pathway**.
-4. Eureka v1 scope freeze — **confidence check** (scope is defended; flag creep).
-5. Crucible integration expectation — **clarifies v1 vs. v1.5 boundary**.
-
-**Cassima's judgments applied:**
-- BM25 quality bar is honest; eval set partitions overlap vs. disjoint; v1 gates on overlap only.
-- Three-tier deferral (agent fully wired, user/project stubbed) is additive not architectural.
-- Path 2 default wiring: opt-in for production, opt-in by default for demos.
-- Crucible integration is v1.5 *improvement*, not v1 blocker (Eureka ships standalone).
-- Session identity is "one entity, two lenses" — shared `SessionId` brand is honest coupling at type layer, preserved by no-cross-DB runtime rule.
-
-**Deliverable:** `docs/eureka/sections/70-prd-alignment.md` (7 sections: acceptance criteria coverage, non-goals check, Crucible amendments, R4/R5 arbitrations, tension log, open questions, summary). 95% confidence on PRD–design alignment; 5% gap is OQ-1 blocker.
-
-**Status:** Report ready for Aaron review. Implementation blocked until OQ-1 resolved.
+**One thing I almost missed.** The Cluster B constraint flag (Aaron's multi-agent line) was buried in the prior-session lock block; I almost shipped §5.1 with the original triage tier ordering for sub-agent stories. The "first N≥2 multi-agent story is promoted in T2" call-out came from re-reading the Cluster B lock carefully, not from the triages themselves. Lesson: Aaron's verbatim constraint flags inside lock blocks are usually the highest-leverage PRD inputs — they deserve their own scan pass before drafting.
 
 ---
 
-### 2026-05-26: Branch-tree reconciliation defers pain without eliminating it; continuous coordination minimizes time-to-v1 when shared substrate is load-bearing
+## Round 8 — PRD reader-first rebuild (2026-05-26)
 
-### 2026-05-26T20:00:00-07:00: Branch-tree-vs-G4 strategy pressure test analysis merged — quantified deferred-coordination worst case (2-7 days at v1 ship, blocks both released products), schema divergence cost (4 days strategic; 2-4 sprint integration delay for Crucible→Eureka WAL bridge), time-to-v1 delta (G4: 40 days + 6 hours; strategic: 44 days; deferred: 42-47 days). Recommendation: G4 continuous coordination.
+Aaron rejected the v1 PRD DRAFT for readability: too dense, too many acronyms (CAS/DBOM/WAL/CBOR/BLAKE3), buried vocabulary, "implementation details masquerading as requirements," user stories indecipherable. Positive signal: the vocabulary / layers / primitives / verbs sections were the only ones that "revealed" anything. Rebuilt the file from a different starting point: **reader-out** instead of engineering-out. New shape: Part 1 (§0 What is Crucible? → §1 Vocabulary up front → §2 What it Does → §3 Non-goals → §4 Trajectory → §5 Success Criteria) at ~280 lines of plain prose, plus Part 2 (Appendices A–E) preserving the prior draft's engineering surface verbatim for owners. The Part-1 body assumes zero session context: a smart engineer who has never heard of Crucible / Cairn / Forge should be able to read §0–§2 in 10 minutes and know what this thing is.
 
-### 2026-05-26: G4 scope analysis — Rotating sprint ownership (Genesta ↔ Crucible platform lead) distributes coordination load; minimum viable G4 is CHANGELOG + PR label + conditional 15-min sync gate; temporal asymmetry (bidirectional during parallel dev, Eureka-initiated post-Crucible-ship) shapes overhead profile; Graham authority without bandwidth means design-only role, not operational owner; Crucible team roster unknown blocks owner assignment.
+## Learnings
 
-### 2026-05-26T20:30:00-07:00: Drafted Crucible schema lead outreach message — joint design doc kickoff for shared substrate (cairn/forge/types) with G4 protocol intro, <300 words, Aaron's voice (direct, no fluff), framed as velocity protection not bureaucracy.
+**The structural mistake I made in Round 7 and corrected in Round 8.** I wrote the prior draft engineering-out: cluster locks first, capability tables second, stories third. That ordering is correct for *generating* the document (it's how the deliberation actually went) and wrong for *reading* the document (a new reader has no entry point — they meet the system in terms of its own internals before knowing what it is). The Round 8 rewrite inverts: it explains the system in terms of what a user can *do* with it, defines vocabulary before using it, and pushes every story ID, day budget, sprint table, and cluster reference into appendices. The body is now 6 sections of prose with at most one table per section; the engineering rigor sits behind it, unchanged. Lesson: the deliberation order and the reading order are different documents. PRDs are read documents.
 
-### 2026-05-26: Erasmus counter-proposal evaluation — Collaborative partner proposing pragmatic scope reduction (3 packages → 1 package), but references "storage fork directive" Eureka squad has no record of; BLOCKER flagged for Aaron caucus before proceeding with 5-step plan (SessionId brand, CODEOWNERS, DecisionRecord freeze, defer prescriber/WAL).
+**The most consequential plain-English rewordings.** A few translations from the prior draft taught me what "engineering-out" actually means in practice. *"Crucible stores the causal read-set in a content-addressed substrate"* became *"Crucible remembers which inputs went into each decision."* *"Per-row, in-group-commit-window, after read-set hash, before fsync"* (Phase A hook bus) is gone from the body entirely — what survived is *"a small piece of code that runs at a specific moment in a session and returns one of three verdicts: keep going, just observe, or pause and ask."* *"A.3 hybrid: custom pure-TS append-only WAL + better-sqlite3 for derived"* became *"a custom append-only log (for the authoritative event stream) plus SQLite (for derived views that you query)"* — same content, no acronyms, named the *purpose* of each half. The rule that worked: if I had to say "L4 commit gate" or "Phase A R3a" to describe what a user could do, I was still writing engineering, not requirements.
 
-### 2026-05-28: Cycle 2 Fix Wave — Canonical Resolutions Landed
+**Tensions that resisted plain-language framing.** Three concepts fought back. (1) **"Layer L0–L5"** — there's no good plain-English replacement because the numbering is itself how the team refers to the architecture. I conceded: §1 names L0–L5 once, says "most readers can ignore the numbers," and gives one-sentence each. (2) **"Hook verdict triple {continue | observe | pause}"** — every attempt to rename `continue/observe/pause` to plain English lost the precision of the enum. I kept the names but introduced them as "keep going, just observe, or pause and ask" first, then named the enum. (3) **"Hermetic replay"** — the word "hermetic" is doing real work (no external calls re-issued), and "replay that re-uses recorded responses" is wordier on every recurrence. I introduced it once in §0 in long form and used "replay" in subsequent prose, accepting one term of vocabulary tax.
 
-**Context:** Squad persona-review Design Panel (Architect/Skeptic/Pragmatist/Compliance) completed cycle 1 on Eureka v1 design package with 19 findings, all accepted by Aaron. Canonical resolutions documented in `.squad/decisions/inbox/squad-cycle1-canon.md`. Cycle 2 fix wave assigned 5 findings to Cassima (PM) for `eureka-prd-v5-final.md`.
+**Vocabulary-up-front is load-bearing.** The single highest-leverage move was moving the glossary from §7 to §1. Once vocabulary is established, §2 can talk about "prescriptions," "Mirror," "Router," and "the read-set" without parenthetical glosses, which is what kept it short. The prior draft's §2 was inflated *specifically because* the vocabulary wasn't yet defined — every paragraph had to gloss its own terms. Lesson for the next PRD: write the glossary section first as a working artifact, even if it ships in §1 of the final.
 
-**Findings landed (all from canon):**
-
-1. **B3 — Decision ownership prose (US-5 line 101):** Clarified "persisted as both" with explicit Forge=audit-authoritative / Eureka=learning-authoritative role split. Added: "Forge writes the audit record (immutable, authoritative for compliance/replay/audit trail); Eureka writes the learning-shaped decision-fact (mutable trust/importance/access_count, authoritative for recall and learning). Both share a decision_id that correlates them. Source of truth for compliance = Forge. Source of truth for learning = Eureka. On disagreement, reconciliation runs against decision_id." Matches canon §B3 language exactly — no improvisation. **No duplicated vs referenced fields specified** (canon mentioned this; judgment call: that detail lives in FR-10 adapter contract, not user story prose; US-5 is user-facing, not schema-facing).
-
-2. **I7 — Remove `tiers` parameter from public recall() API (FR-7.2 v1 tier scope):** Changed "schema and API surface" → "schema" only. Added: "the v1 public recall() API signature has NO tiers parameter; the internal implementation hardwires to agent tier. Fact.scope stays in storage for forward-compat; v1.5 will add the tiers parameter and federation paths when user/project tiers are wired." Deleted "User and project storage adapters ship as stubs that throw NotImplementedError" → replaced with "User and project storage adapters are not shipped in v1 at all (not even as NotImplementedError stubs)." Matches canon §I7 — no stubs, clean hide-the-seam.
-
-3. **I10 — Eval set as M0 deliverable (§10 Roadmap + Appendix A):** Added M0 deliverable prose to §10 before the roadmap table: "10-question eval set (5 train + 5 held-out) against mem/ repo, ground-truthed with file paths and line numbers. Measure grep-baseline (human rediscovery tax) before any Eureka code lands. Wire held-out 5 into CI at M4 as ship-blocker if precision < 80%. Appendix A (below) lists the question set or a placeholder + commitment to land it before M1." Created **Appendix A** (new section at end of PRD) with full 10-question placeholder structure: 5 train (Q1-5), 5 held-out (Q6-10), keyword-overlap vs keyword-disjoint partitioning, ground-truth spec, grep-baseline measurement plan, precision gate (≥80% on held-out overlap questions), authoring commitment (Cassima/Edgar/Laura co-author during M0). Placeholder questions are concrete enough to communicate the structure but explicitly marked as "TBD at M0" with commitment to replace before M1. Matches canon §I10.
-
-4. **I11 — Threat-control implementation status table (§14a):** Added new subsection "v1 Threat Control Implementation Status" after the threat table with 12 rows covering all v1 controls: T1(a-d), T2(a-c), T3(a-c), T4, T6, plus cross-DB ATTACH ban (FR-7.2). Each row marked **code-enforced** (runtime checks, schema constraints, lint rules, CI gates) or **policy-enforced** (documentation, convention). ESLint rule for cross-DB ban specified (`no-restricted-syntax` bans `ATTACH DATABASE` in Eureka codebase, CI gate fails build). Telemetry counter `eureka_trust_same_principal_cap_hit_total` added for T3(b) suspicious pattern detection per canon. Updated v1 scope caveats prose to reference the new table and clarify mix of code vs policy enforcement. Matches canon §I11.
-
-5. **M2 — Path 2 ingestion scope note (FR-14 default wiring):** Added v1 scope note after "Default wiring" paragraph in FR-14: "Path 2 (Forge→Eureka decision ingestion) is deferred to v1.5 unless a v1 production consumer commits to using it. The design (FR-14), adapters (fromDecisionRecord()), CLI (eureka ingest-decisions), and demo wiring all ship in v1 as designed above; however, no production caller is expected to wire it by default in v1. If a production consumer (e.g., skillsmith-runtime) opts in during v1 dogfood, the full Path 2 implementation remains as specified. If no consumer commits, v1.5 revisits scope. This note does NOT change the FR-14 spec; it clarifies production adoption expectations." Matches canon §M2 — keeps design docs as-is, marks scope expectation, no code deferral unless consumer doesn't materialize.
-
-**Length growth:** 617 lines → 692 lines = +75 lines = **12.2% growth** (within 15% budget).
-
-**Deviations from canon:** NONE requiring inbox write-up. One judgment call on B3 (duplicated/referenced fields detail lives in FR-10, not US-5 user story prose) — assessed as faithful to canon intent (user stories are user-facing; schema mechanics live in FR sections). If reviewers disagree, that's a 1-line clarification add, not a structural deviation.
-
-**Voice/structure match:** All edits preserve existing PRD conventions: `[v4-rev2: <reason>]` annotation style for new content, surgical insertions without prose reflow, cross-references by section number (§10, §14a, FR-7.2, FR-10, FR-14), consistent terminology (facts/tiers/adapters/bridge), no new jargon introduced. Appendix A uses same spec rigor as FR sections (numbered questions, bullet sub-structure, bold emphasis on gates/commitments, placeholder + commitment pattern from existing open-questions sections).
-
-**What worked:**
-- Canon document was exhaustively clear — zero ambiguity in what to land or where.
-- File-ownership table prevented collision (no other agent editing eureka-prd-v5-final.md).
-- 15% length budget was realistic for 5 findings (worst-case estimate was 18%; actual 12.2%).
-- Appendix pattern (placeholder + M0 commitment) matches PRD's existing open-questions/deferred-design conventions.
-
-**What I'd change next time:**
-- I could have added the "duplicated vs referenced fields" prose from canon §B3 to US-5 — it's 1 sentence and would've been faithful. Judgment call was "too schema-detail for user story" but reviewers might want it. If flagged, add: "Duplicated: decision_id, timestamp, question, chosen. Referenced: Eureka fact.id (not in Forge), Forge DecisionRecord.id (not in primary Eureka fact schema, stored in metadata)."
-- Appendix A is 72 lines — could've been more compact (collapse train/held-out into one table) but clarity > brevity for an eval spec that multiple people will implement.
-
-**Outcome:** All 5 findings landed as specified in canon. Zero deviations requiring inbox write-up. PRD v5-final updated from 617 → 692 lines (12.2% growth, within budget). Ready for cycle 2 review.
-
-### 2026-05-28: Post-Merge PR #26 Doc Alignment Sweep
-
-**Context:** Copilot automated review on PR #26 (eureka/v1-design-package branch) flagged 5 alignment issues post-merge. Substrate ownership decided (ADR-0002 Option A, monorepo), but several docs still reflected pre-decision state or contradicted locked PRD.
-
-**Changes landed:**
-1. **technical-design.md exec summary (line 14):** Updated three-tier description from "agent fully wired; user/project stubbed" to "agent tier only in v1; user/project tiers reserved in schema, adapters deferred to v1.5 per PRD FR-7.2." Replaced "Four open decisions block implementation" with "OQ-1 resolved via ADR-0002; remaining open decisions tracked in §00 ADR index."
-
-2. **technical-design.md References (lines 163-166):** Replaced `.squad/decisions/inbox/` links (gitignored, broken for other contributors) with references to merged content in `.squad/decisions.md` (Crucible Impact → "Crucible ↔ Eureka Cross-Project Overlap"; Substrate Blocker → "Narrower Substrate Freeze Proposal" + ADR-0002).
-
-3. **ADR-0002 header (line 8):** Replaced `.squad/decisions/inbox/cassima-t7-shared-substrate-blocker.md` reference with merged decision reference: "§70 T7; merged substrate analysis in `.squad/decisions.md` 'Narrower Substrate Freeze Proposal' (2026-05-27)."
-
-4. **ADR-0002 toolchain claims (lines 50-55, 138-145):** Corrected "pnpm workspaces, turborepo" to reflect repository reality: "npm workspaces with `tsc --build` project references — already in use across mem/." Updated M0 prerequisites to reference `tsc --build` incremental compilation. Added note: "Future migration to pnpm/turborepo could optimize build caching, but npm workspaces + `tsc --build` is sufficient for v1."
-
-5. **00-overview.md tier table (lines 242-246):** Changed user/project v1 Status from "Stub (throws on write, empty on read)" to "Not shipped in v1 — schema reserved, adapter deferred to v1.5" per PRD FR-7.2 canonical wording. Updated "Recall Fan-Out Strategy" to note v1.5+ for multi-tier fan-out.
-
-**Rule extracted:** Committed docs must not cite paths under gitignored directories (`.squad/decisions/inbox/` is gitignored → broken for other contributors/CI). References to decision content should point to merged locations in `.squad/decisions.md` or committed ADRs.
-
-**Toolchain reality check:** Confirmed repo uses npm workspaces (root `package.json` + `package-lock.json`), not pnpm/turborepo. Build command is `tsc --build`. ADR-0002 now reflects actual tooling rather than aspirational claims.
-
-**What worked:**
-- Surgical edits preserved doc structure and voice.
-- Rule "respect gitignore boundaries in committed docs" is generalizable beyond Eureka.
-- Tier-status alignment now consistent across executive summary, overview table, and PRD FR-7.2.
-
-**What I learned:**
-- Post-merge alignment sweeps are PM scope when they affect PRD/design consistency.
-- `.squad/decisions/inbox/` is for local-only working memos; references from committed docs must resolve for all team members.
-- Toolchain claims in ADRs should match repository evidence, not aspirational future state (or clearly label as "future migration").
-
-**Status:** All 5 threads addressed. Skill documented. Ready for next work.
+**Where I departed from the requested structure.** Aaron's task spec proposed six capability areas in §2 ("Daily coding loop, Causal recall, Branching and forks, Pause and resume, Self-improvement loop, Inherits from Cairn/Forge"). I ended up with six but renamed and re-cut: "Have a normal daily coding session / Be remembered, faithfully / Branch, fork, and recover / Watch Crucible improve itself / Investigate what happened / Inherit what already works." Two reasons. (1) "Pause and resume" as a top-level capability oversells what a user can *do* with pause in v1 (only `continue` after pause, no `step` or `edit-and-continue`) — folded it into §2.5 Investigation where breakpoints actually live. (2) "Self-improvement loop" needed a more active verb to match the bootstrap-loop framing of §0 — "Watch Crucible improve itself" is what closes the loop from the falsifiable bar.
 
 ---
 
-### 2026-05-28: PR #26 Cycle 2 Doc Alignment — 15 Inbox References Replaced, DecisionRecord Disambiguated, OQ-5 Resolved
+## Round 9 — PRD round-2 revision (2026-05-26)
 
-**Context:** Cycle 2 of cloud-review-cycle on PR #26. Copilot flagged 18 additional documentation issues (13 broken inbox citations, 3 content corrections, 2 machine paths). Scribe merged inbox files into `.squad/decisions.md` first, providing stable anchors (e.g., § "PR #26 — Copilot Review Doc Alignment (Cycle 1)" (2026-05-28), § "DecisionRecord Naming Disambiguation" (2026-05-28), § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27), etc.). Aaron directive: fix Rule R1 (no gitignored citations), Rule R2 (DecisionRecord naming), Rule R3 (no machine paths) across `docs/eureka/`, `.squad/handoffs/`, `.squad/skills/`, `.squad/decisions/`.
+Aaron read the round-1 rebuild and reacted *"much, much better"*, then sent six follow-ups: three clean fixes (Generator-vs-Prescriber naming inconsistency, narrow Artifact definition, missing built-in-tools capability area), one naming reopener (is "Mirror" too nebulous?), one substantive risk (is 100% determinism in the conformance corpus actually achievable?), and one deep thesis-vs-scope tension (the bootstrap loop says "Crucible improves Crucible" but v1 is single-agent while the squad-of-9 building Crucible is inherently multi-agent — the loop closes on a strictly downgraded environment). Made all three clean fixes in §1/§2.4/§2.7; reaffirmed Mirror with a tightened definition that makes the reflective metaphor explicit; rewrote §2.2 + §5.2 + Appendix E.1 to scope replay equivalence honestly (L1-event-log-against-allow-list, not "all observable side effects byte-equal"); and split the success bar into two falsifiable halves (Bar A solo bootstrap in v1, Bar B squad integration named-and-deferred to T2), with a "squad-work-leakage" supporting indicator that turns dogfood week into evidence for whether multi-agent needs T1.5 promotion. Sidecar `cassima-prd-r2-thesis-resolution.md` lays out the four options I weighed and asks Aaron to either confirm option (d) or authorize option (b), which would be a Cluster B + calendar reopener.
 
-**Changes landed:**
+## Learnings
 
-**Group A — Inbox Citation Cleanup (15 threads, all same pattern):**
-1. `docs/eureka/sections/00-overview.md:425` → `.squad/decisions.md` § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27)
-2. `docs/eureka/sections/10-activities-and-tiers.md:470` → same
-3. `docs/eureka/sections/20-knowledge-representation.md:563` → same + § "Eureka PRD v5-final LOCKED" (2026-05-26)
-4. `docs/eureka/sections/30-learning-systems.md:986` → same
-5. `docs/eureka/sections/40-integration.md:648` → generic text (no specific committed doc yet for DI seam audit)
-6. `docs/eureka/sections/40-integration.md:752` → generic text (kernel coupling blockers documented if encountered)
-7. `docs/eureka/sections/40-integration.md:893` → `.squad/decisions.md` § "Crucible ↔ Eureka Cross-Project Overlap" (2026-05-27) + scrubbed `D:\git\harness` machine path
-8. `docs/eureka/sections/60-ux-human-factors.md:283` → same
-9. `docs/eureka/sections/60-ux-human-factors.md:356` → same (Appendix A)
-10. `.squad/handoffs/2026-05-27-london-tdd-kickoff.md:21` → `.squad/decisions.md` § "Eureka v0.1 Technical Design — Assembled & Blocked on 4 Critical Decisions" (2026-05-27)
-11. `.squad/skills/doc-references-respect-gitignore/SKILL.md:139` → **SELF-VIOLATION FIX** — "Deliverable" example cited inbox path; replaced with § "PR #26 — Copilot Review Doc Alignment (Cycle 1)" (2026-05-28)
-12. `.squad/decisions.md:195` → Added usage example for DecisionRecord disambiguation (Rule R2); scrubbed remaining machine path (already fixed in main edit above)
-13. `.squad/decisions/eureka-prd-v5-final.md:434` → `.squad/decisions.md` § "Eureka PRD v5-final LOCKED" (2026-05-26)
-14. `.squad/decisions/eureka-prd-v5-final.md:848` → Collapsed 5-row SessionId R8 decision table into one reference to § "Eureka PRD v5-final LOCKED" (2026-05-26)
-15. `.squad/decisions/eureka-prd-v5-final.md:861` → Same (SessionId R8 panel verdicts all merged into decisions.md entry)
+**Acronym leak is sneakier than vocabulary leak.** Round 1's rebuild caught the obvious vocabulary problem (acronyms and engineering jargon in the body) but left a subtler one in place: the PRD used "Generator" as the user-facing word in §1/§2 while the package was named `skillsmith-prescriber` and the code type was `ProposalGenerator`. Aaron caught it immediately. The lesson isn't "rename to Prescriber" — the lesson is that **when the package name, the code name, and the PRD word disagree, the reader picks the discrepancy up as evidence the PRD wasn't written carefully.** Even if each individual choice was defensible, the inconsistency itself is the bug. Next-PRD heuristic: every vocabulary row in §1 should be grep-checkable against the relevant package and code identifiers, and any disagreement gets either reconciled or explicitly footnoted ("the user-facing word is X; the code type is Y for backwards-compat reasons; they're the same thing").
 
-**Group B — Content Corrections:**
-1. `docs/eureka/sections/20-knowledge-representation.md:449` → **DecisionRecord naming disambiguation (Rule R2)**. Forge `DecisionRecord` wrongly described as "materialized markdown file under `.squad/decisions/inbox/*.md`" — that conflates the TS interface with Squad workflow artifacts. Fixed to: "Forge DecisionRecord: Runtime TypeScript interface in `@akubly/types` representing audited decision metadata." Added note distinguishing Squad decision dotfiles (markdown memos) from Forge DecisionRecord (TS type).
-2. `docs/eureka/sections/30-learning-systems.md:967` → Stale date `2025-01-24` updated to `2026-05-27` (Eureka v0.1 Technical Design).
-3. `docs/eureka/technical-design.md:66` → **OQ-5 rewritten**. Originally framed as contingency "if OQ-1 NOT resolved" — OQ-1 IS resolved (ADR-0002 accepted). Marked OQ-5 **CLOSED/MOOT** with note: "OQ-1 resolved via ADR-0002 (monorepo accepted 2026-05-27); OQ-5 contingency no longer applicable."
+**The hardest reaffirmation is the one you have to argue for cold.** Aaron asked whether "Mirror" was too nebulous, fully acknowledging we already locked it. I could have replied "we locked it" and pointed at `decisions.md`. The discipline I held to (because the original prompt explicitly required engagement, not silent defense) was to actually re-argue the lock — case for, case against, one rejected alternative ("Activity" — too generic, loses the reflective quality) — and conclude with a tightened §1 entry that makes the metaphor explicit. The outcome was probably the same as if I'd silently defended, but the *artifact* now contains the reasoning, so a future reader (or a future Cassima after a context break) can see why Mirror won and decide whether the reasoning still holds. Lesson: a lock without recorded reasoning gets relitigated every time someone with fresh context arrives. A lock with reasoning gets sustained.
 
-**Group C — Machine Path Cleanup:**
-1. `docs/eureka/adrs/0002-shared-substrate-ownership.md:63` → Option B submodule example used `D:\git\akubly-substrate\`, `D:\git\mem\`, `D:\git\harness\`. Replaced with generic placeholders: `<substrate-repo>/`, `<mem-repo>/`, `<harness-repo>/`.
+**The 100% determinism claim was a round-1 honest mistake worth analyzing.** I wrote "byte-for-byte equal output" in §5 of the round-1 rebuild because (a) the underlying conformance kit lock — Phase B / Cluster A — talks about replay equivalence in those terms, and (b) the strong claim is rhetorically tighter than a hedged one. Aaron caught that the strong claim is *materially wrong* in the presence of LLM provider response variance (timestamps, request IDs, telemetry), tool output non-determinism (PIDs, wall-clock), and OS-level drift (line endings, locale). The fix wasn't to soften the rhetoric; it was to scope the claim correctly (the L1 event log specifically, not "all observable side effects") *and* admit the open allow-list question as a sprint-1 blocker that needs Graham + Roger + Laura to settle. Lesson: when a PRD strong-claim is downstream of a lock, the lock's rigor doesn't automatically transfer to the PRD's phrasing. The PRD writer has to re-check that the lock's claim, restated in plain English, is actually true at the user-visible scope.
 
-**Group D — Deferred (Coordinator Handles):**
-1. `.squad/orchestration-log/2026-05-27T08-13-25Z-valanice-ux-section.md:1` → Kept as historical archive per Aaron's strategy. Scribe owns lifecycle.
-2. `.squad/log/2026-05-27T08-13-25Z-eureka-tech-design-v01.md:1` → Same.
-
-**SKILL.md Enhancement:**
-Added "Pitfalls" section to `.squad/skills/doc-references-respect-gitignore/SKILL.md` with anti-pattern: "If you write examples in this skill, lint them against the rule — examples that violate the rule undermine credibility." The skill's own "Deliverable" line had an inbox citation (self-violation); fixed in this sweep.
-
-**What worked:**
-- Scribe-first dependency strategy unblocked the work — all stable anchors available before I started.
-- Batching 15 similar edits into one pass was efficient.
-- Rule R2 (DecisionRecord disambiguation) caught real conflation: doc described Forge's TS interface as "markdown files" which is wrong.
-- OQ-5 rewrite was straightforward once I confirmed ADR-0002 acceptance in decisions.md.
-
-**What I learned:**
-- Skills that codify rules should include a "Pitfalls" section warning authors about self-violations (meta-level discipline).
-- Large-scale citation cleanup requires grep to map topics → decisions.md headings efficiently (15 threads = 15 searches; grep was faster than manual scan).
-- Machine paths are easy to miss (only 2 threads but they're visually subtle in long file paths).
-
-**Deliverable:** `.squad/decisions/inbox/cassima-pr26-cycle2-doc-alignment.md` (this file) + 18 surgical edits.
-
-**Status:** All Group A/B/C threads addressed. Group D threads deferred per plan. SKILL.md enhanced with pitfall warning. Ready for coordinator to close review cycle.
-
+**Promoting a non-goal vs splitting the bar.** Item #6 (multi-agent tension) was the round-2 item I spent the most thinking on. The instinct was to either silently soften the bar (option a) or quietly promote multi-agent (option b). Both were wrong for different reasons: (a) erodes falsifiability so the bar becomes unfalsifiable theater, and (b) makes a calendar-blowing scope change that should be Aaron's decision, not mine. The cleaner move was (d) — explicitly split the bar, name the half that's v1's falsifiable test, name the other half as T2 follow-on, and *build in a measurement* (the squad-work-leakage indicator) that turns dogfood week itself into evidence for whether (b) should get authorized later. Lesson: when scope and thesis are in tension, splitting the thesis honestly across tiers is almost always better than softening the bar or unilaterally widening the scope. The split makes the staged honesty legible; the soften makes the test theater; the widen takes the decision away from the principal.
 
 ---
 
-### 2026-05-28: PR #26 Cycle 3 Residual Sweep — 7 Issues Missed by Previous Sweeps
+## Round 10 — PRD round-2 final acceptance (2026-05-26)
 
-**Context:** Cycle 3 of cloud-review-cycle on PR #26 (maxCycles ceiling). Cycles 1+2 fixed 29 threads, but Copilot review of commit `aa9cdae` surfaced 7 residual issues — 3 fresh content findings, 4 places where earlier sweeps missed the same failure patterns.
+Aaron accepted the v1 PRD draft with six round-2 revisions. Five were clean executions of round-2-interim's recommendations (Prescriber naming, Artifact breadth, Mirror name kept + sharpened, determinism softened, built-in tools expanded). One was a substantive reframe of my round-2-interim recommendation: instead of the Bar A / Bar B split I proposed for item #6, Aaron chose to *promote orchestration into v1* via a **Coordinator-equivalent** — an in-session fan-out capability that lets one Crucible agent do the work the Squad does multi-agent today. v1 stays single-agent (process), but ships first-class sub-task orchestration. The new falsifiable bar is concrete and bolder than my split: *"Aaron can build the multi-agent v2 features using only single-agent v1 Crucible."* I executed the rewrite (new §2.8, rewritten §5, new §6 Open Items), preserved the prior sidecar as historical record of rejected alternatives, and shipped a changelog (`cassima-prd-round2-changelog.md`) so Aaron can review diff intent without re-reading.
 
-**Changes landed:**
-1. **T1 — `docs/eureka/sections/10-activities-and-tiers.md:3`:** Updated stale Last Updated date from `2025-01-21` → `2026-05-27` (Eureka v0.1 design date).
+## Learnings
 
-2. **T2 — `docs/eureka/sections/10-activities-and-tiers.md:44`:** **SPEC INCONSISTENCY** — `integrate()` side effects said "default: `cold`" but PRD line ~663 and §00-overview line ~229 both say **default warm**. Fixed to `(default: warm)`. Verified no other §10 text contradicts; grep found no other `cold` default references.
+**The principal's resolution to a tension I couldn't fully solve.** Item #6 was the one I genuinely couldn't unilaterally resolve in round 2 — the (b)-vs-(d) tradeoff was a calendar question I didn't have authority to decide. I recommended (d) (split the bar) and flagged (b) (promote multi-agent) as Aaron-authorize-only. Aaron's resolution was neither (b) nor (d) as I'd framed them — it was a *third synthesis*: keep the single-agent-process constraint (the heart of (d)'s scope discipline) but add orchestration *inside* the single agent (the spirit of (b)'s "v2 should be buildable with v1"). The new bar — "v1 builds v2" — is sharper and more falsifiable than my Bar A. Lesson: when the right move requires authority I don't have, my job is to *frame the choice cleanly*, not to find the "perfect" recommendation. Aaron synthesized a better answer than either of my preferred options, because the option space I'd drawn wasn't exhaustive. Next time, after I present 2–4 options, I should explicitly ask "is there a synthesis I'm missing?" before committing to one as recommended.
 
-3. **T3 — `docs/eureka/technical-design.md:3`:** Header status still said "awaiting Aaron's decisions on blockers" but OQ-1 resolved (ADR-0002) and OQ-5 CLOSED/MOOT (cycle 2). Updated to: "Locked — v0.1 assembled (§00–§70, 3 ADRs); OQ-1 resolved via ADR-0002; remaining open decisions (OQ-2, OQ-3, OQ-4) tracked in §00 ADR index."
+**Coordinator-equivalent as the bridge concept.** The vocabulary move that made Aaron's resolution work is *Coordinator-equivalent* — calling out that what looks like "multi-agent capability" is actually "in-session orchestration that mimics multi-agent ergonomics." Until that vocabulary exists, the discussion is stuck between two false poles (single-agent = no orchestration; multi-agent = process fork). Introducing a name for the middle option (logical fan-out inside one process) makes the v1 scope conversation tractable. Lesson: when two locked positions create a forced tradeoff, often the move is to introduce vocabulary for the third option neither side has named yet. I added the Coordinator-equivalent to the §1 vocabulary table as a first-class term, the same way Mirror or Router gets a row, because the whole §5 bar leans on it.
 
-4. **T4 — `docs/eureka/adrs/0002-shared-substrate-ownership.md:176`:** Timeline table row still said "pnpm workspace, turborepo" despite cycles 1+2 fixing Pros/Prerequisites to "npm workspace, tsc --build." Fixed to: "npm workspace config (already present), unified tsconfig with tsc --build."
+**Marketplace was the round-2 surprise.** Item 5 expanded from "built-in tools" (which I'd handled adequately in round-1 as §2.7 core tools) to a four-tier ships-with-v1 picture: core tools / skills / MCP servers / marketplace. The marketplace tier in particular surfaces a genuinely new governance question (who owns the allow-list?) that none of the round-1 cluster discussions had reached. I gave it a §6 Open Items home so it's tracked, named the convening pen (Cassima), and named the participants (Graham + Rosella + Gabriel + Sonny). Lesson: when the user expands scope mid-PRD, the right reflex is to (1) absorb the expansion into the body cleanly, (2) name the new opens it creates, and (3) assign a convener and a participant set before the next sprint planning round. If I hadn't named §6.1's owners, the marketplace allow-list would be a residual that surfaces in sprint 6 with no clear path to resolution.
 
-5. **T5 — `.squad/skills/doc-references-respect-gitignore/SKILL.md:56`:** **SELF-VIOLATION** — "Bad" examples used real inbox paths (`cassima-t7-shared-substrate-blocker.md`, `cassima-crucible-eureka-impact.md`). Replaced with generic placeholders (`<memo-slug>.md`).
+**Calendar implications of new T1 capability — flagged but not unilaterally edited.** The §2.8 Coordinator-equivalent is *new* T1 scope. The round-1 sprint plan in Appendix C scopes ~25–30 eng-days for Alexander; `crucible task` fan-out is not in that estimate. I deliberately did NOT touch Appendix C — calendar revisions belong to Alexander and Graham, not to me. Instead I flagged the question in the changelog ("Item 3 in 'What needs to happen next'") so the squad's next coordination round catches it. Lesson: when a PRD revision adds scope, the calendar is downstream owner territory, not PM territory. Flag the implication; don't pre-edit the appendix.
+  
+**The drift-dashboard reframe is a bigger architectural call than it looks.** Aaron's softening of determinism from "byte-equal gate" to "approaching-determinism trend" sounds like a copy edit, but it changes what A3 (Appendix A) actually implements. A3-as-gate is a binary CI assertion. A3-as-trend is a measurement service with categorization, aggregation, visualization. §6.2 names this honestly as a sprint-1 blocker that needs Laura + Roger + Graham. Lesson: vocabulary changes downstream of a thesis softening (gate → aspiration) often have implementation-tier ripples. The PRD writer has to walk back through the appendix to flag what each implementation-tier story now requires; otherwise the appendix-tier owner is left implementing the wrong thing. I did this walk for A3 (flagged in §6.2) but I should make it a habit on every thesis softening.
 
-6. **T6 — `.squad/orchestration-log/2026-05-27T08-13-25Z-valanice-ux-section.md:11`:** Tracked orchestration log cited inbox memo. Surgical citation swap to merged anchor: `.squad/decisions.md` § "Friction-Level UX Decisions — Gated by v1 Dogfood Evidence" (2026-05-27). Preserved audit trail intent; no narrative rewrite.
-
-7. **T7 — `.squad/agents/graham/history.md:108`:** Three inbox citations (R8 verdicts, lock-review sign-off, assembly completion). Surgical swap to merged `.squad/decisions.md` anchors. Preserved audit trail.
-
-**What cycles 1+2 missed:**
-- Didn't sweep `history.md` or tracked `.squad/orchestration-log/` files (only swept `docs/`).
-- Missed line 56 in the skill itself (SKILL.md examples should be generic, not concrete file references).
-- Missed Timeline row in ADR-0002 (only fixed Pros/Prerequisites in cycle 1).
-- Missed §10 spec bug (attention-default `cold` → `warm`); that's the PRD/§00 canonical, §10 was stale.
-
-**What I learned:**
-- **Sweep the WHOLE repo, not just flagged lines.** For doc-cleanup patterns (inbox refs, machine paths, stale dates), grep the entire codebase (including `.squad/agents/*`, `.squad/orchestration-log/*`, `.squad/log/*`, `.squad/handoffs/*`) — not just `docs/`.
-- **Skills that teach a rule must self-audit against that rule.** SKILL.md line 56 illustrated the failure pattern by committing it (albeit as a "Bad" example). Generic placeholders or inline code (non-clickable) prevent self-violations.
-- **Residual issues = incomplete sweeps, not new bugs.** All 7 threads were variations of patterns cycles 1+2 addressed elsewhere — we just didn't search broadly enough.
-
-**SKILL.md updates:**
-1. Added to "How to Find Violations": note that sweeps must include `.squad/agents/*/history.md`, tracked `.squad/orchestration-log/`, tracked `.squad/log/`, `.squad/handoffs/` — not just `docs/`.
-2. Enhanced "Pitfalls" section: added "Not sweeping broadly enough" and "Author your examples carefully" anti-patterns.
-
-**Status:** All 7 threads addressed. Follow-up note in drop file: "For future doc-cleanup sweeps, grep the WHOLE repo (including tracked .squad/* files) for the failure pattern, not just Copilot-flagged lines."
-
----
-
-📌 **2026-05-29: Eureka Cycle 1 Review — F6 Escalation (product semantics) requires your input** — Code panel review of ea05e62 escalated F6 (trust-filter undersupply / spec gap). Finding: `recall()` may silently return fewer than k results when trust floor filters candidates. Caller has no signal to distinguish "only k results exist" from "k+ results exist but fell below trust floor." Spec (§30 §1.2, §30 §2.3, §40) is uniformly silent on overfetch policy. Escalated to you + Crispin (Knowledge Rep). Inputs needed: (1) Is "recall may return <k" acceptable caller contract for v1, or does product require exact-k semantics? (2) Does user-facing UX depend on full result set? Decision drop with 4 options (a–d) and recommendation: .squad/decisions/F6-recall-undersupply-escalation.md (merged into decisions.md). Awaiting your input. — Scribe
-
----
-
-## 2026-05-29: F6 Resolution — Recall Undersupply (Joint with Crispin)
-
-**Event:** F6 escalation from Cycle 1 review. Joint decision drop authored with Crispin.
-
-**Decision:** Option (b) — Push `minTrust` into `FactStore.search()`.
-
-**Cassima's lens (PM scope):**
-The product requires exact-k semantics. AC-1.3 specifies ≥80% precision *at k=5* — the "at k=5" implies k results are expected, not "up to k." The silent undersupply bug was not a documented caller contract; it was a pipeline gap that users and callers would experience as inconsistent behavior with no diagnostic signal.
-
-From a scope perspective: this fix does NOT expand the FactStore implementation work. The concrete SQLite FactStore is on the M5+ critical path, but what changes here is the *TypeScript interface definition* (a type, not an implementation) and the *activity call site*. The mock in tests needs a one-line update. When the real FactStore ships in M5+, it inherits the correct contract and adds `WHERE trust >= ?` to its SQL — which was always the specified behavior per §20 §7.4. Net implementation scope: **zero additional work at M5+**. In fact, the post-filter loop is removed from the activity, which is a net subtraction.
-
-I explicitly evaluated option (a) overfetch from a v1 scope perspective: it introduces a magic constant with no principled basis, adds I/O waste in the common case (healthy trust distribution), and doesn't fix the root cause under adversarial distributions. Option (b) is cleaner, spec-aligned, and costs the same sprint time.
-
-**AC-1.3 confirmation:** With (b), `recall({ k: 5 })` returns 5 results when ≥5 qualifying facts exist. The residual failure mode (store holds <k qualifying facts → returns <k) is honest, not a bug.
-
-**Sequencing:** M4, current cycle. Unblocked. Edgar owns the call site + test mock updates; Crispin reviews interface shape.
-
-**Deliverable:** `.squad/decisions/inbox/cassima-crispin-recall-undersupply-resolution.md`
-
-
----
-
-**Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
+---
