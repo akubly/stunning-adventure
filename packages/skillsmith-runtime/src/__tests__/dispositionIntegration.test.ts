@@ -2,14 +2,16 @@
  * M3 Disposition Integration Tests — Laura (hardening).
  *
  * End-to-end coverage of the Cairn→runtime→forge disposition chain:
- * 1. Hint state transitions are seeded via the real Cairn event-log path
- *    (insertHintIfNew + logEvent with source='mcp').
+ * 1. Hint state transitions are driven via the real resolveOptimizationHint path,
+ *    which emits hint_state_transition events with source='mcp' via emitHintTransitionEvent.
  * 2. executePrescriberRun wires SqliteHintDispositionProvider from its DB.
  * 3. The full applyDispositions logic runs inside runForgePrescribers.
  * 4. We assert suppression and confidence-boost outcomes on the returned hints.
  *
  * This is the "real DB, real prescriber run" tier for M3 disposition logic,
  * analogous to the forge_prescribe integration tests in forgePrescribeMcp.test.ts.
+ * Using resolveOptimizationHint (rather than hand-rolling logEvent) exercises the
+ * full MCP→event-format contract end-to-end.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -71,32 +73,6 @@ function makeHintInsert(
   };
 }
 
-/**
- * Emit a hint_state_transition event with source='mcp', mirroring the event
- * format that cairn.resolveOptimizationHint produces. The hint must already
- * exist in optimization_hints for the JOIN in SqliteHintDispositionProvider
- * to resolve the category.
- */
-function emitMcpDisposition(
-  db: ReturnType<typeof cairn.getDb>,
-  skillId: string,
-  hintId: string,
-  disposition: 'dismissed' | 'resolved',
-  note?: string,
-): void {
-  const sessionId = cairn.ensureSystemSession(db);
-  cairn.logEvent(db, sessionId, 'hint_state_transition', {
-    skill_id: skillId,
-    hint_id: hintId,
-    from_state: 'pending',
-    to_state: 'rejected',
-    timestamp: new Date().toISOString(),
-    resolution_disposition: disposition,
-    resolution_note: note ?? null,
-    source: 'mcp',
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Test lifecycle
 // ---------------------------------------------------------------------------
@@ -122,12 +98,11 @@ describe('M3 disposition integration — executePrescriberRun end-to-end', () =>
     const skillId = 'skill-m3-dismiss';
     const profile = makeProfile(skillId);
 
-    // Seed a prior convergence hint and emit a source='mcp' dismissal for it.
-    // The hint must exist in optimization_hints so the JOIN in
-    // SqliteHintDispositionProvider can resolve its category.
+    // Seed a prior convergence hint and use the real resolveOptimizationHint to
+    // emit a source='mcp' dismissal. This exercises the full MCP→event contract.
     const seedHint = makeHintInsert('seed-convergence-1', skillId, 'convergence');
     cairn.insertHintIfNew(db, seedHint);
-    emitMcpDisposition(db, skillId, seedHint.id, 'dismissed', 'not relevant');
+    cairn.resolveOptimizationHint(db, seedHint.id, 'dismissed', 'not relevant');
 
     // Full-chain run: SqliteHintDispositionProvider reads the dismissal event and
     // applyDispositions filters convergence from the freshly-generated hint list.
@@ -146,10 +121,11 @@ describe('M3 disposition integration — executePrescriberRun end-to-end', () =>
     const skillId = 'skill-m3-resolve';
     const profile = makeProfile(skillId);
 
-    // Seed an old cache-optimization hint and emit a source='mcp' resolved transition.
+    // Seed an old cache-optimization hint and use resolveOptimizationHint to
+    // emit a source='mcp' resolved transition.
     const seedHint = makeHintInsert('seed-cache-1', skillId, 'cache-optimization', 'token-optimizer');
     cairn.insertHintIfNew(db, seedHint);
-    emitMcpDisposition(db, skillId, seedHint.id, 'resolved', 'applied the fix');
+    cairn.resolveOptimizationHint(db, seedHint.id, 'resolved', 'applied the fix');
 
     const result = await executePrescriberRun({ db, skillId, profile });
 
@@ -174,7 +150,7 @@ describe('M3 disposition integration — executePrescriberRun end-to-end', () =>
     const seedHint = makeHintInsert('seed-conv-system', skillId, 'convergence');
     cairn.insertHintIfNew(db, seedHint);
 
-    // Emit source='system' — the SQL WHERE clause `source = 'mcp'` must exclude this.
+    // Emit source='system' directly — the SQL WHERE clause `source = 'mcp'` must exclude this.
     const sessionId = cairn.ensureSystemSession(db);
     cairn.logEvent(db, sessionId, 'hint_state_transition', {
       skill_id: skillId,
@@ -204,15 +180,15 @@ describe('M3 disposition integration — executePrescriberRun end-to-end', () =>
     const skillId = 'skill-m3-combined';
     const profile = makeProfile(skillId);
 
-    // Dismiss convergence.
+    // Dismiss convergence via real MCP path.
     const convHintSeed = makeHintInsert('seed-conv-combined', skillId, 'convergence');
     cairn.insertHintIfNew(db, convHintSeed);
-    emitMcpDisposition(db, skillId, convHintSeed.id, 'dismissed', 'not useful');
+    cairn.resolveOptimizationHint(db, convHintSeed.id, 'dismissed', 'not useful');
 
-    // Resolve cache-optimization.
+    // Resolve cache-optimization via real MCP path.
     const cacheHintSeed = makeHintInsert('seed-cache-combined', skillId, 'cache-optimization', 'token-optimizer');
     cairn.insertHintIfNew(db, cacheHintSeed);
-    emitMcpDisposition(db, skillId, cacheHintSeed.id, 'resolved', 'applied successfully');
+    cairn.resolveOptimizationHint(db, cacheHintSeed.id, 'resolved', 'applied successfully');
 
     const result = await executePrescriberRun({ db, skillId, profile });
 

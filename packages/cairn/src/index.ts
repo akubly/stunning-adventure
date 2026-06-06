@@ -75,7 +75,9 @@ export {
   listOptimizationHints,
   updateOptimizationHintStatus,
   deleteOptimizationHint,
+  resolveOptimizationHint,
   ACTIVE_HINT_STATUSES,
+  HINT_RESOLUTIONS,
 } from './db/optimizationHints.js';
 export { insertChangeVector } from './db/changeVectors.js';
 export {
@@ -114,11 +116,13 @@ export type { ExecutionProfileUpsert, ExecutionProfileRow } from './db/execution
 export type {
   HintSource,
   HintStatus,
+  HintResolution,
   InsertHintIfNewResult,
   ReplaceActiveHintsAtomicallyResult,
   OptimizationHintInsert,
   OptimizationHintQuery,
   OptimizationHintRow,
+  ResolveHintResult,
 } from './db/optimizationHints.js';
 export type { SessionSummary } from './agents/sessionState.js';
 export type { CurateResult } from './agents/curator.js';

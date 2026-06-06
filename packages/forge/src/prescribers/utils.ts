@@ -27,6 +27,9 @@ import type {
 /** Minimum observed vectors for baseline confidence saturation. Mirrored in packages/cairn/src/db/changeVectors.ts — keep in sync. */
 export const DEFAULT_MIN_SESSIONS = 3;
 
+/** Confidence multiplier applied to hints whose category has source='mcp' resolved transitions. */
+export const RESOLVED_CONFIDENCE_BOOST = 1.2;
+
 export function buildSnapshot(profile: ExecutionProfile): MetricSnapshot {
   return {
     driftScore: profile.drift.mean,
@@ -129,9 +132,6 @@ export function applyHistoricalVectorOrdering(hints: OptimizationHint[]): Optimi
   return [...matched, ...unmatched];
 }
 
-/** Confidence multiplier applied to hints whose category has source='mcp' resolved transitions. */
-export const RESOLVED_CONFIDENCE_BOOST = 1.2;
-
 /**
  * Apply user-disposition feedback to a hint list.
  *
@@ -142,6 +142,9 @@ export const RESOLVED_CONFIDENCE_BOOST = 1.2;
  *  - resolved  (source='mcp'): boost confidence by RESOLVED_CONFIDENCE_BOOST.
  *  - Absent/null dispositionProvider → no-op (backward compatible).
  *
+ * The Map is keyed by `${skillId}:${category}` so that a future/buggy provider
+ * returning mixed-skill rows cannot suppress or boost the wrong skill's hints.
+ *
  * Pure function — does not mutate input.
  */
 export function applyDispositions(
@@ -150,18 +153,18 @@ export function applyDispositions(
 ): OptimizationHint[] {
   if (!dispositions.length) return hints;
 
-  const byCategory = new Map<string, DispositionSummary>();
+  const byKey = new Map<string, DispositionSummary>();
   for (const d of dispositions) {
-    byCategory.set(d.category, d);
+    byKey.set(`${d.skillId}:${d.category}`, d);
   }
 
   return hints
     .filter((hint) => {
-      const d = byCategory.get(hint.category);
+      const d = byKey.get(`${hint.skillId}:${hint.category}`);
       return !d || d.dismissedCount === 0;
     })
     .map((hint) => {
-      const d = byCategory.get(hint.category);
+      const d = byKey.get(`${hint.skillId}:${hint.category}`);
       if (!d || d.resolvedCount === 0) return hint;
       return { ...hint, confidence: Math.min(1, hint.confidence * RESOLVED_CONFIDENCE_BOOST) };
     });

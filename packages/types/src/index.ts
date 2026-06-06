@@ -288,7 +288,7 @@ export interface ChangeVectorProvider {
  */
 export interface DispositionSummary {
   skillId: string;
-  category: string;
+  category: OptimizationCategory;
   /**
    * Number of source='mcp' dismissed transitions for this skill+category.
    * dismissedCount > 0 → suppress recurring hints for this category.

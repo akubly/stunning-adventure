@@ -54,9 +54,5 @@ export async function runForgePrescribers(
 
   const allHints = [...promptHints.hints, ...tokenHints.hints];
 
-  if (dispositions && dispositions.length > 0) {
-    return applyDispositions(allHints, dispositions);
-  }
-
-  return allHints;
+  return applyDispositions(allHints, dispositions ?? []);
 }
