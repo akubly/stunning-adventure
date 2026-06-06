@@ -19,7 +19,10 @@ export interface RecallResult {
   content: string;
   trust: number;
   attentionTier: 'hot' | 'warm' | 'cold';
-  /** Normalized BM25 relevance score ∈ [0,1] returned by FactStore.search(). */
+  /** Normalized BM25 relevance score ∈ [0,1] returned by FactStore.search().
+   * **Per-page only:** normalized via min-max across the current result page.
+   * Values are NOT comparable across pages — a sole result on a sparse last
+   * page always receives 1.0. Treat as an intra-page ranking signal only. */
   relevance?: number;
   /** Importance signal ∈ [0,1]. */
   importance?: number;
@@ -52,6 +55,9 @@ export interface FactStore {
     /**
      * Opaque cursor for the next page. Absent when no further results exist.
      * Consumers MUST NOT parse cursor internals.
+     * @note `results[].relevance` is normalized per-page (min-max across this
+     *   page only). It is NOT comparable across pages — an intra-page rank
+     *   signal, not an absolute score.
      */
     nextCursor?: string;
   }>;

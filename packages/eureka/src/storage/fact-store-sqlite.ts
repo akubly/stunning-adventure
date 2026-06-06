@@ -152,13 +152,37 @@ export class SqliteFactStore implements FactStore {
 
     // Fetch limit+1 rows to detect whether a next page exists without a
     // separate COUNT query. The extra row is never returned to the caller.
-    const rows = this.stmt.all({
-      query,
-      session_id: sessionId as string,
-      min_trust: minTrust,
-      limit: limit + 1,
-      offset,
-    });
+    //
+    // FSE-1: FTS5 parse guard — user-supplied query strings may contain FTS5
+    // operators (unclosed `"`, bare `*`, `-`, `NEAR`, etc.) that SQLite rejects
+    // at parse time. We catch SQLITE_ERROR (the code SQLite uses for all query-
+    // parse failures) and return empty results rather than propagating a rejected
+    // Promise. Non-parse failures use distinct codes (SQLITE_CORRUPT=11,
+    // SQLITE_IOERR=10, SQLITE_BUSY=5, …) and are rethrown unchanged.
+    let rows: SearchRow[];
+    try {
+      rows = this.stmt.all({
+        query,
+        session_id: sessionId as string,
+        min_trust: minTrust,
+        limit: limit + 1,
+        offset,
+      });
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        'code' in err &&
+        (err as { code: string }).code === 'SQLITE_ERROR'
+      ) {
+        // SQLITE_ERROR (code 1) covers FTS5 parse/syntax failures from
+        // user-supplied query text (unclosed quotes, bare operators, malformed
+        // NEAR expressions, etc.). Storage/IO failures use different codes
+        // (SQLITE_CORRUPT=11, SQLITE_IOERR=10, SQLITE_BUSY=5, …) and are
+        // still rethrown so genuine bugs remain visible.
+        return { results: [] };
+      }
+      throw err;
+    }
 
     const hasMore = rows.length > limit;
     const pageRows = hasMore ? rows.slice(0, limit) : rows;

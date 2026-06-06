@@ -69,3 +69,13 @@
 **Schema gaps (attentionTier, importance, lastAccessed) default gracefully.** None of these fields are in the `facts` table yet. `attentionTier='warm'` (identity multiplier 1.0), `importance` omitted (FR-2 uses 0), `lastAccessed` omitted (recency floor 0.1). The composite scorer still runs — results are just conservative. A future migration `002-fact-fields.ts` can add the columns without breaking Slice C's implementation (it SELECTs only content, trust, bm25_score).
 
 **The `*.contract.helper.ts` naming + non-`.test.ts` rule extends naturally to FS.** `fact-store-contract.helper.ts` follows the exact same pattern as `fact-reader-contract.helper.ts` and `trust-updater-contract.helper.ts`. The wiring test in `fact-store.contract.test.ts` imports from the helper. Vitest ignores the helper file (not `.test.ts`). The pattern is now consistent across all three storage seams.
+
+## Learnings (2026-06-05 — M8 Slice C follow-ups FSE-1 + FSE-4)
+
+**Branch:** `eureka/m8-slice-c-factstore` (follow-up commits on same branch, PR #48)
+
+**FTS5 error messages don't always contain "fts5".** The intuitive narrowing check `/fts5/i.test(err.message)` fails for `"unterminated string"` (unclosed quote) and other tokenizer-level errors. SQLite's FTS5 query parser errors all carry `code === 'SQLITE_ERROR'` (numeric 1). Non-parse errors use distinct codes: SQLITE_CORRUPT=11, SQLITE_IOERR=10, SQLITE_BUSY=5. Narrowing on code alone is the correct approach for this call site because we're inside a method that ONLY runs FTS5 queries — a false SQLITE_ERROR from a non-FTS cause would require schema corruption or an impossible misuse of the prepared statement. Don't over-narrow on message text for FTS5 errors; narrow on the error code instead.
+
+**Laura's edge test locking the broken behavior (FS-SE-11) is the right pattern.** She wrote the test asserting the rejected Promise BEFORE the fix, which made the finding machine-verifiable. Updating the test to the new contract (resolves to `{ results: [] }`) makes the fix machine-verifiable too. This is the correct audit → fix → relock cycle. The `[FINDING FSE-1]` annotation in the old test title is a useful trail even after the fix; the new title says `(FSE-1 fix)` so the arc is traceable.
+
+**Per-page relevance normalization needs documentation at two levels.** The JSDoc on `RecallResult.relevance` (the field) AND on `FactStore.search` (the return type) should both call out that relevance is per-page only. Documenting it only at one level leaves the other as a trap for future consumers who read the type definition but miss the field comment (or vice versa). Both are load-bearing: consumers of the interface read the return type; consumers of results read the field.

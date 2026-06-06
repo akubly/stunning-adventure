@@ -21,7 +21,7 @@
  *   FS-SE-8  Default minTrust=0.15 when omitted — trust=0.14 excluded
  *   FS-SE-9  Whitespace-only query → empty results, no crash
  *   FS-SE-10 Final page → nextCursor absent
- *   FS-SE-11 FTS5 unclosed quote → rejects with parse error [FINDING: no sanitization]
+ *   FS-SE-11 FTS5 unclosed quote → graceful empty results (FSE-1 fix applied)
  *   FS-SE-12 Per-page normalization distortion: sole result on sparse page gets relevance=1.0
  *
  * All tests use :memory: databases (no disk I/O needed — disk/WAL edges are
@@ -340,13 +340,29 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
   // correctness or isolation issue. File as follow-up, not a blocker.
   // ─────────────────────────────────────────────────────────────────────────
 
-  it('FS-SE-11: FTS5 unclosed-quote query — rejects with SQLite parse error [FINDING FSE-1: no sanitization]', async () => {
+  // ─────────────────────────────────────────────────────────────────────────
+  // FS-SE-11: FTS5 unclosed-quote query → graceful empty results (FSE-1 fix)
+  //
+  // FIXED (FSE-1): SqliteFactStore now wraps stmt.all() in a try/catch that
+  // catches FTS5 parse errors (code==='SQLITE_ERROR' && message contains 'fts5')
+  // and returns { results: [] } instead of propagating the rejected Promise.
+  //
+  // This prevents user-supplied query strings containing FTS5 operator chars
+  // (unclosed `"`, bare `*`, `-`, `NEAR`, etc.) from crashing callers.
+  // Non-FTS errors (DB corruption, schema mismatch) are still rethrown.
+  //
+  // Previous behavior: rejects with parse error.
+  // New behavior:      resolves to { results: [], nextCursor: undefined }.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  it('FS-SE-11: FTS5 unclosed-quote query — resolves to empty results, does not reject (FSE-1 fix)', async () => {
     seed('se11-fact', 'relevant content for fts query test', 0.8);
 
     // An unclosed double-quote is an FTS5 syntax error.
-    await expect(
-      impl.search({ query: '"unclosed phrase', sessionId: SESSION, limit: 10 }),
-    ).rejects.toThrow();
+    // After FSE-1 fix: must resolve gracefully to empty results, not reject.
+    const result = await impl.search({ query: '"unclosed phrase', sessionId: SESSION, limit: 10 });
+    expect(result.results).toHaveLength(0);
+    expect(result.nextCursor).toBeUndefined();
   });
 
   // ─────────────────────────────────────────────────────────────────────────
