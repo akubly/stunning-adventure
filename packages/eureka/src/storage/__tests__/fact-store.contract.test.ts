@@ -7,10 +7,10 @@
  * The helper definition (runFactStoreContract + FactStoreHarness) lives in:
  *   ./fact-store-contract.helper.ts
  *
- * Each call to runFactStoreContract adds 9 tests (FS-1 through FS-8, FS-8 contributing 3 via it.each).
- * InMemoryFactStore wired below → 9 contract tests.
- * SqliteFactStore wired below   → 9 contract tests.
- * Total: 18
+ * Each call to runFactStoreContract adds 11 tests (FS-1 through FS-8, FS-5b×2, FS-8 contributing 3 via it.each).
+ * InMemoryFactStore wired below → 11 contract tests.
+ * SqliteFactStore wired below   → 11 contract tests.
+ * Total: 22
  */
 
 import Database from 'better-sqlite3';
@@ -50,7 +50,10 @@ function encodeCursorInMemory(offset: number): string {
 
 function decodeCursorInMemory(cursor: string): number {
   try {
-    return (JSON.parse(Buffer.from(cursor, 'base64').toString()) as { offset: number }).offset;
+    const payload = JSON.parse(Buffer.from(cursor, 'base64').toString()) as { offset: number };
+    return typeof payload.offset === 'number' && Number.isFinite(payload.offset) && Number.isInteger(payload.offset) && payload.offset >= 0
+      ? payload.offset
+      : 0;
   } catch {
     return 0;
   }
@@ -71,7 +74,7 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
 
       const offset = cursor !== undefined ? decodeCursorInMemory(cursor) : 0;
 
-  if (!query.trim()) return { results: [] };
+      if (!query.trim()) return { results: [] };
 
       const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
 

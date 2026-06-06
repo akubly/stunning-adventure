@@ -23,7 +23,7 @@
  *   - `attentionTier` defaults to 'warm' (warm-tier identity multiplier = 1.0).
  *   - `importance` is omitted (undefined → compositeScore uses 0).
  *   - `lastAccessed` is omitted (undefined → compositeScore uses Infinity → recency floor 0.1).
- * See decision drop roger-m8-slice-c.md §Schema Gaps for the full record.
+ * See `.squad/decisions.md` (M8 Slice C section) for the full record.
  *
  * ## Cursor design
  *

@@ -83,7 +83,7 @@ const SESSION_B = 'fs-contract-session-B' as SessionId;
 /**
  * Run the full FactStore contract suite against a given implementation factory.
  *
- * Each call to `runFactStoreContract` adds 9 tests (FS-1 through FS-6, FS-7, FS-8×3 via it.each).
+ * Each call to `runFactStoreContract` adds 11 tests (FS-1 through FS-8, FS-5b×2, FS-8×3 via it.each).
  *
  * @param implName    Human-readable label shown in test output (e.g. 'SqliteFactStore').
  * @param makeHarness Factory called once per test (via beforeEach) to produce a fresh,
@@ -250,6 +250,31 @@ export function runFactStoreContract(
       const unique = new Set(allContents);
       expect(unique.size).toBe(3);
     });
+
+    // -----------------------------------------------------------------------
+    // FS-5b — Structurally-valid cursor with bad offset falls back to page 0
+    //
+    // A cursor whose JSON is valid but whose `offset` field is negative, NaN,
+    // or non-integer must NOT crash or produce an invalid query. Both impls
+    // must clamp to offset=0 — i.e. behave as if no cursor was supplied.
+    // (T2/T6: mirrors decodeCursor validation in SqliteFactStore.)
+    // -----------------------------------------------------------------------
+
+    it.each([
+      ['negative', Buffer.from(JSON.stringify({ offset: -5 })).toString('base64')],
+      ['NaN',      Buffer.from(JSON.stringify({ offset: null })).toString('base64')],
+    ])(
+      'FS-5b: cursor with %s offset falls back to page-0 results (no crash)',
+      async (_label, badCursor) => {
+        await seed('fs5b-a', SESSION_A, 'fallback cursor alpha content', 0.8);
+
+        const withoutCursor = await impl.search({ query: 'fallback', sessionId: SESSION_A, limit: 10 });
+        const withBadCursor = await impl.search({ query: 'fallback', sessionId: SESSION_A, limit: 10, cursor: badCursor });
+
+        // Bad cursor falls back to offset=0 → same results as no cursor.
+        expect(withBadCursor.results).toHaveLength(withoutCursor.results.length);
+      },
+    );
 
     // -----------------------------------------------------------------------
     // FS-6 — Cross-session isolation

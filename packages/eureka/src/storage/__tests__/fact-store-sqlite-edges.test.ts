@@ -73,8 +73,10 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
   // FS-SE-1: BM25 normalization — top result gets relevance=1.0
   //
   // When multiple results are returned, min-max normalization must assign
-  // relevance=1.0 to the highest-scoring result. All results must be in
-  // non-increasing relevance order.
+  // relevance=1.0 to the highest-scoring result. All relevance values must
+  // be ∈ [0,1]. Relevance order is NOT asserted here — relevance is pure
+  // BM25 quality, independent of the composite (-bm25 × trust) sort order.
+  // See FS-SE-1b for the heterogeneous-trust ordering lock.
   //
   // This locks the normalization math independently of the ordering lock in
   // FS-4 (which verifies rank ordering but does not assert relevance=1.0 for
