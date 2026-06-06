@@ -266,3 +266,7 @@ Chose option (b): annotated `london-tdd-first-green/SKILL.md` as "Sprint 0 varia
 📌 **Crucible Sprint 0 — Walkthrough A REFACTOR CYCLE COMPLETE** (2026-06-02T06:43:01Z): Laura (RED) authored 4 unit tests with mocked DB collaborator; Roger (REFACTOR) extracted ForkLineage value object, introduced SessionManager service + DB interface, wired in-memory adapter. All tests GREEN (0 regression on acceptance layer). Monorepo builds clean. DB collaborator seam established, ready for L1-substrate swap when OQ-2 lands pre-sprint-2. Deferred: Refactor 3 (SQLite integration stub), Mock Drift Defense (shared fixture builder). Next candidates: (a) Refactor 3 integration test, (b) Walkthrough B (§4.2 Pre-Commit Hook Veto). — Scribe
 
 - 2026-06-05 ✅ persona-review-cycle 2 complete: Crucible Sprint 0 Walkthrough A ready to ship (Cycle 1: 11 findings, 10 fixed; Cycle 2: 3 advisory, 2 fixed, 1 deferred)
+
+### 2026-06-05: SKILL doc-drift fixes (PR #45 Copilot review)
+
+**SKILL code examples must be kept in sync with the referenced implementation.** When a PR review cycle changes source code (e.g. removes a factory method, tightens a bounds-check), any SKILL doc whose examples illustrate that code becomes stale and will mislead future refactors. Fix strategy: read the actual shipped source, then update the snippet to match — not the other way around. Both corrections here were grounded in `fork-lineage.ts` and `session-manager.ts` as actually merged.
