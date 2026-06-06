@@ -433,9 +433,9 @@ NULL trust facts (NaN sentinel) are excluded by `AND f.trust IS NOT NULL` before
 
 ## 7. FSE-1 Follow-up: FTS5 Error Narrowing (2026-06-05)
 
-**Fix:** Wrapped `stmt.all()` in `SqliteFactStore.search()` with try/catch. On `SQLITE_ERROR` (SQLite numeric code 1, used for all query-parse failures), returns `{ results: [] }`. All other error codes rethrow unchanged.
+**Fix:** Wrapped `stmt.all()` in `SqliteFactStore.search()` with try/catch. On `SQLITE_ERROR` with a message matching FTS5 patterns, returns `{ results: [] }`. Other errors rethrow unchanged.
 
-**Why `SQLITE_ERROR` alone, not message pattern:** FTS5 parse errors produce varied messages — `"unterminated string"`, `"syntax error near ..."`, etc. — that do not reliably contain `"fts5"`. The SQLite error code `SQLITE_ERROR` (1) is the consistent signal for all query-parse failures at this call site. Non-parse errors (corruption, I/O, busy) use distinct codes and are still rethrown.
+**Narrowing (message-matched):** `code === 'SQLITE_ERROR' && /fts5|unterminated|syntax error|malformed MATCH/i.test(message)`. This pattern correctly catches FTS5 tokenizer errors (e.g., `"unterminated string"` for unclosed `"`) and FTS5 syntax errors (e.g., `"fts5: syntax error near..."`) while letting non-FTS `SQLITE_ERROR` propagate (e.g., `"no such table: facts_fts"` from a dropped table — message doesn't match pattern, rethrows correctly).
 
 **FS-SE-11 updated:** from `rejects.toThrow()` to `resolves { results: [], nextCursor: undefined }`. The `(FSE-1 fix)` label in the title preserves the audit trail.
 

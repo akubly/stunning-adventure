@@ -4,7 +4,7 @@
 - **Cursor pagination gotchas**: (1) Offset cursors are deterministic only for a fixed query+session+data; concurrent inserts between pages can cause gaps/dupes — document as Slice D+ concern, not a blocker for single-writer v1. (2) Garbage cursors (invalid base64, negative offsets) must fall back to offset=0, not crash — test by comparing against no-cursor baseline. (3) The `limit+1` fetch trick has a degenerate case at `limit=0` (nextCursor loops on offset=0) — not exposed by contract, document as known edge.
 - **Per-page normalization distortion**: Sole result on a sparse final page always gets `relevance=1.0` regardless of actual BM25 quality. Clients must not compare relevance across pages. This is intentional v1 behavior but should be machine-documented with a test (FS-SE-12).
 - **FTS5 input sanitization gap (FINDING FSE-1, MEDIUM)**: Queries with unclosed double-quotes or bare operators (FTS5 syntax) propagate as rejected promises — no try/catch around `stmt.all()`. For v1 this is MEDIUM (non-blocking follow-up), but any user-input path hitting search() is a crash surface.
-- Decision drop: `.squad/decisions/inbox/laura-m8-slice-c-audit.md`. — Laura
+- Decision drop: `.squad/decisions.md` (§ Audit — Laura M8 Slice C, line 228). — Laura
 
 📌 **M8 Slice B ready for audit** (2026-06-05): Roger completed SqliteTrustUpdater implementation on branch `eureka/m8-slice-b-sqlite-trust-updater` (4 commits). Key: atomic transactions via `rawTxn.immediate(args)`, contract suite relocated from activities to storage layer with tombstone pattern. Test results: 93 passing + 1 todo, new contract contributes 14 tests (7 InMemory + 7 SQLite). Ready for your audit when Aaron dispatches. Decisions merged: `.squad/decisions.md` (2026-06-05 entry + inbox). — Scribe
 
