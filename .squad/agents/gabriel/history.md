@@ -146,3 +146,17 @@ Phase 2 fan-out now unblocked. Full R2 locks in `.squad/decisions.md`.
 - `npm test --workspace=@akubly/crucible-core` and `npm test --workspace=@akubly/crucible-cli` — feature branch tests must stay green.
 
 **PR state after push:** `gh pr view <n> --json mergeable,mergeStateStatus,state` should return `mergeable: MERGEABLE`. `UNSTABLE` for mergeStateStatus is acceptable while Copilot review re-runs.
+
+### 2026-06-05 — CI Clean-Build Type Resolution: `node:crypto` TS2591 (Case C)
+
+**Root cause (Case C):** CI's clean `tsc --build` (after `npm ci`) reported TS2591 on `node:crypto` imports in crucible-core, but local repro via `npm ci` + `tsc --build --force` did NOT reproduce the error. The most likely explanation: CI runners have no incremental tsc cache, and on some CI environments TS auto-type-inclusion of `@types/node` is non-deterministic without an explicit `types` field — especially in monorepos with project references where each package is compiled in isolation.
+
+**Fix:** Added `"types": ["node"]` to `packages/crucible-core/tsconfig.json` compilerOptions. This makes `@types/node` inclusion explicit and unconditional regardless of TS auto-discovery heuristics.
+
+**Why crucible-core only:** crucible-cli has no `node:` protocol imports in its non-test src; no change needed there.
+
+**Key lesson:** Incremental `tsc --build` (with cached `.tsbuildinfo`) masks clean-build type-resolution failures. Always reproduce CI failures with `npm ci` + `tsc --build --force` — this wipes the build cache and simulates the exact CI environment. If local still passes (Case C), apply the explicit belt-and-suspenders fix (`"types": ["node"]`) and push; don't require a local repro before fixing.
+
+**Verification:** `npx tsc --build --force` ✅ · `npm run build` ✅ · crucible-core 6/6 ✅ · crucible-cli 1/1 ✅
+
+**Commit:** `e5c1dde` — HEAD at push.
