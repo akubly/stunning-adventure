@@ -233,3 +233,12 @@ L1: Conductor + Ledger       ← read-set captured on commit (US-S-3)
 - `step-into` for agentic systems must descend a DAG (sub-task fan-out/fan-in), not a thread stack. Re-confirmed from Round 1 US-S-5 against Phase 2 surfaces — §13.1 has neither verb, so this remains a v1.5 ask, but the §6.4 `parentId` + `causalParentId` split already provides the substrate to do it right when the time comes.
 - Three edge types coexist on every primitive (`parentId` structural production, `causalParentId` sub-task spawn, `causalReadSet.primitiveIds` content-influence). A `why`/`backtrace` verb that doesn't let the user select which edge kind to traverse will answer the wrong question. Default = all three; `--edges` selector for power users.
 - Predicate languages embedded in pre-commit hooks are a DoS vector if unsandboxed (CPU/memory/time bound, no I/O, no host syscalls). This is a §18 Security ask, not a §9.8 Aperture ask, but Aperture is where users will encounter the symptom.
+
+---
+
+## Archive Summary
+
+Earlier entries (200 lines) archived to history-archive.md on 2026-06-05.
+
+---
+

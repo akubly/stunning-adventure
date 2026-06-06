@@ -56,6 +56,7 @@ export { getPreference, setPreference } from './db/preferences.js';
 export { recordSkip, getSkips } from './db/skipBreadcrumbs.js';
 export { getLastProcessedEventId, advanceCursor } from './db/curatorState.js';
 export { SqliteChangeVectorProvider } from './db/sqliteChangeVectorProvider.js';
+export { SqliteHintDispositionProvider } from './db/sqliteHintDispositionProvider.js';
 export { getSessionsSinceInstall } from './db/prescriptions.js';
 export {
   upsertExecutionProfile,
@@ -74,7 +75,14 @@ export {
   listOptimizationHints,
   updateOptimizationHintStatus,
   deleteOptimizationHint,
+  // resolveOptimizationHint, HINT_RESOLUTIONS, HintResolution, ResolveHintResult are
+  // intentional public API: resolveOptimizationHint is the primary user-driven
+  // closure operation and HINT_RESOLUTIONS/HintResolution/ResolveHintResult are
+  // its input and output contract.  Consumers (e.g. MCP handler, integration tests)
+  // are expected to import from the public root rather than internal paths.
+  resolveOptimizationHint,
   ACTIVE_HINT_STATUSES,
+  HINT_RESOLUTIONS,
 } from './db/optimizationHints.js';
 export { insertChangeVector } from './db/changeVectors.js';
 export {
@@ -113,11 +121,13 @@ export type { ExecutionProfileUpsert, ExecutionProfileRow } from './db/execution
 export type {
   HintSource,
   HintStatus,
+  HintResolution,
   InsertHintIfNewResult,
   ReplaceActiveHintsAtomicallyResult,
   OptimizationHintInsert,
   OptimizationHintQuery,
   OptimizationHintRow,
+  ResolveHintResult,
 } from './db/optimizationHints.js';
 export type { SessionSummary } from './agents/sessionState.js';
 export type { CurateResult } from './agents/curator.js';

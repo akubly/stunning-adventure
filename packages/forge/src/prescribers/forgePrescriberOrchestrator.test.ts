@@ -3,11 +3,13 @@ import {
   NEGATIVE_IMPACT_AUTO_APPLY_GATE,
   type ChangeVectorProvider,
   type ChangeVectorSummary,
+  type DispositionSummary,
   type ExecutionProfile,
+  type HintDispositionProvider,
 } from "@akubly/types";
 import { describe, expect, it, vi } from "vitest";
 import { runForgePrescribers } from "./forgePrescriberOrchestrator.js";
-import { DEFAULT_MIN_SESSIONS } from "./utils.js";
+import { DEFAULT_MIN_SESSIONS, RESOLVED_CONFIDENCE_BOOST } from "./utils.js";
 
 function makeProfile(overrides: Partial<ExecutionProfile> = {}): ExecutionProfile {
   return {
@@ -269,6 +271,253 @@ describe("runForgePrescribers", () => {
       expect(cacheOptimization.evidence.autoApplyEligible).toBe(
         testCase.expectedAutoApplyEligible,
       );
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3 — Hint disposition feedback tests
+// ---------------------------------------------------------------------------
+
+describe("runForgePrescribers — HintDispositionProvider", () => {
+  // makeProfile fires: convergence, cache-optimization, model-selection, context-management
+
+  it("suppresses hints for categories with dismissed (source=mcp) transitions", async () => {
+    const profile = makeProfile();
+    const baselineHints = await runForgePrescribers(profile, profile.skillId);
+    expect(baselineHints.some((h) => h.category === "convergence")).toBe(true);
+
+    const dispositionProvider = {
+      getDispositions: vi.fn().mockResolvedValue([
+        { skillId: profile.skillId, category: "convergence", dismissedCount: 1, resolvedCount: 0 },
+      ] satisfies DispositionSummary[]),
+    } satisfies HintDispositionProvider;
+
+    const result = await runForgePrescribers(profile, profile.skillId, { dispositionProvider });
+
+    expect(dispositionProvider.getDispositions).toHaveBeenCalledOnce();
+    expect(dispositionProvider.getDispositions).toHaveBeenCalledWith(profile.skillId);
+    expect(result.some((h) => h.category === "convergence")).toBe(false);
+    expect(result.length).toBe(baselineHints.length - 1);
+  });
+
+  it("boosts confidence for categories with resolved (source=mcp) transitions", async () => {
+    const profile = makeProfile();
+    const baselineHints = await runForgePrescribers(profile, profile.skillId);
+    const baselineCache = findHint(baselineHints, "cache-optimization");
+
+    const dispositionProvider = {
+      getDispositions: vi.fn().mockResolvedValue([
+        { skillId: profile.skillId, category: "cache-optimization", dismissedCount: 0, resolvedCount: 1 },
+      ] satisfies DispositionSummary[]),
+    } satisfies HintDispositionProvider;
+
+    const result = await runForgePrescribers(profile, profile.skillId, { dispositionProvider });
+
+    const cacheHint = findHint(result, "cache-optimization");
+    expect(cacheHint.confidence).toBeCloseTo(
+      Math.min(1, baselineCache.confidence * RESOLVED_CONFIDENCE_BOOST),
+      10,
+    );
+  });
+
+  it("applies no change when dispositionProvider is absent (backward compat)", async () => {
+    const profile = makeProfile();
+    const baselineHints = await runForgePrescribers(profile, profile.skillId);
+    const result = await runForgePrescribers(profile, profile.skillId, {});
+
+    expect(result).toHaveLength(baselineHints.length);
+    for (const baseline of baselineHints) {
+      const matched = findHint(result, baseline.category);
+      expect(matched.confidence).toBeCloseTo(baseline.confidence, 10);
+    }
+  });
+
+  it("applies no change when dispositionProvider returns empty array (no mcp transitions)", async () => {
+    const profile = makeProfile();
+    const baselineHints = await runForgePrescribers(profile, profile.skillId);
+
+    const dispositionProvider = {
+      getDispositions: vi.fn().mockResolvedValue([]),
+    } satisfies HintDispositionProvider;
+
+    const result = await runForgePrescribers(profile, profile.skillId, { dispositionProvider });
+
+    expect(result).toHaveLength(baselineHints.length);
+    for (const baseline of baselineHints) {
+      const matched = findHint(result, baseline.category);
+      expect(matched.confidence).toBeCloseTo(baseline.confidence, 10);
+    }
+  });
+
+  it("fails open when dispositionProvider throws, returning unmodified hints", async () => {
+    const profile = makeProfile();
+    const baselineHints = await runForgePrescribers(profile, profile.skillId);
+
+    const dispositionProvider = {
+      getDispositions: vi.fn().mockRejectedValue(new Error("disposition DB unavailable")),
+    } satisfies HintDispositionProvider;
+
+    const result = await runForgePrescribers(profile, profile.skillId, { dispositionProvider });
+
+    expect(dispositionProvider.getDispositions).toHaveBeenCalledOnce();
+    expect(result).toHaveLength(baselineHints.length);
+    for (const baseline of baselineHints) {
+      const matched = findHint(result, baseline.category);
+      expect(matched.confidence).toBeCloseTo(baseline.confidence, 10);
+    }
+  });
+
+  it("does not suppress when dispositionCount is zero for the category", async () => {
+    const profile = makeProfile();
+    const baselineHints = await runForgePrescribers(profile, profile.skillId);
+
+    const dispositionProvider = {
+      getDispositions: vi.fn().mockResolvedValue([
+        // dismissedCount=0 → no suppression for convergence
+        { skillId: profile.skillId, category: "convergence", dismissedCount: 0, resolvedCount: 0 },
+      ] satisfies DispositionSummary[]),
+    } satisfies HintDispositionProvider;
+
+    const result = await runForgePrescribers(profile, profile.skillId, { dispositionProvider });
+
+    expect(result).toHaveLength(baselineHints.length);
+    expect(result.some((h) => h.category === "convergence")).toBe(true);
+  });
+
+  it("applies both suppression and boost in the same call for different categories", async () => {
+    const profile = makeProfile();
+    const baselineHints = await runForgePrescribers(profile, profile.skillId);
+    const baselineCache = findHint(baselineHints, "cache-optimization");
+
+    const dispositionProvider = {
+      getDispositions: vi.fn().mockResolvedValue([
+        { skillId: profile.skillId, category: "convergence", dismissedCount: 1, resolvedCount: 0 },
+        { skillId: profile.skillId, category: "cache-optimization", dismissedCount: 0, resolvedCount: 2 },
+      ] satisfies DispositionSummary[]),
+    } satisfies HintDispositionProvider;
+
+    const result = await runForgePrescribers(profile, profile.skillId, { dispositionProvider });
+
+    expect(result.some((h) => h.category === "convergence")).toBe(false);
+    const cacheHint = findHint(result, "cache-optimization");
+    expect(cacheHint.confidence).toBeCloseTo(
+      Math.min(1, baselineCache.confidence * RESOLVED_CONFIDENCE_BOOST),
+      10,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3 hardening — adversarial edge cases (Laura)
+// ---------------------------------------------------------------------------
+
+describe("runForgePrescribers — M3 adversarial edge cases", () => {
+  // Gap #1 (Aaron): re-dismissed (dismissedCount=2) must still be suppressed.
+  it("suppresses a re-dismissed category (dismissedCount=2, explicit permanence fixture)", async () => {
+    const profile = makeProfile();
+    const baselineHints = await runForgePrescribers(profile, profile.skillId);
+    expect(baselineHints.some((h) => h.category === "convergence")).toBe(true);
+
+    const dispositionProvider = {
+      getDispositions: vi.fn().mockResolvedValue([
+        {
+          skillId: profile.skillId,
+          category: "convergence",
+          dismissedCount: 2, // dismissed twice — still suppressed
+          resolvedCount: 0,
+        },
+      ] satisfies DispositionSummary[]),
+    } satisfies HintDispositionProvider;
+
+    const result = await runForgePrescribers(profile, profile.skillId, { dispositionProvider });
+
+    expect(result.some((h) => h.category === "convergence")).toBe(false);
+    expect(result.length).toBe(baselineHints.length - 1);
+  });
+
+  // Gap #2 (Aaron): confidence ceiling — hint with sessionCount=9 yields confidence=0.9.
+  // 0.9 * 1.2 = 1.08 — Math.min(1, ...) clamp must hold; confidence must never exceed 1.
+  it("clamps resolved confidence boost to 1.0 when baseline confidence is high (0.9 * 1.2 = 1.08)", async () => {
+    // sessionCount=9: convergence confidence = Math.min(1, 9/10) = 0.9
+    // cache-optimization confidence = Math.min(1, 9/10) = 0.9
+    const profile = makeProfile({ sessionCount: 9 });
+    const baselineHints = await runForgePrescribers(profile, profile.skillId);
+    const baselineCache = findHint(baselineHints, "cache-optimization");
+    expect(baselineCache.confidence).toBeCloseTo(0.9, 10);
+
+    const dispositionProvider = {
+      getDispositions: vi.fn().mockResolvedValue([
+        {
+          skillId: profile.skillId,
+          category: "cache-optimization",
+          dismissedCount: 0,
+          resolvedCount: 1,
+        },
+      ] satisfies DispositionSummary[]),
+    } satisfies HintDispositionProvider;
+
+    const result = await runForgePrescribers(profile, profile.skillId, { dispositionProvider });
+
+    const cacheHint = findHint(result, "cache-optimization");
+    // 0.9 * 1.2 = 1.08 → clamped to 1.0
+    expect(cacheHint.confidence).toBe(1.0);
+    expect(cacheHint.confidence).not.toBeGreaterThan(1.0);
+  });
+
+  // Gap #3 (Aaron): concurrent/mixed transitions — same category has BOTH dismissedCount>0
+  // AND resolvedCount>0. Per decision record, dismissed takes precedence (hint is suppressed).
+  it("dismissed wins over resolved when same category has both signals (dismissedCount=1, resolvedCount=1)", async () => {
+    const profile = makeProfile();
+    const baselineHints = await runForgePrescribers(profile, profile.skillId);
+    expect(baselineHints.some((h) => h.category === "convergence")).toBe(true);
+
+    const dispositionProvider = {
+      getDispositions: vi.fn().mockResolvedValue([
+        {
+          skillId: profile.skillId,
+          category: "convergence",
+          dismissedCount: 1,
+          resolvedCount: 1, // both present — dismissed must win
+        },
+      ] satisfies DispositionSummary[]),
+    } satisfies HintDispositionProvider;
+
+    const result = await runForgePrescribers(profile, profile.skillId, { dispositionProvider });
+
+    // Suppression takes precedence over boost — hint absent from output.
+    expect(result.some((h) => h.category === "convergence")).toBe(false);
+  });
+
+  // Gap #5 (Aaron): all-zero DispositionSummary (no source≠mcp transitions leaked through,
+  // or a summary with no real user signal) → strict no-op.
+  it("all-zero DispositionSummary (dismissedCount=0, resolvedCount=0) is a no-op", async () => {
+    const profile = makeProfile();
+    const baselineHints = await runForgePrescribers(profile, profile.skillId);
+
+    const dispositionProvider = {
+      getDispositions: vi.fn().mockResolvedValue([
+        {
+          skillId: profile.skillId,
+          category: "convergence",
+          dismissedCount: 0,
+          resolvedCount: 0,
+        },
+        {
+          skillId: profile.skillId,
+          category: "cache-optimization",
+          dismissedCount: 0,
+          resolvedCount: 0,
+        },
+      ] satisfies DispositionSummary[]),
+    } satisfies HintDispositionProvider;
+
+    const result = await runForgePrescribers(profile, profile.skillId, { dispositionProvider });
+
+    expect(result).toHaveLength(baselineHints.length);
+    for (const baseline of baselineHints) {
+      const matched = findHint(result, baseline.category);
+      expect(matched.confidence).toBeCloseTo(baseline.confidence, 10);
     }
   });
 });

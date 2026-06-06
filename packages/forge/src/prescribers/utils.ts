@@ -14,6 +14,7 @@
 import {
   ATTENUATION_FLOOR,
   NEGATIVE_IMPACT_AUTO_APPLY_GATE,
+  type DispositionSummary,
 } from "@akubly/types";
 import { classifyDriftLevel } from "../telemetry/drift.js";
 import type { ExecutionProfile } from "../telemetry/types.js";
@@ -25,6 +26,9 @@ import type {
 
 /** Minimum observed vectors for baseline confidence saturation. Mirrored in packages/cairn/src/db/changeVectors.ts — keep in sync. */
 export const DEFAULT_MIN_SESSIONS = 3;
+
+/** Confidence multiplier applied to hints whose category has source='mcp' resolved transitions. */
+export const RESOLVED_CONFIDENCE_BOOST = 1.2;
 
 export function buildSnapshot(profile: ExecutionProfile): MetricSnapshot {
   return {
@@ -126,4 +130,42 @@ export function applyHistoricalVectorOrdering(hints: OptimizationHint[]): Optimi
   matched.sort((a, b) => (b.predictedImpact ?? 0) - (a.predictedImpact ?? 0));
   unmatched.sort((a, b) => b.impactScore - a.impactScore);
   return [...matched, ...unmatched];
+}
+
+/**
+ * Apply user-disposition feedback to a hint list.
+ *
+ * Rules (M3 — Forge Phase feedback loop):
+ *  - dismissed (source='mcp'): suppress all hints for the dismissed category.
+ *    The provider only returns mcp-sourced transitions, so any
+ *    DispositionSummary.dismissedCount > 0 represents a real user signal.
+ *  - resolved  (source='mcp'): boost confidence by RESOLVED_CONFIDENCE_BOOST.
+ *  - Absent/null dispositionProvider → no-op (backward compatible).
+ *
+ * The Map is keyed by `${skillId}:${category}` so that a future/buggy provider
+ * returning mixed-skill rows cannot suppress or boost the wrong skill's hints.
+ *
+ * Pure function — does not mutate input.
+ */
+export function applyDispositions(
+  hints: OptimizationHint[],
+  dispositions: DispositionSummary[],
+): OptimizationHint[] {
+  if (!dispositions.length) return hints;
+
+  const byKey = new Map<string, DispositionSummary>();
+  for (const d of dispositions) {
+    byKey.set(`${d.skillId}:${d.category}`, d);
+  }
+
+  return hints
+    .filter((hint) => {
+      const d = byKey.get(`${hint.skillId}:${hint.category}`);
+      return !d || d.dismissedCount === 0;
+    })
+    .map((hint) => {
+      const d = byKey.get(`${hint.skillId}:${hint.category}`);
+      if (!d || d.resolvedCount === 0) return hint;
+      return { ...hint, confidence: Math.min(1, hint.confidence * RESOLVED_CONFIDENCE_BOOST) };
+    });
 }
