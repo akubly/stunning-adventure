@@ -121,12 +121,19 @@ never reaches the UPDATE.
 | C-1 Happy path | fn(current) result is written; SELECT after txn returns new value |
 | C-2 fn throws | error propagates unchanged; SELECT still returns original value |
 | C-3 fn returns NaN | InvalidValueError thrown; SELECT still returns original value |
+| C-3b fn returns out-of-range | InvalidValueError thrown for 1.5 and -0.1; SELECT unchanged |
 | C-4 Row missing | NotFoundError thrown before fn called; fn never invoked |
 | C-5 5 concurrent | Promise.all of N mutations; final value = start + N * delta |
 | C-6 Different keys | Both reach correct final value; no cross-key interference |
 | C-7 Cross-session | Mutation on sessionB does not affect sessionA's row |
 
-Use `runTrustUpdaterContract` (or the analogous shared contract helper) to verify all 7.
+Use `runTrustUpdaterContract` to verify all 8. Exported from:
+`packages/eureka/src/storage/__tests__/trust-updater-contract.helper.ts`
+as `runTrustUpdaterContract` and `TrustUpdaterHarness`.
+
+**Visibility note:** The contract helper is monorepo-internal — external implementations
+should duplicate the suite (~50 lines). Promote to a `@akubly/eureka/testing` subpath
+when external consumers materialize.
 
 ---
 

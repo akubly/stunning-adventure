@@ -19,7 +19,7 @@
  * Mock contract discipline (§55 §3.3):
  *   TrustUpdater is an I/O seam (trust-write). Per §55 §1.2, always mock storage I/O.
  *   The inline structural mock here must be backed by a contract test when the real
- *   TrustUpdater implementation ships — see trust-updater-contract.test.ts (M7-C).
+ *   TrustUpdater implementation ships — see storage/__tests__/trust-updater-contract.helper.ts (M8 Slice B).
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
