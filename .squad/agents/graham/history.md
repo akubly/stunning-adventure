@@ -1,3 +1,62 @@
+# Graham — History
+
+📌 **Role:** Lead / Architect (Overall vision, cross-system integration, tiebreak arbitration)  
+📌 **Last update:** 2026-06-02
+
+## Current Status
+
+**M0/M1/M2 Dogfood Scope:**
+- M0 (Alexander, PR #36): ✅ Shipped — forge-mcp registration + plugin config
+- M1 (Roger, PR #40): ✅ Open — hint consumption MCP tools (list_optimization_hints, resolve_optimization_hint)
+- M2 (Gabriel, PR #44): ✅ Review-Complete (2-cycle + doc sweep) — bash shell-init hooks + install README; ready to merge
+
+**Recent Major Work:**
+- PR #33 Cloud-Review-Cycle round 6 — Crucible CTD ADR final fixes (cycle 2–6 complete)
+- PR #34 gitignore hygiene findings — .squad/ committed artifacts should not be tracked
+- Designed-but-unbuilt audit — Forge Phase 4.6 surface fully implemented; Phase 5+ deferred
+- Packaging/dogfood readiness audit — Blockers identified: forge-mcp registration, hint consumption tools, bash hooks
+
+**Eureka Status:**
+- v1 PRD locked; v3 PRD reconciled against Cairn/Forge substrate
+- R6 source-reading unblocked; trio (Genesta/Crispin/Edgar) aligned
+- M5+M6 branch prep complete (eureka/m5-m6-trust-feedback ready for review)
+
+## Key Learnings (Recent)
+
+1. **Sub-kind schema governance:** Payload schema + effects + causal-edge contract required, not just enum membership.
+2. **Predicate timing honesty:** Promise.race() is not a sandboxing primitive. v1 uses cooperative measurement + telemetry + retry-budget quarantine; hard preemption belongs in v1.5+.
+3. **Replay-determinism pattern:** Record results, not just choices, when results depend on environment state.
+4. **Gitignore hygiene:** .gitignore blocks new adds only; committed files must be untracked with git rm --cached.
+
+---
+
+## Eureka C8: Recommended test-dir exemption for eslint (overridden by Aaron siding with Genesta)
+
+**Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
+**Milestone:** R6 opened — Eureka source-reading unlocked; trio (Genesta/Crispin/Edgar) reconciled v3 PRD against Cairn/Forge substrate.
+
+**Key outcomes:**
+- Genesta (B+ verdict): PRD v3 stands with v3.1 patch (4 targeted fixes)
+- Crispin (Path A recommended): clean-slate Eureka over Cairn extension
+- Edgar (Kernel extraction): ~70% mechanical infra exists; recommend shared learning-kernel package
+
+**Your involvement:** Advisory roles on boundaries/UX (2-3 hrs/week contribution rate).
+
+**Decision gates pending Aaron's direction:**
+1. Vector search scope (in/out for v1)?
+2. Architectural path (A clean-slate or B extension)?
+3. Learning-kernel extraction (now or defer)?
+4. v3 patch or v4 rewrite?
+
+**Next:** Cassima on deck for v3.1 or v4 intake pending Aaron's architectural direction.
+## 📋 SUMMARY (as of 2026-05-31)
+
+**Current Focus:** Crucible CTD final review + post-CTD ADR authoring  
+**Latest Major Work:** PR #33 cloud-review-cycle round 5 — 3 Copilot findings addressed (fork_resume schema, ADR-0019 payloads, predicate timing honesty); Scribe merged and staged  
+**Key Architectural Contributions:** Replay-determinism bug finding, childSid hybrid protocol review, L3.5 Scheduler Phase 0.5 stub acceptance, sub-kind governance completeness  
+
+---
+
 📌 **PR #33 Cloud-Review-Cycle Round 5 COMPLETE** (2026-05-31T22:55Z): Graham addressed 3 Copilot findings. (1) Fork resume schema: Added authoritative payload schema for `fork_resume` sub-kind in §6.3, completing registry-level governance alongside `fork_origin` and `fork.collision_choice`. (2) ADR-0019 acceptance signal: Updated concrete examples to use actual `fork.collision_choice` payload shape (chosenOption/existingChildSid/resultingChildSid) instead of generic placeholders. (3) Predicate timing honesty: Reframed v1 Hook Bus predicate timing as cooperative measurement with post-hoc telemetry + retry-budget quarantine, not hard preemption (v1.5+ worker/process isolation). Sub-kind governance completeness + watchdog honesty patterns now captured. Build + tests passing. Decision merged to decisions.md; branch staged for Copilot re-review. — Scribe
 
 📌 **PR #33 Cloud-Review-Cycle Round 2 COMPLETE** (2026-05-31T06:15:00Z): Graham addressed all 11 Copilot review threads on Crucible CTD ADRs. Fixes applied: ADR-0002 summary clarity, ADR-0006 PA-B3 ownership, ADR-0018 Security section, ADR-0011/0019 accepted-date stamps, ADR-0020 renumbering. Decision captured: graham-adr-number-stability.md. Build + tests passing. — Scribe
@@ -150,4 +209,5 @@ Aaron's priority reset: defer Eureka moves; get forge installable and dogfoodabl
 
 *Recommended sequence:* (1) Register `forge-mcp` in `.github/plugin/.mcp.json` + `.copilot/mcp-config.json` — S, Alexander; (2) Add `list_optimization_hints` + `resolve_optimization_hint` to cairn MCP — M, Alexander + Beatrix; (3) Bash hook equivalent — M, infrastructure; (4) README forge section — S, anyone, last (write after loop is testable).
 Older detailed history (before 2026-05-30) archived to `history-archive.md`.
+**For detailed history, see history-archive.md**
 

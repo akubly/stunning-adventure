@@ -103,6 +103,107 @@ npm install @akubly/cairn
 
 Clone this repo and point your Copilot CLI at it. The manifests in `.github/plugin/` configure hooks and the MCP server automatically.
 
+---
+
+## forge-mcp: Bash Shell Init (M2)
+
+Wire Cairn's session-start telemetry hook into your interactive bash sessions
+so the prescriber runs automatically each time you open a terminal.
+
+### Prerequisites
+
+- **Node.js** ≥ 20 on your `PATH`
+- Either: the repo cloned and built locally (`npm run build`), **or** the
+  runtime package installed globally (`npm install -g @akubly/skillsmith-runtime`)
+
+### Install (one-time, idempotent)
+
+```bash
+# From the repo root:
+bash .github/hooks/cairn/install.sh
+```
+
+This appends a guarded `source` block to `~/.bashrc`. Re-running is safe — the
+script checks for the marker before appending and exits with a message if
+already installed.
+
+### Reload and verify
+
+```bash
+source ~/.bashrc
+forge_mcp_check
+```
+
+`forge_mcp_check` is a shell function loaded by `shell-init.sh`. It reports the
+resolved script path, package version, and Node.js availability — your smoke test
+after every install or update.
+
+Example output (success):
+
+```
+forge-mcp shell init: checking install...
+  _FORGE_MCP_SHELL_INIT_LOADED = 1
+  sessionStart script: /usr/local/lib/node_modules/@akubly/skillsmith-runtime/dist/hooks/sessionStart.js
+  package version: 0.1.0
+  node: v22.11.0
+
+  ✓ forge-mcp shell init is correctly installed.
+```
+
+If `sessionStart script: NOT FOUND` is reported, build the local repo or install
+the runtime globally:
+
+```bash
+npm run build
+# Or: npm install -g @akubly/skillsmith-runtime
+# Then re-run: forge_mcp_check
+```
+
+### How it works
+
+`shell-init.sh` is sourced by `~/.bashrc` on every new interactive bash session.
+It resolves the `sessionStart.js` entrypoint (see the table below for exact
+priority order), then runs it detached in the background so it never blocks your
+prompt. Non-interactive shells (scripts, CI) are skipped via
+`[[ $- != *i* ]] && return`.
+
+**Script resolution order:**
+
+| Priority | Path | Notes |
+|----------|------|-------|
+| 1 | `~/.cairn/hook/sessionStart.mjs` (user override) | User-managed hook |
+| 2 | `$(npm root -g)/@akubly/skillsmith-runtime/dist/hooks/sessionStart.js` | Preferred runtime |
+| 3 | `$(npm root -g)/@akubly/cairn/dist/hooks/sessionStart.js` | Cairn fallback; Wave 2 behavior, no prescribers |
+| 4 | `<repo>/packages/skillsmith-runtime/dist/hooks/sessionStart.js` | Preferred local checkout |
+| 5 | `<repo>/packages/cairn/dist/hooks/sessionStart.js` | Cairn fallback; Wave 2 behavior, no prescribers |
+| 6 | `<repo>/dist/hooks/sessionStart.js` | Legacy cairn fallback; Wave 2 behavior, no prescribers |
+
+### Uninstall
+
+```bash
+bash .github/hooks/cairn/uninstall.sh
+source ~/.bashrc
+```
+
+The uninstall script removes the entire marker block from `~/.bashrc` using a
+pure-bash line-by-line filter (no sed dependency; identical behavior on Linux,
+macOS, and Git Bash on Windows). Idempotent: no-op if not installed.
+
+### Shell compatibility
+
+`shell-init.sh` is supported for bash and Git Bash. Do not source it from zsh:
+the hook uses bash-specific `${BASH_SOURCE[0]}` self-location for repo-checkout
+fallbacks, so zsh sourcing can break local repo resolution. Automated zsh wiring
+is deferred — file a GitHub issue if you need first-class zsh support.
+
+### Git Bash on Windows
+
+The bash hooks work in Git Bash on Windows. Ensure `node` is on the Git Bash
+`PATH` (usually automatic if Node.js is installed system-wide). The hook fires
+silently in the background — no `disown` issues on MSYS2-based shells.
+
+---
+
 ## Usage
 
 Cairn is a TypeScript library (`@akubly/cairn`). Import and use programmatically:
