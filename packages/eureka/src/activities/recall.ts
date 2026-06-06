@@ -19,7 +19,16 @@ export interface RecallResult {
   content: string;
   trust: number;
   attentionTier: 'hot' | 'warm' | 'cold';
-  /** Normalized BM25 relevance score ∈ [0,1] returned by FactStore.search(). */
+  /** Pure BM25 text-match quality, normalized per-page to [0,1] (min-max).
+   *
+   * **Independent of result/page order.** Page ordering uses the composite
+   * heuristic `(-bm25) × trust`; relevance is `(-bm25)` only (no trust factor).
+   * A high-trust/low-BM25 fact can sort ahead of a low-trust/high-BM25 fact
+   * while carrying a LOWER relevance — this is by design, not a bug.
+   *
+   * **Per-page only.** Min-max is computed across the current page; a sole
+   * result on a sparse last page always receives 1.0. NOT comparable across
+   * pages — treat as an intra-page ranking signal only. */
   relevance?: number;
   /** Importance signal ∈ [0,1]. */
   importance?: number;
@@ -41,7 +50,25 @@ export interface FactStore {
     limit: number;
     /** Trust floor predicate per §20 §7.4 — store applies WHERE trust >= minTrust. Default 0.15. */
     minTrust?: number;
-  }): Promise<RecallResult[]>;
+    /**
+     * Opaque pagination cursor returned by a prior search call.
+     * Absent on first page. Consumers MUST NOT parse cursor internals.
+     * Q2-locked: included now to avoid a breaking change when cross-session queries arrive.
+     */
+    cursor?: string;
+  }): Promise<{
+    results: RecallResult[];
+    /**
+     * Opaque cursor for the next page. Absent when no further results exist.
+     * Consumers MUST NOT parse cursor internals.
+     *
+     * @note `results[].relevance` is pure BM25 text-match quality, normalized
+     *   per-page (min-max across THIS page only). Page ORDER is determined by
+     *   the composite heuristic `(-bm25) × trust`; relevance does NOT control
+     *   order and is NOT comparable across pages. Treat as intra-page signal only.
+     */
+    nextCursor?: string;
+  }>;
 }
 
 export interface RecallOptions {
@@ -175,7 +202,7 @@ export async function recallWithScores(
   }
 
   // C3: Overfetch so the post-BM25 ranker has a meaningful candidate set to reorder.
-  const candidates = await factStore.search({ query, sessionId, limit: k * RANKER_OVERFETCH_FACTOR, minTrust: TRUST_FLOOR });
+  const { results: candidates } = await factStore.search({ query, sessionId, limit: k * RANKER_OVERFETCH_FACTOR, minTrust: TRUST_FLOOR });
   const nowMs = clock.now();
 
   // Belt-and-suspenders: FactStore.search() now receives minTrust and filters at the data
