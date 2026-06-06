@@ -1,3 +1,21 @@
+# SUMMARY (as of 2026-06-01)
+
+File size: 23692 bytes. See history-archive.md for earlier entries.
+
+---
+
+---
+
+## 📋 SUMMARY (as of 2026-05-31)
+
+**Role:** Product Manager (v1 framework)  
+**Current Focus:** Post-triage PRD refinement and team onboarding documentation  
+**Latest Work:** v1 PRD Round 9 revision; thesis-vs-scope tension resolved (solo-bootstrap + squad deferred); success bars split into Bar A (solo v1) + Bar B (squad integration T2+)  
+**Charter Note:** Manually edited by Aaron during PR #33 merge conflict resolution (2026-05-30); onboarding role finalized  
+**File Size Note:** 21KB
+
+---
+
 📌 **Charter Manual Edit by Aaron** (2026-05-31T06:15:00Z): In PR #33 cloud-review-cycle round 1, Aaron manually edited cassima/charter.md as part of merge conflict resolution. Charter onboarding role finalized. — Scribe
 
 # Cassima — History
@@ -110,3 +128,11 @@ PRD v5-final + §30 §2.3 form complete contract. All seams defined (applyFeedba
 
 📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
+---
+
+## Archive Summary
+
+Earlier entries (94 lines) archived to history-archive.md on 2026-06-05.
+
+---
+

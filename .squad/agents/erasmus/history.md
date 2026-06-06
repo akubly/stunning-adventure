@@ -1,3 +1,9 @@
+# SUMMARY (as of 2026-06-01)
+
+File size: 33792 bytes. See history-archive.md for earlier entries.
+
+---
+
 # Erasmus — History
 
 ## Onboarding (2026-05-24)
@@ -271,3 +277,12 @@ substrate that Aperture is implicitly trying to be. Two hours of using it
 will reshape Aperture's verb surface more than any spec round.
 
 **Output:** `D:\git\harness\.squad\decisions\inbox\erasmus-ctd-p2-architectural-review.md`
+
+---
+
+## Archive Summary
+
+Earlier entries (244 lines) archived to history-archive.md on 2026-06-05.
+
+---
+

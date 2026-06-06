@@ -57,6 +57,8 @@
 
 ---
 
+📌 **Crucible Sprint 0 — First GREEN CYCLE COMPLETE** (2026-06-02T06:26:54Z): Roger's implementation landed; RED→GREEN complete. Acceptance scenario A1 passing (all 4 invariants GREEN). Packages scaffolded: `@akubly/crucible-core` (NEW), `@akubly/crucible-cli` (updated). Types finalized: PrimitiveKind (5-union), PrimitiveInput, Session, SessionMetadata. Range convention: inclusive-inclusive. Parent-registry approach: in-memory, logical delegation, no physical copy. Contract anchor (Laura's RED test) unchanged. Inbox decision merged; decisions archived (7-day rule); orchestration + session logs written. Sprint 0 first cycle complete. REFACTOR phase next. — Scribe
+
 📌 **PR #33 Cloud-Review-Cycle Round 5 COMPLETE** (2026-05-31T22:55Z): Graham addressed 3 Copilot findings. (1) Fork resume schema: Added authoritative payload schema for `fork_resume` sub-kind in §6.3, completing registry-level governance alongside `fork_origin` and `fork.collision_choice`. (2) ADR-0019 acceptance signal: Updated concrete examples to use actual `fork.collision_choice` payload shape (chosenOption/existingChildSid/resultingChildSid) instead of generic placeholders. (3) Predicate timing honesty: Reframed v1 Hook Bus predicate timing as cooperative measurement with post-hoc telemetry + retry-budget quarantine, not hard preemption (v1.5+ worker/process isolation). Sub-kind governance completeness + watchdog honesty patterns now captured. Build + tests passing. Decision merged to decisions.md; branch staged for Copilot re-review. — Scribe
 
 📌 **PR #33 Cloud-Review-Cycle Round 2 COMPLETE** (2026-05-31T06:15:00Z): Graham addressed all 11 Copilot review threads on Crucible CTD ADRs. Fixes applied: ADR-0002 summary clarity, ADR-0006 PA-B3 ownership, ADR-0018 Security section, ADR-0011/0019 accepted-date stamps, ADR-0020 renumbering. Decision captured: graham-adr-number-stability.md. Build + tests passing. — Scribe
@@ -65,6 +67,22 @@
 
 # Graham — Key Learnings (Recent)
 
+## 2026-06-02: Crucible Sprint 0 Kickoff — MERGED (Session Logger)
+
+📌 **INBOX MERGED** (2026-06-02T06:13:21Z): Graham's Crucible Sprint 0 Kickoff decision merged to `.squad/decisions.md`. Inbox file deleted. Orchestration log created: `.squad/orchestration-log/2026-06-02T06-13-21Z-graham.md`. Session log: `.squad/log/2026-06-02T06-13-21Z-crucible-first-red.md`.
+
+**Sprint 0 scope:** Walkthrough A first RED cycle (§4.1). One acceptance test in `crucible-cli` asserting session-fork creates child with inherited ledger prefix. Mocked collaborators; no L1 substrate.
+
+**Package decision:** Scaffold both `crucible-cli` AND `crucible-core` upfront. Cost is trivial (~10 min mechanical scaffolding via `scaffold-eureka-package-tdd` skill). Benefit: uninterrupted RED→GREEN flow — the GREEN phase immediately descends into `crucible-core` (SessionManager). Scaffolding `crucible-core` with only `export {}` is infrastructure, not implementation.
+
+**Minimal types surface for RED:**
+- `SessionId` already in `@akubly/types` — only shared brand needed.
+- `PrimitiveKind` (5-member union), `PrimitiveInput` (kind/payload/causalReadSet), `Session` (id/metadata/append/query), `SessionMetadata` (parentSessionId/forkPointEventId) — all Crucible-only, live in `crucible-core` per §15 coexistence ("share identifiers, fork everything else"). NOT promoted to `@akubly/types` yet.
+- `createSession()` and `fork()` — API functions from `crucible-core`.
+
+**OQ-2 safe:** First RED test uses mocked collaborators. No WAL, no SQLite, no `~/.crucible/`. Federate-vs-merge is pre-sprint-2.
+
+**Pattern observed:** The `scaffold-eureka-package-tdd` skill generalizes cleanly to Crucible packages. Same `package.json` shape, same vitest config, same tsconfig with `composite: true`. The skill could be renamed to something monorepo-generic.
 ## 2026-06-01: M8 Scope Drafted
 
 Produced `graham-m8-scope-proposal.md` in the decisions inbox. Four slices defined (A: SqliteFactReader, B: SqliteTrustUpdater atomic mutate, C: FactStore.search() SQLite + FTS5, D: production wiring). Migration idiom proposed following Cairn's `applyMigrations` pattern. `FactStore.search()` interface locked with optional cursor pagination. Three open questions for Aaron: trust_history scope, pagination shape preference, Eureka DB lifecycle ownership.
@@ -211,5 +229,114 @@ Aaron's priority reset: defer Eureka moves; get forge installable and dogfoodabl
 
 *Recommended sequence:* (1) Register `forge-mcp` in `.github/plugin/.mcp.json` + `.copilot/mcp-config.json` — S, Alexander; (2) Add `list_optimization_hints` + `resolve_optimization_hint` to cairn MCP — M, Alexander + Beatrix; (3) Bash hook equivalent — M, infrastructure; (4) README forge section — S, anyone, last (write after loop is testable).
 Older detailed history (before 2026-05-30) archived to `history-archive.md`.
+
+
+## Learnings
+
+### 2026-06-05: Cycle 2 Advisory Polish (N1, N2, N3)
+
+**N3 — fork() JSDoc ≤ → < (ACCEPT):**
+Most important of the three — active doc/behavior drift. `session.ts` fork() JSDoc said `offset ≤ ledger size` but `session-manager.ts` enforces strict `<` (line 24: `forkOffset >= parent.ledgerSize`). Fixed the docstring to match post-B1 behavior. Misleading docs on invariant boundaries are correctness bugs.
+
+**N1 — Barrel test-only marker (ACCEPT):**
+`resetInMemoryDb` sat on the same export line as `createSession`/`fork` in `index.ts` with no test-only signal at the barrel. The JSDoc in `session.ts` is invisible to barrel readers. Split onto its own export line with a `// Test isolation only` comment. Trivial, good hygiene.
+
+**N2 — clear() on InMemoryDB interface (DEFER):**
+Real design concern — `clear()` obligates all future `InMemoryDB` impls to a test-only method. However, `InMemoryDB` is explicitly documented as internal (not part of the public `DB` contract), and Sprint 0 will only ever have one impl. The refactor (moving `clear()` off the interface to a private helper) is clean but adds churn for zero current benefit. Logged to decision inbox for backlog consideration when Refactor 3 (SQLite adapter) lands.
+
+### 2026-06-02: Cycle 1 Persona Review Fixes (I4, I2, M1)
+
+**I4 — ForkLineage.root() removal (YAGNI):**
+Chose option (a): remove `ForkLineage.root()` rather than widen the constructor. Rationale: zero callers, and the sentinel it produced (`forkPointEventId = 0`) conflicted with the `session.ts` convention where `forkPointEventId === null` marks root sessions. Widening the constructor to accept `null` for `forkPointEventId` would have rippled into the guard clause (`forkPointEventId < 0` doesn't cover `null`) and `isRoot()` logic. YAGNI wins — when a real caller exists, we design root() with full knowledge of the null convention.
+
+**I2 — InMemoryDB coupling documentation:**
+Added a 5-line NOTE block to the `session.ts` file-header JSDoc, positioned between the existing Sprint 0 deferral note and the closing `*/`. Placement chosen to avoid merge conflicts with Roger's concurrent changes (imports, runtime logic below line 20). The comment explicitly names the four extended methods (getOwnEvents, getMetadata, insertRootSession, pushEvent) and frames the Refactor 3 decision: either the SQLite adapter satisfies InMemoryDB's surface or session.ts restructures to use DB.queryEvents.
+
+**M1 — SKILL doc drift annotation:**
+Chose option (b): annotated `london-tdd-first-green/SKILL.md` as "Sprint 0 variant" rather than updating the strategy doc. The strategy doc (`docs/crucible-tdd-strategy.md` §4.1) is the canonical reference showing full outside-in mocked-Ledger descent. The SKILL reflects our conscious Sprint 0 simplification (real in-memory, no mocks in GREEN). The annotation explains the divergence is intentional and when the full approach applies (Sprint 1+ when acceptance surface exceeds single-module reach).
+
+📌 **Crucible Sprint 0 — Walkthrough A REFACTOR CYCLE COMPLETE** (2026-06-02T06:43:01Z): Laura (RED) authored 4 unit tests with mocked DB collaborator; Roger (REFACTOR) extracted ForkLineage value object, introduced SessionManager service + DB interface, wired in-memory adapter. All tests GREEN (0 regression on acceptance layer). Monorepo builds clean. DB collaborator seam established, ready for L1-substrate swap when OQ-2 lands pre-sprint-2. Deferred: Refactor 3 (SQLite integration stub), Mock Drift Defense (shared fixture builder). Next candidates: (a) Refactor 3 integration test, (b) Walkthrough B (§4.2 Pre-Commit Hook Veto). — Scribe
+
+- 2026-06-05 ✅ persona-review-cycle 2 complete: Crucible Sprint 0 Walkthrough A ready to ship (Cycle 1: 11 findings, 10 fixed; Cycle 2: 3 advisory, 2 fixed, 1 deferred)
+
+### 2026-06-05: SKILL doc-drift fixes (PR #45 Copilot review)
+
+**SKILL code examples must be kept in sync with the referenced implementation.** When a PR review cycle changes source code (e.g. removes a factory method, tightens a bounds-check), any SKILL doc whose examples illustrate that code becomes stale and will mislead future refactors. Fix strategy: read the actual shipped source, then update the snippet to match — not the other way around. Both corrections here were grounded in `fork-lineage.ts` and `session-manager.ts` as actually merged.
+
+## Learnings
+
+### 2026-06-05: Transitive-fork scope decision (Copilot review cycle 2)
+
+**Decision:** Option A — document + defer. Copilot correctly flagged that child query() prefix delegation via db.getOwnEvents(parentSessionId) breaks for transitive forks (forking a fork), because the grandparent's events aren't in the parent's ownEvents. However, transitive fork lineage is explicitly out of Sprint 0 Walkthrough A scope (A1 only forks once from a root session with 47 primitives), and the TDD strategy already identifies "Fork Lineage Transitivity" as a future REFACTOR-phase test.
+
+**Rationale:** Under London-school TDD discipline, adding recursive parent delegation NOW would be untested speculative code — no failing RED test drives it. Instead, added a 7-line comment block at the delegation site in session.ts making the limitation explicit. This addresses the reviewer's underlying concern (hidden trap → documented limitation) without expanding Sprint 0 scope or violating TDD discipline. The follow-up is a dedicated "Fork Lineage Transitivity" RED test in a future cycle.
+
+**Principle:** Surface limitations explicitly rather than building untested speculative code. A well-documented constraint is better than a silently incomplete fix.
 **For detailed history, see history-archive.md**
+
+
+---
+
+## Archive Summary
+
+Earlier entries (209 lines) archived to history-archive.md on 2026-06-05.
+
+---
+
+## Learnings — 2026-06-05: Forge M3 Panel Review Hardening
+
+### Finding Triage
+
+| Finding | Disposition | Rationale |
+|---------|-------------|-----------|
+| A — `DispositionSummary.category: string` | **ACCEPT** | Trivial type upgrade to `OptimizationCategory`; cast at .map() in provider. Remote providers returning invalid categories now fail the type system rather than silently no-opping. |
+| B — Missing `idx_event_log_type` | **ACCEPT** | Real O(n) scan on every prescriber run. Migration 018 added with table-existence guard mirroring migration017's pattern for partial-schema test DBs. |
+| C — Vocabulary duplication between emitter and consumer SQL | **ACCEPT** | Created `hintStateTransitionConstants.ts` with event type, source value, and payload key names. Both `emitHintTransitionEvent` and the SQL template in `SqliteHintDispositionProvider` now reference the same constants — a key rename causes a compile error in both places simultaneously. Added a round-trip contract test. |
+| D — `applyDispositions` keys Map by `category` alone | **ACCEPT** | Keyed by `${skillId}:${category}`. Cheap robustness fix; prevents cross-skill suppression from a buggy future provider. |
+| E — INNER JOIN drops dismissal after `deleteOptimizationHint` | **REJECT (documented)** | `deleteOptimizationHint` is a low-level CRUD function not exposed in the MCP resolve path — real resolutions go to status=rejected (row kept). Carrying category in the payload (option A) would require backward migration of existing events. Added a clear comment in the provider. This is the accepted trade-off: correctness for the real path over theoretical correctness for an unused path. |
+| F — `RESOLVED_CONFIDENCE_BOOST` in wrong section | **ACCEPT** | Moved to constants section near `DEFAULT_MIN_SESSIONS`. |
+| G — Redundant empty-dispositions guard in orchestrator | **ACCEPT** | Collapsed to `return applyDispositions(allHints, dispositions ?? [])`. The inner guard in `applyDispositions` is sufficient. |
+| H — Integration test hand-rolls logEvent instead of using real resolve | **ACCEPT** | Switched to `cairn.resolveOptimizationHint`. Required adding `resolveOptimizationHint`, `HintResolution`, and `ResolveHintResult` to cairn's public exports. Tests now exercise the full MCP→event-format contract end-to-end. |
+
+### Coupling-Reduction Decisions
+
+**C + H reinforce each other.** Using `resolveOptimizationHint` in the integration test (H) naturally exercises the constants-based event format (C). The contract test added to `sqliteHintDispositionProvider.test.ts` explicitly verifies the round-trip: producer payload keys match the consumer's json_extract() paths, which are now both derived from `HINT_TRANSITION_PAYLOAD_KEYS`.
+
+**E rejected in favor of documentation over complexity.** Option (a) — carrying category in the event payload — would remove the JOIN dependency and be cleaner long-term, but requires backward migration of event data already in production DBs. Since delete-of-dismissed-hint isn't a real path today, the documentation trade-off is correct.
+
+**Version assertion discipline.** Migration tests in cairn hardcode the latest schema version number. Every new migration requires updating those tests. Pattern is: grep for `toBe(17)` (prev version), replace with new version.
+
+---
+
+## Learnings — 2026-06-05: Forge M3 Cycle-2 Hardening
+
+### Finding Dispositions
+
+| Finding | Disposition | Rationale |
+|---------|-------------|-----------|
+| C (complete) — Resolution-value vocabulary still duplicated | **ACCEPT** | Added `HINT_RESOLUTION_RESOLVED` and `HINT_RESOLUTION_DISMISSED` to `hintStateTransitionConstants.ts`. `optimizationHints.ts` now derives `HintResolution` type and `HINT_RESOLUTIONS` from these constants (no circular dep — constants file has no upstream imports). `sqliteHintDispositionProvider.ts` SQL CASE/WHEN references the same constants via template literals. Adding a new resolution requires touching all three files; any single omission is a compile error. |
+| 2 (migration 018 skip-path) | **COMMENT ONLY** | The early-return path is correct: `event_log` is created in migration 001, so the skip only fires in partial-schema test DBs. Expanded the guard comment to document this contract explicitly. Tightened the warning message to say "must never occur on a real DB (event_log is guaranteed present from migration 001)." A startup assertion was evaluated but deemed unnecessary: the existing stderr warning is sufficient observable signal, and the skip is structurally unreachable on a real DB. |
+| 3 (public exports) | **KEEP AS PUBLIC API** | `resolveOptimizationHint` is the primary user-driven closure operation; `HintResolution`, `HINT_RESOLUTIONS`, and `ResolveHintResult` are its input/output contract. Consumers (MCP handler, integration tests) correctly import from the public root. Added a one-line justification comment in `cairn/src/index.ts`. Integration tests stay on the public import path — no internal path workaround needed. |
+
+### Constants Coupling Decision
+
+Resolution values are now owned by `hintStateTransitionConstants.ts` (the event format spec file). `optimizationHints.ts` derives its exported surface from those constants. This forms a compile-enforced triangle: constants → types → SQL. Future additions must update all three vertices, which TypeScript will enforce at build time.
+
+---
+
+## Learnings — 2026-06-06: Forge M3 Copilot Review Address (PR #49)
+
+### Thread 1 — Prepared statement caching in `SqliteHintDispositionProvider`
+
+The comment said the prepared statement was re-used, but `this.db.prepare(...).all(...)` was called inline on every `getDispositions` invocation — creating a new statement object each time. Fixed by adding a `private dispositionStmt` field and using `??=` to lazily prepare once on the instance, then reuse. Comment updated to be accurate: "SQL is built at module load time so the constants are inlined once. The prepared statement is cached on the instance and re-used on every call."
+
+The `SqliteChangeVectorProvider` doesn't offer a caching precedent (it delegates to free functions), so the pattern was derived from the standard better-sqlite3 idiom. `Database.Statement<Params, Row>` is the correct field type — no extra imports needed since `Database` was already imported as a type.
+
+**Pattern to apply to future SQLite providers:** cache `db.prepare(SQL)` in a nullable instance field, initialize with `??=` on first call. Never `prepare()` inside a hot call path.
+
+### Thread 2 — SKILL.md pitfall #5: `resolveOptimizationHint` export status
+
+Pitfall #5 incorrectly stated that `resolveOptimizationHint` was not exported from `@akubly/cairn`. It was added to `cairn/src/index.ts` as part of the Cycle-1 panel review hardening (Finding H). Updated pitfall #5 to call it the **recommended path** (single call handles lookup + transition + event), with `insertHintIfNew` + `logEvent` reserved for adversarial tests needing fine-grained source/payload control.
+
+**Documentation debt pattern:** when a public API export is added as a review fix, also update any SKILL.md pitfalls that reference the non-exported version. Export additions don't automatically propagate to narrative documentation.
 
