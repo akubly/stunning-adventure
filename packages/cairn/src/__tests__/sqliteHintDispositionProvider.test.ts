@@ -16,7 +16,10 @@ import type { OptimizationHintInsert } from '../db/optimizationHints.js';
 let db: ReturnType<typeof getDb>;
 let counter = 0;
 
-function hint(category: string, overrides: Partial<OptimizationHintInsert> = {}): OptimizationHintInsert {
+function hint(
+  category: string,
+  overrides: Partial<OptimizationHintInsert> = {},
+): OptimizationHintInsert {
   counter += 1;
   return {
     id: `disp-hint-${counter}`,
@@ -105,7 +108,7 @@ describe('SqliteHintDispositionProvider', () => {
       [K.TO_STATE]: 'rejected',
       [K.TIMESTAMP]: new Date().toISOString(),
       [K.RESOLUTION_DISPOSITION]: HINT_RESOLUTION_DISMISSED,
-      [K.SOURCE]: 'system',  // NOT 'mcp'
+      [K.SOURCE]: 'system', // NOT 'mcp'
     });
 
     const provider = new SqliteHintDispositionProvider(db);
@@ -175,7 +178,11 @@ describe('SqliteHintDispositionProvider', () => {
     const result = await provider.getDispositions('skill-other');
 
     expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ skillId: 'skill-other', category: 'convergence', dismissedCount: 1 });
+    expect(result[0]).toMatchObject({
+      skillId: 'skill-other',
+      category: 'convergence',
+      dismissedCount: 1,
+    });
   });
 
   // Adversarial: absent source key (no 'source' field in payload at all).
@@ -234,7 +241,7 @@ describe('SqliteHintDispositionProvider', () => {
       skillId: 'skill-disp',
       category: 'tool-guidance',
       dismissedCount: 0, // system dismissal not counted
-      resolvedCount: 1,  // mcp resolution counted
+      resolvedCount: 1, // mcp resolution counted
     });
   });
 
@@ -266,38 +273,38 @@ describe('SqliteHintDispositionProvider', () => {
 
 describe('SqliteHintDispositionProvider — producer/consumer payload contract', () => {
   it('resolveOptimizationHint emits a payload whose key names match what the provider SQL extracts', () => {
-  // This test verifies that the event emitted by the producer
-  // (resolveOptimizationHint → emitHintTransitionEvent) contains the exact
-  // payload key names that SqliteHintDispositionProvider SQL uses in its
-  // json_extract() expressions.  Both sides reference HINT_TRANSITION_PAYLOAD_KEYS
-  // constants; this test makes the coupling explicit and will fail if they drift.
-  const h = hint('convergence');
-  insertHintIfNew(db, h);
-  resolveOptimizationHint(db, h.id, 'dismissed', 'contract-test-note');
+    // This test verifies that the event emitted by the producer
+    // (resolveOptimizationHint → emitHintTransitionEvent) contains the exact
+    // payload key names that SqliteHintDispositionProvider SQL uses in its
+    // json_extract() expressions.  Both sides reference HINT_TRANSITION_PAYLOAD_KEYS
+    // constants; this test makes the coupling explicit and will fail if they drift.
+    const h = hint('convergence');
+    insertHintIfNew(db, h);
+    resolveOptimizationHint(db, h.id, 'dismissed', 'contract-test-note');
 
-  // Read the most recently written hint_state_transition event.
-  const allEvents = getUnprocessedEvents(db, 0);
-  const transitionEvents = allEvents.filter(
-    (e) => e.eventType === HINT_STATE_TRANSITION_EVENT_TYPE,
-  );
-  // insertHintIfNew emits one, resolveOptimizationHint emits one.
-  expect(transitionEvents.length).toBeGreaterThanOrEqual(2);
-  const resolveEvent = transitionEvents[transitionEvents.length - 1];
-  const payload = JSON.parse(resolveEvent.payload) as Record<string, unknown>;
+    // Read the most recently written hint_state_transition event.
+    const allEvents = getUnprocessedEvents(db, 0);
+    const transitionEvents = allEvents.filter(
+      (e) => e.eventType === HINT_STATE_TRANSITION_EVENT_TYPE,
+    );
+    // insertHintIfNew emits one, resolveOptimizationHint emits one.
+    expect(transitionEvents.length).toBeGreaterThanOrEqual(2);
+    const resolveEvent = transitionEvents[transitionEvents.length - 1];
+    const payload = JSON.parse(resolveEvent.payload) as Record<string, unknown>;
 
-  // Assert every key the provider SQL references is present with expected values.
-  expect(payload[K.SOURCE]).toBe(HINT_TRANSITION_SOURCE_MCP);
-  expect(payload[K.SKILL_ID]).toBe('skill-disp');
-  expect(payload[K.HINT_ID]).toBe(h.id);
-  expect(payload[K.RESOLUTION_DISPOSITION]).toBe(HINT_RESOLUTION_DISMISSED);
-  expect(payload[K.RESOLUTION_NOTE]).toBe('contract-test-note');
+    // Assert every key the provider SQL references is present with expected values.
+    expect(payload[K.SOURCE]).toBe(HINT_TRANSITION_SOURCE_MCP);
+    expect(payload[K.SKILL_ID]).toBe('skill-disp');
+    expect(payload[K.HINT_ID]).toBe(h.id);
+    expect(payload[K.RESOLUTION_DISPOSITION]).toBe(HINT_RESOLUTION_DISMISSED);
+    expect(payload[K.RESOLUTION_NOTE]).toBe('contract-test-note');
 
-  // And verify the provider can actually read it (round-trip).
-  const provider = new SqliteHintDispositionProvider(db);
-  return provider.getDispositions('skill-disp').then((result) => {
-    expect(result).toHaveLength(1);
-    expect(result[0].category).toBe('convergence');
-    expect(result[0].dismissedCount).toBe(1);
-  });
+    // And verify the provider can actually read it (round-trip).
+    const provider = new SqliteHintDispositionProvider(db);
+    return provider.getDispositions('skill-disp').then((result) => {
+      expect(result).toHaveLength(1);
+      expect(result[0].category).toBe('convergence');
+      expect(result[0].dismissedCount).toBe(1);
+    });
   });
 });

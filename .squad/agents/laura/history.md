@@ -1530,8 +1530,8 @@ End-to-end Cairn→runtime→forge integration tests via `executePrescriberRun`:
 **Orphan JOIN trap (cairn provider):**
 The `SqliteHintDispositionProvider` SQL uses INNER JOIN on `optimization_hints`. If you emit a `hint_state_transition` event that references a `hint_id` that doesn't exist in `optimization_hints`, the JOIN fails and the event is silently excluded. This is correct behavior (defense-in-depth) but also means tests must seed the underlying hint row or the disposition event will be invisible to the provider.
 
-**`resolveOptimizationHint` not exported from `@akubly/cairn`:**
-To emit source='mcp' disposition events in tests that can't use `resolveOptimizationHint`, use `cairn.insertHintIfNew` + `cairn.logEvent` + `cairn.ensureSystemSession` directly. This also gives more control over the event payload (useful for adversarial testing of edge cases like source=system or absent source).
+**`resolveOptimizationHint` is exported from `@akubly/cairn` (preferred for disposition-event tests):**
+It is the preferred way to emit source='mcp' disposition events end-to-end. For adversarial tests that need direct control over the event payload (e.g., source=system or absent source), drop to `cairn.insertHintIfNew` + `cairn.logEvent` + `cairn.ensureSystemSession` directly.
 
 **Fixture helper added:**
 `emitMcpDisposition(db, skillId, hintId, disposition, note?)` — in `dispositionIntegration.test.ts`. Mirrors exactly what `resolveOptimizationHint` does for the event structure. Reusable pattern for other tests seeding disposition events.
