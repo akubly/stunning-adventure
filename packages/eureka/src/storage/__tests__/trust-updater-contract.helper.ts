@@ -64,8 +64,8 @@ const FACT_ID = 'fact-contract-001';
 /**
  * Run the full TrustUpdater contract suite against a given implementation factory.
  *
- * Each call to `runTrustUpdaterContract` adds 8 tests (C-1 through C-7, with C-3b
- * as an additional out-of-range boundary test).
+ * Each call to `runTrustUpdaterContract` adds 9 tests (C-1 through C-7, with C-3b
+ * contributing 2 cases via it.each([1.5, -0.1])).
  *
  * @param implName    Human-readable label shown in test output (e.g. 'SqliteTrustUpdater').
  * @param makeHarness Factory called once per test (via beforeEach) to produce a fresh,

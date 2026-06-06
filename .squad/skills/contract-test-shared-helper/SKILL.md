@@ -92,7 +92,7 @@ describe('FooInterface contract — InMemoryFoo', () => {
 
 `packages/eureka/src/storage/__tests__/trust-updater-contract.helper.ts`
 
-- `runTrustUpdaterContract(implName, makeHarness)` — 8 contract tests (C-1 through C-7 + C-3b)
+- `runTrustUpdaterContract(implName, makeHarness)` — 9 contract tests (C-1 through C-7 + C-3b×2 via it.each)
   - Harness type: `TrustUpdaterHarness = { impl, setTrust, getTrust, cleanup? }` (all async-tolerant)
   - C-7: cross-session isolation — mutate on sessionB MUST NOT affect sessionA
 - `InMemoryTrustUpdater` wiring + `SqliteTrustUpdater` wiring in adjacent `.contract.test.ts`
