@@ -27,8 +27,8 @@ import { runFactStoreContract, type FactStoreHarness } from './fact-store-contra
 // content (case-insensitive), multiplies by trust for composite score.
 // Pagination via base64-JSON offset cursor (mirrors SqliteFactStore's format).
 //
-// Satisfies all 6 contract invariants using pure in-memory computation —
-// no SQLite required. Serves as the substitutability reference for FS-1..FS-6.
+// Satisfies all 11 contract invariants using pure in-memory computation —
+// no SQLite required. Serves as the substitutability reference for FS-1..FS-8.
 
 interface StoredFact {
   factId: string;
@@ -87,25 +87,28 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
             const matches = (f.content.toLowerCase().match(new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) ?? []).length;
             return sum + matches;
           }, 0);
-          return { ...f, score: termCount * f.trust };
+          // score = composite (termCount × trust) — used for ordering only.
+          // termCount = pure text-match signal — used for relevance normalization only.
+          // Mirrors SQLite: ORDER BY (-bm25 × trust) but relevance = pure -bm25.
+          return { ...f, score: termCount * f.trust, termCount };
         })
         .sort((a, b) => b.score - a.score || a.insertionOrder - b.insertionOrder);
 
       const page = scored.slice(offset, offset + limit);
       const hasMore = scored.length > offset + limit;
 
-      const scores = page.map(f => f.score);
-      const minScore = Math.min(...scores);
-      const maxScore = Math.max(...scores);
+      const termCounts = page.map(f => f.termCount);
+      const minTC = Math.min(...termCounts);
+      const maxTC = Math.max(...termCounts);
 
-      const results: RecallResult[] = page.map((f, i) => ({
+      const results: RecallResult[] = page.map((f) => ({
         content: f.content,
         trust: f.trust,
         attentionTier: 'warm',
         relevance:
-          scores.length <= 1 || maxScore === minScore
+          termCounts.length <= 1 || maxTC === minTC
             ? 1.0
-            : (scores[i] - minScore) / (maxScore - minScore),
+            : (f.termCount - minTC) / (maxTC - minTC),
       }));
 
       const nextCursor = hasMore ? encodeCursorInMemory(offset + limit) : undefined;

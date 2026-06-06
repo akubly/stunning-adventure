@@ -199,16 +199,17 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   it.each([
-    ['negative',  { offset: -5 }],
-    ['Infinity',  { offset: Infinity }],
-    ['float',     { offset: 1.5 }],
+    ['negative',  Buffer.from(JSON.stringify({ offset: -5 })).toString('base64')],
+    // JSON.stringify(Infinity) → null, so construct the raw JSON string directly:
+    // JSON.parse('{"offset":1e309}') → { offset: Infinity }, exercising the isFinite guard.
+    ['Infinity',  Buffer.from('{"offset":1e309}').toString('base64')],
+    ['float',     Buffer.from(JSON.stringify({ offset: 1.5 })).toString('base64')],
   ])(
     'FS-SE-4: cursor with %s offset → fallback to offset=0, no crash',
-    async (_label, payload) => {
+    async (_label, badCursor) => {
       seed('se4-fact', 'topology graph traversal breadth first', 0.8);
 
-      const badCursor = Buffer.from(JSON.stringify(payload)).toString('base64');
-      const baseline    = await impl.search({ query: 'topology', sessionId: SESSION, limit: 10 });
+      const baseline      = await impl.search({ query: 'topology', sessionId: SESSION, limit: 10 });
       const withBadCursor = await impl.search({ query: 'topology', sessionId: SESSION, limit: 10, cursor: badCursor });
 
       // Bad offset clamps to 0 → same results as no-cursor call.
