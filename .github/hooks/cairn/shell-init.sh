@@ -15,7 +15,7 @@
 
 # Idempotency guard: only run once per shell session.
 [[ -n "$_FORGE_MCP_SHELL_INIT_LOADED" ]] && return
-export _FORGE_MCP_SHELL_INIT_LOADED=1
+_FORGE_MCP_SHELL_INIT_LOADED=1
 
 # ---------------------------------------------------------------------------
 # Internal: resolve the sessionStart script path (mirrors curate.ps1 logic)

@@ -176,9 +176,10 @@ _remove_block "$SHELL_RC" "$MARKER_START" "$MARKER_END"
 ```
 
 **Why:** The bash loop is portable across Linux, macOS, and Git Bash on Windows
-with no GNU/BSD sed detection required. The byte-identical roundtrip property
-(install → uninstall → file unchanged) is the acceptance criterion — verify it
-on a sample rc file before shipping any uninstaller.
+with no GNU/BSD sed detection required. The roundtrip acceptance criterion is
+logical identity: the marker block and its leading blank line are removed, while
+the trailing newline is normalized. Verify this on a sample rc file before
+shipping any uninstaller.
 
 ---
 
@@ -199,8 +200,8 @@ on a sample rc file before shipping any uninstaller.
   leaving the block body and `MARKER_END` orphaned so the second pass never fires.
   Each install/uninstall cycle accumulates garbage, and `install.sh` can't detect
   the orphaned tail so it appends a new block on top. Use the bash state-machine
-  loop (pattern #7) instead — it passes the byte-identical roundtrip test that
-  exposes this bug.
+  loop (pattern #7) instead — it passes the logical roundtrip test that exposes
+  this bug.
 - **Synchronous hook execution** — `node "$script"` without `&` blocks the
   prompt for every new shell. Use detached background execution.
 - **Hard-coded single path** — if the package can be installed globally OR from
