@@ -23,7 +23,7 @@ import { runFactReaderContract } from './fact-reader-contract.helper.js';
 // Wire contract suite to InMemoryFactReader
 // ---------------------------------------------------------------------------
 
-// Reference InMemory impl lives inline here by design — test-only, not exported from any production module.
+// Wires InMemoryFactReader (production module) into the shared contract suite for parity with SqliteFactReader.
 runFactReaderContract('InMemoryFactReader', () => {
   const impl = new InMemoryFactReader();
   return {
