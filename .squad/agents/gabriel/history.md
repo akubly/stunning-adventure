@@ -160,3 +160,29 @@ Phase 2 fan-out now unblocked. Full R2 locks in `.squad/decisions.md`.
 **Verification:** `npx tsc --build --force` ✅ · `npm run build` ✅ · crucible-core 6/6 ✅ · crucible-cli 1/1 ✅
 
 **Commit:** `e5c1dde` — HEAD at push.
+
+### 2026-06-05 — Gitignore Cleanup: Tracked Files Bypass Ignore Matching
+
+**Gotcha:** `git check-ignore -v <path>` returns "not ignored" for tracked files even when the path matches a `.gitignore` rule. This is not evidence the file _should_ be tracked — it's the expected behavior: once a file is tracked, ignore rules don't evict it. The bug is that the file was committed in the first place.
+
+**Fix pattern — `git rm --cached`:**
+1. Identify which files the branch introduced under gitignored paths:
+   `git log --diff-filter=A --name-only origin/main..HEAD -- <dir>/`
+   (Also cross-check: `git ls-files <dir>/` to see all currently tracked files.)
+2. For each file this branch added (origin/main..HEAD scope only — leave pre-existing tracked files alone):
+   `git rm --cached -- <path>` — untracks the file without deleting it from disk.
+3. Verify the ignore rule now fires: `git check-ignore -v <path>` — should report `.gitignore:<line>`.
+4. Commit the staged removals.
+
+**Why `--cached` matters:** Plain `git rm` deletes the local file. `--cached` unregisters it from the index only; the file stays on disk as local-only runtime state, which is exactly what the `.gitignore` intent requires.
+
+**Scoping discipline:** Only remove files introduced by this branch (`origin/main..HEAD`). Files that already exist on origin/main are out of scope — removing them would touch things committed before this branch, which isn't our job.
+
+**PR #45 — Files removed:**
+- `.squad/orchestration-log/20260602-064301-laura.md` (gitignore:50)
+- `.squad/orchestration-log/20260602-064301-roger.md` (gitignore:50)
+- `.squad/log/20260602-064301-crucible-walkthrough-a-refactor.md` (gitignore:51)
+
+All three files existed on origin/main-relative tracking only because the Scribe meta-commit staged them before the gitignore cleanup was applied.
+
+**Commit:** `f2606f3` — topic-branch SKILL typo fix (stray space in `.squad/ decision archives` → `.squad/decision archives`).
