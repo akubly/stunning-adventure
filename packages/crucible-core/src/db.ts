@@ -1,3 +1,5 @@
+import type { Primitive } from './types.js';
+
 /**
  * DB — persistence port for crucible-core.
  *
@@ -19,5 +21,5 @@ export interface DB {
     createdAt: number;
   }): Promise<void>;
 
-  queryEvents(id: string, opts: { range: [number, number] }): Promise<unknown[]>;
+  queryEvents(id: string, opts: { range: [number, number] }): Promise<Primitive[]>;
 }

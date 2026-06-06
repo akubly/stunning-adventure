@@ -9,7 +9,7 @@
 ## Problem
 
 Scribe's session consolidation sometimes produces:
-- **Meta-commits on main:** .squad/decision archives, session logs, inbox merges pushed to main
+- **Meta-commits on main:** `.squad/decisions/archive/` merges, session logs, inbox merges pushed to main
 - **Uncommitted code:** Real work (new packages, skills, config changes) still in the working tree
 - **Result:** main is several commits ahead of origin/main; code is unreviewed; main is "dirty" from a review-cycle perspective
 
@@ -36,9 +36,11 @@ Identify three categories:
 Add patterns for any scribe-scratch files so they don't reappear:
 
 ```
-.squad/health-report-*/
-.squad/scribe-health-report-*/
+.squad/health-report-*
+.squad/scribe-health-report-*
 ```
+
+> ⚠️ **No trailing slash** — trailing slash restricts the pattern to directories only. Health reports are files (e.g. `.squad/health-report-*.md`), so omit the slash.
 
 #### Step 3: Create Topic Branch from Dirty HEAD
 
