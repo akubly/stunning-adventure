@@ -5,6 +5,10 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./sqlite": "./dist/sqlite/index.js"
+  },
   "files": [
     "dist/"
   ],
@@ -26,7 +30,11 @@
   "dependencies": {
     "@akubly/types": "*"
   },
+  "optionalDependencies": {
+    "better-sqlite3": "^12.8.0"
+  },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.5.0",
     "vitest": "^3"
   }

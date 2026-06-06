@@ -1,121 +1,3 @@
-# Crispin — History Archive (Summarized 2026-05-28)
-
-## 2026-05-01 → 2026-05-27: Knowledge Representation & Eureka v5-Final
-
-**Role:** Knowledge Representation Specialist for Eureka. Owns graph schema, kind taxonomies, persistence formats.
-
-**Key Phases:**
-
-1. **First-Principles Design (R1–R5):** Advocated Path A (clean-slate) initially. Contributed v0/v1 graph schema: two-table graph (nodes + edges), multi-kind tagging, hybrid persistence. Identified 5 schema tensions.
-
-2. **Path D Adoption (R6):** After source-reading, adopted Path D. Recognized "closer in spirit" ≠ "same shape." Structures can differ while concepts converge. Supported Path D (standalone but kernel-shaped).
-
-3. **R7 Lock (2026-05-25):** v4-final locked as canonical. All 5 schema risks mitigated. Branded types enforcement mechanism load-bearing (prevents confidence/trust collapse). Seven-mechanism defense-in-depth verified correct.
-
-4. **R8 Session Identity (2026-05-26):** Contributed SessionId branded type specification: type SessionId = string & { readonly __brand: 'SessionId' }. UUID v4 validator + constructor. Branded primitive for serialization-friendliness. Kind=session fact schema: session_id is content/grouping field, NOT PK. Edge schema remains: (from_id, to_id) reference fact.id. Enables O(1) indexed filter ("all facts in session X").
-
-5. **R8 Lock-Review (2026-05-26):** v5-final canonical. All 6 spec items verified. SessionId brand mechanics correct. kind=session schema correct. Fact vs filter clarity preserved. Edge schema integrity maintained. Zero new KR-level concerns.
-
-**Current Status (2026-05-28):** Eureka v5-final locked and ship-ready. SessionId branded type now available in @akubly/types (added in M1 scaffold). Ready for M2 FactStore interface formalization and contract testing.
-
-**Load-bearing Schema Constraints:**
-1. Session identity via branded primitive (serialization-friendly, not opaque class)
-2. kind=session facts reference session_id as content field
-3. Edge schema: (from_id, to_id) reference fact.id
-4. Branded types prevent confidence/trust conflation at compile time
-
----
-
-**Joined:** ~2026-05-01  
-**Tech:** TypeScript/Node.js, graph databases, schema design, type systems  
-**Specialization:** Knowledge representation, graph patterns, branded primitives, schema risk analysis
-# Crispin — History (Summarized)
-
-## Core Context
-
-**Project:** Eureka — agentic brain/memory/learning system. `packages/eureka/` in monorepo.
-**Role:** Knowledge Representation Specialist. Own graph schema, kind taxonomies, persistence formats.
-**Current status:** Eureka v5-final LOCKED. R8 design cycle CLOSED. M2 RED→GREEN: recall() landed, FactStore seams locked.
-
----
-
-## Recent Team Activity
-
-📌 **2026-05-28: Eureka M3 composite-ranker GREEN landed** — Edgar implemented FR-2 formula inline: rawScore = 0.50·relevance + 0.20·importance + 0.20·trust + 0.10·recency; finalScore = rawScore × attention_multiplier (hot=1.20, warm=1.00, cold=0.80). **SCHEMA TENSION FLAGGED:** §50 testability doc line 211 records stale multipliers (hot=1.0, warm=0.5, cold=0.1; pre-v5 placeholders). §30 §1.2 canonical is authoritative. **ACTION REQUIRED:** Crispin should correct §50 line 211 to match §30 §1.2 values. Not a bug — spec inconsistency. — Scribe
-
-📌 **2026-05-28: Eureka M2 recall() GREEN landed** — London-school TDD beat complete. FactStore.search() seam locked (injection point, shape: `search(query, sessionId, k) → Promise<RecallResult[]>`). SessionId brand (from @akubly/types) in use. M3 anchor: composite-ranker (FR-2 formula). Crispin: FactStore contract test (fact-store.contract.test.ts) flagged for M2 follow-up (session isolation, trust floor, tier filtering validation). — Scribe
-
----
-
-## Design Ceremony Summary (R1–R8)
-
-**R1–R5:** First-principles design. Advocated Path A (clean-slate) initially. Contributed v0/v1 graph schema docs: two-table graph (nodes + edges), multi-kind tagging, hybrid persistence. 5 tensions identified.
-
-**R6 Revision:** After source-reading, adopted Path D. Recognized "closer in spirit" ≠ "same shape." Structures can differ while concepts converge. Supported Path D (standalone but kernel-shaped).
-
-**R7 Lock:** v4-final locked as canonical. All 5 schema risks mitigated. Branded types enforcement mechanism is load-bearing (prevents confidence/trust collapse). Seven-mechanism defense-in-depth correct.
-
-**R8 Amendment:** Session identity unification. SessionId branded type ships v1 (FR-12 #8). Kind=session facts reference SessionId as content field, not PK. No identity collision risk. Edge schema references fact.id (KR convention); session_id is a content/grouping field. Latency claim holds.
-
----
-
-## Recent Work
-
-### 2026-05-25: R7 Lock-In Verdict — v4-final CANONICAL
-**Verdict:** APPROVE-FOR-LOCK
-- All 5 R7 schema risks mitigated (confidence/trust branded types, extraction-readiness, boundary discipline)
-- Branded types are load-bearing (compiler rejects unsafe cross-assignment)
-- Seven enforcement mechanisms form coherent defense-in-depth
-- FR-14 Path 2 introduces no new schema risks
-
-### 2026-05-26: R8 Session Identity Spec
-**Contribution:** SessionId branded type specification for v5-final
-- type SessionId = string & { readonly __brand: 'SessionId' }
-- UUID v4 validator + constructor
-- Branded primitive (not opaque class) for serialization-friendliness
-- kind=session fact schema: session_id is content/grouping, NOT PK
-- Edge schema remains: (from_id, to_id) reference fact.id
-- session_id allows O(1) indexed filter ("all facts in session X")
-
-### 2026-05-26: R8 Lock-Review — v5-final CANONICAL
-**Verdict:** LOCK
-- All 6 spec items from R8 verdict verified
-- SessionId brand mechanics correct (line 404-423)
-- kind=session schema correct (session_id as content field, no identity collision)
-- fact vs filter clarity preserved
-- Edge schema integrity maintained (no unintended multi-hop traversals)
-- No new KR-level concerns
-
-**Status:** v5-final canonical. Implementation ready. R8 CLOSED.
-
----
-
-## Learnings
-
-### 2026-05-26: Crucible KR Overlap Analysis — Two Critical Collisions, One Shared Primitive
-
-**Context:** Aaron starting Crucible (CLI coding harness) in parallel with Eureka. Requested KR-focused analysis of representational overlap, specifically around schema primitives, session identity, and naming collisions.
-
-**Findings:**
-
-1. **"Decision" naming collision (CRITICAL):** Both systems use `Decision` / `DecisionRecord` / `DecisionPayload` / `kind=decision` for structurally different things. Crucible's `Decision` primitive = any recorded choice (audit event). Eureka's `kind=decision` fact = contemplative structured deliberation with explicit options/rationale (FR-10). Forge's `DecisionRecord` (shared via `@akubly/types`) is the flat audit shape. Three types, one word. **Namespace pollution across three systems.** Recommendation: Crucible rename primitive to `ChoiceEvent` or `DecisionEvent`; ESLint ban cross-system `Decision*` imports.
-
-2. **"Artifact" semantic drift (HIGH):** Crucible's `Artifact` primitive = any reviewable content (inputs AND outputs: PRD, patch, screenshot, transcript, diff), stored in CAS. Eureka uses "artifact" informally (US-2 AC-2.1: "epistemological artifact" = memory representation of session, NOT the content). If Crucible stores Artifacts in cairn CAS and Eureka v2 content-addresses fact payloads, collision at storage layer. Recommendation: Crucible rename to `ContentBlob` / `CapturedContent`; Eureka avoid "artifact" in public types.
-
-3. **Shared `SessionId` brand is the load-bearing integration primitive (OPPORTUNITY):** Crucible's session (operational lifecycle, cairn `sessions` table) and Eureka's session-fact (epistemological artifact, `kind=session`) share **one identifier** — Copilot CLI session UUID via `SessionId` brand (`@akubly/types`, v5-final FR-13). This is the join key that enables Path D kernel extraction: Crucible primitives → cairn event_log, Eureka facts → `facts` table, linked by `session_id`. Type-level construct (branded string, zero runtime overhead), no FK at runtime (FR-7.2: no cross-DB ATTACH). **v5-final session-identity unification (R8 amendment) was prescient for Crucible integration.**
-
-4. **Crucible's 5 primitives vs Eureka's kinds:** Only `Decision` has direct naming collision. `Request`, `Observation`, `Question` have no Eureka equivalents (no collision, but also no shared representation). `Artifact` has semantic drift. The primitives are structurally independent from Eureka's fact/edge graph.
-
-5. **Storage schema convergence (MODERATE):** Both want append-only, replayable, local-first storage. Crucible: hybrid WAL + CBOR+BLAKE3 CAS. Eureka: two-table SQLite graph (facts + edges). Structurally independent but mechanically convergent. If cairn becomes shared substrate (Path D), Crucible primitives live in `event_log`, Eureka facts in `facts`, joined by `session_id`. Shared CAS opportunity: if Eureka v2 content-addresses, adopt Crucible's BLAKE3 primitive (deprecate SHA-256 DBOM legacy).
-
-6. **Drift vs trust are orthogonal:** Crucible's "drift" (replay divergence measurement, conformance corpus) ≠ Eureka's "trust" (epistemic reliability scalar on facts). No collision. BUT: if Crucible's drift-prescriber proposes trust adjustments, explicit adapter required (never implicit conversion). Glossary already guards this (Confidence vs Trust orthogonality, v5-final line 659–660).
-
-7. **Read-set hash vs edges structural mismatch:** Crucible's read-set (opaque hash for replay verification) doesn't compose with Eureka's typed edges (traversable graph). If Sonny's "why did this decision happen?" debugger (Crucible T1-D4) needs Eureka facts, explicit `ReadSetHashToFactEdges` adapter required. Not v1 concern; v2+ bridge gap.
-
-**What I Learned About Representational Reuse:**
-
----
-
 ## 2026-05-27: London-School TDD Strategy Authored + OQ-1 Monorepo Resolution
 
 **Event:** London-school TDD spine delivered and reviewed  
@@ -249,16 +131,6 @@
 
 **Team Update:** §20 seams, representation boundaries, and storage interface are now explicit in documentation. Future code should use §7.4 FactStore interface as the mock boundary for activity tests.
 
----
-
-## 2026-05-29: M4 GREEN + M5 Anchor (Cross-Agent Update)
-
-**Context:** Laura (M4 RED) + Edgar (M4 GREEN) completed ClockProvider seam for recency decay. Edgar's 2-line change in `recall()` wires injected clock (§55 §1.2 discipline).
-
-**M5 Anchor:** Trust score updates from feedback events (§30 §2.3). Events drive mutations: corroboration +0.10, contradiction -0.10, user correction ±0.30. **Laura owns M5 RED.**
-
-**Your attention:** §20 FactStore interface is the seam boundary; M4 GREEN reinforces this by requiring explicit clock injection. M5 will likely extend the seam with feedback event channels. No blocker to §20 work; this is forward context.
-
 
 - **Type sketches belong in architecture docs.** The schema section (§2) includes TypeScript interfaces even though this is "just" a design doc. These sketches are normative — they constrain implementation choices and serve as shared vocabulary for the squad. They're not aspirational code; they're architectural contracts.
 
@@ -380,53 +252,7 @@ Using `updated_at` for recency computation conflates **modification time** with 
 **Deliverable:** Single-line fix in `docs/eureka/sections/20-knowledge-representation.md` (line 180).
 
 ---
----
-
-## 2026-05-28: Eureka M1 First Red Test — Knowledge Graph Schema Cascade Entry
-
-**Event:** Laura (Tester) delivered M1 first red test per §55 London-school TDD. FactStore.search() seam locked.
-
-**RED Status:** AC-1.3 seed test established. Mock contracts finalized: FactStore.search() returns { content: string; trust: number; attention_tier: string } array.
-
-**Impact for Crispin:** M2 cascade: formalize FactStore interface per §20 §7.4. Add contract test validating session isolation, trust floor filtering, tier filtering, BM25 normalization. This test locks the persistence layer contract that your graph schema will depend on.
-
-**SessionId context:** Branded type now available in @akubly/types (added in M1 scaffold). Use for cross-package coordination.
-
-**Baseline preserved:** Cairn 26/26 ✅, Forge 24/24 ✅, tsc --build ✅.
-
----
-
-📌 **2026-05-29: Eureka Cycle 1 Review — F6 Escalation (FactStore contract) requires your input** — Code panel review of ea05e62 escalated F6 (trust-filter undersupply). Finding: `recall()` fetches exactly k candidates, applies trust floor filter, silently returns <k results when trust-filtered. No signal to caller. Spec (§30 §1.2, §30 §2.3, §40) is silent on overfetch policy. Escalated to you + Cassima (PM). Recommendation: Push filter to FactStore.search() layer (option b) or add optional trustFloor parameter (option d). Inputs needed: (1) Can FactStore interface accept trustFloor parameter in next sprint? (2) Would SQLite implementation apply WHERE predicate before returning results? (3) Contract test surface? Decision drop: .squad/decisions/F6-recall-undersupply-escalation.md. Awaiting your input. — Scribe
-
----
-
-## 2026-05-29: F6 Resolution — Recall Undersupply (Joint with Cassima)
-
-**Event:** F6 escalation from Cycle 1 review. Cassima + Crispin joint decision drop authored.
-
-**Decision:** Option (b) — Push `minTrust` into `FactStore.search()`.
-
-**Crispin's lens (layering):**
-The trust floor is a *data quality predicate*, not an activity-level ranking policy. The key finding: §20 §7.4 already specifies `min_trust` in the `RecallQuery` contract and the contract test list explicitly includes `search({ min_trust: 0.6 })`. The current TypeScript `FactStore` seam in recall.ts (line 33) is behind spec — it only has `{ query, sessionId, limit }`. This is a spec-implementation gap, not a policy question. Pushing `minTrust` to the store is not leaking activity policy into the data layer; it's aligning the implementation with the already-approved contract.
-
-The conceptual distinction I applied: `retired = false` and `trust >= 0.15` are **hard-gate structural predicates** — they define the valid working set. The FR-2 composite formula (relevance/importance/trust weighting/recency) is the **ranking policy** — it stays in the activity layer and correctly continues to do so. Filtering ≠ ranking. Both can reference `trust` without conflation.
-
-**What changes in my domain (FactStore seam):**
-1. `FactStore.search()` args in recall.ts line 33: add `minTrust?: number`
-2. Call site (line 134): pass `minTrust: TRUST_FLOOR`
-3. Remove post-filter line 137: `.filter(f => f.trust >= TRUST_FLOOR)` — store owns this now
-4. Activity test mocks: update stubs to respect `minTrust`
-5. Real SQLite implementation (M5+): `WHERE trust >= ?` — already specified in §7.4 contract tests
-
-**Forward compat:** The `ranker?: Ranker` seam (F9) receives pre-qualified candidates — strictly better input. Per-call configurable trustFloor (TODO M5+) becomes a clean one-liner passthrough. Trust-feedback updates (M5) only mutate stored trust values; filter logic unchanged.
-
-**Sequencing:** M4, current cycle. No FactStore SQLite implementation required — the interface contract changes, the mock updates, the activity is fixed.
-
-**Deliverable:** `.squad/decisions/inbox/cassima-crispin-recall-undersupply-resolution.md`
-
-
----
-
+📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
 
 ---
@@ -646,3 +472,48 @@ Using `updated_at` for recency computation conflates **modification time** with 
 📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
 📌 Team update (2026-05-31T07:24:22Z): **M7-A (PR #38) shipped** — Typed error classes for applyFeedback/applyFeedbackById. 5 error classes with code discriminators. All 40 existing tests GREEN (no changes required, inheritance preserved). Next: M7-B (Laura — exhaustive narrowing tests) and M7-C (Crispin/Edgar — FactReader contract + atomicity). — Scribe
+📌 Team update (2026-05-31T07:24:22Z): **M7-A (PR #38) shipped** — Typed error classes for applyFeedback/applyFeedbackById. 5 error classes with code discriminators. All 40 existing tests GREEN (no changes required, inheritance preserved). Next: M7-B (Laura — exhaustive narrowing tests) and M7-C (Crispin/Edgar — FactReader contract + atomicity). — Scribe
+
+---
+
+### 2026-05-31: M7-C — Real FactReader Implementation + Contract Test Suite — COMPLETE
+
+**Branch:** `eureka/m7-c-factreader` (branched from `eureka/m7-bd-narrowing-regression`)
+
+**Summary:** Delivered the real FactReader implementation and shared contract test suite for M7-C. Parallel to Edgar's atomicity contract work on `eureka/m7-c-atomicity`.
+
+#### Data Layer Survey Finding
+
+`packages/eureka/src/` has no persistence layer. No `storage/` directory, no DB driver, no migration files. Only `activities/` + `index.ts`. The package has zero production dependencies besides `@akubly/types`. Both `FactReader` and `TrustUpdater` exist purely as mock-injected interfaces today.
+
+#### Implementation Chosen: In-Memory FactReader
+
+Selected option (i) — `Map<factId, FactRecord[]>` backed in-memory implementation. Rationale:
+- No SQLite dependency exists in Eureka; introducing it would require a schema decision that belongs alongside the full `FactStore.search()` design (Crispin's storage-layer milestone)
+- The `FactReader` interface's job in M7-C is the recall pipeline + direct callers — the in-memory form is sufficient for both
+- The contract test suite is the primary deliverable; a real storage backend wires in later without test rewriting
+
+Deferred: SQLite FactReader to M8-storage (schema + persistence layer milestone).
+
+#### Key design decisions:
+- **SessionId scoping:** `read()` returns `null` for a correct factId in the wrong session — this is a contract requirement, not just an optimization. Different sessions are isolated.
+- **Trust passthrough:** Read layer returns raw NaN/corrupt values unchanged. Validation is the caller's job (`InvalidTrustValueError(source:'storage')` in `applyFeedbackById`).
+- **Seed helper is NOT part of FactReader interface:** `InMemoryFactReader.seed()` is a test/dev utility. Future impls (SQLite) would seed via standard DB writes.
+- **Connection lifecycle:** In-memory impl owns its own Map. Documented that production impls should accept a db handle as constructor arg.
+
+#### Contract Test Pattern
+
+`runFactReaderContract(implName, makeHarness)` — a shared exported helper that any FactReader impl can register with. Five invariants:
+- CL-1: Read existing fact returns `{trust}`
+- CL-2: Read missing fact returns `null`
+- CL-3: Wrong-session isolation returns `null`
+- CL-4: Trust passthrough (NaN returned as-is)
+- CL-5: Result shape carries numeric `trust` field
+
+Pattern scales: adding a new implementation = one `runFactReaderContract(...)` call, zero test duplication.
+
+#### Coordination with Edgar
+
+Edgar's `eureka/m7-c-atomicity` removes `FactReader` from `ApplyFeedbackByIdDeps` (it moves to the storage layer via the `mutate` callback). This is expected and fine — `FactReader` survives for pure-read use cases. No blocking constraints discovered. No `needs-edgar` coordination file required.
+
+#### Test counts: 62 baseline → 67 after M7-C (5 new contract tests). Build clean. All 67 pass.

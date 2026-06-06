@@ -1,14 +1,15 @@
 ---
-updated_at: 2026-05-31T07:30:00Z
-focus_area: Implementation phase ready — Crucible CTD design review COMPLETE; ADR-0019 (childSid hybrid) landed; next: CLI + tests for fork protocol
-previous_focus: Crucible CTD design review (Original Pass 21 findings + Pass A 25 findings + childSid Round 2 4-persona convergence → ADR-0019)
-parallel_track: Eureka v1 M5+M6 COMPLETE & REVIEW-CLEAN (40/40 tests, 11-commit branch, shipped); M1 runway clear; M7 roadmap next
+updated_at: 2026-06-02T06:00:00Z
+focus_area: Eureka M7 COMPLETE — merged to main as ed6be2c via PR #41 cloud-review-cycle marathon (5 cycles, 22 findings, 44 threads resolved)
+previous_focus: Implementation phase ready — Crucible CTD design review COMPLETE; ADR-0019 (childSid hybrid) landed
+parallel_track: Eureka M7 (B+C+D) SHIPPED on main; M1 runway clear; Phase 5 roadmap next
 active_issues:
-  - "**Eureka M5+M6 COMPLETE & REVIEW-CLEAN** ✅ — Trust feedback mutation (applyFeedback + applyFeedbackById + FactReader seams); 40/40 tests GREEN; 3-cycle consensus (12→4→4 finding trajectory); tsc clean; ship-ready"
+  - "**Eureka M7 (B+C+D) COMPLETE & SHIPPED** ✅ (2026-06-02) — PR #41 cloud-review-cycle marathon: 5 cycles, 22 unique findings (44 threads), 74 tests green, tsc-clean, lint-clean, merged to main as ed6be2c; M7-A (error typing) + M7-B (error narrowing) + M7-C (atomicity contract) + M7-D (regression locks) all delivered"
+  - "M7 Review Learnings: (1) Contract tests must lock REQUIRED behavior; (2) Grep entire repo for old interface names post-refactor; (3) Seam changes cascade into JSDoc+SKILL.md+decisions.md; (4) Windows lint uses workspace scripts not root glob; (5) Read/write contract symmetry non-optional; (6) Identity-check cleanup pattern in promise chains"
+  - "New Skill: `.squad/skills/refactor-grep-cleanup/SKILL.md` (Cycle 5 outcome — systematic grep patterns for post-refactor cleanup)"
+  - "**Eureka M5+M6 COMPLETE & REVIEW-CLEAN** ✅ — Trust feedback mutation (applyFeedback + applyFeedbackById + FactReader seams); 40/40 tests GREEN; 3-cycle consensus (12→4→4 finding trajectory); tsc clean; shipped"
   - "Branch: eureka/m5-m6-trust-feedback (11 commits from 9892415 to 112c966)"
   - "Review cycle: 15 personas + 6 squad spawns; 20 findings total (1 blocking in C1, 0 in C2+C3); 100% ACCEPT'ed & implemented"
-  - "Deliverables: Implementation + 40 tests + §30 §2.3 spec + JSDoc complete + Decisions merged + Skills documented"
-  - "M7 ROADMAP NEXT: M7-A (error typing), M7-B (error narrowing), M7-C (atomicity contract), M7-D (regression locks) — Laura + Crispin ownership"
   - "Eureka v0.1 Technical Design — ✅ ASSEMBLED & LOCKED (§00–§70, 198KB, 3 ADRs; OQ-1 resolved via ADR-0002)"
   - "Phase 1: Monorepo restructuring ✅ COMPLETE"
   - "Phase 2: Live runtime verification ✅ COMPLETE (5/5 modules)"

@@ -553,7 +553,7 @@ Query-time computation avoids batch recomputation. Stored timestamps are immutab
 
 **Activity:** `applyFeedback(options, deps)` — computes the correct clamped new trust value from an event and delegates the write to an injected `TrustUpdater` seam (§55 §1.2: storage I/O is always mocked in tests).
 
-**Higher-level orchestrator:** `applyFeedbackById(options, deps)` — reads `currentTrust` from storage via a `FactReader` seam before applying the delta. Callers do not need to know current trust; the activity owns the read.
+**Higher-level orchestrator:** `applyFeedbackById(options, deps)` — thin forwarding wrapper; delegates entirely to `applyFeedback`. Callers do not need to supply or know current trust; the atomic read-modify-write is performed inside `TrustUpdater.mutate()` by the storage layer.
 
 **Mutation Formula:**
 
@@ -566,14 +566,13 @@ Query-time computation avoids batch recomputation. Stored timestamps are immutab
 **Seam Interfaces:**
 
 ```typescript
-// Write seam — owns the storage write
+// Write seam — owns the atomic read-modify-write (M7-C atomicity contract)
 interface TrustUpdater {
-  update(args: { factId: string; sessionId: SessionId; trust: number }): Promise<void>;
-}
-
-// Read seam (applyFeedbackById only) — owns the storage read
-interface FactReader {
-  read(args: { factId: string; sessionId: SessionId }): Promise<{ trust: number } | null>;
+  mutate(args: {
+    factId: string;
+    sessionId: SessionId;
+    fn: (currentTrust: number) => number; // pure delta fn; throw to abort write
+  }): Promise<void>;
 }
 ```
 
@@ -583,18 +582,18 @@ interface FactReader {
 - Clamped symmetrically to `[0.0, 1.0]` domain invariant
 
 **Guard Contracts:**
-- `applyFeedback`: throws `RangeError` if `currentTrust` is non-finite or outside `[0, 1]` — corrupt/buggy callers fail loudly before any side effects
-- `applyFeedback`: throws if `event='user_correction'` and `correctionDelta` is `undefined` — a silent `?? 0` fallback would be a misleading no-op write
-- `applyFeedback`: throws `RangeError` if `event='user_correction'` and `correctionDelta` is non-finite (NaN, ±Infinity) — silently propagating a corrupt delta to TrustUpdater would compute `NaN` and poison storage
-- `applyFeedbackById`: throws if `FactReader.read()` returns `null` — `TrustUpdater` is NOT called for a missing fact
-- `applyFeedbackById`: throws `RangeError` if the stored `fact.trust` is non-finite (corrupted storage row)
+- `applyFeedback`: throws `UnhandledFeedbackEventError` for unknown event variants — pre-flight check before any I/O
+- `applyFeedback`: throws `InvalidFeedbackOptionsError` if `event='user_correction'` and `correctionDelta` is `undefined`
+- `applyFeedback`: throws `InvalidTrustValueError(source:'input')` if `event='user_correction'` and `correctionDelta` is non-finite (NaN, ±Infinity)
+- `applyFeedbackById`: thin forwarding wrapper — all guard contracts are the same as `applyFeedback`; throws `FactNotFoundError` propagated from `TrustUpdater.mutate()` if the fact does not exist in storage
+- `TrustUpdater.mutate()` (storage responsibility): throws `InvalidTrustValueError(source:'storage')` if `fn` returns non-finite or out-of-range [0,1]; write is aborted, storage unchanged
 
 **Named Interface Types (M1–M4 pattern):**
 ```typescript
-interface ApplyFeedbackOptions    { factId: string; sessionId: SessionId; event: FeedbackEvent; currentTrust: number; correctionDelta?: number; }
-interface ApplyFeedbackDeps       { trustUpdater: TrustUpdater; }
+interface ApplyFeedbackOptions     { factId: string; sessionId: SessionId; event: FeedbackEvent; correctionDelta?: number; }
+interface ApplyFeedbackDeps        { trustUpdater: TrustUpdater; }
 interface ApplyFeedbackByIdOptions { factId: string; sessionId: SessionId; event: FeedbackEvent; correctionDelta?: number; }
-interface ApplyFeedbackByIdDeps   { factReader: FactReader; trustUpdater: TrustUpdater; }
+interface ApplyFeedbackByIdDeps    { trustUpdater: TrustUpdater; }  // M7-C: factReader removed
 ```
 No `clock` field in either deps type — clock is not consumed by the feedback path. Time injection is a concern of the recency scoring path (§2.4).
 

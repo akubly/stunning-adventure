@@ -589,6 +589,6 @@ describe('migration 007', () => {
     const row = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as {
       version: number;
     };
-    expect(row.version).toBe(16);
+    expect(row.version).toBe(17);
   });
 });

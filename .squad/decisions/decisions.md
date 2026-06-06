@@ -4,11 +4,10 @@
 
 - [London-School TDD Directive](#london-school-tdd-directive)
 - [G4 Scope & Ownership Recommendation + Directives](#g4-scope--ownership-recommendation--directives)
-- [Brain Project Proposal — Name, Roster, Loop-In Model](#brain-project-proposal--name-roster-loop-in-model)
-- [Unified Package Scope → @akubly](#unified-package-scope--akubly)
-- [Phase 4.5 Brainstorm Round 2 — Aaron's Decisions](#phase-45-brainstorm-round-2--aarons-decisions)
 - [Eureka v1 Design — Cycle 1 Persona Review Canonical Resolutions](#eureka-v1-design--cycle-1-persona-review-canonical-resolutions)
 - [Eureka v1 Design — Cycle 3 Zombie-Fact Semantics Decision](#eureka-v1-design--cycle-3-zombie-fact-semantics-decision)
+- [PR #41 — Eureka M7 (B+C+D) Cloud Review Cycle](#pr-41--eureka-m7-bcd-cloud-review-cycle)
+- [M8 Storage Scope Proposal](#m8-storage-scope-proposal)
 
 ---
 
@@ -207,121 +206,6 @@ Without G4, Crucible can unilaterally mutate DecisionRecord schema breaking Eure
 - ⚠️ Schema freeze sign-off meeting must happen before sprint 2
 - ⚠️ Aaron action: identify Crucible team roster for rotating ownership assignment
 - ⚠️ Aaron action: confirm `#squad-coordination` vs dedicated `#shared-substrate` Slack channel
-
----
-
-**Date:** 2026-05-22  
-**Author:** Graham (Lead/Architect)  
-**Status:** Open for Aaron approval  
-**Log:** [2026-05-22T20-37-39-graham-brain-roster-proposal.md](../orchestration-log/2026-05-22T20-37-39-graham-brain-roster-proposal.md)
-
-### Context
-
-Graham delivered a complete charter proposal for the Brain project (agentic memory infrastructure) consolidating Rounds 1–4 deliberation into actionable form.
-
-### Proposal
-
-**Name candidates (pending Aaron's choice):**
-- **Engram** — Neuroscience term for memory trace
-- **Nous** — Greek for mind/intellect
-- **Anamnesis** — Platonic concept of recollection
-
-**Roster structure (pending Aaron's approval):**
-- **5 core roles:** Lead (must hire), Knowledge Rep specialist (must hire), Platform Engineer (borrow Roger), Integration Engineer (borrow Alexander), Learning Systems specialist (must hire)
-- **2 advisors:** Valanice (UX, 20%), Laura (test, on-call)
-
-**Cairn loop-in model (pending Aaron's acceptance):**
-- Federated decisions: Cross-repo decisions ledger with boundary-affecting changes recorded in both repos
-- Shared cross-team channel: brain-cairn.md living doc for integration points, open questions, blockers
-- 48hr acknowledgment SLA for boundary-affecting changes
-- Time-boxing: Roger and Alexander stay primary Cairn, secondary Brain (scoped 1-week sprints, handoff docs, escalation path)
-- Sync ceremonies: Weekly standup, biweekly boundary review, end-of-Phase-1 retrospective
-
-### Waiting For
-
-1. Working name selection (Engram | Nous | Anamnesis)
-2. Roster shape validation (hire 3, borrow 2, advise 2)
-3. Cairn loop-in model acceptance
-4. New repo creation greenlight
-
----
-
-## Unified Package Scope → @akubly
-
-**Date:** 2026-04-24  
-**Author:** Roger (Platform Dev)  
-**Status:** Adopted  
-**Log:** [2026-04-24T23-18-roger.md](../orchestration-log/2026-04-24T23-18-roger.md)
-
-### Context
-
-The monorepo used a mix of `@cairn/*` and `@akubly/*` scopes:
-- `@cairn/types`, `@cairn/forge` — used the `@cairn` scope
-- `@akubly/cairn` — already used the `@akubly` scope (published to npm)
-
-This inconsistency would block npm publishing for `types` and `forge` since Aaron owns the `@akubly` scope on npm, not `@cairn`.
-
-### Decision
-
-Rename all packages to the `@akubly` scope:
-- `@cairn/types` → `@akubly/types`
-- `@cairn/forge` → `@akubly/forge`
-- `@akubly/cairn` — unchanged (already correct)
-
-### Consequences
-
-- All three packages share one scope, simplifying npm publishing
-- Import paths in source and docs updated to match
-- Historical docs (decisions.md, agent histories, spikes) intentionally left unchanged to preserve the context in which they were written
-
----
-
-## Phase 4.5 Brainstorm Round 2 — Aaron's Decisions
-
-**Date:** 2026-05-01  
-**Author:** Aaron (via Copilot)  
-**Status:** Adopted  
-
-### Context
-
-Phase 4.5 brainstorm Round 2 follow-up decisions on metrics prioritization, exploration budgets, governance structures, and feature discovery.
-
-### Decisions
-
-1. **Metrics priority: Determinism > Token Cost (always)**
-   - Aaron's exact words: "determinism is always > token cost. Our goal is to instill confidence in the tools. That's worth investment."
-   - This is a foundational priority order for all optimization scoring: determinism first, quality second, tokens third.
-
-2. **Exploration budget: Generous — diminishing returns are worth it at scale**
-   - Aaron's reasoning: "Even diminishing returns are worth a one-time cost when scaled out across the entire future of software engineering."
-   - The investment in experimentation pays off because optimized artifacts are portable — they benefit every future user.
-
-3. **Human approval gates → Inception-style recursion: DBOM on prescription decisions**
-   - Aaron's insight: "Do we need heuristics and DBOM on prescription *decisions*?"
-   - This is a meta-observation: the Prescriber ITSELF makes decisions. Those decisions should be tracked with the same rigor as session decisions — decision records, alternatives considered, provenance. The feedback loop is self-referential: optimize the optimizer.
-
-4. **Multi-artifact optimization → Feature suite discovery**
-   - Aaron identifies a suite of features hidden in transfer learning:
-     - Support for collections of skills (plugins as bundles)
-     - How model selection affects skill pairings
-     - Optimize contents of one skill in the presence of other plugins
-     - Cross-skill interaction effects (skill A's optimization depends on which other skills are active)
-
-5. **Data retention tradeoffs: Needs exploration (no decision yet)**
-   - Aaron wants to explore the tradeoffs before committing to a retention policy.
-
-6. **Round 2 wild cards approved for backlog:**
-   - Time-travel debugging via ancestry (Rosella)
-   - Predictive cache warming (Rosella)
-   - Adaptive instrumentation (Alexander)
-
-### Consequences
-
-- Team has clear prioritization: determinism above cost considerations
-- Authorization given for sustained exploration investment across future optimization cycles
-- Prescriber governance now includes decision tracking on its own choices (recursive DBOM)
-- Three feature areas identified for backlog prioritization and skill pairing research
-- Data retention policy deferred for exploratory analysis
 
 ---
 
@@ -756,3 +640,363 @@ Cross-refs verified for consistency.
 
 **For Scribe:** Merge this decision summary into `.squad/decisions.md` under "Cycle 3 Resolutions" section. Archive to `.squad/decisions/archive/` after lock.
 
+---
+
+## PR #41 — Eureka M7 (B+C+D) Cloud Review Cycle
+
+**Date:** 2026-06-01 (5 review cycles)  
+**Agent:** Edgar (Learning Systems Specialist)  
+**Status:** COMPLETE — Merged to main as ed6be2c via squash commit  
+**Test count:** 74 green, tsc clean, CI 3/3 passing  
+**Copilot findings processed:** 22 unique findings across 5 cycles (doubled to 44 threads)
+
+---
+
+## Context
+
+PR #41 implemented Eureka M7 Milestones B (error narrowing), C (atomicity contract), and D (session-scoped regression tests) via a 5-turn cloud-review-cycle marathon. Edgar addressed all Copilot code-review findings, resolved reviewer threads, and maintained green tests throughout.
+
+---
+
+## Cycle Trajectory
+
+### Cycle 1: Contract Suite Gaps + Dangling Reference + Committed Inbox Files (8 findings → 16 threads)
+
+**SHA:** f128f78
+
+| Finding | Root Cause | Resolution |
+|---------|-----------|------------|
+| C1-C5: trust-updater-contract.test.ts | InvalidTrustValueError import missing; weak contract ("throw OR store"); weak non-finite check; getTrust from wrong instance; dead TODO | Added imports; tightened contract to require throw+no-mutate on NaN; added !Number.isFinite guard; destructured getTrust; implemented concurrent +0.1 test |
+| C6: Dangling JSDoc reference | `@concurrency` cited gitignored inbox path | Updated to reference `.squad/decisions.md` PR #41 section |
+| C7-C8: Committed inbox files | crispin-m7-c-storage-survey.md, crispin-m7-c-complete.md committed by mistake | git rm; content merged into decisions.md |
+
+**Learnings:**
+- Contract tests must not accept "either behavior is fine" — lock the REQUIRED behavior.
+- makeImpl() called twice returns different instances; only call once per test.
+- Gitignore blocks NEW files, not tracked files on merged branches.
+
+### Cycle 2: Stale Group Header + Overclaimed Parallelism (2 findings → 4 threads)
+
+**SHA:** 5fb53b4
+
+| Finding | Root Cause | Resolution |
+|---------|-----------|------------|
+| Group 4 header (feedback-error-narrowing.test.ts) | Pre-M7-C language (`currentTrust`, `FactReader` on write path) | Rewrote to post-M7-C reality: source:'input' via non-finite delta, source:'storage' via fn receiving corrupt trust |
+| C-6 overclaimed (trust-updater-contract.test.ts) | Test name said "no global lock" but assertions only checked correctness, not parallelism | Renamed to "do not interfere — reach correct value"; updated header: parallelism PERMITTED but not required |
+
+**Learnings:**
+- Atomicity ≠ parallelism — distinct contract properties.
+- Stale comments in test files are a refactor tax; audit ALL group headers post-refactor.
+
+### Cycle 3: Session-Scoping Missing + Unbounded Locks Cleanup (2 findings)
+
+**SHA:** 1413826
+
+| Finding | Root Cause | Resolution |
+|---------|-----------|------------|
+| sessionId not in keying | store/locks keyed by factId only; FactReader already session-scoped (read invariant) | Re-keyed by `${sessionId}\0${factId}` (null-byte separator); updated TrustUpdaterTestImpl; added C-7 cross-session isolation test (seed (sessionA, factX)=0.5 and (sessionB, factX)=0.7, mutate sessionB, assert sessionA unchanged) |
+| locks Map unbounded | Never deleted entries | Added identity-check cleanup in finally: `if (locks.get(key) === next) locks.delete(key)` |
+
+**Test count:** +1 (C-7 added) → 74 total
+
+**Learnings:**
+- Read/write contract symmetry: if two seams share a data model, their contracts must share key invariants.
+- Identity-check cleanup in promise chains: safe atomic cleanup for the last owner.
+
+### Cycle 4: Real CI Lint Failure + 4 Stale-Doc Nits (4 findings)
+
+**SHA:** 75c9f25
+
+| Finding | Root Cause | Resolution |
+|---------|-----------|------------|
+| Unused imports (CI lint failure) | FactNotFoundError, FactReaderContractError removed from write path but not from imports | Removed imports; classes remain in public error vocabulary for external FactReader impls |
+| @concurrency JSDoc | Still said "per factId"; cycle 3 re-keyed to (sessionId, factId) | Updated to "per (sessionId, factId) pair" |
+| SKILL.md lines 74-80 | Said different keys MUST be parallel; contradicts cycle-2 Option B | Fixed: PERMITTED but not required |
+| SKILL.md test count | Said "6 tests (C-1..C-6)"; cycle 3 added C-7 | Corrected to 7 |
+| decisions.md test count | Said "+6 contract tests"; post-cycle-3 is +7 | Added inline note with post-cycle-3 correction |
+
+**Key incident:** Windows `npm run lint` glob expansion fails; used `npx eslint packages/eureka/src/` directly.
+
+**Learnings:**
+- Seam changes cascade into JSDoc, SKILL.md, decisions.md, test headers — systematic audit required.
+- SKILL.md is normative; future agents read it literally. Accuracy > completeness.
+- Windows lint: use `npx eslint packages/<pkg>/src/` not root glob script.
+
+### Cycle 5: Comprehensive Grep-Cleanup Pass (6 findings → consolidation into 1 sweep)
+
+**SHA:** 7ce81da
+
+**Aaron's decision:** Diminishing returns reached; authorized comprehensive grep-and-fix pass across entire repo for old interface names from the refactor.
+
+**Scope:** 9 grep terms run across whole repo to find residual references
+
+**Files touched:** 6 files across docs and tests
+
+**Outcome:** All stale doc nits fixed in one sweep. New skill created: `.squad/skills/refactor-grep-cleanup/SKILL.md` (cycle 5 lesson — grep entire repo for old interface names BEFORE shipping a refactor).
+
+**Learnings:**
+- After large refactors, grep the entire repo for old interface names before shipping.
+- Document the grep terms and cleanup patterns in a reusable skill.
+
+---
+
+## Key Aaron Decisions During Cycle
+
+1. **Cycle 1:** Approve contract tightening; authorize merged-content deduplication in decisions.md.
+2. **Cycle 2:** Choose Option B — rescope C-6 to atomicity only, not parallelism.
+3. **Cycle 3:** Affirm session-scoping as MUST invariant.
+4. **Cycle 4:** (CI lint failure caught automatically; no decision gate.)
+5. **Cycle 5:** Diminishing returns reached; authorize comprehensive grep-and-fix pass + commit and merge.
+
+---
+
+## Final Stats
+
+| Metric | Value |
+|--------|-------|
+| Total cycles | 5 |
+| Unique Copilot findings | 22 |
+| Threads resolved | 44 |
+| Tests (final) | 74 (all green) |
+| Lint | Clean |
+| tsc | Clean |
+| CI checks | 3/3 passing |
+| Final SHA | ed6be2c |
+| Branch cleaned | eureka/m7-c-atomicity (remote + local), eureka/m7-c-factreader (local), eureka/m7-bd-narrowing-regression (local) |
+
+---
+
+## Merged Content
+
+This section consolidates the following inbox decision drops:
+- edgar-m7-c-complete.md (M7-C contract design summary + files changed)
+- edgar-m7-c-contract.md (atomicity guarantee + variant B design)
+- edgar-pr41-cycle1.md (Copilot cycle 1 findings)
+- edgar-pr41-cycle2.md (Copilot cycle 2 findings)
+- edgar-pr41-cycle3.md (Copilot cycle 3 findings)
+- edgar-pr41-cycle4.md (Copilot cycle 4 findings)
+
+(Cycle 5 findings were consolidated into the grep-cleanup pass; separate drop not required.)
+
+---
+
+## M7-C Design Essence (from merged content)
+
+**TrustUpdater.mutate contract:**
+```ts
+export interface TrustUpdater {
+  mutate(args: {
+    factId: string;
+    sessionId: SessionId;
+    fn: (currentTrust: number) => number;
+  }): Promise<void>;
+}
+```
+
+**Atomicity guarantee:** The storage implementation MUST execute read, fn-application, and write as a single atomic operation with respect to other mutate() calls on the same (sessionId, factId) pair.
+
+**Session-scoping:** Storage MUST scope state by (sessionId, factId). A mutate() on one sessionId MUST NOT observe or mutate state belonging to a different sessionId.
+
+**Breaking API changes:**
+- `TrustUpdater.update` → `TrustUpdater.mutate`
+- `ApplyFeedbackOptions.currentTrust` removed
+- `ApplyFeedbackByIdDeps.factReader` removed
+
+**Test coverage:** 6 contract tests (C-1..C-7) covering happy path, fn-throws, fn-returns-non-finite, fact-missing, concurrent mutates, and cross-session isolation.
+
+---
+
+**For Scribe:** All inbox files merged. Ready to delete from inbox/ directory.
+
+---
+
+## M8 Storage Scope Proposal
+
+**Author:** Graham (Lead / Architect)  
+**Date:** 2026-06-01  
+**Status:** INBOX → Approved by Aaron Q1=scaffold-A-write-B, Q2=lock cursor now, Q3=own DB file  
+**Ref:** decisions.md §M7-C (line 263), PR #41
+
+---
+
+### 1. Goal
+
+M8 ships a SQLite-backed `FactReader` and `TrustUpdater` for `@akubly/eureka`, replacing the in-memory implementations with durable per-session storage. "Done" means: facts written via `TrustUpdater.mutate` survive process restart, `FactReader.read` returns them correctly, the existing `runFactReaderContract` and `runTrustUpdaterContract` suites both pass against the SQLite impls, `FactStore.search()` has a locked interface and a SQLite implementation that serves `recall()`, and Eureka has a migrations module modelled on Cairn's `applyMigrations` pattern. All 69 existing tests remain green; M8 adds ≥ 15 net new contract tests.
+
+---
+
+### 2. Scope Slices
+
+#### Slice A — SQLite `FactReader` (one PR, regression-locked)
+
+**Deliverable:** `SqliteFactReader` in `packages/eureka/src/storage/fact-reader-sqlite.ts` implementing the existing `FactReader` interface.  Wire it into `runFactReaderContract('SqliteFactReader', ...)` — 5 new contract tests, zero production code changes beyond the new class.  Introduce the Eureka migrations module (`packages/eureka/src/db/`) with migration `001` (schema below).  
+
+**Contract tests added:** CL-1..CL-5 via `runFactReaderContract` (+5).  
+**Risk:** Low. Existing contract suite is the full regression lock.  CL-4 (NaN passthrough) is the subtlest — SQLite stores `NULL` for `NaN` unless handled explicitly; `CAST` or JS-side guard needed.
+
+---
+
+#### Slice B — SQLite `TrustUpdater` (atomic mutate)
+
+**Deliverable:** `SqliteTrustUpdater` implementing `TrustUpdater.mutate` atomically via a SQLite transaction (BEGIN IMMEDIATE). Wire into `runTrustUpdaterContract('SqliteTrustUpdater', ...)`.  
+
+**Contract tests added:** C-1..C-7 via `runTrustUpdaterContract` (+7).  
+**Risk:** Medium. The `fn` callback executes inside a `better-sqlite3` transaction; if `fn` throws the transaction rolls back correctly. Must verify that `InvalidTrustValueError(source:'storage')` propagates out of the transaction wrapper. Concurrency in SQLite WAL mode is single-writer anyway — mutual exclusion is database-level, not JS-level.
+
+---
+
+#### Slice C — `FactStore.search()` SQLite implementation
+
+**Deliverable:** `SqliteFactStore` implementing the locked `FactStore` interface (see §4). BM25 full-text search via FTS5 virtual table on `fact_content`. Returns `RecallResult[]` in composite-rank order per §30 §1.2.  
+
+**Contract tests added:** New `runFactStoreContract` helper (minimum 4 invariants: happy-path, empty-result, minTrust filter, ordering by relevance) — +4 per wiring.  
+**Risk:** High. FTS5 `bm25()` score sign convention (negative = better) is a footgun; wrap in `-bm25(...)` for normalized ascending relevance. Ordering tests are the critical regression lock.
+
+---
+
+#### Slice D — Wire SQLite impls as default in production entry point
+
+**Deliverable:** Update `packages/eureka/src/index.ts` (and wiring module) to export SQLite-backed instances as default deps. `InMemoryFactReader` remains importable for test harnesses.  
+
+**Contract tests added:** Integration smoke test — recall() end-to-end with SqliteFactStore (+1 or 2).  
+**Risk:** Low if Slices A–C are green. The seam injection already enforces separation (§55 §2.1 London form).
+
+---
+
+### 3. Schema Sketch
+
+#### Tables
+
+```sql
+-- Eureka migration 001: core fact storage
+CREATE TABLE facts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  fact_id     TEXT    NOT NULL,
+  session_id  TEXT    NOT NULL,
+  content     TEXT    NOT NULL DEFAULT '',
+  trust       REAL    NOT NULL DEFAULT 0.5,
+  created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (fact_id, session_id)
+);
+
+-- FTS5 virtual table for FactStore.search() — content-table form
+CREATE VIRTUAL TABLE facts_fts USING fts5(
+  content,
+  content='facts',
+  content_rowid='id'
+);
+
+-- Triggers to keep FTS in sync
+CREATE TRIGGER facts_ai AFTER INSERT ON facts BEGIN
+  INSERT INTO facts_fts(rowid, content) VALUES (new.id, new.content);
+END;
+CREATE TRIGGER facts_au AFTER UPDATE ON facts BEGIN
+  INSERT INTO facts_fts(facts_fts, rowid, content) VALUES ('delete', old.id, old.content);
+  INSERT INTO facts_fts(rowid, content) VALUES (new.id, new.content);
+END;
+CREATE TRIGGER facts_ad AFTER DELETE ON facts BEGIN
+  INSERT INTO facts_fts(facts_fts, rowid, content) VALUES ('delete', old.id, old.content);
+END;
+
+-- Trust history (append-only audit log — Slice B+)
+CREATE TABLE trust_history (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  fact_id      TEXT    NOT NULL,
+  session_id   TEXT    NOT NULL,
+  trust_before REAL,
+  trust_after  REAL    NOT NULL,
+  event        TEXT    NOT NULL,
+  applied_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+**NaN handling:** SQLite has no NaN literal. M8 stores `NULL` for NaN and re-hydrates as `NaN` on read (JS-side: `row.trust === null ? NaN : row.trust`). CL-4 explicitly tests this round-trip.
+
+#### Migration versioning approach
+
+Eureka has **no migration idiom yet**. Adopt Cairn's pattern verbatim:
+
+1. `packages/eureka/src/db/schema.ts` — `applyMigrations(db: Database)` using `schema_version` table (CREATE IF NOT EXISTS + SELECT MAX(version)).
+2. `packages/eureka/src/db/migrations/001-facts.ts` — exports `migration001: Migration`.
+3. Each migration is a plain `{ version, description, up(db) }` object; `applyMigrations` runs them in order inside `db.transaction(...)`.
+
+**Trade-off:** This is synchronous DDL at open-time (same as Cairn). Fine for CLI workloads. If Eureka is ever used in a server with multiple concurrent openers, switch to WAL + deferred migration. That's an M9+ concern.
+
+---
+
+### 4. FactStore.search() Schema Lock
+
+This is the M5 blocker. Proposed locked surface:
+
+```typescript
+export interface FactStore {
+  search(args: {
+    query: string;
+    sessionId: SessionId;
+    limit: number;
+    /** Trust floor — store filters WHERE trust >= minTrust. Default: 0.15. */
+    minTrust?: number;
+    /**
+     * Pagination cursor — opaque string returned by a prior search call.
+     * Absent on first page. Implementation may use rowid-based or offset cursors.
+     */
+    cursor?: string;
+  }): Promise<{
+    results: RecallResult[];
+    /**
+     * Opaque cursor for the next page. Absent when no further results exist.
+     * Consumers MUST NOT parse cursor internals.
+     */
+    nextCursor?: string;
+  }>;
+}
+```
+
+**Notes:**
+- `RecallResult` shape is already defined in `recall.ts` (content, trust, attentionTier, relevance?, importance?, lastAccessed?). No change to the result row shape.
+- **Ordering:** results are returned by descending composite score: `-bm25(facts_fts) * trust`. Callers (the `recall` activity) apply the FR-2 ranker on top. The storage layer does NOT apply the full FR-2 formula — that is activity-layer responsibility.
+- **Pagination:** cursor is optional for v1. `SqliteFactStore` may implement as rowid-keyset cursor. The `recall` activity today calls with a single page (`limit = k`); cursor is there to avoid a breaking change when cross-session queries arrive in a later milestone.
+- **Breaking change risk:** Adding `cursor` now (optional, not required) is backward-compatible. Adding it later would be a breaking change to a locked interface.
+
+**Trade-off noted:** Wrapping the return in `{ results, nextCursor }` vs. returning a plain array. Plain array is simpler today; `nextCursor` requires callers to change if/when pagination arrives. Recommend the wrapped form now.
+
+---
+
+### 5. Aaron's Decisions (Approved Q1–Q3 Answers)
+
+**Q1 — trust_history table scope for M8?**  
+**Aaron's call:** Q1=scaffold-A-write-B. `trust_history` defined in schema but NOT written in M8. Deferred to a later milestone. Slices A–D proceed without audit-log writes.
+
+**Q2 — `FactStore.search()` pagination: locked now or deferred?**  
+**Aaron's call:** Q2=lock cursor now. The wrapped `{ results, nextCursor }` form ships in M8 even though `cursor` logic is minimal v1 (single page). Prevents breaking change at cross-session time.
+
+**Q3 — DB file location / Eureka database lifecycle ownership?**  
+**Aaron's call:** Q3=own DB file. Eureka owns its own DB file (e.g., `~/.eureka/eureka.db`). Not shared with Cairn; caller-configurable at initialization.
+
+---
+
+### 6. Out of Scope (M8 Deliberately Does NOT)
+
+- **Cross-session aggregation** — `FactStore.search()` is session-scoped in M8. Querying across sessions is a later milestone.
+- **Embeddings / semantic search** — BM25 via FTS5 only. Vector similarity is out of scope.
+- **Durable trust feedback audit log as a first-class feature** — `trust_history` table is scaffolded but not exposed via public API in M8.
+- **`FactStore.search()` multi-field filtering** — only `minTrust` and `query` in M8. Additional predicates (attentionTier filter, date range) deferred.
+- **Migration rollback (`down`)** — Cairn omits `down`; M8 follows the same policy. Forward-only.
+- **Performance optimization** — indexes beyond the FTS5 table and `UNIQUE (fact_id, session_id)` are deferred to when query plans show a need.
+- **Eureka DB sharing with Cairn** — separate DB files per Aaron Q3.
+
+---
+
+### 7. Dependencies
+
+| Dependency | Direction | Notes |
+|---|---|---|
+| PR #41 (`eureka/m7-c-atomicity`) | M8 depends on | `TrustUpdater.mutate` interface must be merged before `SqliteTrustUpdater` is implemented. |
+| PR #40 (M1-hint-MCP follow-ups) | M8 does NOT block | Hint MCP work is Cairn-side; Eureka storage is a parallel track. |
+| Phase 5 Cloud PGO | M8 unblocks | Cloud PGO needs durable Eureka facts (trust history, recalled fact IDs) to feed the optimization signal. M8 SQLite persistence is the prerequisite. DB lifecycle decision (Q3) affects integration surface. |
+| `FactStore.search()` interface lock | M8 self-blocks | Slice C cannot begin until Q2 is answered. Slices A and B are independent. |
+
+---
+
+*Scope doc — implementation design begins after Aaron approves the slice plan.*

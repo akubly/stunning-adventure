@@ -1,75 +1,41 @@
 ## Current & Recent
+# Edgar — History
 
-**2026-05-31 — M7-A Cycle 1: Code Panel review fixes (11 ACCEPT, 2 REJECT)**
+**Role:** Learning Systems Specialist (Plasticity, trust, recency, recall algorithms)
+**Status:** M7-C complete. PR #41 merged (5 Copilot cycles). M8 storage kickoff in progress.
+**Last update:** 2026-06-02
 
-- **`err.code` is the canonical discriminator, not `instanceof`:** Declared explicitly in file header and decisions.md. `instanceof` works in a single realm but fails across ESM realms and after dual-pkg bundling. The `code` string literal is always realm-safe. This should be the stated policy in any typed error hierarchy — not just implied by the presence of a `code` field.
+**Key milestones:**
+- R5-R6: Power-law recency + event-driven trust design
+- R7-R8: v5-final locked canonical (extraction-ready mechanisms verified)
+- M2-M3: recall() + composite-ranker landed (§30 §1.2 FR-2 formula inline)
+- M7-A: Typed error hierarchy shipped (FactNotFoundError, InvalidTrustValueError, etc.)
+- M7-C: Atomicity contract + session-scoping + PR #41 cloud review complete (5 cycles, 74 tests green)
 
-- **Symmetry is a design invariant for error classes:** `UnhandledFeedbackEventError` was missing its `readonly event: string` field while all other 4 classes stored their key payload as a readonly property. Asymmetry forces callers to parse `.message` strings — a fragile contract. Rule: every error class must carry all discriminating payload as typed readonly fields.
+## Archived learnings (summarized from 29780 bytes)
 
-- **`readonly code: 'X' = 'X'` is idiomatic over `readonly code = 'X' as const`:** The explicit annotation form (`readonly code: 'FACT_NOT_FOUND' = 'FACT_NOT_FOUND'`) is the canonical TypeScript pattern. `as const` on a readonly literal initializer is redundant — TypeScript already narrows the type. Apply consistently.
+**Interface contracts & reference implementations must be consistent.** Weak contracts ("throw OR store NaN") create false confidence. Reference impls are the first consumers of the contract; if they don't enforce the contract, the suite is lying.
 
-- **`.name` override is an intentional, observable behavior change that needs documentation:** Setting `this.name = 'InvalidTrustValueError'` diverges from the native base-class name (`'RangeError'`). This is the right thing — readable stack traces, domain-labelled logs — but it's a breaking change for any downstream code keying on `err.name`. Document it explicitly in the file header; don't let it slip through as a silent side-effect.
+**When two seams share a data model, their contracts must share key invariants.** FactReader (session-scoped) + TrustUpdater (initially factId-only keying) was a semantic contradiction. Cycle 3 fix: re-key TrustUpdater by `(sessionId, factId)` for correctness.
 
-- **`Object.setPrototypeOf` comment matters as much as the call:** The comment "required for extending built-in Error in ES5 targets" was misleading at ES2022 target. The correct justification is defensive: guards against downstream bundlers that re-transpile to ES5. A misleading comment is worse than no comment because it causes future engineers to remove the call for the wrong reason.
+**Major refactors require comprehensive artifact audits.** M7-C renamed `update → mutate`, removed parameters, re-keyed storage. Grep the entire repo for old names BEFORE shipping, not after Copilot drips findings per cycle. One pre-merge pass clears what would otherwise take 5 review cycles.
 
-- **@throws ordering should match runtime check order:** JSDoc @throws listed `FactNotFoundError` before `FactReaderContractError` but the runtime checks `undefined` before `null`. Reorder to match reality — JSDoc is documentation of behavior, not narrative summary.
+**Hard-coded repo-wide test totals in source code are drift bombs.** After refactoring a count statement, remove it entirely rather than leaving it to go stale in inline comments.
 
-- **REJECT-defer with rationale is a valid and disciplined outcome:** F3 (EurekaError base class) was rejected not because it's a bad idea but because it's M7-B scope. M7-A's mandate was minimal: typed errors with zero test changes. A base class introduction requires designing a new hierarchy contract that M7-B narrowing tests will anchor. Scope discipline > completeness.
+**Contract tests must lock requirements, not implementation strategies.** C-6 initially required "no global lock" but TrustUpdater only needs per-key atomicity, not per-key parallelism. Valid impls (e.g., single-connection SQLite) serialize all mutations and still satisfy the contract. Rescoped to: atomicity required, parallelism permitted.
 
-- **Branch:** `eureka/m7-a-typed-errors` | **PR:** #38 — cycle 1 fixes committed post-review.
+**Unbounded Maps in reference impls are real bugs.** The `locks` Map grew without bound. Identity-check cleanup (`if (locks.get(key) === yourToken) locks.delete(key)`) is the safe pattern for shared Maps.
 
-**2026-05-31 — M7-A Cycle 2: @throws order regression from a claimed fix**
+**Lint discipline on Windows differs from Unix.** `npm run lint` with glob expansion in package.json failed on Windows. Use `npx eslint packages/eureka/src/` directly. Always run lint locally before push.
 
-- **A fix can land backwards.** Cycle-1 F10 was documented as "swap @throws to match runtime check order." The commit landed with `FactReaderContractError` listed first — the *opposite* of runtime order (code checks `null` → `FactNotFoundError` first, `undefined` → `FactReaderContractError` second). Three of four cycle-2 personas independently caught it. The lesson: after making a swap, re-read the resulting state against the ground truth (the actual runtime code), not just against the before state. "I swapped it" is not the same as "it is now correct." Diff review must verify the final ordering, not just the presence of a change.
+**M7-C Atomicity Pattern Locked:** mutate callback (fn: (currentTrust) → newTrust) over caller-serialization + CAS token. Keeps activity pure; correctness is a storage-layer property.
 
-- **Inheritance discipline for zero test changes:** Existing M5+M6 tests assert `instanceof RangeError` (3 tests) and `instanceof TypeError` (2 tests). By making `InvalidTrustValueError extends RangeError` and `FactReaderContractError`/`UnhandledFeedbackEventError extends TypeError`, all existing assertions pass without any test edits. This is the correct green-beat discipline — typed error introduction is a refactor, not a behavior change.
+---
 
-- **`correctionDelta` non-finite maps to `InvalidTrustValueError`:** The task spec scoped `InvalidTrustValueError` to "currentTrust or stored fact.trust", but the test asserts `RangeError` for non-finite `correctionDelta`. Using `InvalidTrustValueError(value, 'input', msg)` is the cleanest fit — it extends `RangeError`, preserves the assertion, and the `source: 'input'` is accurate. M7-B narrowing tests can document this mapping explicitly.
+**See history-archive.md for entries from M5, M6, design ceremony, R-series design rounds.**
 
-- **Test count delta: 0.** No new tests; no removed tests. Only assertion tightening in M7-B (follow-up PR). 40/40 → 40/40.
+**Scribe note (2026-06-02T06:14:32Z):** M8 storage milestone kicked off (Aaron, 2026-06-01). Slices A→D planned. Aaron locked Q1=scaffold-A-write-B, Q2=cursor pagination, Q3=own eureka.db. Roger (Slice A impl SPAWNED) and Laura (contract audit SPAWNED) on branch eureka/m8-slice-a-sqlite-factreader.
 
-**2026-05-31 — M7-A PR #38 Copilot Cloud Review Cycle (docs-only, Cycle 3)**
-
-- **Three pure-docs threads closed cleanly in one commit (f8f94c3):** All three Copilot findings were pre-aligned with Cycle 1 decisions — no new design work required. Thread A (gitignored inbox path) → replaced with `.squad/decisions.md` § "M7-A" citation per the `doc-references-respect-gitignore` skill. Threads B+C (`as const` examples) → replaced with `readonly code: 'X' = 'X'` explicit-annotation form, with "Do not use as const" callout pointing back to Cycle 1 (F7) and the reference implementation. Reply-before-resolve discipline applied: all 3 threads replied on before calling `resolveReviewThread`.
-
-**See history-archive.md for detailed entries from M5, M6, earlier reviews, and design ceremony.**
-
-
-- **JSDoc concurrency notes must describe the mechanism, not just the obligation:** "atomicity is a storage-backend responsibility" was misleading because `TrustUpdater.update` only accepts an absolute value — the backend has no CAS surface without an API change. Accurate JSDoc names both v1 (caller serialization) and the future path (API widening: CAS token or mutate callback) so M7-C has a concrete scope.
-
-- **Interface is the source of truth for return type contracts:** When an interface says `Promise<T|null>` and impl logic uses `== null`, the loose equality is defending against a contract violation that the TypeScript type system already prevents. Align to `=== null` and update spec/JSDoc to match — three-layer disagreement silently erodes trust in the interface as authoritative.
-
-
-
-- **Required-but-unused dep is inverse anti-pattern:** §55 §1.2 says "no optional default — defaults hide non-determinism." A *required-but-unused* dep is the mirror problem: it signals a dependency the activity doesn't actually need, polluting call sites and obscuring what the function truly depends on. Remove unused deps from both the type and the call sites simultaneously.
-
-- **Exhaustive `switch` over `if/else` for union dispatch:** TypeScript's `never` branch in `default:` makes union extension a compile error. The `if/else if/else` chain silently routes any unrecognized event to the last branch. The `switch` + `_exhaustive: never` pattern is the correct idiom whenever branching on a discriminated union — apply it universally.
-
-- **Input validation before side effects is a contract invariant:** Validating `currentTrust` before the `TrustUpdater.update()` call ensures no partial side-effects occur on bad input. The rule: all input validation must fire before the first `await` that touches external state.
-
-- **Named types pay for themselves at the barrel boundary:** Inline anonymous types in function signatures force callers to inline the shape or `typeof` the function parameters. Extracting to named interfaces (`ApplyFeedbackOptions` etc.) costs one definition but enables type annotations, IDE autocomplete, and `export type` barrel re-export. M1–M4 precedent (`RecallOptions`, `RecallDeps`) makes this a team norm.
-
-- **TOCTOU documentation is a legitimate deliverable:** When actual atomicity fix is deferred to a storage layer, the interim obligation is clear documentation: `@concurrency` JSDoc + a decision drop item. Undocumented TOCTOU is a future debugging trap; documented TOCTOU is a known deferred obligation.
-
-**2026-05-29 — PR #30 Copilot cloud review (T2/T3/T4)**
-
-- **camelCase-at-activity-layer norm:** Activity-layer types (`RecallResult`, `ScoredResult`) use camelCase (`attentionTier`, `lastAccessed`). The FactStore storage seam is responsible for snake↔camel mapping at the data boundary. Snake_case fields in TypeScript activity types were a smell — they belonged one layer down.
-
-- **Ranker BM25-truncation constraint documented:** A custom `Ranker` injected into `recall.ts` only sees at most `k` candidates pre-filtered by BM25 in FactStore.search(). It cannot surface candidates at positions k+1..k+m. This is now documented on the `Ranker` JSDoc. If a future ranker needs broader visibility, overfetching (`limit: k * overfetchFactor`) is the remedy — tracked as future work.
-
-- **Fragile-doc-cite anti-pattern:** Embedding external document line-number claims in production source (e.g., "§50 line 211 contains incorrect values") is fragile — the doc will be edited, the line will shift, the comment becomes misleading. The correct approach: cite only the authoritative source (§30 §1.2) and track the discrepancy in decisions.md, not in source code.
-
-**2026-05-29 — PR #30 Copilot cloud review (Cycle 2, runtime attentionTier guard)**
-
-- **Compile-time strictness + runtime defensiveness are complementary, not contradictory:** TypeScript union narrowing (no `?? 1.00` fallback) catches typos at compile time. A runtime guard (`multiplier === undefined → warn + default 1.0`) defends against SQLite rows that bypass TS narrowing. Both belong — they operate at different seams.
-
-- **Stderr-warn discipline for MCP compatibility:** Any console diagnostic emitted inside recall.ts must go to `console.warn` (stderr), never `console.log` (stdout). The MCP transport uses stdout for protocol messages; any stdout noise corrupts the JSON-RPC frame. This is an invariant for all eureka activity code.
-
-- **NaN-guard pattern (generalised):** The F1 guard (clamp negative tDays) and F7 guard (default undefined multiplier) follow the same structural pattern: identify the input path that produces `NaN`, add a narrowing check, emit a diagnostic on the unexpected branch, substitute a safe default. Apply this pattern to any numeric pipeline that crosses a runtime seam.
-
-**2026-05-30 — M5 GREEN (applyFeedback + TrustUpdater seam)**
-
-- **Silent-fallback `?? 0` considered harmful for required inputs:** My initial M5 GREEN used `correctionDelta ?? 0` as the user_correction fallback. This is a silent no-op — the activity calls TrustUpdater with an unchanged trust value, confusing the caller into thinking the mutation succeeded. M6-A5 (Laura's RED test) drove the fix: throw explicitly when `correctionDelta` is undefined and event is `user_correction`. Required inputs must fail loudly at the activity boundary, not silently degrade.
 
 - **Seam separation — write vs. read:** `applyFeedback` owns delta computation and delegates the write to `TrustUpdater`. It intentionally does NOT read from storage — keeping the function pure with respect to reads. Mixing read + write into a single function blurs responsibility. The `applyFeedbackById` orchestrator is the correct place to own the read, using a distinct `FactReader` seam.
 
@@ -90,3 +56,54 @@
 📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
 
 📌 **Crucible Sprint 0 — DB Collaborator Seam ESTABLISHED** (2026-06-02T06:43:01Z): Roger's REFACTOR cycle introduces explicit DB interface (getSession, insertSession, queryEvents) + in-memory adapter (createInMemoryDB). Seam ready for L1-substrate swap (real SQLite integration stub via Refactor 3, then OQ-2 Cairn event_log integration pre-sprint-2). Edgar/Genesta/Crispin: Coordinate on L1 substrate decisions + schema overlap when OQ-2 lands. — Scribe
+- **M7-C (2026-05-31): Variant B removes `currentTrust` from caller API entirely.** The key insight behind Variant B over Variant A: when atomicity is a storage guarantee, the caller *cannot* provide `currentTrust` — the storage impl reads it inside `mutate()`. Forcing callers to supply `currentTrust` would create a false interface that ignores the supplied value. Variant B is the only shape consistent with the contract.
+
+- **Pre-flight vs. fn-time validation — two distinct seams:** Pre-flight validation (event type, correctionDelta presence/finiteness) fires BEFORE `mutate()` is called. Storage-trust validation fires INSIDE `fn` when storage calls `fn(currentTrust)`. This creates two observable test patterns: (1) pre-flight errors → mutate never called; (2) fn-time errors → mutate WAS called, fn threw, write aborted. Tests must differentiate these.
+
+- **`FactReaderContractError` dead on the write path after M7-C.** The class survives in errors.ts for Crispin's READ seam (recall, display paths). Tests that used to drive it via `applyFeedbackById({ factReader: makeFactReader(undefined) })` must become direct constructor integrity tests. Document this transition explicitly in test comments so future readers understand the historical context.
+
+- **`runTrustUpdaterContract` shared helper is immediately reusable by Crispin.** The helper accepts `makeImpl: () => { impl, setTrust, getTrust }` so any impl — in-memory, SQLite, Postgres — can be exercised against the same 7 contracts. The per-(sessionId,factId) promise chain in `InMemoryTrustUpdater` is the minimal reference impl for serialization semantics.
+
+- **ESM `require()` fails; use static imports.** In an ESM-only package (no CJS build), `require('../errors.js')` inside a test function throws at runtime. All imports must be top-level `import` statements. This bit me in the M6-B3 class-integrity test migration.
+
+- **Test count on `eureka/m7-c-atomicity` vs. prior branches:** 68 tests (not 73) because `fact-reader.contract.test.ts` (5 tests, Crispin's READ seam) lives only on the commits that include Scribe's interim artifacts. The 68 are the right count for Edgar's M7-C branch.
+
+📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
+
+---
+
+**2026-06-02 — M7-C PR #41 COMPLETE — Eureka M7 (B+C+D) Shipped on Main (ed6be2c)**
+
+5-cycle Copilot review marathon complete. 22 unique findings (44 threads), all resolved. 74 final tests, tsc-clean, lint-clean, CI 3/3 passing.
+
+**Cycle 5 (7ce81da) — Comprehensive Grep-Cleanup Pass (Aaron authorized diminishing-returns sweep):**
+
+- **Lesson: Grep the entire repo for old interface names post-refactor, not across 5 cycles.** M7-C renamed `TrustUpdater.update → mutate`, removed `currentTrust`, removed `factReader`, re-keyed by `(sessionId, factId)`. Each change had residual references that Copilot surfaced one-at-a-time over cycles 1-5. A pre-merge grep sweep (9 terms, one pass) would have cleared all in one commit. New skill created: `.squad/skills/refactor-grep-cleanup/SKILL.md`.
+- **Hard-coded repo-wide test totals are drift bombs.** Removed "Post-M7-C: 67 tests" from inline comments. Per-suite counts are stable; repo-wide numbers in comments are always stale after one refactor.
+- **Aaron's diminishing-returns call:** Cycle 5 had 6 stale-doc nits; rather than iterate cycle 6+, authorized one comprehensive grep pass + merge. Proved effective.
+
+**Cycle 4 (75c9f25) — Real CI Lint Failure + Doc Consistency:**
+
+- **Windows npm run lint gotcha confirmed.** Root glob `eslint packages/*/src/` matches no files on Windows (PowerShell glob expansion differs from bash). Always use `npx eslint packages/eureka/src/` for local gate matching CI.
+- **Seam changes cascade into every doc.** Key changed from `factId` to `(sessionId, factId)` in cycle 3; left 4 stale refs: @concurrency JSDoc, SKILL parallelism claim, SKILL test count, decisions.md atomicity note. All require updates.
+- **SKILL.md is normative — must not overclaim the contract.** SKILL said "different keys MUST be parallel (no global lock)." That contradicts cycle-2 Option B (parallelism permitted, not required). Future agents read SKILL literally; if it says MUST, they write tests that reject valid impls. Fixed to MAY.
+
+**Cycle 3 (1413826) — Session-Scoping Missing + Locks Cleanup:**
+
+- **Read/write contract symmetry required.** FactReader already session-scoped; TrustUpdater used only factId. Data-model contradiction. Re-keyed by `${sessionId}\0${factId}` (null-byte separator prevents collisions). Added C-7 cross-session isolation test.
+- **Atomicity and session-scoping are orthogonal.** Atomicity = read-fn-write indivisible for same key. Session-scoping = key must include sessionId. Both required; only one is atomic.
+- **Identity-check cleanup in promise chains.** `if (locks.get(key) === next) locks.delete(key)` is the safe pattern for final cleanup: if no successor has replaced you, you clean up.
+
+**Cycle 2 (5fb53b4) — Stale Comments + Atomicity vs. Parallelism:**
+
+- **Contract tests must not rule out valid implementations.** C-6 claimed "no global lock" but only asserted correctness. A globally-serialized impl satisfies the contract. Option B (rescope to result-independence, not parallelism) was correct.
+- **Atomicity ≠ parallelism.** These are distinct contract properties. Conflating them in test names misleads readers about the contract requirements.
+
+**Cycle 1 (f128f78) — Contract Suite Gaps + Dangling Reference:**
+
+- **"Throw OR store NaN" is not a contract, it's helplessness.** C-3 accepted both behaviors. A contract test must assert REQUIRED behavior. Fixed: MUST throw InvalidTrustValueError(source:'storage') AND storage unchanged.
+- **Reference impl must implement the contract it documents.** InMemoryTrustUpdater was writing NaN despite JSDoc saying MUST reject. Impl is the first consumer; if it doesn't enforce, the suite lies.
+- **getTrust from a fresh makeImpl() is always empty.** C-5 error: called makeImpl() again at end. Always destructure all helpers from the SAME instance.
+- **Gitignored files can slip through cross-branch merges.** Crispin's inbox files became committed. Guard: `git status` review, not just trusting gitignore.
+
+**Outcome:** Eureka M7 (B+C+D) complete. Shipped to main as ed6be2c (squash). All learnings documented in `.squad/decisions.md` PR #41 section. New skill: `.squad/skills/refactor-grep-cleanup/SKILL.md`. Branches cleaned. Ready for next sprint.

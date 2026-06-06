@@ -2,7 +2,7 @@
  * M5 RED — Trust mutation from feedback event (§30 §2.3)
  *
  * Activity under test : applyFeedback (§30 §2.3 "Trust Dynamics Beyond the Static Floor")
- * Seam driven:          TrustUpdater.update() — the trust-write seam
+ * Seam driven:          TrustUpdater.mutate() — the atomic trust-write seam (M7-C)
  * Next owner (GREEN):   Edgar
  *
  * §30 §2.3 specifies event-driven trust mutation:
@@ -10,37 +10,24 @@
  *   Contradiction:   trust = max(0.0, trust - 0.10)
  *   User correction: trust = min(1.0, max(0.0, trust + correctionDelta))
  *
- * Contract under test:
- *   Given a feedback event (type + currentTrust) and an injected TrustUpdater,
- *   applyFeedback() must call trustUpdater.update() with the correctly clamped
- *   new trust value. The TrustUpdater owns the write side; this activity owns
- *   the delta-computation contract.
- *
- * RED failure reason (expected):
- *   `applyFeedback` is not exported from recall.ts → `TypeError: applyFeedback is
- *   not a function` at runtime. This is "missing collaborator / missing wiring",
- *   not a typo or config error.
- *
- * §-ambiguity resolved:
- *   §30 §2.3 ("Trust Dynamics Beyond the Static Floor") is the authoritative spec
- *   for these deltas (+0.10, -0.10, ±0.30). See .squad/decisions.md for the merged
- *   decision trail (M5 Named Target entry).
- *
- * User-correction deferred:
- *   The ± in "trust ± 0.30" is ambiguous — the sign must come from somewhere.
- *   The chosen interpretation (caller-provided delta) is documented in the decision
- *   drop and deferred to Edgar's GREEN beat to confirm the interface shape.
+ * M7-C contract under test:
+ *   Given a feedback event and an injected TrustUpdater, applyFeedback() builds a
+ *   delta fn and calls trustUpdater.mutate({ factId, sessionId, fn }). The fn, when
+ *   called with currentTrust, returns the correctly clamped new trust value.
+ *   currentTrust is no longer a caller input — it is supplied by the storage layer.
  *
  * Mock contract discipline (§55 §3.3):
  *   TrustUpdater is an I/O seam (trust-write). Per §55 §1.2, always mock storage I/O.
  *   The inline structural mock here must be backed by a contract test when the real
- *   TrustUpdater implementation ships (M5+ backlog item for Crispin).
+ *   TrustUpdater implementation ships — see trust-updater-contract.test.ts (M7-C).
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 // M5: applyFeedback — trust mutation from event (GREEN as of M5).
 // M6-B: applyFeedbackById — GREEN as of M6-B. (Originally RED via "is not a function".)
+// M7-C: Ported to TrustUpdater.mutate() callback seam (atomicity contract).
 import { applyFeedback, applyFeedbackById, type FeedbackEvent } from '../recall.js';
+import { FactNotFoundError, FactReaderContractError } from '../errors.js';
 import type { SessionId } from '@akubly/types';
 
 describe('applyFeedback', () => {
@@ -55,32 +42,32 @@ describe('applyFeedback', () => {
   // ---------------------------------------------------------------------------
   //
   // Fixture: currentTrust=0.60 → new trust = min(1.0, 0.60 + 0.10) = 0.70
-  // Drives: TrustUpdater.update({ factId, sessionId, trust: 0.70 })
+  // Drives: TrustUpdater.mutate({ factId, sessionId, fn: t => min(1.0, t + 0.10) })
   //
   // RED failure: applyFeedback is undefined → TypeError: applyFeedback is not a function
 
-  it('calls TrustUpdater.update with trust +0.10 for corroboration event (§30 §2.3)', async () => {
+  it('calls TrustUpdater.mutate with fn returning trust +0.10 for corroboration event (§30 §2.3)', async () => {
     const trustUpdater = {
-      update: vi.fn().mockResolvedValue(undefined),
+      mutate: vi.fn().mockResolvedValue(undefined),
     };
 
     await applyFeedback(
       {
-        factId:       'fact-abc-001',
+        factId:  'fact-abc-001',
         sessionId,
-        event:        'corroboration' as const,
-        currentTrust:  0.60,
+        event:   'corroboration' as const,
+        // M7-C: currentTrust removed — supplied by storage layer via fn argument
       },
       { trustUpdater },
     );
 
-    // Corroboration: trust = min(1.0, 0.60 + 0.10) = 0.70
-    expect(trustUpdater.update).toHaveBeenCalledOnce();
-    expect(trustUpdater.update).toHaveBeenCalledWith({
-      factId:    'fact-abc-001',
-      sessionId,
-      trust:     expect.closeTo(0.70, 5),
-    });
+    // Corroboration: fn(0.60) must return min(1.0, 0.60 + 0.10) = 0.70
+    expect(trustUpdater.mutate).toHaveBeenCalledOnce();
+    expect(trustUpdater.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ factId: 'fact-abc-001', sessionId }),
+    );
+    const { fn } = trustUpdater.mutate.mock.calls[0][0];
+    expect(fn(0.60)).toBeCloseTo(0.70, 5);
   });
 
   // ---------------------------------------------------------------------------
@@ -90,25 +77,23 @@ describe('applyFeedback', () => {
   // Fixture: currentTrust=0.95 → new trust = min(1.0, 0.95 + 0.10) = 1.0
   // Domain invariant: trust ∈ [0.0, 1.0] (§30 §2.1 Measurable Invariants)
 
-  it('clamps corroboration result at 1.0 ceiling (§30 §2.1 domain invariant)', async () => {
+  it('fn clamps corroboration result at 1.0 ceiling (§30 §2.1 domain invariant)', async () => {
     const trustUpdater = {
-      update: vi.fn().mockResolvedValue(undefined),
+      mutate: vi.fn().mockResolvedValue(undefined),
     };
 
     await applyFeedback(
       {
-        factId:       'fact-ceiling-001',
+        factId:  'fact-ceiling-001',
         sessionId,
-        event:        'corroboration' as const,
-        currentTrust:  0.95,
+        event:   'corroboration' as const,
       },
       { trustUpdater },
     );
 
-    // min(1.0, 0.95 + 0.10) = 1.0
-    expect(trustUpdater.update).toHaveBeenCalledWith(
-      expect.objectContaining({ trust: expect.closeTo(1.0, 5) }),
-    );
+    // fn(0.95) must return min(1.0, 0.95 + 0.10) = 1.0
+    const { fn } = trustUpdater.mutate.mock.calls[0][0];
+    expect(fn(0.95)).toBeCloseTo(1.0, 5);
   });
 
   // ---------------------------------------------------------------------------
@@ -116,30 +101,26 @@ describe('applyFeedback', () => {
   // ---------------------------------------------------------------------------
   //
   // Fixture: currentTrust=0.50 → new trust = max(0.0, 0.50 - 0.10) = 0.40
-  // Drives: TrustUpdater.update({ factId, sessionId, trust: 0.40 })
+  // Drives: TrustUpdater.mutate({ factId, sessionId, fn: t => max(0.0, t - 0.10) })
 
-  it('calls TrustUpdater.update with trust −0.10 for contradiction event (§30 §2.3)', async () => {
+  it('calls TrustUpdater.mutate with fn returning trust −0.10 for contradiction event (§30 §2.3)', async () => {
     const trustUpdater = {
-      update: vi.fn().mockResolvedValue(undefined),
+      mutate: vi.fn().mockResolvedValue(undefined),
     };
 
     await applyFeedback(
       {
-        factId:       'fact-xyz-001',
+        factId:  'fact-xyz-001',
         sessionId,
-        event:        'contradiction' as const,
-        currentTrust:  0.50,
+        event:   'contradiction' as const,
       },
       { trustUpdater },
     );
 
-    // Contradiction: trust = max(0.0, 0.50 - 0.10) = 0.40
-    expect(trustUpdater.update).toHaveBeenCalledOnce();
-    expect(trustUpdater.update).toHaveBeenCalledWith({
-      factId:    'fact-xyz-001',
-      sessionId,
-      trust:     expect.closeTo(0.40, 5),
-    });
+    // Contradiction: fn(0.50) must return max(0.0, 0.50 - 0.10) = 0.40
+    expect(trustUpdater.mutate).toHaveBeenCalledOnce();
+    const { fn } = trustUpdater.mutate.mock.calls[0][0];
+    expect(fn(0.50)).toBeCloseTo(0.40, 5);
   });
 
   // ---------------------------------------------------------------------------
@@ -150,25 +131,23 @@ describe('applyFeedback', () => {
   // Domain invariant: trust never goes below 0.0 (§30 §2.1 Measurable Invariants)
   // Zombie-fact semantics apply: trust=0.0 is valid storage state (§30 §2.1.1)
 
-  it('clamps contradiction result at 0.0 floor (§30 §2.1 domain invariant + §2.1.1 zombie-fact)', async () => {
+  it('fn clamps contradiction result at 0.0 floor (§30 §2.1 domain invariant + §2.1.1 zombie-fact)', async () => {
     const trustUpdater = {
-      update: vi.fn().mockResolvedValue(undefined),
+      mutate: vi.fn().mockResolvedValue(undefined),
     };
 
     await applyFeedback(
       {
-        factId:       'fact-floor-001',
+        factId:  'fact-floor-001',
         sessionId,
-        event:        'contradiction' as const,
-        currentTrust:  0.05,
+        event:   'contradiction' as const,
       },
       { trustUpdater },
     );
 
-    // max(0.0, 0.05 - 0.10) = 0.0
-    expect(trustUpdater.update).toHaveBeenCalledWith(
-      expect.objectContaining({ trust: expect.closeTo(0.0, 5) }),
-    );
+    // fn(0.05) must return max(0.0, 0.05 - 0.10) = 0.0
+    const { fn } = trustUpdater.mutate.mock.calls[0][0];
+    expect(fn(0.05)).toBeCloseTo(0.0, 5);
   });
 
   // ===========================================================================
@@ -178,42 +157,38 @@ describe('applyFeedback', () => {
   // Regression lock: clamp logic refactors must not allow trust to escape [0,1]
   // when the input is already exactly at the boundary.
 
-  it('is idempotent at ceiling: corroboration at currentTrust=1.0 stays 1.0 (§30 §2.1)', async () => {
-    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+  it('fn is idempotent at ceiling: corroboration fn(1.0) stays 1.0 (§30 §2.1)', async () => {
+    const trustUpdater = { mutate: vi.fn().mockResolvedValue(undefined) };
 
     await applyFeedback(
       {
-        factId:       'fact-idempotent-ceil',
+        factId:  'fact-idempotent-ceil',
         sessionId,
-        event:        'corroboration' as const,
-        currentTrust:  1.0,
+        event:   'corroboration' as const,
       },
       { trustUpdater },
     );
 
-    // min(1.0, 1.0 + 0.10) = 1.0 — must not exceed ceiling
-    expect(trustUpdater.update).toHaveBeenCalledWith(
-      expect.objectContaining({ trust: expect.closeTo(1.0, 5) }),
-    );
+    // fn(1.0) must return min(1.0, 1.0 + 0.10) = 1.0 — must not exceed ceiling
+    const { fn } = trustUpdater.mutate.mock.calls[0][0];
+    expect(fn(1.0)).toBeCloseTo(1.0, 5);
   });
 
-  it('is idempotent at floor: contradiction at currentTrust=0.0 stays 0.0 (§30 §2.1)', async () => {
-    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+  it('fn is idempotent at floor: contradiction fn(0.0) stays 0.0 (§30 §2.1)', async () => {
+    const trustUpdater = { mutate: vi.fn().mockResolvedValue(undefined) };
 
     await applyFeedback(
       {
-        factId:       'fact-idempotent-floor',
+        factId:  'fact-idempotent-floor',
         sessionId,
-        event:        'contradiction' as const,
-        currentTrust:  0.0,
+        event:   'contradiction' as const,
       },
       { trustUpdater },
     );
 
-    // max(0.0, 0.0 - 0.10) = 0.0 — must not go below floor
-    expect(trustUpdater.update).toHaveBeenCalledWith(
-      expect.objectContaining({ trust: expect.closeTo(0.0, 5) }),
-    );
+    // fn(0.0) must return max(0.0, 0.0 - 0.10) = 0.0 — must not go below floor
+    const { fn } = trustUpdater.mutate.mock.calls[0][0];
+    expect(fn(0.0)).toBeCloseTo(0.0, 5);
   });
 
   // ===========================================================================
@@ -239,27 +214,23 @@ describe('applyFeedback', () => {
   // Fixture: currentTrust=0.50, correctionDelta=+0.30 → min(1.0, max(0.0, 0.80)) = 0.80
   // Regression lock — implementation arrived before contract test (see note above).
 
-  it('applies positive user-correction delta (+0.30) without clamp (§30 §2.3)', async () => {
-    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+  it('fn applies positive user-correction delta (+0.30) without clamp (§30 §2.3)', async () => {
+    const trustUpdater = { mutate: vi.fn().mockResolvedValue(undefined) };
 
     await applyFeedback(
       {
         factId:          'fact-ucorr-001',
         sessionId,
         event:           'user_correction' as const,
-        currentTrust:     0.50,
         correctionDelta:  +0.30,
       },
       { trustUpdater },
     );
 
-    // min(1.0, max(0.0, 0.50 + 0.30)) = 0.80
-    expect(trustUpdater.update).toHaveBeenCalledOnce();
-    expect(trustUpdater.update).toHaveBeenCalledWith({
-      factId:    'fact-ucorr-001',
-      sessionId,
-      trust:     expect.closeTo(0.80, 5),
-    });
+    // fn(0.50) must return min(1.0, max(0.0, 0.50 + 0.30)) = 0.80
+    expect(trustUpdater.mutate).toHaveBeenCalledOnce();
+    const { fn } = trustUpdater.mutate.mock.calls[0][0];
+    expect(fn(0.50)).toBeCloseTo(0.80, 5);
   });
 
   // ---------------------------------------------------------------------------
@@ -269,24 +240,22 @@ describe('applyFeedback', () => {
   // Fixture: currentTrust=0.80, correctionDelta=+0.30 → min(1.0, 0.80+0.30) = 1.0
   // Regression lock — implementation arrived before contract test (see note above).
 
-  it('clamps positive user-correction result at 1.0 ceiling (§30 §2.1 domain invariant)', async () => {
-    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+  it('fn clamps positive user-correction result at 1.0 ceiling (§30 §2.1 domain invariant)', async () => {
+    const trustUpdater = { mutate: vi.fn().mockResolvedValue(undefined) };
 
     await applyFeedback(
       {
         factId:          'fact-ucorr-ceiling-001',
         sessionId,
         event:           'user_correction' as const,
-        currentTrust:     0.80,
         correctionDelta:  +0.30,
       },
       { trustUpdater },
     );
 
-    // min(1.0, 0.80 + 0.30) = 1.0
-    expect(trustUpdater.update).toHaveBeenCalledWith(
-      expect.objectContaining({ trust: expect.closeTo(1.0, 5) }),
-    );
+    // fn(0.80) must return min(1.0, 0.80 + 0.30) = 1.0
+    const { fn } = trustUpdater.mutate.mock.calls[0][0];
+    expect(fn(0.80)).toBeCloseTo(1.0, 5);
   });
 
   // ---------------------------------------------------------------------------
@@ -296,27 +265,23 @@ describe('applyFeedback', () => {
   // Fixture: currentTrust=0.50, correctionDelta=−0.30 → max(0.0, 0.50−0.30) = 0.20
   // Regression lock — implementation arrived before contract test (see note above).
 
-  it('applies negative user-correction delta (−0.30) without clamp (§30 §2.3)', async () => {
-    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+  it('fn applies negative user-correction delta (−0.30) without clamp (§30 §2.3)', async () => {
+    const trustUpdater = { mutate: vi.fn().mockResolvedValue(undefined) };
 
     await applyFeedback(
       {
         factId:          'fact-ucorr-002',
         sessionId,
         event:           'user_correction' as const,
-        currentTrust:     0.50,
         correctionDelta:  -0.30,
       },
       { trustUpdater },
     );
 
-    // max(0.0, 0.50 - 0.30) = 0.20
-    expect(trustUpdater.update).toHaveBeenCalledOnce();
-    expect(trustUpdater.update).toHaveBeenCalledWith({
-      factId:    'fact-ucorr-002',
-      sessionId,
-      trust:     expect.closeTo(0.20, 5),
-    });
+    // fn(0.50) must return max(0.0, 0.50 - 0.30) = 0.20
+    expect(trustUpdater.mutate).toHaveBeenCalledOnce();
+    const { fn } = trustUpdater.mutate.mock.calls[0][0];
+    expect(fn(0.50)).toBeCloseTo(0.20, 5);
   });
 
   // ---------------------------------------------------------------------------
@@ -326,24 +291,22 @@ describe('applyFeedback', () => {
   // Fixture: currentTrust=0.20, correctionDelta=−0.30 → max(0.0, 0.20−0.30) = 0.0
   // Regression lock — implementation arrived before contract test (see note above).
 
-  it('clamps negative user-correction result at 0.0 floor (§30 §2.1 domain invariant)', async () => {
-    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+  it('fn clamps negative user-correction result at 0.0 floor (§30 §2.1 domain invariant)', async () => {
+    const trustUpdater = { mutate: vi.fn().mockResolvedValue(undefined) };
 
     await applyFeedback(
       {
         factId:          'fact-ucorr-floor-001',
         sessionId,
         event:           'user_correction' as const,
-        currentTrust:     0.20,
         correctionDelta:  -0.30,
       },
       { trustUpdater },
     );
 
-    // max(0.0, 0.20 - 0.30) = 0.0
-    expect(trustUpdater.update).toHaveBeenCalledWith(
-      expect.objectContaining({ trust: expect.closeTo(0.0, 5) }),
-    );
+    // fn(0.20) must return max(0.0, 0.20 - 0.30) = 0.0
+    const { fn } = trustUpdater.mutate.mock.calls[0][0];
+    expect(fn(0.20)).toBeCloseTo(0.0, 5);
   });
 
   // ---------------------------------------------------------------------------
@@ -362,15 +325,14 @@ describe('applyFeedback', () => {
   // This is the TRUE RED beat for M6-A.
 
   it('throws when event=user_correction and correctionDelta is omitted (§30 §2.3 required-ness)', async () => {
-    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+    const trustUpdater = { mutate: vi.fn().mockResolvedValue(undefined) };
 
     await expect(
       applyFeedback(
         {
-          factId:       'fact-ucorr-missing-delta',
+          factId:  'fact-ucorr-missing-delta',
           sessionId,
-          event:        'user_correction' as const,
-          currentTrust:  0.50,
+          event:   'user_correction' as const,
           // correctionDelta intentionally omitted
         },
         { trustUpdater },
@@ -378,7 +340,7 @@ describe('applyFeedback', () => {
     ).rejects.toThrow();
 
     // Guard: TrustUpdater must NOT be called when input is invalid
-    expect(trustUpdater.update).not.toHaveBeenCalled();
+    expect(trustUpdater.mutate).not.toHaveBeenCalled();
   });
 
   // ===========================================================================
@@ -392,57 +354,69 @@ describe('applyFeedback', () => {
   //
   // RED until Edgar's F4 switch+TypeError lands.
 
-  it('throws TypeError for unknown event type (defensive guard, §30 §2.3+)', async () => {
-    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+  it('throws TypeError for unknown event type before mutate is called (defensive guard, §30 §2.3+)', async () => {
+    const trustUpdater = { mutate: vi.fn().mockResolvedValue(undefined) };
 
     // Cast forces a value the union forbids — simulates runtime cast from untrusted source
     await expect(applyFeedback(
-      { factId: 'fact-x', sessionId, event: 'meditated' as FeedbackEvent, currentTrust: 0.5 },
+      { factId: 'fact-x', sessionId, event: 'meditated' as FeedbackEvent },
       { trustUpdater },
     )).rejects.toThrow(TypeError);
+
+    // Pre-flight validation fires before mutate — unknown event never reaches storage
+    expect(trustUpdater.mutate).not.toHaveBeenCalled();
   });
 
   // ===========================================================================
-  // F-NEW-RANGE — Regression locks for Edgar's F6: currentTrust input validation
+  // F-NEW-RANGE — Regression locks for M7-C: storage-provided currentTrust validation
   // ===========================================================================
   //
-  // Edgar is adding a RangeError guard: currentTrust must be a finite number in
-  // [0,1]. These tests lock that contract; TrustUpdater must never be called
-  // when the input is invalid.
+  // M7-C: currentTrust is no longer a caller input — it is provided by the storage
+  // layer as the argument to fn. These tests verify that fn throws RangeError
+  // when the storage layer provides a corrupt trust value (NaN, <0, >1).
+  // The mock simulates storage calling fn with a bad value.
   //
-  // RED until Edgar's F6 validation lands.
+  // The semantic invariant is identical to the pre-M7-C tests: corrupt trust
+  // values must not be written to storage. The seam location changed (storage → fn
+  // instead of caller → applyFeedback), but the contract is the same.
 
-  it('throws RangeError when currentTrust is NaN (§30 §2.1 domain invariant)', async () => {
-    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+  it('fn throws RangeError when storage provides NaN currentTrust (§30 §2.1 domain invariant)', async () => {
+    const trustUpdater = {
+      mutate: vi.fn().mockImplementation(async ({ fn }: { fn: (t: number) => number }) => { fn(NaN); }),
+    };
 
     await expect(applyFeedback(
-      { factId: 'fact-range-nan', sessionId, event: 'corroboration' as const, currentTrust: NaN },
+      { factId: 'fact-range-nan', sessionId, event: 'corroboration' as const },
       { trustUpdater },
     )).rejects.toThrow(RangeError);
 
-    expect(trustUpdater.update).not.toHaveBeenCalled();
+    expect(trustUpdater.mutate).toHaveBeenCalledOnce();
   });
 
-  it('throws RangeError when currentTrust is below 0 (§30 §2.1 domain invariant)', async () => {
-    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+  it('fn throws RangeError when storage provides currentTrust below 0 (§30 §2.1 domain invariant)', async () => {
+    const trustUpdater = {
+      mutate: vi.fn().mockImplementation(async ({ fn }: { fn: (t: number) => number }) => { fn(-0.1); }),
+    };
 
     await expect(applyFeedback(
-      { factId: 'fact-range-low', sessionId, event: 'corroboration' as const, currentTrust: -0.1 },
+      { factId: 'fact-range-low', sessionId, event: 'corroboration' as const },
       { trustUpdater },
     )).rejects.toThrow(RangeError);
 
-    expect(trustUpdater.update).not.toHaveBeenCalled();
+    expect(trustUpdater.mutate).toHaveBeenCalledOnce();
   });
 
-  it('throws RangeError when currentTrust is above 1 (§30 §2.1 domain invariant)', async () => {
-    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+  it('fn throws RangeError when storage provides currentTrust above 1 (§30 §2.1 domain invariant)', async () => {
+    const trustUpdater = {
+      mutate: vi.fn().mockImplementation(async ({ fn }: { fn: (t: number) => number }) => { fn(1.5); }),
+    };
 
     await expect(applyFeedback(
-      { factId: 'fact-range-high', sessionId, event: 'corroboration' as const, currentTrust: 1.5 },
+      { factId: 'fact-range-high', sessionId, event: 'corroboration' as const },
       { trustUpdater },
     )).rejects.toThrow(RangeError);
 
-    expect(trustUpdater.update).not.toHaveBeenCalled();
+    expect(trustUpdater.mutate).toHaveBeenCalledOnce();
   });
 
   // ===========================================================================
@@ -454,62 +428,43 @@ describe('applyFeedback', () => {
   // silently poison storage via NaN trust.
 
   it('throws RangeError when correctionDelta is NaN (§30 §2.3 finite guard)', async () => {
-    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+    const trustUpdater = { mutate: vi.fn().mockResolvedValue(undefined) };
 
     await expect(applyFeedback(
-      { factId: 'fact-delta-nan', sessionId, event: 'user_correction' as const, currentTrust: 0.5, correctionDelta: NaN },
+      { factId: 'fact-delta-nan', sessionId, event: 'user_correction' as const, correctionDelta: NaN },
       { trustUpdater },
     )).rejects.toThrow(RangeError);
 
-    expect(trustUpdater.update).not.toHaveBeenCalled();
+    expect(trustUpdater.mutate).not.toHaveBeenCalled();
   });
 
   it('throws RangeError when correctionDelta is +Infinity (§30 §2.3 finite guard)', async () => {
-    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+    const trustUpdater = { mutate: vi.fn().mockResolvedValue(undefined) };
 
     await expect(applyFeedback(
-      { factId: 'fact-delta-inf', sessionId, event: 'user_correction' as const, currentTrust: 0.5, correctionDelta: Infinity },
+      { factId: 'fact-delta-inf', sessionId, event: 'user_correction' as const, correctionDelta: Infinity },
       { trustUpdater },
     )).rejects.toThrow(RangeError);
 
-    expect(trustUpdater.update).not.toHaveBeenCalled();
+    expect(trustUpdater.mutate).not.toHaveBeenCalled();
   });
 });
 
 // =============================================================================
-// M6-B — applyFeedbackById: read-seam (FactReader collaborator)
+// M6-B — applyFeedbackById: mutate seam (M7-C thin-wrapper form)
 // =============================================================================
 //
-// Outside-in: drive the read-seam into existence from a caller-perspective test.
-// Production callers should not need to know the current trust before applying
-// feedback — the activity should own that read. This test drives:
+// M7-C: applyFeedbackById is now a thin forwarding wrapper around applyFeedback.
+// The read has moved into the storage layer (TrustUpdater.mutate atomically reads,
+// applies fn, and writes). FactReader is no longer used on the write path.
 //
-//   1. A new `applyFeedbackById` function (higher-level orchestrator)
-//   2. A `FactReader` collaborator (read-seam, separate from TrustUpdater write-seam)
-//
-// Shape chosen: NEW `applyFeedbackById` function (not mutating existing `applyFeedback`).
-// Rationale:
-//   - `applyFeedback` has a stable M5 contract; breaking it risks regressions
-//   - `applyFeedbackById` is a higher-level orchestrator; separation of concerns
-//   - London-school: each function has one responsibility (read vs. write vs. orchestrate)
-//   - `applyFeedback` remains unit-testable in isolation (no read-seam pollution)
-//
-// FactReader interface shape (driven by this test):
-//   interface FactReader {
-//     read(args: { factId: string; sessionId: SessionId }): Promise<{ trust: number } | null>;
-//   }
-//
-// Activity signature driven:
-//   async function applyFeedbackById(
-//     options: { factId: string; sessionId: SessionId; event: FeedbackEvent; correctionDelta?: number },
-//     deps: { factReader: FactReader; trustUpdater: TrustUpdater },
-//   ): Promise<void>
-//
-// RED failure expected: `applyFeedbackById` is not exported from recall.ts →
-//   TypeError: (0 , applyFeedbackById) is not a function
-// This is "missing collaborator/missing wiring", not a typo or config error.
+// Semantic contract preserved:
+//   - Corroboration/contradiction/user_correction deltas applied correctly via fn
+//   - Missing fact → FactNotFoundError propagated from mutate()
+//   - Corrupt storage trust → RangeError thrown by fn when storage calls fn(badValue)
+//   - Invalid inputs (missing delta) → error propagated before mutate is called
 
-describe('applyFeedbackById (read-seam)', () => {
+describe('applyFeedbackById (mutate seam)', () => {
   let sessionId: SessionId;
 
   beforeEach(() => {
@@ -517,125 +472,112 @@ describe('applyFeedbackById (read-seam)', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // M6-B1 — happy path: FactReader supplies currentTrust; activity applies delta
+  // M6-B1 — happy path: mutate receives fn that computes correct delta
   // ---------------------------------------------------------------------------
   //
-  // Contract: applyFeedbackById reads currentTrust via FactReader, then applies
-  // the event delta and calls TrustUpdater with the new value. Caller does NOT
-  // provide currentTrust — the activity owns the read.
+  // M7-C: No FactReader. applyFeedbackById delegates to applyFeedback which calls
+  // mutate. The fn, when called with a trust value, returns the correct clamped result.
   //
-  // Fixture: FactReader returns trust=0.60; event=corroboration → new trust=0.70
-  //
-  // RED failure: applyFeedbackById is not exported from recall.ts
+  // Contract: applyFeedbackById must pass factId and sessionId to mutate, and the
+  // fn must compute the same delta as the pre-M7-C implementation.
 
-  it('reads currentTrust from FactReader and applies corroboration delta (§30 §2.3 read-seam)', async () => {
-    const factReader = {
-      read: vi.fn().mockResolvedValue({ trust: 0.60 }),
-    };
+  it('delegates corroboration delta to mutate via fn (§30 §2.3 mutate seam)', async () => {
     const trustUpdater = {
-      update: vi.fn().mockResolvedValue(undefined),
+      mutate: vi.fn().mockResolvedValue(undefined),
     };
 
     await applyFeedbackById(
       { factId: 'fact-readseam-001', sessionId, event: 'corroboration' as const },
-      { factReader, trustUpdater },
+      { trustUpdater },
     );
 
-    // FactReader must have been consulted
-    expect(factReader.read).toHaveBeenCalledOnce();
-    expect(factReader.read).toHaveBeenCalledWith({ factId: 'fact-readseam-001', sessionId });
+    // mutate must be called with the right factId/sessionId
+    expect(trustUpdater.mutate).toHaveBeenCalledOnce();
+    expect(trustUpdater.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ factId: 'fact-readseam-001', sessionId }),
+    );
 
-    // Delta applied to read value: min(1.0, 0.60 + 0.10) = 0.70
-    expect(trustUpdater.update).toHaveBeenCalledOnce();
-    expect(trustUpdater.update).toHaveBeenCalledWith({
-      factId:    'fact-readseam-001',
-      sessionId,
-      trust:     expect.closeTo(0.70, 5),
-    });
+    // fn(0.60) must produce min(1.0, 0.60 + 0.10) = 0.70 — same delta as M6-B
+    const { fn } = trustUpdater.mutate.mock.calls[0][0];
+    expect(fn(0.60)).toBeCloseTo(0.70, 5);
   });
 
   // ---------------------------------------------------------------------------
-  // M6-B2 — FactReader returns null (fact not found) must throw
+  // M6-B2 — missing fact → FactNotFoundError from mutate
   // ---------------------------------------------------------------------------
   //
-  // Contract: if FactReader.read() returns null, the activity must throw rather
-  // than silently applying a delta to a non-existent fact (which would mislead
-  // the caller into thinking feedback was recorded). TrustUpdater must NOT be called.
-  //
-  // RED failure: applyFeedbackById is not exported from recall.ts
+  // M7-C: FactNotFoundError is now a storage-layer concern. The mutate() mock
+  // simulates storage throwing FactNotFoundError when the fact does not exist.
+  // applyFeedbackById must propagate this error to the caller.
 
-  it('throws when FactReader returns null for unknown factId (§30 §2.3 read-seam null guard)', async () => {
-    const factReader = {
-      read: vi.fn().mockResolvedValue(null),
-    };
+  it('propagates FactNotFoundError from mutate when fact is missing (§30 §2.3 mutate seam)', async () => {
     const trustUpdater = {
-      update: vi.fn().mockResolvedValue(undefined),
+      mutate: vi.fn().mockRejectedValue(new FactNotFoundError('fact-does-not-exist')),
     };
 
     await expect(
       applyFeedbackById(
         { factId: 'fact-does-not-exist', sessionId, event: 'corroboration' as const },
-        { factReader, trustUpdater },
+        { trustUpdater },
       ),
-    ).rejects.toThrow();
-
-    // Guard: TrustUpdater must NOT be called for a missing fact
-    expect(trustUpdater.update).not.toHaveBeenCalled();
-  });
-
-  it('throws TypeError when FactReader returns undefined (contract violation)', async () => {
-    const factReader = { read: vi.fn().mockResolvedValue(undefined) };
-    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
-
-    await expect(applyFeedbackById(
-      { factId: 'fact-undef', sessionId, event: 'corroboration' as const },
-      { factReader, trustUpdater },
-    )).rejects.toThrow(TypeError);
-
-    expect(trustUpdater.update).not.toHaveBeenCalled();
+    ).rejects.toMatchObject({ code: 'FACT_NOT_FOUND' });
   });
 
   // ---------------------------------------------------------------------------
-  // F-NEW-RANGE — applyFeedbackById: strict reader-contract guard
+  // M6-B3 — FactReaderContractError constructor integrity (no longer driven by SUT)
   // ---------------------------------------------------------------------------
   //
-  // Regression lock for Edgar's F6: if FactReader returns a trust value that
-  // violates the domain invariant (e.g. NaN from a corrupt row), applyFeedbackById
-  // must throw RangeError rather than propagate a corrupt trust write.
-  //
-  // RED until Edgar's F6 validation lands in applyFeedback (which applyFeedbackById
-  // delegates to — the guard fires at that delegation point).
+  // M7-C: FactReader is no longer used in applyFeedbackById. The old test that
+  // drove FactReaderContractError via SUT path (factReader returning undefined)
+  // no longer applies. We instead verify the error class itself can be instantiated
+  // and has the expected shape — class integrity, not SUT wiring.
 
-  it('throws RangeError when FactReader returns trust: NaN (strict reader-contract guard)', async () => {
-    const factReader = { read: vi.fn().mockResolvedValue({ trust: NaN }) };
-    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+  it('FactReaderContractError constructs with correct code and message (class integrity)', () => {
+    const err = new FactReaderContractError('fact-undef');
+    expect(err).toBeInstanceOf(TypeError);
+    expect(err.code).toBe('FACT_READER_CONTRACT');
+    expect(err.factId).toBe('fact-undef');
+    expect(err.message).toContain('FactReader.read()');
+  });
+
+  // ---------------------------------------------------------------------------
+  // F-NEW-RANGE — applyFeedbackById: storage corruption guard via fn
+  // ---------------------------------------------------------------------------
+  //
+  // M7-C: Corrupt trust now surfaces when storage calls fn(NaN). The mock simulates
+  // storage calling fn with a bad value; applyFeedbackById must propagate the RangeError.
+
+  it('fn throws RangeError when storage provides NaN trust via mutate (§30 §2.1 domain invariant)', async () => {
+    const trustUpdater = {
+      mutate: vi.fn().mockImplementation(async ({ fn }: { fn: (t: number) => number }) => { fn(NaN); }),
+    };
 
     await expect(
       applyFeedbackById(
         { factId: 'fact-range-reader', sessionId, event: 'corroboration' as const },
-        { factReader, trustUpdater },
+        { trustUpdater },
       ),
     ).rejects.toThrow(RangeError);
 
-    expect(trustUpdater.update).not.toHaveBeenCalled();
+    expect(trustUpdater.mutate).toHaveBeenCalledOnce();
   });
 
   // ---------------------------------------------------------------------------
   // F-NEW-PROPAGATION — user_correction missing-delta propagates via applyFeedbackById
   // ---------------------------------------------------------------------------
   //
-  // Craft F11 test-side: exercise the path where applyFeedbackById is called with
-  // event='user_correction' but no correctionDelta. The error from applyFeedback
-  // must propagate out. Edgar is updating JSDoc to note this throw; this test locks
-  // the observable contract.
+  // Pre-flight validation fires before mutate. applyFeedbackById must propagate the
+  // InvalidFeedbackOptionsError thrown by applyFeedback when correctionDelta is missing.
 
-  it('propagates missing-correctionDelta error from applyFeedback', async () => {
-    const factReader  = { read: vi.fn().mockResolvedValue({ trust: 0.5 }) };
-    const trustUpdater = { update: vi.fn().mockResolvedValue(undefined) };
+  it('propagates missing-correctionDelta error from applyFeedback (pre-flight, before mutate)', async () => {
+    const trustUpdater = { mutate: vi.fn().mockResolvedValue(undefined) };
 
     await expect(applyFeedbackById(
       { factId: 'fact-y', sessionId, event: 'user_correction' as const /* no correctionDelta */ },
-      { factReader, trustUpdater },
-    )).rejects.toThrow();  // Error message will mention correctionDelta
+      { trustUpdater },
+    )).rejects.toThrow();
+
+    // Guard: mutate must NOT be called — error fires before reaching storage
+    expect(trustUpdater.mutate).not.toHaveBeenCalled();
   });
 });
