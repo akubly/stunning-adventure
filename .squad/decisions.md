@@ -2975,3 +2975,49 @@ The SQLite adapter is the substrate for any future Refactor 4 / Phase 2 work (fi
 
 
 
+
+---
+
+### 2026-06-06: Refactor 3 SQLite Adapter — 2-Cycle Persona Review COMPLETE (Ship-Ready)
+
+**Date:** 2026-06-06  
+**Agents:** Roger (Platform Dev), Laura (Tester)  
+**Cycle 1:** Code Panel (5 personas: correctness/skeptic/craft/compliance/architect) → 1 blocking + 5 important + 4 minor findings  
+**Cycle 2:** Code Panel (5 personas, verification) → 0 blocking; all prior findings resolved; 1 important (constraint-specificity) + minor nits  
+
+**Decision:** Refactor 3 (SQLite adapter work) passes both cycles and is **SHIP-READY** at diminishing returns.
+
+---
+
+## Cycle 1 Remediations (Commits a57f95f, 324c287)
+
+**Roger (a57f95f):** Dependency placement (better-sqlite3 → dependencies), single-source schema.ts, pushEvent session-guard parity, stale RED-phase artifact cleanup, JSDoc clarification, adapter framing.  
+**Laura (324c287):** Removed stale RED-phase prose, added SQLite-specific constraint assertion [SQLite-C1].  
+
+---
+
+## Cycle 2 Remediations (Commits d4ca4ce, 6c14402)
+
+**Laura (d4ca4ce):** Constraint-specific error assertion (toThrow→toThrow with regex matcher), removed stale commit-hash comment.  
+**Roger (6c14402):** Removed redundant better-sqlite3 + @types/better-sqlite3 devDeps from crucible-cli.  
+
+---
+
+## Final State
+
+- ✅ **15 tests green** — 6 crucible-core, 9 crucible-cli (all phases)
+- ✅ **tsc clean** — no TypeScript errors
+- ✅ **FEDERATE invariant upheld** — no Cairn imports introduced
+- ✅ **Declarations confirmed:**
+  - OQ-2 LOCKED (Event-substrate topology = FEDERATE)
+  - Agent history.md commits are IN-SCOPE
+  - Internal helpers: unexport + shrink test surface (Path A)
+  - JSON.parse boundary discipline (3-tier: unknown + validate + drift-guard)
+
+---
+
+## Persona Panel Consensus
+
+Both cycles declared **REVIEW-COMPLETE** with diminishing returns. All findings either RESOLVED or documented as deferred (splitting integration tests, migration/user_version seam, L1 WAL).
+
+**Ship cleared for Refactor 3.** Feature PR ready to merge.

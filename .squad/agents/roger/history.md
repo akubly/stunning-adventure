@@ -18,3 +18,24 @@
 
 **Keep minimal-interface comments honest about used-vs-retained members.** If a port interface intentionally includes members not currently called by the primary consumer (e.g., queryEvents on DB), say so explicitly -- state which methods are used now vs retained for future needs. A comment that says 'only the operations X actually needs' becomes misleading the moment the interface contains anything beyond that scope.
 
+---
+
+## Learnings (Refactor 3 Review Cycle 1 — 2026-06-06)
+
+**Production deps vs devDeps: if a module is exported from the production barrel, its native dependency belongs in `dependencies`, not `devDependencies`.** `createSQLiteDB` is exported from `crucible-core/src/index.ts`, so `better-sqlite3` must be a production dependency of that package. Leaving it in devDeps means any consumer that installs the published package without devDeps would get a runtime crash.
+
+**Single-source schema DDL; never restate it in fixtures or tests.** Creating a canonical `SCHEMA_V1_SQL` export in core and having the fixture call `createSQLiteDB` directly eliminates the drift risk. A fixture that independently restates CREATE TABLE statements will silently diverge from production schema as the schema evolves.
+
+**Error message parity between adapters is a contract, not a courtesy.** When the in-memory oracle throws a specific, diagnosable message (`pushEvent: session '<id>' not found`), the SQLite adapter must throw the exact same message — not a foreign-key constraint error. Tests that assert on error messages will fail at the FK layer with a confusing message; more importantly, callers that pattern-match on errors get inconsistent behavior depending on which adapter is in use.
+
+**Interface JSDoc must describe the cross-impl contract, not the implementation detail of one adapter.** The "mutable reference" wording on `getOwnEvents` was truthful for in-memory but false for SQLite. When an interface has two implementations, the JSDoc on the interface must state what ALL implementors commit to — in this case, a snapshot, not a live reference.
+
+**Header comments on transitional code should name its transitional nature.** Calling the SQLite adapter a "real SQLite adapter" biases future readers toward treating it as canonical. A one-clause note that names the Sprint-0 / compatibility-substrate framing prevents architectural drift.
+
+---
+
+## Learnings (Cycle 2 Remediation — 2026-06-06)
+
+**Verify direct imports before removing a devDependency.** The safe pattern is: grep src/ for `import.*from 'pkg'`; if the only hits are in comments or JSDoc, the dependency is genuinely unused. Trusting that it "should" be gone without grepping first risks removing a still-needed dep (or, conversely, leaving a truly redundant one and failing review). In this case, `better-sqlite3` and `@types/better-sqlite3` appeared only in comments — test-db.ts had already been refactored to import solely from `@akubly/crucible-core`. Safe to drop.
+
+**Transitive dependency satisfaction is enough for test code.** Once `better-sqlite3` lives in `crucible-core`'s `dependencies`, any workspace package that declares `@akubly/crucible-core` as a dependency gets the native module transitively. A devDependency on the same package in the consumer is pure noise and a source of version-skew risk.
