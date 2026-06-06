@@ -44,3 +44,12 @@
 **Append-not-rewrite is the right policy for decision logs.** The tombstone decision (Decision 2 in decisions.md) described a choice that was later reversed. Editing the original entry would erase the context for WHY we initially tombstoned (vitest 3.x no-empty-file requirement). The append-update preserves both the original reasoning and the reversal rationale. Future readers can follow the full arc. Applied this consistently.
 
 **CRLF in non-code files happens silently.** Rosella's history.md had 7 carriage-returns (CRLF sequences at 3 line endings). These come from editors or CI runners that don't respect `.gitattributes`. The fix is `ReadAllText / -replace / WriteAllText` in PowerShell — more reliable than `sed` on Windows. The git warning "LF will be replaced by CRLF" on commit is a `.gitattributes` artifact (text=auto); the file was cleanly committed as LF.
+
+## Learnings (2026-06-05 — M8 Slice B cloud review cycle 2)
+
+**Branch:** `eureka/m8-slice-b-sqlite-trust-updater`  
+**Commits:** af390ba (T6), ccdf994 (T7)
+
+**`UTF8Encoding(false)` is the correct PowerShell pattern for BOM-free writes.** `[System.IO.File]::WriteAllText(path, content)` uses the system default encoding (BOM on Windows). `[System.Text.Encoding]::UTF8` and `[System.Text.UTF8Encoding]::new($true)` both include BOM. Only `[System.Text.UTF8Encoding]::new($false)` suppresses it. When fixing encoding issues in non-code files, always write explicitly with `UTF8Encoding($false)` to avoid the T3 → T6 two-step. The lesson is to use it the first time rather than discovering the BOM in a follow-up review.
+
+**BEGIN IMMEDIATE serializes within a single connection; JS event-loop serializes across async calls from the same connection.** For a synchronous library like better-sqlite3, Promise.all() in the same process doesn't create true concurrency — each mutate() call runs to completion before the JS engine yields. The transaction wrapper enforces that READ + fn + WRITE happen atomically within one mutate() call; it plays no role in ordering ACROSS calls from the same JS thread. BEGIN IMMEDIATE matters only when two separate Database handles (different connections, possibly different processes) compete for the write lock. Getting this distinction wrong in comments misleads future readers about WHERE the safety boundary is.
