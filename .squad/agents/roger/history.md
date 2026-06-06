@@ -18,3 +18,16 @@
 **C-3b (out-of-range) is a materially distinct invariant.** C-3 covers NaN (non-finite); C-3b covers finite-but-out-of-range (1.5, -0.1). These exercise different branches of the validation check (`!Number.isFinite(newTrust)` vs the `< 0 || > 1` guard). A single parameterized test over `[NaN, 1.5, -0.1]` would have worked too, but the current C-3 + C-3b split is clear and avoids a for-loop test that hides which case failed on first failure.
 
 **WAL + busy_timeout are implicit contracts on `SqliteTrustUpdater` constructors.** The class doesn't set these itself — it inherits them from the injected `db` handle. Without documenting this, a future consumer who passes a raw `new Database(path)` handle would get subtly broken concurrency behaviour (SQLITE_BUSY failures instead of retries). The pragma assumption section in JSDoc is the right place to make this explicit.
+
+## Learnings (2026-06-05 — M8 Slice B cycle-3 polish + Slice A retrofit)
+
+**Branch:** `eureka/m8-slice-b-sqlite-trust-updater`  
+**Commits:** af8b596 (N1+N2), 8f48e2f (N3+N4), 1cec460 (N5)
+
+**`it.each` is the correct tool for boundary parameterization.** A `for` loop inside `it()` masks first-failure: if `1.5` fails, `-0.1` never runs. `it.each([1.5, -0.1])` creates two independent test cases so each bound is independently reported. The pattern applies to any test that checks multiple values of the same invariant — particularly validation boundaries. Count impact: +2 tests per wiring × 2 wirings = +4 total (95 → 97 after Commit 1 in this cycle, then 97 steady through cycles 2 and 3).
+
+**The `*.contract.helper.ts` naming convention is now load-bearing for Slice C.** Both `fact-reader-contract.helper.ts` and `trust-updater-contract.helper.ts` follow the same non-`.test.ts` pattern. Slice C's `runFactStoreContract` should land in `fact-store-contract.helper.ts`. The SKILL forward-pointer (N5) documents this explicitly so the Slice C author doesn't have to re-derive it.
+
+**Slice A retrofit was low-risk but high-value.** The FactReader contract file had been stable since Slice A merged (~5 days), making the diff visible and reviewable. The actual change was small (extract helper + wiring-only test file + typed prepare), but it brings both contract suites to the same structural pattern before Slice C inherits them. Retrofitting AFTER Slice C would be harder (more files to touch, possibly conflicting edits). The lesson: harmonize sibling patterns at end-of-slice, not end-of-milestone.
+
+**`ReturnType<Database.Database['prepare']>` is the wrong field type for typed statements.** The broad type forces a runtime `as FactRow | undefined` cast on every `.get()` call. `db.prepare<BP, R>()` returns `Database.Statement<BP, R>` where `.get()` is typed as `R | undefined`. Using the typed generic form eliminates the cast, narrows errors at compile time, and documents the expected bind-parameter shape at the call site. This is the pattern SqliteTrustUpdater already used; the Slice A retrofit applied it retroactively to SqliteFactReader. Future SQLite implementations (SqliteFactStore) should use typed generics from the start.
