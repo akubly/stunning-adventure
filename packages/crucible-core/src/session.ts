@@ -56,6 +56,13 @@ function buildSession(id: string, metadata: SessionMetadata): Session {
       // Child session: prefix [0..forkPoint] lives in the parent's own-event list.
       const result: Primitive[] = [];
 
+      // LIMITATION: prefix delegation assumes the parent is a root session.
+      // getOwnEvents(parent) returns only the parent's directly-appended events.
+      // If the parent is itself a fork, its inherited prefix (from a grandparent)
+      // is NOT in its ownEvents, so this query returns an incomplete prefix.
+      // Transitive / multi-generation fork lineage is a known future scope item
+      // (see §4.1 REFACTOR "Fork Lineage Transitivity" in crucible-tdd-strategy.md)
+      // and will be addressed in a later cycle with its own dedicated RED test.
       if (a <= forkPoint) {
         const parentEvents = db.getOwnEvents(metadata.parentSessionId!);
         const cap = Math.min(b, forkPoint);
