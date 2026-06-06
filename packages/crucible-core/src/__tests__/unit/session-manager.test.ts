@@ -19,15 +19,11 @@
  *   packages/crucible-core/src/__tests__/fixtures/mock-db-builder.ts
  * in a follow-up. For this first unit-test file the mockDB is kept inline.
  *
- * These tests MUST BE RED until Roger's REFACTOR lands SessionManager.
- * If Roger's refactor lands first, some/all will go GREEN — also valid outcome.
+ * These tests are GREEN — SessionManager is implemented and exported.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// SessionManager does not exist yet — import failure is the intended RED signal.
-// If Roger exports it from index.ts, this resolves; otherwise "SessionManager is
-// not a constructor" is the correct RED failure mode.
 import { SessionManager } from '../../index.js';
 
 // ─── Shared mockDB shape ──────────────────────────────────────────────────────

@@ -1,18 +1,16 @@
 /**
- * RED PHASE — First failing acceptance test for Crucible.
+ * Acceptance test (GREEN) — Session Fork from Arbitrary Ledger Position (A1).
  *
  * Acceptance Scenario : A1 — Session Fork from Arbitrary Ledger Position
  * PRD User Stories    : US-A-NEW-1 (Branching Sessions), US-E-2 (Counterfactual Replay)
- * TDD Strategy        : §4.1 Walkthrough A RED Phase (docs/crucible-tdd-strategy.md)
+ * TDD Strategy        : §4.1 Walkthrough A (docs/crucible-tdd-strategy.md)
  * Locked Decision     : Aaron decision 2a — L1-native branching (L1 Ledger owns fork lineage)
  * Naming convention   : §8.5 — "[Layer] [Component] [Scenario] [Expected Behavior]"
  *                       Acceptance-level prefix: "Acceptance: ..."
  *
- * This test MUST FAIL with a missing-module or "not a function" error until the
- * GREEN phase wires `createSession` and `fork` through the full outside-in descent
- * described in §4.1. No mocks are introduced here — this is the outermost,
- * user-observable acceptance ring. The first mock layer (L1 Ledger collaborator)
- * is introduced in the subsequent GREEN/descent cycle.
+ * No mocks are introduced here — this is the outermost, user-observable acceptance
+ * ring. The implementation descends through the full outside-in stack described in
+ * §4.1 and this test is now GREEN.
  *
  * Invariants exercised (A1):
  *   1. Child `parentSessionId` === parent session id
@@ -22,7 +20,6 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-// These symbols do not exist yet — import failure is the intended RED signal.
 import { createSession, fork } from '../../index.js';
 import { resetInMemoryDb } from '@akubly/crucible-core';
 

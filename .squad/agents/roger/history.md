@@ -723,7 +723,7 @@ Full audit inbox: `.squad/decisions/inbox/roger-reconciliation-2026-05-24T2330Z.
 ## 2026-05-25 Round 5: SPIKE fork (a) — port Cairn to a custom storage engine
 Full spike inbox: .squad/decisions/inbox/roger-spike-fork-a-port-2026-05-25T0030Z.md.
 
-**Executive summary.** Surveyed the existing Cairn SQLite surface (87 src files, 31 in db/, 13 linear migrations, 16 tables, 188 prepared/transaction call sites, 80 join/groupby query sites, 478-ish tests, one load-bearing partial UNIQUE index for backpressure, zero use of FTS/virtual-tables/triggers/UDFs/triggers — relational but shallow) and three engine candidates: A.1 pure-Rust edb via NAPI-RS (12-16 weeks, ~100% SQL-ergonomics loss, strongest correctness story, adds a Rust toolchain to a Node monorepo), A.2 Kris Zyp's lmdb Node binding with its eforeCommit hook (8-12 weeks, ~100% SQL loss, 80us-budget at risk under JS dispatch), and A.3 hybrid — custom append-only WAL file in pure TS for L1 only, keep etter-sqlite3 for the other 15 tables and all derived views (5-9 weeks, ~5-10% SQL loss, forward-compatible migration). **Verdict: REJECT A.1, ENDORSE-WITH-CAVEATS A.3, A.2 only as fallback if the JS predicate budget fails in integration.** Phase A's hard contracts bind only L1; rewriting the other six tiers to honor a contract that does not bind them is over-correction. Anti-anchoring alternative reading: if Crucible is heading toward regulatory determinism, 10^9+ rows, or WASM-runtime distribution, A.1's "one substrate, contracts enforced by construction" wins despite the cost — I'd flip if any of those three become true. Tagged Alexander (fork (b) is a contract-amendment, not a contract-honor — sqlite3_update_hook fires post-write not pre-fsync) and Gabriel (fork (c) breaks causal_read_set_hash globality the moment you shard across multiple SQLite files — contract (4) needs amendment).
+**Executive summary.** Surveyed the existing Cairn SQLite surface (87 src files, 31 in db/, 13 linear migrations, 16 tables, 188 prepared/transaction call sites, 80 join/groupby query sites, 478-ish tests, one load-bearing partial UNIQUE index for backpressure, zero use of FTS/virtual-tables/triggers/UDFs/triggers — relational but shallow) and three engine candidates: A.1 pure-Rust edb via NAPI-RS (12-16 weeks, ~100% SQL-ergonomics loss, strongest correctness story, adds a Rust toolchain to a Node monorepo), A.2 Kris Zyp's lmdb Node binding with its beforeCommit hook (8-12 weeks, ~100% SQL loss, 80us-budget at risk under JS dispatch), and A.3 hybrid — custom append-only WAL file in pure TS for L1 only, keep better-sqlite3 for the other 15 tables and all derived views (5-9 weeks, ~5-10% SQL loss, forward-compatible migration). **Verdict: REJECT A.1, ENDORSE-WITH-CAVEATS A.3, A.2 only as fallback if the JS predicate budget fails in integration.** Phase A's hard contracts bind only L1; rewriting the other six tiers to honor a contract that does not bind them is over-correction. Anti-anchoring alternative reading: if Crucible is heading toward regulatory determinism, 10^9+ rows, or WASM-runtime distribution, A.1's "one substrate, contracts enforced by construction" wins despite the cost — I'd flip if any of those three become true. Tagged Alexander (fork (b) is a contract-amendment, not a contract-honor — sqlite3_update_hook fires post-write not pre-fsync) and Gabriel (fork (c) breaks causal_read_set_hash globality the moment you shard across multiple SQLite files — contract (4) needs amendment).
 
 -- Roger
 
@@ -817,7 +817,7 @@ See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-rev
 **Context:** Picked up two owed Pass A triage items after session silence. Aaron requested CLI documentation edits: (1) register crucible perf [top] [--json] in §13.1 verb table, (2) coordinate crucible defer --help text with Valanice's parallel §9.9 edit.
 
 **Decision 1: crucible perf Registration**
-- **Choice:** Added as standalone verb (like status, sck), NOT as saved query
+- **Choice:** Added as standalone verb (like status, fsck), NOT as saved query
 - **Rationale:** §17 explicitly documents [top] sub-variant (dispatch-latency sort) which is verb-specific, not query-driven. Consistency with diagnostic-verb family. Verb placement: between status and config in §13.1
 - **Placement:** §13.1 line 44 (new row between diagnostic verbs and config)
 
@@ -1017,7 +1017,7 @@ No Ledger class, WAL interface, or Cairn integration introduced. That is the REF
 - Created createInMemoryDB() adapter (in-memory-db.ts) wrapping the old registry
 - Refactored session.ts to compose against singleton InMemoryDB + SessionManager
 - Updated barrel index.ts to export all new public surface
-- Decision inbox: oger-crucible-refactor-session-manager.md
+- Decision inbox: roger-crucible-refactor-session-manager.md
 - Skill: london-tdd-refactor-extract-collaborator/SKILL.md written
 
 ### Test results
@@ -1038,14 +1038,13 @@ When the GREEN step has a flat module with module-level state, REFACTOR follows 
 
 ### DB interface contract (locked for unit test compatibility)
 
-`	s
+```ts
 export interface DB {
   getSession(id: string): Promise<{ id: string; ledgerSize: number; pluginVersions?: Record<string, string> } | null>;
   insertSession(session: { id: string; parentSessionId: string | null; forkPointEventId: number | null; pluginVersions?: Record<string, string>; createdAt: number }): Promise<void>;
   queryEvents(id: string, opts: { range: [number, number] }): Promise<unknown[]>;
 }
-`
-
+```
 This shape is locked because Laura's unit test mocks mirror it exactly. Any shape change here requires updating session-manager.test.ts in tandem.
 
 ### In-memory adapter: extend DB for internal helpers
@@ -1055,14 +1054,13 @@ The DB interface is the minimal mock contract. The real adapter needs extra meth
 ### ledgerSize computation for in-memory adapter
 
 - Root session: ownEvents.length
-- Child session: orkPointEventId + 1 + ownEvents.length
+- Child session: forkPointEventId + 1 + ownEvents.length
 
-This mirrors the offset assignment in uildSession: aseOffset = forkPointEventId === null ? 0 : forkPointEventId + 1.
+This mirrors the offset assignment in buildSession: baseOffset = forkPointEventId === null ? 0 : forkPointEventId + 1.
 
 ### ForkLineage.parentSessionId: string | null (not just string)
 
-The strategy doc snippet declared parentSessionId: string, but oot() needs to pass 
-ull. Accept string | null. Document with a comment in the file. This is a common pattern: the strategy snippet covers the happy-path shape; the sentinel case reveals the fuller type.
+The strategy doc snippet declared parentSessionId: string, but root() needs to pass null. Accept string | null. Document with a comment in the file. This is a common pattern: the strategy snippet covers the happy-path shape; the sentinel case reveals the fuller type.
 
 ## Learnings (2026-06-02 — Crucible Sprint 0 Cycle 1 fixes)
 
@@ -1102,3 +1100,13 @@ The optional-chain pattern store.get(id)?.ownEvents.push(event) is a silent data
 **BEGIN IMMEDIATE is the migration race fix, not IF NOT EXISTS alone.** `IF NOT EXISTS` is defense-in-depth for crash recovery (partially-applied DDL); it does not serialize two simultaneous first-opens. IMMEDIATE lock ensures only one process applies migrations; the other reads `schema_version = 1` and skips cleanly. The two mechanisms solve different failure modes and should both be present.
 
 **Harness cleanup belongs in the contract helper, not implementation-specific blocks.** Making `cleanup?: () => void` optional on `FactReaderHarness` keeps the InMemoryFactReader harness backward-compatible (no native handles to close) while ensuring all native-backed implementations can register teardown. The `afterEach(() => harness?.cleanup?.())` pattern in `runFactReaderContract` guarantees cleanup fires even if a test throws. Pattern applies to any future harness that wraps a native resource (file, socket, worker thread).
+
+## 2026-06-05: PR #45 Copilot Review — Comment Accuracy + Docs Fixes
+
+**Context:** Copilot's cloud review on PR #45 flagged doc/comment accuracy issues in crucible-core and crucible-cli. All five fixes are comment/doc-only — no logic changes.
+
+### Learnings
+
+**RED-phase scaffolding comments are review debt that must be cleared when impl lands.** When TDD RED-phase tests go GREEN, header comments saying "MUST FAIL" / "does not exist yet" become false documentation. Pattern: update test-file headers at the same commit that ships the implementation, or log a doc-cleanup follow-up. Leaving RED-phase framing in a GREEN test misleads reviewers and tools.
+
+**Package READMEs are two levels below the repo root.** Packages live at packages/<name>/, so packages/<name>/README.md is two directory levels deep. A relative path to docs/ at the repo root must use ../../docs/, not ../docs/ (which resolves to the non-existent packages/docs/). Rule: when writing relative links from a package README, the root is always ../../.

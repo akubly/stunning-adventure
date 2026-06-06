@@ -10,7 +10,7 @@ export class SessionManager {
    *
    * Validation order:
    *   1. Parent must exist in DB.
-   *   2. forkOffset must not exceed parent ledger size.
+   *   2. forkOffset must be strictly less than parent ledger size (offsets are 0..ledgerSize-1).
    *   3. forkOffset must be non-negative (enforced by ForkLineage constructor).
    *
    * Returns the new child session id.
