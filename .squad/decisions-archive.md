@@ -9610,7 +9610,7 @@ CREATE UNIQUE INDEX idx_optimization_hints_active_dedup
 **Artifacts:**
 - Orchestration log: `.squad/orchestration-log/2026-05-22T20-49-46-onboarding-eureka-hires.md`
 - Session log: `.squad/log/2026-05-22T20-49-46-eureka-hires.md`
-- Decision directive: `.squad/decisions/inbox/copilot-directive-eureka-name.md` (merged here)
+- Decision directive (merged here): the Eureka naming directive
 - New agent folders: `.squad/agents/{genesta,crispin,edgar}/` with charters + history
 - Team roster updated: 14 members (was 11)
 
@@ -10005,11 +10005,11 @@ These are opposing philosophies. Knowledge representation, learning loops, agent
 
 **Session log (1 file):** `.squad/log/2026-05-22T20-32-55Z-brain-squad-fit.md`
 
-**Inbox files to delete (merged):**
-- `.squad/decisions/inbox/graham-squad-fit.md`
-- `.squad/decisions/inbox/roger-self-fit.md`
-- `.squad/decisions/inbox/alexander-self-fit.md`
-- `.squad/decisions/inbox/valanice-self-fit.md`
+**Merged source analyses:**
+- Graham's squad-fit analysis
+- Roger's self-fit analysis
+- Alexander's self-fit analysis
+- Valanice's self-fit analysis
 
 **Status:** OPEN QUESTION — Strong recommendation toward fresh squad, awaiting Aaron's input on budget, timeline, and scope.
 
@@ -12027,7 +12027,7 @@ Updated schema version assertions from 14 → 15 in:
 
 ## Coordination
 
-- API shapes summary written to `.squad/decisions/inbox/roger-issue-11-api.md` for Laura
+- API shapes summary handed off to Laura
 - WI-B (Gabriel, coordinator dispatch policy) holds until this branch merges
 
 
