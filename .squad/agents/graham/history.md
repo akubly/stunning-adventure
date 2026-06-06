@@ -209,6 +209,5 @@ Aaron's priority reset: defer Eureka moves; get forge installable and dogfoodabl
 
 *Recommended sequence:* (1) Register `forge-mcp` in `.github/plugin/.mcp.json` + `.copilot/mcp-config.json` — S, Alexander; (2) Add `list_optimization_hints` + `resolve_optimization_hint` to cairn MCP — M, Alexander + Beatrix; (3) Bash hook equivalent — M, infrastructure; (4) README forge section — S, anyone, last (write after loop is testable).
 Older detailed history (before 2026-05-30) archived to `history-archive.md`.
-**For detailed history, see history-archive-2026-06-01.md**
 **For detailed history, see history-archive.md**
 

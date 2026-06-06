@@ -488,9 +488,9 @@ their interactive bash sessions with a single command.
    non-negotiable. The `&>/dev/null` silences both stdout and stderr so hook
    noise never reaches the user's prompt.
 
-6. **Portable sed for uninstall:** `sed --version` to detect GNU vs BSD is the
-   battle-tested pattern. The macOS `-i ''` vs Linux `-i` difference is the
-   most common portability footgun in shell scripts.
+6. **Portable uninstall:** the sed-free bash state machine is the
+   battle-tested pattern. It avoids GNU/BSD `sed -i` differences and sequencing
+   footguns around blank-line removal plus marker-range deletion.
 
 **Cross-platform reality:** The bash hooks work in Git Bash on Windows (tested
 syntax via `bash -n`). The main risk is `node` not being on the Git Bash PATH —

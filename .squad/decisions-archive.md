@@ -11681,7 +11681,7 @@ Entries older than 7 days.
 **Date:** 2026-05-28 (Synthesis Review completed 2026-05-29T072142Z)  
 **Author:** Graham Knight (Lead / Architect)  
 **Status:** FINAL — CTD v1 STRUCTURALLY COMPLETE  
-**Artifact:** Merged from `.squad/decisions/inbox/graham-ctd-phase4-synthesis.md`
+**Artifact:** Merged from the Phase 4 synthesis draft into this archive.
 
 **Scope:** Final pre-close interface-coherence synthesis across the four Phase 4 authoring lanes (Graham framing §1/§6/§19; Roger CALL/RET + Scheduler WAL §3/§10; Gabriel L3.5 Scheduler §5/§5.A/§17; Laura reproducibility honesty §11.10 + §16.5/§16.7a). Two minor errata resolved inline during synthesis gate.
 

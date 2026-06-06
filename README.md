@@ -138,7 +138,7 @@ forge_mcp_check
 resolved script path, package version, and Node.js availability — your smoke test
 after every install or update.
 
-Expected output (success):
+Example output (success):
 
 ```
 forge-mcp shell init: checking install...
