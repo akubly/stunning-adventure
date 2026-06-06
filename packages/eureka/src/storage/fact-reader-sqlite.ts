@@ -24,16 +24,16 @@ interface FactRow {
 }
 
 export class SqliteFactReader implements FactReader {
-  private readonly stmt: ReturnType<Database.Database['prepare']>;
+  private readonly stmt: Database.Statement<{ fact_id: string; session_id: string }, FactRow>;
 
   constructor(db: Database.Database) {
-    this.stmt = db.prepare(
+    this.stmt = db.prepare<{ fact_id: string; session_id: string }, FactRow>(
       'SELECT trust FROM facts WHERE fact_id = $fact_id AND session_id = $session_id',
     );
   }
 
   async read(args: { factId: string; sessionId: SessionId }): Promise<{ trust: number } | null> {
-    const row = this.stmt.get({ fact_id: args.factId, session_id: args.sessionId }) as FactRow | undefined;
+    const row = this.stmt.get({ fact_id: args.factId, session_id: args.sessionId });
     if (row === undefined) return null;
     // NULL in storage represents NaN (CL-4 round-trip).
     const trust = row.trust === null ? NaN : row.trust;

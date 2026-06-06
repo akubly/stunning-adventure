@@ -90,12 +90,17 @@ describe('FooInterface contract — InMemoryFoo', () => {
 
 ## Reference implementation
 
-`packages/eureka/src/activities/__tests__/trust-updater-contract.test.ts`
+`packages/eureka/src/storage/__tests__/trust-updater-contract.helper.ts`
 
-- `InMemoryTrustUpdater` — per-key promise chain for serialization
-- `runTrustUpdaterContract(makeImpl)` — 7 contract tests (C-1 through C-7)
+- `runTrustUpdaterContract(implName, makeHarness)` — 9 contract tests (C-1 through C-7 + C-3b×2 via it.each)
+  - Harness type: `TrustUpdaterHarness = { impl, setTrust, getTrust, cleanup? }` (all async-tolerant)
   - C-7: cross-session isolation — mutate on sessionB MUST NOT affect sessionA
-- Used to validate `TrustUpdater.mutate()` (M7-C atomicity seam)
+- `InMemoryTrustUpdater` wiring + `SqliteTrustUpdater` wiring in adjacent `.contract.test.ts`
+- Used to validate `TrustUpdater.mutate()` (M7-C + M8 Slice B atomicity seam)
+
+**Visibility note:** The helper is monorepo-internal (`@internal` JSDoc tag). External
+implementations should duplicate the suite. Promote to `@akubly/eureka/testing` subpath
+when external consumers materialize.
 
 ---
 

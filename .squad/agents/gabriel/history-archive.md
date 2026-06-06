@@ -363,6 +363,15 @@ Yes — it used "should" language, omitted error handling entirely, and had no s
 
 
 ---
+# Archived History: 2026-06-01T23:28:28Z
+
+📌 Team update (2026-06-02T06:26:54Z): **Crucible Sprint 0 — First GREEN CYCLE COMPLETE** — Roger's implementation landed. Second Crucible package `@akubly/crucible-core` now exists in repo (types + session impl). Root tsconfig updated with both `crucible-core` and `crucible-cli` references. Monorepo scaffolding complete for TDD descent. Gabriel's infrastructure lock (vitest, tsconfig references, acceptance test dir) proven sound across RED→GREEN cycle. — Scribe
+
+📌 Team update (2026-06-02T06:13:21Z): **Crucible Sprint 0 Kickoff — MERGED** — Gabriel's crucible-cli Package Scaffold decision merged to `.squad/decisions.md`. Inbox file deleted. Orchestration log created. Infrastructure decisions locked: vitest (inherited from eureka), TypeScript project references (../types only), acceptance test directory (src/__tests__/acceptance/). Both packages scaffolded; workspace wired. — Scribe
+
+
+
+---
 
 # Gabriel — History Archive
 
@@ -372,11 +381,17 @@ Archived: 2026-06-01
 
 📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
 
+---
+# Archived History: 2026-06-01T23:28:48Z
+
 # Gabriel — History
 
 📌 Team update (2026-05-28T23:59:59Z): **Crucible CTD Phase 2 Close-out (2026-05-28)** — §9 + §13 shipped (Valanice). R2-3 sync (Gabriel ↔ Valanice) CLOSED — Aperture↔Router ack/resume handshake validated. Your Phase 3 work (§17 + §18) unblocked. Phase 2 synthesis GREEN. No blocking findings. — Scribe
 
 📌 Team update (2026-05-28T10:30:00Z): **Crucible CTD Phase 1 Close-out (2026-05-28)** — §5 (Router Design) FINAL. 4 Aperture↔Router event shapes locked for Valanice §9 sync: `router.paused`, `router.decision`, `aperture.structural-ack-prompt`, `aperture.structural-ack`. Synthesis review: YELLOW, 1 finding routed (5: `dependentPaths` type mismatch with Rosella §7, Phase 2 §9/§10). Phase 2 coordination: Valanice (R2-3 queue mechanics sync pair). — Scribe
+
+---
+# Archived History: 2026-06-01T23:29:00Z
 
 ## 2026-05-29: Crucible CTD Phase 4 — L3.5 Scheduler Tier Promotion
 
