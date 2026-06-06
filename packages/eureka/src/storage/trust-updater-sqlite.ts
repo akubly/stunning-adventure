@@ -41,7 +41,7 @@ interface FactRow {
   trust: number | null;
 }
 
-type MutateArgs = { factId: string; sessionId: SessionId; fn: (t: number) => number };
+type MutateArgs = { factId: string; sessionId: SessionId; fn: (currentTrust: number) => number };
 
 export class SqliteTrustUpdater implements TrustUpdater {
   // Stored as a closure so the prepared statements are reused across calls.
@@ -51,7 +51,7 @@ export class SqliteTrustUpdater implements TrustUpdater {
     const selectStmt = db.prepare<[string, string], FactRow>(
       'SELECT trust FROM facts WHERE fact_id = ? AND session_id = ?',
     );
-    const updateStmt = db.prepare<[number | null, string, string]>(
+    const updateStmt = db.prepare<[number, string, string]>(
       "UPDATE facts SET trust = ?, updated_at = datetime('now') WHERE fact_id = ? AND session_id = ?",
     );
 
@@ -69,15 +69,16 @@ export class SqliteTrustUpdater implements TrustUpdater {
       // fn may throw — transaction rolls back; error propagates unchanged (C-2).
       const newTrust = args.fn(currentTrust);
 
-      // Validate before committing. throw here → transaction rolls back → C-3.
+      // Validate before committing. throw here → transaction rolls back → C-3 / C-3b.
       if (!Number.isFinite(newTrust) || newTrust < 0 || newTrust > 1) {
         throw new InvalidTrustValueError(
           newTrust,
           'storage',
-          `SqliteTrustUpdater.mutate: fn returned an out-of-range trust value (${newTrust}); expected a finite number in [0, 1]`,
+          `SqliteTrustUpdater.mutate: fn returned out-of-range trust (${newTrust}) for factId="${args.factId}" session="${args.sessionId}"; expected finite [0, 1]`,
         );
       }
 
+      // newTrust is validated finite [0,1] here — null is unreachable.
       updateStmt.run(newTrust, args.factId, args.sessionId);
     });
 
