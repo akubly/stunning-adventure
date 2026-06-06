@@ -101,7 +101,9 @@ function encodeCursor(offset: number): string {
 function decodeCursor(cursor: string): number {
   try {
     const payload = JSON.parse(Buffer.from(cursor, 'base64').toString('utf8')) as CursorPayload;
-    return typeof payload.offset === 'number' && payload.offset >= 0 ? payload.offset : 0;
+    return typeof payload.offset === 'number' && Number.isFinite(payload.offset) && Number.isInteger(payload.offset) && payload.offset >= 0
+      ? payload.offset
+      : 0;
   } catch {
     return 0;
   }

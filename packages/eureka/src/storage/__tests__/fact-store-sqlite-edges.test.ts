@@ -15,7 +15,7 @@
  *   FS-SE-1b Heterogeneous trust — high-trust/low-BM25 sorts before low-trust/high-BM25 (relevance ≠ order by design)
  *   FS-SE-2  BM25 normalization — single matching result always gets relevance=1.0
  *   FS-SE-3  Garbage cursor → safe fallback to offset=0 (no crash, no reject)
- *   FS-SE-4  Cursor with negative offset field → fallback to offset=0
+ *   FS-SE-4  Structurally-valid cursor with bad offset (negative/Infinity/float) → fallback to offset=0
  *   FS-SE-5  minTrust exact floor boundary — trust=floor is INCLUDED (>= not >)
  *   FS-SE-6  minTrust just-below floor — fact with trust < floor is excluded
  *   FS-SE-7  NULL trust never surfaces even at minTrust=0
@@ -190,31 +190,33 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // FS-SE-4: Cursor with negative offset field → fallback to offset=0
+  // FS-SE-4: Structurally-valid cursor with bad offset → fallback to offset=0
   //
-  // decodeCursor() guards: `payload.offset >= 0 ? payload.offset : 0`.
-  // A cursor encoding { offset: -5 } must NOT be honored — it falls back to 0.
+  // decodeCursor() validates: non-negative finite integer. Any structurally
+  // valid JSON cursor whose `offset` is negative, non-finite (Infinity), or
+  // non-integer (1.5) must NOT be honored — falls back to 0.
+  // Mirrors the identical validation in decodeCursorInMemory (T2/T6 fix).
   // ─────────────────────────────────────────────────────────────────────────
 
-  it('FS-SE-4: cursor with negative offset field → fallback to offset=0', async () => {
-    seed('se4-fact', 'topology graph traversal breadth first', 0.8);
+  it.each([
+    ['negative',  { offset: -5 }],
+    ['Infinity',  { offset: Infinity }],
+    ['float',     { offset: 1.5 }],
+  ])(
+    'FS-SE-4: cursor with %s offset → fallback to offset=0, no crash',
+    async (_label, payload) => {
+      seed('se4-fact', 'topology graph traversal breadth first', 0.8);
 
-    // Encode a cursor with a negative offset manually.
-    const negativeOffsetCursor = Buffer.from(JSON.stringify({ offset: -5 })).toString('base64');
+      const badCursor = Buffer.from(JSON.stringify(payload)).toString('base64');
+      const baseline    = await impl.search({ query: 'topology', sessionId: SESSION, limit: 10 });
+      const withBadCursor = await impl.search({ query: 'topology', sessionId: SESSION, limit: 10, cursor: badCursor });
 
-    const baseline = await impl.search({ query: 'topology', sessionId: SESSION, limit: 10 });
-    const withNegCursor = await impl.search({
-      query: 'topology',
-      sessionId: SESSION,
-      limit: 10,
-      cursor: negativeOffsetCursor,
-    });
-
-    // Negative offset falls back to 0 → same results as no-cursor call.
-    expect(withNegCursor.results.map(r => r.content)).toEqual(
-      baseline.results.map(r => r.content),
-    );
-  });
+      // Bad offset clamps to 0 → same results as no-cursor call.
+      expect(withBadCursor.results.map(r => r.content)).toEqual(
+        baseline.results.map(r => r.content),
+      );
+    },
+  );
 
   // ─────────────────────────────────────────────────────────────────────────
   // FS-SE-5: minTrust exact floor boundary — trust=floor is INCLUDED
