@@ -1976,6 +1976,547 @@ Add CI check to detect `npm run lint` (bare) in agent logs and fail CI with help
 
 
 
+---
+
+# M8 Slice A — FactReader Contract Audit
+
+**Author:** Laura (Tester)
+**Date:** 2026-06-01
+**Branch:** `eureka/m8-slice-a-sqlite-factreader`
+**Status:** COMPLETE — audit filed, CL-4 tightened, edge test file committed
+
+---
+
+## Purpose
+
+Audit CL-1 through CL-5 in `fact-reader.contract.test.ts` for SQLite-semantic
+completeness before Roger's `SqliteFactReader` impl is declared done. SQLite
+introduces real serialization/deserialization (NaN→NULL, WAL on-disk state,
+shared DB file for all sessions) that the in-memory impl trivially sidesteps.
+Each invariant below states whether it survives SQLite semantics unchanged, and
+if not, what was tightened.
+
+---
+
+## CL-1 — Happy Path: seeded fact is readable
+
+**Verdict: SURVIVES UNCHANGED.**
+
+The test seeds `trust=0.5` and asserts `{trust: 0.5}`. SQLite's `REAL` column
+stores IEEE 754 doubles; `0.5` is exactly representable and round-trips without
+rounding error. The SQL query `WHERE fact_id = ? AND session_id = ?` maps
+directly to the M8 schema's columns. No SQLite-specific failure mode here. The
+test will exercise the full INSERT→SELECT cycle once Roger's harness `seed`
+writes via raw SQL (or an internal method) and `reader.read()` queries the DB.
+
+---
+
+## CL-2 — Missing fact returns null (not undefined)
+
+**Verdict: SURVIVES UNCHANGED.**
+
+The test reads a factId that was never seeded and asserts `expect(result).toBeNull()`.
+For SQLite, a `SELECT` that matches zero rows returns no rows; the impl maps that
+to `null`. Vitest's `toBeNull()` is strict — it rejects `undefined`. The test
+will catch both "returns undefined" and "throws on miss" bugs. No special
+handling needed.
+
+---
+
+## CL-3 — Session isolation: wrong-session reads return null
+
+**Verdict: SURVIVES UNCHANGED — and is a STRONGER validator for SQLite than for InMemory.**
+
+The in-memory impl uses a `Map<factId, FactRecord[]>` scoped per-process; an
+off-by-one on session filtering is contained in the JS heap. For SQLite, both
+sessionA and sessionB share a **single DB file**. The `UNIQUE(fact_id,
+session_id)` constraint means `(factA, sessionA)` and `(factA, sessionB)` are
+distinct rows — but a SQL query that omits `AND session_id = ?` from the WHERE
+clause would silently return sessionA's row when sessionB asks for the same
+factId. CL-3 catches exactly that bug: seed under sessionA, read under sessionB
+→ must be null. This invariant is load-bearing for SQLite correctness and
+already covers the cross-session DB-sharing scenario without modification.
+
+---
+
+## CL-4 — NaN passthrough (trust corruption round-trip)
+
+**Verdict: TIGHTENED. Comment strengthened; test title updated.**
+
+**Finding:** CL-4 was silent on whether the harness `seed` function must write
+to the backing store before `read` is called. The test name was `"returns
+{trust: NaN} for a NaN-seeded fact — read layer does NOT validate"` — framed as
+a validation policy test, not a persistence test. For the in-memory impl, seed
+and read are both JS-heap operations and there is no serialization gap. For
+SQLite, this is the critical failure mode: SQLite has no NaN literal and stores
+`NULL` for NaN; `read` must re-hydrate `NULL → NaN`. A naive SQLite harness that
+caches the seed value in memory (bypassing the INSERT) would pass the old CL-4
+while allowing a real NULL-handling bug to ship silently.
+
+**Before:**
+
+```
+// CL-4 — Trust passthrough: corrupt value (NaN)
+//
+// Seed a fact with trust=NaN → read must return {trust: NaN}.
+// The read layer is NOT responsible for validating trust; that is the
+// caller's job (applyFeedbackById throws InvalidTrustValueError(source:'storage')).
+// Silently clamping or filtering at read time would hide storage corruption.
+
+it('CL-4: returns {trust: NaN} for a NaN-seeded fact — read layer does NOT validate', ...)
+```
+
+**After:**
+
+```
+// CL-4 — Trust passthrough: corrupt value (NaN)
+//
+// Seed a fact with trust=NaN → read must return {trust: NaN}.
+// The read layer is NOT responsible for validating trust; that is the
+// caller's job (applyFeedbackById throws InvalidTrustValueError(source:'storage')).
+// Silently clamping or filtering at read time would hide storage corruption.
+//
+// Storage round-trip requirement: the harness `seed` function MUST write
+// NaN to the backing store before `read` is called — not cache it in memory.
+// For SQLite implementations, NaN has no native literal and is stored as NULL;
+// `read` must re-hydrate NULL → NaN. This test is the primary regression lock
+// for that NaN→NULL→NaN conversion path. A seed implementation that bypasses
+// the backing store (e.g., caches in-memory) would let a silent conversion
+// bug slip through.
+
+it('CL-4: NaN trust round-trips through the storage write/read cycle — read layer does NOT validate', ...)
+```
+
+The assertion (`expect(Number.isNaN(result!.trust)).toBe(true)`) is already
+correct and catches both `null` and `0` returns. The change is to the comment
+and test name, which are now explicit contracts on `seed` semantics. The deeper
+NaN-through-disk regression lock lives in `DB-CL-1` (edges file).
+
+---
+
+## CL-5 — Result shape: numeric trust field
+
+**Verdict: SURVIVES UNCHANGED.**
+
+The test seeds `trust=0.75` and asserts `typeof result!.trust === 'number'`.
+SQLite's `REAL` column comes back as a JS `number` via `better-sqlite3`. Note:
+if CL-4's NULL→NaN path were broken (returning `null`), `typeof null` is
+`'object'`, which would also fail CL-5 — but CL-4 fires first and is the
+correct catch-point. No change needed to CL-5.
+
+---
+
+## Summary Table
+
+| Invariant | SQLite verdict | Action |
+|-----------|---------------|--------|
+| CL-1 | Survives unchanged | None |
+| CL-2 | Survives unchanged | None |
+| CL-3 | Survives unchanged (stronger validator) | None |
+| CL-4 | **Tightened** | Comment + title updated to require seed→store before read |
+| CL-5 | Survives unchanged | None |
+
+**4 of 5 invariants survive audit unchanged. 1 tightened (CL-4).**
+
+---
+
+## Rejection Trigger
+
+If Roger's `SqliteFactReader` ships with a `seed` function that caches NaN
+in memory rather than writing NULL to the DB, CL-4 will pass (false green) but
+DB-CL-1 will FAIL on the close/reopen cycle. That constitutes a contract
+violation. Reviewer protocol: REJECT Roger's PR and route the fix to a
+**different agent** (not Roger). Proposed: Crispin (owns the InMemory reference
+impl and understands the passthrough contract).
+
+---
+
+## Related files
+
+- `packages/eureka/src/storage/__tests__/fact-reader.contract.test.ts` — CL-4 tightened (this audit)
+- `packages/eureka/src/storage/__tests__/fact-reader-sqlite-edges.test.ts` — DB-CL-1 through DB-CL-5 (companion)
+
+
+---
+
+# Laura — M8 Slice A Cycle-2 Audit
+
+**Author:** Laura (Tester)
+**Date:** 2026-06-02
+**Branch:** `eureka/m8-slice-a-sqlite-factreader`
+**PR:** #43
+**Verdict:** ✅ **ACCEPT**
+
+---
+
+## Summary
+
+All 9 mandatory checks pass. Roger's cycle-2 fixes are correct and no regressions were
+introduced. Two new edge tests (DB-CL-6 and DB-CL-7/M3) were added and committed.
+Test count increased from 84 → 86.
+
+---
+
+## Check Results
+
+### 1. Test Count — ✅ PASS
+
+```
+Tests  86 passed (86)   [was 84; +2 new edge tests added by this audit]
+Test Files  7 passed (7)
+```
+
+No regressions. All previous 84 tests remain green.
+
+### 2. Subpath Export Smoke Test (I6) — ✅ PASS
+
+- `packages/eureka/dist/sqlite/index.js` **exists** after `npm run build`.
+- Smoke script at repo root (`tmp-smoke.mjs`, deleted after run) output:
+  ```
+  function function function
+  ```
+  All three exports (`SqliteFactReader`, `openDatabase`, `applyMigrations`) resolve as
+  `function` from `@akubly/eureka/sqlite`.
+- Root path `@akubly/eureka` does **NOT** export `SqliteFactReader` — Node.js ESM raises:
+  ```
+  SyntaxError: The requested module '@akubly/eureka' does not provide an export named 'SqliteFactReader'
+  ```
+  Type leak is confirmed gone from the public surface.
+- **Note:** Smoke file had to be placed inside the repo root (`D:\git\mem\tmp-smoke.mjs`) rather
+  than `D:\tmp-smoke.mjs` as specified; ESM resolution walks from file location and `D:\` has no
+  workspace `node_modules`. File was deleted after successful run. This is a minor test-methodology
+  note, not a product defect.
+
+### 3. better-sqlite3 optionalDependencies (I6/M2) — ✅ PASS
+
+`packages/eureka/package.json` confirms:
+
+```json
+"dependencies": {
+  "@akubly/types": "*"
+},
+"optionalDependencies": {
+  "better-sqlite3": "^12.8.0"
+}
+```
+
+`better-sqlite3` is in `optionalDependencies`, NOT `dependencies`. ✅
+
+### 4. I5 Migration Race Verification — ✅ PASS
+
+**`src/db/schema.ts`:** Migration loop is wrapped in `db.transaction(() => { ... }).immediate()` —
+this is the better-sqlite3 API for `BEGIN IMMEDIATE`. The `.immediate()` at the end is the function
+CALL (equivalent to `txFn.immediate(args)`), not a method returning a new function. Verified by
+the fact that DB-CL-3 (idempotence) passes: migrations DO run inside the IMMEDIATE transaction.
+
+**`src/db/migrations/001-facts.ts`:** Confirmed `IF NOT EXISTS` on every DDL object:
+- `CREATE TABLE IF NOT EXISTS facts`
+- `CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts`
+- `CREATE TRIGGER IF NOT EXISTS facts_ai`
+- `CREATE TRIGGER IF NOT EXISTS facts_au`
+- `CREATE TRIGGER IF NOT EXISTS facts_ad`
+- `CREATE TABLE IF NOT EXISTS trust_history`
+
+**DB-CL-3** idempotence test: ✅ still passes.
+
+**DB-CL-6 (NEW):** Added `concurrent first-open race` test — two `Database` handles to the same
+file, `applyMigrations(db1)` then `applyMigrations(db2)`. Verified: no error thrown, `schema_version`
+has exactly one row with `version=1`. ✅ PASSES. Migration race fix is locked.
+
+### 5. I4 WAL Fallback Verification — ✅ PASS
+
+`src/db/openDatabase.ts` line 38–43:
+
+```typescript
+const walMode = db.pragma('journal_mode = WAL', { simple: true }) as string;
+if (walMode !== 'wal') {
+  process.stderr.write(
+    `[eureka] WAL mode not available (got '${walMode}'); database opened in ${walMode} journal mode\n`,
+  );
+}
+```
+
+- Return value is captured in `walMode`. ✅
+- Warn path uses `process.stderr.write(...)` — goes to **stderr**, not stdout. ✅
+  (MCP stdio rule: diagnostic output must not pollute stdout.)
+
+### 6. I1 busy_timeout — ✅ PASS
+
+`src/db/openDatabase.ts` line 44:
+
+```typescript
+db.pragma('busy_timeout = 5000');
+```
+
+Present immediately after the WAL pragma. ✅
+
+### 7. M3 Harness Seed (INSERT OR REPLACE) — ✅ PASS
+
+`fact-reader.contract.test.ts` line 197:
+
+```typescript
+'INSERT OR REPLACE INTO facts (fact_id, session_id, trust) VALUES (?, ?, ?)',
+```
+
+Confirmed. Comment reads: `// INSERT OR REPLACE matches InMemoryFactReader's upsert seed semantics (M3).`
+
+**DB-CL-7 (NEW):** Added seed-twice test — seeds same `(fact_id, session_id)` twice via
+`INSERT OR REPLACE`; second call must NOT throw; last value wins. ✅ PASSES.
+
+### 8. M4 Cleanup Wiring — ✅ PASS
+
+`fact-reader.contract.test.ts` lines 46–47 / 75–77:
+
+```typescript
+cleanup?: () => void;  // FactReaderHarness interface
+
+afterEach(() => {
+  harness?.cleanup?.();
+});
+```
+
+SQLite harness returns `cleanup: () => db.close()` (line 208). `afterEach` calls it. ✅
+No handle leaks.
+
+### 9. I2 Deferral Comment — ✅ PASS
+
+`src/db/migrations/001-facts.ts` lines 15–16:
+
+```sql
+-- NOTE: trust nullable + NULL=NaN sentinel. Slice B will lock writer discipline;
+-- see graham-m8-scope-proposal.md §5 Q1.
+```
+
+Comment is present adjacent to the `trust` column definition. ✅
+
+---
+
+## New Tests Added
+
+| Test ID | File | Description |
+|---------|------|-------------|
+| DB-CL-6 | `fact-reader-sqlite-edges.test.ts` | Concurrent first-open race: two handles + applyMigrations twice → schema_version=1, no error |
+| DB-CL-7 (M3) | `fact-reader-sqlite-edges.test.ts` | Seed-twice via INSERT OR REPLACE: must not throw, last value wins |
+
+Both committed on this branch. Test count: **84 → 86**.
+
+---
+
+## Known Follow-Ups (Non-Blocking)
+
+None opened this cycle. All cycle-1 findings that were in scope for cycle-2 are addressed.
+I2 (trust nullable / NaN sentinel) remains deferred to Slice B per Aaron's disposition —
+the comment in `001-facts.ts` is the tracking artifact.
+
+---
+
+## Verdict
+
+✅ **ACCEPT** — PR #43 is ready to merge. All 9 checks pass. No blocking failures.
+Two new regression-locking tests added (DB-CL-6, DB-CL-7). Baseline: **86/86 green**.
+
+
+---
+
+# Roger — M8 Slice A Cycle-2 Decision Drop
+
+**Author:** Roger (Platform Dev)
+**Date:** 2026-06-02
+**Branch:** `eureka/m8-slice-a-sqlite-factreader`
+**PR:** #43
+
+---
+
+## I6 — SQLite Subpath Structure
+
+### Exports map (`packages/eureka/package.json`)
+
+```json
+"exports": {
+  ".": "./dist/index.js",
+  "./sqlite": "./dist/sqlite/index.js"
+}
+```
+
+### File layout
+
+| File | Status | Notes |
+|------|--------|-------|
+| `src/storage/fact-reader-sqlite.ts` | **Unchanged** | SQLite reader stays where it is |
+| `src/db/openDatabase.ts` | **Updated** | Changed to `import type` + `createRequire` runtime guard |
+| `src/db/schema.ts` | **Updated** | See I5 below |
+| `src/sqlite/index.ts` | **New** | Subpath entry point; re-exports `SqliteFactReader`, `openDatabase`, `applyMigrations` |
+| `src/storage/index.ts` | **Updated** | Removed `SqliteFactReader` export |
+
+### `better-sqlite3` dependency
+
+Moved from `dependencies` → `optionalDependencies`. `@types/better-sqlite3` already
+was in `devDependencies`; no change needed there.
+
+Runtime guard in `openDatabase.ts` uses `createRequire(import.meta.url)` (required for
+ESM modules loading CJS native addons). If `better-sqlite3` is absent, throws:
+
+```
+[eureka] better-sqlite3 is not installed. SQLite storage requires this native
+module. Install it with: npm install better-sqlite3
+```
+
+### TypeScript build
+
+`src/sqlite/` is inside `src/` (covered by `"include": ["src"]` in `tsconfig.json`).
+`dist/sqlite/index.js` and `dist/sqlite/index.d.ts` are emitted by the existing
+`tsc` composite build. No tsconfig changes required.
+
+---
+
+## I5 — Migration Race Fix
+
+### Strategy: BEGIN IMMEDIATE + IF NOT EXISTS
+
+`applyMigrations` in `src/db/schema.ts`:
+- `CREATE TABLE IF NOT EXISTS schema_version` runs **outside** the transaction (already idempotent)
+- Version read + migration loop wrapped in `db.transaction(...).immediate()`
+- Two simultaneous first-opens serialize on the IMMEDIATE lock; the loser
+  reads `schema_version = 1` and finds no pending migrations
+
+`src/db/migrations/001-facts.ts`:
+- Added `IF NOT EXISTS` to `CREATE TABLE facts`, `CREATE VIRTUAL TABLE facts_fts`,
+  and all three `CREATE TRIGGER` statements
+- Defense-in-depth: a partially-applied migration on crash recovery does not
+  error the second open
+- DB-CL-3 idempotence test continues to pass (84/84 green)
+
+---
+
+## I2 — Trust Nullable / NaN Sentinel Deferral
+
+Per Aaron's disposition: **DEFERRED to Slice B**. No schema change.
+
+Added to `001-facts.ts` near the `trust` column:
+
+```sql
+-- NOTE: trust nullable + NULL=NaN sentinel. Slice B will lock writer discipline;
+-- see graham-m8-scope-proposal.md §5 Q1.
+```
+
+---
+
+## Deviations from Aaron's Dispositions
+
+**None.** All accepted findings (I1, I4, I5, I6, I2, M1–M5) implemented as specified.
+I3 and M6/M7 skipped per Aaron's instructions.
+
+M2 (JSDoc fix) was applied in the same commit as I6 since both touched `openDatabase.ts`.
+M1 + I2 comments were applied in the same commit as I5 since both touched `001-facts.ts`.
+
+
+---
+
+# Roger M8 Slice A Decision Drop
+
+**Author:** Roger (Platform Dev)
+**Date:** 2026-06-02
+**Branch:** `eureka/m8-slice-a-sqlite-factreader`
+**Status:** COMPLETE
+
+---
+
+## Decisions Made
+
+### DB Path Default
+
+`~/.eureka/eureka.db` — per Aaron's Q3 approval. Implementation:
+`path.join(os.homedir(), '.eureka', 'eureka.db')` in `openDatabase.ts`.
+Parent directory created with `fs.mkdirSync(..., { recursive: true })` at open-time.
+
+### NaN Handling — Nullable Column (satisfies CL-4)
+
+**Resolution: nullable column, `NULL ↔ NaN` mapping at the JS layer.**
+
+The `trust` column in `facts` is declared `REAL` (nullable, no `NOT NULL`
+constraint), deviating from Graham's sketch which shows `REAL NOT NULL DEFAULT 0.5`.
+
+**Why:** CL-4 in the contract suite requires that a fact seeded with `NaN` trust
+round-trips as `{trust: NaN}` on read. SQLite has no NaN literal — if the column
+were `NOT NULL`, an INSERT of NaN would store `0.0` (IEEE 754 quiet NaN
+coerced to 0 by SQLite's type rules). The only correct round-trip path is
+`NULL ↔ NaN` as specified in Graham's §3 NaN handling note.
+
+Mapping in `SqliteFactReader.read`: `row.trust === null ? NaN : row.trust`.
+Mapping in test harness seed: `Number.isNaN(trust) ? null : trust`.
+
+### Schema Deviations from Graham's §3 Sketch
+
+| Column | Sketch | Actual | Reason |
+|--------|--------|--------|--------|
+| `trust` | `REAL NOT NULL DEFAULT 0.5` | `REAL` (nullable, no default) | CL-4 NaN round-trip requires NULL storage |
+
+All other table definitions, triggers, and `trust_history` scaffold match the
+§3 sketch verbatim.
+
+`trust_history` is scaffolded but no code writes to it in Slice A, per Aaron's
+Q1 approval. Writes come in Slice B.
+
+---
+
+## Test Count
+
+74 → 79 (+5 SqliteFactReader contract tests via `runFactReaderContract`).
+
+
+---
+
+# Decision: M8 Slice B — Transaction wrapper choice + contract test relocation pattern
+
+**Date:** 2026-06-05  
+**Author:** Roger  
+**Scope:** `@akubly/eureka` — SqliteTrustUpdater + runTrustUpdaterContract refactor
+
+---
+
+## Decision 1: BEGIN IMMEDIATE via `.immediate()` method
+
+**Context:** `SqliteTrustUpdater.mutate` must be atomic per `(sessionId, factId)`. better-sqlite3 provides `db.transaction(fn)` (DEFERRED by default) and `.immediate(args)` to use `BEGIN IMMEDIATE`.
+
+**Choice:** Use `rawTxn.immediate(args)` — the `.immediate()` method on the Transaction object returned by `db.transaction(fn)`.
+
+**Rationale:**
+- DEFERRED BEGIN can yield `SQLITE_BUSY_SNAPSHOT` if a concurrent writer upgrades between our SELECT and UPDATE.
+- IMMEDIATE acquires the write lock at transaction start, serializing writers at the DB level.
+- WAL mode is single-writer anyway; IMMEDIATE just makes the serialization point explicit and earlier.
+- `busy_timeout=5000ms` (Slice A cycle-2 fix) handles the wait.
+- No JS-layer promise chain needed — contrast with InMemoryTrustUpdater's per-key lock.
+
+**Alternative considered:** Explicit `BEGIN IMMEDIATE` / `COMMIT` / `ROLLBACK` via `db.prepare`. Rejected: more boilerplate, loses better-sqlite3's automatic rollback on throw, more surface for bugs.
+
+---
+
+## Decision 2: Contract suite relocation — tombstone pattern for vitest test files
+
+**Context:** Moving `runTrustUpdaterContract` from `activities/__tests__/trust-updater-contract.test.ts` to `storage/__tests__/trust-updater.contract.test.ts` (symmetry with FactReader). The old file cannot be deleted from the repo, and vitest 3.x throws "No test suite found in file" for empty test files.
+
+**Choice:** Replace old file content with a `describe + it.todo` tombstone. The todo shows as 1 skipped test and self-documents the move.
+
+**Pattern (reusable for future suite relocations):**
+```ts
+import { describe, it } from 'vitest';
+describe('XYZ contract suite — tombstone (suite moved)', () => {
+  it.todo('suite moved to storage/__tests__/xyz.contract.test.ts');
+});
+```
+
+**Anti-pattern to avoid:** Importing from the new test file for re-export. If a test file imports from another test file, vitest registers that file's top-level `describe`/`it` calls TWICE, causing test duplication. Do NOT use test files as re-export modules.
+
+**Update 2026-06-05:** Tombstone removed in commit b9185de — the value of pointing future readers to the new location was deemed lower than the noise cost of a permanent `it.todo` skipped test in every run. `git log --follow` on `packages/eureka/src/storage/__tests__/trust-updater-contract.helper.ts` traces the move. The anti-pattern note above (no test-file re-exports) remains valid and was the actual learning.
+
+---
+
+## Decision 3: `TrustUpdaterHarness` shape extends `TrustUpdaterTestImpl` with optional cleanup
+
+**Choice:** `TrustUpdaterHarness = { impl, setTrust, getTrust, cleanup? }` — matching `FactReaderHarness` optional-cleanup convention from Slice A.
+
+**Rationale:** `cleanup` is optional so the InMemory harness needs no change (no native handles). SQLite harness registers `db.close()`. `afterEach(() => harness?.cleanup?.())` in `runTrustUpdaterContract` guarantees teardown even if a test throws — same pattern used in `runFactReaderContract`.
+
 # M2 Design — forge-mcp bash hooks + install README
 
 **Author:** Gabriel (Infrastructure)

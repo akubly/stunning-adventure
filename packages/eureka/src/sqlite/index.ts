@@ -10,5 +10,6 @@
  */
 
 export { SqliteFactReader } from '../storage/fact-reader-sqlite.js';
+export { SqliteTrustUpdater } from '../storage/trust-updater-sqlite.js';
 export { openDatabase } from '../db/openDatabase.js';
 export { applyMigrations } from '../db/schema.js';

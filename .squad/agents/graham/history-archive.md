@@ -1,33 +1,54 @@
-# Graham — History Archive
+# graham — History Archive
 
-Archived entries summarizing architecture leadership and Wave scoping prior to Wave 5-6.
+Entries archived 2026-06-05 (older than 30 days).
 
-## Older Entries
+---
 
-- Wave 0/Wave 2 Scoping: Phase 4.6 decomposition (6 work items across 5 agents)
-- Wave 2 Triage: Defect analysis (confidence ambiguity → renaming fix, not logic)
-- Review Cycle 1: Persona-led review coordination (5 personas, 15 findings, autonomous triage)
-- Wave 2 Architecture: ChangeVectorProvider injection pattern, composition root decision framework
-- Wave 3 ADR + Scope Design: R1–R5 option analysis, R2 convergence (composition library pattern)
-- Wave 3 Ship + Wave 4 Triage: Observability gap analysis, Wave 4 scope ratification
-- Wave 5 Review Cycle 1: Global fallback regression finding + tier fallback architectural pattern
-- Skillsmith Harness Vision: Comprehensive 3200+ word architecture vision document
+---
 
-**Full details:** See commit history, decision documents, and ADR in docs/
+**Role:** Lead / Architect (Overall vision, cross-system integration, tiebreak arbitration)
+**Status:** M0/M1 dogfood scope in flight. M0 shipped; M1 PR #40 open (not merged).
+**Last update:** 2026-05-31
+**Status:** M5+M6 branch prep complete. Feature branch `eureka/m5-m6-trust-feedback` ready for review-cycle.
+**Last update:** 2026-05-30
 
-**Key leadership pattern:** When option space is analyzed independently, reconcile labels early. Convergence signals from two independent analyses indicate strong design patterns.
-📌 Team update (2026-05-26T22:27:00Z): **Wave 5-6 kickoff underway** — W5-5 post-review fixes completed. Root cause documented (McpToolResult index signature). Integration branch ready. Phase 4.6 architecture stable at 597 Cairn + 644 Forge tests passing. — Scribe
-📌 Team update (2026-05-25): **Cycle 2 fixes shipped** (f096c20) — N1: package-lock resync + CHANGELOG; N2: `allowGlobalFallback` boolean → `FallbackPolicy` string-literal union (`'per-skill-only'` | `'full-chain'`); N3: telemetry now shows chain/skipped/selected. All 26 runtime tests green, 4 suites passing. — Graham Knight
-📌 Team update (2026-05-23): **Wave 3 decisions accepted** — R2 approved as `@akubly/skillsmith-runtime`; MCP dropped from Wave 3; always-on Curator hook; 7 work items, ~18 tests. Docs revised, ready to fan out. — Graham Knight
+**Key contributions:**
+- Phase 4.6 wave orchestration: 5 waves integrated (0-6)
+- Brain system: ADR-pending (Curator-driven orchestration, composition root)
+- M0/M1/M2 dogfood scope delivered: 3 strategic synthesis passes (turns G1/G2/G3)
 
-# Graham — History
+## Dogfood Scope Synthesis (2026-05-31, 3 turns)
 
-**Role:** Architecture scoping (phase decomposition, composition patterns), Design review triage, Spec clarification
+**Summary:** After PR #32 shipped, Aaron asked "what's next for Forge?" → Graham completed 3-pass synthesis. Aaron set priority: packaging + dogfooding first.
 
-**Key Leadership Pattern:** When option space is analyzed independently, reconcile labels early (R1–R5 mapping). Convergence signals from two independent analyses indicate strong design.
+**Turn G1 (Synthesis: strategic next moves):**
+- Forge Phase 4.6 surface fully implemented (9 work items shipped)
+- Eureka v1 landing `recall` with injectable `FactStore` seam
+- Next fork: (a) Eureka-pull integration or (b) dogfood packaging
+- Consensus emerging toward dogfood-first (real signal > further design)
 
-## R6 Ceremony — Source-Reading Rule Lifted (2026-05-24)
+**Turn G2 (Backlog inventory):**
+- 6 hard-designed items (FactStore adapter, forge→Eureka wiring, trustFloor seam, etc.)
+- 5 soft-designed items (GP-tournament, Meta-optimization, etc.)
+- 5 aspirational (long-term vision)
+- **Conclusion:** Phase 4.6 surface closure confirmed — no missing load-bearing pieces
 
+**Turn G3 (Dogfood scope post-priority-reset):**
+- Aaron directive: "Packaging + installability + dogfooding is priority #1"
+- Aaron directive: "Defer aggressive Eureka-pull integration moves until Eureka stabilizes"
+- Aaron directive: "GP-tournament + Meta-optimization noted as compelling-but-deferred"
+- **Deliverable:** M0/M1/M2 plan:
+  - **M0** (alexander): forge-mcp registration in plugin + copilot configs → PR #36 ✅ shipped b22c8e7
+  - **M1** (roger): hint consumption MCP tools (cairn MCP expand recall hints → decision hints) → PR #40 ✅ open
+  - **M2** (gabriel): bash hooks + README (install forge-mcp, shell init integration)
+
+**M1 Status (2026-05-31):** Roger dispatched M1 PR #40 (list_optimization_hints + resolve_optimization_hint). Migration 017 (resolution_note column). +15 tests → 708 total. Build clean. Orchestration log: 2026-05-31T19-19-47Z.
+
+---
+
+## Eureka C8: Recommended test-dir exemption for eslint (overridden by Aaron siding with Genesta)
+
+**Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
 **Milestone:** R6 opened — Eureka source-reading unlocked; trio (Genesta/Crispin/Edgar) reconciled v3 PRD against Cairn/Forge substrate.
 
 **Key outcomes:**
@@ -44,6 +65,11 @@ Archived entries summarizing architecture leadership and Wave scoping prior to W
 4. v3 patch or v4 rewrite?
 
 **Next:** Cassima on deck for v3.1 or v4 intake pending Aaron's architectural direction.
+## 📋 SUMMARY (as of 2026-05-31)
+
+**Current Focus:** Crucible CTD final review + post-CTD ADR authoring  
+**Latest Major Work:** PR #33 cloud-review-cycle round 5 — 3 Copilot findings addressed (fork_resume schema, ADR-0019 payloads, predicate timing honesty); Scribe merged and staged  
+**Key Architectural Contributions:** Replay-determinism bug finding, childSid hybrid protocol review, L3.5 Scheduler Phase 0.5 stub acceptance, sub-kind governance completeness  
 
 ---
 
