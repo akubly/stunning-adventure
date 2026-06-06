@@ -225,7 +225,7 @@ Four other test files updated: version assertion 16 → 17 (db, discovery, migra
 ---
 
 
-# Audit — Laura M8 Slice C (SqliteFactStore + FTS5 BM25 Search)
+### 2026-06-05: Audit — Laura M8 Slice C (SqliteFactStore + FTS5 BM25 Search)
 
 **Author:** Laura (Tester)
 **Date:** 2026-06-05
@@ -298,6 +298,8 @@ The WHERE clause `f.trust IS NOT NULL AND f.trust >= $min_trust` correctly seque
 - Single result → no nextCursor. ✅ FS-SE-10.
 - **FINDING FSE-1 (MEDIUM): FTS5 syntax characters not sanitized.** Queries containing FTS5 operator characters (unclosed `"`, bare `AND`/`OR` operators) propagate as rejected Promises rather than graceful empty results. `stmt.all()` is synchronous; the error becomes a rejection of the async `search()` return value. FS-SE-11 locks this current behavior. Recommend: wrap `stmt.all()` in try/catch; on FTS5 parse error, return `{ results: [] }`. This is MEDIUM — not a data corruption issue, but any user-supplied query string reaching `search()` is a potential crash path.
 
+> Superseded by M8 Slice C review-cycle fixes (commit `f08c746`): `SqliteFactStore.search()` now wraps `stmt.all()` in try/catch, catches FTS5 parse-error patterns, and returns `{ results: [] }` instead of rejecting. FS-SE-11 updated to verify empty results (not rejection). FSE-1 marked done below.
+
 ### 6. Interface Reconciliation / recall Consumer
 
 **Status: PASS.** `recallWithScores` correctly destructures `{ results: candidates }` from `factStore.search()`. All 18 recall tests pass. The `cursor` parameter in `FactStore.search()` is optional and not used by `recallWithScores` (which does a single-page overfetch). No regression.
@@ -321,8 +323,9 @@ Committed on branch as `f08c746`, pushed to PR #48.
 | FS-SE-8 | Default `minTrust=0.15` when omitted: `trust=0.14` excluded |
 | FS-SE-9 | Whitespace-only query: empty results, no crash (4 variants) |
 | FS-SE-10 | Final page: `nextCursor` absent |
-| FS-SE-11 | FTS5 unclosed-quote rejects — documents FINDING FSE-1 |
+| FS-SE-11 | FTS5 unclosed-quote resolves to empty results (FSE-1 fixed) |
 | FS-SE-12 | Per-page normalization distortion: sole page-2 result gets `relevance=1.0` |
+| FS-SE-13 | Non-FTS SQLITE_ERROR (e.g. missing table) propagates as rejected Promise |
 
 ---
 
@@ -330,12 +333,12 @@ Committed on branch as `f08c746`, pushed to PR #48.
 
 These do NOT block acceptance. File in backlog:
 
-| ID | Severity | Description |
-|----|----------|-------------|
-| FSE-1 | MEDIUM | Wrap `stmt.all()` in try/catch in `SqliteFactStore.search()`; FTS5 parse errors should return `{ results: [] }` rather than rejecting. Any user-supplied query string is a crash surface. |
-| FSE-2 | LOW | Offset cursor gaps/dupes under concurrent inserts — document in `FactStore` interface JSDoc. Non-issue for single-writer v1; relevant before cross-session queries (Slice D+). |
-| FSE-3 | LOW | `search({ limit: 0 })` degenerate: nextCursor encodes offset=0, creating a potential pagination loop. Add `if (limit <= 0) return { results: [] }` guard. Not reachable via normal activity path. |
-| FSE-4 | NOTE | Cross-page relevance incomparability — documented in FS-SE-12. Roger to add a note to `FactStore.search()` interface JSDoc that `relevance` is per-page only. |
+| ID | Severity | Status | Description |
+|----|----------|--------|-------------|
+| FSE-1 | MEDIUM | ✅ DONE | Wrap `stmt.all()` in try/catch in `SqliteFactStore.search()`; FTS5 parse errors now return `{ results: [] }` rather than rejecting (commit `f08c746`). FS-SE-11 verifies graceful empty results. |
+| FSE-2 | LOW | pending | Offset cursor gaps/dupes under concurrent inserts — document in `FactStore` interface JSDoc. Non-issue for single-writer v1; relevant before cross-session queries (Slice D+). |
+| FSE-3 | LOW | pending | `search({ limit: 0 })` constraint: implementation now throws `TypeError` (FS-8 locked behavior). Contract surface is `limit` must be positive integer; degenerate values are caught at call boundary, not treated as empty results. Document in JSDoc. |
+| FSE-4 | NOTE | ✅ DONE | Cross-page relevance incomparability — documented in FS-SE-12 and in `FactStore.search()` interface JSDoc (`@note relevance is per-page normalized, independent of result order). |
 
 ---
 
