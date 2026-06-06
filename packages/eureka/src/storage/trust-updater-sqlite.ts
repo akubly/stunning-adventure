@@ -1,7 +1,7 @@
 /**
  * SqliteTrustUpdater — SQLite-backed TrustUpdater implementation for
  * `@akubly/eureka`. Implements the `TrustUpdater` interface; verified by the
- * shared contract suite in `storage/__tests__/trust-updater.contract.test.ts`.
+ * shared contract suite in `storage/__tests__/trust-updater-contract.helper.ts`.
  *
  * ## Atomicity — BEGIN IMMEDIATE
  *
@@ -17,6 +17,19 @@
  * holds the lock at a time. BEGIN IMMEDIATE ensures our read-modify-write
  * cycle is fully serialized, satisfying C-5 at the database level rather than
  * via a JS-layer lock (contrast with InMemoryTrustUpdater's promise-chain lock).
+ *
+ * ## Required pragma assumptions
+ *
+ * This class relies on the injected `Database` handle being configured with:
+ *   - `PRAGMA journal_mode = WAL` — single-writer mode; prevents read-write
+ *     deadlocks and allows readers to proceed concurrently with writers.
+ *   - `PRAGMA busy_timeout = 5000` — retries write-lock acquisition for up
+ *     to 5 s before throwing SQLITE_BUSY. Without this, BEGIN IMMEDIATE will
+ *     fail immediately when another writer holds the lock.
+ *
+ * Both pragmas are set by `openDatabase()` in `../db/openDatabase.js`. If a
+ * consumer opens the database directly via `new Database(path)` and skips
+ * `openDatabase`, multi-process write serialization is not guaranteed.
  *
  * ## NaN handling
  *
