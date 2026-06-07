@@ -21,7 +21,7 @@ export interface InMemoryDB extends DB {
   insertRootSession(id: string, createdAt: number): void;
   /** Append a committed primitive to a session's own-event list. */
   pushEvent(sessionId: string, event: Primitive): void;
-  /** Return the own-event list for a session (mutable reference). */
+  /** Return a snapshot of the own-event list for a session. Modifications to the returned array are not persisted. */
   getOwnEvents(sessionId: string): Primitive[];
   /** Return fork metadata + createdAt for building Session objects. */
   getMetadata(
@@ -84,7 +84,7 @@ export function createInMemoryDB(): InMemoryDB {
     },
 
     getOwnEvents(sessionId) {
-      return store.get(sessionId)?.ownEvents ?? [];
+      return [...(store.get(sessionId)?.ownEvents ?? [])];
     },
 
     getMetadata(sessionId) {
