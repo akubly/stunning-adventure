@@ -18,7 +18,7 @@
 
 **KR Principle Reinforced:** When two systems share a conceptual entity (Session, Decision), the choice is: (1) force schema convergence (fragile, couples implementations), or (2) share *identity only* and keep schemas independent (resilient, but requires discipline). v5-final chose (2) via `SessionId` brand + lens framing. Crucible validates this choice — the operational session and epistemological session-fact ARE the same entity, but their representations diverge by design. The brand is the contract; the lens is the interpretation.
 
-**Memo Delivered:** (decision inbox drop — local-only) (7 sections, 28 citations, 4 schema tables, 5 risk rows, 3 Aaron decision points).
+**Memo Delivered:** `.squad/decisions/inbox/crispin-crucible-kr-overlap.md` (7 sections, 28 citations, 4 schema tables, 5 risk rows, 3 Aaron decision points).
 
 ---
 
@@ -97,7 +97,7 @@
 - **Scope:** Two-table graph, query interfaces, persistence boundaries — do they support mocking at London-school boundaries?
 - **Verdict:** ✅ SEAMS HOLD — MINOR ALIGNMENT NEEDED
 - **Key findings:** 5 specific findings, 1 interface addition needed (`session_id?: SessionId` to `RecallQuery`)
-- **Deliverable:** (decision inbox drop — local-only) (full audit report)
+- **Deliverable:** `.squad/decisions/inbox/crispin-20-seam-audit-vs-55.md` (full audit report)
 - **Status:** ✅ PHASE 1 COMPLETE
 
 **Phase 2 — Apply §20 Recommendations After Aaron Approval:**
@@ -172,7 +172,7 @@
 
 **KR Principle Reinforced:** A representation design isn't just about schema correctness (tables, constraints, types) — it's about **seam legibility**. London-school TDD requires clear I/O boundaries to mock. §20's schema is sound, but it didn't make the storage abstraction explicit. This audit revealed a documentation gap, not a design flaw. The fix: add subsection §7.4 "Storage Seam (Mock Boundary)" to name the interface (`FactStore`) and specify contract test requirements.
 
-**Deliverable:** (decision inbox drop — local-only) — 5 findings, 0 schema changes, 1 interface addition, 4 wording clarifications. Verdict: SEAMS HOLD.
+**Deliverable:** `.squad/decisions/inbox/crispin-20-seam-audit-vs-55.md` — 5 findings, 0 schema changes, 1 interface addition, 4 wording clarifications. Verdict: SEAMS HOLD.
 
 ---
 
@@ -314,7 +314,7 @@ Using `updated_at` for recency computation conflates **modification time** with 
 - **Scope:** Two-table graph, query interfaces, persistence boundaries — do they support mocking at London-school boundaries?
 - **Verdict:** ✅ SEAMS HOLD — MINOR ALIGNMENT NEEDED
 - **Key findings:** 5 specific findings, 1 interface addition needed (`session_id?: SessionId` to `RecallQuery`)
-- **Deliverable:** (decision inbox drop — local-only) (full audit report)
+- **Deliverable:** `.squad/decisions/inbox/crispin-20-seam-audit-vs-55.md` (full audit report)
 - **Status:** ✅ PHASE 1 COMPLETE
 
 **Phase 2 — Apply §20 Recommendations After Aaron Approval:**
@@ -389,7 +389,7 @@ Using `updated_at` for recency computation conflates **modification time** with 
 
 **KR Principle Reinforced:** A representation design isn't just about schema correctness (tables, constraints, types) — it's about **seam legibility**. London-school TDD requires clear I/O boundaries to mock. §20's schema is sound, but it didn't make the storage abstraction explicit. This audit revealed a documentation gap, not a design flaw. The fix: add subsection §7.4 "Storage Seam (Mock Boundary)" to name the interface (`FactStore`) and specify contract test requirements.
 
-**Deliverable:** (decision inbox drop — local-only) — 5 findings, 0 schema changes, 1 interface addition, 4 wording clarifications. Verdict: SEAMS HOLD.
+**Deliverable:** `.squad/decisions/inbox/crispin-20-seam-audit-vs-55.md` — 5 findings, 0 schema changes, 1 interface addition, 4 wording clarifications. Verdict: SEAMS HOLD.
 
 ---
 

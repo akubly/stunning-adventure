@@ -150,7 +150,7 @@ My spawn instructions to Scribe listed `orchestration-log/` and `log/` as allowe
 - `agents/{name}/history.md`, `agents/{name}/history-archive.md`
 - `identity/now.md`
 
-Any other `.squad/` paths (log, orchestration-log, sessions, decision inbox, .scratch/) are runtime state — gitignored, local-only.
+Any other `.squad/` paths (log, orchestration-log, sessions, decisions/inbox/, .scratch/) are runtime state — gitignored, local-only.
 
 **Lesson 3 — `test_results.txt` as tracked artifact.**  
 Local test captures with ANSI codes and machine-specific paths (D:/git/...) are never source artifacts. Add to `.gitignore` under `# Local test capture artifacts` and delete from disk.
@@ -176,6 +176,8 @@ ode_modules re-install: cleanup flow handles junction removal before git worktre
 
 
 📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
+
+**Scribe note (2026-06-06T07:00:21Z):** M8 Slice C COMPLETE — Roger (SqliteFactStore + FTS5 BM25 search, PR #48) + Laura (contract/edge audit, 12 tests). FactStore.search() shipped as wrapped `{ results, nextCursor? }` with BM25 ranking, per-page normalization, offset cursor. FSE-1 (parse errors) fixed; FSE-4 (caveat docs) done. Laura's audit: 109→121 tests, all edge cases verified (ordering, round-trip, boundary, isolation, NULL-trust, syntax). Verdict: ✅ ACCEPT-WITH-FOLLOWUPS. Slice D next. Aaron's M8 scope locked: Q1=scaffold-A, Q2=cursor (shipped), Q3=own eureka.db. Ready for follow-up slices.
 
 ### 2026-05-30: Forge Roadmap Synthesis
 

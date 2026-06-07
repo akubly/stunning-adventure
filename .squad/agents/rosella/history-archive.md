@@ -114,7 +114,7 @@ Aaron's brief: "Think big" on extensibility, customization, and ecosystem for Sk
 
 Cross-pollination round against 6 internal peers + Erasmus. Read all peer histories, Erasmus's 4-layer critique, Aaron's post-Erasmus insights (branching = functional requirement; agentic-debugger = vision seed; determinism = load-bearing), and the vocabulary slate.
 
-**Position delivered to inbox:** (decision inbox drop — local-only)
+**Position delivered to inbox:** `.squad/decisions/inbox/rosella-deliberation-position.md`
 
 **Headline moves:**
 - KEPT US-Ro-1, US-Ro-4. REVISED US-Ro-2 (MCP as generator-source, not just tool-binding), US-Ro-3 (promote priority — owns hermetic replay boundary), US-Ro-5 (flagged structural-mutation leak). WITHDREW US-Ro-6 (federation deferred). Added 4 new stories (Generator SDK, plugin-pinned branching, registry+trust tiers, structural-proposal channel).
@@ -131,13 +131,13 @@ T5 resolved — Crucible built on Copilot SDK, replaces Copilot CLI as Aaron's d
 
 ## Round 4 — Phase B Reconciliation against `stunning-adventure` (2026-05-24T23:30Z)
 
-**Inbox:** (decision inbox drop — local-only)
+**Inbox:** `.squad/decisions/inbox/rosella-reconciliation-2026-05-24T2330Z.md`
 
 ---
 
 ## Round 6 — Open #7 resolution: US-A-NEW-5 vs `event_log` (2026-05-25T01:30Z)
 
-**Inbox:** (decision inbox drop — local-only)
+**Inbox:** `.squad/decisions/inbox/rosella-open-7-2026-05-25T0130Z.md`
 
 Resolved the contradiction my Round 4 surfaced. Re-quoted Alexander's
 US-A-NEW-5 verbatim from `agents/alexander/history.md:332-334` (ledger-append
@@ -195,7 +195,7 @@ Read-only sweep across `cairn/`, `forge/`, `skillsmith-runtime/`, `runtime-cli/`
 
 ## Round 7 — v1 Triage (2026-05-25T02:00Z)
 
-**Inbox:** (decision inbox drop — local-only)
+**Inbox:** `.squad/decisions/inbox/rosella-triage-2026-05-25T0200Z.md`
 
 Triaged 10 authored stories + Round-6 #7 work + 2 new stories
 (Mirror Projector, DBOM-frontmatter-for-exports) against Aaron-locked v1
@@ -245,7 +245,7 @@ confirmation, Sonny per-row lineage decision.
 ## Learnings — CTD Phase 1 Lane 2: §7 Generators (L3) (2026-05-28)
 
 **Artifact:** `docs/crucible-technical-design/07-generators-l3.md` (21.2 KB, ≤3pp §7 + ≤1pp Appendix 7-E).
-**Decision drop:** (decision inbox drop — local-only).
+**Decision drop:** `.squad/decisions/inbox/rosella-ctd-phase1-lane2.md`.
 
 ### GenericL3AdapterContract design patterns
 
@@ -625,7 +625,7 @@ Aaron's brief: "Think big" on extensibility, customization, and ecosystem for Sk
 
 Cross-pollination round against 6 internal peers + Erasmus. Read all peer histories, Erasmus's 4-layer critique, Aaron's post-Erasmus insights (branching = functional requirement; agentic-debugger = vision seed; determinism = load-bearing), and the vocabulary slate.
 
-**Position delivered to inbox:** (decision inbox drop — local-only)
+**Position delivered to inbox:** `.squad/decisions/inbox/rosella-deliberation-position.md`
 
 **Headline moves:**
 - KEPT US-Ro-1, US-Ro-4. REVISED US-Ro-2 (MCP as generator-source, not just tool-binding), US-Ro-3 (promote priority — owns hermetic replay boundary), US-Ro-5 (flagged structural-mutation leak). WITHDREW US-Ro-6 (federation deferred). Added 4 new stories (Generator SDK, plugin-pinned branching, registry+trust tiers, structural-proposal channel).
@@ -642,13 +642,13 @@ T5 resolved — Crucible built on Copilot SDK, replaces Copilot CLI as Aaron's d
 
 ## Round 4 — Phase B Reconciliation against `stunning-adventure` (2026-05-24T23:30Z)
 
-**Inbox:** (decision inbox drop — local-only)
+**Inbox:** `.squad/decisions/inbox/rosella-reconciliation-2026-05-24T2330Z.md`
 
 ---
 
 ## Round 6 — Open #7 resolution: US-A-NEW-5 vs `event_log` (2026-05-25T01:30Z)
 
-**Inbox:** (decision inbox drop — local-only)
+**Inbox:** `.squad/decisions/inbox/rosella-open-7-2026-05-25T0130Z.md`
 
 Resolved the contradiction my Round 4 surfaced. Re-quoted Alexander's
 US-A-NEW-5 verbatim from `agents/alexander/history.md:332-334` (ledger-append
@@ -706,7 +706,7 @@ Read-only sweep across `cairn/`, `forge/`, `skillsmith-runtime/`, `runtime-cli/`
 
 ## Round 7 — v1 Triage (2026-05-25T02:00Z)
 
-**Inbox:** (decision inbox drop — local-only)
+**Inbox:** `.squad/decisions/inbox/rosella-triage-2026-05-25T0200Z.md`
 
 Triaged 10 authored stories + Round-6 #7 work + 2 new stories
 (Mirror Projector, DBOM-frontmatter-for-exports) against Aaron-locked v1
@@ -756,7 +756,7 @@ confirmation, Sonny per-row lineage decision.
 ## Learnings — CTD Phase 1 Lane 2: §7 Generators (L3) (2026-05-28)
 
 **Artifact:** `docs/crucible-technical-design/07-generators-l3.md` (21.2 KB, ≤3pp §7 + ≤1pp Appendix 7-E).
-**Decision drop:** (decision inbox drop — local-only).
+**Decision drop:** `.squad/decisions/inbox/rosella-ctd-phase1-lane2.md`.
 
 ### GenericL3AdapterContract design patterns
 

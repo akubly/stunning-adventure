@@ -4,13 +4,13 @@ Archived entries (pre-summarization).
 
 ---
 
-📌 **M8 Slice A Cycle-2 Re-validation** (2026-06-02): Re-validated Roger's 6-commit cycle-2 drop (I1/I4/I5/I6/I2/M1–M5). All 9 mandatory checks passed. Key findings: (1) subpath export `@akubly/eureka/sqlite` resolves correctly — `SqliteFactReader` / `openDatabase` / `applyMigrations` all `function`, root path correctly rejects `SqliteFactReader` import; (2) `better-sqlite3` correctly in `optionalDependencies`; (3) migration IMMEDIATE transaction confirmed as actual CALL via `txFn.immediate()` (better-sqlite3 idiom); (4) WAL fallback writes to `process.stderr.write()` — MCP stdio rule honored; (5) `busy_timeout = 5000` present; (6) M3 seed uses `INSERT OR REPLACE`; (7) M4 cleanup wired in `afterEach`; (8) I2 deferral comment present. Added DB-CL-6 (concurrent first-open race: two handles, applyMigrations twice → schema_version=1, no error) and DB-CL-7/M3 (seed-twice via INSERT OR REPLACE does not throw, last value wins). Test count: 84 → 86. Verdict: ✅ ACCEPT. Decision drop: (decision inbox drop — local-only). — Laura
+📌 **M8 Slice A Cycle-2 Re-validation** (2026-06-02): Re-validated Roger's 6-commit cycle-2 drop (I1/I4/I5/I6/I2/M1–M5). All 9 mandatory checks passed. Key findings: (1) subpath export `@akubly/eureka/sqlite` resolves correctly — `SqliteFactReader` / `openDatabase` / `applyMigrations` all `function`, root path correctly rejects `SqliteFactReader` import; (2) `better-sqlite3` correctly in `optionalDependencies`; (3) migration IMMEDIATE transaction confirmed as actual CALL via `txFn.immediate()` (better-sqlite3 idiom); (4) WAL fallback writes to `process.stderr.write()` — MCP stdio rule honored; (5) `busy_timeout = 5000` present; (6) M3 seed uses `INSERT OR REPLACE`; (7) M4 cleanup wired in `afterEach`; (8) I2 deferral comment present. Added DB-CL-6 (concurrent first-open race: two handles, applyMigrations twice → schema_version=1, no error) and DB-CL-7/M3 (seed-twice via INSERT OR REPLACE does not throw, last value wins). Test count: 84 → 86. Verdict: ✅ ACCEPT. Decision drop: `.squad/decisions/inbox/laura-m8-slice-a-cycle2-audit.md`. — Laura
 
-📌 **M8 Slice A contract audit + edges** (2026-06-01): Audited CL-1..CL-5 in `fact-reader.contract.test.ts` for SQLite-semantic completeness. 4 of 5 invariants survived unchanged. CL-4 was silent on whether `seed` must write to the backing store — tightened: comment + test name now explicitly state "NaN trust round-trips through the storage write/read cycle" and document the NaN→NULL→NaN conversion requirement. Roger independently arrived at the same strengthening in his commit (convergence = confidence). Added `fact-reader-sqlite-edges.test.ts` with 5 real (non-todo) edge tests: DB-CL-1 (NaN through disk close+reopen), DB-CL-2 (UNIQUE constraint enforced), DB-CL-3 (applyMigrations idempotent), DB-CL-4 (WAL persistence), DB-CL-5 (trust=0 + empty content boundary). All 84 tests green. Roger's impl passes. Decision drop: (decision inbox drop — local-only). — Laura
+📌 **M8 Slice A contract audit + edges** (2026-06-01): Audited CL-1..CL-5 in `fact-reader.contract.test.ts` for SQLite-semantic completeness. 4 of 5 invariants survived unchanged. CL-4 was silent on whether `seed` must write to the backing store — tightened: comment + test name now explicitly state "NaN trust round-trips through the storage write/read cycle" and document the NaN→NULL→NaN conversion requirement. Roger independently arrived at the same strengthening in his commit (convergence = confidence). Added `fact-reader-sqlite-edges.test.ts` with 5 real (non-todo) edge tests: DB-CL-1 (NaN through disk close+reopen), DB-CL-2 (UNIQUE constraint enforced), DB-CL-3 (applyMigrations idempotent), DB-CL-4 (WAL persistence), DB-CL-5 (trust=0 + empty content boundary). All 84 tests green. Roger's impl passes. Decision drop: `.squad/decisions/inbox/laura-m8-slice-a-contract-audit.md`. — Laura
 
 📌 **ADR-0019 CONTRIBUTION** (2026-05-30T194147Z): Wall-clock replay-determinism bug finding (independent convergence with Graham) + 8 A-Fork-* acceptance scenarios added to §16.9. Key insight: hermetic replay requires logical-time (offset), not wall-clock time. Multi-persona convergence on this correctness violation made the blocker non-negotiable. Test tier coverage: contract (A-Fork-1/2/3), component (A-Fork-4/6/7), acceptance (A-Fork-5/8). Capture for future: Cross-persona review with distinct lenses (Architect + Tester) surfaces correctness bugs that unit tests or single-reviewer design alone would miss.
 
-📌 Team update (2026-05-30T122214Z): **childSid collision hybrid review DONE** — Laura testability review complete. Verdict: APPROVE-WITH-CONDITIONS. Two required fixes: (1) time-aware default MUST use logical session time (replay-determinism landmine if wall-clock-dependent), (2) fork_resume Observation sub-kind needed in §6.3. Test coverage: 8 new acceptance scenarios (A-Fork-1 through A-Fork-8), all 4 user stories testable, replay determinism via Decision row recording. Review doc: (decision inbox drop — local-only). Awaiting Aaron ruling on time-threshold vs. always-default-to-Fresh. — Laura
+📌 Team update (2026-05-30T122214Z): **childSid collision hybrid review DONE** — Laura testability review complete. Verdict: APPROVE-WITH-CONDITIONS. Two required fixes: (1) time-aware default MUST use logical session time (replay-determinism landmine if wall-clock-dependent), (2) fork_resume Observation sub-kind needed in §6.3. Test coverage: 8 new acceptance scenarios (A-Fork-1 through A-Fork-8), all 4 user stories testable, replay determinism via Decision row recording. Review doc: `.squad/decisions/inbox/laura-review-childsid-hybrid.md`. Awaiting Aaron ruling on time-threshold vs. always-default-to-Fresh. — Laura
 
 📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Laura (C-9 conformance threading in §16.9 + ADR template with Acceptance Signals subsection). Coordinate with Rosella on C-9 forward-compatibility note; coordinate with Graham on ADR template socialization. All Pass A agents complete. — Scribe
 
@@ -55,7 +55,7 @@ Archived entries (pre-summarization).
 
 **Key learning:** Time-aware defaults in interactive workflows are subtle replay-determinism hazards. Any decision that depends on "how long ago was X?" must inject logical time from session context, not read wall clock. The same pattern applies anywhere §11.6 replay oracle must reproduce user-facing prompts: if the prompt text changes based on computed recency ("3 days ago"), the recency calculation must be session-scoped logical time. Wall-clock dependency is replay divergence. This is the same class of hazard as §6.9 Monotonic-Timestamps invariant, but at the user-visible-prompt layer rather than the row-emission layer.
 
-**Decision drop:** (decision inbox drop — local-only).
+**Decision drop:** `.squad/decisions/inbox/laura-review-childsid-hybrid.md`.
 
 ## 2026-05-28: CTD Phase 4 Honesty Amendments (§11 + §16) — FINAL
 
@@ -81,7 +81,7 @@ disjoint, non-substitutable layers (trace-replay v1, mutation-testing v1,
 behavioral-reproducibility v1.5+) with hard rule against cross-layer
 evidence quoting.
 
-**Decision drop:** (decision inbox drop — local-only).
+**Decision drop:** `.squad/decisions/inbox/laura-ctd-phase4-honesty.md`.
 
 **Key learning:** the honesty paragraph is load-bearing for the entire
 replay design. Budget overruns in §11.10 are justified — every future
@@ -147,7 +147,7 @@ it makes and ship a feature depending on the stronger claim being true.
 
 **Artifacts:**
 - Fixed test file: packages/forge/src/__tests__/wave4-pipeline.test.ts (14/14 passing)
-- Decision doc: (decision inbox drop — local-only) (to be written)
+- Decision doc: .squad/decisions/inbox/laura-w4-4-infra-fix.md (to be written)
 
 **Commit:** 472e77d - "W4-4: fix integration test infrastructure → 14/14 green"
 
@@ -665,7 +665,7 @@ Key learnings consolidated into § Core Patterns above.
 
 **Branch:** `issue-17/async-io-sweep`  
 **Commit:** (see git log)  
-**Artifacts:** docs/issue-17-async-io-sweep-findings.md, (decision inbox drop — local-only), .squad/skills/async-io-audit/SKILL.md
+**Artifacts:** docs/issue-17-async-io-sweep-findings.md, .squad/decisions/inbox/laura-w5-5-async-test-plan.md, .squad/skills/async-io-audit/SKILL.md
 
 ## Learnings
 
@@ -709,7 +709,7 @@ Writing tests before implementation means import bindings for not-yet-exported s
 - `packages/cairn/src/__tests__/migration015.test.ts`
 - `packages/cairn/src/__tests__/worktreeSessions.test.ts`
 - `packages/cairn/src/__tests__/worktreeMcp.test.ts`
-- (decision inbox drop — local-only)
+- `.squad/decisions/inbox/laura-issue-11-tests.md`
 
 ## Session: 2026-05-28 Wave 6 Tail — WI-A Tests Complete
 
@@ -878,13 +878,13 @@ Writing tests before implementation means import bindings for not-yet-exported s
 
 **Key learning:** My original Q1 framing (A/B/C options) missed the **primitive-scale axis** entirely. Aaron's per-Decision observation capture + tool-call scale resolves both vocabulary collision and scale ambiguity. Fourth option (per-Decision) was the right answer I didn't see.
 
-**Deliverable:** (decision inbox drop — local-only) (5.2KB validation doc with 5-section breakdown)
+**Deliverable:** `.squad/decisions/inbox/laura-q1-option-e-validation.md` (5.2KB validation doc with 5-section breakdown)
 
 ---
 
 ## Deliberation Round (2026-05-24)
 
-Cross-pollination against Erasmus's 4-layer stack + Aaron's branching/agentic-debugger/determinism insights. Full position written to (decision inbox drop — local-only).
+Cross-pollination against Erasmus's 4-layer stack + Aaron's branching/agentic-debugger/determinism insights. Full position written to `.squad/decisions/inbox/laura-deliberation-position.md`.
 
 **Story revisions:**
 - KEEP: US-L-1, L-2 (strengthened: per-branch ESS), L-4, L-5, L-6 (strengthened: branch divergence detection), L-7.
@@ -1034,7 +1034,7 @@ No change to my round-2 commitments on Pareto fitness ownership, branching-as-ev
 
 ## 2026-05-24 Round 4: Phase B reconciliation against existing monorepo
 
-**Scope:** Reconcile my stories (US-L-1..8 + revisions L-NEW-9..13 + Round-3 8-field schema/A1-A4/ReadSetBuilder lock) against the live `D:\git\stunning-adventure` monorepo (Cairn + Forge + skillsmith-runtime + runtime-cli + types). Read-only. Full detail in (decision inbox drop — local-only).
+**Scope:** Reconcile my stories (US-L-1..8 + revisions L-NEW-9..13 + Round-3 8-field schema/A1-A4/ReadSetBuilder lock) against the live `D:\git\stunning-adventure` monorepo (Cairn + Forge + skillsmith-runtime + runtime-cli + types). Read-only. Full detail in `.squad/decisions/inbox/laura-reconciliation-2026-05-24T2330Z.md`.
 
 **Summary counts:** 0 ALREADY-EXISTS verbatim · 9 PARTIALLY-EXISTS · 9 NET-NEW · 2 CONTRADICTS-EXISTING (canonical serialization algorithm, `evidence` field shape).
 
@@ -1056,7 +1056,7 @@ No change to my round-2 commitments on Pareto fitness ownership, branching-as-ev
 
 ## 2026-05-25 Round 7: v1 framework triage
 
-**Scope:** Tier every story I authored (US-L-1..8, US-L-NEW-9..13, Round-3 lock deliverables) against Aaron's v1 framework: `v1 = MVP that validates the thesis"Aaron can run a one-week productivity loop where every improvement to Crucible is made by Crucible.'` Tiers T1-T6 + Parking. Full output: (decision inbox drop — local-only).
+**Scope:** Tier every story I authored (US-L-1..8, US-L-NEW-9..13, Round-3 lock deliverables) against Aaron's v1 framework: `v1 = MVP that validates the thesis"Aaron can run a one-week productivity loop where every improvement to Crucible is made by Crucible.'` Tiers T1-T6 + Parking. Full output: `.squad/decisions/inbox/laura-triage-2026-05-25T0200Z.md`.
 
 **Triage shape:** 6 T1 / 7 T2 / 3 T3 / 1 T4 / 1 DONE. Two stories split (US-L-NEW-9 and US-L-NEW-13 — lite version T1, full version T2). One merge (US-L-3 folded into US-L-NEW-9, lifting `ValidationResult.tier` enum verbatim). Zero drops.
 
@@ -1119,7 +1119,7 @@ No change to my round-2 commitments on Pareto fitness ownership, branching-as-ev
 - **5-layer mock drift defense** (§7): PR-time contract tests, build-time fixture builders, nightly golden files, PR-time CI double-check runs, build-time API stability tracking
 - **8 open questions** (§11): PRD ambiguities requiring Aaron resolution before test strategy execution
 - **10 anti-goals** (§12): Explicitly rejected testing anti-patterns (100% coverage mandate, mocking private methods, integration-only tests, shared mutable state, flaky tests tolerated, test-later mindset, manual-only validation, happy-path-only, unowned tests)
-- **Decision record:** (decision inbox drop — local-only)
+- **Decision record:** `.squad/decisions/inbox/laura-crucible-tdd-strategy.md`
 
 **Key Learning: London-School Adaptation for Agentic Runtimes**
 
@@ -1226,7 +1226,7 @@ No change to my round-2 commitments on Pareto fitness ownership, branching-as-ev
 ### 4. Deliverables
 
 1. **`docs/crucible-tdd-strategy.md`** revised in place ✓ — Status: FINAL — 8 Open Questions Resolved 2026-05-27
-2. **(decision inbox drop — local-only)** decision drop created ✓
+2. **`.squad/decisions/inbox/laura-crucible-tdd-strategy-revision.md`** decision drop created ✓
 3. **`.squad/agents/laura/history.md`** appended (this entry) ✓
 
 ---
@@ -1236,7 +1236,7 @@ No change to my round-2 commitments on Pareto fitness ownership, branching-as-ev
 
 **Date:** Phase 2 fan-out.
 **Output:** `docs/crucible-technical-design/16-test-strategy-invariants.md` (16,182 bytes).
-**Decision drop:** (decision inbox drop — local-only).
+**Decision drop:** `.squad/decisions/inbox/laura-ctd-phase2-laura.md`.
 
 ### Pattern: §16 as a cross-reference document, not a re-author
 
@@ -1299,7 +1299,7 @@ See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-rev
 **What shipped:**
 - §16.9 edit: Added explicit C-9 acceptance signal to §7.A Generic L3 Adapter Conformance entry with observable signal ("conformance suite rejects generators that emit supersede-replacement proposals without valid parentId lineage") + coordination note for Rosella (PA-B4 may shift §7.A test harness, but C-9 contract is stable).
 - docs/adr/adr-template.md: New template file with mandatory "Acceptance Signals" subsection using five-tier taxonomy (contract/component/acceptance/invariant/countersignal).
-- Decision drop: (decision inbox drop — local-only) for Graham (ADR template review + backfill coordination) and Rosella (FYI on C-9 coordination note).
+- Decision drop: .squad/decisions/inbox/laura-pass-a-test-strategy.md for Graham (ADR template review + backfill coordination) and Rosella (FYI on C-9 coordination note).
 
 **Key learning — ADRs define WHAT but not HOW WE KNOW it worked:**
 - Examined ADRs 0001/0002/0006/0011/0018. All have strong "What Changes" (implementation surface) and "Consequences" (impact), but none explicitly define acceptance signals — the observable test-strategy-level evidence that the ADR is correctly implemented.
@@ -1381,7 +1381,7 @@ When spawning test-authoring agents, point to the ADR's Acceptance Signals subse
 
 📌 **ADR-0019 CONTRIBUTION** (2026-05-30T194147Z): Wall-clock replay-determinism bug finding (independent convergence with Graham) + 8 A-Fork-* acceptance scenarios added to §16.9. Key insight: hermetic replay requires logical-time (offset), not wall-clock time. Multi-persona convergence on this correctness violation made the blocker non-negotiable. Test tier coverage: contract (A-Fork-1/2/3), component (A-Fork-4/6/7), acceptance (A-Fork-5/8). Capture for future: Cross-persona review with distinct lenses (Architect + Tester) surfaces correctness bugs that unit tests or single-reviewer design alone would miss.
 
-📌 Team update (2026-05-30T122214Z): **childSid collision hybrid review DONE** — Laura testability review complete. Verdict: APPROVE-WITH-CONDITIONS. Two required fixes: (1) time-aware default MUST use logical session time (replay-determinism landmine if wall-clock-dependent), (2) fork_resume Observation sub-kind needed in §6.3. Test coverage: 8 new acceptance scenarios (A-Fork-1 through A-Fork-8), all 4 user stories testable, replay determinism via Decision row recording. Review doc: (decision inbox drop — local-only). Awaiting Aaron ruling on time-threshold vs. always-default-to-Fresh. — Laura
+📌 Team update (2026-05-30T122214Z): **childSid collision hybrid review DONE** — Laura testability review complete. Verdict: APPROVE-WITH-CONDITIONS. Two required fixes: (1) time-aware default MUST use logical session time (replay-determinism landmine if wall-clock-dependent), (2) fork_resume Observation sub-kind needed in §6.3. Test coverage: 8 new acceptance scenarios (A-Fork-1 through A-Fork-8), all 4 user stories testable, replay determinism via Decision row recording. Review doc: `.squad/decisions/inbox/laura-review-childsid-hybrid.md`. Awaiting Aaron ruling on time-threshold vs. always-default-to-Fresh. — Laura
 
 📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Laura (C-9 conformance threading in §16.9 + ADR template with Acceptance Signals subsection). Coordinate with Rosella on C-9 forward-compatibility note; coordinate with Graham on ADR template socialization. All Pass A agents complete. — Scribe
 
@@ -1437,7 +1437,7 @@ When spawning test-authoring agents, point to the ADR's Acceptance Signals subse
 
 **Key learning:** Time-aware defaults in interactive workflows are subtle replay-determinism hazards. Any decision that depends on "how long ago was X?" must inject logical time from session context, not read wall clock. The same pattern applies anywhere §11.6 replay oracle must reproduce user-facing prompts: if the prompt text changes based on computed recency ("3 days ago"), the recency calculation must be session-scoped logical time. Wall-clock dependency is replay divergence. This is the same class of hazard as §6.9 Monotonic-Timestamps invariant, but at the user-visible-prompt layer rather than the row-emission layer.
 
-**Decision drop:** (decision inbox drop — local-only).
+**Decision drop:** `.squad/decisions/inbox/laura-review-childsid-hybrid.md`.
 
 ## 2026-05-28: CTD Phase 4 Honesty Amendments (§11 + §16) — FINAL
 
@@ -1463,7 +1463,7 @@ disjoint, non-substitutable layers (trace-replay v1, mutation-testing v1,
 behavioral-reproducibility v1.5+) with hard rule against cross-layer
 evidence quoting.
 
-**Decision drop:** (decision inbox drop — local-only).
+**Decision drop:** `.squad/decisions/inbox/laura-ctd-phase4-honesty.md`.
 
 **Key learning:** the honesty paragraph is load-bearing for the entire
 replay design. Budget overruns in §11.10 are justified — every future
@@ -1529,7 +1529,7 @@ it makes and ship a feature depending on the stronger claim being true.
 
 **Artifacts:**
 - Fixed test file: packages/forge/src/__tests__/wave4-pipeline.test.ts (14/14 passing)
-- Decision doc: (decision inbox drop — local-only) (to be written)
+- Decision doc: .squad/decisions/inbox/laura-w4-4-infra-fix.md (to be written)
 
 **Commit:** 472e77d - "W4-4: fix integration test infrastructure → 14/14 green"
 
@@ -2047,7 +2047,7 @@ Key learnings consolidated into § Core Patterns above.
 
 **Branch:** `issue-17/async-io-sweep`  
 **Commit:** (see git log)  
-**Artifacts:** docs/issue-17-async-io-sweep-findings.md, (decision inbox drop — local-only), .squad/skills/async-io-audit/SKILL.md
+**Artifacts:** docs/issue-17-async-io-sweep-findings.md, .squad/decisions/inbox/laura-w5-5-async-test-plan.md, .squad/skills/async-io-audit/SKILL.md
 
 ## Learnings
 
@@ -2091,7 +2091,7 @@ Writing tests before implementation means import bindings for not-yet-exported s
 - `packages/cairn/src/__tests__/migration015.test.ts`
 - `packages/cairn/src/__tests__/worktreeSessions.test.ts`
 - `packages/cairn/src/__tests__/worktreeMcp.test.ts`
-- (decision inbox drop — local-only)
+- `.squad/decisions/inbox/laura-issue-11-tests.md`
 
 ## Session: 2026-05-28 Wave 6 Tail — WI-A Tests Complete
 
@@ -2260,13 +2260,13 @@ Writing tests before implementation means import bindings for not-yet-exported s
 
 **Key learning:** My original Q1 framing (A/B/C options) missed the **primitive-scale axis** entirely. Aaron's per-Decision observation capture + tool-call scale resolves both vocabulary collision and scale ambiguity. Fourth option (per-Decision) was the right answer I didn't see.
 
-**Deliverable:** (decision inbox drop — local-only) (5.2KB validation doc with 5-section breakdown)
+**Deliverable:** `.squad/decisions/inbox/laura-q1-option-e-validation.md` (5.2KB validation doc with 5-section breakdown)
 
 ---
 
 ## Deliberation Round (2026-05-24)
 
-Cross-pollination against Erasmus's 4-layer stack + Aaron's branching/agentic-debugger/determinism insights. Full position written to (decision inbox drop — local-only).
+Cross-pollination against Erasmus's 4-layer stack + Aaron's branching/agentic-debugger/determinism insights. Full position written to `.squad/decisions/inbox/laura-deliberation-position.md`.
 
 **Story revisions:**
 - KEEP: US-L-1, L-2 (strengthened: per-branch ESS), L-4, L-5, L-6 (strengthened: branch divergence detection), L-7.
@@ -2416,7 +2416,7 @@ No change to my round-2 commitments on Pareto fitness ownership, branching-as-ev
 
 ## 2026-05-24 Round 4: Phase B reconciliation against existing monorepo
 
-**Scope:** Reconcile my stories (US-L-1..8 + revisions L-NEW-9..13 + Round-3 8-field schema/A1-A4/ReadSetBuilder lock) against the live `D:\git\stunning-adventure` monorepo (Cairn + Forge + skillsmith-runtime + runtime-cli + types). Read-only. Full detail in (decision inbox drop — local-only).
+**Scope:** Reconcile my stories (US-L-1..8 + revisions L-NEW-9..13 + Round-3 8-field schema/A1-A4/ReadSetBuilder lock) against the live `D:\git\stunning-adventure` monorepo (Cairn + Forge + skillsmith-runtime + runtime-cli + types). Read-only. Full detail in `.squad/decisions/inbox/laura-reconciliation-2026-05-24T2330Z.md`.
 
 **Summary counts:** 0 ALREADY-EXISTS verbatim · 9 PARTIALLY-EXISTS · 9 NET-NEW · 2 CONTRADICTS-EXISTING (canonical serialization algorithm, `evidence` field shape).
 
@@ -2438,7 +2438,7 @@ No change to my round-2 commitments on Pareto fitness ownership, branching-as-ev
 
 ## 2026-05-25 Round 7: v1 framework triage
 
-**Scope:** Tier every story I authored (US-L-1..8, US-L-NEW-9..13, Round-3 lock deliverables) against Aaron's v1 framework: `v1 = MVP that validates the thesis"Aaron can run a one-week productivity loop where every improvement to Crucible is made by Crucible.'` Tiers T1-T6 + Parking. Full output: (decision inbox drop — local-only).
+**Scope:** Tier every story I authored (US-L-1..8, US-L-NEW-9..13, Round-3 lock deliverables) against Aaron's v1 framework: `v1 = MVP that validates the thesis"Aaron can run a one-week productivity loop where every improvement to Crucible is made by Crucible.'` Tiers T1-T6 + Parking. Full output: `.squad/decisions/inbox/laura-triage-2026-05-25T0200Z.md`.
 
 **Triage shape:** 6 T1 / 7 T2 / 3 T3 / 1 T4 / 1 DONE. Two stories split (US-L-NEW-9 and US-L-NEW-13 — lite version T1, full version T2). One merge (US-L-3 folded into US-L-NEW-9, lifting `ValidationResult.tier` enum verbatim). Zero drops.
 
@@ -2501,7 +2501,7 @@ No change to my round-2 commitments on Pareto fitness ownership, branching-as-ev
 - **5-layer mock drift defense** (§7): PR-time contract tests, build-time fixture builders, nightly golden files, PR-time CI double-check runs, build-time API stability tracking
 - **8 open questions** (§11): PRD ambiguities requiring Aaron resolution before test strategy execution
 - **10 anti-goals** (§12): Explicitly rejected testing anti-patterns (100% coverage mandate, mocking private methods, integration-only tests, shared mutable state, flaky tests tolerated, test-later mindset, manual-only validation, happy-path-only, unowned tests)
-- **Decision record:** (decision inbox drop — local-only)
+- **Decision record:** `.squad/decisions/inbox/laura-crucible-tdd-strategy.md`
 
 **Key Learning: London-School Adaptation for Agentic Runtimes**
 
@@ -2608,7 +2608,7 @@ No change to my round-2 commitments on Pareto fitness ownership, branching-as-ev
 ### 4. Deliverables
 
 1. **`docs/crucible-tdd-strategy.md`** revised in place ✓ — Status: FINAL — 8 Open Questions Resolved 2026-05-27
-2. **(decision inbox drop — local-only)** decision drop created ✓
+2. **`.squad/decisions/inbox/laura-crucible-tdd-strategy-revision.md`** decision drop created ✓
 3. **`.squad/agents/laura/history.md`** appended (this entry) ✓
 
 ---
@@ -2618,7 +2618,7 @@ No change to my round-2 commitments on Pareto fitness ownership, branching-as-ev
 
 **Date:** Phase 2 fan-out.
 **Output:** `docs/crucible-technical-design/16-test-strategy-invariants.md` (16,182 bytes).
-**Decision drop:** (decision inbox drop — local-only).
+**Decision drop:** `.squad/decisions/inbox/laura-ctd-phase2-laura.md`.
 
 ### Pattern: §16 as a cross-reference document, not a re-author
 
@@ -2681,7 +2681,7 @@ See .squad/identity/now.md and .squad/log/2026-05-30-072142Z-crucible-pass-a-rev
 **What shipped:**
 - §16.9 edit: Added explicit C-9 acceptance signal to §7.A Generic L3 Adapter Conformance entry with observable signal ("conformance suite rejects generators that emit supersede-replacement proposals without valid parentId lineage") + coordination note for Rosella (PA-B4 may shift §7.A test harness, but C-9 contract is stable).
 - docs/adr/adr-template.md: New template file with mandatory "Acceptance Signals" subsection using five-tier taxonomy (contract/component/acceptance/invariant/countersignal).
-- Decision drop: (decision inbox drop — local-only) for Graham (ADR template review + backfill coordination) and Rosella (FYI on C-9 coordination note).
+- Decision drop: .squad/decisions/inbox/laura-pass-a-test-strategy.md for Graham (ADR template review + backfill coordination) and Rosella (FYI on C-9 coordination note).
 
 **Key learning — ADRs define WHAT but not HOW WE KNOW it worked:**
 - Examined ADRs 0001/0002/0006/0011/0018. All have strong "What Changes" (implementation surface) and "Consequences" (impact), but none explicitly define acceptance signals — the observable test-strategy-level evidence that the ADR is correctly implemented.
@@ -2768,7 +2768,7 @@ When spawning test-authoring agents, point to the ADR's Acceptance Signals subse
 - Fixed inline signature sketch in the M6-B section: dropped `clock: ClockProvider` from the `applyFeedbackById` deps shape
 - Removed `fixedClock` const and `FIXED_NOW_MS` — both fully unused after call-site cleanup (no ClockProvider import in this file either)
 
-**Validation:** 37/37 tests pass. No Edgar inbox drop present ((decision inbox drop — local-only) does not exist); no new regression-lock test added.
+**Validation:** 37/37 tests pass. No Edgar inbox drop present (`.squad/decisions/inbox/edgar-m5m6-cycle2.md` does not exist); no new regression-lock test added.
 
 **Pattern reinforced:** When an impl change removes a dep from a type, always grep the companion test file for the old field name — tsc exclusion of `__tests__` means excess-property checks won't catch stale injections.
 

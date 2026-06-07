@@ -9,7 +9,7 @@ Both §9 and §13 flag Sonny advisory consult per Appendix C consultant rows. Sp
 - `docs/crucible-technical-design/09-aperture.md` — FINAL.
 - `docs/crucible-technical-design/13-crucible-cli-shell.md` — FINAL.
 - `docs/crucible-technical-design/05-router-design.md` — surgical §5.3 patch (finding 6b).
-- (decision inbox drop — local-only) — decision drop.
+- `.squad/decisions/inbox/valanice-ctd-phase2-valanice.md` — decision drop.
 
 
 📌 Team update (2026-05-28T20-00-00Z): **Crucible CTD Phase 4 UIS Framing Lock — 8/8 STRENGTHENS + Rubber-Duck Reframing ADOPTED** — All 8 team weigh-ins returned STRENGTHENS verdicts; rubber-duck delivered precision reframing ("minimal typed trace algebra" vs "universal ISA"); Aaron locked three coupled decisions: (1) adopt reframing (ADR-0019), (2) adopt BOTH missing concepts (CALL/RET + Scheduler tier), (3) Phase 4 NOW. All 4 amendments SHIPPED (yours §1/§6/§19 FINAL; Roger §3/§10 FINAL; Gabriel §5/§17 FINAL; Laura §11/§16 FINAL). CTD structurally complete; synthesis review in flight. Merged to decisions.md. — Scribe
