@@ -340,6 +340,22 @@ Pitfall #5 incorrectly stated that `resolveOptimizationHint` was not exported fr
 
 **Documentation debt pattern:** when a public API export is added as a review fix, also update any SKILL.md pitfalls that reference the non-exported version. Export additions don't automatically propagate to narrative documentation.
 
+---
+
+## Learnings — 2026-06-06: PR #53 Persona-Review Fixes (worktree fallback warnings)
+
+### Isolation vs. consistency: the npm-install fallback is MORE isolated, not less
+
+When the junction-link fails and we fall back to `npm install` in the worktree, the worktree gets its **own** `node_modules`. That is MORE isolated than a junction (no shared state at all). What degrades is **consistency** (versions may diverge from the main checkout) and **efficiency** (slower, more disk). The original warning said "Dependency isolation is degraded" — that was backwards. Corrected to: *"Dependencies may differ from the main checkout (slower, not shared)."*
+
+**Rule:** isolation ≠ consistency. When writing warnings about fallback dependency strategies, distinguish the two: isolation is about whether the worktree shares state; consistency is about whether versions match.
+
+### Dual-description completeness gap
+
+The squad.agent.md had two descriptions of the same junction-link fallback: once in the "Worktree Lifecycle Management → Dependency management" reference section (line 676 region) and once in the Pre-Spawn step 2d error-handling block. The Pre-Spawn block had the user-visible warning; the reference section did not. An agent following only the reference section would degrade silently.
+
+**Rule:** whenever an instruction appears in both a reference/overview section and a procedural step, both must include all safety-critical outputs (warnings, logs). Review cross-references before shipping.
+
 
 
 ## Learnings — 2026-06-06: Doc Hygiene Re-scope (PR #52, issue #46)
