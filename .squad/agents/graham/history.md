@@ -340,3 +340,28 @@ Pitfall #5 incorrectly stated that `resolveOptimizationHint` was not exported fr
 
 **Documentation debt pattern:** when a public API export is added as a review fix, also update any SKILL.md pitfalls that reference the non-exported version. Export additions don't automatically propagate to narrative documentation.
 
+
+
+## Learnings — 2026-06-06: Doc Hygiene Re-scope (PR #52, issue #46)
+
+### Pointer vs. Policy vs. Writer-Target distinction
+
+Five categories of `.squad/decisions/inbox/` references require different treatment in committed prose:
+
+1. **Broken followable POINTER** (FIX): Prose that cites a specific `inbox/{slug}.md` filename as a stable reference — e.g., `**Artifact:** Merged from .squad/decisions/inbox/graham-ctd-phase4-synthesis.md`, `**Deliverable:** .squad/decisions/inbox/crispin-20-seam-audit-vs-55.md`, `From .squad/decisions/inbox/X.md`, file-inventory bullets, R8 verdict file lists. Replace with slug-preserving plain text (e.g., "decision drop: graham-ctd-phase4-synthesis (local-only)") to retain searchability. Fix any resulting malformed prose (dangling "— this file" → "— this decision entry").
+2. **Gitignore-policy documentation** (KEEP): Bulleted "Explicitly prohibited (gitignored runtime state)" lists, rationale sentences ("`.squad/decisions/inbox/` is gitignored"), and policy-description lines ("Cited gitignored `.squad/decisions/inbox/` paths"). These document the policy, not broken pointers.
+3. **Generic directory narration** (KEEP): Location descriptions like "directive files in `.squad/decisions/inbox/`" — accurate operational narration, not a broken pointer.
+4. **Inside Before:/After: code blocks** (KEEP): Examples documenting historical changes are not live pointers.
+5. **Forward writer-target paths** (NEVER TOUCH): Charters, templates, skills.
+
+### Append-only history files are immutable
+
+Agent history.md and history-archive.md are append-only. No hygiene sweep — not even doc cleanup — may retroactively edit committed history entries. This mirrors the over-reach that caused PR #44 to be reverted.
+
+### "Zero hits" acceptance criteria can be relaxed
+
+Issue #46 originally required zero `decisions/inbox/` hits. Aaron approved relaxing this: the criterion is "zero broken followable file-path pointers," not literally zero string occurrences. Policy-list bullets legitimately retain the bare directory path.
+
+### Merge decisions-archive.md from a current main base
+
+When a branch is behind main and decisions-archive.md diverged significantly, reset to `origin/main` before applying pointer fixes — do not rely on auto-merge, which can produce duplicated sections.
