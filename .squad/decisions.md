@@ -3727,3 +3727,60 @@ The SQLite adapter is the substrate for any future Refactor 4 / Phase 2 work (fi
 Both cycles declared **REVIEW-COMPLETE** with diminishing returns. All findings either RESOLVED or documented as deferred (splitting integration tests, migration/user_version seam, L1 WAL).
 
 **Ship cleared for Refactor 3.** Feature PR ready to merge.
+
+---
+
+## 2026-06-06: Refined Scope Rule for Doc-Hygiene Inbox-Path Sweeps
+
+**Date:** 2026-06-06  
+**Author:** Graham Knight (Lead / Architect)  
+**Status:** FINAL  
+**Context:** PR #52 re-scope (issue #46), per Aaron's direction after persona-review panel findings
+
+### Decision
+
+When sweeping committed prose to remove broken `.squad/decisions/inbox/` path references, apply a **three-way distinction**:
+
+#### 1. FIX — Specific inbox file-path pointers
+
+**Definition:** Prose that cites a concrete `inbox/{name}-{slug}.md` filename as if it were a stable, followable link.
+
+**Action:** Replace the path with a slug-preserving plain-text description. Per Skeptic panel suggestion, retaining the filename slug (without the directory path) preserves searchability — e.g., `decision drop: graham-ctd-phase4-synthesis (local-only, now incorporated in this archive)`.
+
+**Also fix:** Any malformed prose introduced by the replacement — dangling "— this file" self-references should become "— this decision entry".
+
+**Examples fixed in PR #52:**
+- `Merged from .squad/decisions/inbox/graham-ctd-phase4-synthesis.md` → `Merged from decision drop: graham-ctd-phase4-synthesis (local-only, now incorporated in this archive)`
+- `.squad/decisions/inbox/laura-crucible-first-red-test.md — this file` → `decision drop: laura-crucible-first-red-test (local-only) — this decision entry`
+
+#### 2. KEEP / RESTORE — Gitignore-policy documentation
+
+**Definition:** Bulleted "Explicitly prohibited (gitignored runtime state)" lists that name the inbox path as one of several gitignored directories.
+
+**Action:** Keep the literal `.squad/decisions/inbox/` path verbatim. These bullets document the gitignore policy — they are not broken pointers to any specific file. All sibling paths (`.squad/orchestration-log/`, `.squad/log/`, `.squad/sessions/`, `.squad/.scratch/`) are kept; stripping only the inbox path is over-reach.
+
+#### 3. KEEP — Generic directory narration
+
+**Definition:** Narrative sentences that describe where transient files were written, without citing a specific filename (e.g., "resolutions captured as directive files in `.squad/decisions/inbox/`").
+
+**Action:** Keep the path. This is accurate location description, not a broken pointer.
+
+#### 4. NEVER TOUCH — Forward writer-target paths
+
+**Definition:** Charters, templates, skills, routing files that tell future agents where to write files.
+
+**Action:** Leave entirely unchanged. These are instructions, not references.
+
+### Acceptance Criterion (Relaxed, Aaron-approved 2026-06-06)
+
+Issue #46's original literal criterion was "zero `decisions/inbox/` hits in decisions.md AND decisions-archive.md."
+
+**Relaxed criterion:** Zero *broken followable pointers* — specific `inbox/{file}.md` citations that cannot be followed. The three policy-list bullets in `decisions-archive.md` that document the gitignore rule may (and should) retain the literal path.
+
+### Why
+
+The literal "zero hits" criterion over-interprets the spirit of the issue. Issue #46 is about links that are broken for contributors and CI — not about erasing every mention of the path. Policy documentation that *explains why the path is gitignored* is useful, accurate, and should be preserved. Removing it degrades the policy audit trail.
+
+### Append-Only History Rule
+
+**Separately and absolutely:** Agent `history.md` and `history-archive.md` files are append-only. Any hygiene sweep that edits previously committed history entries is a scope violation, regardless of whether the edit improves clarity. This mirrors the over-reach that caused PR #44 to be reverted.
