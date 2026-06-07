@@ -417,3 +417,607 @@ PR #21 merged as f27a537 on main. 1219 tests passing. 7 work items delivered end
 ---
 
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
+
+# SUMMARY (as of 2026-06-01)
+
+File size: 124959 bytes. See history-archive.md for earlier entries.
+
+---
+
+📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
+
+📌 Team update (2026-05-22T20:35:00Z): **Wave 2 W2-5 complete** — ForgePrescriberOrchestrator shipped. Attenuation + autoApplyEligible propagation live. ATTENUATION_FLOOR=0.1 exported from @akubly/types. Fail-open on provider errors. Forge tests 609 passing (+10), root build green. — Scribe
+
+📌 Team update (2026-05-28T10:30:00Z): **Crucible CTD Phase 1 Close-out (2026-05-28)** — §8 (Applier + DecisionGate) + §12 (Copilot SDK Integration) FINAL. **CRITICAL FINDING:** Copilot SDK does NOT expose attention metadata; v1 ships `commitmentMethod: 'fallback'` exclusively. Forward-compat door locked for future providers. Phase 2 coordination: Roger (appendFenced surface). Synthesis review: YELLOW, 2 findings routed (12b to Roger §10, 6b to Valanice §9). — Scribe
+
+📌 Team update (2026-05-28T18:05:30Z): **Crucible CTD Rev. 3 — R2 Locks Baked In** — All 6 R2 decisions locked (Aaron triage complete via Coordinator). Your tasks: (1) L0/L1 `causalContextWindow` declaration contract (R2-1 hybrid, B-with-A-fallback); (2) `BootstrapPayload.literalContext` extraction at session bootstrap (R2-2). Phase 2 fan-out now unblocked. — Scribe
+📌 Team update (2026-05-22T20:16:40Z): **Wave 0 complete** — canonical types in @akubly/types, getAllCategories helper in Cairn. category field reconciled to OptimizationCategory union. — Scribe
+📌 Team update (2026-05-22T20:03:56Z): Wave 2 v3.1 scope final — autoApplyEligible propagates through OptimizationHint; constants NEGATIVE_IMPACT_AUTO_APPLY_GATE=-0.2 and ATTENUATION_FLOOR=0.1; CLI surface only — no MCP in Wave 2. — Graham Knight
+# Alexander — History
+
+## Learnings (2026-05-26: Eureka-Crucible Runtime Overlap Analysis)
+
+### Eureka SDK Relationship & Integration Shape
+Eureka does NOT consume the Copilot SDK directly. Eureka is SDK-agnostic; it receives `SessionId` as a correlation token only. The SDK relationship is mediated through Crucible: Crucible's L0 boundary wraps SDK, Crucible's message loop calls Eureka as a library, Crucible's L1 ledger records Eureka invocations as primitives. **Recommended integration shape: Eureka-as-library-to-Crucible** (lowest cost, preserves hermetic replay, no session lifecycle conflicts). Out-of-process shapes (MCP server, daemon) break hermetic boundary because Eureka state lives outside L1 WAL.
+
+### Session Model Dual Lenses & Correlation
+Both Crucible and Eureka own "session" but through different lenses: Cairn = operational lifecycle (when, where, status), Eureka = epistemological (what was learned, continuity). Both reference the same `SessionId` brand (shared identifier from `@akubly/types`), but storage/schema remain independent. No runtime cross-DB queries (Eureka FR-7.2 hard rule). Reconciliation is offline-only via `eureka reconcile` CLI. **Critical integration gap:** Crucible must explicitly call `eureka.session.flushHints()` before session-end or Eureka US-2 (cross-session continuity) fails for 100% of sessions (Eureka AC-2.5 caller-cooperation contract).
+
+### Hermetic Replay Extension to Eureka
+Crucible's hermetic replay boundary (v1 commitment #4) extends to Eureka IF integrated as library. Eureka calls recorded as L1 primitives with full inputs/outputs; replay re-invokes Eureka library deterministically (BM25 scoring is deterministic, no LLM calls in Eureka v1). **Snapshot contract extension required:** Eureka storage state (`~/.copilot/eureka/agent.db`) must be snapshotted alongside Cairn's `knowledge.db` for full replay fidelity. Document in Crucible snapshot contract: "Replay requires both DBs from snapshot point."
+
+### Sweep Lifecycle Coupling & Trigger Authority
+Eureka's sweep (importance decay, tier demotion, edge population) is caller-driven in v1 (heuristic: end-of-session inferred from `end()` call or first-query-of-next-session catch-up). Crucible owns authoritative session lifecycle (Cairn `sessions.ended_at`). **Mismatch risk:** Crucible ends session, Eureka never sweeps because no one called `eureka.session.end()`. **Mitigation:** Wire Crucible's session-end hook (`sessionStart.ts`) to call `eureka.session.end(session_id)` + `sweep()` synchronously. v1.5 may subscribe to Cairn session-end events (Eureka PRD Edgar R8 §2), but that adds runtime coupling and violates Eureka Path D (ship standalone, defer Cairn coupling). Synchronous hook call is simpler and guarantees sweep fires.
+
+---
+
+## 2026-05-23: Skillsmith Harness — User Stories (v1 ideation)
+
+**Mission:** Big-think programmatic/SDK-first stories for Crucible + runtime-as-platform. Target: Aaron only (v1). Lens: What does agentic harness enable when driveable, embeddable, and composable?
+
+### User Stories
+
+## US-A-1: Drive Crucible from CI/scripting (Programmatic invocation)
+**Story:** As Aaron, I want to invoke Crucible harness as a library from Python/Node/Go scripts and CI pipelines, so that agentic workflows integrate into existing automation without requiring interactive shell.
+**Ambition:** Turn the harness from a CLI tool into an embedded SDK—callable from anywhere, with full control over model selection, skill loading, and artifact routing.
+**Chambers touched:** Crucible (message API), Cairn (primitive export), extensibility hook surface
+**Runtime/SDK implication:** Crucible must expose a synchronous/async procedural API (`invoke(request, config)`) in addition to CLI; primitives must be serializable for cross-process/cross-language handoff.
+
+## US-A-2: Crucible as multi-agent conductor (Orchestration & delegation)
+**Story:** As Aaron, I want Crucible to launch, wire, and coordinate Copilot CLI agents, MCP servers, and custom sub-tasks concurrently, with turn-level visibility into each sub-agent's state, so that I can decompose complex work across specialized agents without manual coordination.
+**Ambition:** Make Crucible the control plane—not just a single agent, but a runtime that spawns, monitors, and re-wires other agents mid-turn based on Observations and Decisions.
+**Chambers touched:** Crucible (sub-agent lifecycle), Cairn (shared primitives across agents), Mirror (agent state reflection)
+**Runtime/SDK implication:** Sub-agent spawning must be first-class: persistent handles, non-blocking wait, mid-turn handoff of Requests/Observations; Cairn must support cross-agent primitive references.
+
+## US-A-3: Replay + transform — Re-run recorded turns with new models/skills (Turn replay & experimentation)
+**Story:** As Aaron, I want to select a recorded turn from Cairn, re-run it with a different LLM provider or different skill set, and compare outcomes side-by-side without replaying the whole context, so that I can A/B test models and optimizations iteratively.
+**Ambition:** Turn Cairn into a replay surface—recorded turns become immutable experiments that can be remixed and reinterpreted.
+**Chambers touched:** Cairn (thick turn storage + replay index), Crucible (replay driver), Forge (model selection + skill binding)
+**Runtime/SDK implication:** Cairn must store turn provenance (model, skills, parameters); Crucible must expose `replayTurn(turnId, config: ModelConfig | SkillSet)` to re-run with alternate bindings; decision/artifact output must be queryable for comparison.
+
+## US-A-4: Alchemist experiments as background + integration (Long-running async + foreground sync)
+**Story:** As Aaron, I want to spawn long-running Alchemist variant experiments (e.g., multi-model tournaments, refactoring trials) in the background while continuing to work in the foreground, and pull in results/observations when ready, so that slow compute doesn't block interactive flow.
+**Ambition:** Decouple experiment cycle time from user interaction—experiments run autonomously, Cairn collects observations, Crucible foreground polls results non-intrusively.
+**Chambers touched:** Alchemist (variant generator), Cairn (observation accumulation), Curator (background trigger), Crucible (result polling API)
+**Runtime/SDK implication:** Alchemist must expose non-blocking spawn with return handle; Cairn must support background observation writes; Crucible must provide `pollResults(experimentId)` and `whenReady(experimentId)` for foreground/background sync.
+
+## US-A-5: Compose harnesses — Chain, nest, run concurrently across projects (Composability)
+**Story:** As Aaron, I want to chain multiple Crucible harnesses together (output of one feeds input to next), nest them (harness calls harness), or run them concurrently across different codebases, with shared Cairn observations and unified artifact lineage, so that multi-project workflows feel like a single composed system.
+**Ambition:** Treat harnesses as composable primitives—not monolithic, but pluggable into larger orchestrations.
+**Chambers touched:** Crucible (composition entry point), Cairn (distributed ledger mode), Mirror (cross-harness introspection)
+**Runtime/SDK implication:** Crucible must support hierarchical invocation with lexical scoping of Cairn; artifact routing must trace lineage across harness boundaries; Cairn must support federated observation collection.
+
+## US-A-6: Mirror-driven workflow introspection + trust building (Reflective visibility & debugging)
+**Story:** As Aaron, I want Mirror to surface the full decision tree of a turn—what Observations triggered which Decisions, why Forge ranked options that way, which skills were evaluated and rejected—so that I can audit harness reasoning, build trust in recommendations, and debug unexpected behaviors.
+**Ambition:** Make harness reasoning transparent and queryable—not a black box, but an inspectable artifact.
+**Chambers touched:** Mirror (decision tree surface), Cairn (decision provenance storage), Crucible (introspection API)
+**Runtime/SDK implication:** Every Decision and Observation must be stored with full provenance chain (source, inputs, confidence); Mirror must expose graph query API (`decisions(filter)`, `whyRejected(option)`) for interactive inspection.
+
+## US-A-7: Curator as event-driven automation (Triggering from external signals)
+**Story:** As Aaron, I want Curator to listen for external signals (git webhooks, file watchers, scheduled events, Slack messages) and autonomously invoke Crucible workflows in response—e.g., "when PR opens, analyze code; when test fails, debug"—so that agentic work happens without explicit manual invocation.
+**Ambition:** Make the harness reactive—not just request/response, but event-driven and autonomous.
+**Chambers touched:** Curator (signal listener + routing), Crucible (async trigger invocation), Cairn (event provenance)
+**Runtime/SDK implication:** Curator must expose plugin/hook API for external signal adapters; Crucible must support async fire-and-forget invocation with correlation tracking.
+
+## US-A-8: Multi-provider, multi-skill experimentation workspace (Optimization + A/B testing)
+**Story:** As Aaron, I want Forge to generate and manage a suite of model/skill combinations (Claude 3.5 + ReflectSkill, GPT-5 + SecurityReview, Llama + TaskPlanner), run Crucible in parallel against each variant for the same task, and report performance/quality deltas, so that I can empirically validate which combination works best for a given workflow.
+**Ambition:** Make the harness a tuning laboratory—not fixed to one model or skill configuration, but an experimentation workbench.
+**Chambers touched:** Forge (variant generation + ranking), Crucible (multi-config parallel invoke), Cairn (comparative metrics)
+**Runtime/SDK implication:** Crucible must support batch invoke with variant configs; Cairn must expose metrics query (tokens used, latency, success rate, quality score) for comparative analysis.
+
+## US-A-9: Artifact routing + transformation pipelines (Composable artifact flows)
+**Story:** As Aaron, I want to define artifact routing rules (e.g., "Decisions → code-review skill", "Questions → research agent", "Observations → Cairn + Slack + email") and transformation pipelines (e.g., "artifact → format for MCP → call remote service"), so that harness outputs flow autonomously to the right downstream systems.
+**Ambition:** Turn artifacts into first-class flows—not just terminal output, but routable, transformable, and composable.
+**Chambers touched:** Crucible (artifact routing root), Cairn (routing rule storage), Curator (executor), extensibility hook surface
+**Runtime/SDK implication:** Primitives must be strongly typed and declaratively routable; Crucible must expose routing DSL or plugin API; artifact transformers must be chainable and composable.
+
+## US-A-10: Harness-as-MCP-server (Crucible drives external tools, external tools drive Crucible)
+**Story:** As Aaron, I want Crucible to expose itself as an MCP server (so other clients can invoke it, query Cairn, subscribe to events) and simultaneously act as an MCP client (calling remote resources, integrating external tools seamlessly), so that the harness becomes a first-class peer in a larger MCP ecosystem.
+**Ambition:** Break down the boundary between Crucible and the broader agent ecosystem—true bidirectional integration.
+**Chambers touched:** Crucible (MCP server surface), MCP client integration, Cairn (remote primitive access), extensibility hook surface
+**Runtime/SDK implication:** Crucible must implement MCP protocol for resources (Primitives), tools (invoke, replay, compose), and notifications (state changes); MCP client calls must be transparently logged to Cairn.
+
+---
+
+# Alexander — History
+
+## 2026-05-21: Wave 2 v3 Scope Ready — Curator Wiring Deferred to Wave 3
+
+Scribe orchestration complete: Graham's v3 scope finalized and merged to `.squad/decisions.md`. Key scope decisions:
+- **ChangeVectorProvider** port with async return type for Phase 5 cloud readiness
+- **Wave 2/3 split:** Manual invocation in Wave 2; Curator-driven automatic orchestration deferred to Wave 3 (requires composition-root decision)
+- **Hint deduplication** via `(skillId, source, category)` key with active-status filter
+- **Two-layer negative-impact attenuation:** Confidence scaling + eligibility flag (`autoApplyEligible`)
+
+Decisions archived; all decisions.md > 20KB now. Ready for implementation on Wave 2 primitives (computation + ranking only; runtime wiring follows in Wave 3).
+
+---
+
+## Core Context
+
+
+**Role:** SDK/Runtime Dev  
+**Joined:** 2026-04-28  
+**Specialization:** Monorepo migration patterns, circular dependency resolution, migration framework expertise, prescriber CRUD integration
+
+**Key Patterns Mastered:**
+- Migration framework: single `migration.up(db)` with all DDL, versioning tied to filename, idempotent re-runs via `schema_version` table
+- Circular dependency management: Cairn↔Forge import constraint solved via mirror + regression test guard (Laura L5)
+- CRUD patterns: explicit `db` parameter for transactional control vs internal getDb() calls; anti-join for compute-once guards
+- Type field naming: encode semantic space (confidence level vs confidenceBoost multiplier) to prevent latent traps
+- Two-tier sort partition (matched vs unmatched) for correct ranking when optional keys diverge negative
+- Lockout-routing pattern: cross-assignment fixes prevent author bias; each agent fixes other's code per review
+
+**Recent Work (Phase 4.6 W1–3):**
+- Wave 1: A1–A4 completed (migration 012, schema v12, changeVectors CRUD, Curator sweep integration); weight constants decision: mirror in cairn + L5 guard
+- Wave 3: Lockout-fixed Rosella's prescriber code (confidence → confidenceBoost); extracted duplicate sort to utils.ts; 3 advisory fixes (safeMin guard, JSDoc, DRY)
+- Current: Wave 2 owner for @akubly/types — promote ChangeVectorSummary, define ChangeVectorProvider port, implement SqliteChangeVectorProvider in Cairn
+
+---
+
+## 2026-05-20: Phase 4.6 Wave 2 Scoping — @akubly/types Port + Cairn Adapter
+
+Wave 2 scope amended: `docs/forge-phase4.6-wave2-scope.md` updated with PrescriberOrchestrator port + negative-impact attenuation. New ADR merged to `.squad/decisions.md`. Invocation point: `Curator.curate()` post-vector-sweep. Attenuation: when `meanNetImpact < 0`, `confidenceBoost` ≤ 1.0 (minimum 0.3), preventing auto-apply of harmful prescriptions.
+
+---
+
+## 2026-05-20: Phase 4.6 Wave 2 Scoping — @akubly/types Port + Cairn Adapter
+
+---
+
+## 2026-05-01: Finding 8 — FeedbackSource.getProfile granularityKey
+
+**Problem:** `FeedbackSource.getProfile(skillId, granularity?)` couldn't address per-user / per-model profiles. DB key is `(skill_id, granularity, granularity_key)`.
+
+**Fix:** Added optional `granularityKey?: string` third parameter. Updated JSDoc with per-tier semantics (user id for per-user, model id for per-model, 'global' default).
+
+**Verification:** `npm run build` clean; `npm test` 512/512 passing. No call sites changed (optional, additive).
+
+**Lesson:** Treat unexpressive shared contracts as bugs, not feature gaps — additive optional parameters carry low risk.
+
+---
+
+## 2026-05-03–04: Phase 4.6 Waves 1 & 3 Summary
+
+**Wave 1 (Foundation):** A1–A4 completed. Decision: mirror weight constants in cairn + Laura L5 regression test to guard against drift. Curator sweep integration: post-event-loop call, not per-batch, keeps transaction model clean.
+
+**Wave 3 (Lockout Fixes):** Fixed Rosella's prescriber code—renamed `confidence` → `confidenceBoost` (semantic distinction: level vs multiplier). Extracted 8-line duplicate sort block from both prescribers to `utils.ts` (12 lines removed, one call each).
+
+**Key Lesson:** Advisory findings surface edge cases (null checks, boundary behavior) that happy-path code misses. Cycle 3's `safeMin` guard (`minVectors=0` → denominator `Math.log(1) = 0`) is exactly this.
+
+**Build status:** 1153 tests passing (baseline 990 + 163 new). Branch review-clean, all cycles complete.
+
+---
+
+## 2026-05-22: Wave 3 Integration Analysis — Curator–MCP Wiring Mapped
+
+Completed comprehensive integration surface analysis for Wave 3 Curator-driven orchestration. All five requested sections delivered:
+
+**1. Curator surface today:**
+- `curate(changeVectorConfig?)` exports from `packages/cairn/src/agents/curator.ts`; returns `CurateResult` with `changeVectorSweep` metadata
+- Call sites: `sessionStart.ts:68` and `mcp/server.ts:327` (both read-only in Wave 2)
+- Vector sweep identifies skills with newly computed categories; invocation hook for Wave 3 injector
+
+**2. Profile selection strategy (three independent dimensions):**
+- **Trigger set:** Trigger-driven (skills with new vectors) vs. global vs. hybrid batching. **Recommended:** Trigger-driven for v1.
+- **Granularity tier:** Per-skill only vs. all tiers. **Recommended:** Per-skill only (matches vector computation scope).
+- **Skip conditions:** No profile, immature sessionCount, stale profile. **Recommended:** v1 skips on no-profile or `sessionCount < minSessions`.
+- Operators observe: skills processed, skipped, hint volume, dedup stats.
+
+**3. MCP tool shape:** `run_prescriber_optimization(force?: boolean)` with output: success, skills processed, hints (generated/inserted/dedup'd), vector applicability, next steps.
+
+**4. Curator config surface:** Backward-compatible signature addition: `curate(changeVectorConfig?, prescriberOrchestrationConfig?)`. Orchestrator is an injectable dependency (`runForSkill` function + optional profile loader). Composition root constructs and passes it.
+
+**5. ADR blockers identified:**
+- Composition root choice (A–D from Roger's track) gates implementation
+- Hook vs. MCP tool vs. both (invocation model)
+- Eager vs. lazy Forge import (startup cost, optional dependency handling)
+- Profile expansion (explicit skill list, global tier fallback, staleness) deferred to Wave 4
+
+Analysis is **mechanical once composition root is decided**. Hard parts (data plumbing, attenuation, dedup) already in Wave 2. Full report: `.squad/agents/alexander/wave3-integration-analysis.md`.
+
+## Learnings (2026-05-23 — Wave 3 Decisions Accepted by Aaron)
+
+- **W3-D1: Composition Root → R2 ACCEPTED** — New `@akubly/skillsmith-runtime` library package (composition layer importing both `@akubly/cairn` and `@akubly/forge`) + thin `@akubly/runtime-cli` wrapper. Clean separation, best test isolation, Phase 5-ready. Unblocks all Wave 3 work items.
+- **W3-D3: MCP Tool → Dropped from Wave 3** — No MCP tool exposure in Wave 3. Curator hook is autonomous surface; `forge-prescribe` CLI is manual surface. `run_prescriber_optimization` MCP tool deferred to later wave when concrete operator need surfaces. Removes ~7 items, ~18 tests from Wave 3 scope.
+- **W3-D4: Curator Hook → Always-On** — Automatic prescriber orchestration invocation enabled always. No opt-in flag in v1. Existing safety rails (negative-impact attenuation, hint dedup, fail-open semantics) sufficient. Profile selection trigger-driven only; global tier fallback deferred to Wave 4.
+
+## Learnings (2026-05-22: Wave 3 Integration Analysis — Curator–MCP Wiring Mapped)
+- Keeping Forge's local `OptimizationCategory` union in place is safe for W2-2 because Roger canonized the shared union to match Forge's stricter category set; the barrel contract stays structurally compatible in both directions.
+- Added `packages/forge/src/prescribers/types.contract.test.ts` with two guards: barrel-vs-canonical type assignability and a prompt-prescriber regression using a canonical summary carrying `autoApplyEligible`. Validation passed with `npm run build` from repo root and `npm test --workspace=@akubly/forge` (599 passed, 3 todo).
+- `runForgePrescribers()` now lives in `packages/forge/src/prescribers/forgePrescriberOrchestrator.ts`, queries an optional `ChangeVectorProvider`, and returns the combined prompt/token hint list without dedup or persistence.
+- Forge attenuation semantics are now: mature vectors with `meanNetImpact <= -0.2` attenuate confidence to `max(0.1, 1 + meanNetImpact)` and force `autoApplyEligible = false`; sparse negatives or mature negatives above `-0.2` stay neutral at `confidenceBoost = 1.0`.
+- `autoApplyEligible` is stored on matched hints both as a top-level field and in `hint.evidence.autoApplyEligible`; unmatched hints omit the field so Phase 4.5 callers still read absence as eligible.
+- Added `packages/forge/src/prescribers/forgePrescriberOrchestrator.test.ts` with ten cases (nine maturity-gradient scenarios plus provider-failure fallback); validation passed with `npm test --workspace=@akubly/forge` (609 passed, 3 todo), root `npm test`, and root `npm run build`.
+- Negative-impact auto-apply gating is now inclusive at `<= NEGATIVE_IMPACT_AUTO_APPLY_GATE` (`-0.2`), keeping exact-boundary cases on the manual-review side because the safety asymmetry favors false positives over false negatives.
+- Wave 3 integration is **injection-based**: Curator accepts an optional orchestrator config (not a direct Forge import). This preserves the acyclic dependency boundary and allows composition root to wire both packages independently. The orchestrator is a simple function pointer (`runForSkill`), not a class — keeps it lightweight and testable.
+
+## Learnings (2026-05-23 — W3-3 Prescriber orchestration types)
+- `ExecutionProfile` was already canonized in `@akubly/types`, so W3-3 should extend that package in place instead of duplicating or structurally mirroring the shape from Cairn. That keeps the dependency boundary acyclic and avoids type drift between Curator, Forge, and the composition root.
+- `loadProfile` stays **synchronous** for Wave 3 because today's loader shape (`FeedbackSource.getProfile()` and Cairn DB accessors) is synchronous. If Phase 5 cloud/profile fetching makes this async later, evolve the shared contract then rather than widening early without a caller.
+- `packages/skillsmith-runtime/src/index.ts` now re-exports the canonical `PrescriberOrchestrationConfig` / `PrescriberRunResult` types from `@akubly/types`; W3-5 can wire real implementations against those exports without changing the scaffold API.
+- W3-4 should consume `PrescriberOrchestrationConfig.loadProfile()` as an optional sync hook and treat null as a skip path; W3-5 should return `PrescriberRunResult` counts aligned with Forge's raw hint generation and Cairn dedup/persistence outcomes.
+
+## Learnings (2026-05-23 — W3-5 Prescriber orchestration factory)
+- Extracted a shared `executePrescriberRun()` helper in `packages/skillsmith-runtime/src/index.ts` so both `runForgePrescribe()` and `createPrescriberOrchestrationConfig().runForSkill()` reuse the same provider → Forge prescriber → dedup/persist pipeline. The CLI keeps its Wave 2 result contract and global fallback behavior, while the Curator-facing factory stays a thin adapter.
+- Factory profile loading is **per-skill only** and `runForSkill()` calls the exact same `loadProfile` closure it exposes. Missing profile or `sessionCount < minSessions` returns a zero-count `PrescriberRunResult` as the skip semantic; W3-6 does not need an extra skip flag.
+- `CreatePrescriberOrchestrationConfigOpts` now accepts either an owned SQLite handle (`db`) or `dbPath`; local row loading avoids Cairn singleton coupling when the caller already has a DB connection.
+
+## Learnings (2026-05-23 — W3-4 curate() signature extension)
+- `curate()` had to become `async` because `PrescriberOrchestrationConfig.runForSkill()` is async. That propagated to every live sync consumer: `packages/cairn/src/hooks/sessionStart.ts`, `packages/cairn/src/mcp/server.ts`, Cairn curate tests, and Forge's `wave2-pipeline` integration test now all `await` the Curator result.
+- The smallest viable trigger signal is a distinct `computedSkillIds` array on `ChangeVectorSweepResult`, populated only when a new change vector row is inserted this sweep. That keeps W3-4 trigger-driven without re-querying history or inventing a second notion of eligibility.
+- `minSessions` should come from the existing `ChangeVectorConfig.minSessionsObserved` fallback chain (`DEFAULT_MIN_SESSIONS`), and Curator should pass that same value into `runForSkill(skillId, minSessions)` so vector gating and prescriber gating stay aligned. Curator itself should not pre-filter via `loadProfile()`; skip semantics stay inside the orchestrator closure.
+- The qualifying-skill list should be sorted before orchestration/tests consume it. SQLite's natural row order is not a contract, so sorting `computedSkillIds` prevents flaky call-order assertions and keeps operator output stable.
+- Fail-open needs to be visible in two places: `console.warn` for operators and an inline `PrescriberRunResult` error row (`hintsGenerated/Inserted/Duplicated = 0`, `hintsError = 1`) so W3-5/W3-6 can surface partial-success counts without special-case plumbing.
+
+## 2026-05-23: 📌 Wave 3 Complete — Curator-Driven Prescriber Orchestration Shipped
+
+**Status:** ✓ All 7 work items shipped  
+
+**W3-3, W3-4, W3-5 shipped:**
+- W3-3: `PrescriberOrchestrationConfig` + `PrescriberRunResult` types canonized in `@akubly/types`
+- W3-4: `curate()` async, trigger-driven orchestration loop, fail-open semantics, 4 new + 32 updated tests
+- W3-5: Shared `executePrescriberRun()` helper extracted; `createPrescriberOrchestrationConfig()` factory wired; Cairn `getExecutionProfileWithDb()` convenience added
+
+**Final Test Counts:**
+- Cairn: 576/576 passing
+- Forge: 630/630 passing
+- Skillsmith-Runtime: 6/6 passing
+
+Wave 3 delivers fully-realized Curator-driven orchestration. Type contracts locked in `@akubly/types`. Per-skill execution pipeline centralized. Factory ready for W3-6 hook wiring.
+
+---
+
+## Learnings (2026-05-23 — Harness Vision Runtime Analysis)
+- Vision defines six chambers (Harness, Cairn, Forge, Geneticist, Curator, Narrator) but doesn't specify runtime execution model for the Harness chamber itself. Turn structure, tool invocation loop, model routing, and sub-agent spawning are orthogonal to chamber responsibilities — these are runtime execution concerns.
+- Prior art (ReAct, OpenHands, LangGraph, AutoGen, Aider, Claude Computer Use SDK) converges on common patterns: (1) ReAct-style thought→action→observation loops with history-based reasoning, (2) explicit state persistence across turns, (3) structured turn management with message passing, (4) conditional sub-agent spawning based on state, (5) approval gates embedded in execution loop before risky actions, (6) model routing policies (rule-based or context-driven).
+- Core unresolved execution tensions: (a) Single persistent loop vs. ephemeral sub-agent spawns, (b) Tool selection authority (LLM decides vs. orchestrator routes), (c) Primitive recording timing (pre-execution vs. post-execution vs. both), (d) Decision ledger write-ahead vs. write-behind semantics, (e) Sub-agent context inheritance (isolated vs. full parent state), (f) Approval gate blocking semantics (user prompt vs. queue-and-continue), (g) Model routing trigger conditions (per-turn vs. per-skill vs. capability-based).
+- Key questions emerge around turn atomicity (what's the unit of replay?), state shape (what gets serialized between turns?), tool execution ownership (inline vs. delegated to sub-agents), and primitive recording hooks (orchestrator vs. model middleware).
+
+---
+
+## 2026-05-24: Turn Definition Survey — Prior Art & Recommendation for Harness
+
+**Requested by:** Aaron Kubly  
+**Scope:** Ground naive instinct ("turn = single LLM call") in concrete prior-art systems.
+
+### Survey Results: Six Systems Analyzed
+
+| System | What user sees | Persisted per turn | Tool-call visibility |
+|--------|----------------|-------------------|----------------------|
+| **Copilot CLI** | One user message → full agent response (potentially after sub-agent delegation) | Full message pair + all sub-agent results aggregated | Hidden inside—narrator surfaces "interesting things" selectively |
+| **Claude Code CLI** | Single LLM exchange: user prompt → Claude response | Both user message and assistant response | Visible as part of response context (tool calls shown in reasoning) |
+| **Aider** | User message → assistant response with file edits visible | Conversation history + file diffs per turn | Visible—edits are surfaced as discrete changes within turn |
+| **Cline** | User input → step-by-step tool execution visible in UI | Each tool call + result shown separately | **Visible as steps**—tool calls are user-facing, not batched |
+| **OpenHands** | Agent turn: reason → tool call → observe → repeat until done | Each step logged (LLM reasoning, tool execution, observation) | **Visible per step**—agentic loop is transparent |
+| **Cursor agent mode** | User request → iterative reasoning loop → final deliverable | Batched tool calls per iteration + intermediate reasoning | Varies—can batch (thick) or single-step (thin) depending on mode |
+
+### Spectrum Analysis: Thin ↔ Thick
+
+**Thin turn** (isolated/single-step): One user input → one LLM call → one tool call (if needed). Tool calls visible as separate user-facing steps. Maximum transparency; more round-trips (pattern: Cline, OpenHands default).
+
+**Thick turn** (batched/loop): One user input → multi-step internal loop → one final response. Tool calls may be batched, hidden, or re-executed intelligently. Faster for user; harder to debug (pattern: Copilot CLI, Cursor, Claude).
+
+**Reality:** Modern agents lean thick internally but control visibility. Agentic systems expose thin turns by default for transparency.
+
+### Recommended Default for Harness: **THICK TURN with Intra-Turn Primitive Recording**
+
+**Rationale:**
+
+1. **Aaron's daily driver (Copilot CLI):** Parallel sub-agents, one user message → one coherent response. That's a thick turn: main agent delegates, waits for sub-agent results, synthesizes final response. Sub-agent interactions are NOT individual user-visible turns.
+
+2. **Replayable fidelity:** Primitives (tool calls, agent decisions, file ops) must be recorded per intra-turn step, not per turn boundary. Schema:
+   - **Turn** = user message → final response
+   - **Inside:** Every primitive logged (timestamp, actor, input, output, metadata)
+   - **Replay:** Reconstructs thick turn by replaying all intra-turn primitives in sequence
+
+3. **Narrator flow:** Thick turns allow narrator to surface "interesting things" without fragmenting user perception. Intra-turn logging lets narrator mine primitives (e.g., "sub-agent X surfaced security issue") without interrupting single user-visible response.
+
+4. **v1 single-user context:** No cross-turn consistency issues; local persistence sufficient. Thick turns simpler to reason about for one operator.
+
+### Downstream Consequences
+
+1. **Primitive recording layer exists below turn abstraction:**
+   - `turn_id` → `primitive[]` (all internal steps)
+   - Each primitive: `{ type, timestamp, actor, input, output, metadata }`
+
+2. **Replay semantics:** Replaying a turn = replaying all primitives in order (not re-running LLM). Ensures deterministic fidelity.
+
+3. **Sub-agent contract:** Sub-agents are tool calls within a thick turn, not separate turns. Their internal turns (if any) are NOT persisted at harness level—only final result recorded as one primitive.
+
+4. **Narrator indexing:** Query primitives by `turn_id`, not turn number. Enables fine-grained "interesting things" extraction.
+
+5. **No turn fragmentation:** Unlike Cline/OpenHands, intermediate steps are not user-visible turns. Keeps UI clean, matches Aaron's Copilot CLI expectation.
+
+**Key Decision Forced:** Primitives must be recorded **during execution**, not after. This enables transparent replay and narrator mining without losing step-level context.
+
+---
+
+**Older learnings archived to history-archive.md**
+---
+
+## Deliberation Round (2026-05-24)
+
+# Alexander — Deliberation Position (2026-05-24)
+
+**Lens:** SDK / Runtime Dev. Owns: `packages/forge/src/runtime/`, model selection, Copilot SDK abstraction, runtime verification.
+
+---
+
+## Section 1 — Story Revisions
+
+| ID | Disposition | Notes |
+|---|---|---|
+| **US-A-1** Programmatic invocation (CI/scripting SDK) | **KEEP** | Foundational. Trunk for everything else. Solo-v1 still needs scriptable entry — CI, hooks, agent-spawned-by-agent all depend on it. |
+| **US-A-2** Crucible as multi-agent conductor | **KEEP (strengthen)** | Erasmus US-E-8 (sub-agent DAG with topo scheduling + failure isolation) is the missing runtime spec for this story. Adopt that DAG model as the conductor's scheduling primitive. |
+| **US-A-3** Replay + transform with new models/skills | **MERGE** into **US-A-NEW-3** (hermetic replay). Replay-with-different-config is just hermetic replay with one mock swapped — same runtime substrate. |
+| **US-A-4** Background Alchemist async experiments | **KEEP** | Non-blocking spawn + `whenReady`/`pollResults` API is required by Gabriel's isolation stories (US-1) and Laura's lazy-fitness story (US-L-7). |
+| **US-A-5** Compose / chain / nest harnesses | **REVISE → defer** | Conflicts with Solo-v1 (tension #1). Reduce to: nesting yes (sub-agent), chaining yes (Curator), federation no for v1. Cross-codebase federated Cairn → Phase 5+. |
+| **US-A-6** Mirror-driven introspection | **REVISE** | Re-cast under debugger-lens: decision-tree query API is the *read* half of the debugger surface. The *interactive* half moves to US-A-NEW-2. |
+| **US-A-7** Curator event-driven automation | **KEEP** | Aligns with Graham US-G-8 (custom Curator hooks) and Roger US-R-2 (GitHub coupling). No revision. |
+| **US-A-8** Multi-provider experimentation workspace | **MERGE with Erasmus US-E-3** | His fitness-driven allocation (Thompson sampling, learned curves) is the *selector* layer; my parallel-invoke-with-variant-configs is the *runner* layer. Same story, two halves. Re-scoped as **US-A-8′: fitness-driven multi-provider runner.** |
+| **US-A-9** Artifact routing + transformation pipelines | **REVISE (narrow)** | Drop the "transformation DSL" ambition for v1 — overengineered. Keep typed routing rules (`Decisions → code-review skill`). Transformation = user-authored skill. |
+| **US-A-10** Harness-as-MCP-server | **REVISE** | Bidirectional MCP is right, but framing depends on resolution of tension #5. See Section 3. Re-cast as: Crucible exposes MCP server surface so Copilot CLI (and other clients) can drive it; Crucible is also an MCP client. Symmetric. |
+
+### NEW Stories
+
+**US-A-NEW-1: Branching-session runtime support** *(Aaron insight #1)*
+As Aaron, I want to fork a session from any ledger position into a sibling session that inherits the parent's primitive prefix and diverges from there, so that counterfactual exploration is a first-class runtime operation — not a debug-mode hack.
+*Runtime/SDK implication:* Crucible exposes `fork(sessionId, atPrimitive) → newSessionId`. Cairn's content-addressed primitives make this cheap (sibling refs, no copy). Forks must be invocable from SDK, CLI, MCP, and Curator hooks. Lineage stored in primitive metadata (`parentSessionId`, `forkPoint`). Strengthens Graham US-G-7, Erasmus US-E-2, Valanice US-V-7.
+
+**US-A-NEW-2: Debugger-style runtime hooks** *(Aaron insight #2 — DEBUGGER-LENS)* ⚠️
+As Aaron, I want to set breakpoints on primitive types (`break on Decision where confidence < 0.6`), watch expressions over ledger projections (`watch tokenSpend.session > $5`), and step *into* a sub-agent's primitive stream, so that the harness is interactive — not just observable.
+*Runtime/SDK implication:* Crucible message loop checks a registered hook table at every primitive append. Hooks may pause (yielding control to debugger), continue, or fork. Step-into = spawn sub-agent in suspended mode, drive one primitive at a time. Requires a debugger-protocol surface (DAP-shaped) over the SDK. **Flagging the need for a dedicated debugger-lens specialist** — this is its own discipline (DAP, conditional breakpoints, watch evaluation, frame inspection).
+
+**US-A-NEW-3: Hermetic replay runtime** *(Aaron insight #3)*
+As Aaron, I want to replay any session (or session prefix) with all LLM calls and tool calls served from captured observations or explicit mocks, so that runtime behavior is bit-stable for regression testing, bug isolation, and counterfactual exploration.
+*Runtime/SDK implication:* Every tool/LLM call routes through a *call-boundary interceptor* that on `record` writes `(request-hash, response, latency, model-version)` to the ledger, and on `replay` consults a `MockRegistry` keyed by request-hash before hitting the network. Mock injection API: `replay(sessionId, { mocks: { 'tool:read_file:abc123': '...' } })`. Determinism is now load-bearing per Aaron's standing implication. Includes seeded RNG, frozen clock, and deterministic sub-agent ordering. Subsumes US-A-3.
+
+**US-A-NEW-4: Sub-agent dependency DAG runtime** *(operationalizes Erasmus US-E-8)*
+As Aaron, I want sub-agent invocations declared with explicit input/output deps so the conductor topologically schedules them, runs independents in parallel, and isolates failures to the subtree, so that multi-agent work is reliable and fast without manual coordination.
+*Runtime/SDK implication:* `spawn(agent, { deps: [handleA, handleB] })` returns a handle that resolves after deps. Conductor maintains the live DAG; failure of a node marks its descendants `skipped` (not `failed`) and surfaces a single root-cause. Backs Valanice US-V-5, Gabriel US-2.
+
+**US-A-NEW-5: Ledger-append transactional contract** *(architectural prerequisite for 4-layer stack)*
+As Alexander, I need a documented, benchmarked contract for the atomic-append-on-every-tool-call requirement before the merged Conductor+Ledger ships, so that we don't discover a per-tool-call fsync bottleneck after Crucible is built around it.
+*Runtime/SDK implication:* SQLite WAL mode, batched group-commit on decision boundaries (turn-end OR N≥32 appends OR T≥50ms), per-append latency budget ≤1ms p99, durability guarantee = "lost ≤ last decision boundary on crash." Append API is sync (returns after WAL write, not fsync). Crash recovery replays from last fsync boundary.
+
+---
+
+## Section 2 — Position on Erasmus's 4-Layer Stack: **PARTIAL ENDORSE**
+
+**Endorse:**
+- Layer 2 (Derived Query / Salsa-style incremental projections) — strongly. This is the right abstraction for Mirror, Forge, and debugger watch expressions. All three are projection consumers; let them share one incremental engine. Solves Laura US-L-5 (pattern mining queries) and US-V-1 (rewind to intent) without bespoke caches per chamber.
+- Layer 3 (Pluggable Proposal Generators with common interface) — yes. This is what makes Forge, Curator triggers, Alchemist variants, and skill recommenders extensible (Graham US-G-5, Rosella US-Ro-1). Common interface = one approval router, one notification policy.
+- Layer 4 (Approval + Notification Router) — yes, consolidates Curator-as-policy-choke-point cleanly.
+
+**Partial / concerns:**
+
+**Conductor + Ledger merge has real runtime implications.** Erasmus is right that the ledger is *storage of the conductor*, not a peer component — but "every tool call must atomically append" is a load-bearing perf claim that needs validation, not an assumption.
+
+- **Is per-tool-call append a perf problem?** Not if we don't fsync per append. SQLite WAL2 with group-commit at decision boundaries gives ~1ms p99 appends, ~10–50k/sec throughput. Per-tool-call fsync would be 5–20ms p99 — bad. The runtime contract must say: appends are *durable at decision boundaries*, not per-primitive. US-A-NEW-5 nails this down before we build on it.
+- **Crash window:** lose ≤1 turn on power-loss. Acceptable for solo-v1. Document it.
+- **Hermetic replay forces this anyway:** every tool call must hit the ledger boundary to be intercepted, so the append cost is paid regardless. Replay turns the bug into a feature.
+
+**How do generators get notified of ledger appends?**
+
+- **Reject polling** (Erasmus didn't propose this, but worth ruling out): wastes CPU and adds latency.
+- **Reject push-per-append**: too noisy. A Decision primitive append is interesting; a tool-call Observation rarely is. Generators would spend more cycles filtering than computing.
+- **Endorse: pub/sub on commit boundaries with declarative subscriptions.** Generators subscribe via predicates over projection deltas (Layer 2's job): `subscribe({ on: 'Decision.committed', where: 'confidence < 0.7' })`. The query layer's incremental engine already knows what changed; piggyback notifications on its invalidations. Coalesce per decision boundary. No generator is woken for primitives it doesn't care about.
+
+This means **Layer 2 (Derived Query) is the load-bearing piece**, not Layer 1. Build it first or generators will reinvent it badly.
+
+---
+
+## Section 3 — Positions on the 5 Tensions
+
+**#1 Solo-v1 vs federation.** Solo-v1. Federation (multi-Aaron-machines, multi-user Cairn) is Phase 5+. But: SDK contracts should already be *federation-shaped* (async ledger reads, session IDs globally unique, primitives content-addressed) so we don't repaint later. Adopt the cheap discipline now; defer the expensive infrastructure. Affects my US-A-5 (deferred) and US-A-NEW-4 (DAG stays in-process for v1).
+
+**#2 Curator never approves.** Resolved. Curator *proposes and routes*; Approval Router (Layer 4) holds the decision. Aaron is the only approver in solo-v1. Auto-apply for UX-only categories (per Graham US-G-4) is policy on the router, not a Curator superpower. No runtime impact beyond honoring the policy contract.
+
+**#3 Mirror scope creep.** Resolved by Layer 2: Mirror is a *consumer* of the derived-query layer, not a sibling chamber that needs its own indexing. Mirror = projection + UI; that's it. Keeps Mirror small.
+
+**#4 Heavyweight ops vs solo user.** Skip the ops apparatus. Solo-v1 = local SQLite, local processes, no service mesh, no observability stack beyond Cairn itself (Cairn *is* the observability stack). Gabriel's stories that imply ops infrastructure (US-7 cross-harness, US-8 hash-chained audit) get the Phase 5+ tag.
+
+**#5 Crucible vs Copilot CLI parent-child relationship — MY TENSION.**
+
+**Concrete resolution: Crucible is a host that embeds Copilot CLI as one of several sub-agent providers, AND ships a thin Copilot CLI plugin as a convenience entrypoint. Bidirectional. Neither owns the other.**
+
+Reasoning:
+- **Not a plugin (subordinate to Copilot CLI):** Crucible's lifecycle is longer-lived than a CLI turn (background Alchemist experiments, Curator triggers waiting on webhooks, hermetic-replay runs). Subordinating it to Copilot CLI's process lifecycle breaks US-A-4 and US-A-7.
+- **Not a replacement (sibling-only):** Aaron's daily driver is Copilot CLI. Making him leave it to use Crucible is a UX tax he won't pay (Valanice would object).
+- **Not a sibling (peer-only):** Crucible needs to *invoke* Copilot CLI as a sub-agent (its own subagent provider — that's literally how this conversation is running). So Crucible must be a host of CLI processes.
+- **Host + plugin, both directions:**
+  - `@akubly/crucible-runtime` is the trunk SDK (US-A-1).
+  - `crucible` is its own CLI for headless invocation and CI.
+  - `crucible-copilot-plugin` registers `/crucible` slash-commands inside Copilot CLI so Aaron stays in his shell. Plugin is thin — it just calls the runtime SDK.
+  - Crucible spawns Copilot CLI as a child process via stdio MCP / process protocol when delegating to it as a sub-agent. Same way it spawns Claude, GPT, local LLMs (US-A-8′).
+  - Crucible exposes an MCP server surface (US-A-10) so Copilot CLI (or any client) can query Cairn, set breakpoints, fork sessions, etc.
+
+The shape: **runtime in the middle; CLI, plugin, MCP-server all thin shells around it.** This is exactly the composition-root discipline we already proved in Wave 3 (`skillsmith-runtime` as the only place importing both Cairn and Forge; `runtime-cli` is a thin re-export). Generalize that pattern to the whole harness.
+
+---
+
+## Section 4 — Cross-References
+
+1. **Graham US-G-7 (Decision Reversion & Multi-Path Exploration)** → strengthens **US-A-NEW-1**. His "fork ledger at tentative decision" is the user-facing UX; my branching-session runtime is the substrate. They're the same feature from two lenses; we should co-design.
+
+2. **Erasmus US-E-8 (Sub-agent dependency DAG)** → invalidates the loose framing of **US-A-2** and is the spec for **US-A-NEW-4**. Adopt his DAG model wholesale; my US-A-2 was hand-wavy on scheduling.
+
+3. **Erasmus US-E-3 (Fitness-driven sub-agent allocation, Thompson sampling)** → merges with **US-A-8**. His learned allocator is the brain; my parallel-variant runner is the body. Combined story: Forge picks model per task from a learned policy, runner executes, Cairn records outcome, allocator updates. Closes Laura US-L-3's heterogeneous-fitness loop too.
+
+4. **Valanice US-V-5 (orchestrate parallel variants without lost context)** → depends on **US-A-2 / US-A-NEW-4**. Her dashboard UX needs my conductor to expose live sub-agent state, including failure-isolation status. If US-A-NEW-4 doesn't ship, US-V-5 can't.
+
+5. **Gabriel US-1 (background isolation) + US-2 (sub-agent crash recovery)** → constrain **US-A-NEW-4 + US-A-NEW-5**. Isolation = sub-agent failures don't corrupt parent ledger (DAG failure isolation handles it). Recovery = ledger-append durability contract (US-A-NEW-5) defines what "checkpoint" means. These three stories must agree on one crash semantics or we'll ship contradictory behaviors.
+
+6. **Laura US-L-7 (outcome latency / lazy fitness)** → pressure-tests **US-A-NEW-3 hermetic replay**. Outcomes arrive days after hints; replay must be able to splice in late-arriving outcomes without re-running the whole session. The replay substrate needs a "partial replay from primitive N" capability, not just "replay from start."
+
+---
+
+**Standing requests:**
+- Spawn a **debugger-lens specialist** to own US-A-NEW-2 (DAP surface, breakpoint semantics, watch expressions). Out of my depth on debugger UX/protocol design.
+- Lock **US-A-NEW-5 (ledger-append transactional contract)** before any Conductor+Ledger merge implementation begins. This is the load-bearing perf claim under the whole 4-layer stack.
+
+## 2026-05-24 Round 3: Reply to Sonny on debugger surface
+
+# Alexander → Sonny: Reply on debugger surface
+
+**Date:** 2026-05-24
+**Author:** Alexander (SDK/Runtime)
+**Re:** Sonny's 9 debugger-lens stories, the L5 proposal, the DAP framing, and US-S-9.
+
+Sonny — you asked for the direct conversation; here it is. I read all nine stories and your structural notes. Below is where you moved me, where I push back, and a third option I want on the table.
+
+---
+
+## On L5 as a layer — **ENDORSE, with one framing edit**
+
+You're right. I had been implicitly treating the debugger as a *client* of Mirror; it isn't. Mirror is "see what is," L5 is "ask why and what-if." Different verbs, different state ownership (registries, DAP-client connections, bisect orchestrators), different lifecycle. Bolting that into Mirror would either contaminate Mirror's read-only purity or contaminate L2's referential purity. A labeled L5 is the honest cut.
+
+**Framing edit I'd make:** L5 isn't "above" L2 in the dependency sense — it *spans*. It reaches down into L4 (install pause verdicts), L2 (subscribe to invalidations), and L1 (register pre-commit predicates). Drawing it as a vertical stripe alongside the stack, rather than a horizontal layer on top, will save us an argument later when someone asks "why does L5 import from L1?" The answer is "because investigation is inherently cross-cutting." Let's name it that way from the start.
+
+The three v1 invariants you ask for (read-set capture on commit; L2 purity for retroactive projections; extensible L4 verdict enum) — I endorse all three, and I want the read-set one (US-S-3) escalated to a hard gate on L1 freeze. You're correct that it's structurally impossible to retrofit.
+
+## On DAP framing — **ENDORSE the "necessary, not canonical" framing**
+
+You read US-A-NEW-2 correctly. "DAP-shaped" was shorthand for "editor attach via a known protocol," not a claim that DAP's vocabulary should be the canonical Crucible debug API. Once I tried to imagine expressing US-S-3 (causal slice) or US-S-6 (bisect) as DAP custom requests, I agreed with you before I finished the sentence — at that point you have a native protocol cosplaying as DAP, and every editor client renders garbage.
+
+**Two surfaces over one substrate.** The substrate (predicate registry, slice engine, pause router, bisect orchestrator) is what the runtime actually owns. DAP is a *projection* of that substrate onto a restricted vocabulary (`Thread`/`Frame`/`Variable`/`Source`/`Line`) for editor compatibility. The investigator REPL is a *projection* onto the full vocabulary. Both are thin shells; the substrate is the SDK contract. This matches the composition-root discipline I proposed in tension #5: runtime in the middle, surfaces thin.
+
+US-A-NEW-2 is hereby revised to drop the "DAP-shaped protocol" framing and replace it with "two-surface debugger: DAP sidecar + native investigator REPL, both over the L5 substrate."
+
+## On US-S-9 (breakpoint = approval) — **PARTIAL ENDORSE; split the primitive**
+
+The collapse is mostly right and I like the safety inheritance argument. But you're collapsing two things that I think should stay distinct in the runtime:
+
+1. **The predicate-evaluation hook at pre-commit** — a runtime mechanism that fires on every candidate primitive write, evaluates registered predicates, and produces a verdict.
+2. **The pause path** — what happens when a verdict says "stop and ask."
+
+Your US-S-9 says "a breakpoint IS an L4 approval request." I'd refine: **a breakpoint *that pauses* is an L4 approval request.** Not every breakpoint-class predicate pauses. Specifically:
+
+- **Logpoints** (DAP's "log a message instead of stopping") — should write a synthetic `Observation` via L2's existing path, never wake L4.
+- **Watchpoints in observe-only mode** — same: deltas land as Observations; no pause.
+- **Counter/sampling breakpoints** ("pause every 100th hit") — predicate state is L5's; only the 100th verdict goes to L4.
+
+So the cleaner shape is: there is **one pre-commit hook bus** that L3 generators, L4 approval policy, and L5 debugger predicates all sit on. Each registered predicate emits a verdict from `{continue, observe, pause}`. *Pause verdicts always route through L4* — that's where I fully endorse US-S-9. Observe verdicts route to L2. Continue verdicts cost nothing.
+
+**What US-A-NEW-2 becomes after this reply:**
+
+> **US-A-NEW-2 (revised): Pre-commit predicate hook + L5 investigation surface.**
+> Crucible's pre-commit hook bus fires before every L1 group-commit. Registered predicates (from L3 generators, L4 approval policy, or L5 debugger registrations) evaluate against the candidate write and the pre-commit read-set, emitting a verdict in `{continue, observe, pause}`. Pause verdicts route through L4's approval router (extensible verdict enum per US-S-9). Observe verdicts emit synthetic Observations via L2. Continue is the zero-cost default. L5 owns the debugger-facing registries and exposes two surfaces (DAP sidecar, investigator REPL) over this substrate. The DAP surface deliberately restricts to ops that DAP can render; the REPL exposes the full vocabulary.
+
+That gives you the safety inheritance you wanted *and* keeps logpoints/sampling breakpoints from waking the approval router on every hit.
+
+## Net proposal — synthesis
+
+```
+L5 (Investigation Surface)  ← spans, doesn't sit-atop
+  ├── DAP sidecar (restricted vocabulary)
+  ├── Investigator REPL (full vocabulary)
+  └── registries: breakpoints, watches, bisect state, slice cache
+       │
+       ▼ registers predicates on
+L1's pre-commit hook bus  ← shared with L3, L4
+       │
+       ├── verdict=continue → fast path
+       ├── verdict=observe  → synthetic Observation via L2
+       └── verdict=pause    → L4 approval router (US-S-9 collapse holds here)
+```
+
+Three architectural locks I'm asking the team to commit to in this round:
+
+1. **Read-set capture on commit** (your US-S-3 — highest priority, blocks L1 freeze).
+2. **Pre-commit hook bus is a first-class runtime ABI**, not a debugger feature. L3, L4, L5 all sit on it.
+3. **Pause path is unified through L4 with an extensible verdict enum.** Observe path is unified through L2. There is one of each.
+
+## Anything you missed
+
+Four things I'd add, none of which invalidate your brief:
+
+1. **Predicate cost on the hot path.** A naive match-spec interpreter at every commit blows the 1ms p99 budget I locked in US-A-NEW-5. Mitigation: index predicates by primitive kind so non-matching kinds cost a single dispatch, and let L2's Salsa engine cache compiled predicates the same way it caches queries. This unifies even more tightly with your US-S-2.
+
+2. **Predicate lifecycle across forks.** You mention per-fork enable/disable for breakpoints. What I want explicit: predicates set in a *child* fork do **not** back-propagate to the parent. Forks inherit; siblings don't share. Otherwise causality across the Cairn DAG gets weird and replay invariants break.
+
+3. **DAP→DAG projection rule.** Even on the restricted DAP surface, we need *some* mapping from sub-agent DAG to DAP's `Thread`. Proposal: each leaf execution path = one synthetic `threadId`; fan-out spawns new threads; fan-in is invisible to DAP (threads simply terminate). Document this projection so DAP clients render *consistently flat* rather than *inconsistently flat*. Native REPL still honors the DAG (your US-S-5).
+
+4. **Edit-and-continue durability.** You said it comes "for free" from US-S-9. Almost — but the injected synthetic `Decision` must be content-addressed and lineage-tagged like any other primitive, or hermetic replay (US-A-NEW-3) breaks the moment Aaron uses edit-and-continue. Worth one line in the L4 verdict-extension spec: edit-and-continue verdicts produce ledger-visible Decisions, full stop.
+
+---
+
+Net: you moved me on L5, on DAP, and on most of US-S-9. The one place I push back (split observe from pause; both ride a shared pre-commit hook bus) I think actually strengthens your case rather than weakening it — it gets the safety inheritance you wanted without conflating logpoints with approvals.
+
+Ship it together?
+
+— Alexander
+
+## Team updates 2026-05-24
+
+T5 resolved — Crucible built on Copilot SDK, replaces Copilot CLI as Aaron's daily driver. Sonny hired as debugger-lens specialist; see his US-S-1..US-S-9 stories and L5 (Investigation Surface) structural proposal in decisions.md.
+
+## 2026-05-24 Round 4: Phase B Reconciliation against D:\git\stunning-adventure
+
+**Inbox:** .squad/decisions/inbox/alexander-reconciliation-2026-05-24T2330Z.md.
+
+### Counts
+- ALREADY-EXISTS: 0
+- PARTIALLY-EXISTS: 4 (US-A-1, US-A-7, US-A-10, US-A-NEW-2)
+- NET-NEW: 10 (US-A-2/3/4/5/6/8/9, US-A-NEW-1/3/4)
+- CONTRADICTS-EXISTING: 1 (US-A-NEW-5 vs current vent_log; defer to Rosella)
+
+### Headline findings
+- **The package named @akubly/skillsmith-runtime is not a runtime.** It is a 323-line Cairn↔Forge prescriber composition root (packages/skillsmith-runtime/src/index.ts:1-323). @akubly/runtime-cli is a 9-line re-export plus a one-shot orge-prescribe batch CLI (packages/runtime-cli/src/index.ts:1-9, cli.ts:1-94). **There is no top-level message loop in this repo.** The Copilot CLI process owns the loop; everything Forge does is invoked from CLI hooks via stdin JSON (cairn/src/hooks/sessionStart.ts:107-110, postToolUse.ts:27-41).
+- **The real SDK wrapper IS Forge.** ForgeClient (orge/src/runtime/client.ts:56-171) and ForgeSession (orge/src/runtime/session.ts:61-172) wrap @github/copilot-sdk's CopilotClient/CopilotSession 1:1 with hook composition + bridge wiring. ridge/index.ts:65-93 is the single SDK→Cairn event-mapping file by design.
+- **Hook composition exists and is well-disciplined.** HookComposer (orge/src/hooks/index.ts:58-235) merges observers of onPreToolUse | onPostToolUse | onSessionStart | onSessionEnd | onUserPromptSubmitted | onErrorOccurred with last-writer-wins shallow-merge and error isolation. **But it fires on tool calls, not on primitive/ledger appends** — wrong granularity for the Phase A pre-commit hook bus I synthesized with Sonny. The pattern is directly transferable; the L1 substrate (primitive ledger with content-addressed appends + read-set capture) is NET-NEW.
+- **State mutation today:** journal_mode=WAL (cairn/db/index.ts:29); db.transaction(...).immediate() pattern pervasive (8 call sites). Event log appends are single-row INSERTs (db/events.ts:35-38) — atomic per call but **no group-commit, no decision-boundary batching, no p99 budget, no fsync semantics**. US-A-NEW-5 has zero coverage.
+- **Sub-agents:** SDK emits subagent.* events; Forge observes (ridge/index.ts:84-92) but does not spawn. No DAG, no spawn(agent, {deps}), no failure isolation. US-A-2 / US-A-NEW-4 are entirely NET-NEW.
+- **Branching:** No ork(). sessions table has no parent/forkPoint columns (cairn/db/sessions.ts:9-17). SDK's session.snapshot_rewind event is bridged but unused.
+- **Two session-ID systems coexist unlinked** (SDK sessionId vs Cairn sessions.id keyed on epo_key). US-A-NEW-1 and US-A-NEW-3 both need this resolved.
+- **Replay:** No call-boundary interceptor, no MockRegistry, no request-hash recording. US-A-NEW-3 is entirely NET-NEW.
+
+### T5 realizability (Crucible-on-Copilot-SDK)
+Realizable. Forge's wrapper discipline is the right pattern to generalize. ForgeClient/ForgeSession provide L0.5; Crucible's L0-loop (multi-turn driver) and L1 (primitive ledger + hook bus + group-commit) are NET-NEW additive layers on top. The "runtime in the middle, thin shells around it" pattern is proven at the prescriber scope (skillsmith-runtime/untime-cli); generalize it to crucible-runtime + crucible-cli + crucible-copilot-plugin + crucible-mcp-server.
+
+### Hook bus implementability
+Half-yes. The HookComposer error-isolation + merge engine + SDKSession.on(handler) + db.transaction(...).immediate() are the right reusable pieces. Missing: candidate-write object, read-set capture, three-verdict trichotomy ({continue, observe, pause} vs SDK's llow|deny|ask), L2 derived-query layer for compiled-predicate caching. Pre-commit bus is implementable but is NOT "add an observer to HookComposer" — needs L1 first.
+
+### Defer-to-owner
+- **Rosella (Cairn ledger):** US-A-NEW-5 contradicts current vent_log shape (loosely — event_log is audit, not the contemplated L1 primitive ledger). Two paths: reshape event_log into L1, or introduce parallel primitive store and demote event_log to audit. Cairn owner picks.
+- **Erasmus + Sonny (L1 read-set + pre-commit boundary):** L1 must exist before my hook bus is implementable. My round-3 invariants stand.
+
+### Gaps not previously captured
+1. Hook stdin protocol (Crucible must compat or supersede).
+2. Stale-session shim (hooks/sessionStart.ts:41-54) papers over absence of crash semantics; US-A-NEW-5 must subsume it.
+3. Dual session-ID problem.
+4. HookComposer error-isolation discipline (hooks/index.ts:106-111) — I had not committed to this explicitly in pre-commit hook bus spec; doing so now.
+5. Bridge-as-single-absorption-point discipline should extend to MCP, sub-agent providers, terminal IO.
+6. SessionStartOrchestrationFactory (hooks/sessionStart.ts:99-101) is the existing IoC seam for US-A-7 webhooks.
+7. Worth a 1-hour spike: does SDK already expose sub-agent spawning that ForgeClient just doesn't surface? subagent.* events suggest yes.
+
+### Recommended follow-ups
+1. **Rename @akubly/skillsmith-runtime** — it is not a runtime; the name will poison every future reconciliation. Flag to Scribe + Rosella.
+2. Defer to Rosella on US-A-NEW-5 vs event_log path.
+3. Adopt verbatim from existing repo: HookComposer pattern, single-bridge-file discipline, composition-root pattern, db.transaction(...).immediate() for group-commit.
+4. Subsume the 2-minute heartbeat stale-session shim explicitly in the US-A-NEW-5 crash-recovery contract.
+5. Cross-team: Valanice/Sonny — ForgeSession already exists with send/sendAndWait/on/disconnect; their daily-driver and debugger surfaces can sit on top of it.
+📌 Team update (2026-06-02T06:14:32Z): **M8 storage milestone kicked off (Aaron, 2026-06-01).** Slices A→D planned. Aaron locked Q1=scaffold-A-write-B, Q2=cursor pagination, Q3=own eureka.db. Roger (Slice A impl SPAWNED) and Laura (contract audit SPAWNED) on branch eureka/m8-slice-a-sqlite-factreader. — Scribe
+
+---
+
+# Alexander — History
+
+**Role:** Runtime Lead (SDK integration, Crucible-Eureka orchestration, session lifecycle)
+**Status:** Crucible CTD (Comprehensive Technical Design) Phase 1 complete. Phase 2 (R2-1 causalContextWindow + R2-2 BootstrapPayload) in progress.
+**Last update:** 2026-06-02
+
+**Key milestones:**
+- Eureka-Crucible runtime overlap analysis (session models, hermetic replay, sweep lifecycle)
+- Crucible SDK integration findings (Copilot SDK does not expose attention metadata; v1 ships commitmentMethod: 'fallback' exclusively)
+- Crucible CTD Phases 1–3 review cycles complete
+- R2 Decisions locked (6 decisions via Aaron triage)
+- Wave 0/Wave 2 scope finalized
+- Phase 4.6 W1–3: Migration framework patterns, circular dependency resolution, lockout-routing practices
+
+## Archived Learnings (Summarized from 127KB detailed entries)
+
+**Eureka as library to Crucible is the lowest-cost integration shape.** Eureka is SDK-agnostic; receives SessionId as correlation token only. Out-of-process shapes (MCP server, daemon) break hermetic replay boundary. Library integration preserves Eureka state inside L1 WAL.
+
+**Session model dual lenses:** Cairn = operational lifecycle (when, where, status); Eureka = epistemological (what was learned). Both reference same SessionId brand but storage/schema independent. No runtime cross-DB queries (Eureka FR-7.2 hard rule). Reconciliation is offline-only.
