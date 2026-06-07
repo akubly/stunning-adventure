@@ -48,6 +48,16 @@ File size: 17270 bytes. See history-archive.md for earlier entries.
 
 **Gaps / follow-ups:**
 - TODO in test: switch to Roger's factory (`createSqliteRecallDeps` / `createDefaultDeps`) once his Slice D wiring lands. This would smoke-test the production composition root, not just the primitives.
+
+### 2026-06-06: M8 Slice D — Persona-Review Remediation (I1/I2/M1)
+
+**Context:** 5-persona Code Panel reviewed `recall-sqlite-smoke.test.ts`. Three findings accepted and addressed in commit `434a046`.
+
+- **I1 (public-barrel imports guard export wiring):** Importing symbols directly from internal paths (e.g., `../../db/openDatabase.js`, `../../sqlite/deps.js`) bypasses the subpath barrel (`../../sqlite/index.js`). A broken/removed export in `sqlite/index.ts` would not be caught. Fix: consolidate all sqlite-subpath imports onto `../../sqlite/index.js`. This is now the pattern to follow for any smoke test that validates Slice D wiring.
+- **I2 (feedback factory coverage):** `createSqliteFeedbackDeps` shipped in Slice D with no end-to-end test — a broken constructor wiring would regress silently. Added SD-3: seeds a fact at trust 0.5, applies corroboration (+0.1 → 0.6) then contradiction (-0.1 → 0.5) via `applyFeedback()` with real `SqliteTrustUpdater`, and reads trust back from the DB directly. Pattern: always add a smoke test for every new factory that wires storage impls.
+- **M1 (no @date JSDoc):** Non-standard `@date` tag removed; git history covers authorship/date.
+
+**Test count delta:** 147 → 148 (+1 test: SD-3). Full suite: 148 passing.
 - Session isolation (SD-3 candidate): smoke test doesn't assert that OTHER_SESSION facts are invisible. Covered by FS-6 in the contract suite — acceptable gap for a +1/+2 smoke spec.
 
 — Laura
