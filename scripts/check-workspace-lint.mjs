@@ -41,8 +41,24 @@ for (const pattern of workspaceGlobs) {
         }
       }
     }
+  } else if (pattern.includes('*')) {
+    // Unsupported glob (e.g. "packages/**", "apps/*/plugins/*", scoped globs).
+    // Silently falling through would match ZERO packages — exactly the silent-skip
+    // blind spot this guard exists to prevent. Hard-fail so the maintainer knows
+    // the guard needs extending (or switch to `npm query .workspace --json`).
+    console.error('');
+    console.error('check-workspace-lint: ERROR — unsupported workspace glob pattern');
+    console.error('');
+    console.error(`  Pattern "${pattern}" contains a wildcard but is not the supported`);
+    console.error('  "parent/*" form. Silently resolving it as a literal path would match');
+    console.error('  zero packages and recreate the silent-skip blind spot this guard prevents.');
+    console.error('');
+    console.error('  Extend the glob resolver in scripts/check-workspace-lint.mjs to handle');
+    console.error('  this pattern, or switch to: npm query .workspace --json');
+    console.error('');
+    process.exit(1);
   } else {
-    // Fallback: treat as a literal path
+    // No wildcard — treat as a literal path.
     const resolved = join(repoRoot, pattern);
     if (existsSync(resolved)) {
       packageDirs.push(resolved);
