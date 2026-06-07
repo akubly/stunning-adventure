@@ -39,3 +39,13 @@
 **Verify direct imports before removing a devDependency.** The safe pattern is: grep src/ for `import.*from 'pkg'`; if the only hits are in comments or JSDoc, the dependency is genuinely unused. Trusting that it "should" be gone without grepping first risks removing a still-needed dep (or, conversely, leaving a truly redundant one and failing review). In this case, `better-sqlite3` and `@types/better-sqlite3` appeared only in comments — test-db.ts had already been refactored to import solely from `@akubly/crucible-core`. Safe to drop.
 
 **Transitive dependency satisfaction is enough for test code.** Once `better-sqlite3` lives in `crucible-core`'s `dependencies`, any workspace package that declares `@akubly/crucible-core` as a dependency gets the native module transitively. A devDependency on the same package in the consumer is pure noise and a source of version-skew risk.
+
+---
+
+## Learnings (PR #51 Review — 2026-06-06)
+
+**Return a copy from snapshot methods, not the live internal collection.** `getOwnEvents()` was documented as returning a snapshot where modifications are not persisted, but returned the raw `ownEvents` array. The spread `[...array]` (or `.slice()`) is the minimal correct fix. Notably, the SQLite adapter already honored this contract (`.map()` creates a new array) — the in-memory adapter was the outlier. Whenever two adapters implement the same interface, verify BOTH sides match the JSDoc contract, not just one.
+
+**Lazy-load native modules that are not needed by all consumers.** Placing `import Database from 'better-sqlite3'` at module top level causes the native `.node` binary to be loaded the moment the barrel is `import`-ed — even by callers that only use the in-memory adapter. The fix: `import type Database from 'better-sqlite3'` (type-only, erased at compile time) at top level, and `createRequire(import.meta.url)('better-sqlite3') as typeof Database` inside the factory function. The import graph then only reaches the native module when `createSQLiteDB` is actually called. This matches the pattern in `packages/eureka/src/db/openDatabase.ts`.
+
+**`typeof ImportedType` is the correct cast for a `createRequire` call that returns a constructor.** `typeof import('better-sqlite3').default` fails when the package uses `export =` style declarations (TypeScript reports "Namespace has no exported member 'default'"). Use the locally imported type name directly: `as typeof Database`, where `Database` is bound via `import type Database from 'better-sqlite3'`.
