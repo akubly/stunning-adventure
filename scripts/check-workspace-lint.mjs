@@ -4,8 +4,8 @@
  * Asserts that every workspace package with a `src/` directory has a `lint`
  * script defined in its package.json.
  *
- * Rule: A package MUST declare `scripts.lint` if and only if it contains a
- * `src/` directory. Packages without `src/` are considered non-lintable
+ * Rule: A package with a `src/` directory MUST declare a `lint` script in its
+ * package.json. Packages without `src/` are considered non-lintable
  * meta-packages and are exempt. This mirrors the `--if-present` behaviour of
  * the root `lint` script, but fails loudly instead of silently skipping —
  * closing the silent-skip bug class that issue #37 originally fixed at the
@@ -25,7 +25,25 @@ const repoRoot = resolve(__dirname, '..');
 
 // Read root package.json to get workspaces globs
 const rootPkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'));
-const workspaceGlobs = Array.isArray(rootPkg.workspaces) ? rootPkg.workspaces : [];
+
+// Support both array form ("workspaces": [...]) and object form ("workspaces": { "packages": [...] })
+let workspaceGlobs;
+if (Array.isArray(rootPkg.workspaces)) {
+  workspaceGlobs = rootPkg.workspaces;
+} else if (rootPkg.workspaces && Array.isArray(rootPkg.workspaces.packages)) {
+  workspaceGlobs = rootPkg.workspaces.packages;
+} else {
+  const shape = rootPkg.workspaces === undefined ? 'missing' : JSON.stringify(rootPkg.workspaces);
+  console.error('');
+  console.error('check-workspace-lint: ERROR — cannot read workspace list from package.json');
+  console.error('');
+  console.error(`  The "workspaces" field is ${shape}.`);
+  console.error('  Expected an array (["packages/*"]) or an object with a "packages" array');
+  console.error('  ({ "packages": ["packages/*"] }). Resolving zero packages would');
+  console.error('  silently skip all checks — failing loudly instead.');
+  console.error('');
+  process.exit(1);
+}
 
 // Resolve all packages matching the workspace globs
 const packageDirs = [];
