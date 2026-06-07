@@ -8,7 +8,8 @@
  * OQ-2 FEDERATE (locked 2026-06-06): Crucible owns its own schema, independent
  * of Cairn's event_log. This fixture MUST NOT import anything from @akubly/cairn.
  *
- * Schema is defined canonically in @akubly/crucible-core (SCHEMA_V1_SQL).
+ * Schema is owned by @akubly/crucible-core (the SCHEMA_V1_SQL constant) and is applied
+ * internally by createSQLiteDB(); this fixture does not reference the constant directly.
  * Interface contract is InMemoryDB from @akubly/crucible-core.
  */
 
