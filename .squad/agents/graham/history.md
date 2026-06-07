@@ -98,6 +98,8 @@
 ```typescript
 append(input: PrimitiveInput): Promise<number>
 ```
+
+
 Throws `Error('Append vetoed by hook: <hookId>')` on VETO. No WAL row created on VETO.
 
 **Veto invariant (three-part, pinned by §4.2 RED test):**

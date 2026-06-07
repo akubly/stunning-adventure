@@ -3829,3 +3829,111 @@ The SQLite adapter is the substrate for any future Refactor 4 / Phase 2 work (fi
 Both cycles declared **REVIEW-COMPLETE** with diminishing returns. All findings either RESOLVED or documented as deferred (splitting integration tests, migration/user_version seam, L1 WAL).
 
 **Ship cleared for Refactor 3.** Feature PR ready to merge.
+
+
+---
+
+### 2026-06-06T22:03:01-07:00: Queued follow-ups — WAL / Walkthrough B (non-blocking)
+**By:** Aaron Kubly (via Copilot) — approved to queue for later
+**Source:** Laura's Walkthrough B GREEN sign-off.
+1. **Edge-case RED test:** "prior rows survive a later veto" — append N committed rows, VETO on row N+1, assert exactly N rows remain (vetoed row absent, prior rows intact). Not covered by current hook-veto.test.ts. Owner candidate: Laura (RED) → Roger (GREEN) if it drives impl change.
+2. **§4.1 doc polish:** add a TypeScript-name column to the §4.1 verdict table so the intentional doc(`'veto'`)/code(`'VETO'`) casing split is explicit. Non-blocking; Owner candidate: Graham. (Casing split is intentional and type-safe — accepted, not a bug.)
+
+
+---
+
+# Roger — WAL File Backend Decisions
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-06-06T22:03:01-07:00  
+**Branch:** squad/crucible-wal-substrate-walkthrough-b  
+**Status:** CLOSED — 7 new file-backend tests GREEN, full suite 35/35
+
+---
+
+## D-WB-FS-1: On-disk layout matches §3.2
+
+```
+<rootDir>/
+├── meta/
+│   └── manifest.json
+├── wal/
+│   └── sessions/<sessionId>/
+│       ├── 000000.seg     binary records via codec.ts framing
+│       └── index.idx      NDJSON: {offset, seg, byteOffset} one line per row
+└── cas/
+    └── <2-hex-shard>/
+        └── <64-hex-hash>.cbor   raw payload / readSet bytes
+```
+
+This matches the §3.2 spec tree exactly. `rootDir` is caller-supplied (not
+hard-coded to `~/.crucible`) so tests use a temp dir with no repo leakage.
+
+---
+
+## D-WB-FS-2: Manifest schema (schemaVersion=1)
+
+```json
+{
+  "schemaVersion": 1,
+  "sessionId": "<sessionId>",
+  "segmentRange": [0, 0],
+  "lastCommitOffset": -1
+}
+```
+
+- `schemaVersion: 1` — upgrade path reserved for when §6 CBOR canonicalization lands.
+- `lastCommitOffset: -1` — sentinel for "no rows committed yet".
+- `segmentRange: [first, last]` — only `[0, 0]` for now (single-segment; roll-over deferred).
+- Written on every `commitRow` via synchronous `writeFileSync` (simpler than fdatasync for v0.1).
+
+---
+
+## D-WB-FS-3: Index format — NDJSON, append-only
+
+`index.idx` is written by appending a newline-delimited JSON object per committed row:
+```
+{"offset":0,"seg":0,"byteOffset":0}
+{"offset":1,"seg":0,"byteOffset":164}
+```
+
+This matches the §3.2 advisory index contract: rebuild from segment scan if corrupted.
+Currently the reopen path performs a sequential segment scan (not index lookup) for
+simplicity — the index exists as the spec requires but fast random-access lookup is
+deferred until a RED test drives it.
+
+---
+
+## D-WB-FS-4: primitiveKind stored in envelopeCbor as UTF-8
+
+The segment record's `envelopeCbor` field stores `primitiveKind` as raw UTF-8 bytes
+(e.g., `Buffer.from('observation', 'utf8')`). This allows reopen to reconstruct the full
+`LedgerEvent.primitiveKind` field without additional metadata.
+
+**Deferred upgrade:** When §6 primitive taxonomy is locked, replace this with a CBOR
+envelope that carries the kind byte, schemaVersion, and other envelope fields.
+Changing the envelopeCbor format requires a `schemaVersion` bump in manifest.json and
+a segment migration pass.
+
+---
+
+## D-WB-FS-5: CAS write-before-WAL ordering respected
+
+Per §3.2: "WAL never references CAS content that is not durable." In `FileSystemWalBackend.commitRow`:
+1. `cas.put(payloadBytes)` — writes `.cbor` file synchronously
+2. `cas.put(readSetBytes)` — writes `.cbor` file synchronously (if non-empty)
+3. `appendFileSync(activeSegPath, recordBuf)` — appends WAL record
+
+`fdatasync` is not explicitly called in v0.1 (deferred alongside group-commit in §3.5).
+The ordering guarantee holds: CAS bytes exist on disk before the WAL record referencing
+their hash is appended.
+
+---
+
+## D-WB-FS-6: Scope fences — NOT touched (no RED test)
+
+- **Single-writer advisory file lock** (§3.4.1): deferred to next cycle.
+- **Group-commit batching + seal-and-split on PAUSE** (§3.5): deferred.
+- **64 MiB segment roll-over**: deferred.
+- **fdatasync per group-commit**: deferred alongside group-commit.
+- **crc32c real computation**: deferred (4 zero bytes, as before).
