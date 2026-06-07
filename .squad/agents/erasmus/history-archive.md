@@ -1,3 +1,9 @@
+# SUMMARY (as of 2026-06-01)
+
+File size: 33792 bytes. See history-archive.md for earlier entries.
+
+---
+
 # Agent History Archive — erasmus
 
 Archived entries (pre-summarization).
@@ -247,4 +253,15 @@ framing.
    respecting the call.
 
 **Prior-art comparisons most illuminating for this review:**
+
+- **rr / Pernosco** as the gold standard for record-replay. Crucible is
+  closer to "rr-for-agents" than to "LangGraph-for-agents," and the doc
+  underplays this. Aperture's investigation UX should target Pernosco,
+  not Datadog/Honeycomb.
+- **Datomic** as the only mainstream "append-only fact log + recomputable
+  projections" system. Their compaction/excision story is directly
+  applicable to L1 long-term.
+- **Cursor (vs VS Code)** as the cautionary tale for T5. Owning the host
+  costs forever. Cursor can pay because they have funding; Crucible can't.
+- **Temporal** for the Router/Applier split (Workflow vs Activity) and
 
