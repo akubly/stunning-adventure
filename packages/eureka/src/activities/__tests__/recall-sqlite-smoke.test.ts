@@ -29,15 +29,13 @@
  *   openDatabase throws a clear "[eureka] better-sqlite3 is not installed…"
  *   message — install with `npm install better-sqlite3` and re-run.
  *
- * @date 2026-06-06T21:48:05-07:00
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type Database from 'better-sqlite3';
 import type { SessionId } from '@akubly/types';
-import { openDatabase } from '../../db/openDatabase.js';
-import { createSqliteRecallDeps } from '../../sqlite/deps.js';
-import { recall } from '../recall.js';
+import { openDatabase, createSqliteRecallDeps, createSqliteFeedbackDeps } from '../../sqlite/index.js';
+import { recall, applyFeedback } from '../recall.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -125,5 +123,60 @@ describe('recall() — end-to-end smoke: real SQLite + FTS5 stack', () => {
     );
 
     expect(results).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SD-3: createSqliteFeedbackDeps end-to-end — trust mutation via real SQLite.
+// ---------------------------------------------------------------------------
+
+describe('createSqliteFeedbackDeps() — end-to-end smoke: real SQLite trust mutation', () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = openDatabase(':memory:');
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SD-3: applyFeedback() with deps from createSqliteFeedbackDeps() mutates
+  // trust in the real SQLite store — corroboration raises trust, contradiction
+  // lowers it. Guards the constructor wiring added in Slice D.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  it('SD-3: applyFeedback via createSqliteFeedbackDeps — corroboration raises trust, contradiction lowers it', async () => {
+    const insert = db.prepare(
+      'INSERT OR REPLACE INTO facts (fact_id, session_id, content, trust) VALUES (?, ?, ?, ?)',
+    );
+    insert.run('fact-feedback', SESSION as string, 'Some memorable fact', 0.5);
+
+    const deps = createSqliteFeedbackDeps(db);
+
+    // Positive feedback: trust 0.5 → 0.6
+    await applyFeedback(
+      { factId: 'fact-feedback', sessionId: SESSION, event: 'corroboration' },
+      deps,
+    );
+
+    const afterCorroboration = (
+      db.prepare('SELECT trust FROM facts WHERE fact_id = ? AND session_id = ?')
+        .get('fact-feedback', SESSION as string) as { trust: number }
+    ).trust;
+    expect(afterCorroboration).toBeCloseTo(0.6, 5);
+
+    // Negative feedback: trust 0.6 → 0.5
+    await applyFeedback(
+      { factId: 'fact-feedback', sessionId: SESSION, event: 'contradiction' },
+      deps,
+    );
+
+    const afterContradiction = (
+      db.prepare('SELECT trust FROM facts WHERE fact_id = ? AND session_id = ?')
+        .get('fact-feedback', SESSION as string) as { trust: number }
+    ).trust;
+    expect(afterContradiction).toBeCloseTo(0.5, 5);
   });
 });
