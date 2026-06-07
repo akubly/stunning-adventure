@@ -22,7 +22,9 @@ File size: 103960 bytes. See history-archive.md for earlier entries.
 
 ---
 
-## Learnings (2026-06-06, PR #45 final fixes)
+## 2026-06-06: Crucible Walkthrough B GREEN — WAL Substrate + Ledger Seam Implementation
+
+📌 **Roger:** Implemented Walkthrough B GREEN for WAL substrate + Ledger pre-stage hook gate. Seam-first parallelization: built sub-seam internals (hash-chain BLAKE3, CAS, codec v0.1) in parallel with Graham's seam lock. Once Aaron ruled VETO (Option A), integrated the four-step protocol at Ledger.append. Result: hash-chain 9 tests, wal-codec 12 tests, wal-cas 4 tests, ledger impl 1 acceptance test (hook-veto). Total: 28/28 green. Key: lazy-load better-sqlite3 native module, return snapshot copy from getOwnEvents.
 
 **Prefer domain types over `unknown[]` in port interfaces.** `DB.queryEvents` was typed `Promise<unknown[]>`, erasing the `Primitive` type that the in-memory impl already returned correctly. Port interfaces are contracts — they should reflect the actual domain type, not a widening escape hatch. When the impl already returns the right type, the fix is purely additive and compile-safe.
 
@@ -1232,3 +1234,93 @@ The optional-chain pattern store.get(id)?.ownEvents.push(event) is a silent data
 **Lazy-load native modules that are not needed by all consumers.** Placing `import Database from 'better-sqlite3'` at module top level causes the native `.node` binary to be loaded the moment the barrel is `import`-ed — even by callers that only use the in-memory adapter. The fix: `import type Database from 'better-sqlite3'` (type-only, erased at compile time) at top level, and `createRequire(import.meta.url)('better-sqlite3') as typeof Database` inside the factory function. The import graph then only reaches the native module when `createSQLiteDB` is actually called. This matches the pattern in `packages/eureka/src/db/openDatabase.ts`.
 
 **`typeof ImportedType` is the correct cast for a `createRequire` call that returns a constructor.** `typeof import('better-sqlite3').default` fails when the package uses `export =` style declarations (TypeScript reports "Namespace has no exported member 'default'"). Use the locally imported type name directly: `as typeof Database`, where `Database` is bound via `import type Database from 'better-sqlite3'`.
+
+
+---
+
+## Learnings (WAL Substrate Sub-Seam Build — 2026-06-06)
+
+**WAL substrate internals are now GREEN (21/21 tests).** Three sub-seam cycles completed via strict London-school RED→GREEN TDD:
+
+### What's GREEN
+
+| Module | File | Tests |
+|---|---|---|
+| Segment record codec | packages/crucible-core/src/ledger/wal/codec.ts | 7/7 |
+| BLAKE3 hash chain | packages/crucible-core/src/ledger/wal/hash-chain.ts | 7/7 |
+| In-memory CAS | packages/crucible-core/src/ledger/wal/cas.ts | 7/7 |
+
+Supporting files: 	ypes.ts (shared types), hash.ts (blake3 seam via @noble/hashes).
+
+Test files: src/__tests__/unit/wal-codec.test.ts, wal-hash-chain.test.ts, wal-cas.test.ts.
+
+### Key decisions (full detail in .squad/decisions/inbox/roger-wal-substrate.md)
+
+- **D-WAL-1: BLAKE3 library = @noble/hashes v2.x** (@noble/hashes/blake3.js) — pure TS/WASM, no native compilation, Node16 ESM-compatible. Hash is behind a hashBytes() seam in hash.ts for easy swap.
+- **D-WAL-2: selfRoot canonical content** — byte concatenation of all fields except selfRoot (sub-seam approximation; CBOR canonicalization deferred until §6 locks).
+- **D-WAL-3: crc32c deferred** — 4 zero bytes placeholder in codec; RED test for bad-crc32c rejection deferred.
+- **D-WAL-4: Conditional fields deferred** — hookVerdictWitness, contextWindowCommitment, commitmentMethod deferred until §6 primitive enum is locked.
+- **D-WAL-5: Public Ledger.append() seam intentionally NOT built** — waiting on Graham's seam lock (graham-ledger-seam.md).
+
+### What remains RED / deferred
+
+- hook-veto.test.ts acceptance test (Walkthrough B) — pre-existing RED, owned by the shared seam. NOT touched.
+- Public Ledger.append() orchestration — blocked on Graham's seam.
+- File-system CAS (FileSystemCas) — above seam, deferred.
+- crc32c validation — deferred (see D-WAL-3).
+- Conditional codec fields — deferred (see D-WAL-4).
+- CBOR canonicalization for selfRoot — deferred (see D-WAL-2).
+
+### Patterns learned
+
+- @noble/hashes subpath import requires .js extension even for TypeScript sources: import { blake3 } from '@noble/hashes/blake3.js'
+- SegmentRecordInput / SegmentRecord split keeps chain-building clean: inputs don't carry prevRoot/selfRoot (those are outputs of uildChain()).
+- erifyChain() recomputes selfRoot inline rather than trusting the stored value — tamper detection works even if a caller mutates a field post-build.
+- ncodeRecord() writes magic as big-endian (writeUInt32BE) so the first 4 bytes read "WAL1" in ASCII. All other multi-byte integers are little-endian per spec.
+
+
+---
+
+## Learnings (Walkthrough B GREEN — 2026-06-06)
+
+**hook-veto.test.ts acceptance test is now GREEN. Full suite: 28/28 passing.**
+
+### What was built
+
+Three new files wired the seam:
+
+| File | Role |
+|---|---|
+| src/ledger/hook-bus-impl.ts | PreCommitHookBus — FIFO fire order, VETO short-circuits |
+| src/ledger/wal-backend-in-memory.ts | InMemoryWalBackend — wraps sub-seam hash-chain + CAS |
+| src/ledger/ledger-impl.ts | LedgerImpl + createLedger factory |
+
+index.ts wired xport { createLedger } from './ledger/ledger-impl.js'.
+
+### VETO protocol (Aaron's Option A ruling)
+
+`
+(a) Build HookContext — no I/O
+(b) hookBus.fire(ctx)                ← BEFORE any WAL byte
+(c) verdict === 'VETO' → throw Error('Append vetoed by hook: <hookId>')
+    ← return; walBackend.commitRow NEVER called
+(d) non-VETO → walBackend.commitRow(input, result) → commitOffset
+`
+
+Exclude<HookVerdict,'VETO'> on commitRow enforces the invariant at the type level.
+
+### No test edits required
+
+Laura's RED test signatures matched the locked seam exactly. The SEAM-ALIGNMENT NOTE in the test is now resolved.
+
+### InMemoryWalBackend wires sub-seam internals
+
+commitRow calls uildChain([rowInput], this.prevRoot) (real BLAKE3 hash-chain) and InMemoryCas.put (content-addressing). The in-memory backend is structurally identical to the future file-system backend — no seam divergence when we add disk I/O.
+
+### Deferred (no RED test yet)
+
+- File-system WalBackend (segment writes, fdatasync, index.idx)
+- Full §4 PreCommitHookBus (kind-indexed dispatch, CAS witness)
+- predicate_registered / predicate_unregistered Observation WAL rows
+- §3.5 seal-and-split on PAUSE
+- Real crc32c computation

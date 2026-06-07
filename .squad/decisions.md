@@ -2950,6 +2950,248 @@ Child `query()` prefix delegation reads the parent's `ownEvents` via `db.getOwnE
 
 ---
 
+# 2026-06-06: Aaron's User Directive — Parallelization and TDD Discipline
+
+**By:** Aaron Kubly (via Copilot)  
+**Directive:** When parallelizing work, do NOT go parallel if it requires deviating from RED→GREEN TDD execution. TDD discipline (RED test fails first, then minimal GREEN, then REFACTOR) takes priority over parallelism. Parallel work is only permitted at TDD-safe boundaries (e.g., independent RED tests, interface/seam contracts) — never GREEN-before-RED, never shared-impl-before-seam.  
+**Why:** User direction — captured for team memory during WAL substrate + Walkthrough B kickoff (Option A seam-first).
+
+---
+
+# 2026-06-06: Aaron's Ruling — HookVerdict VETO Semantics (resolves graham-ledger-seam-OPEN)
+
+**By:** Aaron Kubly (via Copilot)  
+**Decision:** Option A — Adopt **VETO** as a first-class **pre-WAL Ledger-layer gate**.
+
+- VETO fires at `Ledger.append` entry, BEFORE staging. Rejected input never enters the WAL → WAL stays purely append-only; §3's "all staged rows commit" invariant is intact.
+- §4's `continue | observe | pause` (on the staged batch, inside the group-commit window) are untouched. VETO is a distinct, earlier policy boundary.
+- Enforced by the type system: `Exclude<HookVerdict, 'VETO'>` at the WAL backend `commitRow` port so VETO can never cross the WAL boundary.
+- §4.2 Walkthrough B RED test passes as written — no test rework.
+
+**Required follow-on (documented amendments to FINAL specs):**
+
+1. §4.1 verdict table — add VETO row ("no row created; Ledger throws `Append vetoed by hook: <id>`"), flagged as Ledger-layer (not commit-window).
+2. §4.3 dispatch — add VETO case before the PAUSE check.
+3. §11 replay contract — note: VETO inputs are not in the WAL; replay need not handle them (Ledger-layer policy, not a WAL concept).
+
+**Why:** User ruling at Decision-Point Gate during WAL substrate + Walkthrough B build.
+
+---
+
+# 2026-06-06: Ledger Seam Contract — Graham (Lead/Architect)
+
+**Date:** 2026-06-06T22:03:01-07:00  
+**Status:** LOCKED — Option A ruling received (Aaron, 2026-06-06). Spec amendments applied. See `graham-ledger-seam-OPEN.md` (RESOLVED).
+
+## Purpose
+
+This document is the single authoritative reference for Roger (§3 WAL substrate)
+and Laura/Roger (§4.2 Walkthrough B GREEN) on how the Ledger, HookBus, and
+WalBackend fit together.
+
+## Delivered Files
+
+```
+packages/crucible-core/src/ledger/hook-bus.ts   — HookVerdict, HookContext, HookMetadata,
+                                                   HookResult, HookPredicate,
+                                                   HookRegistrationOpts, HookBusPort
+packages/crucible-core/src/ledger/ledger.ts     — Ledger, LedgerEvent, LedgerQueryOpts,
+                                                   LedgerFactoryOptions, CreateLedger,
+                                                   WalBackend
+packages/crucible-core/src/index.ts             — all above types re-exported
+```
+
+## §1 Locked `append` Signature
+
+```typescript
+// On Ledger interface:
+append(input: PrimitiveInput): Promise<number>
+//                                            ^ commitOffset (monotonic, per-session)
+```
+
+- **Input:** `PrimitiveInput` — `{ primitiveKind: PrimitiveKind; primitivePayload: unknown; causalReadSet: string[] }`.
+  Unchanged from the existing Sprint 0 type.
+- **Returns:** `Promise<number>` — the commit offset assigned to the row by the WAL backend.
+- **Throws:** `Error('Append vetoed by hook: <hookId>')` when any hook returns VETO.
+  The exact message string is pinned by §4.2 RED test invariant 1.
+
+## §2 Veto Invariant — No Partial Write
+
+**Three-part invariant (all must hold simultaneously; pinned by §4.2 RED test):**
+
+1. `append()` rejects with `Error('Append vetoed by hook: <hookId>')` on VETO.
+2. The hook predicate is invoked with `{ primitiveKind, primitivePayload, metadata }` **before** any WAL byte is written.
+3. The ledger stays EMPTY after a veto — no WAL row, no CAS write, no fdatasync.
+
+**Implementation rule for Roger's GREEN phase:**
+
+```
+(a)  Build HookContext from PrimitiveInput.
+(b)  Call hookBus.fire(ctx).
+(c)  if result.verdict === 'VETO':
+         throw new Error(`Append vetoed by hook: ${result.hookId}`)
+         // ← return here; do NOT proceed
+(d)  ONLY IF non-VETO:
+         call walBackend.commitRow(input, result)
+         return commitOffset
+```
+
+There MUST be **no** WAL write, CAS write, or fdatasync between steps (b) and (c).
+
+## §3 Where HookBus.fire Sits Relative to the WAL Write
+
+```
+Ledger.append(input)
+  │
+  ├─ 1. Build HookContext (no I/O)
+  │
+  ├─ 2. hookBus.fire(ctx)          ← FIRES HERE — before any WAL byte
+  │      │
+  │      ├─ VETO   → throw Error('Append vetoed by hook: <hookId>')  ← exits, nothing written
+  │      ├─ PAUSE  → pass to WalBackend ─┐
+  │      ├─ OBSERVE → pass to WalBackend ─┤
+  │      └─ COMMIT → pass to WalBackend ─┘
+  │
+  └─ 3. walBackend.commitRow(input, hookResult)
+         │
+         ├─ Hash-chain (prevRoot/selfRoot)
+         ├─ BLAKE3 payloadHash + readSetHash (§3.3)
+         ├─ CAS write (payload, readSet, hookVerdictWitness if OBSERVE/PAUSE)
+         ├─ Segment binary write (§3.2)
+         ├─ fdatasync (one per group-commit batch — §3.4)
+         └─ Returns commitOffset
+```
+
+## §4 HookVerdict at the Ledger Boundary
+
+```typescript
+type HookVerdict = 'COMMIT' | 'OBSERVE' | 'PAUSE' | 'VETO';
+```
+
+| Ledger verdict | §3/§4 WAL-row value | Effect |
+|---|---|---|
+| `COMMIT`  | `hookVerdict = null` or `'continue'` | Row proceeds normally |
+| `OBSERVE` | `hookVerdict = 'observe'` | Row proceeds + CAS hookVerdictWitness written |
+| `PAUSE`   | `hookVerdict = 'pause'` | Row commits; §3.5 seal-and-split fires inside WalBackend |
+| `VETO`    | *(never reaches WAL)* | Ledger throws; no row written |
+
+⚠ **VETO is now LOCKED** (Aaron ruling 2026-06-06, Option A). All four verdicts are locked and unblocking.
+
+## §5 WalBackend Integration Boundary
+
+```typescript
+interface WalBackend {
+  commitRow(
+    input: PrimitiveInput,
+    hookResult: HookResult & {
+      verdict: Exclude<HookVerdict, 'VETO'>;
+      hookId: string | null;
+    },
+  ): Promise<number>;
+
+  readRows(opts: LedgerQueryOpts): Promise<LedgerEvent[]>;
+}
+```
+
+- `commitRow` receives `verdict` typed as `Exclude<HookVerdict, 'VETO'>` — the TypeScript
+  type enforces that VETO can never reach this method.
+- Roger's WAL substrate implements this interface.
+- For in-memory / test runs, a trivial in-memory `WalBackend` suffices (no file I/O).
+
+---
+
+# 2026-06-06: Walkthrough B RED Test — Hook Veto Acceptance Test (Laura)
+
+**Date:** 2026-06-06T22:03:01-07:00
+**Author:** Laura (Tester)  
+**Status:** RED — test written and confirmed failing for the right reason.
+
+The RED acceptance test for A3 (Pre-Commit Hook Veto) has been written at:
+```
+packages/crucible-core/src/__tests__/acceptance/hook-veto.test.ts
+```
+
+Test imports `createLedger` from `../../index.js` but it is not yet exported → confirmed failure: `TypeError: (0 , createLedger) is not a function`.
+
+This is the correct RED signal: the test is well-formed, not broken by typo.
+
+---
+
+# 2026-06-06: Walkthrough B GREEN — HookBus + Ledger Pre-Stage Gate (Roger)
+
+**Date:** 2026-06-06T22:03:01-07:00
+**Author:** Roger (Platform Dev)  
+**Status:** GREEN — acceptance test passing, 28/28 crucible-core tests green, tsc build clean
+
+## Implementation Summary
+
+`createLedger()` factory exported, `Ledger.registerHook()` and `append()` implemented with VETO pre-WAL gate. HookBus fires at entry, VETO short-circuits to error (no WAL write). All hook verdicts locked and unblocking.
+
+### Results
+
+- Acceptance: `✓ hook-veto.test.ts` GREEN (1/1 test passing)
+- Unit tests: 27 crucible-core tests GREEN
+- Total: **28/28 crucible-core tests passing**
+- Build: `npm run build` clean (tsc, no errors)
+
+---
+
+# 2026-06-06: PR #51 Review Decisions — Roger
+
+**Date:** 2026-06-06  
+**PR:** crucible/refactor-3-sqlite-adapter (#51)
+
+## Decision 1 — `getOwnEvents` returns a copy (snapshot contract)
+
+Return a spread copy — `[...(store.get(sessionId)?.ownEvents ?? [])]`. The JSDoc contract ("modifications to the returned array are not persisted") is the intended behavior. The SQLite adapter already satisfied this; making in-memory match eliminates behavioral asymmetry.
+
+## Decision 2 — Lazy-load `better-sqlite3` native module inside `createSQLiteDB`
+
+Defer the native module load using `createRequire`:
+```typescript
+import { createRequire } from 'node:module';
+import type Database from 'better-sqlite3';   // type-only
+
+export function createSQLiteDB(path: ':memory:' | string): InMemoryDB {
+  const DatabaseCtor = createRequire(import.meta.url)('better-sqlite3');
+  // ...
+}
+```
+
+This avoids eager loading when in-memory adapter is the only consumer.
+
+---
+
+# 2026-06-06: WAL Substrate Sub-Seam Decisions — Roger
+
+**Date:** 2026-06-06T22:03:01-07:00
+**Status:** SUB-SEAM GREEN (hash-chain, CAS, codec all locked and tested)
+
+## D-WAL-1: BLAKE3 library selection
+
+**Choice:** `@noble/hashes` v2.x (`@noble/hashes/blake3.js`)
+
+- Pure TypeScript/WASM — no native compilation required on Windows
+- Actively maintained; widely used across the JS crypto ecosystem
+- Correct ESM subpath exports
+- API: `blake3(data: Uint8Array): Uint8Array`
+
+## D-WAL-2: selfRoot canonical content (sub-seam approximation)
+
+`selfRoot = BLAKE3(commitOffset(8 LE) || timestampNs(8 LE) || ... || envelopeCbor(var))`
+
+Byte concatenation is deterministic now. Swap to CBOR once §6 is locked.
+
+## D-WAL-3: crc32c deferred
+
+Written as 4 zero bytes in v0.1. Implement real CRC32C before production.
+
+## D-WAL-4: Conditional segment fields deferred
+
+`hookVerdictWitness`, `contextWindowCommitment` not encoded/decoded until §6 is locked.
+
+---
+
 # Handoff: Crucible Refactor 3 RED — Integration Test for Real SQLite
 
 **Author:** Laura (Tester)

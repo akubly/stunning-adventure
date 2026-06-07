@@ -1,7 +1,7 @@
 # Graham — History
 
 📌 **Role:** Lead / Architect (Overall vision, cross-system integration, tiebreak arbitration)  
-📌 **Last update:** 2026-06-02
+📌 **Last update:** 2026-06-06
 
 ## Current Status
 
@@ -27,6 +27,12 @@
 2. **Predicate timing honesty:** Promise.race() is not a sandboxing primitive. v1 uses cooperative measurement + telemetry + retry-budget quarantine; hard preemption belongs in v1.5+.
 3. **Replay-determinism pattern:** Record results, not just choices, when results depend on environment state.
 4. **Gitignore hygiene:** .gitignore blocks new adds only; committed files must be untracked with git rm --cached.
+
+---
+
+## 2026-06-06: Crucible Walkthrough B — WAL Substrate + Ledger Seam Lock
+
+**📌 Graham:** Locked the Ledger seam contract (graham-ledger-seam.md) under Aaron's VETO Option A ruling. VETO is a first-class pre-WAL Ledger-layer gate; WalBackend never sees it (Exclude type enforcement). No rework needed for Roger/Laura. Seam-first parallelization unblocked all paths. Result: 28/28 crucible-core tests green, acceptance test (hook-veto.test.ts) passing.
 
 ---
 
@@ -66,6 +72,57 @@
 📌 **ADR-0019 CONTRIBUTION** (2026-05-30T194147Z): Wall-clock replay-determinism bug finding (independent convergence with Laura) elevated heuristic drop from "nice-to-have" to "non-negotiable." Architectural finding: offsets are load-bearing primitives; wall-clock time is informational metadata. This discovery directly led to Aaron's decision to implement always-prompt UX without automatic nudges. — Scribe
 
 # Graham — Key Learnings (Recent)
+
+## 2026-06-06: VETO Ruling — §4 and §11 Spec Amendments
+
+**Aaron ruled Option A** (2026-06-06): VETO adopted as a first-class Ledger-layer pre-stage gate. WAL stays purely append-only; `continue | observe | pause` untouched.
+
+**Spec amendments applied:**
+- **§4 intro**: Added two-surface model (Surface 1: pre-stage gate; Surface 2: commit-window dispatch).
+- **§4.1**: Added `LedgerHookVerdict = WalHookVerdict | 'veto'` type; added VETO row to verdict table.
+- **§4.3.1**: New subsection — Ledger-layer pre-stage gate pseudocode; no-partial-write invariant stated explicitly.
+- **§4.7 P3**: Clarified VETO never appears in WAL rows; closed WAL-verdict enum unchanged.
+- **§11.11**: New section — VETO inputs are out of scope for replay (no WAL row, oracle unaffected, P3 unaffected). Honesty note added.
+
+**OPEN resolved**: `graham-ledger-seam-OPEN.md` updated to RESOLVED status.  
+**TS seam untouched**: `hook-bus.ts` and `ledger.ts` already encoded Option A (`HookVerdict` includes `'VETO'`; `Exclude<HookVerdict,'VETO'>` guards `WalBackend.commitRow`). No collision risk for Roger.  
+**Build**: `tsc --build` still passes.
+
+---
+
+## 2026-06-06: Ledger Seam — WAL × Hook-Bus Boundary Locked
+
+**Seam decision** (2026-06-06T22:03:01-07:00): Reconciled §3 WAL substrate (Roger) and §4.2 Walkthrough B (Laura/Roger) into a single `Ledger` interface contract. Delivered as type-only files; no implementation.
+
+**Locked `append` signature:**
+```typescript
+append(input: PrimitiveInput): Promise<number>
+```
+Throws `Error('Append vetoed by hook: <hookId>')` on VETO. No WAL row created on VETO.
+
+**Veto invariant (three-part, pinned by §4.2 RED test):**
+1. `append()` rejects with exact message `'Append vetoed by hook: <hookId>'`.
+2. Hook fires BEFORE any WAL byte is written.
+3. Ledger stays EMPTY after veto — no partial write.
+
+**Append flow:**  `build HookContext → hookBus.fire() → if VETO: throw (exit) → walBackend.commitRow()`
+
+**HookVerdict at Ledger boundary:** `'COMMIT' | 'OBSERVE' | 'PAUSE' | 'VETO'` (UPPERCASE).  
+Maps to §3/§4 WAL-row values (`continue | observe | pause`) inside WalBackend.  
+`Exclude<HookVerdict, 'VETO'>` typed on `WalBackend.commitRow` — enforced by TypeScript.
+
+**Open question (PROVISIONAL):** VETO is not in §4's `continue | observe | pause` vocabulary. Flagged in `graham-ledger-seam-OPEN.md`; Aaron's ruling needed. Three other verdicts are locked and unblocking.
+
+**Key file paths:**
+- `packages/crucible-core/src/ledger/hook-bus.ts` — HookBus types
+- `packages/crucible-core/src/ledger/ledger.ts` — Ledger interface + WalBackend port
+- `packages/crucible-core/src/index.ts` — type exports added
+- `.squad/decisions/inbox/graham-ledger-seam.md` — contract document (Roger + Laura read this)
+- `.squad/decisions/inbox/graham-ledger-seam-OPEN.md` — VETO fork open question
+
+**Build:** `npm run build` passes (tsc, exit 0, no errors).
+
+---
 
 ## 2026-06-02: Crucible Sprint 0 Kickoff — MERGED (Session Logger)
 

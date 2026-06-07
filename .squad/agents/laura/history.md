@@ -25,6 +25,76 @@ File size: 17270 bytes. See history-archive.md for earlier entries.
 
 ## Learnings
 
+📌 **2026-06-06 Crucible Walkthrough B:** Wrote RED acceptance test (hook-veto.test.ts) per §4.2 TDD spec. Confirmed RED (missing createLedger export). Then verified GREEN once Roger landed the Ledger implementation. Test structure: no beforeEach (fresh factory), vi.fn() hook for .toHaveBeenCalledWith assertion, expect.any(Object) on metadata (shape TBD). Result: 1/1 acceptance + 27/27 unit tests passing (8/8 total green).
+
+**Test written:**
+- File: `packages/crucible-core/src/__tests__/acceptance/hook-veto.test.ts`
+- Scenario: `createLedger()` → register a VETO hook via `registerHook('policy-gate', vetoHook, { budget: 50_000 })` → attempt `ledger.append(...)` → assert rejection, hook invocation, and empty ledger.
+- Mirrors §4.2 verbatim with house-style header comment and §8.5 naming convention (`Acceptance: ... [policy-gate, external-source, empty-ledger]`).
+
+**Expected failure (confirmed):**
+```
+TypeError: (0 , createLedger) is not a function
+```
+`createLedger` is not exported from `../../index.js` — correct RED. Import resolves without error (the module exists), but the named export is missing → runtime TypeError at test line 33.
+
+**Seam-alignment note:**
+Graham's ledger-seam file (`.squad/decisions/inbox/graham-ledger-seam.md`) did NOT exist at authorship time (2026-06-06T22:03:01-07:00). Test was written to §4.2 signatures. If Graham's seam ships different `createLedger` / `registerHook` / `append` signatures, this test must be realigned to the seam before GREEN. — Laura
+
+---
+
+### 2026-06-06: Crucible Walkthrough B GREEN Sign-Off
+
+**Context:** Verified Roger's GREEN implementation of `HookBus` + `LedgerImpl` + `createLedger` against the RED acceptance test I authored. Branch `squad/crucible-wal-substrate-walkthrough-b`. 28/28 tests passing in crucible-core, no edits to my test.
+
+**Verdict: PASS — GREEN is honest.**
+
+#### 1. VETO behavior is real (not stubbed or weakened)
+
+The execution path in `ledger-impl.ts` is:
+1. Build `HookContext` from `PrimitiveInput` (no I/O yet) — correct.
+2. Call `hookBus.fire(ctx)` — fires the registered predicate **before any call to `walBackend.commitRow`**. The hook bus `fire()` in `hook-bus-impl.ts` invokes predicates in FIFO order, short-circuits on VETO.
+3. If `result.verdict === 'VETO'`: `throw new Error(`Append vetoed by hook: ${result.hookId}`)` — `hookId` is `'policy-gate'` (set at registration), producing the exact message the test asserts.
+4. `walBackend.commitRow` is called ONLY on the non-VETO branch — the type-level `Exclude<HookVerdict, 'VETO'>` at the `WalBackend` port boundary makes this machine-checked, not just documented.
+
+All three test assertions are driven by real behavior:
+- **Rejection message** — from step 3 above. ✅
+- **Hook invocation with correct context** — `HookContext` fields (`primitiveKind`, `primitivePayload`, `metadata`) built from `PrimitiveInput`; `metadata: expect.any(Object)` passes the `{ timestamp: number }` shape. ✅
+- **Empty ledger after veto** — `InMemoryWalBackend.events` is never mutated because `commitRow` is never called. `readRows` filters an empty array → length 0. ✅
+
+#### 2. "No partial write" edge — uncovered, flag as follow-up RED candidate
+
+The test covers: _new ledger, first append is vetoed → ledger stays empty._ It does NOT cover: _N rows committed successfully → VETO hook registered → attempt row N+1 → assert exactly N rows remain, N+1 is absent._
+
+This is a meaningful gap. An implementation that cleared all prior events on VETO (a corruption bug) would still pass the current test. The seam's `WalBackend.commitRow` contract prohibits this, but there is no acceptance test that proves the "prior rows survive a later veto" invariant.
+
+**Recommended follow-up RED test (do not write now — flag only):**
+```
+arrange: ledger + 3 successful appends → register VETO hook
+act:     attempt 4th append
+assert:  rejects with 'Append vetoed by hook: ...'
+assert:  queryEvents({ range: [0, 100] }) has length 3 (not 0, not 4)
+```
+File: `packages/crucible-core/src/__tests__/acceptance/hook-veto-prior-rows.test.ts`.
+Route to Roger for GREEN when written.
+
+#### 3. Doc/code casing split — ACCEPTABLE, documented, one readability risk
+
+- **§4 spec** uses lowercase throughout: `'continue' | 'observe' | 'pause' | 'veto'` (pseudocode vocabulary).
+- **TypeScript seam** (`hook-bus.ts`) uses UPPERCASE: `'COMMIT' | 'OBSERVE' | 'PAUSE' | 'VETO'`.
+
+This is **intentional and explicitly documented** in two places:
+- `hook-bus.ts` line 14 comment: "⚠ HookVerdict naming fork: §3/§4 WAL spec uses lowercase … The seam adopts UPPERCASE at the Ledger API boundary."
+- `04-hook-bus.md` §4.1, line 40: "In the TypeScript seam … these map to UPPERCASE: COMMIT | OBSERVE | PAUSE | VETO."
+
+**Verdict on the split:** Acceptable. The failure mode if a developer uses the wrong case is a TypeScript type error (not a silent bug), so it's detectable. The risk is readability: a developer reading §4 may hunt for the cross-reference to find the TypeScript names.
+
+**Recommendation (non-blocking):** Add a one-line mapping summary to §4.1's verdict table (a "TypeScript name" column or a note row) so the lookup is inline rather than a cross-reference chase. Route to Graham or doc owner — not a code defect.
+
+#### VETO verdict status
+
+The `graham-ledger-seam-OPEN.md` shows Aaron ruled **Option A** (VETO as first-class pre-WAL gate) on 2026-06-06. The `PROVISIONAL` tag in `hook-bus.ts` can be cleared by Roger in a follow-up commit — not a blocker. — Laura
+
 ### 2026-06-01: Crucible REFACTOR RED — SessionManager Unit Tests (London-school with mocked DB)
 
 **Context:** Authored 4 failing unit tests for `SessionManager` per §4.1 Refactor 2, one turn after Roger's GREEN acceptance test landed.
