@@ -3803,7 +3803,7 @@ Updated schema version assertions from 14 → 15 in:
 **Date:** 2026-05-28 (Synthesis Review completed 2026-05-29T072142Z)  
 **Author:** Graham Knight (Lead / Architect)  
 **Status:** FINAL — CTD v1 STRUCTURALLY COMPLETE  
-**Artifact:** Merged from `.squad/decisions/inbox/graham-ctd-phase4-synthesis.md`
+**Artifact:** Merged from decision drop: graham-ctd-phase4-synthesis (local-only, now incorporated in this archive)
 
 **Scope:** Final pre-close interface-coherence synthesis across the four Phase 4 authoring lanes (Graham framing §1/§6/§19; Roger CALL/RET + Scheduler WAL §3/§10; Gabriel L3.5 Scheduler §5/§5.A/§17; Laura reproducibility honesty §11.10 + §16.5/§16.7a). Two minor errata resolved inline during synthesis gate.
 
@@ -4113,7 +4113,7 @@ The acceptance test **must not be modified** between RED and final GREEN — it 
 ## Files Created
 
 - `packages/crucible-cli/src/__tests__/acceptance/session-fork.test.ts` — the RED test
-- `.squad/decisions/inbox/laura-crucible-first-red-test.md` — this file
+- decision drop: laura-crucible-first-red-test (local-only) — this decision entry
 - `.squad/agents/laura/history.md` — Learnings section updated
 - `.squad/skills/london-tdd-first-red-test/SKILL.md` — reusable skill extracted
 

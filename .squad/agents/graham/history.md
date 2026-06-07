@@ -324,6 +324,25 @@ Resolution values are now owned by `hintStateTransitionConstants.ts` (the event 
 
 ---
 
+## Learnings — 2026-06-06: Doc Hygiene Re-scope (PR #52, issue #46)
+
+### Pointer vs. Policy vs. Writer-Target distinction
+
+Three categories of `.squad/decisions/inbox/` references must be treated differently:
+
+1. **Broken followable POINTER** (FIX): Prose that cites a specific `inbox/{name}.md` filename as if it were a stable committed link (e.g. `Merged from .squad/decisions/inbox/graham-ctd-phase4-synthesis.md`). Replace with slug-preserving plain text; fix any resulting malformed prose (dangling "— this file" → "— this decision entry").
+2. **Gitignore-policy documentation** (KEEP/RESTORE): Bulleted `Explicitly prohibited (gitignored runtime state)` lists that document the inbox path itself — these are policy docs, not broken pointers. Every sibling path was kept; stripping only the inbox path was over-reach.
+3. **Generic directory narration** (KEEP/RESTORE): Location descriptions like "directive files in `.squad/decisions/inbox/`" that accurately describe where transient files were written — keep the path.
+4. **Forward writer-target paths** (NEVER TOUCH): Charters, templates, skills that tell future agents where to write files.
+
+### Append-only history files are immutable
+
+Agent `history.md` and `history-archive.md` files are append-only. Committed entries must never be retroactively edited — even for doc hygiene. Any sweep touching them mirrors the over-reach that got PR #44 reverted.
+
+### "Zero hits" acceptance criteria can be relaxed when the remaining hits are intentional
+
+Issue #46 originally required zero `decisions/inbox/` hits in decisions-archive.md. Aaron approved relaxing this when the remaining hits are policy-list bullets documenting the gitignore rule. The criterion is "zero broken followable pointers," not literally zero occurrences of the path string.
+
 ## Learnings — 2026-06-06: Forge M3 Copilot Review Address (PR #49)
 
 ### Thread 1 — Prepared statement caching in `SqliteHintDispositionProvider`
