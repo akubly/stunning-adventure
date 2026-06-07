@@ -15,6 +15,18 @@
 - Cycle 2: C8 tiebreak — sided with strict layering; Eureka as independently deployable component
 - 7-mechanism extraction readiness: Defense-in-depth verified
 
+## Learnings
+
+### 2026-06-06: OQ-2 Substrate Brief — FEDERATE Recommendation
+
+**Task:** Evaluate MERGE vs FEDERATE for Crucible L1 WAL / Cairn event_log topology from Eureka/Cairn bounded-context perspective.
+
+**Recommendation:** Option B (FEDERATE). The architecture already commits to "share identifiers, fork everything else" (§15.1). MERGE would violate §14.3 ("no shared substrate with Cairn"), require reworking Sprint 0's DB seam, and pollute Eureka's ingestion pipeline with Crucible event types it has no business understanding.
+
+**Key insight:** The "one entity, two lenses" framing fails the write-pattern test. CRUD-with-update (Cairn) and append-only-with-CAS (Crucible) are not lenses on the same thing — they're different storage contracts. Forcing them into one table means one side's invariants yield to the other's.
+
+**Artifacts:** Brief delivered to `.squad/decisions/inbox/genesta-oq2-substrate-brief.md`. Covers bounded-context verdict, schema-ownership risks for both options, federation boundary specification, and 5 cross-package gotchas.
+
 **See history-archive.md for detailed entries.**
 
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
@@ -36,6 +48,7 @@ Architecture remains kernel-extraction-ready. No substrate changes. Ready for Aa
 **Scribe note (2026-06-02T06:14:32Z):** M8 storage milestone kicked off (Aaron, 2026-06-01). Slices A→D planned. Aaron locked Q1=scaffold-A-write-B, Q2=cursor pagination, Q3=own eureka.db. Roger (Slice A impl SPAWNED) and Laura (contract audit SPAWNED) on branch eureka/m8-slice-a-sqlite-factreader.
 
 📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
+- 2026-06-06 📌 scribe: OQ-2 LOCKED (FEDERATE) + Refactor 3 complete (real SQLite adapter, 14/14 green)
 
 **Scribe note (2026-06-06T07:00:21Z):** M8 Slice C COMPLETE — Roger (SqliteFactStore + FTS5 BM25 search, PR #48) + Laura (contract/edge audit, 12 tests). FactStore.search() now wrapped form `{ results, nextCursor? }` with BM25 ranking `-bm25(facts_fts)*trust DESC`, per-page normalization, base64-JSON offset cursor. FSE-1 (parse errors → graceful `{results:[]}`) fixed in Round 2. FSE-4 (caveat docs) documented. Laura's 109→121 test suite: BM25 ordering, cursor round-trip, boundary, isolation, NULL-trust, FTS5 syntax all verified. Verdict: ✅ ACCEPT-WITH-FOLLOWUPS. Slice D next.
 ## 2026-06-07 — M8 Slice D Complete
