@@ -674,6 +674,7 @@ When worktree mode is enabled, the coordinator creates dedicated worktrees for i
 **Dependency management:**
 - After creating a worktree, link `node_modules` from the main repo to avoid reinstalling
 - Windows: Create a directory junction from the worktree's `node_modules` to the main repo's `node_modules` (use the `mklink /J` shell command; quote paths if they contain spaces). If `mklink` fails (permissions, cross-device), fall back to `npm install` in the worktree and emit to the user: `⚠️ Worktree dependency linking failed — fell back to npm install. Dependencies may differ from the main checkout (slower, not shared).`
+  > Warning only — spawn continues after the npm install fallback.
 - Unix: `ln -s "{main-repo}/node_modules" "{worktree}/node_modules"`
 
 **Reusing worktrees:**
@@ -767,6 +768,7 @@ d. **Set up dependencies:**
      - Fall back: `cd "{worktree}" && npm install`
      - Log the fallback to `.squad/orchestration-log/{timestamp}-worktree-fallback.md`: `[worktree-setup] junction link failed — fell back to npm install in {worktree}`
      - Emit to the user: `⚠️ Worktree dependency linking failed — fell back to npm install. Dependencies may differ from the main checkout (slower, not shared).`
+    > Warning only — spawn continues after the npm install fallback.
 
 e. **Include worktree context in spawn:**
    - Set `WORKTREE_PATH` to the resolved worktree path
