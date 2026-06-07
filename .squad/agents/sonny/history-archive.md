@@ -4,6 +4,12 @@ File size: 30573 bytes. See history-archive.md for earlier entries.
 
 ---
 
+# Agent History Archive — sonny
+
+Archived entries (pre-summarization).
+
+---
+
 # Sonny — History
 
 ## Project Context
@@ -214,3 +220,4 @@ L1: Conductor + Ledger       ← read-set captured on commit (US-S-3)
 **Summary:** Read-only audit of Cairn + Forge + skillsmith-runtime + runtime-cli + types against US-S-1..9 and the L5 layer proposal. Headline: there is no debugger today — zero matches for DAP, breakpoint, watchpoint, REPL, bisect, minimize, time-travel, or replay across all `src/**` files; `runtime-cli` exposes only `forge-prescribe` and `cairn/src/cli.ts` is a 2-line stub. But the substrate I asked for is largely already shipped: `HookComposer.onPreToolUse` + `permissionDecision: "ask"` is the per-tool pause primitive US-S-1/US-S-9 ride; `event_log` + `getUnprocessedEvents(cursor)` is the deterministic replay engine US-S-4 needs; the MCP server already hosts the de-facto investigation tools Aaron uses today. The bad news is exactly what US-S-3 predicted: `event_log.payload` has no `read_set` column anywhere, seven tables mutate rows in place (`optimization_hints`, `prescriptions`, `insights`, `curator_state`, `execution_profiles`, `managed_artifacts`, `signal_samples` GC) with shadow-event emission by convention not invariant, and the word `provenance` is already taken in this repo to mean evidentiary tier (`provenanceTier: 'internal' | 'certification' | 'deployment'`) — a hard vocabulary collision with US-S-3's causal-slice meaning. Per-story verdict: 0 already-exists, 3 partially-exists (US-S-1, US-S-2, US-S-9 — substrate present, debugger semantics absent), 6 net-new (US-S-3, US-S-4, US-S-5, US-S-6, US-S-7, US-S-8 + L5 layer), 0 contradictions (only the naming collision, surfaced not resolved). Highest-leverage recommendations: (1) name the new field `causal_read_set` not `provenance`; (2) extend `permissionDecision` enum with `step / step-into / step-out / abort / edit-and-continue`; (3) add `sessions.parent_session_id` + `fork_point_event_id` in one migration — unblocks US-S-5, US-S-6, US-S-8 simultaneously; (4) treat the MCP tool list as the investigator-REPL's vocabulary rather than inventing a parallel surface; (5) split the hook composer into a fail-loud debugger tier so thrown breakpoints propagate. Full inbox: `.squad/decisions/inbox/sonny-reconciliation-2026-05-24T2330Z.md`.
 
 
+- L4's approval router IS the pause mechanism for breakpoints. Reusing it gets safety properties for free and makes the debugging session itself event-sourced.

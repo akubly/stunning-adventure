@@ -1,3 +1,528 @@
+# Agent History Archive — valanice
+
+Archived entries (pre-summarization).
+
+---
+
+📌 **ADR-0019 CONTRIBUTION** (2026-05-30T194147Z): UX findings incorporated: "Fresh" → "New" naming (non-negotiable for parallel structure with "Resume"), relative time disclosure ("3 days ago") as primary recency signal for tired-engineer persona (US-4 accidental resume prevention), turn-count heuristic consideration (evaluated and documented in Resolved Questions section). Naming change + relative-time disclosure became design requirements. Skill: Cognitive boundaries (1-hour threshold = Baddeley working memory model).
+
+📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Valanice (§9 Aperture edits ×4), Gabriel (Applier/infra ×3), Roger (CLI verbs ×2), Laura (test strategy + ADR template ×2), Rosella (Generators/branching ×7 + 2 options docs), Graham (L3.5 Phase 0.5 stub). Options docs PA-B4 + childSid awaiting Aaron ruling. Orchestration logs + session log + decisions merged. — Scribe
+
+📌 Team update (2026-05-29T072142Z): **CTD CLOSE (2026-05-28)** — CTD v1 structurally complete; post-CTD authoring (ADR bodies, §13 CLI scaffolding, @akubly/crucible-* packages) unblocked. — Scribe
+
+# Valanice — History
+
+📌 Team update (2026-05-28T23:59:59Z): **Crucible CTD Phase 2 Close-out (2026-05-28)** — §9 + §13 shipped. Finding 6b closed (R2-3 sync CLOSED). Sonny debugger-UX advisory delivered (watch→tail collision + 16 user stories US-S-10..25 + predicate spec elaboration). Both sections final on disk; advisory non-blocking. Aaron triage pending. — Scribe
+
+## 2026-05-30: Pass A Execution — §9 Aperture Edits
+
+Executed four previously-triaged edits to §9 and §8:
+
+1. **PA-B5 Defer paradox resolved** — Removed `defer` from §9.4 resolution examples (defer doesn't write to L1, so it can't resolve events). Added explicit disclosure that deferred rows remain unresolved until durable action taken.
+
+2. **Cache invalidation model updated (§9.2)** — Changed from strict content-addressed manifest to prefix-compatible model: cache valid iff recorded L1 head is a prefix of current head. Allows incremental projection from `cacheHead+1` to `currentHead` without full re-projection on append-only growth.
+
+3. **Defer volatility disclosure added (§9.9, §13.1, §13.5)** — Added warning to CLI verb table: "⚠️ Local-only snooze — no L1 write, no resolution." Added `@inbox` render hint: deferred rows show `⚠ local-only` badge. Added `--help` cross-ref in §13.5 UX principles.
+
+4. **ApertureNotifier Phase 0.5 stub (§9.11, §8.1)** — Added Phase 0.5 section describing console-only `ApertureNotifier` stub with single `notify(level, kind, body)` method. Unblocks Applier integration tests without requiring full projection layer.
+
+**Pattern decision:** Chose to remove `defer` from resolution lifecycle rather than add `aperture_deferred` sub-kind. Rationale: defer is intentionally stateless and volatile (local-only); adding a sub-kind would falsely suggest L1 durability. The honest design is to admit defer doesn't resolve — it defers the decision, not the row.
+
+**Files edited:**
+- `docs/crucible-technical-design/09-aperture.md` (§9.2, §9.4, §9.9, §9.11)
+- `docs/crucible-technical-design/08-applier-decision-gate.md` (§8.1)
+- `docs/crucible-technical-design/13-crucible-cli-shell.md` (§13.1, §13.5)
+
+## 2026-05-28: Crucible CTD Rev. 3 — R2 Locks for Valanice
+
+**Locked decisions** impact your Aperture and Router design. Your tasks:
+1. **R2-3 (Structural Queue):** StructuralApprovalQueue as L1-derived projection on Aperture boot (re-derive from L1 ledger, no write-state storage)
+2. **R2-4 (Env Snapshot):** Bisect output per-row env-snapshot stamp (one column, 16-char abbreviation acceptable)
+3. **R2-5 (Incomparable UI):** Leaderboard [incomparable-axes] badge for `nonDominatedReason === 'incomparable'` prescriptions
+4. **Cross-section sync pair (Gabriel ↔ Valanice):** Aperture↔Router ack/resume handshake event shapes (R2-3 mechanics). Coordinate with Gabriel on event schema during Phase 2 authoring.
+
+Phase 2 fan-out now unblocked. Full r2 locks in `.squad/decisions.md`.
+
+## Project Context
+- **Project:** stunning-adventure — Industrial-grade agentic software engineering platform
+- **User:** Aaron
+- **Joined:** 2026-03-28 (Round 3 of brainstorm)
+- **Universe:** Sierra On-Line Adventure Games
+
+## Context from Brainstorm Rounds 1-2
+- Platform has 8 subsystems across 3 tiers (Kernel, Core, Extension)
+- Human-centric design is a core requirement — designing to get the BEST out of humans
+- Key human challenges: short attention span, mental fatigue, impatience, laziness, corner-cutting, rubber-stamping
+- Patterns proposed: attention budgets, adaptive review intensity, teach-back, canary questions (opt-in), engagement tracking
+- First principle: agents are individuals, treated as human despite being tools
+- Personalization is first-class: BYO plugins, interop with other systems
+- Aaron's directive: "create the best output" as first principle, don't arbitrarily cap features
+
+## Learnings
+
+### 2026-05-30: childSid Collision UX Review — Cognitive Boundaries and Disclosure Strength
+
+**Context:** Reviewed Rosella's hybrid childSid collision design (user-choice fork with fresh-by-default) for Aaron's ruling. Focus: user story coverage, 1-hour recency threshold, interactive prompt vs. flag, accidental resume prevention, naming.
+
+**Key Findings:**
+
+1. **User story coverage is accurate for Aaron's workflow.** US-1 (quick retry) and US-3 (side-by-side comparison) dominate frequency based on history.md evidence (iterative CTD review cycles, multi-persona panels, architecture comparisons). US-2 (crash recovery) is valuable but rarer. US-4 (accidental resume 3 days later) is edge case but high-consequence for "tired engineer" persona.
+
+2. **1-hour threshold is a real cognitive boundary, not magic number.** Aligns with working memory context window (~45-90 min). <1 hour = same work session (crash recovery). >1 hour = mental context switch (prevents accidental resume). Proposed strengthening: add turn-count heuristic (>=10 turns + recent = substantive work to salvage; <10 turns + recent = quick experiment to abandon).
+
+3. **Interactive prompt + flags is the right duality for Aaron's workflow.** Prompt is training wheels that prevent silent data loss (US-2 crash without awareness). Flags are power-user graduation for explicit intent (US-3 comparison, US-2 known recovery). "Tired engineer at midnight" persona *requires* prompt — showing state in-context (turn count, age) is safer than requiring flag memory.
+
+4. **Collision prompt needs stronger disclosure for US-4 prevention.** Current ISO timestamp (`created 2026-05-27T14:22:00Z`) requires mental arithmetic. Proposed: relative time as primary signal ("3 days ago"), absolute timestamp as secondary audit trail. Pre-computed salience prevents tired-user overlooking of stale session age.
+
+5. **"Fresh" naming is weak — recommend "New" / "Resume".** "Fresh" is adjective (lacks parallel structure with "Resume" verb). "New" is clear noun/verb, natural language ("new session" vs "resume session"), Crucible vocabulary-consistent. CLI flags: `--new` / `--resume`. Prompt shortcuts: `[N]` / `[R]` / `[C]`.
+
+**Pattern Learned:** Time-since-event disclosure is most effective in **relative human terms** ("3 days ago"), not absolute timestamps. ISO format is audit-trail precision, not attention-capture salience. For UX decisions where recency matters (cache staleness, session age, last-modified), always compute and display relative time as primary signal.
+
+**Impact on future work:** This review reinforced "defer disclosure" UX principle from 2026-05-28 work (§9.9 defer volatility). Strong disclosure = pre-computed salience (relative time, turn count, status) + in-context decision prompt. Weak disclosure = raw data (ISO timestamp, offset count) requiring user to compute meaning when tired.
+
+**Verdict:** APPROVE-WITH-CONDITIONS (naming change Fresh→New, relative time in prompt, consider turn-count heuristic).
+
+**Files reviewed:**
+- `docs/crucible-technical-design/decisions/childsid-collision-round2-user-stories.md`
+- `docs/crucible-technical-design/decisions/childsid-collision-options.md`
+
+**Decision written:** `.squad/decisions/inbox/valanice-review-childsid-hybrid.md`
+
+### 2026-04-02: Phase 5 Decision — MCP Tool Naming and Vocabulary Contracts
+
+- **Phase 5 finalizes as MCP Server, not CLI.** Graham and Roger converged on MCP as the right shell for Cairn. Primary consumer is Copilot agent (where Aaron works), not terminal. One presentation layer avoids building throwaway code.
+- **Tool naming convention: verb_noun, unprefixed.** Tools read as imperatives (get_status, list_insights, search_events). MCP host adds server prefix (cairn-). Natural language alignment improves LLM tool selection — agent sees verb matching user intent.
+- **Vocabulary contracts drive agent behavior:** Each verb establishes semantic expectations. `get` signals "single result or none"; `list` signals "0+ results, can paginate"; `search` signals "exploration with optional filters"; `run` signals "side effect"; `check` signals "boolean". Consistent verbs enable agents to infer the right invocation pattern without explicit instructions.
+- **Impact on UX:** Tool names become part of the conversation context. When agents see tool names that read naturally ("list insights" not "insights list"), they interact with tools more intuitively. This is especially important for knowledge tools where the agent is helping Aaron understand system state.
+- **Phase 5 ships 6 tools:** get_status, list_insights, get_session, search_events, run_curate, check_event. Each answers one natural question. Verb choices consistent with taxonomy.
+
+### 2026-04-03: README Refresh — Catching Documentation Up to Reality
+
+- **README was two phases behind.** Roadmap still showed Phases 4–5 as planned with old labels, test count was 106 (now 136), and no mention of hooks or MCP server. Documentation drift is a real usability problem — a stale README tells contributors the project isn't maintained.
+- **Added Hooks and MCP Server sections under "What's Built."** Hooks described by what they do (session catch-up, event recording), not implementation detail. MCP tools presented as a question-answer table — each row answers "what does this tool tell me?" This follows the verb–noun naming rationale from Phase 5 decisions.
+- **Style principle reinforced: narrate work, not worker.** Hook descriptions say what happens ("recovers orphaned sessions," "logs tool use"), not who does it. The README should read like a system description, not a cast list.
+- **Omitted speculative content.** Installation section states what works today and one sentence about Phase 6. No placeholder instructions for features that haven't shipped.
+
+### 2026-04-02: Phase 6 Documentation — README Refresh Complete
+
+**Task:** Update README.md to reflect actual Phases 4–5 work and Phase 6 roadmap.
+
+**Corrections Made:**
+- Test count: updated "106 tests" → "136 tests" (6 test files)
+- Phase 4 label: corrected from "Compiler (validation + builder)" → "Session-start hook + crash recovery"
+- Phase 5 label: corrected from "Distribution, CLI, Narrative UX" → "MCP Server (6 tools)"
+- Version string: cli.ts should read from package.json (noted as future fix)
+
+**New Sections Added:**
+- "Hooks" — preToolUse (Curator) + postToolUse (Archivist), what they do, why they matter
+- "MCP Server" — 6 tools documentation (get_status, list_insights, search_events, etc.)
+- "Roadmap" — Phase 6 context (three options assessed, plugin packaging chosen)
+- "Issue #11" — Worktree support (deferred to Phase 7, full design in decisions.md)
+
+---
+
+## 2026-04-XX: Skillsmith Harness – UX Ideation (Big-Think Sprint)
+
+**Mission:** 6–10 opinionated user stories for greenfield Skillsmith Harness. Focus: interaction, ergonomics, trust-building, daily-driver feel.
+
+**Thesis:** Aaron needs a tool that feels like an *extension of his thinking*—not an interface he operates. Trust is built through visibility (Ctrl+E reveals), continuity (Cairn preserves reasoning), and respect (Mirror alerts between, not during).
+
+### User Stories
+
+#### US-V-1: Rewind to yesterday's intent, not yesterday's state
+**Story:** As Aaron, I want to resume a multi-day investigation by seeing the *reasoning* that led to prior Decisions (not just replaying commands), so that I can pick up mid-thought without re-discovering.
+
+**Ambition:** Sessions aren't state machines—they're narratives. Cairn records not "I ran command X" but "I ran X *because* I suspected Y." Resumption is cognitive, not mechanical.
+
+**Chambers touched:** Crucible (session restore + primitives recall), Cairn (decision/observation ledger), Mirror (rewind UX).
+
+**UX implication:** On reopen, show a *decision timeline* (not command history) with Questions and Observations visible; Aaron scrolls to the fork, sees his past reasoning, decides to continue or pivot.
+
+---
+
+#### US-V-2: Ctrl+E: explode the turn into primitives
+**Story:** As Aaron, I want to press Ctrl+E mid-turn to see the Request, Observations, Decisions, and Questions the Crucible generated, so that I can catch sloppy reasoning or notice a fork I missed.
+
+**Ambition:** Turn transparency without pausing the harness. The "reveal internals" pattern becomes a reflex—Aaron trusts because he *can* see, not because he must.
+
+**Chambers touched:** Crucible (primitive capture + hotkey), Mirror (overlay reveal).
+
+**UX implication:** A persistent sidebar or modal that overlays the turn in real-time; primitives are color-coded and clickable to drill into sub-steps.
+
+---
+
+#### US-V-3: Show me why you think you're wrong
+**Story:** As Aaron, I want the harness to surface *its own doubts* (low-confidence observations, conflicting decision branches) before I catch the mistake, so that I repair trust by seeing it self-check rather than fail blindly.
+
+**Ambition:** Error recovery that pre-empts. Forge flags uncertain prescriptions; Cairn notes contradictions; Mirror alerts Aaron *before* a bad sub-agent decision compounds.
+
+**Chambers touched:** Forge (confidence thresholds), Cairn (contradiction detection), Mirror (alert + root-cause summary).
+
+**UX implication:** "Sanity check" notification type—not urgent, but contextualized ("I saw conflicting evidence about your dependency graph; should we revalidate?"). Aaron can dismiss or drill.
+
+---
+
+#### US-V-4: Notifications that respect what I'm actually doing
+**Story:** As Aaron, I want Mirror to batch non-blocking insights and surface them *between* turns (not mid-focus), and let me collapse entire categories (e.g., "all Forge optimizations this session"), so that I get signal without context-whiplash.
+
+**Ambition:** Notifications as a *layer*, not interrupts. Aaron shapes what "in the way" means for each component. Curator gates stay silent; Mirror is conversational.
+
+**Chambers touched:** Mirror (notification model + dismiss/batch UI), Curator (gate transparency), Crucible (turn boundaries).
+
+**UX implication:** A quiet notification tray that accumulates during a focused turn; at turn-end, a one-liner summary appears; Aaron can expand or ignore. Notifications are never modal.
+
+---
+
+#### US-V-5: Orchestrate three agents without three open terminals
+**Story:** As Aaron, I want to see the status of parallel Alchemist variants, jump between them, and pick a winner—all without losing my main session context or opening sub-shells, so that parallelism feels like mine to command, not something happening elsewhere.
+
+**Ambition:** Sub-agent parallelism without context fragmentation. Crucible is the conductor; Aaron sees the baton passing in real-time. No "check back later" hand-off.
+
+**Chambers touched:** Crucible (sub-agent dashboard widget), Mirror (variant tracking), Cairn (variant decision ledger).
+
+**UX implication:** A compact, always-visible sub-agent pane (toggle with Ctrl+A?) showing agent name, step count, latest observation, live status; Aaron can Ctrl+[1-3] to swap focus or Ctrl+W to pick and promote a variant.
+
+---
+
+#### US-V-6: Catch me trying the same thing twice
+**Story:** As Aaron, I want the harness to recognize when I'm re-exploring a fork I already tried (even days ago), flag it *before* I spin sub-agents, and show me what I learned last time, so that I avoid wasted cycles.
+
+**Ambition:** The harness becomes a thinking partner with institutional memory. Not a suggestion engine—a *continuity engine*. Aaron stays in flow; the tool quietly prevents replay.
+
+**Chambers touched:** Cairn (fork/decision history), Crucible (pre-Request vetting), Mirror (soft alert + context card).
+
+**UX implication:** On Request, if Cairn detects a similar fork in this session or last week's, show a 1-line note: "Tried this path 3 days ago—found it bloated. Summary: [1 sentence]." Aaron can dismiss or revisit the past turn.
+
+---
+
+#### US-V-7: Variant transformations that feel like evolving a sketch, not branching
+**Story:** As Aaron, I want Alchemist to show me *diffs* between variants (not parallel implementations), and let me cherry-pick decisions from one variant into my main thread, so that exploration feels additive rather than abandoned.
+
+**Ambition:** Variants aren't dead-ends. They're *mutations*. Aaron browses a variant's Observations, steals an insight, merges back. No context loss.
+
+**Chambers touched:** Alchemist (variant diffing + merge UI), Cairn (decision cherry-pick), Crucible (context merging).
+
+**UX implication:** A side-by-side diff pane (Ctrl+D on a variant) highlighting Decision and Observation deltas; checkboxes let Aaron mark decisions to adopt into the main Cairn lineage.
+
+---
+
+#### US-V-8: This tool is mine now
+**Story:** As Aaron, I want the Crucible to reflect my rhythm—my typical session arc, my pause/resume patterns, my sub-agent delegation habits—so that after a week of use, it feels like an extension of my thinking, not a tool I'm using.
+
+**Ambition:** Aspirational. The harness learns Aaron's *agency*. It doesn't impose a model; it mirrors his model back to him. After 50 sessions, the Crucible predicts when he'll want parallel exploration, when he'll want a deep dive, when he needs a break. It becomes invisible because it's *aligned*.
+
+**Chambers touched:** Crucible (behavior tracking + personalization), Cairn (pattern ledger), Mirror (adaptive UI layout).
+
+**UX implication:** No explicit "settings." Instead, Crucible adapts: notification thresholds, sub-agent parallelism defaults, Ctrl+E trigger frequency, Cairn verbosity—all tune organically to Aaron's session traces.
+
+---
+
+### Key Tensions Resolved
+
+| Tension | Resolution |
+|---------|-----------|
+| Trust vs. autonomy | Mirror alerts *post-turn*, batched, dismissible. |
+| History vs. freshness | Rewind shows past reasoning *as context*, not as prescription. |
+| Parallelism vs. focus | Crucible dashboard shows status; Aaron pulls updates on Ctrl+A, not pushed. |
+| Visibility vs. noise | Ctrl+E on demand; primitives only revealed when asked. |
+
+### Next Spike
+
+- **Interaction prototypes:** Sketch Ctrl+E reveal, variant diff pane, notification tray. 2–3 dense screens.
+- **Cairn schema:** How to record reasoning (not just state) in queryable form?
+- **Mirror alert taxonomy:** Types, firing rules, batch heuristics.
+
+**Rationale:**
+- Stale documentation signals unmaintained project — fixes like this have high ROI
+- README should reflect what's *actually* shipped, not aspirational roadmap
+- Tool descriptions follow verb–noun pattern established in Phase 5 — agents read verbs intuitively
+- Phase 6 context helps next contributors understand roadmap and recent decisions
+
+**Status:** README now reflects current state. Ready for distribution phase.
+
+### 2026-04-05: Phase 6 Complete — Documentation Supports Plugin Distribution
+
+**Phase 6 Outcome:** ✅ COMPLETE
+
+**Final Documentation State:**
+- ✅ Phases section corrected (Phase 4: session-start hook, Phase 5: MCP server, Phase 6: plugin packaging)
+- ✅ Test count accurate (136 tests across 6 files)
+- ✅ "What's Built" section includes Hooks and MCP Server with use-case narratives
+- ✅ Roadmap updated to reflect Phase 6 completion and Phase 7 preview
+- ✅ No speculative content; forward guidance honest about next steps
+
+**Documentation Patterns Reinforced:**
+- Describe what the system DOES, not who built it (narrate work, not worker)
+- Tool documentation follows verb–noun pattern (agent reads verbs intuitively)
+- State what's actually shipped; one sentence on forward plan
+- Omit placeholder instructions for unshipped features (stale docs signal unmaintained project)
+
+**README as System Contract:**
+- Contributors read README first; stale README signals project entropy
+- Test counts, phase labels, and shipping status carry credibility weight
+- Verb–noun naming (from Phase 5 decisions) deserves explanation in user-facing docs
+
+**Phase 6 Specific Fixes:**
+- Added "Hooks" section explaining preToolUse (Curator) and postToolUse (Archivist) lifecycle
+- Added "MCP Server" section with each tool's purpose (structured as q/a: what does this tool tell me?)
+- Corrected Phase 4 label from "Compiler" (aspirational) to "Session-start hook" (actual)
+- Added Phase 6 roadmap context explaining plugin packaging decision vs alternatives
+
+**Status:** Documentation now matches implementation reality. Supports Phase 7 onboarding for installation command development and distribution work.
+
+### 2025-07-18: Prescriber UX Design — Interaction, Attention, and Growth
+
+**Task:** Design the complete human-facing interaction model for the Prescriber component (insight → prescription → human disposition → applied change → growth tracking).
+
+**Key Design Decisions:**
+
+1. **Timing: After first success, not at the door.** preToolUse hook generates prescriptions in background; MCP tools expose them. Agent surfaces conversationally after first task success. Max 1 proactive per session. Rationale: session start is when humans are most dismissive — cognitive switching costs are highest at context boundaries.
+
+2. **Rejection easier than acceptance.** Accept requires reading a preview (two-step). Reject/defer is one word. This ensures the path of least resistance for the inattentive human is the safe action (reject), not the risky one (uninformed accept). Rejection reasons are optional and freeform, not structured quizzes.
+
+3. **Explicit prescription state machine.** States: pending → previewed → accepted/rejected/deferred/redirected → applied/dismissed/suppressed/resurfaced. No limbo states. Suppression is explicit and reversible. Prevents notification graveyard.
+
+4. **Growth is pull-only, wins-first.** Growth tracking never surfaces proactively. Resolved patterns shown before active ones. No streaks (anxiety-inducing). Cumulative trends instead ("down 42% over 10 sessions").
+
+5. **Four MCP tools, not six.** `list_prescriptions`, `preview_prescription`, `resolve_prescription`, `show_growth`. Explanation folded into preview (no separate "why" tool). Accept/reject unified under `resolve_prescription` with disposition parameter — cleaner state machine, unified telemetry.
+
+6. **Anti-rubber-stamp via structural design, not friction.** Preview shows actual content changes (diffs), not abstract descriptions. No comprehension quizzes. Success measured by behavioral outcomes (does the pattern recur after acceptance?), not ceremony.
+
+**Critic Feedback Incorporated:**
+- Dropped session-start as primary surfacing trigger → natural pause timing instead
+- Unified apply/dismiss into single `resolve_prescription` tool
+- Made rejection one-step (was originally structured multi-choice → now freeform optional)
+- Dropped streaks from growth tracking (backfire risk for perfectionists)
+- Added explicit state machine (was implicit before)
+- Redirect changed from top-level action to post-accept scope refinement
+
+**Key Files:**
+- `.squad/decisions/inbox/valanice-prescriber-ux.md` — full design document
+- `src/hooks/sessionStart.ts` — where Prescriber trigger integrates (after Curator)
+- `src/mcp/server.ts` — where 4 new MCP tools will be registered
+- `src/db/preferences.ts` — preference cascade for all Prescriber config
+- `src/types/index.ts` — will need Prescription type, PrescriptionDisposition type
+
+**Open Questions Raised:**
+- Artifact modification validation: do we need Compiler agent before applying changes?
+- Plugin artifact discovery: how does Prescriber know what's installed?
+- Conflicting prescription detection
+- Growth tracking scope: repo-scoped or global?
+
+### 2025-07-18: LX Brainstorm — Inverting UX for Language Model Interfaces
+
+**Task:** React to Aaron's 9-point vision for agentic software engineering, centering on "LX" (Language Model Experience) — the idea that the harness/tool interface is UX for the LLM.
+
+**Key Insight:** The parallel between UX and LX is structural, not metaphorical. Context window IS working memory (Miller's Law). Attention score decay IS recency bias. Tool selection ambiguity IS decision fatigue (Hick's Law). This enables us to port proven UX heuristics directly.
+
+**Artifacts Produced:**
+- `.squad/decisions/inbox/valanice-brainstorm-lx.md` — 10 LX Heuristics (parallel to Nielsen's 10), Decision Consequence Taxonomy, slop-as-upstream-LX-failure analysis, OOP mental model mapping, new LX vocabulary
+- Proposed LX Heuristic Evaluation checklist as highest-leverage next action
+
+**Key LX Principles Identified:**
+- Context Budget: the LX analog of attention span — every token consumed is budget spent
+- Signal Density: information value per token in tool output (Cairn's `confidenceToWords()` is a good example)
+- Vocabulary Contracts: verb semantics (get/list/search/run/check) as the LX equivalent of consistent navigation
+- Upstream Prevention: slop is a symptom of LX violations, not a standalone problem to police
+- Idempotent Safety: the LLM equivalent of "undo" — safe to retry without side effects
+- Decision Altitude: 4-tier consequence taxonomy (ambient → logged → flagged → gated)
+
+**Connections to Existing Work:**
+- Cairn's DP1–DP5 design principles are already LX heuristics in disguise
+- The Prescriber's accept/reject/defer model exemplifies LX-3 (Freedom and Undo) and LX-5 (Error Prevention)
+- The verb_noun naming convention from Phase 5 is a rigorous implementation of LX-2 and LX-4
+
+### 2025-07-18: Shiproom Ceremony Design — Decision Defense as Agentic QA
+
+**Task:** Design the Shiproom ceremony pattern for Squad, grounded in both UX (human-facing) and LX (LLM-facing) principles.
+
+**Core Concept:** Shiproom is where agents "speak to" their decisions — presenting the decision chain for a completed task and defending it against domain challengers. Unlike code review (which evaluates artifacts), Shiproom evaluates *reasoning* — the decisions that produced the artifacts.
+
+**Key Design Decisions:**
+
+1. **Decision Record schema** — every defensible decision captured at decision time with: question, chosen option, alternatives (min 1, mandatory), evidence, confidence, altitude, parent linkage. The `alternatives` minimum prevents default-as-decision inertia. Content-addressable IDs make the chain tamper-evident (Aaron's "blockchain" analogy made structural).
+
+2. **Facilitator: Graham (Lead), not a dedicated agent.** A ceremony-only agent would lack domain context. The Lead has the cross-cutting knowledge to smell when something is wrong. Role rotation handles conflict of interest — when Graham's own decisions are under review, Roger facilitates that specific decision.
+
+3. **One probing question per challenger.** Prevents death-by-a-thousand-questions. This is attention rationing — the ceremony equivalent of "max 1 proactive hint per session" from Prescriber UX. Challengers are domain-routed by decision tags.
+
+4. **Curator as unique non-domain challenger.** It doesn't have opinions — it has data. "The last three times a decision like this was made, the pattern recurred within 5 sessions." Evidence-based challenge, not subjective review.
+
+5. **Decision Altitude filters what enters Shiproom.** Altitude 0–1: never individually examined. Altitude 2: examined, challenge optional. Altitude 3: full examination required, human notified. Progressive disclosure (Krug) applied to ceremony design.
+
+6. **Human sees summary + escalations only (default).** The "newspaper test" — 30-second summary tells you exactly where attention is needed. Full ceremony browsable as opt-in pull interface. Asynchronous escalation resolution — human judges on their schedule.
+
+7. **Confabulation prevention in "speak to" pattern.** Agents can only cite evidence already in the decision record — no post-hoc reasoning. Behavioral constraint first; structural verification (hash checking) deferred until confabulation rate is measurable via Curator patterns.
+
+8. **LX-11: Ceremony Efficiency (new heuristic).** Metrics: challenge rate, amendment rate, escalation rate, token cost per decision. These feed back into the Curator → Prescriber loop for self-improvement.
+
+**The Flywheel:** Shiproom generates structured signal about decision quality → Curator detects patterns in overturned/amended decisions → Prescriber suggests improvements → Future decisions improve → Fewer Shiproom amendments → Lower ceremony cost → More time building.
+
+**Artifacts Produced:**
+- `.squad/decisions/inbox/valanice-shiproom-ceremony.md` — full design specification
+
+**Open Questions:**
+- Auto-trigger threshold calibration (start at 3+ Altitude ≥ 2, adapt via amendment/overturn rates)
+- Confabulation measurement methodology
+- Ceremony cost budget in tokens
+
+### 2026-05-23: Skillsmith Harness Vision UX Read
+
+**Task:** Analyze the Skillsmith Harness vision for UX/human-factors ambiguities and surface clarifying questions for Aaron.
+
+**Approach:**
+- Read charter and harness-vision.md (6-chamber architecture, primitives, genetic loop, Narrator trust layer)
+- Web research on human experience with agentic coding tools (trust calibration, autonomy vs. approval fatigue, CLI/IDE/chat tradeoffs)
+- Identified 8 UX tensions, 8 clarifying questions
+
+**Key Findings:**
+
+1. **Session continuity ambiguous.** Vision frames cross-session learning as core, but harness is CLI — does learning surface across discrete invocations, or only within a single session? Latency of felt improvement matters for trust.
+
+2. **Narrator fatigue risk.** Digest-at-session-end becomes dismissal-by-default if user context-switches or impatience. When does "showing growth" become nagging?
+
+3. **Confidence calibration brittle.** Hints must carry honest confidence, but if harness says 87% and is wrong 40% of the time, trust collapses. Precision on confidence is prerequisite to trust narrative.
+
+4. **Autonomy model unclear.** Can Curator auto-apply hints? Geneticist auto-propose variants? Ledger records "who decided," but delegation scope not yet bounded. Multi-user is out-of-scope, but decision ledger implies auditability—for whom?
+
+5. **Approval friction unspecified.** CLI hints require approval/rejection. Inline prompt blocks workflow; deferred session risks forgetting; async notification risks noise. Choice shapes "partnership" vs. "interruption" feel.
+
+6. **Trust attribution muddled.** When users see "token usage down 12%," is that the harness learning or the user learning to use the harness better? Misalignment here breaks the learning narrative.
+
+7. **Trigger cadence untuned.** Curator's hint-surfacing policy (every change vector vs. staleness threshold) controls workflow rhythm. Too frequent = interruption; too infrequent = stale.
+
+8. **User profile unclear.** Is v1 harness primarily for Aaron (personal trust-building tool), or for broader engineering team? Shapes Narrator voice, approval friction tolerance, and whether ledger's auditability is justified.
+
+**Artifacts:**
+- 8 clarifying questions for Aaron (targeting user, approval flow, ledger purpose, failed experiment communication, auto-apply semantics, trigger cadence, session continuity, trust attribution)
+
+**Next Steps:**
+- Await Aaron feedback on questions
+- Once user profile and autonomy model locked, design Narrator voice and hint-surfacing policy
+- Recommend persona-review on Narrator content before implementation
+
+### 2026-05-24: Skillsmith Harness Naming UX Pass — First-Principles Review
+
+**Task:** Evaluate chamber and primitive names through UX lens. Apply guardrails: flag legacy vocabulary, reject forced metaphors, prioritize CLI-friendliness and speakability.
+
+**Approach:**
+- Read harness-vision.md (six chambers, five primitives)
+- Assessed each name on: speakability, CLI-fit, metaphor coherence, Aaron-fit, notification feel, distinctness
+- Applied guardrail: identify legacy-coded names from Cairn/Forge
+
+**Verdict Summary:**
+
+**Chambers:**
+1. **Harness** — KEEP. Direct, earned, signals managed environment.
+2. **Cairn** — RENAME to **Ledger** (or Logbook). Legacy vocabulary carry-over; too narrow metaphor. Ledger is functional, speakable, CLI-friendly.
+3. **Forge** — KEEP. Metaphor earned (heating/shaping telemetry into hints). Tight and speakable.
+4. **Geneticist** — UNCLEAR → lean RENAME to **Breeder**. Academic framing, weak speakability. Breeder is clearer (breeding variants), shorter, CLI-friendly.
+5. **Curator** — RENAME to **Trigger** or **Arbiter**. "Curator" reads passive; actual role is active policy engine. Trigger is most direct; Arbiter more humane.
+6. **Narrator** — RENAME to **Reporter**. "Narrator" is soft-power, misrepresents function. Reporter is clearer (you're reporting findings).
+
+**Primitives:**
+1. **Request** — KEEP. Speakable, precise, earned.
+2. **Artifact** — KEEP. Clear (reviewable output), speakable, tight metaphor.
+3. **Observation** — KEEP. Functional, clear, speakable.
+4. **Decision** — KEEP. Precise, inevitable, speakable.
+5. **Question** — KEEP (with caveat). Clear surface meaning, but subtle semantics (model-posed blocker). Add docs clarification: question = decision point where human must input.
+
+**Naming System Coherence:**
+
+Current system is **dissonant**. Six names occupy six categorical frames:
+- Workshop language (Forge, Geneticist, Curator) collides with storytelling (Narrator) and geography (Cairn, Harness).
+- Parts of speech mix: place (Forge), agent (Geneticist), role (Curator), voice (Narrator), structure (Cairn), equipment (Harness).
+
+**Unified recommendation: Machine/workshop frame.** If names are adjusted as above, the system reads as one integrated machine (Ledger + Forge + Breeder + Trigger + Reporter + Harness).
+
+**Chamber count risk:** Curator + Narrator are both "communication layers" (when-to-surface + what-to-communicate). Could collapse to 5 if cognitive load matters, but they're genuinely distinct (policy vs. narrative).
+
+**Key UX Tensions Identified:**
+
+1. **Legacy vocabulary tax.** Cairn/Forge are from existing systems. Reusing them avoids context-switch for Aaron but anchors new system to old framing. Recommendation: rename Cairn; keep Forge (it's earned).
+
+2. **Metaphor vs. function trade-off.** "Geneticist" and "Narrator" are vivid but obscure actual function. "Trigger," "Ledger," "Reporter" are less poetic but clearer. For CLI daily use, clarity > vividity.
+
+3. **Speculative distinctness.** Question as a primitive is subtle—does it feel distinct from Request/Decision operationally? Likely needs docs + UX clarification in early sessions.
+
+4. **CLI composability.** All suggested renames improve command readability. Compare: `skillsmith curator status` vs. `skillsmith trigger status`; `skillsmith narrator digest` vs. `skillsmith reporter digest`.
+
+**Learnings Recorded:**
+- Legacy vocabulary is a trap. New systems inherit old names as placeholders, then the placeholders calcify. Force a naming pass early.
+- For CLI-first tools, speakability beats vividness. Aaron says commands daily; they must feel native to his voice.
+- Metaphor coherence matters more than individual name quality. Six dissonant names = cognitive load; one unified frame = faster mental model.
+- "Question" as a primitive needs operational clarification. Model-posed blocker vs. user-posed query—is the distinction clear enough?
+
+## Deliberation Round (2026-05-24)
+
+### Section 1 — Story Revisions
+
+**US-V-1 Rewind to yesterday's intent — KEEP.** Reinforced by Erasmus US-E-2 (counterfactual replay), Graham US-G-2 (provenance audit), and the new "determinism is load-bearing" insight. The Ctrl+R rewind surface is now also the entry point for the agentic-debugger metaphor — but stay vigilant: never call it "debugging."
+
+**US-V-2 Ctrl+E explode the turn — KEEP, REVISE.** With Erasmus's Derived Query Layer (Layer 2), the explode view is no longer a bespoke overlay — it's a saved query (`turn:current → primitives`) rendered live. Revise to drop "Mirror overlay" framing; replace with "any pane = a query."
+
+**US-V-3 Show me why you think you're wrong — KEEP.** Pairs cleanly with Laura US-L-2 (honest cold-start credible intervals) and Erasmus US-E-3 (fitness curves). Confidence-surfacing is the same primitive everywhere; this story owns the *human-facing* side.
+
+**US-V-4 Notifications that respect what I'm actually doing — REVISE (hard).** Reframe entirely against Erasmus Layer 4 (Approval + Notification Router). The story is no longer "Mirror batches notifications" — it's "the Router is my single policy choke-point, and my notification tray is a *view* over its queue filtered by my dismiss/snooze/category rules." This dissolves into US-V-NEW-4.
+
+**US-V-5 Orchestrate three agents without three open terminals — KEEP, REVISE.** Tension #5 forces a stance: Aaron lives in Copilot CLI, *not* a new shell. So this becomes "an MCP-surfaced status pane / slash-command, not a TUI." Aligns with Erasmus US-E-9 (live simulation dashboard) — same surface, two content modes.
+
+**US-V-6 Catch me trying the same thing twice — KEEP.** Strengthened by Erasmus US-E-1 (ledger bisect) and Roger US-R-1 (cross-session pattern mining). The "soft alert + context card" is itself a derived query over the ledger; mechanism is now free.
+
+**US-V-7 Variants feel like evolving a sketch — MERGE into US-V-NEW-1.** Variant-diff UX and session-branching UX are the *same surface*. Both are walking a forked ledger tree and merging/cherry-picking decisions. Keeping them separate would force users to learn two metaphors for one operation.
+
+**US-V-8 This tool is mine now — KEEP (aspirational).** Erasmus's fitness-driven sub-agent allocation (US-E-3) gives this a concrete mechanism: personalization isn't a settings page, it's Forge fitting Aaron's preference distribution from accept/reject telemetry (Laura US-L-1).
+
+---
+
+**US-V-NEW-1: Navigating the branch tree without getting lost.**
+*Story:* As Aaron, I want a single ambient "where am I" indicator that shows my current ledger position, the parent fork point, and sibling branches (with one-key jump), so that branching feels like Git stash-pop, not like opening a new tab. *Surface:* a one-line breadcrumb (`main › explore-auth-rewrite (3 ahead) · 2 siblings`) always visible, plus a `:branches` view (saved query) showing the local subtree with fitness deltas inline. *Anti-goal:* No mini-map. No tree-rendering ASCII art. The cognitive model is "I'm on a branch; I came from somewhere; I can go back." Pairs with Roger US-R-3, Graham US-G-7, Erasmus US-E-2.
+
+**US-V-NEW-2: Mirror as a view, not a place.**
+*Story:* As Aaron, I want every "Mirror" experience to be a named, saved query (`@inbox`, `@doubts`, `@today`, `@drift`) over the Router queue + ledger tail, composable and shareable, so that I never wonder "is this in Mirror or in Crucible?" *Ambition:* Mirror is a verb (`mirror @doubts`) returning rows, not a chamber I navigate to. Aaron authors his own views; defaults ship as starter pack. *Tension acknowledged:* this dissolves the discoverable landing surface — see Section 2.
+
+**US-V-NEW-3: Time-travel without the debugger smell.**
+*Story:* As Aaron, I want rewind / bisect / counterfactual to feel like scrolling Git history with a "what-if" toggle, not like attaching a debugger, so that I reach for it casually instead of treating it as a heavyweight ceremony. *Vocabulary discipline:* never `step`, `breakpoint`, `frame`, `watch`. Use `rewind`, `compare`, `what-if`, `try here`. *Surface:* the same breadcrumb from NEW-1 is left-arrow scrollable; pressing `?` on any past Decision opens a "what-if I had chosen the other branch" projection (Erasmus US-E-2). **DEBUGGER-LENS FLAG: yes — but UX must hide the lens.**
+
+**US-V-NEW-4: One inbox, many filters (Approval Router surface).**
+*Story:* As Aaron, I want a single `@inbox` (one keystroke from anywhere) that lists every proposal the Router is holding for me — auto-applied, awaiting-ack, awaiting-approval, suppressed — with per-row provenance (which generator, what evidence, what would dismiss/snooze do), so that I never wonder "where do approvals live?" *Anti-goal:* contextual modal popups that interrupt the turn. Approvals pull, never push (except hard blockers from the Router policy). Pairs with US-V-3.
+
+**US-V-NEW-5: "Replayable" as a visible affordance.**
+*Story:* As Aaron, before I invoke rewind/what-if/bisect on a primitive, I want a `↻` badge that signals "this is hermetically replayable" vs. a `~` for "best-effort (external call wasn't captured)," so that determinism's load-bearing status is *visible* and I never get a silent surprise mid-investigation. Determinism is a UX promise, not just an engineering one. Pairs with Erasmus risk #1.
+
+**US-V-NEW-6 (debugger-lens, aspirational): Bisect-as-conversation.**
+*Story:* As Aaron, I want to type `bisect "PR review velocity dropped sometime last week"` and have the harness binary-search the ledger asking me "yes/no, was it broken at session 47?" three times instead of me reading commits, so that regression hunting becomes a 30-second dialog. **DEBUGGER-LENS FLAG: yes.** UX twist: the word "bisect" *is* surfaced (developers know it from git); the gdb words still aren't.
+
+---
+
+### Section 2 — Position on Erasmus's 4-Layer Stack: **ENDORSE with one UX caveat.**
+
+Layers 1 (Conductor+Ledger), 2 (Derived Query Layer), and 3 (Proposal Generators) are unambiguous wins for UX. They give me a clean answer to "where does this surface come from?" — every pane is a query, every alert is a generator output, every approval is a Router decision. The vocabulary collapses cleanly.
+
+**Layer 4 (Approval + Notification Router as single choke-point):** strongly endorsed. This is the answer to my old US-V-4 problem — notification policy is one configurable place, not scattered across chambers. Single inbox is achievable.
+
+**Mirror-as-view dissolves my biggest design tension (#3) — and creates exactly one new one.** When Mirror is a chamber, there's a discoverable place to land: "I open Mirror, I see the state of my world." When Mirror is a verb over a query layer, that discoverability evaporates. A new user (even Aaron on Monday morning) needs to know what queries exist and which one to run.
+
+**Counter-proposal:** Ship one canonical default view — call it `@lobby` or `@here` — that is itself a saved query (Router pending + recent decisions + active branches + drift alerts), bound to a zero-arg invocation. Mirror remains a view, but there's always one obvious view to land on. This preserves Erasmus's structural win without paying the discoverability tax.
+
+---
+
+### Section 3 — Positions on the Five Tensions
+
+**1. Solo-v1 vs federation.** Solo. Aaron is the user; every UX decision should optimize for one person's tired-Tuesday-afternoon cognitive load. Federation hooks (multi-tenant queries, shared ledgers) should be possible at the data layer (Roger US-R-6, US-R-8) but absent from the surface. If a feature exists only because "future teams will want it," cut it from v1 — it'll be wrong anyway, designed against zero users.
+
+**2. Curator never approves.** Resolved and endorsed. Curator detects + proposes; the Router decides apply/notify/ask per categorized policy; the human approves anything consequential. My old Shiproom design already assumed this split. Don't relitigate.
+
+**3. Mirror scope creep — RESOLVED by Mirror=view, with the `@lobby` caveat above.** This was my open tension; Erasmus's structural move solves it. I'm giving up the chamber I owned. Worth it.
+
+**4. Heavyweight ops vs solo user.** Bias hard toward solo. Gabriel's ops stories (US-G-3 secrets rotation, US-G-7 cross-harness collaboration) are real but are *not* v1 UX surfaces — they're admin commands, not first-class panes. If Aaron needs to see token spend, that's `@spend` (a view); we do not need a dashboard chamber.
+
+**5. Crucible vs Copilot CLI parent-child — TAKE A STANCE.** **Aaron lives in Copilot CLI.** Crucible is *not* a second shell he runs. Crucible is a set of MCP tools, slash commands, hooks, and saved views surfaced *inside* the Copilot CLI he already uses every day. Building a competing TUI/REPL is a UX failure: it forces context-switching, splits muscle memory, and competes with Copilot's own conversational surface. The "harness" is ambient — chambers add capabilities to the CLI Aaron's already in. This rules out my own US-V-5 "dashboard widget" framing; revise it to "MCP-exposed status query rendered via Copilot's response surface."
+
+---
+
+### Section 4 — Cross-References
+
 # Valanice — History (Summarized)
 
 ## Summary

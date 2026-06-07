@@ -4,6 +4,12 @@ File size: 33792 bytes. See history-archive.md for earlier entries.
 
 ---
 
+# Agent History Archive — erasmus
+
+Archived entries (pre-summarization).
+
+---
+
 # Erasmus — History
 
 ## Onboarding (2026-05-24)
@@ -258,3 +264,4 @@ framing.
 - **Cursor (vs VS Code)** as the cautionary tale for T5. Owning the host
   costs forever. Cursor can pay because they have funding; Crucible can't.
 - **Temporal** for the Router/Applier split (Workflow vs Activity) and
+

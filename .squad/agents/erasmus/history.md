@@ -18,3 +18,11 @@ will reshape Aperture's verb surface more than any spec round.
 
 **Output:** `D:\git\harness\.squad\decisions\inbox\erasmus-ctd-p2-architectural-review.md`
 
+---
+
+## Archive Summary
+
+Earlier entries (244 lines) archived to history-archive.md on 2026-06-05.
+
+---
+

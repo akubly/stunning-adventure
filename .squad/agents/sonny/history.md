@@ -18,3 +18,11 @@
 - Three edge types coexist on every primitive (`parentId` structural production, `causalParentId` sub-task spawn, `causalReadSet.primitiveIds` content-influence). A `why`/`backtrace` verb that doesn't let the user select which edge kind to traverse will answer the wrong question. Default = all three; `--edges` selector for power users.
 - Predicate languages embedded in pre-commit hooks are a DoS vector if unsandboxed (CPU/memory/time bound, no I/O, no host syscalls). This is a §18 Security ask, not a §9.8 Aperture ask, but Aperture is where users will encounter the symptom.
 
+---
+
+## Archive Summary
+
+Earlier entries (200 lines) archived to history-archive.md on 2026-06-05.
+
+---
+

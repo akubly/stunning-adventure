@@ -694,6 +694,83 @@ Older detailed history (before 2026-05-30) archived to `history-archive.md`.
 
 
 
+# Agent History Archive — graham
+
+Archived entries (pre-summarization).
+# graham — History Archive
+
+Entries archived 2026-06-05 (older than 30 days).
+
+---
+
+---
+
+**Role:** Lead / Architect (Overall vision, cross-system integration, tiebreak arbitration)
+**Status:** M0/M1 dogfood scope in flight. M0 shipped; M1 PR #40 open (not merged).
+**Last update:** 2026-05-31
+**Status:** M5+M6 branch prep complete. Feature branch `eureka/m5-m6-trust-feedback` ready for review-cycle.
+**Last update:** 2026-05-30
+
+**Key contributions:**
+- Phase 4.6 wave orchestration: 5 waves integrated (0-6)
+- Brain system: ADR-pending (Curator-driven orchestration, composition root)
+- M0/M1/M2 dogfood scope delivered: 3 strategic synthesis passes (turns G1/G2/G3)
+
+## Dogfood Scope Synthesis (2026-05-31, 3 turns)
+
+**Summary:** After PR #32 shipped, Aaron asked "what's next for Forge?" → Graham completed 3-pass synthesis. Aaron set priority: packaging + dogfooding first.
+
+**Turn G1 (Synthesis: strategic next moves):**
+- Forge Phase 4.6 surface fully implemented (9 work items shipped)
+- Eureka v1 landing `recall` with injectable `FactStore` seam
+- Next fork: (a) Eureka-pull integration or (b) dogfood packaging
+- Consensus emerging toward dogfood-first (real signal > further design)
+
+**Turn G2 (Backlog inventory):**
+- 6 hard-designed items (FactStore adapter, forge→Eureka wiring, trustFloor seam, etc.)
+- 5 soft-designed items (GP-tournament, Meta-optimization, etc.)
+- 5 aspirational (long-term vision)
+- **Conclusion:** Phase 4.6 surface closure confirmed — no missing load-bearing pieces
+
+**Turn G3 (Dogfood scope post-priority-reset):**
+- Aaron directive: "Packaging + installability + dogfooding is priority #1"
+- Aaron directive: "Defer aggressive Eureka-pull integration moves until Eureka stabilizes"
+- Aaron directive: "GP-tournament + Meta-optimization noted as compelling-but-deferred"
+- **Deliverable:** M0/M1/M2 plan:
+  - **M0** (alexander): forge-mcp registration in plugin + copilot configs → PR #36 ✅ shipped b22c8e7
+  - **M1** (roger): hint consumption MCP tools (cairn MCP expand recall hints → decision hints) → PR #40 ✅ open
+  - **M2** (gabriel): bash hooks + README (install forge-mcp, shell init integration)
+
+**M1 Status (2026-05-31):** Roger dispatched M1 PR #40 (list_optimization_hints + resolve_optimization_hint). Migration 017 (resolution_note column). +15 tests → 708 total. Build clean. Orchestration log: 2026-05-31T19-19-47Z.
+
+---
+
+## Eureka C8: Recommended test-dir exemption for eslint (overridden by Aaron siding with Genesta)
+
+**Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
+**Milestone:** R6 opened — Eureka source-reading unlocked; trio (Genesta/Crispin/Edgar) reconciled v3 PRD against Cairn/Forge substrate.
+
+**Key outcomes:**
+- Genesta (B+ verdict): PRD v3 stands with v3.1 patch (4 targeted fixes)
+- Crispin (Path A recommended): clean-slate Eureka over Cairn extension
+- Edgar (Kernel extraction): ~70% mechanical infra exists; recommend shared learning-kernel package
+
+**Your involvement:** Advisory roles on boundaries/UX (2-3 hrs/week contribution rate).
+
+**Decision gates pending Aaron's direction:**
+1. Vector search scope (in/out for v1)?
+2. Architectural path (A clean-slate or B extension)?
+3. Learning-kernel extraction (now or defer)?
+4. v3 patch or v4 rewrite?
+
+**Next:** Cassima on deck for v3.1 or v4 intake pending Aaron's architectural direction.
+## 📋 SUMMARY (as of 2026-05-31)
+
+**Current Focus:** Crucible CTD final review + post-CTD ADR authoring  
+**Latest Major Work:** PR #33 cloud-review-cycle round 5 — 3 Copilot findings addressed (fork_resume schema, ADR-0019 payloads, predicate timing honesty); Scribe merged and staged  
+**Key Architectural Contributions:** Replay-determinism bug finding, childSid hybrid protocol review, L3.5 Scheduler Phase 0.5 stub acceptance, sub-kind governance completeness  
+
+---
 
 # Graham — History
 
@@ -719,6 +796,31 @@ Older detailed history (before 2026-05-30) archived to `history-archive.md`.
 - M5+M6 branch prep complete (eureka/m5-m6-trust-feedback ready for review)
 
 ## Key Learnings (Recent)
+
+## 2026-06-05: Forge M3 — Disposition Consumer
+
+**What was built:** The feedback half of the dogfood loop. Copilot resolves/dismisses optimization hints via the Cairn MCP tool → `hint_state_transition` events are logged with `resolution_disposition` and `source='mcp'` → the forge prescriber now reads these back via `HintDispositionProvider`.
+
+**Provider decision:** Chose sibling `HintDispositionProvider` over extending `ChangeVectorProvider`. SRP: change vectors = telemetry outcomes; dispositions = user intent. Parallel seam, parallel pattern, parallel fail-open.
+
+**Key design:**
+- Interface `DispositionSummary { skillId, category, dismissedCount, resolvedCount }` in `@akubly/types`  
+- Concrete `SqliteHintDispositionProvider` in `@akubly/cairn` — queries `event_log JOIN optimization_hints WHERE source='mcp'`  
+- `applyDispositions(hints, dispositions)` in forge `utils.ts` — pure filter+map  
+- Dismissed → suppress (filter out) all hints for that category  
+- Resolved → 1.2× confidence boost for hints in that category  
+- Provider throws → fail-open (same pattern as ChangeVectorProvider)  
+
+**Source gating rule:** `source='mcp'` filter is enforced at the provider layer (SQL WHERE clause). Forge's `applyDispositions` never sees non-mcp transitions.
+
+**Key files:**
+- `packages/types/src/index.ts` — new `DispositionSummary`, `HintDispositionProvider`
+- `packages/cairn/src/db/sqliteHintDispositionProvider.ts` — new concrete provider
+- `packages/forge/src/prescribers/utils.ts` — `applyDispositions`, `RESOLVED_CONFIDENCE_BOOST`
+- `packages/forge/src/prescribers/forgePrescriberOrchestrator.ts` — `dispositionProvider?` option
+- `packages/skillsmith-runtime/src/runtime.ts` — injection wiring
+
+**Test counts after:** cairn 725 (+9), forge 651 (+7). Build clean. No commit — Laura hardens next.
 
 1. **Sub-kind schema governance:** Payload schema + effects + causal-edge contract required, not just enum membership.
 2. **Predicate timing honesty:** Promise.race() is not a sandboxing primitive. v1 uses cooperative measurement + telemetry + retry-budget quarantine; hard preemption belongs in v1.5+.
@@ -974,3 +1076,4 @@ Added a 5-line NOTE block to the `session.ts` file-header JSDoc, positioned betw
 **M1 — SKILL doc drift annotation:**
 Chose option (b): annotated `london-tdd-first-green/SKILL.md` as "Sprint 0 variant" rather than updating the strategy doc. The strategy doc (`docs/crucible-tdd-strategy.md` §4.1) is the canonical reference showing full outside-in mocked-Ledger descent. The SKILL reflects our conscious Sprint 0 simplification (real in-memory, no mocks in GREEN). The annotation explains the divergence is intentional and when the full approach applies (Sprint 1+ when acceptance surface exceeds single-module reach).
 
+- DAG prescription ancestry (`prescription_graph` table) — Phase 5 §2.3 illustrative schema exists. Currently linear (`parent_prescription_id`). Deferred pending change-vector population.

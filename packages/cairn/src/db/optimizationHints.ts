@@ -1,6 +1,13 @@
 import type Database from 'better-sqlite3';
 import { logEvent } from './events.js';
 import { ensureSystemSession } from './sessions.js';
+import {
+  HINT_STATE_TRANSITION_EVENT_TYPE,
+  HINT_TRANSITION_SOURCE_MCP,
+  HINT_TRANSITION_PAYLOAD_KEYS as K,
+  HINT_RESOLUTION_RESOLVED,
+  HINT_RESOLUTION_DISMISSED,
+} from './hintStateTransitionConstants.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -78,10 +85,10 @@ export interface ReplaceActiveHintsAtomicallyResult {
   results: InsertHintIfNewResult[];
 }
 
-export type HintResolution = 'resolved' | 'dismissed';
+export type HintResolution = typeof HINT_RESOLUTION_RESOLVED | typeof HINT_RESOLUTION_DISMISSED;
 
 /** All valid hint resolution dispositions — single source of truth for Zod enum and type guards. */
-export const HINT_RESOLUTIONS = ['resolved', 'dismissed'] as const;
+export const HINT_RESOLUTIONS = [HINT_RESOLUTION_RESOLVED, HINT_RESOLUTION_DISMISSED] as const;
 
 export interface ResolveHintResult {
   id: string;
@@ -223,15 +230,15 @@ function emitHintTransitionEvent(
   extra?: { resolution_disposition?: string | null; resolution_note?: string | null; source?: string },
 ): void {
   const sessionId = ensureSystemSession(db);
-  logEvent(db, sessionId, 'hint_state_transition', {
-    skill_id: skillId,
-    hint_id: hintId,
-    from_state: fromState,
-    to_state: toState,
-    timestamp: new Date().toISOString(),
-    ...(extra?.resolution_disposition != null ? { resolution_disposition: extra.resolution_disposition } : {}),
-    ...(extra?.resolution_note != null ? { resolution_note: extra.resolution_note } : {}),
-    ...(extra?.source != null ? { source: extra.source } : {}),
+  logEvent(db, sessionId, HINT_STATE_TRANSITION_EVENT_TYPE, {
+    [K.SKILL_ID]: skillId,
+    [K.HINT_ID]: hintId,
+    [K.FROM_STATE]: fromState,
+    [K.TO_STATE]: toState,
+    [K.TIMESTAMP]: new Date().toISOString(),
+    ...(extra?.resolution_disposition != null ? { [K.RESOLUTION_DISPOSITION]: extra.resolution_disposition } : {}),
+    ...(extra?.resolution_note != null ? { [K.RESOLUTION_NOTE]: extra.resolution_note } : {}),
+    ...(extra?.source != null ? { [K.SOURCE]: extra.source } : {}),
   });
 }
 
@@ -514,7 +521,7 @@ export function resolveOptimizationHint(
       emitHintTransitionEvent(db, current.skillId, id, current.status, 'rejected', {
         resolution_disposition: resolution,
         resolution_note: resolvedNote,
-        source: 'mcp',
+        source: HINT_TRANSITION_SOURCE_MCP,
       });
     }
 
