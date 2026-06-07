@@ -768,7 +768,7 @@ d. **Set up dependencies:**
      - Fall back: `cd "{worktree}" && npm install`
      - Log the fallback to `.squad/orchestration-log/{timestamp}-worktree-fallback.md`: `[worktree-setup] junction link failed — fell back to npm install in {worktree}`
      - Emit to the user: `⚠️ Worktree dependency linking failed — fell back to npm install. Dependencies may differ from the main checkout (slower, not shared).`
-    > Warning only — spawn continues after the npm install fallback.
+     > Warning only — spawn continues after the npm install fallback.
 
 e. **Include worktree context in spawn:**
    - Set `WORKTREE_PATH` to the resolved worktree path
