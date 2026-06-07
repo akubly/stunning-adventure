@@ -1,6 +1,6 @@
 ### 2026-05-30: WI-A Implementation Log — Issue #11 (Roger history restoration)
 
-From .squad/decisions/inbox/roger-issue-11-implementation.md (WI-A history, cross-referenced)
+From decision drop: roger-issue-11-implementation (local-only, WI-A history, cross-referenced)
 
 **Cloud Review Cycles 1-5 completed** — Worktree-aware session resolution now in place. Schema version 16. Partial UNIQUE indexes for NULL-workdir case. All 1405 tests green. Ready for WI-B (coordinator dispatch).
 
@@ -3674,7 +3674,7 @@ The SQLite adapter is the substrate for any future Refactor 4 / Phase 2 work (fi
 - **Refactor 3 proceeds with zero DB-interface rework.** The current `DB` interface (`getSession`/`insertSession`/`queryEvents` + extended `getOwnEvents`/`getMetadata`/`insertRootSession`/`pushEvent`) survives. The real SQLite adapter is a standalone `better-sqlite3(':memory:')` with Crucible's own two-table schema, no Cairn dependency.
 - Estimated ~2 days cheaper than Option A for Refactor 3; gap widens as Crucible's schema evolves independently.
 
-**Source briefs:** `.squad/decisions/inbox/graham-oq2-substrate-brief.md`, `genesta-oq2-substrate-brief.md`, `roger-oq2-substrate-brief.md`.
+**Source briefs:** decision drops: graham-oq2-substrate-brief, genesta-oq2-substrate-brief, roger-oq2-substrate-brief (all local-only).
 
 
 ---

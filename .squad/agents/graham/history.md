@@ -364,3 +364,42 @@ Two infrastructure changes approved in PRs #50 and #52:
 
 **Action for you:** No immediate action required. Lint workspace changes take effect after merge and 
 pm install restart. Doc-hygiene scope established for future improvements.
+## Learnings — 2026-06-06: PR #53 Persona-Review Fixes (worktree fallback warnings)
+
+### Isolation vs. consistency: the npm-install fallback is MORE isolated, not less
+
+When the junction-link fails and we fall back to `npm install` in the worktree, the worktree gets its **own** `node_modules`. That is MORE isolated than a junction (no shared state at all). What degrades is **consistency** (versions may diverge from the main checkout) and **efficiency** (slower, more disk). The original warning said "Dependency isolation is degraded" — that was backwards. Corrected to: *"Dependencies may differ from the main checkout (slower, not shared)."*
+
+**Rule:** isolation ≠ consistency. When writing warnings about fallback dependency strategies, distinguish the two: isolation is about whether the worktree shares state; consistency is about whether versions match.
+
+### Dual-description completeness gap
+
+The squad.agent.md had two descriptions of the same junction-link fallback: once in the "Worktree Lifecycle Management → Dependency management" reference section (line 676 region) and once in the Pre-Spawn step 2d error-handling block. The Pre-Spawn block had the user-visible warning; the reference section did not. An agent following only the reference section would degrade silently.
+
+**Rule:** whenever an instruction appears in both a reference/overview section and a procedural step, both must include all safety-critical outputs (warnings, logs). Review cross-references before shipping.
+
+
+
+## Learnings — 2026-06-06: Doc Hygiene Re-scope (PR #52, issue #46)
+
+### Pointer vs. Policy vs. Writer-Target distinction
+
+Five categories of `.squad/decisions/inbox/` references require different treatment in committed prose:
+
+1. **Broken followable POINTER** (FIX): Prose that cites a specific `inbox/{slug}.md` filename as a stable reference — e.g., `**Artifact:** Merged from .squad/decisions/inbox/graham-ctd-phase4-synthesis.md`, `**Deliverable:** .squad/decisions/inbox/crispin-20-seam-audit-vs-55.md`, `From .squad/decisions/inbox/X.md`, file-inventory bullets, R8 verdict file lists. Replace with slug-preserving plain text (e.g., "decision drop: graham-ctd-phase4-synthesis (local-only)") to retain searchability. Fix any resulting malformed prose (dangling "— this file" → "— this decision entry").
+2. **Gitignore-policy documentation** (KEEP): Bulleted "Explicitly prohibited (gitignored runtime state)" lists, rationale sentences ("`.squad/decisions/inbox/` is gitignored"), and policy-description lines ("Cited gitignored `.squad/decisions/inbox/` paths"). These document the policy, not broken pointers.
+3. **Generic directory narration** (KEEP): Location descriptions like "directive files in `.squad/decisions/inbox/`" — accurate operational narration, not a broken pointer.
+4. **Inside Before:/After: code blocks** (KEEP): Examples documenting historical changes are not live pointers.
+5. **Forward writer-target paths** (NEVER TOUCH): Charters, templates, skills.
+
+### Append-only history files are immutable
+
+Agent history.md and history-archive.md are append-only. No hygiene sweep — not even doc cleanup — may retroactively edit committed history entries. This mirrors the over-reach that caused PR #44 to be reverted.
+
+### "Zero hits" acceptance criteria can be relaxed
+
+Issue #46 originally required zero `decisions/inbox/` hits. Aaron approved relaxing this: the criterion is "zero broken followable file-path pointers," not literally zero string occurrences. Policy-list bullets legitimately retain the bare directory path.
+
+### Merge decisions-archive.md from a current main base
+
+When a branch is behind main and decisions-archive.md diverged significantly, reset to `origin/main` before applying pointer fixes — do not rely on auto-merge, which can produce duplicated sections.

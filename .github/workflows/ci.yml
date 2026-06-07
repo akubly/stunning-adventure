@@ -17,6 +17,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - run: npm ci
+      - run: node scripts/check-workspace-lint.mjs
       - run: tsc --build
       - run: npm run lint
       - run: npm run build
