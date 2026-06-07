@@ -833,6 +833,16 @@ Phase 2:
 - **Bootstrap atomicity = single group-commit.** §3.8 bootstrap-batch writes
   the entire `BootstrapPayload` as one atomic group-commit at offset 0. §10
   must never spread session bootstrap across multiple `append()` calls —
+
+## Learnings (Slice D persona-review polish — 2026-06-06)
+
+**JSDoc type positions should name types, not values.** When doc prose describes a return shape, use the declared type name (`ClockProvider`) not the module-private value (`systemClock`). Readers scan the JSDoc expecting types, not implementation identifiers.
+
+**Tighten doc titles to the declared return type; call out structural compatibility separately.** A JSDoc title that says "ApplyFeedbackDeps / ApplyFeedbackByIdDeps" overpromises when the return type is `ApplyFeedbackDeps`. The correct pattern: title names the declared type, a one-liner notes structural satisfaction of related types. Keeps the contract honest without losing useful information.
+
+**Reject exporting trivial private values when the public surface cost > benefit.** `systemClock` is `{ now: () => Date.now() }` — no unique behavior. Callers needing a custom clock supply their own `ClockProvider`. Exporting it for "observability" just anchors external code to an internal detail. The right call: reject.
+
+**Reject guard clauses on stated preconditions unless the error UX materially improves.** The JSDoc already says `openDatabase()` is required. A runtime check adds complexity without meaningfully improving the failure signal (SQLite itself reports missing tables clearly). Over-engineering stated preconditions is noise.
   the all-or-nothing property is what lets replay refuse to advance past
   offset 0 on bootstrap-manifest mismatch (TDD §6.8).
 

@@ -24,7 +24,7 @@ const systemClock = { now: (): number => Date.now() };
 /**
  * Assemble production SQLite `RecallDeps`.
  *
- * Returns `{ factStore: SqliteFactStore, clock: systemClock }` — pass directly
+ * Returns `{ factStore: SqliteFactStore, clock: ClockProvider }` — pass directly
  * to `recall()` / `recallWithScores()`.
  *
  * @param db  An already-opened, migration-applied `Database` handle from
@@ -38,7 +38,9 @@ export function createSqliteRecallDeps(db: Database.Database): RecallDeps {
 }
 
 /**
- * Assemble production SQLite `ApplyFeedbackDeps` / `ApplyFeedbackByIdDeps`.
+ * Assemble production SQLite `ApplyFeedbackDeps`.
+ *
+ * Also structurally satisfies `ApplyFeedbackByIdDeps` (same shape today).
  *
  * Returns `{ trustUpdater: SqliteTrustUpdater }` — pass directly to
  * `applyFeedback()` / `applyFeedbackById()`.
