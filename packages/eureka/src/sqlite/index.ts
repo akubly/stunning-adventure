@@ -14,3 +14,4 @@ export { SqliteTrustUpdater } from '../storage/trust-updater-sqlite.js';
 export { SqliteFactStore } from '../storage/fact-store-sqlite.js';
 export { openDatabase } from '../db/openDatabase.js';
 export { applyMigrations } from '../db/schema.js';
+export { createSqliteRecallDeps, createSqliteFeedbackDeps } from './deps.js';
