@@ -1,5 +1,6 @@
 
-📌 2026-06-06: **WAL file-backed durability landed** — FileSystemWalBackend ships with 7 new RED→GREEN tests. Binary `.seg` records, BLAKE3 hash-chain, CAS persistence at `cas/<shard>/<hash>.cbor`. Scope fences deferred (single-writer lock, group-commit, 64MiB roll-over). Full suite 35/35 green. Decisions D-WB-FS-1..6 in decisions.md. Next: prior-rows-survive-veto RED test + §4.1 doc polish. — Roger
+📌 2026-06-06: **WAL PID-liveness stale-lock reclaim GREEN (D-LOCK-2 resolved)** — 4 new RED→GREEN tests (stale dead PID reclaimed, live PID blocks with PID in message, corrupt content = stale, empty content = stale). `acquireWriteLock()` now writes `process.pid` on create; on EEXIST reads stored PID, calls `isPidAlive()` via `process.kill(pid,0)`. ESRCH→dead→reclaim; EPERM→alive→throw; unparseable/empty→stale→reclaim. Residual race: read-PID→overwrite not atomic; v1 best-effort is acceptable — WAL hash-chain detects any corruption. Issue #55 tracks OS advisory lock upgrade. `WriteLockHeldError` now includes holder PID in message. Full suite 44/44 green. Group-commit/§3.5 NOT touched. — Roger
+
 
 📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
@@ -604,3 +605,49 @@ Two new files:
 - Group-commit batching + seal-and-split on PAUSE (§3.5) — deferred
 - 64 MiB segment roll-over — deferred
 - fdatasync per group-commit — deferred
+
+
+---
+
+## Learnings (WAL Write Lock §3.4.1 — 2026-06-06)
+
+**Single-writer advisory write lock is now GREEN. Full suite: 40/40 passing.**
+
+### What was built
+
+Modified src/ledger/wal-backend-fs.ts:
+- Added WriteLockHeldError (exported) — thrown when lock file already exists
+- Added close(): Promise<void> — unlinks write.lock; no-op on read-only
+- Added cquireWriteLock() — s.openSync(lockPath, 'wx'), fd immediately closed
+- Added eadOnly option — bypasses lock acquisition entirely
+- Added opts?: { readOnly? } to FileSystemWalBackend.create() + createFileSystemWalBackend()
+
+### 5 new RED→GREEN tests (wal-backend-file-lock.test.ts)
+
+| Test | Invariant |
+|---|---|
+| second write-open throws WriteLockHeldError | Exclusive write enforcement |
+| close() releases lock; fresh open succeeds | Lock lifecycle |
+| write.lock file exists while open, absent after close | On-disk signal |
+| readOnly open succeeds while write lock is held | Read path not gated |
+| error message contains write.lock path | User-actionable error |
+
+### Existing wal-backend-file.test.ts updated
+
+4 tests needed wait backendN.close() calls inserted before reopens — the lock now correctly blocks the second open without close. This is a semantic fix: a real "process restart" requires the first writer to close first.
+
+### Lock mechanism: exclusive-create (no new npm dep)
+
+s.openSync(lockPath, 'wx') = O_CREAT|O_EXCL. Cross-platform, stdlib only, no open fd held (fd closed immediately). Presence of file is the lock; unlink on close() releases it.
+
+### Stale-lock decision FLAGGED for Aaron
+
+Logged to .squad/decisions/inbox/roger-wal-write-lock.md D-LOCK-2. Recommendation: Option (a) manual clear (v1). PID+liveness check (Option b) deferred until a RED test drives it.
+
+### Scope fences confirmed NOT touched
+
+- Group-commit + seal-and-split (§3.5): deferred
+- 64 MiB segment roll-over: deferred
+- ppendFenced / optimistic head-offset: deferred
+
+- 2026-06-06 📌 roger: WAL single-writer lock + PID-liveness stale-lock landed; issue #55 tracks OS-lock reconsideration
