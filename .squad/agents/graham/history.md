@@ -1,3 +1,9 @@
+# SUMMARY (as of 2026-06-06)
+
+File size: 34712 bytes. See history-archive.md for earlier entries.
+
+---
+
 # Graham — History
 
 📌 **Role:** Lead / Architect (Overall vision, cross-system integration, tiebreak arbitration)  
@@ -33,6 +39,10 @@
 2. **Predicate timing honesty:** Promise.race() is not a sandboxing primitive. v1 uses cooperative measurement + telemetry + retry-budget quarantine; hard preemption belongs in v1.5+.
 3. **Replay-determinism pattern:** Record results, not just choices, when results depend on environment state.
 4. **Gitignore hygiene:** .gitignore blocks new adds only; committed files must be untracked with git rm --cached.
+5. **Worktree fallback warning convention (issue #31):** The coordinator's Pre-Spawn: Worktree Setup has two fallback paths that must BOTH log AND emit a user-visible warning:
+   - **Step 2(c) — worktree add failure** (lock/permissions/any error): log to `.squad/orchestration-log/{timestamp}-worktree-failed.md` AND emit `⚠️  Worktree creation failed — falling back to main checkout. Isolation disabled for this spawn.`
+   - **Step 2(d) — junction/symlink link failure**: log to `.squad/orchestration-log/{timestamp}-worktree-fallback.md` AND emit `⚠️  Worktree dependency linking failed — fell back to npm install. Dependency isolation is degraded for this spawn.`
+   - Convention: silent fallbacks are never acceptable when they degrade isolation guarantees the user opted into.
 
 ---
 
@@ -361,3 +371,56 @@ Pitfall #5 incorrectly stated that `resolveOptimizationHint` was not exported fr
 
 📌 **Slice D review-cycle complete + PR #54 opened** (2026-06-07T06:03Z): 5-persona Code Panel review → 0 blocking, 2 important + 3 minor fixed, 2 sound rejects + 1 false-positive cleared; 148/148 tests passing; Copilot review requested. — Scribe
 
+---
+
+**[2026-06-06T19:23:48Z — Scribe Cross-Agent Update]**
+
+## Team Notifications
+
+Two infrastructure changes approved in PRs #50 and #52:
+
+1. **PR #50 — Root lint cross-platform fix (Issue #37, Gabriel):** Root package.json lint script now uses workspace delegation to enable cross-platform execution. Per-package lint scripts added to 7 packages. Windows developers will now see linting errors locally.
+
+2. **PR #52 — Doc-hygiene back-reference sweep (Issue #46, Gabriel):** Gitignored-path back-references removed from committed prose across decisions.md, decisions-archive.md, and agent history files. Forward writer-targets (charters, templates, skills) preserved. Classification heuristic documented for future hygiene sweeps.
+
+**Action for you:** No immediate action required. Lint workspace changes take effect after merge and 
+pm install restart. Doc-hygiene scope established for future improvements.
+## Learnings — 2026-06-06: PR #53 Persona-Review Fixes (worktree fallback warnings)
+
+### Isolation vs. consistency: the npm-install fallback is MORE isolated, not less
+
+When the junction-link fails and we fall back to `npm install` in the worktree, the worktree gets its **own** `node_modules`. That is MORE isolated than a junction (no shared state at all). What degrades is **consistency** (versions may diverge from the main checkout) and **efficiency** (slower, more disk). The original warning said "Dependency isolation is degraded" — that was backwards. Corrected to: *"Dependencies may differ from the main checkout (slower, not shared)."*
+
+**Rule:** isolation ≠ consistency. When writing warnings about fallback dependency strategies, distinguish the two: isolation is about whether the worktree shares state; consistency is about whether versions match.
+
+### Dual-description completeness gap
+
+The squad.agent.md had two descriptions of the same junction-link fallback: once in the "Worktree Lifecycle Management → Dependency management" reference section (line 676 region) and once in the Pre-Spawn step 2d error-handling block. The Pre-Spawn block had the user-visible warning; the reference section did not. An agent following only the reference section would degrade silently.
+
+**Rule:** whenever an instruction appears in both a reference/overview section and a procedural step, both must include all safety-critical outputs (warnings, logs). Review cross-references before shipping.
+
+
+
+## Learnings — 2026-06-06: Doc Hygiene Re-scope (PR #52, issue #46)
+
+### Pointer vs. Policy vs. Writer-Target distinction
+
+Five categories of `.squad/decisions/inbox/` references require different treatment in committed prose:
+
+1. **Broken followable POINTER** (FIX): Prose that cites a specific `inbox/{slug}.md` filename as a stable reference — e.g., `**Artifact:** Merged from .squad/decisions/inbox/graham-ctd-phase4-synthesis.md`, `**Deliverable:** .squad/decisions/inbox/crispin-20-seam-audit-vs-55.md`, `From .squad/decisions/inbox/X.md`, file-inventory bullets, R8 verdict file lists. Replace with slug-preserving plain text (e.g., "decision drop: graham-ctd-phase4-synthesis (local-only)") to retain searchability. Fix any resulting malformed prose (dangling "— this file" → "— this decision entry").
+2. **Gitignore-policy documentation** (KEEP): Bulleted "Explicitly prohibited (gitignored runtime state)" lists, rationale sentences ("`.squad/decisions/inbox/` is gitignored"), and policy-description lines ("Cited gitignored `.squad/decisions/inbox/` paths"). These document the policy, not broken pointers.
+3. **Generic directory narration** (KEEP): Location descriptions like "directive files in `.squad/decisions/inbox/`" — accurate operational narration, not a broken pointer.
+4. **Inside Before:/After: code blocks** (KEEP): Examples documenting historical changes are not live pointers.
+5. **Forward writer-target paths** (NEVER TOUCH): Charters, templates, skills.
+
+### Append-only history files are immutable
+
+Agent history.md and history-archive.md are append-only. No hygiene sweep — not even doc cleanup — may retroactively edit committed history entries. This mirrors the over-reach that caused PR #44 to be reverted.
+
+### "Zero hits" acceptance criteria can be relaxed
+
+Issue #46 originally required zero `decisions/inbox/` hits. Aaron approved relaxing this: the criterion is "zero broken followable file-path pointers," not literally zero string occurrences. Policy-list bullets legitimately retain the bare directory path.
+
+### Merge decisions-archive.md from a current main base
+
+When a branch is behind main and decisions-archive.md diverged significantly, reset to `origin/main` before applying pointer fixes — do not rely on auto-merge, which can produce duplicated sections.

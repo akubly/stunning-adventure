@@ -109,3 +109,17 @@
 **Outcome:** Eureka M7 (B+C+D) complete. Shipped to main as ed6be2c (squash). All learnings documented in `.squad/decisions.md` PR #41 section. New skill: `.squad/skills/refactor-grep-cleanup/SKILL.md`. Branches cleaned. Ready for next sprint.
 
 - 2026-06-06 📌 scribe: OQ-2 LOCKED (FEDERATE) + Refactor 3 complete (real SQLite adapter, 14/14 green)
+---
+
+**[2026-06-06T19:23:48Z — Scribe Cross-Agent Update]**
+
+## Team Notifications
+
+Two infrastructure changes approved in PRs #50 and #52:
+
+1. **PR #50 — Root lint cross-platform fix (Issue #37, Gabriel):** Root package.json lint script now uses workspace delegation to enable cross-platform execution. Per-package lint scripts added to 7 packages. Windows developers will now see linting errors locally.
+
+2. **PR #52 — Doc-hygiene back-reference sweep (Issue #46, Gabriel):** Gitignored-path back-references removed from committed prose across decisions.md, decisions-archive.md, and agent history files. Forward writer-targets (charters, templates, skills) preserved. Classification heuristic documented for future hygiene sweeps.
+
+**Action for you:** No immediate action required. Lint workspace changes take effect after merge and 
+pm install restart. Doc-hygiene scope established for future improvements.

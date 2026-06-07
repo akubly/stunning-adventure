@@ -63,3 +63,17 @@ Architecture remains kernel-extraction-ready. No substrate changes. Ready for Aa
 - packages/eureka/src/activities/__tests__/recall-sqlite-smoke.test.ts — SD-1, SD-2 smoke tests
 - .squad/decisions.md — M8 Slice D as-built section (Graham SD-F1)
 
+📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe---
+
+**[2026-06-06T19:23:48Z — Scribe Cross-Agent Update]**
+
+## Team Notifications
+
+Two infrastructure changes approved in PRs #50 and #52:
+
+1. **PR #50 — Root lint cross-platform fix (Issue #37, Gabriel):** Root package.json lint script now uses workspace delegation to enable cross-platform execution. Per-package lint scripts added to 7 packages. Windows developers will now see linting errors locally.
+
+2. **PR #52 — Doc-hygiene back-reference sweep (Issue #46, Gabriel):** Gitignored-path back-references removed from committed prose across decisions.md, decisions-archive.md, and agent history files. Forward writer-targets (charters, templates, skills) preserved. Classification heuristic documented for future hygiene sweeps.
+
+**Action for you:** No immediate action required. Lint workspace changes take effect after merge and 
+pm install restart. Doc-hygiene scope established for future improvements.

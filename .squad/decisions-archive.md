@@ -1151,13 +1151,13 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 
 **Phase 1 — Audits & Executions:**
 
-1. **Crispin (§20 Audit):** SEAMS HOLD — 5 findings, 1 interface addition (session_id to RecallQuery). No schema changes. **Deliverable:** `.squad/decisions/inbox/crispin-20-seam-audit-vs-55.md`
+1. **Crispin (§20 Audit):** SEAMS HOLD — 5 findings, 1 interface addition (session_id to RecallQuery). No schema changes. **Deliverable:** decision drop: crispin-20-seam-audit-vs-55 (local-only)
 
-2. **Roger (§40 DI Audit):** 80% injectable — 2 seams need extraction (`ClockProvider`, `RandomSource`), 1 correctly deferred (model). Forward-docs network boundary for v1.5. **Deliverable:** `.squad/decisions/inbox/roger-40-di-seam-audit-vs-55.md`
+2. **Roger (§40 DI Audit):** 80% injectable — 2 seams need extraction (`ClockProvider`, `RandomSource`), 1 correctly deferred (model). Forward-docs network boundary for v1.5. **Deliverable:** decision drop: roger-40-di-seam-audit-vs-55 (local-only)
 
 3. **Laura (§50 Reframe):** §50 positioned as design-time testability discipline; §55 as implementation-time TDD practice. Complementary pair. **Deliverable:** Edited `docs/eureka/sections/50-testability.md` (+9%)
 
-4. **Edgar (§30 Follow-Ups):** 3/3 executed — CuratorStore signature adopted, ClockProvider seam added, latency cross-refs established. **Deliverable:** `.squad/decisions/inbox/edgar-30-followups-executed.md`, edited `docs/eureka/sections/30-learning-systems.md`
+4. **Edgar (§30 Follow-Ups):** 3/3 executed — CuratorStore signature adopted, ClockProvider seam added, latency cross-refs established. **Deliverable:** decision drop: edgar-30-followups-executed (local-only), edited `docs/eureka/sections/30-learning-systems.md`
 
 **Phase 2 — Recommendations Applied:**
 
@@ -1236,7 +1236,7 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 ## Technical Findings (Cross-Referenced)
 
 ### Finding 1: Repository Dependency (Cassima)
-**Full analysis:** `.squad/decisions/inbox/cassima-crucible-eureka-impact.md` §1.2 (undeclared dependency), §4 (resourcing)
+**Full analysis:** decision drop: cassima-crucible-eureka-impact (local-only) §1.2 (undeclared dependency), §4 (resourcing)
 
 - Crucible PRD §1 vocabulary, §2.4, §2.6, Appendix D assume Forge prescribers in `harness`.
 - Actual location: `D:\git\mem\packages\forge`.
@@ -1245,7 +1245,7 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 **Recommendation:** Stagger projects OR establish explicit dependency + versioning contract.
 
 ### Finding 2: Event Schema Collision (Genesta)
-**Full analysis:** `.squad/decisions/inbox/genesta-crucible-eureka-overlap.md` § Finding 1 + 2 + 5
+**Full analysis:** decision drop: genesta-crucible-eureka-overlap (local-only) § Finding 1 + 2 + 5
 
 - Crucible §1: 5 typed events (Request, Artifact, Observation, Decision, Question)
 - Cairn today: `event_log` with existing `eventType` vocabulary
@@ -1259,7 +1259,7 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 **Gate:** Before Crucible sprint 2 (L1 substrate), convene Graham + Roger + Genesta to lock event-substrate topology.
 
 ### Finding 3: SessionId Brand + Decision Schema Collision (Crispin, Genesta)
-**Full analysis:** `.squad/decisions/inbox/crispin-crucible-kr-overlap.md` § 1 + 5, `genesta-...` § Finding 2
+**Full analysis:** decision drop: crispin-crucible-kr-overlap (local-only) § 1 + 5, `genesta-...` § Finding 2
 
 **Collision 1 — SessionId Brand (BLOCKER):**
 - Eureka v5 (FR-13): `SessionId` branded type in `@akubly/types` (Aaron R8 directive).
@@ -1284,7 +1284,7 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 **Recommendation (Crispin):** Crucible rename to `ContentBlob` / `CapturedContent`. Eureka avoid "artifact" in public types.
 
 ### Finding 4: Learning-Loop Feedback Substrate (Edgar)
-**Full analysis:** `.squad/decisions/inbox/edgar-crucible-learning-overlap.md` § 1–4
+**Full analysis:** decision drop: edgar-crucible-learning-overlap (local-only) § 1–4
 
 - **Crucible's loop:** Prescriber → Review-Gate → Apply/Inbox → Scorecard (minutes to hours per-session).
 - **Eureka's loop:** Sweep → Ranker → Trust/Confidence mutations (hours to days across sessions).
@@ -1333,10 +1333,10 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 
 All findings preserved in inbox for detailed review:
 
-- `.squad/decisions/inbox/genesta-crucible-eureka-overlap.md` (20.9 KB, 216 lines) — Architectural findings: 5 overlaps (3 high-risk, 2 safe).
-- `.squad/decisions/inbox/crispin-crucible-kr-overlap.md` (24.5 KB, 136 lines) — KR findings: 2 critical collisions, 1 integration opportunity.
-- `.squad/decisions/inbox/edgar-crucible-learning-overlap.md` (25.6 KB, 202 lines) — Learning-loop findings: parallel loops, feedback substrate, prescriber transition.
-- `.squad/decisions/inbox/cassima-crucible-eureka-impact.md` (25.0 KB, 200 lines) — PM findings: undeclared dependency, 3 strategic questions, resourcing risk.
+- decision drop: genesta-crucible-eureka-overlap (local-only, 20.9 KB, 216 lines) — Architectural findings: 5 overlaps (3 high-risk, 2 safe).
+- decision drop: crispin-crucible-kr-overlap (local-only, 24.5 KB, 136 lines) — KR findings: 2 critical collisions, 1 integration opportunity.
+- decision drop: edgar-crucible-learning-overlap (local-only, 25.6 KB, 202 lines) — Learning-loop findings: parallel loops, feedback substrate, prescriber transition.
+- decision drop: cassima-crucible-eureka-impact (local-only, 25.0 KB, 200 lines) — PM findings: undeclared dependency, 3 strategic questions, resourcing risk.
 
 ---
 
@@ -1391,9 +1391,9 @@ All findings preserved in inbox for detailed review:
 
 **Artifacts:**
 - **Canonical PRD:** `.squad/decisions/eureka-prd-v5-final.md` (stable location, do not edit; supersedes v4-final)
-- **R8 Design Panel Verdicts:** `.squad/decisions/inbox/graham-r8-session-identity.md`, `genesta-r8-session-identity.md`, `crispin-r8-session-identity.md`, `edgar-r8-session-identity.md` (all ACCEPT/FOLD verdicts)
-- **Aaron R8 Directive:** `.squad/decisions/inbox/copilot-directive-r8-session-identity.md`
-- **R8 Lock Panel Verdicts:** `.squad/decisions/inbox/graham-r8-lock-verdict.md`, `genesta-r8-lock-verdict.md`, `crispin-r8-lock-verdict.md`, `edgar-r8-lock-verdict.md` (all LOCK, unanimous)
+- **R8 Design Panel Verdicts:** decision drops: graham-r8-session-identity, genesta-r8-session-identity, crispin-r8-session-identity, edgar-r8-session-identity (all ACCEPT/FOLD verdicts; local-only)
+- **Aaron R8 Directive:** decision drop: copilot-directive-r8-session-identity (local-only)
+- **R8 Lock Panel Verdicts:** decision drops: graham-r8-lock-verdict, genesta-r8-lock-verdict, crispin-r8-lock-verdict, edgar-r8-lock-verdict (all LOCK, unanimous; local-only)
 - **Superseded Artifact:** `.squad/decisions/eureka-prd-v4-final.md` (historical reference; see header banner for migration note)
 
 **Implementation Readiness:**
@@ -1413,7 +1413,7 @@ All findings preserved in inbox for detailed review:
 **By:** Graham (Lead)
 **Status:** Implemented in cycles 4-6
 
-From .squad/decisions/inbox/graham-wi-b-cycle4-redesign.md
+From decision drop: graham-wi-b-cycle4-redesign (local-only)
 
 **Thread analysis:** 51 unresolved threads across 4 files represent 5 distinct findings:
 - F8a: Wrong-branch reuse calls git worktree remove without unlinking junction first
@@ -1442,7 +1442,7 @@ ode_modules junction/symlink (before git worktree remove)
 **By:** Graham (Lead)
 **Status:** Reviewed and approved for merge
 
-From .squad/decisions/inbox/graham-wi-b-review-approve.md
+From decision drop: graham-wi-b-review-approve (local-only)
 
 **Scope adherence:** ✅ Gabriel implemented exactly what was scoped. Six change areas all map directly to concrete changes. No omissions.
 
@@ -1468,7 +1468,7 @@ From .squad/decisions/inbox/graham-wi-b-review-approve.md
 **By:** Graham (Lead)
 **Status:** Scoping complete, implemented
 
-From .squad/decisions/inbox/graham-wi-b-scope.md
+From decision drop: graham-wi-b-scope (local-only)
 
 **Scope confirmation:** WI-B makes the coordinator CREATE worktrees per-issue instead of dispatching agents into shared main.
 
@@ -1503,7 +1503,7 @@ ode_modules re-install after worktree removal — cleanup flow handles junction 
 
 ### 2026-05-30: WI-A Implementation Log — Issue #11 (Roger history restoration)
 
-From .squad/decisions/inbox/roger-issue-11-implementation.md (WI-A history, cross-referenced)
+From decision drop: roger-issue-11-implementation (local-only, WI-A history, cross-referenced)
 
 **Cloud Review Cycles 1-5 completed** — Worktree-aware session resolution now in place. Schema version 16. Partial UNIQUE indexes for NULL-workdir case. All 1405 tests green. Ready for WI-B (coordinator dispatch).
 
@@ -3803,7 +3803,7 @@ Updated schema version assertions from 14 → 15 in:
 **Date:** 2026-05-28 (Synthesis Review completed 2026-05-29T072142Z)  
 **Author:** Graham Knight (Lead / Architect)  
 **Status:** FINAL — CTD v1 STRUCTURALLY COMPLETE  
-**Artifact:** Merged from `.squad/decisions/inbox/graham-ctd-phase4-synthesis.md`
+**Artifact:** Merged from decision drop: graham-ctd-phase4-synthesis (local-only, now incorporated in this archive)
 
 **Scope:** Final pre-close interface-coherence synthesis across the four Phase 4 authoring lanes (Graham framing §1/§6/§19; Roger CALL/RET + Scheduler WAL §3/§10; Gabriel L3.5 Scheduler §5/§5.A/§17; Laura reproducibility honesty §11.10 + §16.5/§16.7a). Two minor errata resolved inline during synthesis gate.
 
@@ -4113,7 +4113,7 @@ The acceptance test **must not be modified** between RED and final GREEN — it 
 ## Files Created
 
 - `packages/crucible-cli/src/__tests__/acceptance/session-fork.test.ts` — the RED test
-- `.squad/decisions/inbox/laura-crucible-first-red-test.md` — this file
+- decision drop: laura-crucible-first-red-test (local-only) — this decision entry
 - `.squad/agents/laura/history.md` — Learnings section updated
 - `.squad/skills/london-tdd-first-red-test/SKILL.md` — reusable skill extracted
 
@@ -6612,13 +6612,13 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 
 **Phase 1 — Audits & Executions:**
 
-1. **Crispin (§20 Audit):** SEAMS HOLD — 5 findings, 1 interface addition (session_id to RecallQuery). No schema changes. **Deliverable:** `.squad/decisions/inbox/crispin-20-seam-audit-vs-55.md`
+1. **Crispin (§20 Audit):** SEAMS HOLD — 5 findings, 1 interface addition (session_id to RecallQuery). No schema changes. **Deliverable:** decision drop: crispin-20-seam-audit-vs-55 (local-only)
 
-2. **Roger (§40 DI Audit):** 80% injectable — 2 seams need extraction (`ClockProvider`, `RandomSource`), 1 correctly deferred (model). Forward-docs network boundary for v1.5. **Deliverable:** `.squad/decisions/inbox/roger-40-di-seam-audit-vs-55.md`
+2. **Roger (§40 DI Audit):** 80% injectable — 2 seams need extraction (`ClockProvider`, `RandomSource`), 1 correctly deferred (model). Forward-docs network boundary for v1.5. **Deliverable:** decision drop: roger-40-di-seam-audit-vs-55 (local-only)
 
 3. **Laura (§50 Reframe):** §50 positioned as design-time testability discipline; §55 as implementation-time TDD practice. Complementary pair. **Deliverable:** Edited `docs/eureka/sections/50-testability.md` (+9%)
 
-4. **Edgar (§30 Follow-Ups):** 3/3 executed — CuratorStore signature adopted, ClockProvider seam added, latency cross-refs established. **Deliverable:** `.squad/decisions/inbox/edgar-30-followups-executed.md`, edited `docs/eureka/sections/30-learning-systems.md`
+4. **Edgar (§30 Follow-Ups):** 3/3 executed — CuratorStore signature adopted, ClockProvider seam added, latency cross-refs established. **Deliverable:** decision drop: edgar-30-followups-executed (local-only), edited `docs/eureka/sections/30-learning-systems.md`
 
 **Phase 2 — Recommendations Applied:**
 
@@ -6697,7 +6697,7 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 ## Technical Findings (Cross-Referenced)
 
 ### Finding 1: Repository Dependency (Cassima)
-**Full analysis:** `.squad/decisions/inbox/cassima-crucible-eureka-impact.md` §1.2 (undeclared dependency), §4 (resourcing)
+**Full analysis:** decision drop: cassima-crucible-eureka-impact (local-only) §1.2 (undeclared dependency), §4 (resourcing)
 
 - Crucible PRD §1 vocabulary, §2.4, §2.6, Appendix D assume Forge prescribers in `harness`.
 - Actual location: `D:\git\mem\packages\forge`.
@@ -6706,7 +6706,7 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 **Recommendation:** Stagger projects OR establish explicit dependency + versioning contract.
 
 ### Finding 2: Event Schema Collision (Genesta)
-**Full analysis:** `.squad/decisions/inbox/genesta-crucible-eureka-overlap.md` § Finding 1 + 2 + 5
+**Full analysis:** decision drop: genesta-crucible-eureka-overlap (local-only) § Finding 1 + 2 + 5
 
 - Crucible §1: 5 typed events (Request, Artifact, Observation, Decision, Question)
 - Cairn today: `event_log` with existing `eventType` vocabulary
@@ -6720,7 +6720,7 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 **Gate:** Before Crucible sprint 2 (L1 substrate), convene Graham + Roger + Genesta to lock event-substrate topology.
 
 ### Finding 3: SessionId Brand + Decision Schema Collision (Crispin, Genesta)
-**Full analysis:** `.squad/decisions/inbox/crispin-crucible-kr-overlap.md` § 1 + 5, `genesta-...` § Finding 2
+**Full analysis:** decision drop: crispin-crucible-kr-overlap (local-only) § 1 + 5, `genesta-...` § Finding 2
 
 **Collision 1 — SessionId Brand (BLOCKER):**
 - Eureka v5 (FR-13): `SessionId` branded type in `@akubly/types` (Aaron R8 directive).
@@ -6745,7 +6745,7 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 **Recommendation (Crispin):** Crucible rename to `ContentBlob` / `CapturedContent`. Eureka avoid "artifact" in public types.
 
 ### Finding 4: Learning-Loop Feedback Substrate (Edgar)
-**Full analysis:** `.squad/decisions/inbox/edgar-crucible-learning-overlap.md` § 1–4
+**Full analysis:** decision drop: edgar-crucible-learning-overlap (local-only) § 1–4
 
 - **Crucible's loop:** Prescriber → Review-Gate → Apply/Inbox → Scorecard (minutes to hours per-session).
 - **Eureka's loop:** Sweep → Ranker → Trust/Confidence mutations (hours to days across sessions).
@@ -6794,10 +6794,10 @@ None required. All 5 threads addressed. Skill extracted. Ready for next work.
 
 All findings preserved in inbox for detailed review:
 
-- `.squad/decisions/inbox/genesta-crucible-eureka-overlap.md` (20.9 KB, 216 lines) — Architectural findings: 5 overlaps (3 high-risk, 2 safe).
-- `.squad/decisions/inbox/crispin-crucible-kr-overlap.md` (24.5 KB, 136 lines) — KR findings: 2 critical collisions, 1 integration opportunity.
-- `.squad/decisions/inbox/edgar-crucible-learning-overlap.md` (25.6 KB, 202 lines) — Learning-loop findings: parallel loops, feedback substrate, prescriber transition.
-- `.squad/decisions/inbox/cassima-crucible-eureka-impact.md` (25.0 KB, 200 lines) — PM findings: undeclared dependency, 3 strategic questions, resourcing risk.
+- decision drop: genesta-crucible-eureka-overlap (local-only, 20.9 KB, 216 lines) — Architectural findings: 5 overlaps (3 high-risk, 2 safe).
+- decision drop: crispin-crucible-kr-overlap (local-only, 24.5 KB, 136 lines) — KR findings: 2 critical collisions, 1 integration opportunity.
+- decision drop: edgar-crucible-learning-overlap (local-only, 25.6 KB, 202 lines) — Learning-loop findings: parallel loops, feedback substrate, prescriber transition.
+- decision drop: cassima-crucible-eureka-impact (local-only, 25.0 KB, 200 lines) — PM findings: undeclared dependency, 3 strategic questions, resourcing risk.
 
 ---
 
@@ -6852,9 +6852,9 @@ All findings preserved in inbox for detailed review:
 
 **Artifacts:**
 - **Canonical PRD:** `.squad/decisions/eureka-prd-v5-final.md` (stable location, do not edit; supersedes v4-final)
-- **R8 Design Panel Verdicts:** `.squad/decisions/inbox/graham-r8-session-identity.md`, `genesta-r8-session-identity.md`, `crispin-r8-session-identity.md`, `edgar-r8-session-identity.md` (all ACCEPT/FOLD verdicts)
-- **Aaron R8 Directive:** `.squad/decisions/inbox/copilot-directive-r8-session-identity.md`
-- **R8 Lock Panel Verdicts:** `.squad/decisions/inbox/graham-r8-lock-verdict.md`, `genesta-r8-lock-verdict.md`, `crispin-r8-lock-verdict.md`, `edgar-r8-lock-verdict.md` (all LOCK, unanimous)
+- **R8 Design Panel Verdicts:** decision drops: graham-r8-session-identity, genesta-r8-session-identity, crispin-r8-session-identity, edgar-r8-session-identity (all ACCEPT/FOLD verdicts; local-only)
+- **Aaron R8 Directive:** decision drop: copilot-directive-r8-session-identity (local-only)
+- **R8 Lock Panel Verdicts:** decision drops: graham-r8-lock-verdict, genesta-r8-lock-verdict, crispin-r8-lock-verdict, edgar-r8-lock-verdict (all LOCK, unanimous; local-only)
 - **Superseded Artifact:** `.squad/decisions/eureka-prd-v4-final.md` (historical reference; see header banner for migration note)
 
 **Implementation Readiness:**
@@ -6874,7 +6874,7 @@ All findings preserved in inbox for detailed review:
 **By:** Graham (Lead)
 **Status:** Implemented in cycles 4-6
 
-From .squad/decisions/inbox/graham-wi-b-cycle4-redesign.md
+From decision drop: graham-wi-b-cycle4-redesign (local-only)
 
 **Thread analysis:** 51 unresolved threads across 4 files represent 5 distinct findings:
 - F8a: Wrong-branch reuse calls git worktree remove without unlinking junction first
@@ -6902,7 +6902,7 @@ ode_modules junction/symlink (before git worktree remove)
 **By:** Graham (Lead)
 **Status:** Reviewed and approved for merge
 
-From .squad/decisions/inbox/graham-wi-b-review-approve.md
+From decision drop: graham-wi-b-review-approve (local-only)
 
 **Scope adherence:** ✅ Gabriel implemented exactly what was scoped. Six change areas all map directly to concrete changes. No omissions.
 
@@ -6928,7 +6928,7 @@ From .squad/decisions/inbox/graham-wi-b-review-approve.md
 **By:** Graham (Lead)
 **Status:** Scoping complete, implemented
 
-From .squad/decisions/inbox/graham-wi-b-scope.md
+From decision drop: graham-wi-b-scope (local-only)
 
 **Scope confirmation:** WI-B makes the coordinator CREATE worktrees per-issue instead of dispatching agents into shared main.
 

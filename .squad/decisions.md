@@ -1,6 +1,6 @@
 ### 2026-05-30: WI-A Implementation Log — Issue #11 (Roger history restoration)
 
-From .squad/decisions/inbox/roger-issue-11-implementation.md (WI-A history, cross-referenced)
+From decision drop: roger-issue-11-implementation (local-only, WI-A history, cross-referenced)
 
 **Cloud Review Cycles 1-5 completed** — Worktree-aware session resolution now in place. Schema version 16. Partial UNIQUE indexes for NULL-workdir case. All 1405 tests green. Ready for WI-B (coordinator dispatch).
 
@@ -939,6 +939,146 @@ The factory functions are pure: they take an already-opened DB handle and return
 **Slice D Status:** ✅ **COMPLETE** — 147/147 tests passing, factory-on-subpath wiring verified, Graham ACCEPT-WITH-FOLLOWUPS, SD-F1 ledger amendment applied.
 
 ---
+
+### 2026-06-06: Ralph Round 1 — PRs #50, #52, #53 Orchestration Outcomes
+
+# Decision: Switch Root Lint to Workspace Iteration for Windows Compatibility
+
+**Agent:** Gabriel (Infrastructure)  
+**Date:** 2026-06-06  
+**Issue:** #37  
+**PR:** #50 (`squad/37-windows-lint-workspace`)
+
+## What Changed
+
+**Root `package.json`:**
+- Before: `"lint": "eslint packages/*/src/"`
+- After: `"lint": "npm run lint --workspaces --if-present"`
+
+**Per-package `package.json` files** (7 packages updated — cairn already had it):
+- Added `"lint": "eslint src/"` to: `types`, `crucible-cli`, `crucible-core`, `eureka`, `forge`, `runtime-cli`, `skillsmith-runtime`
+
+## Why
+
+The root glob `packages/*/src/` is not expanded by Windows PowerShell — eslint received the literal string, found no matching files, and silently exited 0. Lint errors were invisible to local Windows developers and only caught by Linux CI.
+
+The workspace delegation pattern (`npm run lint --workspaces --if-present`) is cross-platform: it calls each package's own `lint` script, where the path `src/` is a literal, not a glob. This mirrors how `test` and other cross-package scripts already work in this monorepo.
+
+## Impact
+
+- `npm run lint` now correctly invokes eslint in all 8 workspace packages on both Windows and Linux.
+- The `--if-present` flag ensures future packages without a lint script do not fail the root command.
+- Pre-existing `any` type warnings in `cairn` and `eureka` surface (out of scope for this fix — tracked separately).
+- Exit code remains 0 (warnings only, no errors introduced by this change).
+
+---
+
+# Decision: Scoped Doc-Hygiene Sweep — Gitignored Back-References (Issue #46)
+
+**Date:** 2026-06-06  
+**Author:** Gabriel (Infrastructure)  
+**Status:** FINAL  
+**Related:** Issue #46, PR to be opened from `squad/46-doc-hygiene-backref-sweep`
+
+## Decision
+
+Performed the correctly-scoped sweep of gitignored-path back-references in committed prose, as specified in Issue #46. Preserved all forward writer-target paths in charters, templates, and skill files.
+
+## Scope
+
+**Fixed (back-references):**
+- `.squad/decisions-archive.md` — 4 occurrences → 0
+- `.squad/orchestration-log.md` — 1 occurrence → 0
+- 17 agent history files (`history.md` / `history-archive.md`) — 100+ occurrences → 0
+
+**Preserved (forward writer-targets):**
+- All `agents/*/charter.md` files — writer-target paths intact (25 hits confirmed)
+- All `templates/*.md` files — writer-target paths intact
+- All skill files — writer-target paths intact
+- `.squad/skills/doc-references-respect-gitignore/SKILL.md` — not modified per task instructions
+
+## Classification Heuristic
+
+**Forward writer-target (leave alone):** Lines using template syntax (`{name}-{slug}`) or imperative instructions telling agents WHERE to write. Context: charters, templates, skills.
+
+**Back-reference (fix):** Lines recording completed work by citing a concrete inbox filename. Context: history files, archive entries, orchestration logs. Past-tense patterns: "Decision drop: ...", "Written to ...", "Memo Location: ...", "Full analysis written to ...", "Inbox: ...".
+
+**Directory-only references** (`.squad/decisions/inbox/` without a filename) in committed prose: replaced with "Scribe decision inbox" or "decision inbox" — path-free description that preserves the meaning.
+
+## Verification Results
+
+| Criterion | Result |
+|-----------|--------|
+| `grep -rn 'decisions/inbox/' .squad/decisions.md .squad/decisions-archive.md` | **ZERO hits** ✅ |
+| `grep -rn 'decisions/inbox/' .squad/templates .squad/agents/*/charter.md` | **25 hits** (forward writer-targets preserved) ✅ |
+
+## Why This Matters
+
+Broken inbox links in committed prose cause:
+- Confusion for contributors who don't have local inbox files
+- CI link-checker failures (if ever enabled)
+- Eroded trust in the documentation as a navigable resource
+
+The carve-out for forward writer-targets ensures agents continue to know where to drop decisions during parallel work sessions.
+
+---
+
+# Decision: Worktree Fallback Must Emit User-Visible Warning
+
+**Author:** Graham (Lead / Architect)  
+**Date:** 2026-06-06  
+**Issue:** #31  
+**PR:** #53  
+**Status:** Proposed (pending merge)
+
+## Context
+
+When `SQUAD_WORKTREES=1` is set, the coordinator's Pre-Spawn: Worktree Setup flow can silently degrade isolation in two ways:
+
+1. **Step 2(c):** `git worktree add` fails (lock error, permissions error, or any other error) → coordinator falls back to the main checkout with `WORKTREE_MODE=false`.
+2. **Step 2(d):** Junction/symlink dependency linking fails → coordinator falls back to `npm install` in the worktree, losing the shared-`node_modules` isolation model.
+
+In both cases the existing behavior was to write a log entry to `.squad/orchestration-log/` only. The user received no signal.
+
+## Decision
+
+**Both fallback paths MUST emit a one-line user-visible warning in addition to the existing log entry.** The log entry is preserved unchanged.
+
+### Warning text
+
+**Step 2(c) — worktree creation failure:**
+```
+⚠️  Worktree creation failed — falling back to main checkout. Isolation disabled for this spawn.
+```
+
+**Step 2(d) — dependency linking failure:**
+```
+⚠️  Worktree dependency linking failed — fell back to npm install. Dependency isolation is degraded for this spawn.
+```
+
+## Rationale
+
+The user opted into worktree isolation by setting `SQUAD_WORKTREES=1`. Silent degradation violates the principle of least surprise — the user's assumption (isolation is active) diverges from reality (isolation is disabled) with no signal. This is especially dangerous in multi-agent parallel dispatch where the user is relying on per-issue isolation to avoid cross-contamination.
+
+The chosen fix is additive (log + warn, not log → warn): the log entry stays for post-hoc debugging, and the warning surfaces the degradation in real time.
+
+## Alternatives Considered
+
+1. **Block on failure instead of falling back** — too disruptive; some lock errors are transient and the step-2(c) retry already handles that. Fallback with warning is the right UX.
+2. **Warn only, remove log** — removes auditability. Rejected.
+3. **Add a config flag to suppress warning** — YAGNI at this scale; skip for now.
+
+## Scope
+
+Change is confined to `.github/agents/squad.agent.md` (governance/documentation), steps 2(c) and 2(d) error-handling bullets. No code changes required.
+
+## ⚠️ Coordinator Restart Note
+
+Because this change modifies the coordinator's own governance file, any running coordinator session will operate on stale instructions until it is restarted. Inform the user when this PR is merged.
+
+---
+
+### 2026-06-01: Crucible Sprint 0 — First GREEN Cycle (Roger)
 
 # Roger: Crucible First GREEN — Decision Inbox
 
@@ -3766,7 +3906,7 @@ The SQLite adapter is the substrate for any future Refactor 4 / Phase 2 work (fi
 - **Refactor 3 proceeds with zero DB-interface rework.** The current `DB` interface (`getSession`/`insertSession`/`queryEvents` + extended `getOwnEvents`/`getMetadata`/`insertRootSession`/`pushEvent`) survives. The real SQLite adapter is a standalone `better-sqlite3(':memory:')` with Crucible's own two-table schema, no Cairn dependency.
 - Estimated ~2 days cheaper than Option A for Refactor 3; gap widens as Crucible's schema evolves independently.
 
-**Source briefs:** `.squad/decisions/inbox/graham-oq2-substrate-brief.md`, `genesta-oq2-substrate-brief.md`, `roger-oq2-substrate-brief.md`.
+**Source briefs:** decision drops: graham-oq2-substrate-brief, genesta-oq2-substrate-brief, roger-oq2-substrate-brief (all local-only).
 
 
 ---
@@ -3819,3 +3959,60 @@ The SQLite adapter is the substrate for any future Refactor 4 / Phase 2 work (fi
 Both cycles declared **REVIEW-COMPLETE** with diminishing returns. All findings either RESOLVED or documented as deferred (splitting integration tests, migration/user_version seam, L1 WAL).
 
 **Ship cleared for Refactor 3.** Feature PR ready to merge.
+
+---
+
+## 2026-06-06: Refined Scope Rule for Doc-Hygiene Inbox-Path Sweeps
+
+**Date:** 2026-06-06  
+**Author:** Graham Knight (Lead / Architect)  
+**Status:** FINAL  
+**Context:** PR #52 re-scope (issue #46), per Aaron's direction after persona-review panel findings
+
+### Decision
+
+When sweeping committed prose to remove broken `.squad/decisions/inbox/` path references, apply a **three-way distinction**:
+
+#### 1. FIX — Specific inbox file-path pointers
+
+**Definition:** Prose that cites a concrete `inbox/{name}-{slug}.md` filename as if it were a stable, followable link.
+
+**Action:** Replace the path with a slug-preserving plain-text description. Per Skeptic panel suggestion, retaining the filename slug (without the directory path) preserves searchability — e.g., `decision drop: graham-ctd-phase4-synthesis (local-only, now incorporated in this archive)`.
+
+**Also fix:** Any malformed prose introduced by the replacement — dangling "— this file" self-references should become "— this decision entry".
+
+**Examples fixed in PR #52:**
+- `Merged from .squad/decisions/inbox/graham-ctd-phase4-synthesis.md` → `Merged from decision drop: graham-ctd-phase4-synthesis (local-only, now incorporated in this archive)`
+- `.squad/decisions/inbox/laura-crucible-first-red-test.md — this file` → `decision drop: laura-crucible-first-red-test (local-only) — this decision entry`
+
+#### 2. KEEP / RESTORE — Gitignore-policy documentation
+
+**Definition:** Bulleted "Explicitly prohibited (gitignored runtime state)" lists that name the inbox path as one of several gitignored directories.
+
+**Action:** Keep the literal `.squad/decisions/inbox/` path verbatim. These bullets document the gitignore policy — they are not broken pointers to any specific file. All sibling paths (`.squad/orchestration-log/`, `.squad/log/`, `.squad/sessions/`, `.squad/.scratch/`) are kept; stripping only the inbox path is over-reach.
+
+#### 3. KEEP — Generic directory narration
+
+**Definition:** Narrative sentences that describe where transient files were written, without citing a specific filename (e.g., "resolutions captured as directive files in `.squad/decisions/inbox/`").
+
+**Action:** Keep the path. This is accurate location description, not a broken pointer.
+
+#### 4. NEVER TOUCH — Forward writer-target paths
+
+**Definition:** Charters, templates, skills, routing files that tell future agents where to write files.
+
+**Action:** Leave entirely unchanged. These are instructions, not references.
+
+### Acceptance Criterion (Relaxed, Aaron-approved 2026-06-06)
+
+Issue #46's original literal criterion was "zero `decisions/inbox/` hits in decisions.md AND decisions-archive.md."
+
+**Relaxed criterion:** Zero *broken followable pointers* — specific `inbox/{file}.md` citations that cannot be followed. The three policy-list bullets in `decisions-archive.md` that document the gitignore rule may (and should) retain the literal path.
+
+### Why
+
+The literal "zero hits" criterion over-interprets the spirit of the issue. Issue #46 is about links that are broken for contributors and CI — not about erasing every mention of the path. Policy documentation that *explains why the path is gitignored* is useful, accurate, and should be preserved. Removing it degrades the policy audit trail.
+
+### Append-Only History Rule
+
+**Separately and absolutely:** Agent `history.md` and `history-archive.md` files are append-only. Any hygiene sweep that edits previously committed history entries is a scope violation, regardless of whether the edit improves clarity. This mirrors the over-reach that caused PR #44 to be reverted.
