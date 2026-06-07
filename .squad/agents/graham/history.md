@@ -177,6 +177,8 @@ ode_modules re-install: cleanup flow handles junction removal before git worktre
 
 📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
 
+**Scribe note (2026-06-06T07:00:21Z):** M8 Slice C COMPLETE — Roger (SqliteFactStore + FTS5 BM25 search, PR #48) + Laura (contract/edge audit, 12 tests). FactStore.search() shipped as wrapped `{ results, nextCursor? }` with BM25 ranking, per-page normalization, offset cursor. FSE-1 (parse errors) fixed; FSE-4 (caveat docs) done. Laura's audit: 109→121 tests, all edge cases verified (ordering, round-trip, boundary, isolation, NULL-trust, syntax). Verdict: ✅ ACCEPT-WITH-FOLLOWUPS. Slice D next. Aaron's M8 scope locked: Q1=scaffold-A, Q2=cursor (shipped), Q3=own eureka.db. Ready for follow-up slices.
+
 ### 2026-05-30: Forge Roadmap Synthesis
 
 **Context:** Aaron asked "what's next for forge?" after Eureka v1 (`ef06238`) and PR #32 type-tightening (`aae18ae`) landed same day.
@@ -354,3 +356,28 @@ The squad.agent.md had two descriptions of the same junction-link fallback: once
 
 **Rule:** whenever an instruction appears in both a reference/overview section and a procedural step, both must include all safety-critical outputs (warnings, logs). Review cross-references before shipping.
 
+
+
+## Learnings — 2026-06-06: Doc Hygiene Re-scope (PR #52, issue #46)
+
+### Pointer vs. Policy vs. Writer-Target distinction
+
+Five categories of `.squad/decisions/inbox/` references require different treatment in committed prose:
+
+1. **Broken followable POINTER** (FIX): Prose that cites a specific `inbox/{slug}.md` filename as a stable reference — e.g., `**Artifact:** Merged from .squad/decisions/inbox/graham-ctd-phase4-synthesis.md`, `**Deliverable:** .squad/decisions/inbox/crispin-20-seam-audit-vs-55.md`, `From .squad/decisions/inbox/X.md`, file-inventory bullets, R8 verdict file lists. Replace with slug-preserving plain text (e.g., "decision drop: graham-ctd-phase4-synthesis (local-only)") to retain searchability. Fix any resulting malformed prose (dangling "— this file" → "— this decision entry").
+2. **Gitignore-policy documentation** (KEEP): Bulleted "Explicitly prohibited (gitignored runtime state)" lists, rationale sentences ("`.squad/decisions/inbox/` is gitignored"), and policy-description lines ("Cited gitignored `.squad/decisions/inbox/` paths"). These document the policy, not broken pointers.
+3. **Generic directory narration** (KEEP): Location descriptions like "directive files in `.squad/decisions/inbox/`" — accurate operational narration, not a broken pointer.
+4. **Inside Before:/After: code blocks** (KEEP): Examples documenting historical changes are not live pointers.
+5. **Forward writer-target paths** (NEVER TOUCH): Charters, templates, skills.
+
+### Append-only history files are immutable
+
+Agent history.md and history-archive.md are append-only. No hygiene sweep — not even doc cleanup — may retroactively edit committed history entries. This mirrors the over-reach that caused PR #44 to be reverted.
+
+### "Zero hits" acceptance criteria can be relaxed
+
+Issue #46 originally required zero `decisions/inbox/` hits. Aaron approved relaxing this: the criterion is "zero broken followable file-path pointers," not literally zero string occurrences. Policy-list bullets legitimately retain the bare directory path.
+
+### Merge decisions-archive.md from a current main base
+
+When a branch is behind main and decisions-archive.md diverged significantly, reset to `origin/main` before applying pointer fixes — do not rely on auto-merge, which can produce duplicated sections.

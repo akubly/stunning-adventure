@@ -1,3 +1,15 @@
+📌 **M8 Slice C audit complete** (2026-06-05): Audited Roger's `SqliteFactStore` (FTS5 BM25 search, cursor pagination, minTrust floor, session isolation). Verdict: ✅ ACCEPT-WITH-FOLLOWUPS. Added `fact-store-sqlite-edges.test.ts` (12 new tests, FS-SE-1..12). Test count: 109 → 121. Key learnings:
+
+> Correction (2026-06-05): Test count reflects FS-SE-1..13 (13 invariants). FS-SE-13 added post-audit for non-FTS SQLITE_ERROR propagation (commit `f08c746`).
+- **FTS5 BM25 sign convention**: `bm25()` returns NEGATIVE (more-negative=better). Correct ordering is `ORDER BY (-bm25(facts_fts)) * trust DESC`. The footgun: if you forget negation, best matches sort LAST (ascending on negatives). Lock this with a term-frequency ordering test.
+- **BM25 normalization proof approach**: Seed 3 facts with very different term densities for the same keyword; assert `results[0].relevance === 1.0` and descending order. Simpler than computing expected BM25 values.
+- **Cursor pagination gotchas**: (1) Offset cursors are deterministic only for a fixed query+session+data; concurrent inserts between pages can cause gaps/dupes — document as Slice D+ concern, not a blocker for single-writer v1. (2) Garbage cursors (invalid base64, negative offsets) must fall back to offset=0, not crash — test by comparing against no-cursor baseline. (3) The `limit+1` fetch trick has a degenerate case at `limit=0` (nextCursor loops on offset=0) — not exposed by contract, document as known edge.
+- **Per-page normalization distortion**: Sole result on a sparse final page always gets `relevance=1.0` regardless of actual BM25 quality. Clients must not compare relevance across pages. This is intentional v1 behavior but should be machine-documented with a test (FS-SE-12).
+- **FTS5 input sanitization gap (FINDING FSE-1, MEDIUM)**: Queries with unclosed double-quotes or bare operators (FTS5 syntax) propagate as rejected promises — no try/catch around `stmt.all()`. For v1 this is MEDIUM (non-blocking follow-up), but any user-input path hitting search() is a crash surface.
+
+> Correction (2026-06-05): FSE-1 fixed in this PR (commit `f08c746`). `SqliteFactStore.search()` now wraps `stmt.all()` in try/catch, catches FTS5 parse-error patterns, and returns `{ results: [] }` instead of rejecting. FS-SE-11 updated to test empty results (not rejection).
+- Decision drop: `.squad/decisions.md` (§ Audit — Laura M8 Slice C, line 228). — Laura
+
 # SUMMARY (as of 2026-06-01)
 📌 **M8 Slice B ready for audit** (2026-06-05): Roger completed SqliteTrustUpdater implementation on branch `eureka/m8-slice-b-sqlite-trust-updater` (4 commits). Key: atomic transactions via `rawTxn.immediate(args)`, contract suite relocated from activities to storage layer with tombstone pattern. Test results: 93 passing + 1 todo, new contract contributes 14 tests (7 InMemory + 7 SQLite). Ready for your audit when Aaron dispatches. Decisions merged: `.squad/decisions.md` (2026-06-05 entry + inbox). — Scribe
 
@@ -1467,6 +1479,46 @@ When spawning test-authoring agents, point to the ADR's Acceptance Signals subse
 ---
 
 📌 Team update (2026-06-02T06:00:00Z): **M7-B + M7-C + M7-D (PR #41) COMPLETE — Eureka M7 Shipped** — Edgar + Crispin delivered 5-cycle marathon. 22 unique Copilot findings (44 threads). Final: 74 tests green, tsc-clean, lint-clean, merged to main as ed6be2c. M7 COMPLETE: error narrowing (B) ✅ + atomicity contract (C) ✅ + session-scoped regression tests (D) ✅. New skill: `.squad/skills/refactor-grep-cleanup/SKILL.md` (grep repo for old interface names post-refactor, not across N cycles). — Scribe
+
+## Learnings
+
+### 2026-06-06: SQLite-C1 constraint assertion tightened (review-cycle cycle 2 remediation)
+
+**Task:** Two cycle-2 review findings in `packages/crucible-cli/src/__tests__/integration/session-fork.integration.ts`.
+
+**Fix 1 — [IMPORTANT] Constraint-specific assertion for SQLite-C1:**
+- Old: `.toThrow()` — too weak; passes on any throw including the session-exists guard.
+- New: `.toThrow(/UNIQUE constraint failed|SQLITE_CONSTRAINT/i)` — proves the SQLite PK constraint fired.
+- Confirmed schema uses `PRIMARY KEY (session_id, "offset")` in schema.ts. better-sqlite3 surfaces PK violations with message "UNIQUE constraint failed: events.session_id, events.offset".
+- Test setup already correct: `insertRootSession` is called first, so the `pushEvent` session-exists guard (`if (!exists) throw`) passes on both calls. The only possible throw on the second push is the constraint — no pre-emption risk.
+- A generic non-constraint throw (e.g. "session not found") would NOT match `/UNIQUE constraint failed|SQLITE_CONSTRAINT/i`, proving the matcher is discriminating.
+- Added inline comment explaining why the session-guard does not pre-empt and what error shape better-sqlite3 surfaces.
+
+**Fix 2 — [LOW] Dropped fragile commit-hash from beforeEach comment:**
+- Removed "Roger's a57f95f" from the beforeEach comment. The file-header GREEN note already captures the milestone context.
+
+**Verification:** crucible-core 6/6 green, crucible-cli 9/9 green (8 integration + 1 acceptance). tsc --build --force clean. No lint script in packages. Commit: `d4ca4ce`.
+
+**Rule reinforced:** Integration test error assertions must be *constraint-specific* — a pattern that only the intended failure path can satisfy. `.toThrow()` without a matcher proves nothing about discriminating power.
+
+### 2026-06-06: Refactor 3 RED → GREEN cleanup (review-cycle cycle 1 remediation)
+
+**Task:** Two persona-review findings in `packages/crucible-cli/src/__tests__/integration/session-fork.integration.ts`. Roger's `a57f95f` had already landed (createSQLiteDB exported, SCHEMA_V1_SQL single-sourced, pushEvent throws on unknown session). My job: integration test file only.
+
+**Fix 1 — Stale RED prose:**
+- Removed the `🔴 RED PHASE: These tests FAIL because…` block and its `Expected RED failure` section. These were accurate TDD scaffolding at authoring time but became false after Roger's GREEN commit.
+- Replaced with a brief `// GREEN — Refactor 3 complete, 2026-06-06` note referencing the commit SHA.
+- Also removed the `// 🔴 RED:` comment in `beforeEach`.
+- **Rule reinforced:** RED-phase narrative is scaffolding, not documentation. It must be removed (not just commented out) when the phase ends, otherwise it misleads future readers about system state.
+
+**Fix 2 — SQLite-specific assertion (SQLite-C1):**
+- The existing tests only asserted API outcomes (ledgerSize, range counts, fork metadata) — all satisfiable by a map-backed fake.
+- Added `[SQLite-C1]`: insert a session, push event at offset=0, then push again at offset=0. The events table has `PRIMARY KEY (session_id, "offset")` (confirmed in `schema.ts`). better-sqlite3 throws synchronously on the duplicate INSERT. A fake would silently overwrite.
+- Chose option (a) (duplicate-offset rejection) over option (b) (second connection re-read) because: (1) `:memory:` databases are per-connection — option (b) would require a temp file and cleanup logic; (2) the PK constraint test is simpler, faster, and equally definitive.
+- **Rule reinforced:** Integration tests must include at least one assertion that is *impossible* for the mock/fake to satisfy. Otherwise the integration layer adds no discriminating power over unit tests.
+
+**Verification:** crucible-core 6/6 green, crucible-cli 9/9 green (8 integration + 1 acceptance). tsc --build --force clean. eslint clean. Commit: `324c287`.
+
 
 
 ---

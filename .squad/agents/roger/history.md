@@ -1140,6 +1140,59 @@ The optional-chain pattern store.get(id)?.ownEvents.push(event) is a silent data
 **When cleaning control-character artifacts, sweep the WHOLE file, not just the flagged region.** Reviewers sample; a spot fix that only patches the cited lines leaves other artifacts alive. After any control-char remediation, run a full-file scan (e.g., byte-level check for bytes <0x20 excluding tab/LF/CRLF) before committing, so the issue does not resurface in the next review cycle.
 **BEGIN IMMEDIATE serializes within a single connection; JS event-loop serializes across async calls from the same connection.** For a synchronous library like better-sqlite3, Promise.all() in the same process doesn't create true concurrency — each mutate() call runs to completion before the JS engine yields. The transaction wrapper enforces that READ + fn + WRITE happen atomically within one mutate() call; it plays no role in ordering ACROSS calls from the same JS thread. BEGIN IMMEDIATE matters only when two separate Database handles (different connections, possibly different processes) compete for the write lock. Getting this distinction wrong in comments misleads future readers about WHERE the safety boundary is.
 
+## Learnings (2026-06-05 — M8 Slice C: SqliteFactStore + FTS5 BM25)
+
+**Branch:** `eureka/m8-slice-c-factstore`
+
+**BM25 sign convention is the primary footgun.** `bm25(facts_fts)` returns NEGATIVE values where more-negative = better match. Using it directly in ASC ORDER BY sorts best matches LAST. The fix is `ORDER BY (-bm25(facts_fts)) * trust DESC`. The FS-4 contract test (higher-frequency term fact ranks first) is the regression lock. Every SQLite FTS5 implementation must own this pattern or it will silently break ordering on first write.
+
+**Per-page min-max normalization is the right call for v1.** Normalizing `relevance` to [0,1] via min-max across the result page is simple and correct for single-page recall (RANKER_OVERFETCH_FACTOR × k). Cross-page normalization (where page-1 and page-2 relevances are comparable) requires two queries or a separate max-score fetch — deferred until cross-session pagination needs it. Document the choice so the next person doesn't re-derive it.
+
+**Interface reconciliation (wrapped return) is a mechanical but real change to merged code.** The `recall.ts` change from `Promise<RecallResult[]>` to `Promise<{ results: RecallResult[]; nextCursor? }>` required updating 10 mock sites in `recall.test.ts`. Each was `mockResolvedValue([...])` → `mockResolvedValue({ results: [...] })`. The pattern is mechanical but if you miss one the test will FAIL — destructuring `{ results }` from a bare array returns `undefined`, and the first downstream use of `results` (like `results.filter(...)`) throws a noisy TypeError rather than a clean assertion failure. That TypeError will be confusing to diagnose because it points at the consumer, not the stale mock. Grep for `mockResolvedValue` in the test file before declaring done — it catches all stale mocks in one pass.
+
+**Offset cursors are pragmatic for v1 FTS5 pagination.** Rowid+rank keyset cursors require stable rank values — BM25 floats are session-stable but not write-stable. For v1 single-page recall, offset is deterministic. Encode as base64 JSON `{ offset }` so the format can be extended (add `sessionId`, `queryHash`, etc.) without a breaking cursor change. Document the choice; the next person will want to understand why you didn't use a keyset cursor.
+
+**Schema gaps (attentionTier, importance, lastAccessed) default gracefully.** None of these fields are in the `facts` table yet. `attentionTier='warm'` (identity multiplier 1.0), `importance` omitted (FR-2 uses 0), `lastAccessed` omitted (recency floor 0.1). The composite scorer still runs — results are just conservative. A future migration `002-fact-fields.ts` can add the columns without breaking Slice C's implementation (it SELECTs only content, trust, bm25_score).
+
+**The `*.contract.helper.ts` naming + non-`.test.ts` rule extends naturally to FS.** `fact-store-contract.helper.ts` follows the exact same pattern as `fact-reader-contract.helper.ts` and `trust-updater-contract.helper.ts`. The wiring test in `fact-store.contract.test.ts` imports from the helper. Vitest ignores the helper file (not `.test.ts`). The pattern is now consistent across all three storage seams.
+
+## Learnings (2026-06-05 — M8 Slice C follow-ups FSE-1 + FSE-4)
+
+**Branch:** `eureka/m8-slice-c-factstore` (follow-up commits on same branch, PR #48)
+
+**FTS5 error messages don't always contain "fts5".** The intuitive narrowing check `/fts5/i.test(err.message)` fails for `"unterminated string"` (unclosed quote) and other tokenizer-level errors. SQLite's FTS5 query parser errors all carry `code === 'SQLITE_ERROR'` (numeric 1). Non-parse errors use distinct codes: SQLITE_CORRUPT=11, SQLITE_IOERR=10, SQLITE_BUSY=5. Narrowing on code alone is the correct approach for this call site because we're inside a method that ONLY runs FTS5 queries — a false SQLITE_ERROR from a non-FTS cause would require schema corruption or an impossible misuse of the prepared statement. Don't over-narrow on message text for FTS5 errors; narrow on the error code instead.
+
+**[Correction 2026-06-05]:** The shipped FSE-1 catch narrows on `code === 'SQLITE_ERROR'` AND a message regex `/fts5|unterminated|syntax error|malformed MATCH/i`, rethrowing non-FTS SQLITE_ERROR (missing-table/schema). Code-only narrowing would over-swallow missing-table errors (e.g., `"no such table: facts_fts"`) which are also `SQLITE_ERROR`. The message pattern distinguishes FTS5 parse errors from missing-table errors, preventing silent corruption of the schema-error signal.
+
+**Laura's edge test locking the broken behavior (FS-SE-11) is the right pattern.** She wrote the test asserting the rejected Promise BEFORE the fix, which made the finding machine-verifiable. Updating the test to the new contract (resolves to `{ results: [] }`) makes the fix machine-verifiable too. This is the correct audit → fix → relock cycle. The `[FINDING FSE-1]` annotation in the old test title is a useful trail even after the fix; the new title says `(FSE-1 fix)` so the arc is traceable.
+
+**Per-page relevance normalization needs documentation at two levels.** The JSDoc on `RecallResult.relevance` (the field) AND on `FactStore.search` (the return type) should both call out that relevance is per-page only. Documenting it only at one level leaves the other as a trap for future consumers who read the type definition but miss the field comment (or vice versa). Both are load-bearing: consumers of the interface read the return type; consumers of results read the field.
+
+## Learnings (2026-06-05 — M8 Slice C code-panel F1–F7 findings)
+
+**Branch:** `eureka/m8-slice-c-factstore` (F1–F7 fixes on same branch, PR #48)
+
+**F1: relevance ≠ sort order is a design, not a defect.** The `compositeScore` consumer weights relevance, trust, importance, and recency as four independent orthogonal signals (each with its own coefficient). Baking trust into `relevance` via composite normalization (`-bm25 × trust`) would double-count trust — it already has a 0.20 weight in the scorer. So: `relevance` = pure `-bm25` normalized; ORDER = composite. When trust varies, a high-trust/low-BM25 fact can sort first while carrying lower relevance. FS-SE-1b is the regression lock for this design. The FS-4 equal-trust lock is still valuable because it verifies the BM25 footgun (negation) under controlled conditions.
+
+**Narrow FTS5 catch with message pattern in addition to error code.** After consulting actual SQLite error messages for missing tables vs FTS5 parse errors: a dropped `facts_fts` table produces a `SQLITE_ERROR` with message `"no such table: facts_fts"` — it does NOT match the FTS5 parse pattern. This is good news for the narrowing: `code === 'SQLITE_ERROR' && /fts5|unterminated|syntax error|malformed MATCH/i` correctly lets the missing-table error propagate. The earlier code-only check (no message filter) was too broad — it would have swallowed the missing-table error. Always verify the message against real SQLite output before deciding on pattern breadth.
+
+**F3 tie-breaker: `f.id ASC` is cheap and correct.** `f.id` is autoincrement INTEGER PRIMARY KEY — guaranteed unique and monotonically increasing (insertion order within a session). Adding `f.id ASC` as secondary sort on the `ORDER BY` clause costs nothing at query time (BTree INTEGER PK) and makes OFFSET pagination deterministic across tied composite scores. The InMemory reference impl should mirror this with `a.factId.localeCompare(b.factId)` since factIds are insertion-order strings in the harness.
+
+**[Correction 2026-06-05]:** The shipped InMemory implementation uses an explicit `insertionOrder` counter (incremented on each `seed()` call) to tie-break results, which correctly mirrors SQLite's AUTOINCREMENT id semantics. `localeCompare` on factId would produce different insertion-order ties when factIds are inserted in non-alphabetical order, so it was not used in the final implementation. See FS-7 test design: seeded `tie-c`, `tie-a`, `tie-b` in non-lexicographic order to distinguish the two approaches.
+
+**F4 limit validation prevents infinite pagination loops.** `limit=0` produces OFFSET 0, LIMIT 0, returns 0 results, `nextCursor` defined, next call produces the same state — infinite loop for any consumer that auto-paginates. `limit=-1` makes SQLite treat it as unlimited (implementation quirk). Both are bugs, not edge cases. `TypeError` is the right signal because `limit` is a misuse of the API contract, not a data error. Apply at both SqliteFactStore AND the InMemory reference impl so the contract test catches both.
+
+**F5 cursor versioning is Slice D work.** The v1 offset cursor is NOT bound to query params, session, minTrust, or limit. Cross-parameter reuse is undefined behavior (silently returns wrong page). The right fix (scope fingerprint: hash of query+sessionId+minTrust+limit) is deferred to Slice D when we add cursor validation. Document with code comments NOW so the next author doesn't have to rediscover the gap.
+
+## Learnings (2026-06-06 — M8 Slice C cycle-2 C2-A/B/C/D/E)
+
+**Branch:** `eureka/m8-slice-c-factstore` (final fix pass, PR #48)
+
+**Insertion-order tie-break must be explicit, not coincidental.** `localeCompare` on factId produces a different order than `f.id ASC` (autoincrement) whenever factIds are inserted in non-alphabetical order. The two impls were only "equivalent" because the test data happened to align. The fix: add an explicit `insertionOrder` counter to `StoredFact`, increment on each `seed()` call, sort ties by `a.insertionOrder - b.insertionOrder`. Then seed FS-7 in non-lexicographic order (`tie-c`, `tie-a`, `tie-b`) so the test would fail under `localeCompare` semantics. Cross-impl contract tests must use data that DISTINGUISHES the implementations they're testing — otherwise they miss the divergence they exist to prevent.
+
+**Duplicates need distinguishable content.** A tie-breaking test that seeds identical content and only asserts `length === 3` would pass even if the impl returned the same row twice (three identical items would still have length 3 and Set.size 1 vs expected 3 — but only if you check the Set). FS-7's fix: seed content `'tiebreak pagination fact-c/a/b'` and assert `new Set(all.map(r => r.content)).size === 3`. A no-dup assertion requires uniquely-identifiable results.
+
+**FTS5 error-message regex is a v1 tradeoff.** The `/fts5|unterminated|syntax error|malformed MATCH/i` pattern was verified against real SQLite errors on 2026-06-05. The conservative failure mode (miss → real error propagates, not swallowed) is acceptable for v1. Slice D should version-anchor the test or look for a more structured FTS5 error signal from better-sqlite3. Noted in decision drop §C2-E.
 ---
 
 ## Learnings (PR #45 Cycle 3 -- 2026-06-05)
@@ -1147,3 +1200,35 @@ The optional-chain pattern store.get(id)?.ownEvents.push(event) is a silent data
 **Keep mock return values matching the interface contract even when the value is ignored.** insertSession is typed Promise<void>, so mocks should resolve undefined, not a stray string like 'child-id'. Resolving a wrong type can mask future misuse where code incorrectly reads the return value -- the interface contract is the source of truth, not what production code happens to ignore today.
 
 **Keep minimal-interface comments honest about used-vs-retained members.** If a port interface intentionally includes members not currently called by the primary consumer (e.g., queryEvents on DB), say so explicitly -- state which methods are used now vs retained for future needs. A comment that says 'only the operations X actually needs' becomes misleading the moment the interface contains anything beyond that scope.
+
+---
+
+## Learnings (Refactor 3 Review Cycle 1 — 2026-06-06)
+
+**Production deps vs devDeps: if a module is exported from the production barrel, its native dependency belongs in `dependencies`, not `devDependencies`.** `createSQLiteDB` is exported from `crucible-core/src/index.ts`, so `better-sqlite3` must be a production dependency of that package. Leaving it in devDeps means any consumer that installs the published package without devDeps would get a runtime crash.
+
+**Single-source schema DDL; never restate it in fixtures or tests.** Creating a canonical `SCHEMA_V1_SQL` export in core and having the fixture call `createSQLiteDB` directly eliminates the drift risk. A fixture that independently restates CREATE TABLE statements will silently diverge from production schema as the schema evolves.
+
+**Error message parity between adapters is a contract, not a courtesy.** When the in-memory oracle throws a specific, diagnosable message (`pushEvent: session '<id>' not found`), the SQLite adapter must throw the exact same message — not a foreign-key constraint error. Tests that assert on error messages will fail at the FK layer with a confusing message; more importantly, callers that pattern-match on errors get inconsistent behavior depending on which adapter is in use.
+
+**Interface JSDoc must describe the cross-impl contract, not the implementation detail of one adapter.** The "mutable reference" wording on `getOwnEvents` was truthful for in-memory but false for SQLite. When an interface has two implementations, the JSDoc on the interface must state what ALL implementors commit to — in this case, a snapshot, not a live reference.
+
+**Header comments on transitional code should name its transitional nature.** Calling the SQLite adapter a "real SQLite adapter" biases future readers toward treating it as canonical. A one-clause note that names the Sprint-0 / compatibility-substrate framing prevents architectural drift.
+
+---
+
+## Learnings (Cycle 2 Remediation — 2026-06-06)
+
+**Verify direct imports before removing a devDependency.** The safe pattern is: grep src/ for `import.*from 'pkg'`; if the only hits are in comments or JSDoc, the dependency is genuinely unused. Trusting that it "should" be gone without grepping first risks removing a still-needed dep (or, conversely, leaving a truly redundant one and failing review). In this case, `better-sqlite3` and `@types/better-sqlite3` appeared only in comments — test-db.ts had already been refactored to import solely from `@akubly/crucible-core`. Safe to drop.
+
+**Transitive dependency satisfaction is enough for test code.** Once `better-sqlite3` lives in `crucible-core`'s `dependencies`, any workspace package that declares `@akubly/crucible-core` as a dependency gets the native module transitively. A devDependency on the same package in the consumer is pure noise and a source of version-skew risk.
+
+---
+
+## Learnings (PR #51 Review — 2026-06-06)
+
+**Return a copy from snapshot methods, not the live internal collection.** `getOwnEvents()` was documented as returning a snapshot where modifications are not persisted, but returned the raw `ownEvents` array. The spread `[...array]` (or `.slice()`) is the minimal correct fix. Notably, the SQLite adapter already honored this contract (`.map()` creates a new array) — the in-memory adapter was the outlier. Whenever two adapters implement the same interface, verify BOTH sides match the JSDoc contract, not just one.
+
+**Lazy-load native modules that are not needed by all consumers.** Placing `import Database from 'better-sqlite3'` at module top level causes the native `.node` binary to be loaded the moment the barrel is `import`-ed — even by callers that only use the in-memory adapter. The fix: `import type Database from 'better-sqlite3'` (type-only, erased at compile time) at top level, and `createRequire(import.meta.url)('better-sqlite3') as typeof Database` inside the factory function. The import graph then only reaches the native module when `createSQLiteDB` is actually called. This matches the pattern in `packages/eureka/src/db/openDatabase.ts`.
+
+**`typeof ImportedType` is the correct cast for a `createRequire` call that returns a constructor.** `typeof import('better-sqlite3').default` fails when the package uses `export =` style declarations (TypeScript reports "Namespace has no exported member 'default'"). Use the locally imported type name directly: `as typeof Database`, where `Database` is bound via `import type Database from 'better-sqlite3'`.
