@@ -1,3 +1,5 @@
+# SUMMARY — Last Updated 2026-06-07T06:03Z (Size: 144911 bytes → see history-archive.md for entries before 2026-06-01)
+
 📌 **M8 Slice C audit complete** (2026-06-05): Audited Roger's `SqliteFactStore` (FTS5 BM25 search, cursor pagination, minTrust floor, session isolation). Verdict: ✅ ACCEPT-WITH-FOLLOWUPS. Added `fact-store-sqlite-edges.test.ts` (12 new tests, FS-SE-1..12). Test count: 109 → 121. Key learnings:
 
 > Correction (2026-06-05): Test count reflects FS-SE-1..13 (13 invariants). FS-SE-13 added post-audit for non-FTS SQLITE_ERROR propagation (commit `f08c746`).
@@ -1609,4 +1611,6 @@ Earlier entries (1410 lines) archived to history-archive.md on 2026-06-05.
 - packages/eureka/src/sqlite/deps.ts — factory implementations
 - packages/eureka/src/activities/__tests__/recall-sqlite-smoke.test.ts — SD-1, SD-2 smoke tests
 - .squad/decisions.md — M8 Slice D as-built section (Graham SD-F1)
+
+📌 **Slice D review-cycle complete + PR #54 opened** (2026-06-07T06:03Z): 5-persona Code Panel review → 0 blocking, 2 important + 3 minor fixed, 2 sound rejects + 1 false-positive cleared; 148/148 tests passing; Copilot review requested. — Scribe
 

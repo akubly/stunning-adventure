@@ -359,3 +359,5 @@ Pitfall #5 incorrectly stated that `resolveOptimizationHint` was not exported fr
 - packages/eureka/src/activities/__tests__/recall-sqlite-smoke.test.ts — SD-1, SD-2 smoke tests
 - .squad/decisions.md — M8 Slice D as-built section (Graham SD-F1)
 
+📌 **Slice D review-cycle complete + PR #54 opened** (2026-06-07T06:03Z): 5-persona Code Panel review → 0 blocking, 2 important + 3 minor fixed, 2 sound rejects + 1 false-positive cleared; 148/148 tests passing; Copilot review requested. — Scribe
+

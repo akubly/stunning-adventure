@@ -1,3 +1,5 @@
+# SUMMARY — Last Updated 2026-06-07T06:03Z (Size: 140604 bytes → see history-archive.md for entries before 2026-06-01)
+
 
 📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe
 **Scribe note (2026-05-29T23:24:24Z):** Review cycle 2 complete. All findings processed. M5 unblocked. See decisions.md for Cycle 2 resolutions.
@@ -1257,4 +1259,6 @@ The optional-chain pattern store.get(id)?.ownEvents.push(event) is a silent data
 - packages/eureka/src/sqlite/deps.ts — factory implementations
 - packages/eureka/src/activities/__tests__/recall-sqlite-smoke.test.ts — SD-1, SD-2 smoke tests
 - .squad/decisions.md — M8 Slice D as-built section (Graham SD-F1)
+
+📌 **Slice D review-cycle complete + PR #54 opened** (2026-06-07T06:03Z): 5-persona Code Panel review → 0 blocking, 2 important + 3 minor fixed, 2 sound rejects + 1 false-positive cleared; 148/148 tests passing; Copilot review requested. — Scribe
 
