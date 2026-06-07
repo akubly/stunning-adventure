@@ -452,6 +452,238 @@ Added JSDoc at two locations:
 - **`attentionTier` / `importance` / `lastAccessed` columns:** Future migration.
 - **Cross-session aggregation:** `FactStore.search()` is session-scoped in M8. Querying across sessions is a later milestone.
 - **Embeddings/semantic search:** BM25 via FTS5 only. Vector similarity is out of scope.
+
+---
+
+# M8 Slice D — SQLite Production Deps Factory (Roger, Laura, Graham)
+
+## 2026-06-06: Slice D Wiring Decision — SQLite Production Deps Factory (Roger)
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-06-06T21:48:05-07:00  
+**Slice:** M8 Slice D  
+**Status:** SHIPPED — build clean, 145/145 tests passing
+
+### The Design Tension
+
+Slice D spec: "make SQLite the default deps in `index.ts`."  
+Existing constraint: `better-sqlite3` is deliberately isolated behind the `./sqlite`
+subpath (Slice A, PR #43). The core `.` entry must stay native-dep-free.
+
+These are in direct conflict. One of them has to yield.
+
+### Options Considered
+
+**Option A — Production wiring factory in `./sqlite` subpath (CHOSEN)**
+
+Add `createSqliteRecallDeps(db)` and `createSqliteFeedbackDeps(db)` as named
+exports from `@akubly/eureka/sqlite`. Production consumers import one subpath and
+get batteries-included deps. Core `.` entry unchanged.
+
+Pros:
+- Preserves the native-dep isolation established in Slice A (no rework).
+- Zero cost for in-memory consumers — they never load `better-sqlite3`.
+- Factory is pure: takes an already-opened DB handle, returns a plain object.
+  No hidden state, no module-level side effects.
+- Explicit for callers: `openDatabase()` + `createSqliteRecallDeps(db)` is a
+  two-line setup, readable and discoverable.
+
+Cons:
+- The Slice D spec said "index.ts" — we're diverging from letter-of-spec.
+  Mitigation: the spirit of the spec (production callers get SQLite by default)
+  is fully satisfied; the letter was written before the isolation constraint was
+  established.
+
+**Option B — Import SQLite impls directly in `packages/eureka/src/index.ts`**
+
+Set up `SqliteFactStore` + `SqliteTrustUpdater` as module-level singletons in
+the core entry, export a pre-assembled `defaultDeps` object.
+
+Why rejected:
+1. Pulls `better-sqlite3` (native addon) into the `@akubly/eureka` main bundle.
+   Any consumer that does `import '@akubly/eureka'` loads a native binary — even
+   if they never call SQLite-backed functions.
+2. Requires the database path to be known at module load time (or lazy-init
+   with a global singleton) — neither is clean in a library context.
+3. Contradicts the explicit architecture decision in Slice A (PR #43 commit
+   `4235f8c`) that moved `SqliteFactReader` out of core surface specifically to
+   avoid this problem.
+4. The `createRequire` guard in `openDatabase.ts` softens the missing-addon
+   error but does not remove the module from the dependency graph — tree-shaking
+   does not eliminate a `new DatabaseCtor(path)` at module init.
+
+### Chosen Approach: Option A
+
+Two new factory functions added to `@akubly/eureka/sqlite`:
+
+```typescript
+import { openDatabase, createSqliteRecallDeps, createSqliteFeedbackDeps }
+  from '@akubly/eureka/sqlite';
+import { recall, applyFeedback } from '@akubly/eureka';
+
+const db   = openDatabase();                   // opens ~/.eureka/eureka.db
+const deps = createSqliteRecallDeps(db);       // RecallDeps
+const fbDeps = createSqliteFeedbackDeps(db);   // ApplyFeedbackDeps
+
+const results = await recall(options, deps);
+await applyFeedback(options, fbDeps);
+```
+
+### Public Surface (for Laura's integration test + Graham's review)
+
+**Import path:** `@akubly/eureka/sqlite`  
+**New exports:**
+
+| Name | Signature | Returns |
+|------|-----------|---------|
+| `createSqliteRecallDeps` | `(db: Database.Database) => RecallDeps` | `{ factStore: SqliteFactStore, clock: systemClock }` |
+| `createSqliteFeedbackDeps` | `(db: Database.Database) => ApplyFeedbackDeps` | `{ trustUpdater: SqliteTrustUpdater }` |
+
+**Unchanged exports (still available):**  
+`SqliteFactReader`, `SqliteTrustUpdater`, `SqliteFactStore`, `openDatabase`, `applyMigrations`
+
+**Core `.` entry — NO CHANGE:**  
+Activities (`recall`, `recallWithScores`, `applyFeedback`, `applyFeedbackById`),
+types (`RecallDeps`, `FactStore`, `ClockProvider`, …), errors — all unchanged.  
+`InMemoryFactReader` remains importable for test harnesses via `@akubly/eureka`
+(re-exported through `storage/index.ts`).
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `packages/eureka/src/sqlite/deps.ts` | **NEW** — factory functions |
+| `packages/eureka/src/sqlite/index.ts` | Added `export … from './deps.js'` |
+| `packages/eureka/dist/sqlite/deps.*` | Compiled output (build artifact) |
+
+### Build / Test Status
+
+- `npm run build --workspace=@akubly/eureka` → ✅ clean (exit 0)
+- `npm run test --workspace=@akubly/eureka` → ✅ 145/145 passing
+- No regressions in other packages (build is workspace-scoped; no cross-package changes)
+
+---
+
+## 2026-06-06: Laura — Slice D Smoke Test Verdict
+
+**Date:** 2026-06-06T21:48:05-07:00  
+**Author:** Laura (Tester)  
+**Slice:** M8 Slice D — Integration smoke test: recall() end-to-end with SqliteFactStore
+
+### What was tested
+
+Two smoke tests in `packages/eureka/src/activities/__tests__/recall-sqlite-smoke.test.ts`, wired via the production factory `createSqliteRecallDeps(db)` (Roger's Slice D wiring):
+
+| ID   | Test name | What it proves |
+|------|-----------|----------------|
+| SD-1 | seeded fact round-trips through real SQLite/FTS5 — content returned, ordering sane | `openDatabase(':memory:')` + `applyMigrations` + INSERT-via-trigger → FTS5 index populated → `SqliteFactStore.search()` BM25 query → `recall()` FR-2 composite ranking → content round-trips intact, high-trust×high-BM25 fact ranks first |
+| SD-2 | non-matching query returns empty array — FTS5 no-match path is clean | FTS5 zero-match path propagates cleanly as `[]` without throwing |
+
+### Production surface exercised
+
+- **`openDatabase(':memory:')`** — real DB open + full migration (schema_version, `facts`, `facts_fts`, `facts_ai`/`facts_au`/`facts_ad` triggers)
+- **`createSqliteRecallDeps(db)`** — Roger's Slice D factory; assembles `{ factStore: SqliteFactStore, clock: systemClock }` — the real production composition root
+- **`recall()`** — FR-2 composite scoring, trust-floor post-filter (defense-in-depth), slice to k
+
+### Test count delta
+
+**+2 tests** (SD-1, SD-2)  
+**Total suite: 145 → 147 passing.** Full suite green. Build clean (TypeScript, no errors).
+
+### Pass/fail
+
+✅ **PASS** — Both smoke tests green against production factory. Full 147-test suite green. Build green.
+
+### Factory wiring
+
+✅ **Switched to `createSqliteRecallDeps(db)`** — Roger's factory merged 2026-06-06. The smoke test now exercises the production composition root end-to-end. No follow-up needed for factory wiring.
+
+### Gaps (documented, not blocking)
+
+- **SD-3 (session isolation)**: Not added — already locked by FS-6 in the contract suite. Adding it would duplicate coverage without adding signal.
+- **Cursor smoke**: Not added — cursor correctness is exhaustively covered by FS-SE-3/4/10/12. Smoke test budget per spec is +1 or 2.
+- **Recency scoring**: Wall-clock clock used (not a fixed mock). Recency precision is not under test here — that's a recall.test.ts concern (M4 clock seam). For a smoke test, any `nowMs` large enough to floor recency is fine.
+
+---
+
+## 2026-06-06: Graham — M8 Slice D Architectural Review
+
+**Author:** Graham (Lead / Architect)  
+**Date:** 2026-06-06T21:59:05-07:00  
+**Slice:** M8 Slice D — SQLite Production Deps Factory  
+**Review Type:** Architectural gate (pre-merge)
+
+### Verdict
+
+**✅ ACCEPT-WITH-FOLLOWUPS**
+
+Slice D is architecturally sound. Roger's interpretation is correct; the decisions ledger needs a minor amendment.
+
+### Review Focus Areas
+
+#### 1. Spec vs. Implementation Tension — ✅ RESOLVED CORRECTLY
+
+**The tension:** Slice D spec said "update index.ts to export SQLite-backed instances as default deps." The Slice A isolation boundary (PR #43) established that the core `@akubly/eureka` entry must NOT pull in `better-sqlite3`.
+
+**Roger's resolution:** Factory functions (`createSqliteRecallDeps`, `createSqliteFeedbackDeps`) live on the `@akubly/eureka/sqlite` subpath. Production consumers import from one subpath and get batteries-included deps. The core `.` entry is unchanged.
+
+**Assessment:** This is the architecturally correct interpretation. The spec's intent was "production callers get SQLite by default" — that intent is fully satisfied. The spec's letter ("update index.ts") was written before the isolation constraint was established; the constraint takes precedence. A two-line composition root (`openDatabase()` + `createSqliteRecallDeps(db)`) is explicit, discoverable, and preserves the invariant that casual importers don't load a native binary.
+
+**Follow-up:** The decisions ledger should capture the as-built shape (factory-on-subpath, not root-entry-mutation). This is a documentation update, not a code change.
+
+#### 2. Composition Root Clarity — ✅ CLEAN
+
+The factory functions are pure: they take an already-opened DB handle and return a plain object. No hidden state, no module-level singletons, no side effects. The DB lifecycle (open/close) is explicitly owned by the caller.
+
+**`createSqliteRecallDeps(db)` returns:**
+```typescript
+{ factStore: SqliteFactStore, clock: systemClock }
+```
+
+**`createSqliteFeedbackDeps(db)` returns:**
+```typescript
+{ trustUpdater: SqliteTrustUpdater }
+```
+
+**Clock wiring:** `systemClock` is a module-level const (`{ now: () => Date.now() }`). This is appropriate for production — no injectable clock needed for SQLite deps since recall's clock is for composite scoring, not storage concerns.
+
+**Cross-session concern:** The factories are session-agnostic (they don't encode a session ID). Session scoping happens at call time via `RecallOptions.sessionId`. This is correct — the composition root shouldn't bake in runtime state.
+
+#### 3. Test Sufficiency — ✅ ADEQUATE FOR SMOKE GATE
+
+**SD-1** proves the end-to-end production path: `openDatabase(':memory:')` → real migrations → real FTS5 BM25 → `createSqliteRecallDeps(db)` → `recall()` → composite-scored results. Content round-trips intact; ordering is FR-2 compliant (high-trust × high-BM25 first).
+
+**SD-2** proves the FTS5 no-match path returns `[]` without throwing.
+
+**Assessment:** +2 tests is right-sized for a smoke gate. The contract suite (32 tests on `FactStore`, 18 on `TrustUpdater`) already exhaustively covers edge cases. These smoke tests prove the wiring is correct — that the factory assembles real impls into a working whole.
+
+**Not tested (acceptable):** Cursor pagination, session isolation, recency scoring. All covered by contract tests or deliberately out-of-scope for smoke (Laura documented gaps correctly).
+
+#### 4. Boundary Integrity — ✅ VERIFIED
+
+**Core `@akubly/eureka` entry (`packages/eureka/src/index.ts`):**
+- Exports only from `./activities/recall.js` and `./activities/errors.js`
+- Zero imports of `sqlite/`, `db/`, or `storage/*-sqlite.ts`
+- Zero references to `better-sqlite3`
+
+**Grep verification:** No transitive path from `index.ts` to the native dependency. The isolation boundary established in Slice A holds.
+
+### Build / Test Status
+
+- **Suite:** 147/147 passing (confirmed by fresh run)
+- **Build:** Clean (TypeScript, no errors)
+- **Boundary:** Core entry has no SQLite dependency
+
+---
+
+## Slice D as-built (2026-06-06) — SD-F1 Amendment
+
+**Added per Graham's SD-F1 follow-up:** Production deps wiring shipped as factory functions on `@akubly/eureka/sqlite` (`createSqliteRecallDeps`, `createSqliteFeedbackDeps`), NOT as root-entry mutations. This preserves the Slice A isolation boundary — the core `@akubly/eureka` entry does not transitively load `better-sqlite3`. Production consumers use a two-line composition root: `const db = openDatabase(); const deps = createSqliteRecallDeps(db);`. 
+
+**Slice D Status:** ✅ **COMPLETE** — 147/147 tests passing, factory-on-subpath wiring verified, Graham ACCEPT-WITH-FOLLOWUPS, SD-F1 ledger amendment applied.
+
+---
+
 # Roger: Crucible First GREEN — Decision Inbox
 
 **Date:** 2026-06-01  

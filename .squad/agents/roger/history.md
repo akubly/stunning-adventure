@@ -22,6 +22,41 @@ File size: 103960 bytes. See history-archive.md for earlier entries.
 
 ---
 
+## Learnings (2026-06-06, M8 Slice D — SQLite production wiring)
+
+**Spec letter vs. architecture intent: always honour the constraint you own.**
+Slice D spec said "make SQLite the default deps in `index.ts`," but the
+`./sqlite` isolation boundary from Slice A (PR #43) makes that a contradiction.
+Resolution: the spec's *intent* (production callers get batteries-included
+SQLite deps) was satisfied via a subpath factory; the spec's *letter* (edit
+`index.ts`) was overridden because the constraint I own is the architecture
+boundary. When spec and prior architecture conflict, document the tension, pick
+the constraint that matters more, and record the reasoning — don't silently
+reconcile one away.
+
+**Factory-in-subpath pattern for native-addon deps.** When a package has a
+native-addon module isolated behind a subpath export, the right home for
+production wiring factories is that same subpath — not the core entry. The
+factory (`createSqliteRecallDeps`, `createSqliteFeedbackDeps`) lives in
+`src/sqlite/deps.ts` and is re-exported from `src/sqlite/index.ts`
+(`@akubly/eureka/sqlite`). Core `.` entry stays clean; tree-shaking and
+in-memory consumers pay zero native-module cost.
+
+**Public surface (for Laura's integration test):**
+- Import path: `@akubly/eureka/sqlite`
+- `createSqliteRecallDeps(db: Database): RecallDeps` — `{ factStore, clock }`
+- `createSqliteFeedbackDeps(db: Database): ApplyFeedbackDeps` — `{ trustUpdater }`
+- Full usage: `openDatabase()` → `createSqliteRecallDeps(db)` → `recall(opts, deps)`
+
+**Key file paths:**
+- `packages/eureka/src/sqlite/deps.ts` — new factory module
+- `packages/eureka/src/sqlite/index.ts` — re-exports deps.ts factories
+- `packages/eureka/src/index.ts` — UNCHANGED (no SQLite in core)
+
+**Build/test baseline:** 145/145 green after Slice D changes.
+
+---
+
 ## Learnings (2026-06-06, PR #45 final fixes)
 
 **Prefer domain types over `unknown[]` in port interfaces.** `DB.queryEvents` was typed `Promise<unknown[]>`, erasing the `Primitive` type that the in-memory impl already returned correctly. Port interfaces are contracts — they should reflect the actual domain type, not a widening escape hatch. When the impl already returns the right type, the fix is purely additive and compile-safe.
@@ -1200,3 +1235,16 @@ The optional-chain pattern store.get(id)?.ownEvents.push(event) is a silent data
 **Keep mock return values matching the interface contract even when the value is ignored.** insertSession is typed Promise<void>, so mocks should resolve undefined, not a stray string like 'child-id'. Resolving a wrong type can mask future misuse where code incorrectly reads the return value -- the interface contract is the source of truth, not what production code happens to ignore today.
 
 **Keep minimal-interface comments honest about used-vs-retained members.** If a port interface intentionally includes members not currently called by the primary consumer (e.g., queryEvents on DB), say so explicitly -- state which methods are used now vs retained for future needs. A comment that says 'only the operations X actually needs' becomes misleading the moment the interface contains anything beyond that scope.
+
+## 2026-06-07 — M8 Slice D Complete
+
+**Slice:** M8 Slice D — SQLite Production Deps Factory (Roger, Laura, Graham)  
+**Status:** ✅ COMPLETE (147/147 tests, factory-on-subpath, Graham ACCEPT-WITH-FOLLOWUPS, SD-F1 ledger amendment applied)
+
+**Summary:** Roger shipped factory functions (createSqliteRecallDeps, createSqliteFeedbackDeps) on @akubly/eureka/sqlite, preserving Slice A isolation. Laura added +2 smoke tests (SD-1, SD-2). Graham's architectural review: boundary integrity verified, composition root clean, spec tension resolved correctly. Scribe merged decisions inbox + applied SD-F1 ledger amendment.
+
+**Key artifacts:**
+- packages/eureka/src/sqlite/deps.ts — factory implementations
+- packages/eureka/src/activities/__tests__/recall-sqlite-smoke.test.ts — SD-1, SD-2 smoke tests
+- .squad/decisions.md — M8 Slice D as-built section (Graham SD-F1)
+

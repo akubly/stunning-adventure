@@ -1,7 +1,13 @@
 # Graham — History
 
 📌 **Role:** Lead / Architect (Overall vision, cross-system integration, tiebreak arbitration)  
-📌 **Last update:** 2026-06-02
+📌 **Last update:** 2026-06-06
+
+## Learnings
+
+### 2026-06-06: M8 Slice D Review — Spec/Implementation Tension Resolution
+
+**Finding:** When a spec written early ("update index.ts to export SQLite-backed instances as default deps") conflicts with a later-established constraint (Slice A's native-dep isolation boundary), the constraint wins. Roger's factory-on-subpath approach correctly interprets "default" as "batteries-included on the production path" rather than "exported from the root entry point." The two-line composition root (`openDatabase` + `createSqliteRecallDeps(db)`) is explicit, discoverable, and preserves the isolation invariant. Updated decisions ledger recommended to capture the as-built shape.
 
 ## Current Status
 
@@ -339,4 +345,17 @@ The `SqliteChangeVectorProvider` doesn't offer a caching precedent (it delegates
 Pitfall #5 incorrectly stated that `resolveOptimizationHint` was not exported from `@akubly/cairn`. It was added to `cairn/src/index.ts` as part of the Cycle-1 panel review hardening (Finding H). Updated pitfall #5 to call it the **recommended path** (single call handles lookup + transition + event), with `insertHintIfNew` + `logEvent` reserved for adversarial tests needing fine-grained source/payload control.
 
 **Documentation debt pattern:** when a public API export is added as a review fix, also update any SKILL.md pitfalls that reference the non-exported version. Export additions don't automatically propagate to narrative documentation.
+
+
+## 2026-06-07 — M8 Slice D Complete
+
+**Slice:** M8 Slice D — SQLite Production Deps Factory (Roger, Laura, Graham)  
+**Status:** ✅ COMPLETE (147/147 tests, factory-on-subpath, Graham ACCEPT-WITH-FOLLOWUPS, SD-F1 ledger amendment applied)
+
+**Summary:** Roger shipped factory functions (createSqliteRecallDeps, createSqliteFeedbackDeps) on @akubly/eureka/sqlite, preserving Slice A isolation. Laura added +2 smoke tests (SD-1, SD-2). Graham's architectural review: boundary integrity verified, composition root clean, spec tension resolved correctly. Scribe merged decisions inbox + applied SD-F1 ledger amendment.
+
+**Key artifacts:**
+- packages/eureka/src/sqlite/deps.ts — factory implementations
+- packages/eureka/src/activities/__tests__/recall-sqlite-smoke.test.ts — SD-1, SD-2 smoke tests
+- .squad/decisions.md — M8 Slice D as-built section (Graham SD-F1)
 

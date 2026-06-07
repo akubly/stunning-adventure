@@ -25,6 +25,33 @@ File size: 17270 bytes. See history-archive.md for earlier entries.
 
 ## Learnings
 
+### 2026-06-06: M8 Slice D — recall() Integration Smoke Test
+
+**Context:** Wrote the Slice D integration smoke test (`recall-sqlite-smoke.test.ts`) as specified in decisions.md §"Slice D". Roger's production factory (`createSqliteRecallDeps` / `createDefaultDeps`) was not yet available (no inbox drop), so wired `SqliteFactStore` + `recall()` directly with a TODO to switch once merged.
+
+**What the smoke test covers:**
+- `SD-1`: Seeded fact round-trips through `openDatabase(':memory:')` → FTS5 trigger populate → `SqliteFactStore.search()` → `recall()` composite ranking → caller. Asserts content integrity, trust round-trip, and FR-2 ordering (high-trust × high-BM25 ranks first).
+- `SD-2`: Non-matching query returns `[]` cleanly — FTS5 "no match" path propagates without throwing.
+
+**Production surface exercised:**
+- `openDatabase(':memory:')` — real open + migrations (schema_version, facts, facts_fts, triggers all live)
+- `SqliteFactStore.search()` — real FTS5 BM25 query against in-memory DB
+- `recall()` — real FR-2 composite scoring + trust-floor filter + slice to k
+
+**Key learnings:**
+- `openDatabase(':memory:')` works correctly: `path.dirname(':memory:')` = `'.'`, `mkdirSync('.')` is a no-op, WAL pragma degrades gracefully to 'memory' with a stderr note.
+- Seed via `INSERT OR REPLACE INTO facts` (direct SQL) correctly fires `facts_ai` trigger → FTS5 index populated. This is the same path production INSERT will use.
+- Wall-clock clock is acceptable for smoke tests (not testing recency precision; any `nowMs` large enough to floor recency to 0.1 for test data).
+- Test file placement: `packages/eureka/src/activities/__tests__/` (parallel to `recall.test.ts`) — exercises the full recall activity, not just storage internals.
+
+**Test count delta:** 145 → 147 (+2 tests: SD-1, SD-2). Full suite: 147 passing.
+
+**Gaps / follow-ups:**
+- TODO in test: switch to Roger's factory (`createSqliteRecallDeps` / `createDefaultDeps`) once his Slice D wiring lands. This would smoke-test the production composition root, not just the primitives.
+- Session isolation (SD-3 candidate): smoke test doesn't assert that OTHER_SESSION facts are invisible. Covered by FS-6 in the contract suite — acceptable gap for a +1/+2 smoke spec.
+
+— Laura
+
 ### 2026-06-01: Crucible REFACTOR RED — SessionManager Unit Tests (London-school with mocked DB)
 
 **Context:** Authored 4 failing unit tests for `SessionManager` per §4.1 Refactor 2, one turn after Roger's GREEN acceptance test landed.
@@ -1559,4 +1586,17 @@ It is the preferred way to emit source='mcp' disposition events end-to-end. For 
 Earlier entries (1410 lines) archived to history-archive.md on 2026-06-05.
 
 ---
+
+
+## 2026-06-07 — M8 Slice D Complete
+
+**Slice:** M8 Slice D — SQLite Production Deps Factory (Roger, Laura, Graham)  
+**Status:** ✅ COMPLETE (147/147 tests, factory-on-subpath, Graham ACCEPT-WITH-FOLLOWUPS, SD-F1 ledger amendment applied)
+
+**Summary:** Roger shipped factory functions (createSqliteRecallDeps, createSqliteFeedbackDeps) on @akubly/eureka/sqlite, preserving Slice A isolation. Laura added +2 smoke tests (SD-1, SD-2). Graham's architectural review: boundary integrity verified, composition root clean, spec tension resolved correctly. Scribe merged decisions inbox + applied SD-F1 ledger amendment.
+
+**Key artifacts:**
+- packages/eureka/src/sqlite/deps.ts — factory implementations
+- packages/eureka/src/activities/__tests__/recall-sqlite-smoke.test.ts — SD-1, SD-2 smoke tests
+- .squad/decisions.md — M8 Slice D as-built section (Graham SD-F1)
 
