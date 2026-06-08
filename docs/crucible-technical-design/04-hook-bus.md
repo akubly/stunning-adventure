@@ -6,26 +6,54 @@
 §11 (Hermetic Replay).
 **Depth budget:** ≤3 pages.
 
-The pre-commit hook bus is Crucible's real-time safety floor. It fires
-**per row, inside the §3.5 group-commit window, before the fsync barrier**,
-against the staged batch. The bus is load-bearing for correctness alongside
-the Router; pause is the only verdict that mutates downstream control flow,
-and pause verdicts are durable in the WAL before any subscriber dispatch
-(exactly-once-pause via crash recovery).
+The hook system is Crucible's real-time safety floor. It operates on **two
+distinct surfaces**:
+
+1. **Ledger-layer pre-stage gate** (`Ledger.append` entry, §4.3.1): fires
+   **before any row is staged or enters the group-commit window**. The only
+   verdict exclusive to this surface is `veto` — when a predicate returns
+   `veto`, `Ledger.append` throws immediately and **no WAL byte is written**.
+   This is a pure Ledger-layer policy gate; nothing is recorded in the WAL
+   (the WAL remains purely append-only).
+
+2. **WAL-layer commit-window dispatch** (`PreCommitHookBus.dispatch`, §4.3):
+   fires **per row, inside the §3.5 group-commit window, before the fsync
+   barrier**, against the staged batch. Verdicts here are
+   `continue | observe | pause`. `pause` is the only verdict that mutates
+   downstream control flow, and pause verdicts are durable in the WAL before
+   any subscriber dispatch (exactly-once-pause via crash recovery).
+
+Both surfaces consult the same registered predicate set. The WAL remains
+purely append-only: only rows that pass the pre-stage gate (non-veto) ever
+enter the group-commit window.
 
 ## 4.1 Verdict Enum
 
 ```ts
-type HookVerdict = 'continue' | 'observe' | 'pause';
+// WAL-layer commit-window verdicts — recorded in every committed WAL row.
+// These are the only values that ever appear in WalRow.hookVerdict (§3.3).
+type WalHookVerdict = 'continue' | 'observe' | 'pause';
+
+// Ledger-layer pre-stage gate verdict (§4.3.1).
+// 'veto' is exclusive to Surface 1; it never reaches the WAL.
+// In the TypeScript seam (packages/crucible-core/src/ledger/hook-bus.ts)
+// these map to UPPERCASE: COMMIT | OBSERVE | PAUSE | VETO.
+type LedgerHookVerdict = WalHookVerdict | 'veto';
 ```
 
-Semantics against the in-flight group commit:
+Surface 2 semantics (commit-window verdicts against the in-flight group commit):
 
 | Verdict    | Effect on the staged batch                                                       | WAL recording                                       | Subscriber routing |
 |------------|----------------------------------------------------------------------------------|-----------------------------------------------------|--------------------|
 | `continue` | Row joins `committed` unchanged. Default verdict when no predicate matches.       | `hookVerdict = continue`; `hookVerdictWitness = null`. Zero-cost per P5. | None |
 | `observe`  | Row joins `committed`; an attention-tier signal is emitted. Does not stall.        | `hookVerdict = observe`; `hookVerdictWitness = blake3(witnessBody)` in CAS. | Bus dispatches to `observe`-subscribed sinks (Aperture, Curator on opt-in). |
 | `pause`    | Row joins `committed` with the pause verdict durable; subsequent rows in the batch are restaged via §3.5 seal-and-split. | `hookVerdict = pause`; `hookVerdictWitness` durable. | Bus broadcasts to the Router (§5) via L1Subscriber on the paused row. |
+
+Surface 1 semantics (Ledger-layer pre-stage gate — Aaron ruling 2026-06-06):
+
+| Verdict | Effect | WAL recording | Subscriber routing |
+|---------|--------|---------------|--------------------|
+| `veto`  | `Ledger.append` throws `Error('Append vetoed by hook: <id>')` immediately. Row never staged. | **None — no WAL row created.** WAL remains purely append-only. | None |
 
 `continue` is the default when no registered predicate matches the row's
 primitive kind; the WAL row stores `hookVerdict = null` in that case to
@@ -134,6 +162,45 @@ async cancellable predicate API.
 stops dispatching against further predicates for that row and returns the
 verdict array up to and including the paused row. The caller (§3.5
 `sealAndSplit`) seals rows `0..i` and restages rows `i+1..end`.
+
+### 4.3.1 Ledger-Layer Pre-Stage Gate (Surface 1 — VETO)
+
+The pre-stage gate fires at `Ledger.append` entry, **before** any call to
+`AppendProtocol.append` and therefore before any group-commit window opens.
+It uses the same registered predicate set as Surface 2 but operates on a
+`HookContext` (kind + payload + metadata) rather than a `WalRowDraft` — the
+row has not yet been hashed or staged.
+
+```pseudo
+Ledger.append(input: PrimitiveInput) -> CommitOffset:
+    ctx := HookContext {
+        primitiveKind    : input.primitiveKind,
+        primitivePayload : input.primitivePayload,
+        metadata         : { timestamp: wallClockNow(), source: input.source? },
+    }
+
+    # ── Surface 1: pre-stage gate ──────────────────────────────────────────
+    result := hookBus.fire(ctx)             # consults kind-indexed predicate set
+    if result.verdict == 'veto':
+        raise Error('Append vetoed by hook: ' + result.hookId)
+        # ← exits here — NO staging, NO group-commit, NO WAL byte written.
+        # WAL remains purely append-only; the vetoed input is never recorded.
+
+    # ── Proceed to Surface 2 ───────────────────────────────────────────────
+    # Non-veto verdict (continue | observe | pause) is forwarded to the WAL
+    # backend; Surface 2 (§4.3 PreCommitHookBus.dispatch) runs inside the
+    # group-commit window on the staged WalRowDraft.
+    return walBackend.commitRow(input, result)
+```
+
+**Invariant (no partial write):** There MUST be no WAL write, CAS write, or
+`fdatasync` between `hookBus.fire()` and the `raise` on veto. This is
+machine-enforced by the TypeScript seam: `WalBackend.commitRow` receives a
+`verdict: Exclude<LedgerHookVerdict, 'veto'>` parameter, making it a
+type error to pass a veto verdict to the backend.
+
+**Replay note:** Veto inputs are not in the WAL. Replay never encounters
+them and needs no special handling. See §11.11.
 
 ## 4.4 Seal-and-Split Protocol (Cross-Ref §3.5)
 
@@ -261,8 +328,7 @@ rules are:
    durable; replay does not re-fire the pause through the Router. Replay's
    Router subscriber is a no-op sink; the assertion is that the WAL row
    carries the pause verdict, not that the Router acks it again.
-3. **P3 — Closed enum.** Verdicts outside `{continue, observe, pause}` are
-   a structural error; replay refuses to load such a row.
+3. **P3 — Closed WAL-verdict enum.** Verdicts outside `{continue, observe, pause}` in a WAL row are a structural error; replay refuses to load such a row. Note: `veto` is a Ledger-layer verdict (Surface 1, §4.3.1) and **never appears in a WAL row** — a vetoed input produces no row, so replay never encounters it. The WAL-row verdict enum remains `{continue, observe, pause}` (plus `null` for no-predicate-matched).
 4. **P4 — Ordering within primitive.** Predicate dispatch order is
    deterministic by registration order; the witness body records this
    order, and replay asserts equality.

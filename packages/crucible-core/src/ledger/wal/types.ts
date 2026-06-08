@@ -1,0 +1,39 @@
+/**
+ * Shared types for the WAL substrate sub-seam internals.
+ *
+ * These types are strictly BELOW the public Ledger.append() seam.
+ * The append orchestration and HookBus integration are deferred pending
+ * Graham's seam lock (.squad/decisions/inbox/graham-ledger-seam.md).
+ */
+
+export type Blake3Hash = Uint8Array; // 32 bytes
+
+/** Bits for the 2-byte flags field in a segment record. */
+export interface SegmentRecordFlags {
+  bootstrap:       boolean; // bit 0
+  declaredWindow:  boolean; // bit 1
+  syntheticOutput: boolean; // bit 2
+  taskBoundary:    boolean; // bit 3
+  manifestRoot:    boolean; // bit 4
+}
+
+/**
+ * Fields supplied by the caller before hash-chain linking.
+ * prevRoot and selfRoot are computed by hash-chain.ts — they are not inputs.
+ */
+export interface SegmentRecordInput {
+  commitOffset:  bigint;           // u64 monotonic per session
+  timestampNs:   bigint;           // u64 ns, monotonically non-decreasing
+  primitiveKind: number;           // u8 enum (§6, locked separately)
+  hookVerdict:   number;           // u8: 0=continue, 1=observe, 2=pause, 0xFF=no-verdict
+  flags:         SegmentRecordFlags;
+  payloadHash:   Blake3Hash;       // BLAKE3(CBOR(primitivePayload))
+  readSetHash:   Blake3Hash;       // BLAKE3(CBOR(causalReadSet)) or zero-hash
+  envelopeCbor:  Uint8Array;       // CBOR envelope tail; may be empty
+}
+
+/** Complete WAL segment record including hash-chain links. */
+export interface SegmentRecord extends SegmentRecordInput {
+  prevRoot: Blake3Hash; // previous row's selfRoot (ZERO_HASH for genesis)
+  selfRoot: Blake3Hash; // BLAKE3 of canonical content (see hash-chain.ts)
+}
