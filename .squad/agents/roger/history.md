@@ -39,5 +39,29 @@ File size: 103960 bytes. See history-archive.md for earlier entries.
 
 ---
 
+## 2026-06-07: WAL Substrate Cycle-1 Review Fix Wave
 
-# Full history archived to history-archive-2026-06-07.md on 2026-06-07.
+Addressed 11 findings (B1, I1, I3, I4, I5, I6, M1, M2, M3, M4) from the 5-persona Code Panel review of the WAL substrate + Walkthrough B.  Two findings (#56 crash-durability, #57 verdict no-match encoding) remain deferred as per Aaron's direction.
+
+**B1 (lock empty-file race):** Fixed `acquireWriteLock` to write PID through the wx fd via `fs.writeSync(fd, String(process.pid))` before `closeSync`; removed the subsequent `writeFileSync`.  RED test: spy intercepts `closeSync` and asserts lock file is non-empty at that moment (was empty before fix).
+
+**I1 (readOnly guard):** Added `ReadOnlyWalBackendError` class; `commitRow()` throws immediately when `isReadOnly=true`.  RED tests: one for commitRow rejection, one for flush() no-op on empty queue.
+
+**I3 (seam type):** `LedgerImpl` constructor retype from concrete `PreCommitHookBus` to `HookBusPort` interface.  Pure type change; factory still constructs `PreCommitHookBus`.
+
+**I4 (aliased hash views):** `decodeRecord` now calls `.slice()` on all four 32-byte hash fields (prevRoot, selfRoot, payloadHash, readSetHash) to return owned copies.  RED test: mutates source buffer after decode, asserts decoded hashes unchanged.
+
+**I5 (encodeFlags duplication):** Extracted `encodeFlags` to `wal/flags.ts`; imported in `codec.ts` and `hash-chain.ts`.  Pure refactor, no test needed.
+
+**I6 (contract test):** Added `wal-backend.contract.test.ts` with `runWalBackendContract(implName, makeHarness)` pattern.  5 invariants (CL-1 round-trip, CL-2 offset monotonicity, CL-3 verdict→offset, CL-4 range semantics, CL-5 PAUSE durability) run against both `InMemoryWalBackend` and `FileSystemWalBackend` = 10 new tests.
+
+**M1 (lint):** Removed unused `FileSystemWalBackend` type imports from `wal-backend-file.test.ts` and `wal-group-commit.test.ts`.
+
+**M2 (CAS fsync):** Honest comment in `cas-fs.ts` acknowledging no-fsync gap; no behavior change.
+
+**M3 (VERDICT_TO_WAL):** Moved to `wal/types.ts`; both backends import from there.  Key type uses `Record<'COMMIT'|'OBSERVE'|'PAUSE', number>` to stay dep-clean from parent ledger layer.
+
+**M4 (sessionId/export):** Dropped unused `sessionId` field from `LedgerFactoryOptions` (no test or caller referenced it; rootDir contract not yet established).  Exported `createFileSystemWalBackend`, `WriteLockHeldError`, `ReadOnlyWalBackendError`, `FileSystemWalBackendOptions` from `index.ts`.
+
+**Result:** 74/74 tests green (60 original + 14 new).  Build clean.  Lint zero errors.  #56 and #57 NOT touched.
+

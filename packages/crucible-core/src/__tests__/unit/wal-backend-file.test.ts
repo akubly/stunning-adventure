@@ -31,7 +31,6 @@ import { randomUUID } from 'node:crypto';
 
 import {
   createFileSystemWalBackend,
-  FileSystemWalBackend,
 } from '../../ledger/wal-backend-fs.js';
 import { verifyChain } from '../../ledger/wal/hash-chain.js';
 import type { PrimitiveInput } from '../../types.js';

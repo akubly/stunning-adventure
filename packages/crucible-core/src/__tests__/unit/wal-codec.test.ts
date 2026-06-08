@@ -121,3 +121,33 @@ describe('WAL codec — segment record framing', () => {
     expect(decoded.envelopeCbor).toEqual(new Uint8Array(0));
   });
 });
+
+// ─── I4: aliased hash views ───────────────────────────────────────────────────
+//
+// decodeRecord returns hash fields as Uint8Array VIEWS into the source buffer.
+// Mutating the source buffer after decode corrupts the decoded hash fields.
+// Fix: .slice() all four hash fields so they are owned copies.
+
+describe('WAL codec — I4 hash fields are owned copies (not aliased views)', () => {
+  it('I4: mutating the source buffer after decode does NOT corrupt decoded hash fields', () => {
+    const original = makeRecord();
+    const buf = encodeRecord(original);
+
+    const decoded = decodeRecord(buf);
+
+    // Capture original hash values before mutation
+    const prevRootBefore   = Array.from(decoded.prevRoot);
+    const selfRootBefore   = Array.from(decoded.selfRoot);
+    const payloadBefore    = Array.from(decoded.payloadHash);
+    const readSetBefore    = Array.from(decoded.readSetHash);
+
+    // Corrupt every byte of the source buffer
+    buf.fill(0xff);
+
+    // Decoded hash fields must be unchanged (owned copies, not views)
+    expect(Array.from(decoded.prevRoot)).toEqual(prevRootBefore);
+    expect(Array.from(decoded.selfRoot)).toEqual(selfRootBefore);
+    expect(Array.from(decoded.payloadHash)).toEqual(payloadBefore);
+    expect(Array.from(decoded.readSetHash)).toEqual(readSetBefore);
+  });
+});

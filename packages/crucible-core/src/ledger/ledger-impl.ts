@@ -26,13 +26,21 @@ import type {
   HookRegistrationOpts,
   HookResult,
   HookVerdict,
+  HookBusPort,
 } from './hook-bus.js';
 import { PreCommitHookBus } from './hook-bus-impl.js';
 import { InMemoryWalBackend } from './wal-backend-in-memory.js';
 
+/** Type guard: narrows HookResult to non-VETO variants without an `as` cast. */
+function isNonVeto(
+  r: HookResult & { hookId: string | null },
+): r is HookResult & { verdict: Exclude<HookVerdict, 'VETO'>; hookId: string | null } {
+  return r.verdict !== 'VETO';
+}
+
 class LedgerImpl implements Ledger {
   constructor(
-    private readonly hookBus: PreCommitHookBus,
+    private readonly hookBus: HookBusPort,
     private readonly walBackend: WalBackend,
   ) {}
 
@@ -55,10 +63,14 @@ class LedgerImpl implements Ledger {
     }
 
     // (d) Non-VETO path — delegate to WAL backend
-    return this.walBackend.commitRow(
-      input,
-      result as HookResult & { verdict: Exclude<HookVerdict, 'VETO'>; hookId: string | null },
-    );
+    // Narrow via type guard: TypeScript already knows verdict !== 'VETO' here
+    // because the VETO branch above exhausts that case, but the union type still
+    // includes it.  A narrow function removes the need for an unsafe `as` cast.
+    if (!isNonVeto(result)) {
+      // Unreachable: covered by the VETO branch above — guard is exhaustive.
+      throw new Error('Unexpected VETO after guard');
+    }
+    return this.walBackend.commitRow(input, result);
   }
 
   async registerHook(

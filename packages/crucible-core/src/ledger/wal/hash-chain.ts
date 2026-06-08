@@ -12,19 +12,12 @@
  * canonicalization once §6 primitive taxonomy is locked (see decision inbox).
  */
 
-import type { SegmentRecord, SegmentRecordInput, SegmentRecordFlags, Blake3Hash } from './types.js';
+import type { SegmentRecord, SegmentRecordInput, Blake3Hash } from './types.js';
 import { hashBytes } from './hash.js';
+import { encodeFlags } from './flags.js';
 
 /** Genesis row prevRoot: 32 zero bytes. */
 export const ZERO_HASH: Blake3Hash = new Uint8Array(32);
-
-function encodeFlags(f: SegmentRecordFlags): number {
-  return (f.bootstrap       ? 0x01 : 0)
-       | (f.declaredWindow  ? 0x02 : 0)
-       | (f.syntheticOutput ? 0x04 : 0)
-       | (f.taskBoundary    ? 0x08 : 0)
-       | (f.manifestRoot    ? 0x10 : 0);
-}
 
 /**
  * Compute the selfRoot for a record given its content and prevRoot.

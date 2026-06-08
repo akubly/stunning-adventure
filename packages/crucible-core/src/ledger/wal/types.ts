@@ -37,3 +37,14 @@ export interface SegmentRecord extends SegmentRecordInput {
   prevRoot: Blake3Hash; // previous row's selfRoot (ZERO_HASH for genesis)
   selfRoot: Blake3Hash; // BLAKE3 of canonical content (see hash-chain.ts)
 }
+
+// Imported by HookVerdict — keep this import-free from hook-bus.ts to avoid
+// a circular dep (hook-bus.ts is in the parent ledger/ dir).
+// The strings must exactly match the HookVerdict union in hook-bus.ts.
+
+/** Ledger verdict → WAL hookVerdict byte (§4 seam §5). */
+export const VERDICT_TO_WAL: Record<'COMMIT' | 'OBSERVE' | 'PAUSE', number> = {
+  COMMIT:  0x00,
+  OBSERVE: 0x01,
+  PAUSE:   0x02,
+};

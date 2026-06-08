@@ -26,7 +26,7 @@
  *   5. Rows committed before lock release are readable from a read-only open.
  */
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import os   from 'node:os';
 import path from 'node:path';
 import fs   from 'node:fs';
@@ -36,6 +36,7 @@ import {
   createFileSystemWalBackend,
   FileSystemWalBackend,
   WriteLockHeldError,
+  ReadOnlyWalBackendError,
 } from '../../ledger/wal-backend-fs.js';
 import type { PrimitiveInput } from '../../types.js';
 import type { HookResult, HookVerdict } from '../../ledger/hook-bus.js';
@@ -262,5 +263,85 @@ describe('WAL FileSystemWalBackend — PID liveness stale-lock reclaim (§3.4.1 
     expect(written).toBe(process.pid);
 
     await backend.close();
+  });
+});
+
+// ─── B1: lock empty-file race ─────────────────────────────────────────────────
+//
+// The original acquireWriteLock opened the fd with 'wx', CLOSED it (leaving the
+// file empty), then wrote the PID with a separate writeFileSync.  A concurrent
+// opener arriving in that window sees an empty file, treats it as stale, reclaims
+// the lock, and both writers believe they hold it.
+//
+// Fix: write the PID through the wx fd BEFORE closing, so the file is never empty.
+// RED invariant: right after the wx fd is closed, the lock file must contain our PID.
+
+describe('WAL FileSystemWalBackend — B1 lock empty-file race (§3.4.1)', () => {
+  it('B1: write.lock contains our PID at the moment the wx fd is closed (no empty window)', async () => {
+    const rootDir   = makeTmpDir();
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+    const lockPath  = path.join(rootDir, 'wal', 'sessions', sessionId, 'write.lock');
+
+    // Capture the lock file content immediately after each closeSync.
+    // With the BUG: the first close is for the wx fd — file is still empty.
+    // With the FIX: PID was written through the fd before close — file is non-empty.
+    let contentAtFirstClose: string | null = null;
+    const origClose = fs.closeSync.bind(fs);
+    const spy = vi.spyOn(fs, 'closeSync').mockImplementation((fd: number) => {
+      origClose(fd);
+      if (contentAtFirstClose === null && fs.existsSync(lockPath)) {
+        contentAtFirstClose = fs.readFileSync(lockPath, 'utf8');
+      }
+    });
+
+    const backend = await openWrite(rootDir, sessionId);
+    spy.mockRestore();
+
+    // Must be non-empty (i.e., PID was written before fd was closed)
+    expect(contentAtFirstClose).not.toBeNull();
+    expect(contentAtFirstClose).not.toBe('');
+    expect(parseInt(contentAtFirstClose!.trim(), 10)).toBe(process.pid);
+
+    await backend.close();
+  });
+});
+
+// ─── I1: readOnly cannot write ────────────────────────────────────────────────
+
+describe('WAL FileSystemWalBackend — I1 readOnly write guard', () => {
+  it('I1: commitRow on a readOnly backend throws ReadOnlyWalBackendError', async () => {
+    const rootDir   = makeTmpDir();
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+
+    // Create the session first as a writer (so the session dir and manifest exist)
+    const writer = await openWrite(rootDir, sessionId);
+    await writer.close();
+
+    // Re-open read-only
+    const reader = await createFileSystemWalBackend(rootDir, sessionId, { readOnly: true });
+
+    await expect(
+      reader.commitRow(makeInput('should-be-rejected'), COMMIT),
+    ).rejects.toThrow(ReadOnlyWalBackendError);
+
+    // readRows must still work
+    const rows = await reader.readRows({ range: [0, 10] });
+    expect(rows).toHaveLength(0);
+
+    await reader.close();
+  });
+
+  it('I1: flush() on a readOnly backend is a no-op (empty staging queue)', async () => {
+    const rootDir   = makeTmpDir();
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+
+    const writer = await openWrite(rootDir, sessionId);
+    await writer.close();
+
+    const reader = await createFileSystemWalBackend(rootDir, sessionId, { readOnly: true });
+    // flush() on an empty staging queue must not throw
+    await expect(reader.flush()).resolves.toBeUndefined();
+
+    await reader.close();
   });
 });

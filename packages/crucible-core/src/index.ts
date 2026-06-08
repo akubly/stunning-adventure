@@ -31,6 +31,13 @@ export type {
   CreateLedger,
   WalBackend,
 } from './ledger/ledger.js';
+// Durable WAL backend — file-system substrate (§3.2 on-disk layout).
+export {
+  createFileSystemWalBackend,
+  WriteLockHeldError,
+  ReadOnlyWalBackendError,
+} from './ledger/wal-backend-fs.js';
+export type { FileSystemWalBackendOptions } from './ledger/wal-backend-fs.js';
 export { createInMemoryDB } from './in-memory-db.js';
 export type { InMemoryDB } from './in-memory-db.js';
 export { createSQLiteDB } from './sqlite-db.js';

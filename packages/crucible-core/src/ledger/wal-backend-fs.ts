@@ -47,6 +47,7 @@ import { buildChain, ZERO_HASH }             from './wal/hash-chain.js';
 import { FileSystemCas }                     from './wal/cas-fs.js';
 import { sealAndSplit }                      from './wal/seal-and-split.js';
 import type { SegmentRecord, SegmentRecordInput } from './wal/types.js';
+import { VERDICT_TO_WAL }                    from './wal/types.js';
 
 // ─── Write-lock error ─────────────────────────────────────────────────────────
 
@@ -61,6 +62,18 @@ export class WriteLockHeldError extends Error {
     const pidInfo = holderPid != null ? ` (held by PID ${holderPid})` : '';
     super(`WAL session write lock is held: ${lockPath}${pidInfo}`);
     this.name = 'WriteLockHeldError';
+  }
+}
+
+/**
+ * Thrown when commitRow() or flush() is called on a backend opened with
+ * `{ readOnly: true }`.  Read-only opens never acquire a write lock, so
+ * allowing writes would silently corrupt the segment or race another writer.
+ */
+export class ReadOnlyWalBackendError extends Error {
+  constructor() {
+    super('Cannot write to a read-only WAL backend');
+    this.name = 'ReadOnlyWalBackendError';
   }
 }
 
@@ -86,13 +99,6 @@ interface StagedEntry {
   resolve:    (offset: number) => void;
   reject:     (err: unknown) => void;
 }
-
-// Ledger verdict → WAL hookVerdict byte (§4 seam §5)
-const VERDICT_TO_WAL: Record<Exclude<HookVerdict, 'VETO'>, number> = {
-  COMMIT:  0x00,
-  OBSERVE: 0x01,
-  PAUSE:   0x02,
-};
 
 /** Options for the FileSystemWalBackend factory. */
 export interface FileSystemWalBackendOptions {
@@ -249,10 +255,11 @@ export class FileSystemWalBackend implements WalBackend {
    */
   private acquireWriteLock(): void {
     try {
+      // Write PID through the wx fd before closing — eliminates the empty-file
+      // window that a concurrent opener could misread as a stale lock (§3.4.1).
       const fd = fs.openSync(this.lockPath, 'wx');
+      fs.writeSync(fd, String(process.pid));
       fs.closeSync(fd);
-      // Write our PID so a future opener can check our liveness
-      fs.writeFileSync(this.lockPath, String(process.pid), 'utf8');
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
       this.reclaimOrThrow();
@@ -392,6 +399,7 @@ export class FileSystemWalBackend implements WalBackend {
     input:      PrimitiveInput,
     hookResult: HookResult & { verdict: Exclude<HookVerdict, 'VETO'>; hookId: string | null },
   ): Promise<number> {
+    if (this.isReadOnly) throw new ReadOnlyWalBackendError();
     return new Promise((resolve, reject) => {
       this.stagingQueue.push({ input, hookResult, resolve, reject });
       if (this.stagingQueue.length >= this.batchSize) {

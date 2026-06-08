@@ -20,15 +20,9 @@ import type { HookResult, HookVerdict } from './hook-bus.js';
 import { buildChain } from './wal/hash-chain.js';
 import { InMemoryCas } from './wal/cas.js';
 import type { SegmentRecordInput } from './wal/types.js';
+import { VERDICT_TO_WAL } from './wal/types.js';
 
 const ZERO_HASH = new Uint8Array(32);
-
-// Verdict → WAL hookVerdict byte mapping (§4 seam doc §4 / §5)
-const VERDICT_TO_WAL: Record<Exclude<HookVerdict, 'VETO'>, number> = {
-  COMMIT:  0x00,
-  OBSERVE: 0x01,
-  PAUSE:   0x02,
-};
 
 export class InMemoryWalBackend implements WalBackend {
   private readonly events: LedgerEvent[] = [];

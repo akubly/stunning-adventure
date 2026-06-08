@@ -22,6 +22,7 @@
  */
 
 import type { SegmentRecord, SegmentRecordFlags } from './types.js';
+import { encodeFlags } from './flags.js';
 
 export const MAGIC = 0x57414c31 as const;
 
@@ -48,14 +49,6 @@ const OFF_READ_SET_HASH = 124;
 const OFF_ENVELOPE_CBOR = 156;
 
 const CRC32C_SIZE = 4; // placeholder; real crc32c computation deferred
-
-function encodeFlags(f: SegmentRecordFlags): number {
-  return (f.bootstrap       ? 0x01 : 0)
-       | (f.declaredWindow  ? 0x02 : 0)
-       | (f.syntheticOutput ? 0x04 : 0)
-       | (f.taskBoundary    ? 0x08 : 0)
-       | (f.manifestRoot    ? 0x10 : 0);
-}
 
 function decodeFlags(raw: number): SegmentRecordFlags {
   return {
@@ -114,10 +107,10 @@ export function decodeRecord(buf: Buffer): SegmentRecord {
     primitiveKind: buf.readUInt8(OFF_PRIMITIVE_KIND),
     hookVerdict:   buf.readUInt8(OFF_HOOK_VERDICT),
     flags:         decodeFlags(buf.readUInt16LE(OFF_FLAGS)),
-    prevRoot:      new Uint8Array(buf.buffer, buf.byteOffset + OFF_PREV_ROOT, 32),
-    selfRoot:      new Uint8Array(buf.buffer, buf.byteOffset + OFF_SELF_ROOT, 32),
-    payloadHash:   new Uint8Array(buf.buffer, buf.byteOffset + OFF_PAYLOAD_HASH, 32),
-    readSetHash:   new Uint8Array(buf.buffer, buf.byteOffset + OFF_READ_SET_HASH, 32),
+    prevRoot:      new Uint8Array(buf.buffer, buf.byteOffset + OFF_PREV_ROOT, 32).slice(),
+    selfRoot:      new Uint8Array(buf.buffer, buf.byteOffset + OFF_SELF_ROOT, 32).slice(),
+    payloadHash:   new Uint8Array(buf.buffer, buf.byteOffset + OFF_PAYLOAD_HASH, 32).slice(),
+    readSetHash:   new Uint8Array(buf.buffer, buf.byteOffset + OFF_READ_SET_HASH, 32).slice(),
     envelopeCbor:  new Uint8Array(envelopeCbor),
   };
 }

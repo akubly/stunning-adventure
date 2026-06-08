@@ -61,11 +61,6 @@ export interface LedgerQueryOpts {
  */
 export interface LedgerFactoryOptions {
   walBackend?: WalBackend;
-  /**
-   * Session id — wires this Ledger to a specific WAL session directory
-   * under ~/.crucible/wal/sessions/<sessionId>/. Optional for in-memory runs.
-   */
-  sessionId?: string;
 }
 
 /**

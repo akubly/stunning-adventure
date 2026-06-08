@@ -15,7 +15,6 @@ import path                      from 'node:path';
 import os                        from 'node:os';
 import fs                        from 'node:fs';
 import {
-  FileSystemWalBackend,
   createFileSystemWalBackend,
 } from '../../ledger/wal-backend-fs.js';
 import type { PrimitiveInput } from '../../types.js';
