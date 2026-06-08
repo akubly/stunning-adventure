@@ -49,6 +49,29 @@ Closed three residuals from the cycle-2 re-review.
 
 **C2-M1 (breaking note):** Added a `BREAKING (0.1.x pre-release)` comment to `LedgerFactoryOptions` in `ledger.ts` documenting that `sessionId` was intentionally removed in cycle-1 and pointing callers to `createFileSystemWalBackend`.
 
+---
+
+## 2026-06-08: WAL Substrate 2-Cycle Review COMPLETE
+
+📌 **Scribe:** WAL Substrate + Walkthrough B 2-cycle persona review COMPLETE.
+
+**Cycle 1 (Code Panel, 5 personas):**
+- 13 findings (1 blocking / 8 important / 4 minor)
+- B1: lock empty-file race — FIXED (commit b5b03dc)
+- All 8 important findings accepted and fixed
+- Result: 74/75 tests green
+
+**Cycle 2 (Re-review, 3 personas):**
+- 2 important / 1 minor, 0 blocking
+- Contract suite hardened: verdict bytes + PAUSE-across-reopen assertions
+- Lock PID write loop hardened against short-write
+- sessionId removal documented
+- Result: 75/75 tests green, lint clean, build clean
+
+**Deferrals:** #56 (crash-durability/CAS fsync) and #57 (verdict encoding) filed and monitored.
+
+**Branch ready for merge.** See decisions.md for full disposition table and commit history.
+
 **Result:** 75/75 tests green (74 from cycle-1 + 1 new CL-6). Build clean. Lint 0 errors. #56 and #57 NOT touched.
 
 

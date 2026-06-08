@@ -129,6 +129,7 @@ L1Subscriber broadcast to the §5 Router is deferred to its own RED cycle.
 
 ---
 
+
 # Roger — WAL Write Lock Decisions (§3.4.1)
 
 **Author:** Roger (Platform Dev)  
@@ -586,6 +587,7 @@ One invariant belongs in the shared contract helper (applies to ALL FactStore im
 Roger's Slice C is correct and well-structured. The BM25 sign convention is right, cursor safety is solid, minTrust boundaries are precise, and session isolation holds. The one genuine finding (FSE-1: no FTS5 input sanitization) is MEDIUM severity — it's a real crash path for user-supplied queries, but not a correctness, isolation, or data-loss issue. It does not block the slice. Filed as a follow-up with a test that locks current behavior.
 
 
+
 # Decision Drop — Roger M8 Slice C (FactStore + FTS5 BM25 search)
 
 **Author:** Roger Wilco (Platform Dev)  
@@ -675,6 +677,7 @@ Added JSDoc at two locations:
 - `RecallResult.relevance` field — clarifies per-page min-max, NOT comparable across pages
 - `FactStore.search` return type (on `nextCursor?`) — same note for consumers reading the return shape
 
+
 # Roger: Crucible First GREEN — Decision Inbox
 
 **Date:** 2026-06-01  
@@ -684,6 +687,7 @@ Added JSDoc at two locations:
 - **`attentionTier` / `importance` / `lastAccessed` columns:** Future migration.
 - **Cross-session aggregation:** `FactStore.search()` is session-scoped in M8. Querying across sessions is a later milestone.
 - **Embeddings/semantic search:** BM25 via FTS5 only. Vector similarity is out of scope.
+
 # Roger: Crucible First GREEN — Decision Inbox
 
 **Date:** 2026-06-01  
@@ -925,6 +929,7 @@ const offset = baseOffset + ownEvents.length;
 No `Ledger` class, no `WAL` interface, no Cairn integration in this turn. This is the **GREEN phase only** — simplest correct implementation behind the acceptance API. The REFACTOR step (next TDD cycle) is where a Ledger collaborator abstraction would be introduced, followed by the London-school descent to introduce an L1 mock layer. Deferred per Graham's sprint plan (OQ-2).
 
 ---
+
 
 # Decision Drop: Crucible REFACTOR Cycle — SessionManager Unit Tests (RED)
 
@@ -1032,6 +1037,7 @@ packages/crucible-cli/src/__tests__/acceptance/session-fork.test.ts (1 test) ✅
 Roger's refactor must not change the public `fork` / `createSession` API surface.
 
 ---
+
 
 # Decision: Crucible Sprint 0 — REFACTOR Phase: SessionManager + ForkLineage
 
@@ -1181,6 +1187,7 @@ Tests 1 passed (1)
 
 ---
 
+
 # Decision: Crucible Sprint 0 Topic Branch Recovery
 
 **Date:** 2026-06-01T23:58:20Z  
@@ -1230,6 +1237,7 @@ This left main 3 commits ahead of origin/main with unreviewed code still in the 
 Topic branch is ready for review-cycle skill execution.
 
 ---
+
 
 # Graham — Cycle 1 Persona Review Fixes
 
@@ -1285,6 +1293,7 @@ Topic branch is ready for review-cycle skill execution.
 
 ---
 
+
 # Cycle 2 Advisory Close-Out — Graham
 
 **Date:** 2026-06-05T10:54:00Z
@@ -1309,6 +1318,7 @@ Topic branch is ready for review-cycle skill execution.
 
 ---
 
+
 # Laura — Cycle 1 Test Updates
 
 **Date:** 2026-06-02  
@@ -1319,6 +1329,7 @@ Topic branch is ready for review-cycle skill execution.
 
 
 ---
+
 
 # M8 Slice A — FactReader Contract Audit
 
@@ -1481,6 +1492,7 @@ impl and understands the passthrough contract).
 
 ---
 
+
 # Laura — M8 Slice A Cycle-2 Audit
 
 **Author:** Laura (Tester)
@@ -1569,6 +1581,7 @@ beforeEach(() => {
 | `@akubly/crucible-cli` | 1 | ✅ GREEN |
 
 ---
+
 
 # Roger — Cycle 1 Fix Decisions
 
@@ -1801,6 +1814,7 @@ Two new regression-locking tests added (DB-CL-6, DB-CL-7). Baseline: **86/86 gre
 
 ---
 
+
 # Roger — M8 Slice A Cycle-2 Decision Drop
 
 **Author:** Roger (Platform Dev)
@@ -1895,6 +1909,7 @@ M1 + I2 comments were applied in the same commit as I5 since both touched `001-f
 
 ---
 
+
 # Roger M8 Slice A Decision Drop
 
 **Author:** Roger (Platform Dev)
@@ -1949,6 +1964,7 @@ Q1 approval. Writes come in Slice B.
 
 ---
 
+
 # Decision: M8 Slice B — Transaction wrapper choice + contract test relocation pattern
 
 **Date:** 2026-06-05  
@@ -1999,6 +2015,7 @@ describe('XYZ contract suite — tombstone (suite moved)', () => {
 **Choice:** `TrustUpdaterHarness = { impl, setTrust, getTrust, cleanup? }` — matching `FactReaderHarness` optional-cleanup convention from Slice A.
 
 **Rationale:** `cleanup` is optional so the InMemory harness needs no change (no native handles). SQLite harness registers `db.close()`. `afterEach(() => harness?.cleanup?.())` in `runTrustUpdaterContract` guarantees teardown even if a test throws — same pattern used in `runFactReaderContract`.
+
 
 # M2 Design — forge-mcp bash hooks + install README
 
@@ -2092,6 +2109,7 @@ to `~/.zshrc` in place of `~/.bashrc`. Documented in README as a brief note.
 
 No changes to forge-mcp's tool surface, MCP wiring, or any TypeScript source.
 
+
 # M2 Shipped — forge-mcp Bash Shell Init Hooks
 
 **Author:** Gabriel (Infrastructure)
@@ -2117,23 +2135,29 @@ No changes to forge-mcp's tool surface, MCP wiring, or any TypeScript source.
 ## Verification Recipe for Laura
 
 ```bash
+
 # 1. Syntax check
 bash -n .github/hooks/cairn/shell-init.sh
 bash -n .github/hooks/cairn/install.sh
 bash -n .github/hooks/cairn/uninstall.sh
 
+
 # 2. Install (idempotent — run twice to confirm second run is no-op)
 bash .github/hooks/cairn/install.sh
 bash .github/hooks/cairn/install.sh   # should print "already installed"
+
 
 # 3. Reload and smoke-check
 source ~/.bashrc
 forge_mcp_check
 
+
 # 4. Uninstall
 bash .github/hooks/cairn/uninstall.sh
 source ~/.bashrc
+
 # forge_mcp_check should no longer exist as a function
+
 
 # 5. Re-install (confirm idempotency survived uninstall cycle)
 bash .github/hooks/cairn/install.sh
@@ -2146,6 +2170,7 @@ forge_mcp_check
 The marker block strategy (`# forge-mcp: shell init — start`) is the safe pattern
 for managed rc-file entries. The install script will never double-append, and the
 uninstall script removes the exact block. No manual editing required.
+
 
 # Decision Drop: M1 Cycle-1 Findings Fix Wave
 
@@ -2246,6 +2271,7 @@ Returns the raw JSON payload (not the MCP content wrapper). MCP handler calls th
 | F12 ?? null | resolution_note + resolution_disposition use ?? null |
 | F13 .max(256) | hint_id + skill_id Zod fields |
 
+
 # Decision Drop: M1 Cycle-2 Polish Wave
 
 **Author:** Roger  
@@ -2330,6 +2356,7 @@ Net -1: merged the two migration schema `it()` tests (one for 017, one for 018) 
 - `packages/cairn/src/__tests__/discovery.test.ts` — version 18 → 17
 - `packages/cairn/src/__tests__/migration012.test.ts` — version 18 → 17 (2 assertions)
 - `packages/cairn/src/__tests__/prescriptions.test.ts` — version 18 → 17
+
 
 # Decision: PR #45 CI Build Fix — gabriel-pr45-ci-build-fix
 
@@ -2417,6 +2444,7 @@ Incremental `tsc --build` (with cached `.tsbuildinfo`) masks clean-build type-re
 
 ---
 
+
 # Decision: PR #45 Gitignore Cleanup + Topic-Branch SKILL Typo Fix
 
 **Author:** Gabriel (Infrastructure)
@@ -2464,6 +2492,7 @@ All three verified via `git check-ignore -v` after removal — each matched by t
 
 
 ---
+
 
 # Decision Drop: PR #45 Merge Resolution (squad/crucible-sprint-0-walkthrough-a ← origin/main)
 
@@ -2533,6 +2562,7 @@ See `gabriel/history.md` → "2026-06-05 — Merge-Conflict Resolution" for the 
 
 ---
 
+
 # PR #45 — Second Merge from origin/main (2026-06-05)
 
 **Author:** Gabriel (Infrastructure)
@@ -2585,6 +2615,7 @@ Not pushed — Roger has follow-up fixes to land on top; coordinator will push a
 
 
 ---
+
 
 # OQ-2 Substrate Brief — Genesta (Eureka/Cairn Bounded-Context Owner)
 
@@ -2667,6 +2698,7 @@ The minimal honest federation boundary already exists in the architecture:
 
 
 ---
+
 
 # OQ-2 Decision Brief: Event-Substrate Topology
 
@@ -2757,6 +2789,7 @@ The `DB` interface would need to target Cairn's `event_log` schema. This means:
 
 ---
 
+
 # Decision: Correct Stale SKILL Examples (PR #45 Copilot Review)
 
 **Agent:** Graham (Lead / Architect)  
@@ -2796,6 +2829,7 @@ Copilot's cloud review on PR #45 flagged two stale code examples in `.squad/skil
 
 
 ---
+
 
 # Graham Review: Refactor 3 GREEN
 
@@ -2892,6 +2926,7 @@ This is the substrate for Refactor 4 / Phase 2 file-backed sessions. The prepare
 
 ---
 
+
 # Decision: Transitive Fork Prefix Delegation — Scope Disposition
 
 **Date:** 2026-06-05
@@ -2926,6 +2961,7 @@ Child `query()` prefix delegation reads the parent's `ownEvents` via `db.getOwnE
 
 ---
 
+
 # 2026-06-06: Aaron's User Directive — Parallelization and TDD Discipline
 
 **By:** Aaron Kubly (via Copilot)  
@@ -2933,6 +2969,7 @@ Child `query()` prefix delegation reads the parent's `ownEvents` via `db.getOwnE
 **Why:** User direction — captured for team memory during WAL substrate + Walkthrough B kickoff (Option A seam-first).
 
 ---
+
 
 # 2026-06-06: Aaron's Ruling — HookVerdict VETO Semantics (resolves graham-ledger-seam-OPEN)
 
@@ -2953,6 +2990,7 @@ Child `query()` prefix delegation reads the parent's `ownEvents` via `db.getOwnE
 **Why:** User ruling at Decision-Point Gate during WAL substrate + Walkthrough B build.
 
 ---
+
 
 # 2026-06-06: Ledger Seam Contract — Graham (Lead/Architect)
 
@@ -3076,6 +3114,7 @@ interface WalBackend {
 
 ---
 
+
 # 2026-06-06: Walkthrough B RED Test — Hook Veto Acceptance Test (Laura)
 
 **Date:** 2026-06-06T22:03:01-07:00
@@ -3092,6 +3131,7 @@ Test imports `createLedger` from `../../index.js` but it is not yet exported →
 This is the correct RED signal: the test is well-formed, not broken by typo.
 
 ---
+
 
 # 2026-06-06: Walkthrough B GREEN — HookBus + Ledger Pre-Stage Gate (Roger)
 
@@ -3111,6 +3151,7 @@ This is the correct RED signal: the test is well-formed, not broken by typo.
 - Build: `npm run build` clean (tsc, no errors)
 
 ---
+
 
 # 2026-06-06: PR #51 Review Decisions — Roger
 
@@ -3137,6 +3178,7 @@ export function createSQLiteDB(path: ':memory:' | string): InMemoryDB {
 This avoids eager loading when in-memory adapter is the only consumer.
 
 ---
+
 
 # 2026-06-06: WAL Substrate Sub-Seam Decisions — Roger
 
@@ -3167,6 +3209,7 @@ Written as 4 zero bytes in v0.1. Implement real CRC32C before production.
 `hookVerdictWitness`, `contextWindowCommitment` not encoded/decoded until §6 is locked.
 
 ---
+
 
 # Handoff: Crucible Refactor 3 RED — Integration Test for Real SQLite
 
@@ -3329,6 +3372,7 @@ Roger's GREEN implementation must not break these.
 
 
 ---
+
 
 # OQ-2 Substrate Brief — Roger (Platform Dev)
 
@@ -3495,6 +3539,7 @@ Option B (FEDERATE). The DB interface is already the right contract. The SQLite 
 
 ---
 
+
 # Roger — PR #45 Cycle 2 Fixes
 
 **Date:** 2026-06-05  
@@ -3531,6 +3576,7 @@ Option B (FEDERATE). The DB interface is already the right contract. The SQLite 
 
 ---
 
+
 # Decision Record: PR #45 Cycle 3 Fixes (Roger)
 
 **Date:** 2026-06-05  
@@ -3561,6 +3607,7 @@ Option B (FEDERATE). The DB interface is already the right contract. The SQLite 
 
 
 ---
+
 
 # Roger — PR #45 Final Fixes (Copilot cloud-review pass)
 
@@ -3601,6 +3648,7 @@ This is the same bug that caused the real scratch-file problem during Sprint 0 r
 
 ---
 
+
 # PR #45 Copilot Review — Comment Accuracy Fixes
 
 **Date:** 2026-06-05
@@ -3636,6 +3684,7 @@ This is the same bug that caused the real scratch-file problem during Sprint 0 r
 
 
 ---
+
 
 # Roger Handoff: Refactor 3 GREEN
 
@@ -3818,6 +3867,7 @@ Both cycles declared **REVIEW-COMPLETE** with diminishing returns. All findings 
 
 ---
 
+
 # Roger — WAL File Backend Decisions
 
 **Author:** Roger (Platform Dev)  
@@ -3914,3 +3964,96 @@ their hash is appended.
 - **fdatasync per group-commit**: deferred alongside group-commit.
 - **crc32c real computation**: deferred (4 zero bytes, as before).
 
+
+
+# Roger WAL Review Fixes — Cycle 1 Decisions Log
+
+**Date:** 2026-06-07
+**Branch:** squad/crucible-wal-substrate-walkthrough-b
+**Author:** Roger Wilco (Platform Dev, Crucible)
+
+---
+
+## M4 — sessionId / factory export
+
+**Decision: DROP `sessionId` from `LedgerFactoryOptions`; EXPORT `createFileSystemWalBackend`.**
+
+Rationale:
+- `sessionId` was declared in `LedgerFactoryOptions` but never read in `createLedger()`.  No test references it.  Wiring it to a default file-system backend would require committing to a stable `~/.crucible` rootDir contract that isn't established yet — premature.  Cleanest fix: remove the unused field.
+- `createFileSystemWalBackend` IS the public durable entrypoint and was already a named export from `wal-backend-fs.ts` but not re-exported from `index.ts`.  Added alongside `WriteLockHeldError`, `ReadOnlyWalBackendError`, and `FileSystemWalBackendOptions`.
+
+---
+
+## New error types introduced
+
+| Name | Location | Thrown when |
+|------|----------|-------------|
+| `ReadOnlyWalBackendError` | `wal-backend-fs.ts` | `commitRow()` is called on a backend opened with `{ readOnly: true }` |
+
+`WriteLockHeldError` was already present; no change to its shape.
+
+---
+
+## I5 — encodeFlags extraction
+
+`encodeFlags` was duplicated in `codec.ts` (wire framing) and `hash-chain.ts` (hash pre-image).  Extracted to `wal/flags.ts`; both files now import from there.  Intentional: these two callers MUST stay identical.  Having a single source of truth prevents silent bit-mapping drift between the on-disk frame and the hash commitment.
+
+---
+
+## M3 — VERDICT_TO_WAL centralisation
+
+Moved to `wal/types.ts` (same file as the WAL-layer type definitions).  Both `wal-backend-fs.ts` and `wal-backend-in-memory.ts` import it from there.  The key type is `Record<'COMMIT' | 'OBSERVE' | 'PAUSE', number>` — equivalent to the old `Record<Exclude<HookVerdict, 'VETO'>, number>` but expressed without the ledger-layer `HookVerdict` import, keeping the `wal/` sub-package dependency-clean from the parent `ledger/` layer.
+
+---
+
+## Deferred (NOT touched in this wave)
+
+- **#56** (crash-durability): CAS fsync gap — acknowledged with a comment in `cas-fs.ts`; no behavior change.
+- **#57** (verdict no-match encoding): Not touched.
+
+
+---
+
+# WAL Substrate + Walkthrough B — 2-Cycle Persona Review
+
+**Author:** Scribe  
+**Date:** 2026-06-07T23:59:26.964-07:00  
+**Branch:** squad/crucible-wal-substrate-walkthrough-b  
+**Status:** REVIEW-COMPLETE — 75/75 tests green, 0 blocking sustained
+
+## Summary
+
+Two-cycle persona review of Crucible WAL substrate (Roger) + Walkthrough B prototype (Laura/Graham seam test).
+
+**Cycle 1 (Code Panel — 5 personas):** 13 findings (1 blocking / 8 important / 4 minor)
+- Blocking B1: lock empty-file race — FIXED (commit b5b03dc)
+- Important findings: 8 of 8 accepted and fixed
+- Minor findings: 4 deferred / accepted as-is
+- Result: 74/75 tests green
+
+**Cycle 2 (Re-review — 3 personas):** 2 important / 1 minor, 0 blocking
+- Contract suite hardened: now asserts verdict bytes + PAUSE-across-reopen
+- Lock PID write hardened against short-write
+- sessionId removal documented in release notes
+- Result: 75/75 tests green, lint clean, build clean
+
+## Dispositions
+
+| Item | Disposition |
+|------|-------------|
+| B1 (lock empty-file race) | FIXED (b5b03dc) |
+| I2 (crash-durability / CAS fsync) | DEFERRED → GitHub issue #56 |
+| I7 (verdict no-match vs continue encoding) | DEFERRED → GitHub issue #57 |
+| I1, I3, I4, I5, I6, M1, M2, M3, M4, M5 | FIXED (b5b03dc + 028cdee) |
+
+## Branch Commits
+
+- 6ef2a61: feat WAL + WalkthroughB
+- b432f8d: squad artifacts
+- b5b03dc: cycle-1 fixes
+- 028cdee: cycle-2 fixes
+
+## Follow-up
+
+- #56: CAS fsync gap (crash durability window)
+- #57: Verdict encoding clarification (no-match vs continue)
