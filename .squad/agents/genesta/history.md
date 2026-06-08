@@ -51,6 +51,18 @@ Architecture remains kernel-extraction-ready. No substrate changes. Ready for Aa
 - 2026-06-06 📌 scribe: OQ-2 LOCKED (FEDERATE) + Refactor 3 complete (real SQLite adapter, 14/14 green)
 
 **Scribe note (2026-06-06T07:00:21Z):** M8 Slice C COMPLETE — Roger (SqliteFactStore + FTS5 BM25 search, PR #48) + Laura (contract/edge audit, 12 tests). FactStore.search() now wrapped form `{ results, nextCursor? }` with BM25 ranking `-bm25(facts_fts)*trust DESC`, per-page normalization, base64-JSON offset cursor. FSE-1 (parse errors → graceful `{results:[]}`) fixed in Round 2. FSE-4 (caveat docs) documented. Laura's 109→121 test suite: BM25 ordering, cursor round-trip, boundary, isolation, NULL-trust, FTS5 syntax all verified. Verdict: ✅ ACCEPT-WITH-FOLLOWUPS. Slice D next.
+## 2026-06-07 — M8 Slice D Complete
+
+**Slice:** M8 Slice D — SQLite Production Deps Factory (Roger, Laura, Graham)  
+**Status:** ✅ COMPLETE (147/147 tests, factory-on-subpath, Graham ACCEPT-WITH-FOLLOWUPS, SD-F1 ledger amendment applied)
+
+**Summary:** Roger shipped factory functions (createSqliteRecallDeps, createSqliteFeedbackDeps) on @akubly/eureka/sqlite, preserving Slice A isolation. Laura added +2 smoke tests (SD-1, SD-2). Graham's architectural review: boundary integrity verified, composition root clean, spec tension resolved correctly. Scribe merged decisions inbox + applied SD-F1 ledger amendment.
+
+**Key artifacts:**
+- packages/eureka/src/sqlite/deps.ts — factory implementations
+- packages/eureka/src/activities/__tests__/recall-sqlite-smoke.test.ts — SD-1, SD-2 smoke tests
+- .squad/decisions.md — M8 Slice D as-built section (Graham SD-F1)
+
 📌 Team update (2026-05-30T12:26:16Z): **WI-B (PR #29) shipped** — Coordinator worktree dispatch now real; use SQUAD_WORKTREES=1 to activate. Cycles: 8→5→8→51→19→9→0 threads. Recovery: cycle-3 incident (direct push ae62558 reverted 3086c68) taught worktree armor pattern; Graham's prose redesign (cycle 4) resolved F8/F9/F10; final state: zero unresolved threads, clean main. Follow-ups: fallback warning (issue filed), #25 polish. — Scribe---
 
 **[2026-06-06T19:23:48Z — Scribe Cross-Agent Update]**

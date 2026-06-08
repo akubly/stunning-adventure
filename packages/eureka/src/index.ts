@@ -3,6 +3,9 @@
  *
  * v1 entry point. Activities will be exported here as they are implemented.
  * First red test: recall (§55 §2.1, AC-1.3).
+ *
+ * For production SQLite wiring, see `@akubly/eureka/sqlite`:
+ *   `createSqliteRecallDeps` / `createSqliteFeedbackDeps`.
  */
 
 export {
