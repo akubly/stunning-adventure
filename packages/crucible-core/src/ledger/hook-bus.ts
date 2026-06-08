@@ -2,7 +2,7 @@
  * HookBus type boundary — the seam between Ledger and the pre-commit hook bus.
  *
  * SEAM CONTRACT (Graham, Lead/Architect — 2026-06-06T22:03:01-07:00)
- * Authority: .squad/decisions/inbox/graham-ledger-seam.md
+ * Authority: .squad/decisions.md
  *
  * These are pure type/interface declarations. No implementation bodies.
  *

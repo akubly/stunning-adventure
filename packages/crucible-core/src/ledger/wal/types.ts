@@ -3,7 +3,7 @@
  *
  * These types are strictly BELOW the public Ledger.append() seam.
  * The append orchestration and HookBus integration are deferred pending
- * Graham's seam lock (.squad/decisions/inbox/graham-ledger-seam.md).
+ * Graham's seam lock (see .squad/decisions.md).
  */
 
 export type Blake3Hash = Uint8Array; // 32 bytes
@@ -25,7 +25,8 @@ export interface SegmentRecordInput {
   commitOffset:  bigint;           // u64 monotonic per session
   timestampNs:   bigint;           // u64 ns, monotonically non-decreasing
   primitiveKind: number;           // u8 enum (§6, locked separately)
-  hookVerdict:   number;           // u8: 0=continue, 1=observe, 2=pause, 0xFF=no-verdict
+  hookVerdict:   number;           // u8: 0=continue, 1=observe, 2=pause
+                                    // (no-verdict/null distinction deferred — see #57)
   flags:         SegmentRecordFlags;
   payloadHash:   Blake3Hash;       // BLAKE3(CBOR(primitivePayload))
   readSetHash:   Blake3Hash;       // BLAKE3(CBOR(causalReadSet)) or zero-hash

@@ -5,7 +5,7 @@
  *   Track 2 (Laura/Roger) : §4.2 Walkthrough B — pre-commit hook-veto gate.
  *
  * SEAM CONTRACT (Graham, Lead/Architect — 2026-06-06T22:03:01-07:00)
- * Authority: .squad/decisions/inbox/graham-ledger-seam.md
+ * Authority: .squad/decisions.md
  *
  * These are pure interface/type declarations. No implementation bodies.
  *

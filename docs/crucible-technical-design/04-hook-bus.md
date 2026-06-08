@@ -60,6 +60,11 @@ primitive kind; the WAL row stores `hookVerdict = null` in that case to
 distinguish "no predicate fired" from "a predicate fired and said continue."
 Both are zero-witness; only the bookkeeping distinguishes them.
 
+> **Deferred (#57):** The null-vs-continue encoding described above is planned
+> but not yet implemented by the current code. Today the implementation does not
+> distinguish "no predicate matched" from an explicit COMMIT verdict in the WAL
+> row. Tracked in issue #57.
+
 ## 4.2 Predicate Registration and Kind-Indexed Dispatch
 
 Predicates are pre-registered, compiled at registration time, and indexed by

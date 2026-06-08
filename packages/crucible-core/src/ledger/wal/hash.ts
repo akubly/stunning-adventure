@@ -7,7 +7,7 @@
  *
  * Library choice: @noble/hashes v2.x — pure TS/WASM, no native compilation,
  * Node16 ESM compatible, actively maintained. Documented in
- * .squad/decisions/inbox/roger-wal-substrate.md.
+ * .squad/decisions.md.
  */
 
 import { blake3 } from '@noble/hashes/blake3.js';

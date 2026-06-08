@@ -36,8 +36,9 @@ export class FileSystemCas {
     const filePath = path.join(shardDir, `${hex}.cbor`);
     if (!fs.existsSync(filePath)) {
       // NOTE: no fsync here — CAS writes are best-effort durable in v1.
-      // A crash between the WAL fsync and this write leaves the WAL record
-      // referencing a missing CAS key. Tracked separately (crash-durability).
+      // The WAL fsync can make a segment durable while this CAS file is still
+      // only in the OS page cache (not yet on disk). A crash in that window
+      // leaves the WAL record referencing a missing CAS key. Tracked in #56.
       fs.writeFileSync(filePath, bytes);
     }
     return hash;
