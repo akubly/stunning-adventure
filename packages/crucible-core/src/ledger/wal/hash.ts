@@ -6,8 +6,8 @@
  * become available or the function is replaced during testing).
  *
  * Library choice: @noble/hashes v2.x — pure TS/WASM, no native compilation,
- * Node16 ESM compatible, actively maintained. Documented in
- * .squad/decisions.md.
+ * ESM compatible (NodeNext/Node16 module resolution), actively maintained.
+ * Requires Node.js >=20.19.0. Documented in .squad/decisions.md.
  */
 
 import { blake3 } from '@noble/hashes/blake3.js';
