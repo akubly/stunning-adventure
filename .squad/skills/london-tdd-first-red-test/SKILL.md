@@ -134,11 +134,40 @@ Append to `.squad/agents/<agent>/history.md` under `## Learnings`:
 
 ---
 
+## Variant: Acceptance Tests With a Controlled Spy (Hook/Callback Scenarios)
+
+Some acceptance tests DO use `vi.fn()` — not as a mock of an internal collaborator,
+but as a **user-supplied plug-in** (hook predicate, callback, observer). This is valid
+at the acceptance level because the hook IS part of the public API contract:
+the user registers it, the system invokes it, and the test asserts the invocation.
+
+```typescript
+// ✅ vi.fn() as a user-supplied hook — fine at acceptance level
+const vetoHook = vi.fn().mockResolvedValue({ verdict: 'VETO', reason: '...' });
+await ledger.registerHook('policy-gate', vetoHook, { budget: 50_000 });
+expect(vetoHook).toHaveBeenCalledWith({ ... });
+```
+
+Distinguish from:
+```typescript
+// ❌ vi.fn() as a mock of an internal collaborator (DB, filesystem) — not at acceptance level
+const mockDB = { insertSession: vi.fn() };
+```
+
+The rule is: if the `vi.fn()` is *passed in by the user* through the public API, it
+belongs at acceptance level. If it replaces an *internal dependency*, it belongs in
+unit/integration tests.
+
+**Applied in:** A3 hook-veto acceptance test (§4.2 Walkthrough B).
+
+---
+
 ## Anti-Patterns
 
 | ❌ Don't | ✅ Do instead |
 |---|---|
-| Mock at the acceptance level | Keep acceptance tests mock-free per §4.1; mocks appear in the next descent layer |
+| Mock internal collaborators at acceptance level | Keep internal collaborators real; use `vi.fn()` only for user-supplied hooks/callbacks |
+| Use `vi.fn()` for an internal collaborator at acceptance level | Move to unit/integration ring, pass real instances to the acceptance test |
 | Create implementation files in the same PR | RED commit = test file only. Implementation is a separate commit/turn |
 | Use `.ts` extension on imports | Use `.js` for ESM interop even in TypeScript sources |
 | Omit the header comment block | Always cite PRD, scenario, strategy, and locked decisions |
