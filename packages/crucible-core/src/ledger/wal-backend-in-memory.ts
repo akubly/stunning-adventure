@@ -19,7 +19,7 @@ import type {
 import type { HookResult, HookVerdict } from './hook-bus.js';
 import { buildChain } from './wal/hash-chain.js';
 import { InMemoryCas } from './wal/cas.js';
-import type { SegmentRecordInput } from './wal/types.js';
+import type { SegmentRecord, SegmentRecordInput } from './wal/types.js';
 import { VERDICT_TO_WAL } from './wal/types.js';
 
 const ZERO_HASH = new Uint8Array(32);
@@ -29,6 +29,8 @@ export class InMemoryWalBackend implements WalBackend {
   private readonly cas = new InMemoryCas();
   /** The selfRoot of the last committed row; ZERO_HASH for empty ledger. */
   private prevRoot = new Uint8Array(ZERO_HASH);
+  /** Segment records produced by commitRow — mirrors the FS backend's on-disk records. */
+  private readonly segRecords: SegmentRecord[] = [];
 
   async commitRow(
     input: PrimitiveInput,
@@ -66,6 +68,7 @@ export class InMemoryWalBackend implements WalBackend {
     // subsequent rows get prevRoot=previous selfRoot.
     const [linked] = buildChain([rowInput], this.prevRoot);
     this.prevRoot = new Uint8Array(linked.selfRoot);
+    this.segRecords.push(linked);
 
     this.events.push({ ...input, offset });
     return offset;
@@ -74,5 +77,14 @@ export class InMemoryWalBackend implements WalBackend {
   async readRows(opts: LedgerQueryOpts): Promise<LedgerEvent[]> {
     const [start, end] = opts.range;
     return this.events.filter(e => e.offset >= start && e.offset <= end);
+  }
+
+  /**
+   * Return all SegmentRecords produced by commitRow.
+   * Mirrors FileSystemWalBackend.readSegmentRecords() — used by the shared
+   * contract test to assert hookVerdict bytes without coupling to the interface.
+   */
+  readSegmentRecords(): SegmentRecord[] {
+    return this.segRecords.slice();
   }
 }

@@ -39,7 +39,18 @@ File size: 103960 bytes. See history-archive.md for earlier entries.
 
 ---
 
-## 2026-06-07: WAL Substrate Cycle-1 Review Fix Wave
+## 2026-06-07: WAL Substrate Cycle-2 Review Fix Wave (CURRENT_DATETIME: 2026-06-07T23:11:54-07:00)
+
+Closed three residuals from the cycle-2 re-review.
+
+**C2-I1 (contract test deepened):** Added `readVerdictByte(offset)` to `WalBackendHarness` (required for both impls). Added `readSegmentRecords(): SegmentRecord[]` to `InMemoryWalBackend` so it exposes the same introspection surface as `FileSystemWalBackend`. Strengthened CL-3 to assert persisted `hookVerdict` bytes (0x00/0x01/0x02) for all three verdicts on both backends — a mapping mis-match now fails. Added FS-only CL-6 block (`close+reopen durability`): writes COMMIT+PAUSE rows, closes, reopens read-only, asserts hookVerdict bytes survive. Total contract tests: 11 (5×InMemory + 5×FS shared + 1 FS-only CL-6).
+
+**C2-I2 (PID write loop):** `acquireWriteLock` now loops `fs.writeSync(fd, pidBuf, written, remaining)` until all bytes of the PID are written before `closeSync`. Guards against short writes on slow/busy filesystems that could leave a truncated PID and trigger false stale-reclaim.
+
+**C2-M1 (breaking note):** Added a `BREAKING (0.1.x pre-release)` comment to `LedgerFactoryOptions` in `ledger.ts` documenting that `sessionId` was intentionally removed in cycle-1 and pointing callers to `createFileSystemWalBackend`.
+
+**Result:** 75/75 tests green (74 from cycle-1 + 1 new CL-6). Build clean. Lint 0 errors. #56 and #57 NOT touched.
+
 
 Addressed 11 findings (B1, I1, I3, I4, I5, I6, M1, M2, M3, M4) from the 5-persona Code Panel review of the WAL substrate + Walkthrough B.  Two findings (#56 crash-durability, #57 verdict no-match encoding) remain deferred as per Aaron's direction.
 

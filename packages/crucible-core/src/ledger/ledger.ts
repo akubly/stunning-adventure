@@ -58,6 +58,11 @@ export interface LedgerQueryOpts {
  * walBackend is optional: when omitted the factory uses an in-memory backend
  * (suitable for tests and RED-phase runs). Roger's GREEN phase passes the
  * real §3 WalBackend here to wire the durable, hash-chained substrate.
+ *
+ * BREAKING (0.1.x pre-release): sessionId was removed from this interface in
+ * cycle-1 review (2026-06-07). It was declared but never wired in createLedger.
+ * Callers that passed sessionId must pass it directly to createFileSystemWalBackend
+ * instead (rootDir + sessionId are explicit params on that factory).
  */
 export interface LedgerFactoryOptions {
   walBackend?: WalBackend;

@@ -1,19 +1,22 @@
 /**
- * Shared WalBackend contract test — I6.
+ * Shared WalBackend contract test — I6 (strengthened in cycle-2 review).
  *
  * Runs the same behavioral invariants against BOTH concrete WalBackend
- * implementations to prevent fs/in-memory drift.
+ * implementations to prevent fs/in-memory verdict-persistence drift.
  *
  * Pattern: runWalBackendContract(implName, makeHarness)
  *   makeHarness() — called fresh per test (beforeEach) → isolated instance.
- *   Harness exposes the WalBackend under test + a cleanup hook.
  *
  * Invariants:
  *   CL-1: append → read round-trip (happy path)
  *   CL-2: offset monotonicity (each commitRow returns offset = previous + 1)
- *   CL-3: verdict → WAL byte mapping persists (COMMIT=0x00, OBSERVE=0x01, PAUSE=0x02)
+ *   CL-3: verdict → hookVerdict byte (COMMIT=0x00, OBSERVE=0x01, PAUSE=0x02)
+ *         — asserts the persisted byte so mapping drift between backends FAILS.
  *   CL-4: read-range semantics (inclusive [start, end]; out-of-range returns empty)
- *   CL-5: durable PAUSE row (PAUSE-verdict row is readable after a flush)
+ *   CL-5: PAUSE-verdict row is readable via readRows after flush
+ *
+ * FS-only:
+ *   CL-6: PAUSE hookVerdict byte survives close+reopen (durable backend)
  *
  * Skill refs:
  *   .squad/skills/interface-contract-test-suite/SKILL.md
@@ -36,13 +39,16 @@ import type { HookResult, HookVerdict } from '../../ledger/hook-bus.js';
 
 interface WalBackendHarness {
   backend: WalBackend;
+  /**
+   * Side-channel: return the persisted hookVerdict byte for the committed row
+   * at the given offset. Throws if no record exists at that offset.
+   * Both backends must implement this — it is the primary drift guard.
+   */
+  readVerdictByte: (offset: number) => Promise<number>;
+  /** Some backends (fs batchSize>1) need an explicit flush before readRows. */
+  flush?: () => Promise<void>;
   /** Optional teardown — called after each test. */
   cleanup?: () => Promise<void> | void;
-  /**
-   * Some backends (fs) need an explicit flush to make reads consistent.
-   * Call after all commitRow() calls before readRows() in contract tests.
-   */
-  flush?: () => Promise<void>;
 }
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -99,19 +105,22 @@ export function runWalBackendContract(
       expect(o2).toBe(2);
     });
 
-    it('CL-3: COMMIT verdict → offset 0; OBSERVE → offset 1; PAUSE → offset 2', async () => {
-      const o0 = await h.backend.commitRow(makeInput('c'), commit('COMMIT'));
-      const o1 = await h.backend.commitRow(makeInput('o'), commit('OBSERVE'));
-      const o2 = await h.backend.commitRow(makeInput('p'), commit('PAUSE'));
+    it('CL-3: verdict→hookVerdict byte: COMMIT=0x00, OBSERVE=0x01, PAUSE=0x02', async () => {
+      await h.backend.commitRow(makeInput('c'), commit('COMMIT'));
+      await h.backend.commitRow(makeInput('o'), commit('OBSERVE'));
+      await h.backend.commitRow(makeInput('p'), commit('PAUSE'));
       if (h.flush) await h.flush();
 
-      // All three offsets must be assigned sequentially regardless of verdict
-      expect(o0).toBe(0);
-      expect(o1).toBe(1);
-      expect(o2).toBe(2);
-
+      // Offsets must be assigned sequentially regardless of verdict
       const rows = await h.backend.readRows({ range: [0, 2] });
       expect(rows).toHaveLength(3);
+
+      // Assert the persisted hookVerdict byte — this catches VERDICT_TO_WAL drift.
+      // If the mapping is mis-applied (e.g. OBSERVE→0x02 instead of 0x01), these
+      // assertions will fail on the implementation that has the wrong mapping.
+      expect(await h.readVerdictByte(0)).toBe(0x00); // COMMIT
+      expect(await h.readVerdictByte(1)).toBe(0x01); // OBSERVE
+      expect(await h.readVerdictByte(2)).toBe(0x02); // PAUSE
     });
 
     it('CL-4: read-range semantics — inclusive [start, end]; out-of-range returns empty', async () => {
@@ -128,14 +137,13 @@ export function runWalBackendContract(
       expect(empty).toHaveLength(0);
     });
 
-    it('CL-5: PAUSE-verdict row is readable after flush', async () => {
+    it('CL-5: PAUSE-verdict row is visible via readRows after flush', async () => {
       await h.backend.commitRow(makeInput('before'), commit('COMMIT'));
       await h.backend.commitRow(makeInput('paused'), commit('PAUSE'));
       if (h.flush) await h.flush();
 
       const rows = await h.backend.readRows({ range: [0, 10] });
       expect(rows).toHaveLength(2);
-      // The PAUSE row committed — it is visible in readRows
       expect(rows[1].offset).toBe(1);
       expect((rows[1].primitivePayload as { content: string }).content).toBe('paused');
     });
@@ -146,7 +154,15 @@ export function runWalBackendContract(
 
 runWalBackendContract('InMemoryWalBackend', () => {
   const backend = new InMemoryWalBackend();
-  return { backend };
+  return {
+    backend,
+    readVerdictByte: async (offset: number) => {
+      const recs = backend.readSegmentRecords();
+      const rec  = recs.find(r => Number(r.commitOffset) === offset);
+      if (rec === undefined) throw new Error(`InMemory: no record at offset ${offset}`);
+      return rec.hookVerdict;
+    },
+  };
 });
 
 // ─── Wire FileSystemWalBackend ────────────────────────────────────────────────
@@ -156,49 +172,14 @@ runWalBackendContract('FileSystemWalBackend', () => {
   const sessionId = `sess-${randomUUID().slice(0, 8)}`;
   fs.mkdirSync(rootDir, { recursive: true });
 
-  // Use batchSize=10, long deadline so we control flushes explicitly
   let backendInstance: Awaited<ReturnType<typeof createFileSystemWalBackend>>;
-
-  const harness = {
-    // Will be replaced after the async open completes in beforeEach.
-    // We use a sync-init shim: the contract suite calls makeHarness() from
-    // beforeEach, which is sync.  We work around this by returning a proxy
-    // object whose `backend` property is resolved lazily after open().
-    backend: null as unknown as WalBackend,
-    flush: undefined as (() => Promise<void>) | undefined,
-    cleanup: undefined as (() => Promise<void>) | undefined,
-  };
-
-  // beforeEach is called before the test body; we need to open the backend.
-  // runWalBackendContract calls makeHarness() inside beforeEach, so we return
-  // a special harness that wraps an async-initialised backend via a promise
-  // sentinel.  To keep the contract suite simple, we use a self-initialising
-  // pattern: the first access of `harness.backend` triggers the open.
-  // This is cleaner via a simple trick: wrap the whole thing in a class proxy.
-
-  // Actually the simplest approach: return a harness with a lazy `backend` getter
-  // backed by a synchronous-init wrapper.  Since both InMemory and FS backends
-  // only ever have commitRow/readRows called after `beforeEach`, and beforeEach
-  // is async-capable in vitest, we do the open in an IIFE and return a
-  // promise-backed harness.
-  //
-  // However, makeHarness() in this pattern must be synchronous.  The cleanest
-  // solution without changing the contract suite signature: make the FS harness
-  // wrap an async-open backend behind a lazy initializer called by the first
-  // method invocation.
-
-  // Implementation: create a proxy WalBackend that defers to an async-initialized
-  // real backend.  Open is triggered once on first method call.
   let openPromise: Promise<void> | null = null;
+
   const ensureOpen = (): Promise<void> => {
     if (!openPromise) {
       openPromise = createFileSystemWalBackend(rootDir, sessionId, {
-        // batchSize=1: immediate flush — commitRow resolves without explicit flush call.
-        // The harness still exposes a flush() for the CL-5 PAUSE test.
-        batchSize: 1,
-      }).then(b => {
-        backendInstance = b;
-      });
+        batchSize: 1, // immediate flush — commitRow resolves without explicit flush call
+      }).then(b => { backendInstance = b; });
     }
     return openPromise;
   };
@@ -214,12 +195,63 @@ runWalBackendContract('FileSystemWalBackend', () => {
     },
   };
 
-  harness.backend = proxy;
-  harness.flush   = async () => { await ensureOpen(); await backendInstance.flush(); };
-  harness.cleanup = async () => {
-    if (backendInstance) await backendInstance.close();
-    try { fs.rmSync(rootDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+  return {
+    backend: proxy,
+    readVerdictByte: async (offset: number) => {
+      await ensureOpen();
+      const recs = backendInstance.readSegmentRecords();
+      const rec  = recs.find(r => Number(r.commitOffset) === offset);
+      if (rec === undefined) throw new Error(`FS: no record at offset ${offset}`);
+      return rec.hookVerdict;
+    },
+    flush: async () => { await ensureOpen(); await backendInstance.flush(); },
+    cleanup: async () => {
+      if (backendInstance) await backendInstance.close();
+      try { fs.rmSync(rootDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+    },
   };
+});
 
-  return harness;
+// ─── CL-6: FS-only close+reopen durability ────────────────────────────────────
+//
+// This invariant is not part of the shared suite because in-memory backends
+// have no durable state — reopen is not applicable.  The FS backend must
+// preserve the hookVerdict byte across close+reopen (fdatasync guarantee).
+
+describe('WalBackend contract — FileSystemWalBackend durability (close+reopen)', () => {
+  let rootDir: string;
+  let sessionId: string;
+
+  beforeEach(() => {
+    rootDir   = path.join(os.tmpdir(), `crucible-contract-reopen-${randomUUID()}`);
+    sessionId = `sess-${randomUUID().slice(0, 8)}`;
+    fs.mkdirSync(rootDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    try { fs.rmSync(rootDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+  });
+
+  it('CL-6: PAUSE hookVerdict byte survives close+reopen (durable backend)', async () => {
+    // Write COMMIT + PAUSE rows, then close
+    const writer = await createFileSystemWalBackend(rootDir, sessionId);
+    await writer.commitRow(makeInput('c'), commit('COMMIT'));
+    await writer.commitRow(makeInput('p'), commit('PAUSE'));
+    await writer.close();
+
+    // Reopen read-only — segment is re-read from disk
+    const reader = await createFileSystemWalBackend(rootDir, sessionId, { readOnly: true });
+    const recs   = reader.readSegmentRecords();
+
+    expect(recs).toHaveLength(2);
+    expect(recs[0].hookVerdict).toBe(0x00); // COMMIT
+    expect(recs[1].hookVerdict).toBe(0x02); // PAUSE
+
+    // readRows must also surface both events after reopen
+    const rows = await reader.readRows({ range: [0, 10] });
+    expect(rows).toHaveLength(2);
+    expect(rows[1].offset).toBe(1);
+
+    await reader.close();
+  });
 });

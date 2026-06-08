@@ -257,8 +257,14 @@ export class FileSystemWalBackend implements WalBackend {
     try {
       // Write PID through the wx fd before closing — eliminates the empty-file
       // window that a concurrent opener could misread as a stale lock (§3.4.1).
-      const fd = fs.openSync(this.lockPath, 'wx');
-      fs.writeSync(fd, String(process.pid));
+      // Loop until all bytes are written: writeSync may short-write on a slow
+      // or busy filesystem, and a truncated PID would be parsed as stale.
+      const fd     = fs.openSync(this.lockPath, 'wx');
+      const pidBuf = Buffer.from(String(process.pid), 'utf8');
+      let written  = 0;
+      while (written < pidBuf.length) {
+        written += fs.writeSync(fd, pidBuf, written, pidBuf.length - written);
+      }
       fs.closeSync(fd);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
