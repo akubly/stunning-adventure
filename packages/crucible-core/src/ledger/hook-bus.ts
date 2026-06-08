@@ -47,8 +47,9 @@ export interface HookMetadata {
   /** UTC epoch milliseconds assigned by Ledger.append at invocation time. */
   timestamp: number;
   /**
-   * Caller-supplied source tag extracted from primitivePayload envelope, if present.
-   * Used by §4.2 test: primitivePayload = { source: 'external', ... }.
+   * Caller-supplied source tag — reserved seam field; not yet populated by
+   * Ledger.append in this slice (no RED test drives extraction). A future
+   * policy predicate may need it; populate when a test pins the contract.
    */
   source?: string;
 }

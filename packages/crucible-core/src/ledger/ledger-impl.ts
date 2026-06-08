@@ -46,6 +46,8 @@ class LedgerImpl implements Ledger {
 
   async append(input: PrimitiveInput): Promise<number> {
     // (a) Build hook context — no I/O, no WAL staging
+    // metadata.source is intentionally not populated here (no RED test drives
+    // extraction from primitivePayload in this slice; reserved for future use).
     const ctx: HookContext = {
       primitiveKind:    input.primitiveKind,
       primitivePayload: input.primitivePayload,

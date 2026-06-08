@@ -38,7 +38,7 @@ export class FileSystemCas {
       // NOTE: no fsync here — CAS writes are best-effort durable in v1.
       // The WAL fsync can make a segment durable while this CAS file is still
       // only in the OS page cache (not yet on disk). A crash in that window
-      // leaves the WAL record referencing a missing CAS key. Tracked in #56.
+      // leaves the WAL record referencing a missing CAS key. Tracked in #59.
       fs.writeFileSync(filePath, bytes);
     }
     return hash;
