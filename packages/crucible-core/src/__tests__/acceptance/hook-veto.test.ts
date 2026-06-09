@@ -33,7 +33,7 @@ describe('Pre-Commit Hook Veto', () => {
     const ledger = await createLedger();
     const vetoHook = vi.fn().mockResolvedValue({ verdict: 'VETO', reason: 'External source denied' });
 
-    await ledger.registerHook('policy-gate', vetoHook, { budget: 50_000 }); // 50 µs
+    await ledger.registerHook('policy-gate', vetoHook, { budget: 50_000 }); // 50ms
 
     // ── Act: Attempt to append external-source primitive ─────────────────────
     const appendPromise = ledger.append({

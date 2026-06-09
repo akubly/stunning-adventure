@@ -10,11 +10,12 @@
  *   - Roger  : §3 WAL substrate GREEN — wires PreCommitHookBus (§4) behind HookBusPort.
  *   - Laura/Roger: §4.2 Walkthrough B GREEN — implements HookPredicate for the veto gate.
  *
- * ⚠ HookVerdict naming fork: §3/§4 WAL spec uses lowercase `continue | observe | pause`;
+ * HookVerdict naming fork: §3/§4 WAL spec uses lowercase `continue | observe | pause`;
  *   §4.2 TDD sketch uses UPPERCASE `COMMIT | PAUSE | VETO`. The seam adopts UPPERCASE
  *   at the Ledger API boundary; the WalBackend maps to WAL-row vocabulary internally.
- *   VETO is not present in §4's verdict set — see graham-ledger-seam-OPEN.md for
- *   the open question pending Aaron's ruling (marked PROVISIONAL below).
+ *   VETO is a Ledger-layer pre-stage gate (Aaron ruling, Option A — locked). It never
+ *   reaches the WAL; append() throws before any byte is written. Enforced structurally
+ *   via Exclude<HookVerdict,'VETO'> on commitRow().
  */
 
 import type { PrimitiveKind } from '../types.js';
@@ -28,9 +29,9 @@ import type { PrimitiveKind } from '../types.js';
  * OBSERVE — row proceeds + attention signal emitted; maps to §4 `observe`.
  * PAUSE   — row commits durably with pause verdict; triggers §3.5 seal-and-split.
  *           Maps to §4 `pause`. Router receives broadcast via L1Subscriber.
- * VETO    — ⚠ PROVISIONAL — append() throws before any WAL byte is written;
- *           no WAL row is created. Not present in §4's verdict vocabulary.
- *           Introduced by §4.2 RED acceptance test. Pending Aaron's ruling.
+ * VETO    — Ledger-layer pre-stage gate (locked, Aaron ruling Option A).
+ *           append() throws before any WAL byte is written; no WAL row is
+ *           created. Structurally excluded from WAL via Exclude<HookVerdict,'VETO'>.
  *
  * Precedence when multiple hooks fire: VETO > PAUSE > OBSERVE > COMMIT.
  */

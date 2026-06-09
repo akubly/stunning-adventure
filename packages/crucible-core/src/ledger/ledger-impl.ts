@@ -59,19 +59,12 @@ class LedgerImpl implements Ledger {
     // (b) Fire hook bus — before any WAL byte
     const result = await this.hookBus.fire(ctx);
 
-    // (c) VETO gate — throw immediately, nothing written
-    if (result.verdict === 'VETO') {
+    // (c) VETO gate — throw immediately, nothing written; narrows type for commitRow
+    if (!isNonVeto(result)) {
       throw new Error(`Append vetoed by hook: ${result.hookId}`);
     }
 
     // (d) Non-VETO path — delegate to WAL backend
-    // Narrow via type guard: TypeScript already knows verdict !== 'VETO' here
-    // because the VETO branch above exhausts that case, but the union type still
-    // includes it.  A narrow function removes the need for an unsafe `as` cast.
-    if (!isNonVeto(result)) {
-      // Unreachable: covered by the VETO branch above — guard is exhaustive.
-      throw new Error('Unexpected VETO after guard');
-    }
     return this.walBackend.commitRow(input, result);
   }
 

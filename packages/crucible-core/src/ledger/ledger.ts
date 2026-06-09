@@ -162,7 +162,8 @@ export interface Ledger {
  *     in graham-ledger-seam.md. Upgrade to bigint if overflow risk materialises.
  *
  * WAL-layer verdict vocabulary mapping (Roger's internal concern):
- *   COMMIT  → hookVerdict = 'continue' (or null if no predicate matched)
+ *   COMMIT  → hookVerdict = 'continue' (today, no-predicate-matched and explicit
+ *             COMMIT encode identically; the distinction is deferred — see #57)
  *   OBSERVE → hookVerdict = 'observe'
  *   PAUSE   → hookVerdict = 'pause'
  *   VETO    → never reaches WalBackend; Ledger.append throws first
