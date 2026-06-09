@@ -255,3 +255,74 @@ describe('WalBackend contract — FileSystemWalBackend durability (close+reopen)
     await reader.close();
   });
 });
+
+// ─── CL-7: timestampNs monotonicity (both backends, clock seam) ──────────────
+//
+// §3.10 invariant: timestampNs must be monotonically non-decreasing within a
+// session. When the system clock goes backward, the backend must clamp to the
+// last assigned value. Both backends must pass (RED without clamping logic).
+
+describe('WalBackend contract — CL-7: timestampNs monotonicity (clock goes backward)', () => {
+  it('CL-7 InMemoryWalBackend: second row timestampNs >= first when clock regresses', async () => {
+    let tick = 2_000_000_000n; // 2 s in nanoseconds
+    const backend = new InMemoryWalBackend({ nowNs: () => tick });
+
+    await backend.commitRow(makeInput('first'), commit());
+    tick = 1_000_000_000n; // clock jumps backward to 1 s
+    await backend.commitRow(makeInput('second'), commit());
+
+    const recs = backend.readSegmentRecords();
+    expect(recs).toHaveLength(2);
+    expect(recs[1].timestampNs).toBeGreaterThanOrEqual(recs[0].timestampNs);
+  });
+
+  it('CL-7 FileSystemWalBackend: second row timestampNs >= first when clock regresses', async () => {
+    const rootDir   = path.join(os.tmpdir(), `crucible-cl7-${randomUUID()}`);
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+    fs.mkdirSync(rootDir, { recursive: true });
+
+    let tick = 2_000_000_000n;
+    const backend = await createFileSystemWalBackend(rootDir, sessionId, {
+      nowNs: () => tick,
+    });
+
+    await backend.commitRow(makeInput('first'), commit());
+    tick = 1_000_000_000n; // clock jumps backward
+    await backend.commitRow(makeInput('second'), commit());
+
+    const recs = backend.readSegmentRecords();
+    expect(recs).toHaveLength(2);
+    expect(recs[1].timestampNs).toBeGreaterThanOrEqual(recs[0].timestampNs);
+
+    await backend.close();
+    try { fs.rmSync(rootDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+  });
+
+  it('CL-7 FileSystemWalBackend: lastTimestampNs seeded from replayed records (reopen monotonicity)', async () => {
+    const rootDir   = path.join(os.tmpdir(), `crucible-cl7-reopen-${randomUUID()}`);
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+    fs.mkdirSync(rootDir, { recursive: true });
+
+    // Write one row with a known large timestamp
+    const highTick = 5_000_000_000n;
+    const backend1 = await createFileSystemWalBackend(rootDir, sessionId, {
+      nowNs: () => highTick,
+    });
+    await backend1.commitRow(makeInput('pre-reopen'), commit());
+    await backend1.close();
+
+    // Reopen with a clock that returns a LOWER value — must still be clamped
+    const lowTick = 1_000_000_000n;
+    const backend2 = await createFileSystemWalBackend(rootDir, sessionId, {
+      nowNs: () => lowTick,
+    });
+    await backend2.commitRow(makeInput('post-reopen'), commit());
+
+    const recs = backend2.readSegmentRecords();
+    expect(recs).toHaveLength(2);
+    expect(recs[1].timestampNs).toBeGreaterThanOrEqual(recs[0].timestampNs);
+
+    await backend2.close();
+    try { fs.rmSync(rootDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+  });
+});

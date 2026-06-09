@@ -76,6 +76,18 @@ export class ReadOnlyWalBackendError extends Error {
   }
 }
 
+/**
+ * Thrown by replayFromSegments when a decoded record contains data that
+ * violates the WAL invariants (e.g. unknown primitiveKind, non-string
+ * causalReadSet element) — indicating segment corruption or a schema mismatch.
+ */
+export class CorruptSegmentError extends Error {
+  constructor(segPath: string, detail: string) {
+    super(`Corrupt WAL segment "${segPath}": ${detail}`);
+    this.name = 'CorruptSegmentError';
+  }
+}
+
 // ─── Internal types ───────────────────────────────────────────────────────────
 
 interface Manifest {
@@ -127,6 +139,13 @@ export interface FileSystemWalBackendOptions {
    * Stub for the L1Subscriber → Router broadcast (§5 not yet built).
    */
   onPause?: (commitOffset: number) => void;
+  /**
+   * Injectable clock for testable timestampNs assignment (§3.10 monotonicity).
+   * Must return a bigint in nanoseconds. Default: () => BigInt(Date.now()) * 1_000_000n.
+   * Inject a controlled clock to test that timestampNs is clamped when the
+   * system clock goes backward.
+   */
+  nowNs?: () => bigint;
 }
 
 // ─── FileSystemWalBackend ─────────────────────────────────────────────────────
@@ -139,6 +158,7 @@ export class FileSystemWalBackend implements WalBackend {
   private manifest!:        Manifest;
   private events:           LedgerEvent[] = [];
   private prevRoot          = new Uint8Array(ZERO_HASH);
+  private lastTimestampNs:  bigint = 0n;
   private activeSeg         = 0;
   private activeSegPath!:   string;
   private indexPath!:       string;
@@ -147,6 +167,7 @@ export class FileSystemWalBackend implements WalBackend {
   private readonly batchSize:      number;
   private readonly batchDeadlineMs:number;
   private readonly syncFn:         (fd: number) => void;
+  private readonly nowNs:          () => bigint;
   private readonly onPause?:       (offset: number) => void;
 
   /** Rows waiting for the next group-commit flush. */
@@ -165,6 +186,7 @@ export class FileSystemWalBackend implements WalBackend {
     this.batchSize       = opts?.batchSize      ?? 1;       // default: immediate flush
     this.batchDeadlineMs = opts?.batchDeadlineMs ?? 2;
     this.syncFn          = opts?.syncFn ?? ((fd) => fs.fsyncSync(fd));
+    this.nowNs           = opts?.nowNs  ?? (() => BigInt(Date.now()) * 1_000_000n);
     this.onPause         = opts?.onPause;
   }
 
@@ -318,12 +340,27 @@ export class FileSystemWalBackend implements WalBackend {
   private replayFromSegments(): void {
     const [first, last] = this.manifest.segmentRange;
     for (let s = first; s <= last; s++) {
-      const records = this.scanSegmentFile(this.segPath(s));
+      const segFilePath = this.segPath(s);
+      const records = this.scanSegmentFile(segFilePath);
       for (const rec of records) {
         const offset = Number(rec.commitOffset);
-        const primitiveKind = rec.envelopeCbor.length > 0
-          ? (Buffer.from(rec.envelopeCbor).toString('utf8') as PrimitiveKind)
+
+        // Seed lastTimestampNs from replayed records (§3.10 monotonicity across reopen)
+        if (rec.timestampNs > this.lastTimestampNs) {
+          this.lastTimestampNs = rec.timestampNs;
+        }
+
+        // Validate primitiveKind — reject unknown values from corrupt segments
+        const primitiveKindRaw = rec.envelopeCbor.length > 0
+          ? Buffer.from(rec.envelopeCbor).toString('utf8')
           : 'observation';
+        if (!VALID_PRIMITIVE_KINDS.has(primitiveKindRaw)) {
+          throw new CorruptSegmentError(
+            segFilePath,
+            `unknown primitiveKind "${primitiveKindRaw}" at offset ${offset}`,
+          );
+        }
+        const primitiveKind = primitiveKindRaw as PrimitiveKind;
 
         const payloadBuf = this.cas.get(rec.payloadHash);
         const primitivePayload = payloadBuf
@@ -335,7 +372,19 @@ export class FileSystemWalBackend implements WalBackend {
           const rsBuf = this.cas.get(rec.readSetHash);
           if (rsBuf) {
             const parsed = JSON.parse(Buffer.from(rsBuf).toString('utf8')) as unknown;
-            if (Array.isArray(parsed)) causalReadSet = parsed as string[];
+            if (!Array.isArray(parsed)) {
+              throw new CorruptSegmentError(
+                segFilePath,
+                `causalReadSet at offset ${offset} is not an array`,
+              );
+            }
+            if (!parsed.every((e): e is string => typeof e === 'string')) {
+              throw new CorruptSegmentError(
+                segFilePath,
+                `causalReadSet at offset ${offset} contains non-string elements`,
+              );
+            }
+            causalReadSet = parsed;
           }
         }
 
@@ -491,9 +540,14 @@ export class FileSystemWalBackend implements WalBackend {
 
       const envelopeCbor = new Uint8Array(Buffer.from(entry.input.primitiveKind, 'utf8'));
 
+      // §3.10 timestampNs monotonicity: clamp to lastTimestampNs when clock goes backward
+      const nowNs = this.nowNs();
+      const tsNs  = nowNs > this.lastTimestampNs ? nowNs : this.lastTimestampNs;
+      this.lastTimestampNs = tsNs;
+
       rowInputs.push({
         commitOffset:  BigInt(offset),
-        timestampNs:   BigInt(Date.now()) * 1_000_000n,
+        timestampNs:   tsNs,
         primitiveKind: 0x01,
         hookVerdict:   VERDICT_TO_WAL[verdict],
         flags: {
@@ -583,6 +637,14 @@ export class FileSystemWalBackend implements WalBackend {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Valid primitiveKind strings (§6.1). Used during replay to detect corrupt
+ * segments that contain an unrecognised kind byte sequence.
+ */
+const VALID_PRIMITIVE_KINDS = new Set<string>([
+  'request', 'artifact', 'observation', 'decision', 'question',
+]);
 
 function isZeroHash(hash: Uint8Array): boolean {
   for (let i = 0; i < hash.length; i++) {

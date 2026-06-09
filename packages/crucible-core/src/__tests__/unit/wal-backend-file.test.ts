@@ -31,8 +31,12 @@ import { randomUUID } from 'node:crypto';
 
 import {
   createFileSystemWalBackend,
+  CorruptSegmentError,
 } from '../../ledger/wal-backend-fs.js';
-import { verifyChain } from '../../ledger/wal/hash-chain.js';
+import { verifyChain, buildChain, ZERO_HASH } from '../../ledger/wal/hash-chain.js';
+import { encodeRecord } from '../../ledger/wal/codec.js';
+import { hashBytes } from '../../ledger/wal/hash.js';
+import type { SegmentRecordInput } from '../../ledger/wal/types.js';
 import type { PrimitiveInput } from '../../types.js';
 import type { HookResult, HookVerdict } from '../../ledger/hook-bus.js';
 
@@ -281,5 +285,94 @@ describe('WAL FileSystemWalBackend — file-backed durability', () => {
     const rowsB = await backendB2.readRows({ range: [0, 10] });
     expect(rowsB).toHaveLength(1);
     expect((rowsB[0].primitivePayload as { content: string }).content).toBe('b-row-0');
+  });
+});
+
+// ─── Group 2: replay runtime validation ──────────────────────────────────────
+//
+// Writes a minimal corrupt segment/CAS directly to disk, then verifies that
+// opening the backend throws CorruptSegmentError rather than silently casting
+// bad data or throwing an opaque RangeError.
+
+/** Writes a one-record session directory directly to disk using the codec internals. */
+async function writeCorruptSession(opts: {
+  rootDir:          string;
+  sessionId:        string;
+  envelopeCbor:     Uint8Array;
+  readSetCasJson?:  string; // if set, write a non-zero readSetHash with this JSON content
+}): Promise<void> {
+  const { rootDir, sessionId, envelopeCbor, readSetCasJson } = opts;
+  const sessionDir = path.join(rootDir, 'wal', 'sessions', sessionId);
+  const casDir     = path.join(rootDir, 'cas');
+  fs.mkdirSync(sessionDir, { recursive: true });
+  fs.mkdirSync(casDir, { recursive: true });
+
+  // Write a minimal payload CAS entry (replay needs it to exist)
+  const payloadBytes = new Uint8Array(Buffer.from(JSON.stringify({ data: 'test' }), 'utf8'));
+  const payloadHash  = hashBytes(payloadBytes);
+  const payloadHex   = Buffer.from(payloadHash).toString('hex');
+  const payloadShard = path.join(casDir, payloadHex.slice(0, 2));
+  fs.mkdirSync(payloadShard, { recursive: true });
+  fs.writeFileSync(path.join(payloadShard, `${payloadHex}.cbor`), payloadBytes);
+
+  let readSetHash = new Uint8Array(32); // zero = no readSet
+  if (readSetCasJson !== undefined) {
+    const rsBytes  = new Uint8Array(Buffer.from(readSetCasJson, 'utf8'));
+    readSetHash    = hashBytes(rsBytes);
+    const rsHex    = Buffer.from(readSetHash).toString('hex');
+    const rsShard  = path.join(casDir, rsHex.slice(0, 2));
+    fs.mkdirSync(rsShard, { recursive: true });
+    fs.writeFileSync(path.join(rsShard, `${rsHex}.cbor`), rsBytes);
+  }
+
+  const rowInput: SegmentRecordInput = {
+    commitOffset:  0n,
+    timestampNs:   1_000_000_000n,
+    primitiveKind: 0x01,
+    hookVerdict:   0x00,
+    flags: { bootstrap: false, declaredWindow: false, syntheticOutput: false, taskBoundary: false, manifestRoot: false },
+    payloadHash,
+    readSetHash,
+    envelopeCbor,
+  };
+
+  const [record] = buildChain([rowInput], new Uint8Array(ZERO_HASH));
+  const segBuf   = encodeRecord(record);
+  fs.writeFileSync(path.join(sessionDir, '000000.seg'), segBuf);
+
+  const manifest = { schemaVersion: 1, sessionId, segmentRange: [0, 0], lastCommitOffset: 0 };
+  fs.writeFileSync(path.join(sessionDir, 'manifest.json'), JSON.stringify(manifest));
+}
+
+describe('WAL FileSystemWalBackend — Group 2 replay validation (CorruptSegmentError)', () => {
+  it('Group2-1: replay throws CorruptSegmentError for unknown primitiveKind in envelopeCbor', async () => {
+    const rootDir   = makeTmpDir();
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+
+    await writeCorruptSession({
+      rootDir,
+      sessionId,
+      envelopeCbor: new Uint8Array(Buffer.from('bogus_kind', 'utf8')),
+    });
+
+    await expect(
+      createFileSystemWalBackend(rootDir, sessionId, { readOnly: true }),
+    ).rejects.toThrow(CorruptSegmentError);
+  });
+
+  it('Group2-2: replay throws CorruptSegmentError for non-string element in causalReadSet', async () => {
+    const rootDir   = makeTmpDir();
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+
+    await writeCorruptSession({
+      rootDir,
+      sessionId,
+      envelopeCbor:    new Uint8Array(Buffer.from('observation', 'utf8')),
+      readSetCasJson:  JSON.stringify([1, 2, 3]), // numbers, not strings
+    });
+
+    await expect(
+      createFileSystemWalBackend(rootDir, sessionId, { readOnly: true }),
+    ).rejects.toThrow(CorruptSegmentError);
   });
 });

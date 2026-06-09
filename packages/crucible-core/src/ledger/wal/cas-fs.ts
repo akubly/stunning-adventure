@@ -5,7 +5,8 @@
  *   <casDir>/<first-2-hex-chars-of-hash>/<full-64-hex-char-hash>.cbor
  *
  * CAS writes happen BEFORE the corresponding WAL segment record is written
- * (§3.2 fsync strategy: "WAL never references CAS content that is not durable").
+ * (§3.2 write order). Note: CAS files are NOT fsynced in v1 — full durability
+ * of CAS content relative to WAL segments is deferred; tracked in #59.
  *
  * `.cbor` extension is a convention; the file content is raw bytes (not
  * CBOR-wrapped). CBOR envelope encoding is deferred until §6 locks.

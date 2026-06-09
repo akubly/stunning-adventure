@@ -24,6 +24,15 @@ import { VERDICT_TO_WAL } from './wal/types.js';
 
 const ZERO_HASH = new Uint8Array(32);
 
+/** Options accepted by the InMemoryWalBackend constructor. */
+export interface InMemoryWalBackendOptions {
+  /**
+   * Injectable clock for testable timestampNs assignment (§3.10 monotonicity).
+   * Default: () => BigInt(Date.now()) * 1_000_000n.
+   */
+  nowNs?: () => bigint;
+}
+
 export class InMemoryWalBackend implements WalBackend {
   private readonly events: LedgerEvent[] = [];
   private readonly cas = new InMemoryCas();
@@ -31,6 +40,13 @@ export class InMemoryWalBackend implements WalBackend {
   private prevRoot = new Uint8Array(ZERO_HASH);
   /** Segment records produced by commitRow — mirrors the FS backend's on-disk records. */
   private readonly segRecords: SegmentRecord[] = [];
+  /** Last assigned timestampNs — clamped floor for §3.10 monotonicity. */
+  private lastTimestampNs: bigint = 0n;
+  private readonly nowNs: () => bigint;
+
+  constructor(opts?: InMemoryWalBackendOptions) {
+    this.nowNs = opts?.nowNs ?? (() => BigInt(Date.now()) * 1_000_000n);
+  }
 
   async commitRow(
     input: PrimitiveInput,
@@ -47,9 +63,14 @@ export class InMemoryWalBackend implements WalBackend {
       ? this.cas.put(new TextEncoder().encode(JSON.stringify(input.causalReadSet)))
       : new Uint8Array(32);
 
+    // §3.10 timestampNs monotonicity: clamp to lastTimestampNs when clock goes backward
+    const nowNs = this.nowNs();
+    const tsNs  = nowNs > this.lastTimestampNs ? nowNs : this.lastTimestampNs;
+    this.lastTimestampNs = tsNs;
+
     const rowInput: SegmentRecordInput = {
       commitOffset:  BigInt(offset),
-      timestampNs:   BigInt(Date.now()) * 1_000_000n,
+      timestampNs:   tsNs,
       primitiveKind: 0x01, // placeholder until §6 enum is locked
       hookVerdict:   VERDICT_TO_WAL[hookResult.verdict],
       flags: {
