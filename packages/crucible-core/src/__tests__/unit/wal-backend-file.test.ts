@@ -32,6 +32,7 @@ import { randomUUID } from 'node:crypto';
 import {
   createFileSystemWalBackend,
   CorruptSegmentError,
+  CasMissError,
 } from '../../ledger/wal-backend-fs.js';
 import { verifyChain, buildChain, ZERO_HASH } from '../../ledger/wal/hash-chain.js';
 import { encodeRecord } from '../../ledger/wal/codec.js';
@@ -151,14 +152,16 @@ describe('WAL FileSystemWalBackend — file-backed durability', () => {
     // payloadHash starts at byte offset 92 in the segment record.
     const segPath = path.join(rootDir, 'wal', 'sessions', sessionId, '000000.seg');
     const segBuf = fs.readFileSync(segPath);
-    segBuf[92] ^= 0xff; // flip bits in payloadHash — selfRoot now wrong
+    segBuf[92] ^= 0xff; // flip bits in payloadHash
     fs.writeFileSync(segPath, segBuf);
 
-    // Reopen: record loads with corrupted payloadHash; verifyChain re-derives selfRoot → mismatch
+    // Reopen: the corrupted payloadHash has no matching CAS blob on disk.
+    // Stricter replay (§3.2.1) now throws CasMissError rather than silently returning null.
+    // This is caught before verifyChain ever runs — corruption is detected earlier.
     await backend1.close();
-    const backend2 = await createFileSystemWalBackend(rootDir, sessionId);
-    const records = backend2.readSegmentRecords();
-    expect(verifyChain(records)).toBe(false);
+    await expect(
+      createFileSystemWalBackend(rootDir, sessionId),
+    ).rejects.toThrow(CasMissError);
   });
 
   it('Unit: FileSystemWalBackend CAS body .cbor files written to disk', async () => {
@@ -299,30 +302,37 @@ async function writeCorruptSession(opts: {
   rootDir:          string;
   sessionId:        string;
   envelopeCbor:     Uint8Array;
-  readSetCasJson?:  string; // if set, write a non-zero readSetHash with this JSON content
+  readSetCasJson?:  string;   // if set, compute a non-zero readSetHash with this JSON content
+  omitPayloadCas?:  boolean;  // compute hash but DON'T write the CAS file → CAS_MISS on replay
+  omitReadSetCas?:  boolean;  // compute readSet hash but DON'T write its CAS file → CAS_MISS
 }): Promise<void> {
-  const { rootDir, sessionId, envelopeCbor, readSetCasJson } = opts;
+  const { rootDir, sessionId, envelopeCbor, readSetCasJson,
+          omitPayloadCas = false, omitReadSetCas = false } = opts;
   const sessionDir = path.join(rootDir, 'wal', 'sessions', sessionId);
   const casDir     = path.join(rootDir, 'cas');
   fs.mkdirSync(sessionDir, { recursive: true });
   fs.mkdirSync(casDir, { recursive: true });
 
-  // Write a minimal payload CAS entry (replay needs it to exist)
+  // Compute payload hash; write CAS file unless omitPayloadCas
   const payloadBytes = new Uint8Array(Buffer.from(JSON.stringify({ data: 'test' }), 'utf8'));
   const payloadHash  = hashBytes(payloadBytes);
-  const payloadHex   = Buffer.from(payloadHash).toString('hex');
-  const payloadShard = path.join(casDir, payloadHex.slice(0, 2));
-  fs.mkdirSync(payloadShard, { recursive: true });
-  fs.writeFileSync(path.join(payloadShard, `${payloadHex}.cbor`), payloadBytes);
+  if (!omitPayloadCas) {
+    const payloadHex   = Buffer.from(payloadHash).toString('hex');
+    const payloadShard = path.join(casDir, payloadHex.slice(0, 2));
+    fs.mkdirSync(payloadShard, { recursive: true });
+    fs.writeFileSync(path.join(payloadShard, `${payloadHex}.cbor`), payloadBytes);
+  }
 
   let readSetHash = new Uint8Array(32); // zero = no readSet
   if (readSetCasJson !== undefined) {
     const rsBytes  = new Uint8Array(Buffer.from(readSetCasJson, 'utf8'));
     readSetHash    = hashBytes(rsBytes);
-    const rsHex    = Buffer.from(readSetHash).toString('hex');
-    const rsShard  = path.join(casDir, rsHex.slice(0, 2));
-    fs.mkdirSync(rsShard, { recursive: true });
-    fs.writeFileSync(path.join(rsShard, `${rsHex}.cbor`), rsBytes);
+    if (!omitReadSetCas) {
+      const rsHex    = Buffer.from(readSetHash).toString('hex');
+      const rsShard  = path.join(casDir, rsHex.slice(0, 2));
+      fs.mkdirSync(rsShard, { recursive: true });
+      fs.writeFileSync(path.join(rsShard, `${rsHex}.cbor`), rsBytes);
+    }
   }
 
   const rowInput: SegmentRecordInput = {
@@ -374,5 +384,63 @@ describe('WAL FileSystemWalBackend — Group 2 replay validation (CorruptSegment
     await expect(
       createFileSystemWalBackend(rootDir, sessionId, { readOnly: true }),
     ).rejects.toThrow(CorruptSegmentError);
+  });
+});
+
+// ─── Group 3: CAS_MISS replay validation (§3.2.1) ────────────────────────────
+//
+// §3.2.1: replay must REFUSE TO ADVANCE past a missing CAS blob.
+// Tests confirm CasMissError is thrown rather than null/empty being substituted.
+
+describe('WAL FileSystemWalBackend — Group 3 CAS_MISS on replay (CasMissError)', () => {
+  it('Group3-1: replay throws CasMissError when payload CAS blob is absent', async () => {
+    const rootDir   = makeTmpDir();
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+
+    await writeCorruptSession({
+      rootDir,
+      sessionId,
+      envelopeCbor:   new Uint8Array(Buffer.from('observation', 'utf8')),
+      omitPayloadCas: true, // hash in segment, no corresponding CAS file
+    });
+
+    await expect(
+      createFileSystemWalBackend(rootDir, sessionId, { readOnly: true }),
+    ).rejects.toThrow(CasMissError);
+  });
+
+  it('Group3-2: replay throws CasMissError when readSet CAS blob is absent (non-zero hash)', async () => {
+    const rootDir   = makeTmpDir();
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+
+    await writeCorruptSession({
+      rootDir,
+      sessionId,
+      envelopeCbor:   new Uint8Array(Buffer.from('observation', 'utf8')),
+      readSetCasJson: JSON.stringify(['dep1']), // provides non-zero readSetHash...
+      omitReadSetCas: true,                    // ...but no CAS file written
+    });
+
+    await expect(
+      createFileSystemWalBackend(rootDir, sessionId, { readOnly: true }),
+    ).rejects.toThrow(CasMissError);
+  });
+
+  it('Group3-3 (sanity): zero readSetHash with no CAS blob replays fine (empty readSet is legitimate)', async () => {
+    const rootDir   = makeTmpDir();
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+
+    // Normal row — no causalReadSet, so readSetHash = zero-hash; no CAS blob needed
+    await writeCorruptSession({
+      rootDir,
+      sessionId,
+      envelopeCbor: new Uint8Array(Buffer.from('observation', 'utf8')),
+      // readSetCasJson omitted → zero readSetHash
+    });
+
+    const backend = await createFileSystemWalBackend(rootDir, sessionId, { readOnly: true });
+    const rows = await backend.readRows({ range: [0, 0] });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].causalReadSet).toEqual([]);
   });
 });

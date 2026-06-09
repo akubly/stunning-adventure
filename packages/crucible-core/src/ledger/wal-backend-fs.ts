@@ -88,6 +88,19 @@ export class CorruptSegmentError extends Error {
   }
 }
 
+/**
+ * Thrown by replayFromSegments when a WAL record references a CAS hash that
+ * has no corresponding blob on disk (§3.2.1 CAS-miss mitigation: replay must
+ * refuse to advance past a CAS_MISS rather than substituting a default).
+ */
+export class CasMissError extends Error {
+  constructor(hash: Uint8Array, offset: number) {
+    const hex = Buffer.from(hash).toString('hex');
+    super(`CAS_MISS: blob ${hex} referenced at WAL offset ${offset} is not present on disk`);
+    this.name = 'CasMissError';
+  }
+}
+
 // ─── Internal types ───────────────────────────────────────────────────────────
 
 interface Manifest {
@@ -363,29 +376,31 @@ export class FileSystemWalBackend implements WalBackend {
         const primitiveKind = primitiveKindRaw as PrimitiveKind;
 
         const payloadBuf = this.cas.get(rec.payloadHash);
-        const primitivePayload = payloadBuf
-          ? (JSON.parse(Buffer.from(payloadBuf).toString('utf8')) as unknown)
-          : null;
+        if (!payloadBuf) {
+          throw new CasMissError(rec.payloadHash, offset);
+        }
+        const primitivePayload = JSON.parse(Buffer.from(payloadBuf).toString('utf8')) as unknown;
 
         let causalReadSet: string[] = [];
         if (!isZeroHash(rec.readSetHash)) {
           const rsBuf = this.cas.get(rec.readSetHash);
-          if (rsBuf) {
-            const parsed = JSON.parse(Buffer.from(rsBuf).toString('utf8')) as unknown;
-            if (!Array.isArray(parsed)) {
-              throw new CorruptSegmentError(
-                segFilePath,
-                `causalReadSet at offset ${offset} is not an array`,
-              );
-            }
-            if (!parsed.every((e): e is string => typeof e === 'string')) {
-              throw new CorruptSegmentError(
-                segFilePath,
-                `causalReadSet at offset ${offset} contains non-string elements`,
-              );
-            }
-            causalReadSet = parsed;
+          if (!rsBuf) {
+            throw new CasMissError(rec.readSetHash, offset);
           }
+          const parsed = JSON.parse(Buffer.from(rsBuf).toString('utf8')) as unknown;
+          if (!Array.isArray(parsed)) {
+            throw new CorruptSegmentError(
+              segFilePath,
+              `causalReadSet at offset ${offset} is not an array`,
+            );
+          }
+          if (!parsed.every((e): e is string => typeof e === 'string')) {
+            throw new CorruptSegmentError(
+              segFilePath,
+              `causalReadSet at offset ${offset} contains non-string elements`,
+            );
+          }
+          causalReadSet = parsed;
         }
 
         this.events.push({ primitiveKind, primitivePayload, causalReadSet, offset });
