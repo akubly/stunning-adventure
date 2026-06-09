@@ -24,6 +24,7 @@ import {
   encodeRecord,
   decodeRecord,
   InvalidMagicError,
+  InvalidRecordLengthError,
   MAGIC,
 } from '../../ledger/wal/codec.js';
 import type { SegmentRecord } from '../../ledger/wal/types.js';
@@ -149,5 +150,23 @@ describe('WAL codec — I4 hash fields are owned copies (not aliased views)', ()
     expect(Array.from(decoded.selfRoot)).toEqual(selfRootBefore);
     expect(Array.from(decoded.payloadHash)).toEqual(payloadBefore);
     expect(Array.from(decoded.readSetHash)).toEqual(readSetBefore);
+  });
+});
+
+// ─── T3: recordLen validation ─────────────────────────────────────────────────
+
+describe('WAL codec — T3 recordLen validation (InvalidRecordLengthError)', () => {
+  it('T3: decodeRecord throws InvalidRecordLengthError when recordLen is too small (negative envelopeLen)', () => {
+    const buf = encodeRecord(makeRecord());
+    // recordLen < 156 would produce a negative envelopeLen; set to 10
+    buf.writeUInt32LE(10, 4);
+    expect(() => decodeRecord(buf)).toThrow(InvalidRecordLengthError);
+  });
+
+  it('T3: decodeRecord throws InvalidRecordLengthError when recordLen exceeds buffer size', () => {
+    const buf = encodeRecord(makeRecord());
+    // recordLen claims more bytes than the buffer holds
+    buf.writeUInt32LE(buf.length + 100, 4);
+    expect(() => decodeRecord(buf)).toThrow(InvalidRecordLengthError);
   });
 });

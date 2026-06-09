@@ -239,7 +239,7 @@ describe('WAL FileSystemWalBackend — group-commit batching (§3.5)', () => {
     expect(segSize).toBe(0);
 
     // Manifest still shows no committed rows
-    const manifestRaw = fs.readFileSync(path.join(rootDir, 'meta', 'manifest.json'), 'utf8');
+    const manifestRaw = fs.readFileSync(path.join(rootDir, 'wal', 'sessions', sessionId, 'manifest.json'), 'utf8');
     const manifest    = JSON.parse(manifestRaw) as { lastCommitOffset: number };
     expect(manifest.lastCommitOffset).toBe(-1);
 

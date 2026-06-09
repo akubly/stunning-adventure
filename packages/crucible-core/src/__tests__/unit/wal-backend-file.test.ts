@@ -101,7 +101,7 @@ describe('WAL FileSystemWalBackend — file-backed durability', () => {
     await backend.commitRow(makeInput('x'), COMMIT_RESULT);
     await backend.commitRow(makeInput('y'), COMMIT_RESULT);
 
-    const manifestPath = path.join(rootDir, 'meta', 'manifest.json');
+    const manifestPath = path.join(rootDir, 'wal', 'sessions', sessionId, 'manifest.json');
     expect(fs.existsSync(manifestPath)).toBe(true);
 
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as {
@@ -230,5 +230,56 @@ describe('WAL FileSystemWalBackend — file-backed durability', () => {
     const rows = await b2.readRows({ range: [0, 10] });
     expect(rows).toHaveLength(3);
     expect((rows[2].primitivePayload as { content: string }).content).toBe('post-3');
+  });
+
+  it('T1: two sessions under the same rootDir have isolated per-session manifests (no cross-contamination)', async () => {
+    const rootDir = makeTmpDir();
+    const sessionA = `sess-a-${randomUUID().slice(0, 8)}`;
+    const sessionB = `sess-b-${randomUUID().slice(0, 8)}`;
+
+    // Session A: commit 2 rows and close
+    const backendA1 = await createFileSystemWalBackend(rootDir, sessionA);
+    await backendA1.commitRow(makeInput('a-row-0'), COMMIT_RESULT);
+    await backendA1.commitRow(makeInput('a-row-1'), COMMIT_RESULT);
+    await backendA1.close();
+
+    // Session B: commit 1 row and close — with shared manifest this clobbers A's manifest
+    const backendB = await createFileSystemWalBackend(rootDir, sessionB);
+    await backendB.commitRow(makeInput('b-row-0'), COMMIT_RESULT);
+    await backendB.close();
+
+    // Each session must have its OWN manifest at its per-session path
+    const manifestPathA = path.join(rootDir, 'wal', 'sessions', sessionA, 'manifest.json');
+    const manifestPathB = path.join(rootDir, 'wal', 'sessions', sessionB, 'manifest.json');
+
+    expect(fs.existsSync(manifestPathA), 'session A manifest must be at per-session path').toBe(true);
+    expect(fs.existsSync(manifestPathB), 'session B manifest must be at per-session path').toBe(true);
+
+    const mA = JSON.parse(fs.readFileSync(manifestPathA, 'utf8')) as {
+      sessionId: string; lastCommitOffset: number;
+    };
+    const mB = JSON.parse(fs.readFileSync(manifestPathB, 'utf8')) as {
+      sessionId: string; lastCommitOffset: number;
+    };
+
+    // Session A's manifest must reflect only A's state
+    expect(mA.sessionId).toBe(sessionA);
+    expect(mA.lastCommitOffset).toBe(1); // offsets 0 and 1
+
+    // Session B's manifest must reflect only B's state
+    expect(mB.sessionId).toBe(sessionB);
+    expect(mB.lastCommitOffset).toBe(0); // offset 0
+
+    // Reopen each session and verify row isolation
+    const backendA2 = await createFileSystemWalBackend(rootDir, sessionA, { readOnly: true });
+    const rowsA = await backendA2.readRows({ range: [0, 10] });
+    expect(rowsA).toHaveLength(2);
+    expect((rowsA[0].primitivePayload as { content: string }).content).toBe('a-row-0');
+    expect((rowsA[1].primitivePayload as { content: string }).content).toBe('a-row-1');
+
+    const backendB2 = await createFileSystemWalBackend(rootDir, sessionB, { readOnly: true });
+    const rowsB = await backendB2.readRows({ range: [0, 10] });
+    expect(rowsB).toHaveLength(1);
+    expect((rowsB[0].primitivePayload as { content: string }).content).toBe('b-row-0');
   });
 });

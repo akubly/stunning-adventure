@@ -310,7 +310,7 @@ export class FileSystemWalBackend implements WalBackend {
   }
 
   private manifestPath(): string {
-    return path.join(this.metaDir, 'manifest.json');
+    return path.join(this.segDir, 'manifest.json');
   }
 
   private segPath(idx: number): string {
@@ -519,7 +519,13 @@ export class FileSystemWalBackend implements WalBackend {
 
     try {
       for (const buf of recordBuffers) {
-        fs.writeSync(segFd, buf);
+        // Loop until all bytes are written — writeSync may short-write on a
+        // busy or slow filesystem, which would truncate the record and break
+        // replay. Same pattern as acquireWriteLock (§3.4.1).
+        let written = 0;
+        while (written < buf.length) {
+          written += fs.writeSync(segFd, buf, written, buf.length - written);
+        }
       }
       this.syncFn(segFd); // ONE barrier per batch (§3.5)
     } catch (err) {

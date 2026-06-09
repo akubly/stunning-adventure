@@ -34,6 +34,17 @@ export class InvalidMagicError extends Error {
   }
 }
 
+/**
+ * Thrown by decodeRecord when recordLen is inconsistent with the buffer size
+ * or would produce a negative envelopeLen — indicating a corrupt or partial record.
+ */
+export class InvalidRecordLengthError extends Error {
+  constructor(recordLen: number, detail: string) {
+    super(`Invalid WAL recordLen ${recordLen}: ${detail}`);
+    this.name = 'InvalidRecordLengthError';
+  }
+}
+
 // Byte offsets for fixed-prefix fields
 const OFF_MAGIC         = 0;
 const OFF_RECORD_LEN    = 4;
@@ -84,7 +95,8 @@ export function encodeRecord(record: SegmentRecord): Buffer {
   return buf;
 }
 
-/** Decode a Buffer back to a SegmentRecord. Throws InvalidMagicError on bad magic. */
+/** Decode a Buffer back to a SegmentRecord. Throws InvalidMagicError on bad magic,
+ *  InvalidRecordLengthError when recordLen is inconsistent with the buffer. */
 export function decodeRecord(buf: Buffer): SegmentRecord {
   const magic = buf.readUInt32BE(OFF_MAGIC);
   if (magic !== MAGIC) {
@@ -92,6 +104,20 @@ export function decodeRecord(buf: Buffer): SegmentRecord {
   }
 
   const recordLen = buf.readUInt32LE(OFF_RECORD_LEN);
+
+  // Minimum recordLen: total frame must hold at least the fixed prefix + CRC32C
+  // with no envelope bytes. totalMin = OFF_ENVELOPE_CBOR + CRC32C_SIZE = 160.
+  // recordLen excludes magic (4 bytes), so minimum recordLen = 156.
+  const MIN_RECORD_LEN = OFF_ENVELOPE_CBOR - 4 + CRC32C_SIZE; // 156
+  if (recordLen < MIN_RECORD_LEN) {
+    throw new InvalidRecordLengthError(recordLen,
+      `too small — minimum is ${MIN_RECORD_LEN} (would produce negative envelopeLen)`);
+  }
+  if (recordLen + 4 > buf.length) {
+    throw new InvalidRecordLengthError(recordLen,
+      `claimed total ${recordLen + 4} exceeds buffer length ${buf.length}`);
+  }
+
   const totalExpected = recordLen + 4;
   const envelopeLen = totalExpected - OFF_ENVELOPE_CBOR - CRC32C_SIZE;
 

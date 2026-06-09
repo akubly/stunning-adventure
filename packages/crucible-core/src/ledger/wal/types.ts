@@ -28,8 +28,10 @@ export interface SegmentRecordInput {
   hookVerdict:   number;           // u8: 0=continue, 1=observe, 2=pause
                                     // (no-verdict/null distinction deferred — see #57)
   flags:         SegmentRecordFlags;
-  payloadHash:   Blake3Hash;       // BLAKE3(CBOR(primitivePayload))
-  readSetHash:   Blake3Hash;       // BLAKE3(CBOR(causalReadSet)) or zero-hash
+  payloadHash:   Blake3Hash;       // BLAKE3(JSON UTF-8 bytes of primitivePayload);
+                                    // canonical CBOR hashing deferred — tracked in #60
+  readSetHash:   Blake3Hash;       // BLAKE3(JSON UTF-8 bytes of causalReadSet), or zero-hash;
+                                    // CBOR hashing deferred — tracked in #60
   envelopeCbor:  Uint8Array;       // CBOR envelope tail; may be empty
 }
 
