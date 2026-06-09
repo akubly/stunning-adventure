@@ -6,12 +6,11 @@
  * On-disk tree rooted at `rootDir`:
  *
  *   <rootDir>/
- *   ├── meta/
- *   │   └── manifest.json           schemaVersion, sessionId, segmentRange, lastCommitOffset
  *   ├── wal/
  *   │   └── sessions/<sessionId>/
  *   │       ├── 000000.seg          binary segment records (codec.ts framing)
  *   │       ├── index.idx           NDJSON: {offset, seg, byteOffset} one line per row
+ *   │       ├── manifest.json       schemaVersion, sessionId, segmentRange, lastCommitOffset
  *   │       └── write.lock          exclusive-create PID lock (§3.4.1)
  *   └── cas/
  *       └── <2-hex-shard>/
@@ -135,7 +134,6 @@ export interface FileSystemWalBackendOptions {
 export class FileSystemWalBackend implements WalBackend {
   private readonly segDir:  string;
   private readonly casDir:  string;
-  private readonly metaDir: string;
   private readonly cas:     FileSystemCas;
 
   private manifest!:        Manifest;
@@ -162,7 +160,6 @@ export class FileSystemWalBackend implements WalBackend {
   ) {
     this.segDir          = path.join(rootDir, 'wal', 'sessions', sessionId);
     this.casDir          = path.join(rootDir, 'cas');
-    this.metaDir         = path.join(rootDir, 'meta');
     this.cas             = new FileSystemCas(this.casDir);
     this.isReadOnly      = opts?.readOnly      ?? false;
     this.batchSize       = opts?.batchSize      ?? 1;       // default: immediate flush
@@ -217,7 +214,6 @@ export class FileSystemWalBackend implements WalBackend {
   private async open(): Promise<void> {
     fs.mkdirSync(this.segDir,  { recursive: true });
     fs.mkdirSync(this.casDir,  { recursive: true });
-    fs.mkdirSync(this.metaDir, { recursive: true });
 
     this.lockPath = path.join(this.segDir, 'write.lock');
 
