@@ -516,11 +516,15 @@ export function runFactStoreContract(
       await seed('fs10f-2', SESSION_A, 'versioning compat v0 cursor beta',  0.8);
       await seed('fs10f-3', SESSION_A, 'versioning compat v0 cursor gamma', 0.7);
 
+      // Page 1 — no cursor, limit 1.  Establishes which fact lands on page 1.
+      const p1 = await impl.search({ query: 'versioning', sessionId: SESSION_A, limit: 1 });
+      expect(p1.results).toHaveLength(1);
+
       // Manually construct a v0 cursor (pre-Slice-D+ format — no `v` field).
       const v0Cursor = Buffer.from(JSON.stringify({ offset: 1 })).toString('base64');
 
-      // v0 cursor must be accepted (no throw) and offset honored.
-      const result = await impl.search({
+      // Page 2 — v0 cursor must be accepted (no throw) and offset honored.
+      const p2 = await impl.search({
         query: 'versioning',
         sessionId: SESSION_A,
         limit: 1,
@@ -528,8 +532,13 @@ export function runFactStoreContract(
       });
 
       // Must not throw CursorScopeMismatchError or any other error.
-      expect(result).toBeDefined();
-      expect(result.results).toBeDefined();
+      expect(p2.results).toBeDefined();
+
+      // Offset must be applied: page-2 content must differ from page-1 content.
+      // An impl that ignores the v0 offset and always returns page 1 would fail here.
+      const page1Contents = new Set(p1.results.map(r => r.content));
+      expect(p2.results).toHaveLength(1);
+      expect(page1Contents.has(p2.results[0].content)).toBe(false);
     });
 
     // -----------------------------------------------------------------------
