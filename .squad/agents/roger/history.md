@@ -112,3 +112,47 @@ FS-SE-15 had a seed/query mismatch: FTS5 AND mode requires ALL query tokens to a
 
 - 2026-06-08 📌 Documented FSE-2 (offset cursor gaps/dupes under concurrent writes) and FSE-3 (limit > 0 TypeError contract) as interface-level JSDoc @remarks on FactStore. No behavior change; build + tests (164/164) green.
 
+---
+
+## Learnings (2026-06-09 — Code Panel cycle 1 remediation, cursor-versioning review)
+
+**Branch:** `squad/slice-dplus-cursor-versioning` (commit d75349b, 187/187 tests)
+
+**Summary:** Addressed 7 accepted findings from the 6-persona Code Panel review.
+
+**JSON.stringify as scope canonical form beats newline-delimited strings.**
+The original `query=${q}\nsessionId=...` format is vulnerable to scope collisions when the query contains the literal substring `\nsessionId=`. `JSON.stringify({ query, sessionId, minTrust, limit })` is unambiguous — each field is a proper JSON value, properly escaped. No two distinct (query, sessionId, minTrust, limit) tuples produce the same JSON string. This is the correct baseline for any multi-field key canonicalization.
+
+**"Present-but-invalid v" is a contract violation, not garbage.**
+The original dispatch table had a gap: `v:0` passed the `typeof v !== 'number' || !Number.isInteger(v) || v < 0` guard and fell through to the v1 path. Non-integer strings/floats silently returned offset:0. The correct model: `v` absent/null → v0 (legacy); `v` present and exactly 1 → v1; `v` present and anything else → throw CursorVersionUnsupportedError. A cursor that contains a `v` field came from a versioned system — treating it as garbage is wrong.
+
+**Empty-query short-circuit must come after cursor decode, not before.**
+If the empty-query guard fires first, an invalid cursor version silently returns empty results instead of throwing. Since the cursor contract (version validation) is independent of the query, decode first — throw for bad versions — then apply the query-level short-circuits. This ordering applies to both SQLite and InMemory impls: the cursor is an input invariant, the query is a search-shape input.
+
+**Diagnostic fields on error classes are worth the 2-line cost.**
+`CursorScopeMismatchError` gained `readonly cursorScope` and `readonly currentScope` fields. No test can reasonably assert on error message text (too brittle), but structured fields let callers log the two fingerprints for debugging without string-parsing. The pattern mirrors `CursorVersionUnsupportedError.version`. Apply this consistently: any error that signals a mismatch should carry both sides.
+
+**Isolated unit tests for pure utility modules catch bugs contract tests miss.**
+The new `cursor.test.ts` caught that v:0 wasn't throwing (contract tests only call `search()` which re-throws at a higher level — the path through `decodeCursor` with v:0 was never hit by a focused test). Pure unit tests for pure functions are cheap and should be added any time a utility module handles non-trivial dispatch logic.
+
+---
+
+## Learnings (2026-06-09 — Code Panel cycle 2 remediations, cursor-versioning Fix H/I/J)
+
+**Branch:** `squad/slice-dplus-cursor-versioning` (commit 9b145e8, 187/187 tests)
+
+**Key: absent v key ≠ null v key — use `'v' in payload`, not `v != null`.**
+`v !== undefined && v !== null` silently treats `{v: null, offset: 3}` as a legacy v0 cursor. But that payload HAS a v key — it came from a system that serialized something (e.g., NaN → null via JSON.stringify). The contract is: ABSENT key → v0; PRESENT key with value ≠ 1 → throw. The correct guard is `'v' in raw` (after confirming payload is a non-null object). This is the standard JavaScript idiom for key-presence vs value-check.
+
+**Pair RED-test changes with the code change, not after.**
+The cycle-2 review caught that CU-3f was asserting the wrong behavior (version===0 for v:null) and CU-1b was in the wrong describe block. The correct workflow: update the test to reflect desired behavior (RED against current code), verify it actually fails, then implement. A test that passes because the code does the wrong thing is harder to detect than a compile error.
+
+**Lazy fingerprinting pattern: compute only when consumed.**
+Use a `computedScope: string | undefined` variable initialized to undefined. Compute the scope inside the v1 cursor branch (if-present-and-v1) and reuse it for nextCursor emission via `computedScope ?? scopeFingerprint(...)`. This avoids hashing on empty-query short-circuit paths, no-cursor paths with no next page, and v0-cursor paths with no next page — all while preserving the Fix E decode-before-short-circuit ordering. The `??` fallback is the correct operator here (not `||`) since a valid fingerprint is always a non-empty string.
+
+---
+
+## Learnings (2026-06-09 — Cycle-3 cleanup)
+
+**Object.hasOwn(raw, 'v') improves robustness over 'v' in raw.** Both are functionally identical for well-formed JSON payloads, but Object.hasOwn avoids prototype-chain lookups if the object ever inherits non-standard prototypes — a good defensive practice for untrusted input even when we don't expect it.
+
