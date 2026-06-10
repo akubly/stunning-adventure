@@ -18,6 +18,7 @@ import type {
   LedgerEvent,
   LedgerFactoryOptions,
   LedgerQueryOpts,
+  LedgerSubscriber,
   WalBackend,
 } from './ledger.js';
 import type {
@@ -39,10 +40,16 @@ function isNonVeto(
 }
 
 class LedgerImpl implements Ledger {
+  private readonly subscribers: LedgerSubscriber[] = [];
+
   constructor(
     private readonly hookBus: HookBusPort,
     private readonly walBackend: WalBackend,
   ) {}
+
+  subscribe(subscriber: LedgerSubscriber): void {
+    this.subscribers.push(subscriber);
+  }
 
   async append(input: PrimitiveInput): Promise<number> {
     // (a) Build hook context — no I/O, no WAL staging
@@ -65,7 +72,17 @@ class LedgerImpl implements Ledger {
     }
 
     // (d) Non-VETO path — delegate to WAL backend
-    return this.walBackend.commitRow(input, result);
+    const offset = await this.walBackend.commitRow(input, result);
+
+    // (e) Notify subscribers — fired after durable commit, before append resolves
+    if (this.subscribers.length > 0) {
+      const event: LedgerEvent = { ...input, offset };
+      for (const sub of this.subscribers) {
+        sub.onCommit(offset, event);
+      }
+    }
+
+    return offset;
   }
 
   async registerHook(

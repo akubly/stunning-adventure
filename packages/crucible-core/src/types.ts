@@ -15,11 +15,23 @@ export type PrimitiveKind =
   | 'decision'
   | 'question';
 
+/**
+ * Optional caller-supplied event metadata.
+ * Carries tier/level and any other caller-supplied fields.
+ */
+export interface EventMetadata {
+  /** Attention tier: 'urgent' | 'attention' | 'notice' | 'info'. */
+  level?: string;
+  [key: string]: unknown;
+}
+
 /** Input shape for appending a primitive to a session ledger. */
 export interface PrimitiveInput {
   primitiveKind: PrimitiveKind;
   primitivePayload: unknown;
   causalReadSet: string[];
+  /** Optional event metadata — carries tier/level and caller-supplied fields. */
+  metadata?: EventMetadata;
 }
 
 /**
