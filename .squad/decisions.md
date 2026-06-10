@@ -4612,3 +4612,798 @@ The literal "zero hits" criterion over-interprets the spirit of the issue. Issue
 ### Append-Only History Rule
 
 **Separately and absolutely:** Agent `history.md` and `history-archive.md` files are append-only. Any hygiene sweep that edits previously committed history entries is a scope violation, regardless of whether the edit improves clarity. This mirrors the over-reach that caused PR #44 to be reverted.
+
+---
+
+# Graham — Aperture UX Disposition
+
+**Author:** Graham (Lead / Architect)  
+**Date:** 2026-06-09T18:08:44-07:00  
+**Input:** Valanice's advisory UX review (`.squad/decisions/inbox/valanice-aperture-ux.md`)  
+**Scope:** Walkthrough C — Aperture push-notification projector (§4.3)  
+**Delegated by:** Aaron Kubly ("defer to the Lead")
+
+---
+
+## Architectural Framing
+
+The `NotificationService` interface is a **mocked seam** today — no real badge renderer exists.
+This is the primary lens for all dispositions: work that requires a real consumer to be meaningful
+should wait; work that is a genuine correctness bug or costs nearly nothing should be closed now.
+
+The seam design is already correct. Valanice confirmed: all UX complexity (coalescing, DND,
+escalation, snooze) can be adapter-decorated around `NotificationService` without touching the
+projector. Roger's seam placement is validated. The projection purity and `queryEvents()` stability
+are confirmed foundations.
+
+---
+
+## Per-Finding Rulings
+
+### B-1 — ℹ️ fallback icon for attention-tier events
+**Ruling: FOLD NOW**  
+**Issue: #64** (`squad:roger`, `priority:p1`)
+
+**Reasoning:** This is a genuine correctness defect in `NotificationPolicy.getIcon()`. The info
+emoji communicates "nothing to do" — the opposite of what `attention`/`urgent` tier events mean.
+It costs one line and a test update. Shipping a real renderer with this default guarantees a
+misleading badge from day one. No interface changes; purely internal to `NotificationPolicy`.
+
+**Trade-off named:** If we defer, every downstream demo and renderer prototype is seeded with
+incorrect icon semantics that will need retroactive correction. The cost of doing it now (~30 min)
+is lower than the cost of un-teaching the wrong default later.
+
+---
+
+### I-1 — unreadCount is a one-way ratchet with no dismiss/ack path
+**Ruling: FILE (follow-up)**  
+**Issue: #66** (`squad:roger`, `squad:valanice`, `priority:p2`, `release:backlog`)
+
+**Reasoning:** The `seenOffset` cursor and `markRead()` method are the right design, but they
+require a CLI-layer call site — something that invokes `markRead()` when the user views the badge.
+That call site does not exist because there is no real renderer. Implementing the ack cursor now
+means building machinery with no consumer, and the shape of `markRead()` will likely be constrained
+by real renderer UX. Defer until the first real badge renderer lands; `queryEvents()` is stable and
+the cursor is a purely additive ApertureProjector extension.
+
+**Trade-off named:** Doing it now risks over-designing the ack interface before real usage constrains
+the shape. The append-only projection model is already the right foundation — adding a cursor later
+requires no rework.
+
+---
+
+### I-2 — Burst coalescing absent
+**Ruling: DEFER**  
+**Unblocked by:** First real `NotificationService` implementation (CLI badge renderer)
+
+**Reasoning:** Coalescing is entirely a `NotificationService` adapter concern — Valanice confirmed
+the seam is already in the right place. A `DebouncedNotificationService` wrapper can be added
+without touching the projector. With a mock notifier, coalescing produces no observable difference
+in the test suite and has no user-visible effect. Filing an issue now would generate noise with no
+action path.
+
+**Trade-off named:** Not coalescing is not wrong at the projector layer — it is a rendering quality
+issue. The risk of deferring is that a future renderer implementer might be unaware of the concern;
+mitigated by this document and Valanice's review being on record.
+
+---
+
+### I-3 — getPriority() computed but never reaches the push payload
+**Ruling: FILE (follow-up)**  
+**Issue: #65** (`squad:roger`, `priority:p2`, `release:backlog`)
+
+**Reasoning:** `getPriority()` is currently dead code from a UX perspective — the renderer has no
+way to know whether the badge contains urgent or attention events. The fix is additive
+(`highestPriority: number` on the push payload). However, this touches the `NotificationService`
+interface boundary: any future adapter implementing the interface will see this field. Prefer to
+finalize the interface shape once — when the first real renderer is being built — so the payload
+contract is settled by real consumer needs rather than speculation.
+
+**Trade-off named:** Filing now vs. deferring: the dead-code reality is a correctness gap, but it
+is only observable through a renderer. The interface cost of adding a field now is low; the cost of
+getting the field name/type wrong and having to change it before the interface is frozen is higher.
+Target: implement alongside the first real `NotificationService` consumer.
+
+---
+
+### I-4 — Emoji-only signaling — accessibility exposure
+**Ruling: FILE (follow-up)**  
+**Issue: #66** (grouped with I-1, `squad:roger`, `squad:valanice`, `priority:p2`, `release:backlog`)
+
+**Reasoning:** Adding `label: string` to the push payload is the right fix but is a pure CLI
+rendering concern — the label value is only meaningful when rendered with ARIA or text fallback.
+The right label strings (`'quarantine'`, `'decision'`, `'alert'`) should be spec'd by Valanice
+alongside the first real renderer design, not guessed now. Grouped with I-1 because both are
+"pre-renderer readiness" items.
+
+**Trade-off named:** Adding the label field now is low-cost but the label vocabulary (what values
+to use) is a UX specification decision that should be driven by real rendering context. Getting the
+vocabulary wrong now means changing the interface before it is frozen.
+
+---
+
+### I-5 — ✓ for decision reads as "resolved"
+**Ruling: FOLD NOW**  
+**Issue: #64** (grouped with B-1, `squad:roger`, `priority:p1`)
+
+**Reasoning:** Same cost profile as B-1: one-line fix in `getIcon()`, no interface changes. The
+checkmark glyph actively misleads when `outcome: 'reject'` decisions land in the badge. This is
+observable today in the test suite (AP-2 uses a reject outcome). Correcting it costs nothing and
+removes a semantic trap for future renderer developers.
+
+**Trade-off named:** None meaningful — the cost of correct is a glyph swap; the cost of wrong is a
+category of user errors where actionable decisions are ignored.
+
+---
+
+### N-1 — Separate unread counts by tier
+**Ruling: DEFER**  
+**Unblocked by:** First real badge renderer
+
+**Reasoning:** Splitting the payload into `{ urgentCount, attentionCount }` requires a renderer
+capable of displaying a compound badge. Without that renderer, the split is invisible. This is also
+a meaningful interface change (not purely additive if urgentCount + attentionCount replaces
+unreadCount). Defer until renderer UX is specified; revisit alongside I-3 (highestPriority).
+
+---
+
+### N-2 — Do-not-disturb / mute mode
+**Ruling: DEFER**  
+**Unblocked by:** Real NotificationService consumer + evidence of DND user need
+
+**Reasoning:** Correctly identified by Valanice as a `BatchedNotificationService` adapter concern.
+The seam is already positioned for it. File only when there is a real workflow (batch plugin sweep)
+and a real renderer to suppress. No issue filed — track in Valanice's UX backlog.
+
+---
+
+### N-3 — Escalation from attention → urgent if unacknowledged
+**Ruling: DEFER**  
+**Blocked by:** I-1 (ack/seenOffset cursor) + real renderer
+
+**Reasoning:** Depends on the ack cursor from I-1. No path forward until I-1 is resolved and a
+renderer can display escalation signals. High effort, low priority.
+
+---
+
+### N-4 — Per-type snooze
+**Ruling: DEFER**  
+**Blocked by:** Real renderer + user evidence of snooze need
+
+**Reasoning:** Correct design (NotificationPolicy.shouldPush() + snoozeList context parameter) but
+requires real usage evidence to justify the policy complexity. Track in Valanice's UX backlog when
+the renderer ships and real workflows generate snooze requests.
+
+---
+
+## Summary Table
+
+| Finding | Ruling | Issue | Rationale |
+|---------|--------|-------|-----------|
+| B-1 | FOLD NOW | #64 | One-line correctness fix, no interface change |
+| I-1 | FILE | #66 | Needs CLI call site; defer to first real renderer |
+| I-2 | DEFER | — | Pure adapter concern; seam already correct |
+| I-3 | FILE | #65 | Interface additive but shape best finalized with real consumer |
+| I-4 | FILE | #66 | Label vocabulary is a UX spec + renderer concern |
+| I-5 | FOLD NOW | #64 | One-line correctness fix, no interface change |
+| N-1 | DEFER | — | Renderer + compound badge UX required |
+| N-2 | DEFER | — | Adapter concern; needs real workflow + renderer |
+| N-3 | DEFER | — | Blocked on I-1 + renderer |
+| N-4 | DEFER | — | Needs usage evidence from real renderer phase |
+
+---
+
+## Walkthrough C Scope Verdict
+
+Roger's implementation is **clean and correct**. The seam design is validated by Valanice's review.
+Issue #64 closes the only genuine correctness gap before we move on. Issues #65 and #66 are
+pre-renderer readiness items that should be picked up as a bundle when the first real
+`NotificationService` adapter is implemented in `crucible-cli`.
+
+The defer items (I-2, N-1 through N-4) are all adapter/renderer concerns that the seam already
+accommodates — no projector rework will be needed when they are eventually addressed.
+
+
+---
+
+# Roger — Aperture Projector (Walkthrough C) Decisions
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-06-09T18:08:44-07:00  
+**Branch:** (working on main checkout)  
+**Status:** COMPLETE — 114/114 crucible-core tests GREEN, 9/9 crucible-cli tests GREEN  
+
+---
+
+## D-AP-1: Commit-notification seam — additive `subscribe()` on Ledger interface
+
+**Situation:** The strategy doc (§4.3) referenced `ledger.subscribe(apertureProjector)` but the
+`Ledger` interface (Graham's locked seam) had no such method.
+
+**Choice:** Added `LedgerSubscriber` interface and `subscribe(subscriber: LedgerSubscriber): void`
+to the `Ledger` interface in `packages/crucible-core/src/ledger/ledger.ts` as an **additive-only**
+extension. `LedgerImpl.append()` fires all registered subscribers synchronously after
+`walBackend.commitRow()` resolves (step (e)), before `append()` returns to the caller.
+
+**Subscriber signature:**
+```typescript
+export interface LedgerSubscriber {
+  onCommit(offset: number, event: LedgerEvent): void;
+}
+```
+
+**Single-event callback** (not batch): matches the per-row commit model of `InMemoryWalBackend`.
+The `onCommit` is called once per row; if the FS backend needs batch delivery later, that can be
+added additively without changing the interface.
+
+**Seam impact on Graham's locked interface:** Additive only. Existing `append()`, `queryEvents()`,
+`registerHook()`, `unregisterHook()` signatures are UNCHANGED. `WalBackend` interface is UNCHANGED.
+Graham's seam contract is NOT violated.
+
+**Why NOT a WalBackend-level callback:** The WAL backend operates below the Ledger (it never sees
+`LedgerEvent` shapes or metadata). Subscriber notification belongs at the Ledger layer where the
+full `PrimitiveInput + offset` event is assembled.
+
+---
+
+## D-AP-2: `metadata` field on `PrimitiveInput` — optional, additive
+
+**Situation:** `PrimitiveInput` had no `metadata` field. The strategy doc showed
+`await ledger.append({ ..., metadata: { level: 'attention' } })` which TypeScript would reject.
+
+**Choice:** Added optional `metadata?: EventMetadata` to `PrimitiveInput` in `types.ts`, where
+`EventMetadata = { level?: string; [key: string]: unknown }`. All existing callers pass no
+`metadata` (omitted = undefined), so zero regressions. The field flows through `Primitive extends
+PrimitiveInput` → `LedgerEvent = Primitive` automatically.
+
+```typescript
+export interface EventMetadata {
+  level?: string;
+  [key: string]: unknown;
+}
+export interface PrimitiveInput {
+  ...
+  metadata?: EventMetadata;
+}
+```
+
+---
+
+## D-AP-3: Projection store — internal array (not SQLite DDL)
+
+**Situation:** The strategy doc showed `INSERT INTO aperture_events` (SQLite DDL). The test harness
+for Walkthrough C uses the `InMemoryWalBackend`; there is no need for a separate SQLite projection
+table in this slice.
+
+**Choice:** `ApertureProjector` maintains an internal `ApertureEvent[]` array. `queryEvents(opts?)`
+returns a filtered snapshot. No SQLite DDL, no schema migration, no `aperture_events` table.
+
+**Rationale:**
+- Simpler, zero friction for tests
+- The public `queryEvents()` interface is stable — a future adapter can replace the array with a
+  projected SQLite table without changing ApertureProjector's API or the acceptance test
+- Avoids coupling Aperture's projection to the `sessions`/`events` schema (OQ-2 FEDERATE)
+
+**Future migration path:** If durable projections are needed across process restarts, add an
+`aperture_events` table via a new schema migration and inject a `ProjectionStore` port into
+`ApertureProjector`. The `LedgerSubscriber` seam remains stable.
+
+---
+
+## D-AP-4: NotificationPolicy extracted at GREEN phase
+
+**Situation:** The strategy doc prescribes extracting `NotificationPolicy` in the REFACTOR phase.
+
+**Choice:** `NotificationPolicy` was created as a standalone file from the start (alongside
+`ApertureProjector`). The inline logic was always delegated to it. The "REFACTOR" beat adds the
+dedicated unit tests for `NotificationPolicy` and the projector purity contract test — the class
+itself was pre-extracted.
+
+**Rationale:** Extracting it inline avoids an unnecessary intermediate state where
+`ApertureProjector` contains raw string comparisons that then need to be moved. The TDD
+discipline still holds: unit tests for `NotificationPolicy` were written as REFACTOR beats.
+
+---
+
+## D-AP-5: Acceptance test in crucible-core (not crucible-cli)
+
+**Situation:** The strategy doc placed the acceptance test in `packages/crucible-cli/src/__tests__/`.
+But `createLedger` is exported from `crucible-core`, and the CLI (`crucible-cli`) only re-exports
+core symbols. There is no CLI-layer logic to exercise.
+
+**Choice:** Acceptance test lives in `packages/crucible-core/src/__tests__/acceptance/aperture-push.test.ts`,
+matching the pattern of the existing `hook-veto.test.ts` acceptance test.
+
+**No `setBadgeRenderer`:** The strategy doc's `cli.setBadgeRenderer(badgeRenderer)` was illustrative.
+The real acceptance test directly mocks `NotificationService: { push: vi.fn() }` and passes it to
+`new ApertureProjector(mockNotifier)`. This is cleaner and avoids coupling the test to a non-existent
+CLI API.
+
+---
+
+## Impact on Other Agents
+
+| Agent | Impact |
+|-------|--------|
+| **Graham** | `Ledger` interface gained `subscribe()` — additive only. All existing interface members unchanged. |
+| **Laura** | None — hook bus, veto logic, append signature unchanged. |
+| **Rosella** | Walkthrough C is now implemented. `ApertureProjector`, `NotificationService`, `ApertureEvent`, `NotificationPolicy`, `LedgerSubscriber`, `EventMetadata` are all exported from `@akubly/crucible-core`. |
+| **All** | `PrimitiveInput.metadata?: EventMetadata` is now available for callers who want to tag events with a tier level. Fully optional — existing callers unchanged. |
+
+---
+
+## Files Touched
+
+**New:**
+- `packages/crucible-core/src/projectors/notification-policy.ts`
+- `packages/crucible-core/src/projectors/aperture-projector.ts`
+- `packages/crucible-core/src/__tests__/acceptance/aperture-push.test.ts`
+- `packages/crucible-core/src/__tests__/unit/aperture-projector.test.ts`
+- `packages/crucible-core/src/__tests__/unit/aperture-projector-purity.test.ts`
+- `packages/crucible-core/src/__tests__/unit/notification-policy.test.ts`
+
+**Modified:**
+- `packages/crucible-core/src/types.ts` — `EventMetadata` + `metadata?` on `PrimitiveInput`
+- `packages/crucible-core/src/ledger/ledger.ts` — `LedgerSubscriber` + `subscribe()` on `Ledger`
+- `packages/crucible-core/src/ledger/ledger-impl.ts` — `subscribe()` impl + subscriber fire step
+- `packages/crucible-core/src/index.ts` — new exports
+
+
+---
+
+# Decision: WAL CAS fsync Ordering (Issue #59)
+
+**Author:** Roger Wilco  
+**Date:** 2026-06-09  
+**Status:** Implemented  
+**Related:** Issue #59, #56 (manifest replay gate — already fixed)
+
+---
+
+## Problem
+
+`FileSystemCas.put()` wrote CAS blobs via `fs.writeFileSync()` without fsync. Phase 3 of `executeFlush()` fsynced the WAL segment via `syncFn(segFd)`, making WAL records durable while CAS blobs were still only in the OS page cache. A crash between Phase 1 (CAS write) and Phase 3 (segment fdatasync) left a durable WAL record referencing a non-durable CAS blob. On reopen, `replayFromSegments()` would call `this.cas.get(hash)` → null → throw `CasMissError`.
+
+This is distinct from #56 (manifest gate preventing replay entirely). After #56 was fixed, reopen always runs `replayFromSegments()`, which makes the #59 window more likely to surface as a `CasMissError` on the next open.
+
+---
+
+## Options Considered
+
+### Option A: Per-put fsync
+Call `fs.fsyncSync()` on each CAS file inside `put()`, immediately after `writeFileSync()`.
+
+**Tradeoffs:**  
+✅ Simplest code; ordering is local  
+❌ O(rows) fsync calls per batch — every row pays a full disk barrier even if its CAS blob is the same as the previous row  
+❌ No dedup benefit: same payload written in the same batch fsyncs once per call (before existence check)  
+❌ Destroys group-commit batching benefit
+
+### Option B: Batch CAS fsync in Phase 2.5 (chosen)
+Track newly-written CAS file paths in `FileSystemCas.pendingSync: Set<string>`. After the hash chain is built (Phase 2) and before the segment file is opened (Phase 3), call `cas.syncAll(syncFn)` to fsync all pending CAS files in a batch. Uses the same injectable `syncFn` seam as the segment fdatasync.
+
+**Tradeoffs:**  
+✅ O(K) fsync calls per batch where K ≤ number of unique new CAS files  
+✅ Dedup: identical payloads across rows in the same batch → 1 CAS file → 1 CAS sync  
+✅ Already-durable CAS files (from prior batches) are never re-tracked  
+✅ Preserves group-commit batching: all I/O barrier costs amortised across batch  
+✅ Uses existing injectable `syncFn` seam (testable without disk, consistent spy)  
+❌ Slightly more complex CAS class (pendingSync field + syncAll method)
+
+### Option C: Reconcile on reopen
+On `replayFromSegments()`, if a CAS blob is missing, skip the WAL record and truncate the segment back to exclude it.
+
+**Tradeoffs:**  
+✅ No write-path cost  
+❌ Data loss by design: committed rows silently dropped  
+❌ Hash chain invalidated at truncation boundary  
+❌ Violates durability contract: a fsynced segment record must survive reopen
+
+---
+
+## Decision: Option B — Batch CAS fsync in Phase 2.5
+
+### Rationale
+Option B maintains the durability contract with no data loss, amortises I/O cost across the group-commit barrier, and reuses the existing injectable `syncFn` seam. The cost is O(K) per batch where K is typically much smaller than O(rows) due to payload dedup. For workloads with large payloads or high uniqueness, cost is O(rows) in the worst case — same as Option A but amortised over the batch.
+
+### Ordering invariant established
+CAS blobs durable → segment written → segment fsynced → WAL record durable  
+No durable WAL record can reference a non-durable CAS blob.
+
+---
+
+## Implementation
+
+### `packages/crucible-core/src/ledger/wal/cas-fs.ts`
+
+Added:
+- `private readonly pendingSync = new Set<string>()` field
+- In `put()`: `this.pendingSync.add(filePath)` when a new file is written (dedup: skipped when file already exists)
+- `syncAll(syncFn: (fd: number) => void): void`: iterates `pendingSync`, opens each with `'r+'` (write access needed for `FlushFileBuffers` on Windows), calls `syncFn(fd)`, closes, removes from set. Each file removed only on successful sync so failed syncs are retried on the next batch.
+
+### `packages/crucible-core/src/ledger/wal-backend-fs.ts` — `executeFlush()`
+
+Inserted Phase 2.5 between Phase 2 (hash chain) and Phase 3 (segment write):
+
+```
+// Phase 2.5: fsync all newly-written CAS files (§3.2 / issue #59)
+try {
+  this.cas.syncAll(this.syncFn);
+} catch (err) {
+  // Segment not yet opened — no truncation needed.
+  for (const { row: entry } of committed) entry.reject(err);
+  if (restaged.length > 0) { this.stagingQueue.unshift(...restaged.map(r => r.row)); }
+  throw err;
+}
+```
+
+Phase 3 (segment open+write+fsync) is unchanged.
+
+### Windows compatibility
+CAS files opened with `'r+'` in `syncAll()`. `fs.fsyncSync(fd)` on Windows uses `FlushFileBuffers`, which requires write access. Read-only `'r'` would fail with EBADF on Windows. `'r+'` opens existing files for read+write, which is valid since `put()` always creates the file before `syncAll()` is called.
+
+---
+
+## Throughput Analysis
+
+| Scenario | CAS syncs per batch | Segment syncs | Total |
+|---|---|---|---|
+| N rows, all unique payloads, empty readSets | N | 1 | N+1 |
+| N rows, same payload (dedup), empty readSets | 1 | 1 | 2 |
+| 1 row, non-empty causalReadSet | 2 | 1 | 3 |
+| Second batch, same payload as first | 0 | 1 | 1 |
+
+For typical append workloads with repeated observation payloads (e.g., telemetry dedup), the amortised CAS sync cost approaches 0 over time.
+
+---
+
+## Interaction with Issue #56
+
+#56 fixed: `replayFromSegments()` is now called unconditionally (removed manifest gate). This means the #59 crash window is always tested on reopen — no manifest `-1` guard to mask a `CasMissError`. After #59 is fixed, `CasMissError` on reopen indicates true hardware corruption (segment durable, CAS blob lost to hardware failure), not a crash-window ordering bug.
+
+---
+
+## Impact on Other Agents
+
+- **Graham (seam guard):** `CasFsStore` (the `WalBackend` port's CAS seam) is not directly visible in the WAL interface — `FileSystemCas` is a private implementation detail of `FileSystemWalBackend`. No interface contract change.
+- **WAL backend contract tests:** The injectable `syncFn` seam now receives additional calls (CAS syncs before segment sync). Tests counting exact `syncFn` invocations must account for CAS syncs. Three existing group-commit tests updated: `syncCount` expectations raised from 1→2 (first batch) and 2→3 (after second batch for restaged row).
+- **InMemoryWalBackend:** Not affected. Uses `InMemoryCas` (no filesystem), no sync path.
+
+
+---
+
+# Roger — WAL Crash-Durability Fix (Issue #56)
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-06-09T18:25:35-07:00  
+**Branch:** (main checkout)  
+**Status:** COMPLETE — 119/119 crucible-core tests GREEN, build clean, lint clean  
+**Issue:** #56
+
+---
+
+## D-CD-1: Root cause — manifest-gate drops first-batch durable rows
+
+**Bug:** `FileSystemWalBackend.open()` called `replayFromSegments()` only when
+`manifest.lastCommitOffset >= 0`. The manifest starts at `-1` (no rows committed).
+The first batch's `executeFlush()` updates it in **Phase 4** (after fdatasync).
+
+**Crash window:** Process dies between Phase 3 (segment `fdatasync`) and Phase 4
+(`manifest.json` `writeFileSync`). Result:
+- Segment file: contains durable (fdatasync'd) records ✅
+- `manifest.lastCommitOffset`: still `-1` ❌
+
+On the next open: `-1 >= 0` is false → `replayFromSegments()` is never called →
+`this.events` stays empty → `readRows()` returns `[]` → durable rows silently lost.
+
+**Scope:** Only the first batch of a session. Subsequent batches leave
+`lastCommitOffset >= 0`, so the gate passes and `scanSegmentFile()` reads all bytes
+(including crash-recovered rows from the segment tail). No data loss for second+ batches.
+
+---
+
+## D-CD-2: Fix — remove the `-1` gate; always replay from segment
+
+**Choice:** Remove `if (manifest.lastCommitOffset >= 0)` and call
+`this.replayFromSegments()` unconditionally in `open()`.
+
+**Rationale:**
+- `scanSegmentFile()` already handles missing/empty segment files (returns `[]`) — the
+  call is a safe no-op for genuinely fresh sessions.
+- The segment file IS the ground truth. `manifest.lastCommitOffset` is informational
+  metadata, not an authoritative durability gate.
+- Zero behavior change for the normal path (no crash): manifest is always updated in
+  Phase 4, so `-1` only persists if the process died before Phase 4.
+
+**Alternative considered — manifest fsync within the same barrier:**
+Write the manifest within Phase 3's fdatasync scope (open manifest fd, write, fsync,
+close, then close segment fd). Rejected because:
+1. It requires two synced files per batch (higher I/O cost).
+2. It doesn't fully close the window (crash between segment-close and manifest-sync
+   still possible with two-file approach unless both are in one barrier, which is
+   filesystem-dependent and complex).
+3. The segment-as-ground-truth approach is simpler and makes the invariant
+   immediately obvious: on open, always scan what's durably on disk.
+
+---
+
+## D-CD-3: Crash-injection test methodology
+
+**Simulation:** write rows → flush (segment is durable) → manually overwrite
+`manifest.json` to set `lastCommitOffset = -1` → `close()` (no staged entries, no
+manifest re-update) → reopen.
+
+This accurately models the on-disk state left by a crash between Phase 3 and Phase 4.
+No special fsync spying needed; the test confirms the EXACT recovery path.
+
+**Test file:** `packages/crucible-core/src/__tests__/unit/wal-crash-durability.test.ts`
+
+Tests (all 5 were RED before fix, 5 GREEN after):
+
+| ID | Invariant |
+|----|-----------|
+| CD-1 | First-batch crash: 3 durable rows recovered when manifest shows -1 |
+| CD-2 | Subsequent-batch crash: all rows recovered when manifest lags segment |
+| CD-3 | Hash-chain verifies across crash-recovered boundary |
+| CD-4 | Post-recovery write chains onto recovered tail (prevRoot seeded from tail) |
+| CD-5 | lastTimestampNs seeded from recovered rows; subsequent writes don't regress |
+
+CD-2 was already GREEN before the fix (because `lastCommitOffset = 1 >= 0` passes the
+old gate). It's retained as a regression guard and to document the invariant.
+
+---
+
+## D-CD-4: Manifest role after fix
+
+`manifest.lastCommitOffset` is still updated in Phase 4 after each successful flush.
+Its role is now:
+- **Informational only** — aids debugging, logging, and schema tracking
+- **Not a replay gate** — replay always reads from the segment bytes
+
+`manifest.segmentRange` is still the authoritative list of segment files to scan
+during replay (needed for the future 64 MiB segment roll-over).
+
+---
+
+## D-CD-5: #59 (CAS fsync) scope fence — noted but not touched
+
+The fix does NOT address the CAS write durability gap (#59). CAS `.cbor` files are
+written before the segment fdatasync but are NOT themselves fsynced. If the process
+crashes after CAS write but before segment fsync, the segment record may point to a
+CAS blob that exists in memory but not yet on disk.
+
+The fix ensures that crash-recovered segment records are correctly replayed. If a
+CAS blob is absent on disk after a crash, `replayFromSegments()` will throw
+`CasMissError` (correct behavior per §3.2.1 — fail fast rather than substitute a
+default). Issue #59 tracks a proper fix for CAS durability.
+
+---
+
+## Impact on Other Agents
+
+| Agent | Impact |
+|-------|--------|
+| **Graham** | `WalBackend` interface UNCHANGED. `Ledger` interface UNCHANGED. |
+| **All** | Crash-durability is now correct for the first batch. Existing tests unaffected. |
+| **Future** | When 64 MiB segment roll-over is implemented, the manifest `segmentRange` update must be treated with the same care as `lastCommitOffset` — if it's updated after fdatasync in Phase 4, a crash between them would leave the new segment unreplayable. Recommend including `segmentRange` update in the same atomic write as `lastCommitOffset`. |
+
+---
+
+## Files Touched
+
+**Modified:**
+- `packages/crucible-core/src/ledger/wal-backend-fs.ts` — removed `if (lastCommitOffset >= 0)` guard in `open()`, replaced with unconditional `replayFromSegments()` + explaining comment
+
+**New:**
+- `packages/crucible-core/src/__tests__/unit/wal-crash-durability.test.ts` — 5 crash-injection tests (CD-1 through CD-5)
+
+
+---
+
+# Valanice — Aperture Push-Notification UX Review
+
+**Author:** Valanice (UX / Human Factors)  
+**Date:** 2026-06-09T18:25:39-07:00  
+**Target:** Walkthrough C implementation (Roger, `roger-aperture-projector.md`)  
+**Status:** ADVISORY — Roger is NOT blocked. These are ranked recommendations.
+
+---
+
+## Context
+
+Roger implemented the Aperture push-notification projector per §4.3. The core machinery is sound:
+subscription seam is additive, `NotificationPolicy` is pure and extracted, projection purity is
+contract-tested. This review examines the *human-factors* layer — what the design does to the
+tired, distracted engineer watching the badge.
+
+Files reviewed:
+- `packages/crucible-core/src/projectors/aperture-projector.ts`
+- `packages/crucible-core/src/projectors/notification-policy.ts`
+- `packages/crucible-core/src/__tests__/acceptance/aperture-push.test.ts`
+- `packages/crucible-core/src/__tests__/unit/aperture-projector.test.ts`
+- `packages/crucible-core/src/__tests__/unit/aperture-projector-purity.test.ts`
+- `docs/crucible-tdd-strategy.md §4.3`
+- `.squad/decisions/inbox/roger-aperture-projector.md`
+
+---
+
+## BLOCKING
+
+*No absolute ship-stoppers. The projection layer is technically correct. The findings below are
+framed as "blocking if any badge UI ships to real users without addressing them."*
+
+### B-1: ℹ️ fallback icon for attention-tier events is cognitively dissonant
+
+**Location:** `notification-policy.ts` line 36 — `return 'ℹ️'` as the else-branch for events
+that are not quarantine and not decision, but that are still `attention`- or `urgent`-tier.
+
+**Problem:** The ℹ️ glyph communicates "informational, no action needed." By contract,
+`attention`/`urgent` events are exactly the events where the human MUST look. Surfacing an info
+icon for an attention event teaches the human that ℹ️ sometimes matters and sometimes doesn't —
+destroying the icon's signal value. The tired engineer skips ℹ️ badges on instinct.
+
+**Recommendation:** Replace the default with a distinct action-required icon (e.g., `⚠️` or `🔔`)
+or, at minimum, differentiate by tier rather than by category alone. The icon decision tree should
+be: tier=urgent → one icon; tier=attention (non-quarantine, non-decision) → another; never ℹ️ for
+actionable tiers.
+
+---
+
+## IMPORTANT
+
+### I-1: `unreadCount` is a one-way ratchet with no dismiss/ack path
+
+**Location:** `aperture-projector.ts` line 103 — `unreadCount: this.events.length`
+
+**Problem:** Every qualifying `onCommit()` increments the badge count. There is no `markRead()`,
+no `dismiss()`, no reset. Within a session, a burst of 20 quarantine events fires 20 sequential
+`notifier.push()` calls with counts 1 through 20 (validated in AP-5). After a busy session, the
+badge number is meaningless. Users learn to ignore a permanently-elevated badge — the classic
+notification desensitization loop.
+
+**Recommendation:** The projection store (append-only `ApertureEvent[]`) should remain immutable
+for purity reasons. But `unreadCount` should be a *derived view*, not `events.length`. Add:
+- A `seenOffset: number` cursor (or a `Set<string>` of seen event IDs) that the CLI layer can
+  advance via `markRead(upToOffset: number)` or similar.
+- `unreadCount` = `events.length - seenOffset` (or equivalent).
+
+This does not require changing the projection contract — it's a rendering concern layered on top of
+the stable `queryEvents()` interface Roger already defined.
+
+### I-2: Burst coalescing is absent — rapid-fire events produce rapid-fire pushes
+
+**Location:** `aperture-projector.ts` lines 86–106 (synchronous `onCommit` loop)
+
+**Problem:** A plugin sweep that quarantines 20 plugins in sequence fires 20 `notifier.push()`
+calls synchronously, one per commit. The CLI renderer receives 20 state updates in rapid succession.
+Depending on the renderer implementation, this could cause visual thrashing or, worse, the 20th
+call overwrites context from the 1st before the human can read it.
+
+**Recommendation:** The `NotificationService` interface is the right abstraction boundary for
+coalescing. Consider either:
+- (a) A debounced `NotificationService` adapter (e.g., coalesce calls within a 50ms window, emit
+  one `push()` with the final `unreadCount`), or
+- (b) A batch variant on the subscriber interface: `onCommitBatch(events: LedgerEvent[]): void`
+  that the ledger could use to deliver all events from a single `append()` call (if batching is
+  ever added).
+
+Option (a) is purely a CLI-layer concern — the projector logic is unchanged, and this is already
+the right place in the seam design.
+
+### I-3: `getPriority()` is computed but never surfaced in the push payload
+
+**Location:** `notification-policy.ts` lines 43–51; `aperture-projector.ts` line 102–105
+
+**Problem:** `NotificationPolicy.getPriority()` returns urgent=3, attention=2, notice=1, info=0 but
+the `NotificationService.push()` payload only carries `{ unreadCount: number; icon: string }`. The
+renderer has no way to distinguish a badge that contains 1 urgent + 10 attention events from one
+that contains 11 attention events. The urgent signal is invisible in the badge.
+
+**Recommendation:** Add `highestPriority: number` (or `hasUrgent: boolean`) to the push payload.
+The projector already has all the information it needs to compute this:
+
+```typescript
+this.notifier.push({
+  unreadCount: this.events.length,
+  icon: this.policy.getIcon(category, event.primitivePayload),
+  highestPriority: Math.max(...this.events.map(e => this.policy.getPriority(e.level))),
+});
+```
+
+Without this, `getPriority()` is dead code from the UX perspective and the badge cannot escalate
+its urgency signal as more critical events accumulate.
+
+### I-4: Emoji-only signaling — accessibility exposure
+
+**Location:** `notification-policy.ts` lines 27–37 (getIcon return values)
+
+**Problem:** All badge signals are emoji: 🔒, ✓, ℹ️. Emoji rendering has real accessibility gaps:
+- Screen readers announce them as verbose prose ("lock emoji", "heavy check mark sign") — not
+  actionable descriptions.
+- Emoji fonts vary by OS/terminal; in some CLI environments, these render as `?` or empty boxes.
+- Users who rely on high-contrast modes or have visual processing differences may not reliably
+  distinguish 🔒 from ℹ️ at badge scale.
+
+**Recommendation:** The `NotificationService` push payload should include a `label: string`
+alongside the icon — a machine-readable category string (`'quarantine'`, `'decision'`, `'alert'`)
+that the renderer can use to supplement the emoji with text or ARIA labels. This doesn't require
+changing projection logic — it's an additive field.
+
+### I-5: ✓ for "decision" reads as "resolved" — may suppress action
+
+**Location:** `notification-policy.ts` line 34 — `if (category === 'decision') return '✓'`
+
+**Problem:** ✓ is a completion/success glyph. A decision notification is not necessarily good news
+(AP-2 test uses `outcome: 'reject'`). A user who sees ✓ badge may instinctively read it as
+"something finished OK" and defer reading it — even when the decision requires follow-up action.
+
+**Recommendation:** Use a neutral or attention-specific glyph for decision notifications: `📋`
+(clipboard/document) or `⚡` (action required). Reserve ✓ for explicitly successful outcomes if
+that category ever exists.
+
+---
+
+## NICE-TO-HAVE
+
+### N-1: Separate unread counts by tier (attention vs. urgent)
+
+The current badge is a single integer. Separating `{ urgentCount: number; attentionCount: number }`
+in the push payload would let the renderer show a compound badge (e.g., "3 urgent / 8 attention")
+without changing the projection model. The human can then triage at a glance rather than having to
+open the event list to understand severity distribution.
+
+### N-2: Do-not-disturb / mute mode
+
+For high-throughput analysis workflows (batch evaluation, mass plugin sweeps), there should be a
+way to suppress badge pushes for the duration of the operation and deliver a single summary push
+at completion. This is a `NotificationService` adapter concern, not a projector concern — the
+seam is already in the right place. Track as a future `BatchedNotificationService` wrapper.
+
+### N-3: Escalation from attention → urgent if unacknowledged
+
+If an `attention`-tier event is not acknowledged (seen/dismissed) within a configurable window, it
+should escalate to `urgent` visually. This requires the read/ack cursor from I-1 as a prerequisite.
+Low priority for now — track as future work once I-1 is addressed.
+
+### N-4: Snooze for known-noisy event types
+
+Some attention-tier events may be expected (e.g., a known plugin under active remediation). A
+per-event-type snooze (suppress badge pushes for `quarantine` events from plugin X for N minutes)
+would reduce fatigue for situations where the human is already aware of the issue. This is a
+policy-layer extension — `NotificationPolicy.shouldPush()` could accept a `snoozeList` context
+parameter.
+
+---
+
+## What the Design Gets Right
+
+Worth stating explicitly:
+
+- **Tier gating is correct.** Pushing on attention + urgent only, silencing notice + info, is
+  exactly the right attention hygiene. The two-tier gate preserves badge signal value.
+- **`NotificationService` is the right seam.** All UX complexity (coalescing, debounce, DND,
+  escalation) can be implemented as adapter decorators around this port without touching the
+  projector. Roger's seam design is clean.
+- **Projection purity is well-tested.** The purity contract (PC-1 through PC-4) ensures the
+  projector's materialization logic is deterministic. That's the right foundation before adding
+  rendering semantics on top.
+- **`queryEvents()` interface is stable.** Read/ack cursors, filtering by level, future persistence
+  — all can be added without changing the acceptance test contract.
+
+---
+
+## Summary Priority Order
+
+| # | Finding | Severity | Effort |
+|---|---------|----------|--------|
+| B-1 | ℹ️ fallback icon for attention-tier | Blocking (if rendering ships) | Low — one-line change |
+| I-1 | No dismiss/ack — badge grows forever | Important | Medium — needs seenOffset cursor |
+| I-2 | Burst coalescing absent | Important | Medium — adapter layer |
+| I-3 | Priority not surfaced in push payload | Important | Low — add field to payload |
+| I-4 | Emoji-only accessibility exposure | Important | Low — add label field |
+| I-5 | ✓ icon misleads on decision notifications | Important | Low — swap icon |
+| N-1 | Separate counts by tier | Nice | Low |
+| N-2 | Do-not-disturb mode | Nice | Medium |
+| N-3 | Escalation logic | Nice | High |
+| N-4 | Per-type snooze | Nice | High |
+
