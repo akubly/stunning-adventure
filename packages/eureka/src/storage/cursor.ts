@@ -21,7 +21,7 @@
  * throws.  Only a truly ABSENT `v` key is treated as a legacy v0 cursor.
  * Completely unparseable/non-JSON input still falls back to offset 0.
  *
- * @see .squad/decisions/inbox/graham-slice-dplus-cursor-versioning.md §1
+ * @see .squad/decisions.md (M8 Slice D+ — Cursor Versioning & Scope Fingerprint §1)
  */
 
 import { createHash } from 'node:crypto';

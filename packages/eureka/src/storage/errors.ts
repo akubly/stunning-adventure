@@ -13,7 +13,7 @@
  * Follows the M7-A error-hierarchy conventions (code discriminator, name override,
  * Object.setPrototypeOf guard for bundler safety).
  *
- * @see .squad/decisions/inbox/graham-slice-dplus-cursor-versioning.md §2
+ * @see .squad/decisions.md (M8 Slice D+ — Cursor Versioning & Scope Fingerprint §2)
  */
 
 // ---------------------------------------------------------------------------
