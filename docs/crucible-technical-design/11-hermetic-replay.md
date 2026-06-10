@@ -258,3 +258,15 @@ Until that surface exists, any claim of "hermetic replay" must be qualified as *
 
 **Cross-references:** §18.1 (single-user threat model), ADR-0011 §Security Implications, §11.10.1 (boundary-faithful honesty), §18.4.1 (Known Limits — PII/secret handling).
 
+## 11.11 VETO Inputs Are Out of Scope for Replay
+
+The §4.3.1 Ledger-layer pre-stage gate (Surface 1) can produce a `veto` verdict that causes `Ledger.append` to throw before any WAL byte is written. **Vetoed inputs never appear in the WAL.**
+
+Replay implications:
+
+- The re-feed loop (§11.4 step 3) iterates WAL rows only; it never encounters a vetoed input. No replay handling is needed for `veto`.
+- The oracle (§11.6) compares WAL rows; vetoed inputs produce no WAL row and are therefore invisible to the oracle. This is correct by construction.
+- The preflight checks (§11.7) do not surface a `veto`-specific refusal condition; absence of a vetoed-input row in the replay ledger is not a divergence — it matches the source ledger, which also has no such row.
+- P3 (§4.7) — the closed WAL-verdict enum `{continue, observe, pause, null}` — is unaffected. `veto` is a Ledger-layer concept; the WAL-row `hookVerdict` field never carries it.
+
+**Honesty note:** a session where many veto gates fired (inputs were rejected before append) is indistinguishable at the WAL level from a session where those inputs were never attempted. This is intentional: the WAL records what happened, not what was prevented. Aperture attention-tier events may surface veto telemetry out-of-band if a future veto-telemetry hook is registered as an `observe`-verdict predicate on subsequent rows; that is an opt-in observation, not a WAL invariant.

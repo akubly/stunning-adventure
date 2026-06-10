@@ -1,3 +1,130 @@
+# Roger — WAL Group-Commit + Seal-and-Split Decisions (§3.5)
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-06-06T22:03:01-07:00  
+**Branch:** squad/crucible-wal-substrate-walkthrough-b  
+**Status:** CLOSED — 16 new tests GREEN (9 sealAndSplit + 7 group-commit), full suite 60/60
+
+---
+
+## D-GC-1: sealAndSplit as a pure function (own module)
+
+**Choice:** `packages/crucible-core/src/ledger/wal/seal-and-split.ts` —
+exported as a standalone pure function, no I/O, generic over the row type `T`.
+
+**Rationale:**
+- Pure function is trivially unit-testable (9 cases; no temp dirs, no async).
+- Generic `sealAndSplit<T>(staged, verdicts)` lets the backend pass `StagedEntry[]`
+  directly, preserving the `resolve`/`reject` callbacks for promise resolution.
+- `pauseBatchIndex: number` annotation on restaged rows records the batch-relative
+  position of the PAUSE row; the backend enriches this with the actual commit
+  offset in Phase 4 (post-fsync) if needed by the Router in a future cycle.
+
+**Key rules implemented:**
+- COMMIT | OBSERVE → row joins `committed` with its verdict preserved.
+- PAUSE at index i → rows 0..i join `committed` (pause row carries durable PAUSE
+  verdict per exactly-once-pause); rows i+1..end join `restaged`. First PAUSE wins.
+- VETO is not present in the verdicts array (intercepted pre-WAL by the Ledger layer).
+
+---
+
+## D-GC-2: Group-commit staging in FileSystemWalBackend
+
+**Choice:** Internal `stagingQueue: StagedEntry[]` in `FileSystemWalBackend`.
+`commitRow()` stages the row and returns a Promise that resolves only after
+the containing batch is fdatasync'd. Flush triggers:
+  (a) `stagingQueue.length >= batchSize` (batchSize trigger)
+  (b) deadline timer fires after `batchDeadlineMs`
+  (c) explicit `flush()` call
+
+**Default batchSize: 1** — preserves existing per-row immediate-flush semantics
+for all existing tests (no regressions). Tests for group-commit pass `batchSize: N`
+and `batchDeadlineMs: 60_000` (suppress timer).
+
+**Seam impact on Graham's locked interface:**
+- `WalBackend.commitRow()` signature UNCHANGED.
+- `WalBackend.readRows()` signature UNCHANGED.
+- `flush()` and `close()` are on the CONCRETE class only (same pattern as the
+  existing `close()`). Graham's locked `WalBackend` interface was NOT touched.
+- **Additive only — no seam reshaping.**
+
+---
+
+## D-GC-3: ONE fdatasync barrier per batch
+
+**Mechanism:**
+1. Phase 1: CAS writes + build `SegmentRecordInput[]` for all committed rows.
+2. Phase 2: `buildChain(rowInputs, this.prevRoot)` chains the entire batch in one call.
+3. Phase 3: `fs.openSync(seg, 'a')` → `fs.writeSync` all records → `syncFn(fd)` → `fs.closeSync(fd)`.
+4. Phase 4 (success only): update `prevRoot`, write index entries, update manifest,
+   push to in-memory event cache, resolve row promises, fire `onPause`, re-queue restaged.
+
+**Single barrier:** `syncFn(fd)` fires exactly once per `executeFlush()` call.
+Tests inject a spy via `syncFn` option; the spy count verifies the one-sync invariant.
+
+---
+
+## D-GC-4: Atomic abort — path-based truncation (Windows fix)
+
+**Problem:** `fs.ftruncateSync(fd, size)` on a file opened in append mode (`'a'`)
+is unreliable on Windows (O_APPEND semantics interfere with SetEndOfFile).
+
+**Fix:** On failure in Phase 3, close the fd first, then call
+`fs.truncateSync(this.activeSegPath, preBatchSegSize)` (path-based). This works
+identically on Windows and Unix and guarantees no partial-batch bytes survive.
+
+**Hash-chain root rollback:** `this.prevRoot` is updated only in Phase 4 (success
+path). If Phase 3 fails, `this.prevRoot` is never advanced — the next batch
+correctly restarts from the pre-batch chain head. No explicit save/restore needed.
+
+**Manifest invariant:** `manifest.lastCommitOffset` is updated only in Phase 4.
+On abort, it retains its pre-batch value. On crash-recovery replay, the scanner
+reads segment bytes directly; records beyond `lastCommitOffset` would be orphaned
+(but are now absent due to truncation).
+
+**Residual:** CAS body files (`.cbor`) written in Phase 1 are NOT rolled back on
+abort. They are content-addressed (BLAKE3), so orphaned CAS files are harmless
+(they're simply never referenced by a committed WAL row). A future GC cycle can
+reclaim them.
+
+---
+
+## D-GC-5: syncFn injectable seam
+
+`FileSystemWalBackendOptions.syncFn?: (fd: number) => void` replaces the
+hard-coded `fs.fsyncSync(fd)` call. Default remains `(fd) => fs.fsyncSync(fd)`.
+Tests inject either a spy (count calls) or a throwing stub (test abort path).
+This avoids ESM module-spy issues and keeps the seam explicit.
+
+---
+
+## D-GC-6: onPause L1Subscriber stub
+
+`FileSystemWalBackendOptions.onPause?: (commitOffset: number) => void` is the
+minimal Router notification seam (§3.5: "Router receives the pause verdict via
+the L1Subscriber broadcast on the paused row"). The callback fires after
+fdatasync (durable), passing the commit offset of the PAUSE row. Full
+L1Subscriber broadcast to the §5 Router is deferred to its own RED cycle.
+
+---
+
+## D-GC-7: Scope fences confirmed NOT touched
+
+- 64 MiB segment roll-over — deferred
+- `appendFenced` / optimistic head-offset check (§3.4.1) — deferred
+- Full L1Subscriber broadcast / §5 Router integration — deferred
+- Group-commit deadline timer unit test (vi.useFakeTimers) — not needed to pass
+  RED tests; the timer logic is exercised implicitly via batchSize auto-flush.
+
+
+---
+
+### 2026-06-06T22:03:01-07:00: Aaron's ruling — WAL write.lock stale-lock policy (resolves D-LOCK-2)
+**By:** Aaron Kubly (via Copilot)
+**Decision:** Option (b) — **PID + liveness reclaim** for v1. The `write.lock` file records the owner PID; on an acquisition conflict, check whether that PID is alive — reclaim the lock if the owner is dead, throw `WriteLockHeldError` if alive. Driven by a dedicated RED→GREEN cycle.
+**Rationale:** Preserves §3.4.1's auto-release-on-termination *intent* without a native dependency; avoids opaque "stuck forever after crash" failures (correctness compounds across agent actions).
+**Follow-up filed:** GitHub issue **#55** — reconsider a true OS advisory lock (flock/LockFileEx via maintained dependency) vs PID-liveness later (label squad:roger).
+**Supersedes:** Roger's recommended Option (a) manual-clear (D-LOCK-2). §3.4.1 spec guarantee is now honored by PID-liveness, not downgraded.
 ### 2026-05-30: WI-A Implementation Log — Issue #11 (Roger history restoration)
 
 From decision drop: roger-issue-11-implementation (local-only, WI-A history, cross-referenced)
@@ -8,244 +135,100 @@ From decision drop: roger-issue-11-implementation (local-only, WI-A history, cro
 
 ---
 
-## 2026-05-30: Squad Convention — Agent history.md Commits in Feature PRs Are In-Scope
 
-**Date:** 2026-05-30  
-**Source:** PR #32 / issue #25, Cycle 1 Skeptic review (F3 flagged as scope creep)  
-**Decision:** Agent-maintained history.md entries in feature PRs are **IN-SCOPE**, not scope creep.
+# Roger — WAL Write Lock Decisions (§3.4.1)
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-06-06T22:03:01-07:00  
+**Branch:** squad/crucible-wal-substrate-walkthrough-b  
+**Status:** CLOSED — 9 lock tests GREEN (5 original + 4 PID-liveness), full suite 44/44
+
+---
+
+## D-LOCK-1: Lock mechanism — exclusive-create file (no new npm dependency)
+
+**Choice:** `fs.openSync(lockPath, 'wx')` — O_CREAT | O_EXCL exclusive create.
 
 **Rationale:**
-The `.gitattributes` file defines `merge=union` driver (line 3) specifically to enable parallel agent history tracking within feature branches. This is an intentional design pattern, not incidental coupling.
+- Works identically on Windows and Unix (Node.js wraps CreateFileW with OPEN_ALWAYS semantics mapped to O_CREAT|O_EXCL).
+- No open fd held after creation: `fs.closeSync(fd)` immediately after. Presence of the file IS the lock (per spec: "content ignored").
+- No native dependencies, no npm packages.
+- Unit-testable within a single process: same process can attempt two opens and the second fails with EEXIST.
+- Simpler than `flock(LOCK_EX|LOCK_NB)` (not available cross-platform in Node stdlib) or `LockFileEx` (Windows-only, requires native bindings).
 
-When `.gitattributes:3` declares `*.md merge=union`, it is explicitly authorizing commits that append to history files during feature development. Rejecting such commits as "scope creep" contradicts the declared merge strategy.
+**Lock file path:** `<segDir>/write.lock` = `<rootDir>/wal/sessions/<sessionId>/write.lock`  
+(matches §3.4.1: `~/.crucible/wal/sessions/<sessionId>/write.lock`)
 
-**Citation:** `.gitattributes:3` — "\\*.md merge=union"
-
-**Scope boundary:** Agent history commits are IN-SCOPE when:
-- They document agent work on the feature (not tangential or admin work)
-- They follow the squad history.md format (one-liner, topic tag, date, agent)
-- They do not alter code or test artifacts
-
-Example in-scope entry:
-```
-- 2026-05-30 📌 alexander: JSON.parse boundary guarding via ProfileStalenessReason import
-```
-
-**Future:** If history bloat becomes a problem (file ≥15360 bytes), summarization rules apply (per Task 6). This is a hygiene gate, not a scope gate.
+**Acquire:** `fs.openSync(lockPath, 'wx')` → close fd immediately  
+**Release:** `fs.unlinkSync(lockPath)` in `close()`
 
 ---
 
-## 2026-05-30: Path A for Internal Helpers — Unexport and Shrink Test Surface
+## D-LOCK-2: Stale-lock policy — RESOLVED (Option b: PID + liveness reclaim)
 
-**Date:** 2026-05-30  
-**Source:** PR #32 / issue #25, Cycle 2, C2-3 polish  
-**Decision:** When an `@internal` JSDoc tag cannot be enforced (no api-extractor or stripInternal pass), prefer unexporting the helper and shrinking the unit test surface over maintaining a false-promise export.
+**Aaron's ruling:** Option (b) — PID + liveness check via `process.kill(pid, 0)`.
 
-**Rationale:**
-The helper `normalizeProfileSource(payload: unknown)` was introduced in Cycle 1 to centralize JSON.parse payload narrowing. Tagged `@internal`, it was still exported for unit testing. This creates a false API promise — users can import and call it despite the intent to keep it internal.
+**Implementation (GREEN — 4 new tests, all passing):**
 
-Options:
-- **(a) Unexport + shrink tests (chosen)** — Move coverage to integration tests. Helper becomes truly internal (scoped to module).
-- **(b) Keep export + hope no one uses it** — Relies on convention; creates API risk.
-- **(c) Use namespace/private pattern** — Language-specific; TypeScript has no true private exports.
+On acquire:
+1. `fs.openSync(lockPath, 'wx')` → write `String(process.pid)` into the file.
+2. On EEXIST: read stored PID → call `isPidAlive(pid)`:
+   - `process.kill(pid, 0)` returns → alive → throw `WriteLockHeldError(path, storedPid)`.
+   - ESRCH → dead → overwrite lock file with our PID (reclaim).
+   - EPERM → alive (no signal permission) → throw `WriteLockHeldError`.
+   - Unparseable/empty → treat as stale → overwrite (reclaim).
 
-**Choice:** Path A. The @internal tag already signals intent. Unexporting honors that intent and forces coverage dependency on integration tests (which are stronger anyway — they validate the full narrowing + validation flow, not the helper in isolation).
+**Liveness helper:** `isPidAlive(pid)` — works on Windows and Unix in Node.js.
 
-**Applied to:** `normalizeProfileSource()` in PR #32. Reduced unit test count from 28→26; integration tests retain coverage.
+**Residual race window (acknowledged, not fixed in v1):**
+`read-PID → liveness-check → overwrite` is NOT atomic. Two concurrent openers
+could both read the same stale PID, both call `process.kill` → dead, and both
+attempt to overwrite. The one that wins `writeFileSync` owns the lock; the loser
+doesn't know it lost. In practice the window is microseconds and the WAL
+hash-chain will detect corruption. A truly atomic swap requires a different OS
+mechanism. Tracking issue #55 covers upgrading to a real OS advisory lock.
 
-**Implication:** Team preference: explicit enforcement (unexport) > convention-based promises (@internal tag).
+**`WriteLockHeldError` updated:** constructor now accepts `holderPid?: number`;
+error message includes `(held by PID <pid>)` when a live holder is identified.
 
----
-
-## 2026-05-30: JSON.parse Boundary Discipline — Unknown Typing + Runtime Validation + Drift Guard
-
-**Date:** 2026-05-30  
-**Source:** PR #32 / issue #25, Cycle 1 F1 (Correctness) + Cycle 2 C2-1/C2-2 (verification)  
-**Decision:** When narrowing types that flow from `JSON.parse(eventLogPayload)`, enforce a three-tier boundary discipline:
-
-### Tier 1: Type the payload as `unknown`
-```typescript
-const payload: unknown = JSON.parse(eventLogPayload);
-```
-Do NOT type it as `any` or the target type. This forces explicit narrowing.
-
-### Tier 2: Validate at the boundary
-Implement a helper (e.g., `normalizeProfileSource()`) that:
-- Takes `unknown` input
-- Validates shape (e.g., `if (typeof payload.source !== 'string')`)
-- Returns the narrowed type or throws/returns null
-
-Emit a **stderr warning** if coercion occurs (matching the pattern from `loadMetrics` in the codebase):
-```typescript
-if (payload.source && !VALID_PROFILE_SOURCES.includes(payload.source)) {
-  console.warn(`[LoadedProfileSource] Coerced unexpected source: ${payload.source}`);
-}
-```
-
-### Tier 3: Drift-guard the union
-When the upstream union (e.g., `ProfileStalenessReason | 'FRESH' | 'STALE'`) grows, catch missing branches at compile time using a `satisfies` pattern:
-```typescript
-const driftGuard: Record<LoadedProfileSource | ProfileStalenessReason, true> = {
-  'FRESH': true,
-  'STALE': true,
-  'UNKNOWN': true,
-};
-```
-If a new reason is added and this helper is not updated, TypeScript will fail on the guard object (RED test).
-
-**Citation:** Cycle 1 F1 raised that `JSON.parse` cast to `UnionType` was unguarded. Cycle 2 C2-1/C2-2 verified the drift-guard pattern resolves it.
-
-**Impact:** Ensures JSON.parse payloads cannot silently accept malformed data or diverge from enum reality.
+**Issue #55:** tracks reconsideration of OS advisory lock (flock/LockFileEx) as
+a future replacement for the presence-based mechanism.
 
 ---
 
-## 2026-05-30: PowerShell Here-String Convention — Use Single-Quoted @'...'@ for Code Content
+## D-LOCK-3: No new npm dependency added
 
-**Date:** 2026-05-30  
-**Source:** PR #32 / issue #25, PR body rendering issues (2 occurrences)  
-**Decision:** When building multi-line file content in PowerShell that contains backticks (markdown code spans, `` `tsc ``, `` `null ``), use single-quoted here-strings `@'...'@` instead of double-quoted `@"..."@`.
-
-**Rationale:**
-PowerShell interprets escape sequences in double-quoted strings:
-- `` `t `` → TAB character
-- `` `n `` → newline
-- `` `r `` → carriage return
-
-Single-quoted here-strings treat backquotes literally.
-
-**Problem encountered (2 instances):**
-1. PR body description: `` `tsc `` became TAB + "sc", `` `n `` (in code block) became newline, eating the next line
-2. Earlier in session: GraphQL multiline field values mangled the same way
-
-**Pattern:**
-```powershell
-# ❌ WRONG — backticks interpreted
-$content = @"
-Run: `tsc --noEmit`
-Type:
-  - A (old)
-  - B (new)
-"@
-
-# ✅ CORRECT — backticks literal
-$content = @'
-Run: `tsc --noEmit`
-Type:
-  - A (old)
-  - B (new)
-'@
-```
-
-**Applied to:** PR #32 body re-render in alexander-5. Prevents escape-sequence garble in future multiline content.
+Confirmed: `fs.openSync(lockPath, 'wx')` is stdlib. No `proper-lockfile`,
+`lockfile`, or `node-lockfile` packages were added. Dependencies unchanged.
 
 ---
 
-## 2026-05-30: Forge Roadmap Priority — Dogfood-First (Aaron Directive)
+## D-LOCK-4: `close()` is on the concrete class, not WalBackend interface
 
-**Date:** 2026-05-30T23:55:00-07:00  
-**Author:** Aaron Kubly (via Copilot)  
-**Status:** ADOPTED
-
-### What (1) — Eureka pace
-
-"Let's not pull too hard on Eureka yet, it's still in the works." Defer aggressive forge → Eureka integration moves (the C2-1/C2-2/C2-3 Eureka-internal items Graham proposed) until Eureka stabilizes further. Forge can continue without depending on Eureka.
-
-### What (2) — Next priority for forge
-
-Packaging + installability + dogfooding is now priority #1. Forge's Phase 4.6 surface is implemented; the next move is getting it into a state where Aaron (and the team) can install + run it locally on real work to generate signal.
-
-### What (3) — Compelling-but-deferred for forge
-
-GP-tournament selection (Phase 5 §2.4) and Meta-optimization (DBOM on prescriber decisions, §3.5) are noted as compelling future moves, but explicitly *behind* packaging/dogfooding. They're soft-designed today and benefit from real dogfood signal before contract is nailed.
-
-### Why
-
-User direction on roadmap sequencing. Dogfooding-first reflects the principle that real usage signal beats further design speculation, and the deferred Eureka work prevents thrashing on a moving target.
-
-### Implications
-
-- **M0 (Alexander):** forge-mcp registration in plugin + copilot configs (shipped 2026-05-31 as PR #36, b22c8e7)
-- **M1 (Roger):** Hint consumption MCP tools (cairn MCP expand recall hints → decision hints)
-- **M2 (Gabriel):** Bash hooks + README (install forge-mcp, shell init integration)
-- **Deferred:** Eureka FactStore adapter, forge→Eureka integration wiring (until Eureka v1 stabilizes)
+`close()` is `async close(): Promise<void>` on `FileSystemWalBackend` only.
+Graham's locked `WalBackend` interface was NOT modified. Tests import the
+concrete class for lifecycle management; the `Ledger` interface does not expose
+a close path yet (deferred).
 
 ---
 
-## 2026-05-30: Forge Next Load-Bearing Move — SQLite FactStore Adapter (Graham Decision)
+## D-LOCK-5: `readOnly` option bypasses write lock
 
-**Date:** 2026-05-30  
-**Author:** Graham (Architect)  
-**Status:** PROPOSED FOR FUTURE DISPATCH (deferred by Aaron dogfood priority)
-
-### Context
-
-Eureka v1 (`ef06238`, 2026-05-30) landed `recall` with a composite ranker and injectable `FactStore`/`ClockProvider` seams. The `FactStore` interface is well-defined (`search({ query, sessionId, limit, minTrust }): Promise<RecallResult[]>`), but no SQLite-backed implementation exists.
-
-Forge's prescriber (`ForgePrescriberOrchestrator`) currently accepts an optional `ChangeVectorProvider` for historical context (statistical summaries). Eureka's `recall` would provide episodic context (trust-scored, recency-weighted facts) — complementary, not duplicative.
-
-### Decision
-
-**The next load-bearing move for forge is building the Eureka SQLite FactStore adapter.** Without it, `recall` is unreachable in production and the forge→Eureka integration loop cannot be validated.
-
-**Sequence (when Eureka stabilizes):**
-1. **Eureka SQLite FactStore adapter** — `packages/eureka/src/adapters/sqlite-fact-store.ts`, implements `FactStore.search()` against Eureka's SQLite DB. M, Edgar or Roger. This is Eureka's M5 milestone deliverable.
-2. **Wire `recall` into `ForgePrescriberOrchestrator`** — add optional `factStore?: FactStore` alongside existing `provider?: ChangeVectorProvider`. Fail-open (recall failure → prescribe without episodic context). S-M, Alexander. Forge imports `FactStore` type from `@akubly/eureka` only (no impl coupling).
-3. **`trustFloor` RecallOptions override** — small plumbing in `packages/eureka/src/activities/recall.ts`; seam already supports `minTrust` at FactStore boundary, just needs wiring. S, any agent.
-
-### What to defer
-
-- Eureka `commit` activity (v1.5+) — don't design before FactStore + recall wiring is proven.
-- Issue #17 async-IO sweep implementation — Alexander's T3 closed the W5-5 gaps; issue should be closed, not implemented. `better-sqlite3` sync model is acceptable for single-user local tool.
-
-### Risk
-
-Schema lock-in for FactStore SQLite backing: trust/importance/attentionTier storage must be durable. Any migration later breaks cognitive memory. Design the schema defensively (nullable fields, enum TEXT columns with normalizeX guards matching the `normalizeProfileSource` pattern from PR #32).
-
-### Current Status
-
-Deferred per Aaron's dogfood-first priority (2026-05-30). Will be picked up after M0/M1/M2 complete and Eureka v1 stabilizes.
+`createFileSystemWalBackend(rootDir, sessionId, { readOnly: true })` opens
+without acquiring the write lock. This satisfies the spec requirement that the
+read path is not gated by the write lock. Read-only backends replay from disk
+and support `readRows()` but `close()` is a no-op (no lock to release).
 
 ---
 
-## 2026-05-31: Cycle-2 Latent Lint Bug Pattern — Windows `npm run lint` Glob Failure
+## D-LOCK-6: Scope fences confirmed NOT touched
 
-**Date:** 2026-05-31  
-**Author:** Alexander (via Scribe, Issue #37)  
-**Status:** ROOT CAUSE IDENTIFIED; WORKAROUND DOCUMENTED; PERMANENT FIX TRACKED
+- Group-commit batching + seal-and-split on PAUSE (§3.5) — deferred
+- 64 MiB segment roll-over — deferred
+- `appendFenced` / optimistic head-offset check (§3.4.1) — deferred
 
-### What
 
-`npm run lint` fails on Windows with silent no-match (eslint glob `packages/*/src/` matches nothing via PowerShell glob expansion). Agents pushing code from Windows worktrees don't catch lint errors; Linux CI flags them post-merge. Example: commit 85d49b8 (PR #36 turn alexander-8) discovered unused-variable error during CI run, not local development.
-
-### Root Cause
-
-ESLint glob expansion via Node.js child_process on Windows uses native PowerShell glob rules (not sh glob rules). The pattern `packages/*/src/` expands to zero matches because PowerShell treats `*` literally when no files match at the top level. On Linux (`sh`), the glob expands correctly.
-
-### Workaround
-
-**UNTIL ISSUE #37 IS FIXED:** Agents modifying any package must use:
-```bash
-npm run lint --workspace=<package-name>
-```
-
-Examples:
-```bash
-npm run lint --workspace=forge
-npm run lint --workspace=eureka
-npm run lint --workspace=cairn
-```
-
-This bypasses the glob entirely and runs eslint directly on the package's source tree.
-
-### Permanent Fix
-
-**Tracked in Issue #37 (squad:gabriel):** Rewrite ESLint glob pattern or use a different linting approach:
-- Option A: Use `packages/{cairn,forge,eureka,types}/**/*.ts` (explicit list)
-- Option B: Run linter per-package in parallel (robust to glob expansion issues)
-- Option C: Use ESLint's built-in workspace support (v8+)
-﻿### 2026-06-01: Crucible Sprint 0 — First GREEN Cycle (Roger)
-
-## Open Decisions (Current Session)
+---
 
 ### 2026-06-02: M2 Cycle-2 Doc Alignment (Gabriel)
 
@@ -610,6 +593,7 @@ One invariant belongs in the shared contract helper (applies to ALL FactStore im
 Roger's Slice C is correct and well-structured. The BM25 sign convention is right, cursor safety is solid, minTrust boundaries are precise, and session isolation holds. The one genuine finding (FSE-1: no FTS5 input sanitization) is MEDIUM severity — it's a real crash path for user-supplied queries, but not a correctness, isolation, or data-loss issue. It does not block the slice. Filed as a follow-up with a test that locks current behavior.
 
 
+
 # Decision Drop — Roger M8 Slice C (FactStore + FTS5 BM25 search)
 
 **Author:** Roger Wilco (Platform Dev)  
@@ -699,6 +683,7 @@ Added JSDoc at two locations:
 - `RecallResult.relevance` field — clarifies per-page min-max, NOT comparable across pages
 - `FactStore.search` return type (on `nextCursor?`) — same note for consumers reading the return shape
 
+
 # Roger: Crucible First GREEN — Decision Inbox
 
 **Date:** 2026-06-01  
@@ -709,6 +694,11 @@ Added JSDoc at two locations:
 - **Cross-session aggregation:** `FactStore.search()` is session-scoped in M8. Querying across sessions is a later milestone.
 - **Embeddings/semantic search:** BM25 via FTS5 only. Vector similarity is out of scope.
 
+# Roger: Crucible First GREEN — Decision Inbox
+
+**Date:** 2026-06-01  
+**Author:** Roger (Platform Dev)  
+**Status:** GREEN confirmed — acceptance test passing
 ---
 
 # M8 Slice D — SQLite Production Deps Factory (Roger, Laura, Graham)
@@ -1322,6 +1312,124 @@ No `Ledger` class, no `WAL` interface, no Cairn integration in this turn. This i
 
 ---
 
+## 1. Packages Scaffolded
+
+### `packages/crucible-core/`
+New package `@akubly/crucible-core` v0.1.0.
+
+Files created:
+- `package.json` — name `@akubly/crucible-core`, type module, `main/types` → `dist/`, scripts: build/test/typecheck/clean, deps: `@akubly/types: *`, devDeps: `@types/node ^25.5.0`, `vitest ^3`
+- `tsconfig.json` — mirrors crucible-cli: ES2022, Node16 module, composite, strict, references `../types`
+- `README.md` — one paragraph description
+- `vitest.config.ts` — standard node environment, `include: ['src/**/*.test.ts']`
+- `src/types.ts` — types-only module (no runtime code)
+- `src/session.ts` — createSession + fork implementation
+- `src/index.ts` — barrel re-export
+
+### `packages/crucible-cli/` (modified)
+- `src/index.ts` — now re-exports `{ createSession, fork }` from `@akubly/crucible-core`
+- `package.json` — added `"@akubly/crucible-core": "*"` to dependencies
+- `tsconfig.json` — added `{ "path": "../crucible-core" }` to references
+
+### Root `tsconfig.json`
+Added references: `packages/crucible-core` and `packages/crucible-cli`.
+
+---
+
+## 2. Public Types and Functions — Shapes
+
+```ts
+// §6 five-kind vocabulary
+type PrimitiveKind = 'request' | 'artifact' | 'observation' | 'decision' | 'question';
+
+interface PrimitiveInput {
+  primitiveKind: PrimitiveKind;
+  primitivePayload: unknown;
+  causalReadSet: string[];
+}
+
+// Committed primitive — PrimitiveInput + logical offset
+interface Primitive extends PrimitiveInput {
+  offset: number;
+}
+
+interface SessionMetadata {
+  parentSessionId: string | null;
+  forkPointEventId: number | null;
+  createdAt: number;
+}
+
+interface Session {
+  id: string;
+  metadata: SessionMetadata;
+  append(p: PrimitiveInput): Promise<void>;
+  query(opts: { range: [number, number] }): Promise<Primitive[]>;
+}
+
+function createSession(): Promise<Session>;
+function fork(parentId: string, opts: { atOffset: number }): Promise<Session>;
+```
+
+---
+
+## 3. Range Convention: Inclusive-Inclusive
+
+**Decision:** `query({ range: [a, b] })` is **inclusive on both ends**:  
+- `[0, 46]` returns 47 primitives (offsets 0, 1, …, 46)  
+- `[0, 23]` returns 24 primitives  
+
+**Evidence from test:** `query({ range: [0, 46] })` → `toHaveLength(47)` → 47 = 46 − 0 + 1 ✓
+
+---
+
+## 4. In-Memory Parent-Registry Approach
+
+A module-level `Map<string, Primitive[]>` holds each session's **own events**:
+
+- **Root sessions:** own events are the complete event log; offset = array index.
+- **Child (forked) sessions:** own events contain only primitives appended *after* the fork. Events at offset ≤ `forkPointEventId` are served by **delegating to the parent registry entry** — no physical copy.
+
+**Rationale:** This satisfies A1 invariant 3 (child prefix equals parent prefix [0..23]) and invariant 4 (parent unmodified) without copying. The parent's `registry` entry remains untouched; the child's `query` reads from it transparently.
+
+**Offset assignment for child append:**
+```ts
+const baseOffset = forkPointEventId === null ? 0 : forkPointEventId + 1;
+const offset = baseOffset + ownEvents.length;
+```
+
+---
+
+## 5. GREEN Confirmation
+
+```
+> @akubly/crucible-cli@0.1.0 test
+> vitest run
+
+ RUN  v3.2.4 D:/git/harness/packages/crucible-cli
+
+ ✓ src/__tests__/acceptance/session-fork.test.ts (1 test) 3ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  23:22:14
+   Duration  436ms (transform 71ms, setup 0ms, collect 73ms, tests 3ms, environment 0ms, prepare 148ms)
+```
+
+**Invariants confirmed GREEN:**
+- A1-1: `childSession.metadata.parentSessionId === parentSession.id` ✓
+- A1-2: `childSession.metadata.forkPointEventId === 23` ✓
+- A1-3: `childPrefix.toEqual(parentPrefix)` for range [0,23] ✓
+- A1-4: `parentEventsAfter.toHaveLength(47)` for range [0,46] ✓
+
+---
+
+## 6. Deferred: Ledger Abstraction
+
+No `Ledger` class, no `WAL` interface, no Cairn integration in this turn. This is the **GREEN phase only** — simplest correct implementation behind the acceptance API. The REFACTOR step (next TDD cycle) is where a Ledger collaborator abstraction would be introduced, followed by the London-school descent to introduce an L1 mock layer. Deferred per Graham's sprint plan (OQ-2).
+
+---
+
+
 # Decision Drop: Crucible REFACTOR Cycle — SessionManager Unit Tests (RED)
 
 **Author:** Laura (Tester)  
@@ -1428,6 +1536,7 @@ packages/crucible-cli/src/__tests__/acceptance/session-fork.test.ts (1 test) ✅
 Roger's refactor must not change the public `fork` / `createSession` API surface.
 
 ---
+
 
 # Decision: Crucible Sprint 0 — REFACTOR Phase: SessionManager + ForkLineage
 
@@ -1577,6 +1686,7 @@ Tests 1 passed (1)
 
 ---
 
+
 # Decision: Crucible Sprint 0 Topic Branch Recovery
 
 **Date:** 2026-06-01T23:58:20Z  
@@ -1626,6 +1736,7 @@ This left main 3 commits ahead of origin/main with unreviewed code still in the 
 Topic branch is ready for review-cycle skill execution.
 
 ---
+
 
 # Graham — Cycle 1 Persona Review Fixes
 
@@ -1681,6 +1792,7 @@ Topic branch is ready for review-cycle skill execution.
 
 ---
 
+
 # Cycle 2 Advisory Close-Out — Graham
 
 **Date:** 2026-06-05T10:54:00Z
@@ -1705,6 +1817,7 @@ Topic branch is ready for review-cycle skill execution.
 
 ---
 
+
 # Laura — Cycle 1 Test Updates
 
 **Date:** 2026-06-02  
@@ -1715,6 +1828,7 @@ Topic branch is ready for review-cycle skill execution.
 
 
 ---
+
 
 # M8 Slice A — FactReader Contract Audit
 
@@ -1877,6 +1991,7 @@ impl and understands the passthrough contract).
 
 ---
 
+
 # Laura — M8 Slice A Cycle-2 Audit
 
 **Author:** Laura (Tester)
@@ -1965,6 +2080,7 @@ beforeEach(() => {
 | `@akubly/crucible-cli` | 1 | ✅ GREEN |
 
 ---
+
 
 # Roger — Cycle 1 Fix Decisions
 
@@ -2197,6 +2313,7 @@ Two new regression-locking tests added (DB-CL-6, DB-CL-7). Baseline: **86/86 gre
 
 ---
 
+
 # Roger — M8 Slice A Cycle-2 Decision Drop
 
 **Author:** Roger (Platform Dev)
@@ -2291,6 +2408,7 @@ M1 + I2 comments were applied in the same commit as I5 since both touched `001-f
 
 ---
 
+
 # Roger M8 Slice A Decision Drop
 
 **Author:** Roger (Platform Dev)
@@ -2345,6 +2463,7 @@ Q1 approval. Writes come in Slice B.
 
 ---
 
+
 # Decision: M8 Slice B — Transaction wrapper choice + contract test relocation pattern
 
 **Date:** 2026-06-05  
@@ -2395,6 +2514,7 @@ describe('XYZ contract suite — tombstone (suite moved)', () => {
 **Choice:** `TrustUpdaterHarness = { impl, setTrust, getTrust, cleanup? }` — matching `FactReaderHarness` optional-cleanup convention from Slice A.
 
 **Rationale:** `cleanup` is optional so the InMemory harness needs no change (no native handles). SQLite harness registers `db.close()`. `afterEach(() => harness?.cleanup?.())` in `runTrustUpdaterContract` guarantees teardown even if a test throws — same pattern used in `runFactReaderContract`.
+
 
 # M2 Design — forge-mcp bash hooks + install README
 
@@ -2488,6 +2608,7 @@ to `~/.zshrc` in place of `~/.bashrc`. Documented in README as a brief note.
 
 No changes to forge-mcp's tool surface, MCP wiring, or any TypeScript source.
 
+
 # M2 Shipped — forge-mcp Bash Shell Init Hooks
 
 **Author:** Gabriel (Infrastructure)
@@ -2513,23 +2634,29 @@ No changes to forge-mcp's tool surface, MCP wiring, or any TypeScript source.
 ## Verification Recipe for Laura
 
 ```bash
+
 # 1. Syntax check
 bash -n .github/hooks/cairn/shell-init.sh
 bash -n .github/hooks/cairn/install.sh
 bash -n .github/hooks/cairn/uninstall.sh
 
+
 # 2. Install (idempotent — run twice to confirm second run is no-op)
 bash .github/hooks/cairn/install.sh
 bash .github/hooks/cairn/install.sh   # should print "already installed"
+
 
 # 3. Reload and smoke-check
 source ~/.bashrc
 forge_mcp_check
 
+
 # 4. Uninstall
 bash .github/hooks/cairn/uninstall.sh
 source ~/.bashrc
+
 # forge_mcp_check should no longer exist as a function
+
 
 # 5. Re-install (confirm idempotency survived uninstall cycle)
 bash .github/hooks/cairn/install.sh
@@ -2542,6 +2669,7 @@ forge_mcp_check
 The marker block strategy (`# forge-mcp: shell init — start`) is the safe pattern
 for managed rc-file entries. The install script will never double-append, and the
 uninstall script removes the exact block. No manual editing required.
+
 
 # Decision Drop: M1 Cycle-1 Findings Fix Wave
 
@@ -2642,6 +2770,7 @@ Returns the raw JSON payload (not the MCP content wrapper). MCP handler calls th
 | F12 ?? null | resolution_note + resolution_disposition use ?? null |
 | F13 .max(256) | hint_id + skill_id Zod fields |
 
+
 # Decision Drop: M1 Cycle-2 Polish Wave
 
 **Author:** Roger  
@@ -2726,6 +2855,7 @@ Net -1: merged the two migration schema `it()` tests (one for 017, one for 018) 
 - `packages/cairn/src/__tests__/discovery.test.ts` — version 18 → 17
 - `packages/cairn/src/__tests__/migration012.test.ts` — version 18 → 17 (2 assertions)
 - `packages/cairn/src/__tests__/prescriptions.test.ts` — version 18 → 17
+
 
 # Decision: PR #45 CI Build Fix — gabriel-pr45-ci-build-fix
 
@@ -2813,6 +2943,7 @@ Incremental `tsc --build` (with cached `.tsbuildinfo`) masks clean-build type-re
 
 ---
 
+
 # Decision: PR #45 Gitignore Cleanup + Topic-Branch SKILL Typo Fix
 
 **Author:** Gabriel (Infrastructure)
@@ -2860,6 +2991,7 @@ All three verified via `git check-ignore -v` after removal — each matched by t
 
 
 ---
+
 
 # Decision Drop: PR #45 Merge Resolution (squad/crucible-sprint-0-walkthrough-a ← origin/main)
 
@@ -2929,6 +3061,7 @@ See `gabriel/history.md` → "2026-06-05 — Merge-Conflict Resolution" for the 
 
 ---
 
+
 # PR #45 — Second Merge from origin/main (2026-06-05)
 
 **Author:** Gabriel (Infrastructure)
@@ -2981,6 +3114,7 @@ Not pushed — Roger has follow-up fixes to land on top; coordinator will push a
 
 
 ---
+
 
 # OQ-2 Substrate Brief — Genesta (Eureka/Cairn Bounded-Context Owner)
 
@@ -3063,6 +3197,7 @@ The minimal honest federation boundary already exists in the architecture:
 
 
 ---
+
 
 # OQ-2 Decision Brief: Event-Substrate Topology
 
@@ -3153,6 +3288,7 @@ The `DB` interface would need to target Cairn's `event_log` schema. This means:
 
 ---
 
+
 # Decision: Correct Stale SKILL Examples (PR #45 Copilot Review)
 
 **Agent:** Graham (Lead / Architect)  
@@ -3192,6 +3328,7 @@ Copilot's cloud review on PR #45 flagged two stale code examples in `.squad/skil
 
 
 ---
+
 
 # Graham Review: Refactor 3 GREEN
 
@@ -3288,6 +3425,7 @@ This is the substrate for Refactor 4 / Phase 2 file-backed sessions. The prepare
 
 ---
 
+
 # Decision: Transitive Fork Prefix Delegation — Scope Disposition
 
 **Date:** 2026-06-05
@@ -3321,6 +3459,256 @@ Child `query()` prefix delegation reads the parent's `ownEvents` via `db.getOwnE
 
 
 ---
+
+
+# 2026-06-06: Aaron's User Directive — Parallelization and TDD Discipline
+
+**By:** Aaron Kubly (via Copilot)  
+**Directive:** When parallelizing work, do NOT go parallel if it requires deviating from RED→GREEN TDD execution. TDD discipline (RED test fails first, then minimal GREEN, then REFACTOR) takes priority over parallelism. Parallel work is only permitted at TDD-safe boundaries (e.g., independent RED tests, interface/seam contracts) — never GREEN-before-RED, never shared-impl-before-seam.  
+**Why:** User direction — captured for team memory during WAL substrate + Walkthrough B kickoff (Option A seam-first).
+
+---
+
+
+# 2026-06-06: Aaron's Ruling — HookVerdict VETO Semantics (resolves graham-ledger-seam-OPEN)
+
+**By:** Aaron Kubly (via Copilot)  
+**Decision:** Option A — Adopt **VETO** as a first-class **pre-WAL Ledger-layer gate**.
+
+- VETO fires at `Ledger.append` entry, BEFORE staging. Rejected input never enters the WAL → WAL stays purely append-only; §3's "all staged rows commit" invariant is intact.
+- §4's `continue | observe | pause` (on the staged batch, inside the group-commit window) are untouched. VETO is a distinct, earlier policy boundary.
+- Enforced by the type system: `Exclude<HookVerdict, 'VETO'>` at the WAL backend `commitRow` port so VETO can never cross the WAL boundary.
+- §4.2 Walkthrough B RED test passes as written — no test rework.
+
+**Required follow-on (documented amendments to FINAL specs):**
+
+1. §4.1 verdict table — add VETO row ("no row created; Ledger throws `Append vetoed by hook: <id>`"), flagged as Ledger-layer (not commit-window).
+2. §4.3 dispatch — add VETO case before the PAUSE check.
+3. §11 replay contract — note: VETO inputs are not in the WAL; replay need not handle them (Ledger-layer policy, not a WAL concept).
+
+**Why:** User ruling at Decision-Point Gate during WAL substrate + Walkthrough B build.
+
+---
+
+
+# 2026-06-06: Ledger Seam Contract — Graham (Lead/Architect)
+
+**Date:** 2026-06-06T22:03:01-07:00  
+**Status:** LOCKED — Option A ruling received (Aaron, 2026-06-06). Spec amendments applied. See `graham-ledger-seam-OPEN.md` (RESOLVED).
+
+## Purpose
+
+This document is the single authoritative reference for Roger (§3 WAL substrate)
+and Laura/Roger (§4.2 Walkthrough B GREEN) on how the Ledger, HookBus, and
+WalBackend fit together.
+
+## Delivered Files
+
+```
+packages/crucible-core/src/ledger/hook-bus.ts   — HookVerdict, HookContext, HookMetadata,
+                                                   HookResult, HookPredicate,
+                                                   HookRegistrationOpts, HookBusPort
+packages/crucible-core/src/ledger/ledger.ts     — Ledger, LedgerEvent, LedgerQueryOpts,
+                                                   LedgerFactoryOptions, CreateLedger,
+                                                   WalBackend
+packages/crucible-core/src/index.ts             — all above types re-exported
+```
+
+## §1 Locked `append` Signature
+
+```typescript
+// On Ledger interface:
+append(input: PrimitiveInput): Promise<number>
+//                                            ^ commitOffset (monotonic, per-session)
+```
+
+- **Input:** `PrimitiveInput` — `{ primitiveKind: PrimitiveKind; primitivePayload: unknown; causalReadSet: string[] }`.
+  Unchanged from the existing Sprint 0 type.
+- **Returns:** `Promise<number>` — the commit offset assigned to the row by the WAL backend.
+- **Throws:** `Error('Append vetoed by hook: <hookId>')` when any hook returns VETO.
+  The exact message string is pinned by §4.2 RED test invariant 1.
+
+## §2 Veto Invariant — No Partial Write
+
+**Three-part invariant (all must hold simultaneously; pinned by §4.2 RED test):**
+
+1. `append()` rejects with `Error('Append vetoed by hook: <hookId>')` on VETO.
+2. The hook predicate is invoked with `{ primitiveKind, primitivePayload, metadata }` **before** any WAL byte is written.
+3. The ledger stays EMPTY after a veto — no WAL row, no CAS write, no fdatasync.
+
+**Implementation rule for Roger's GREEN phase:**
+
+```
+(a)  Build HookContext from PrimitiveInput.
+(b)  Call hookBus.fire(ctx).
+(c)  if result.verdict === 'VETO':
+         throw new Error(`Append vetoed by hook: ${result.hookId}`)
+         // ← return here; do NOT proceed
+(d)  ONLY IF non-VETO:
+         call walBackend.commitRow(input, result)
+         return commitOffset
+```
+
+There MUST be **no** WAL write, CAS write, or fdatasync between steps (b) and (c).
+
+## §3 Where HookBus.fire Sits Relative to the WAL Write
+
+```
+Ledger.append(input)
+  │
+  ├─ 1. Build HookContext (no I/O)
+  │
+  ├─ 2. hookBus.fire(ctx)          ← FIRES HERE — before any WAL byte
+  │      │
+  │      ├─ VETO   → throw Error('Append vetoed by hook: <hookId>')  ← exits, nothing written
+  │      ├─ PAUSE  → pass to WalBackend ─┐
+  │      ├─ OBSERVE → pass to WalBackend ─┤
+  │      └─ COMMIT → pass to WalBackend ─┘
+  │
+  └─ 3. walBackend.commitRow(input, hookResult)
+         │
+         ├─ Hash-chain (prevRoot/selfRoot)
+         ├─ BLAKE3 payloadHash + readSetHash (§3.3)
+         ├─ CAS write (payload, readSet, hookVerdictWitness if OBSERVE/PAUSE)
+         ├─ Segment binary write (§3.2)
+         ├─ fdatasync (one per group-commit batch — §3.4)
+         └─ Returns commitOffset
+```
+
+## §4 HookVerdict at the Ledger Boundary
+
+```typescript
+type HookVerdict = 'COMMIT' | 'OBSERVE' | 'PAUSE' | 'VETO';
+```
+
+| Ledger verdict | §3/§4 WAL-row value | Effect |
+|---|---|---|
+| `COMMIT`  | `hookVerdict = null` or `'continue'` | Row proceeds normally |
+| `OBSERVE` | `hookVerdict = 'observe'` | Row proceeds + CAS hookVerdictWitness written |
+| `PAUSE`   | `hookVerdict = 'pause'` | Row commits; §3.5 seal-and-split fires inside WalBackend |
+| `VETO`    | *(never reaches WAL)* | Ledger throws; no row written |
+
+⚠ **VETO is now LOCKED** (Aaron ruling 2026-06-06, Option A). All four verdicts are locked and unblocking.
+
+## §5 WalBackend Integration Boundary
+
+```typescript
+interface WalBackend {
+  commitRow(
+    input: PrimitiveInput,
+    hookResult: HookResult & {
+      verdict: Exclude<HookVerdict, 'VETO'>;
+      hookId: string | null;
+    },
+  ): Promise<number>;
+
+  readRows(opts: LedgerQueryOpts): Promise<LedgerEvent[]>;
+}
+```
+
+- `commitRow` receives `verdict` typed as `Exclude<HookVerdict, 'VETO'>` — the TypeScript
+  type enforces that VETO can never reach this method.
+- Roger's WAL substrate implements this interface.
+- For in-memory / test runs, a trivial in-memory `WalBackend` suffices (no file I/O).
+
+---
+
+
+# 2026-06-06: Walkthrough B RED Test — Hook Veto Acceptance Test (Laura)
+
+**Date:** 2026-06-06T22:03:01-07:00
+**Author:** Laura (Tester)  
+**Status:** RED — test written and confirmed failing for the right reason.
+
+The RED acceptance test for A3 (Pre-Commit Hook Veto) has been written at:
+```
+packages/crucible-core/src/__tests__/acceptance/hook-veto.test.ts
+```
+
+Test imports `createLedger` from `../../index.js` but it is not yet exported → confirmed failure: `TypeError: (0 , createLedger) is not a function`.
+
+This is the correct RED signal: the test is well-formed, not broken by typo.
+
+---
+
+
+# 2026-06-06: Walkthrough B GREEN — HookBus + Ledger Pre-Stage Gate (Roger)
+
+**Date:** 2026-06-06T22:03:01-07:00
+**Author:** Roger (Platform Dev)  
+**Status:** GREEN — acceptance test passing, 28/28 crucible-core tests green, tsc build clean
+
+## Implementation Summary
+
+`createLedger()` factory exported, `Ledger.registerHook()` and `append()` implemented with VETO pre-WAL gate. HookBus fires at entry, VETO short-circuits to error (no WAL write). All hook verdicts locked and unblocking.
+
+### Results
+
+- Acceptance: `✓ hook-veto.test.ts` GREEN (1/1 test passing)
+- Unit tests: 27 crucible-core tests GREEN
+- Total: **28/28 crucible-core tests passing**
+- Build: `npm run build` clean (tsc, no errors)
+
+---
+
+
+# 2026-06-06: PR #51 Review Decisions — Roger
+
+**Date:** 2026-06-06  
+**PR:** crucible/refactor-3-sqlite-adapter (#51)
+
+## Decision 1 — `getOwnEvents` returns a copy (snapshot contract)
+
+Return a spread copy — `[...(store.get(sessionId)?.ownEvents ?? [])]`. The JSDoc contract ("modifications to the returned array are not persisted") is the intended behavior. The SQLite adapter already satisfied this; making in-memory match eliminates behavioral asymmetry.
+
+## Decision 2 — Lazy-load `better-sqlite3` native module inside `createSQLiteDB`
+
+Defer the native module load using `createRequire`:
+```typescript
+import { createRequire } from 'node:module';
+import type Database from 'better-sqlite3';   // type-only
+
+export function createSQLiteDB(path: ':memory:' | string): InMemoryDB {
+  const DatabaseCtor = createRequire(import.meta.url)('better-sqlite3');
+  // ...
+}
+```
+
+This avoids eager loading when in-memory adapter is the only consumer.
+
+---
+
+
+# 2026-06-06: WAL Substrate Sub-Seam Decisions — Roger
+
+**Date:** 2026-06-06T22:03:01-07:00
+**Status:** SUB-SEAM GREEN (hash-chain, CAS, codec all locked and tested)
+
+## D-WAL-1: BLAKE3 library selection
+
+**Choice:** `@noble/hashes` v2.x (`@noble/hashes/blake3.js`)
+
+- Pure TypeScript/WASM — no native compilation required on Windows
+- Actively maintained; widely used across the JS crypto ecosystem
+- Correct ESM subpath exports
+- API: `blake3(data: Uint8Array): Uint8Array`
+
+## D-WAL-2: selfRoot canonical content (sub-seam approximation)
+
+`selfRoot = BLAKE3(commitOffset(8 LE) || timestampNs(8 LE) || ... || envelopeCbor(var))`
+
+Byte concatenation is deterministic now. Swap to CBOR once §6 is locked.
+
+## D-WAL-3: crc32c deferred
+
+Written as 4 zero bytes in v0.1. Implement real CRC32C before production.
+
+## D-WAL-4: Conditional segment fields deferred
+
+`hookVerdictWitness`, `contextWindowCommitment` not encoded/decoded until §6 is locked.
+
+---
+
 
 # Handoff: Crucible Refactor 3 RED — Integration Test for Real SQLite
 
@@ -3483,6 +3871,7 @@ Roger's GREEN implementation must not break these.
 
 
 ---
+
 
 # OQ-2 Substrate Brief — Roger (Platform Dev)
 
@@ -3649,6 +4038,7 @@ Option B (FEDERATE). The DB interface is already the right contract. The SQLite 
 
 ---
 
+
 # Roger — PR #45 Cycle 2 Fixes
 
 **Date:** 2026-06-05  
@@ -3685,6 +4075,7 @@ Option B (FEDERATE). The DB interface is already the right contract. The SQLite 
 
 ---
 
+
 # Decision Record: PR #45 Cycle 3 Fixes (Roger)
 
 **Date:** 2026-06-05  
@@ -3715,6 +4106,7 @@ Option B (FEDERATE). The DB interface is already the right contract. The SQLite 
 
 
 ---
+
 
 # Roger — PR #45 Final Fixes (Copilot cloud-review pass)
 
@@ -3755,6 +4147,7 @@ This is the same bug that caused the real scratch-file problem during Sprint 0 r
 
 ---
 
+
 # PR #45 Copilot Review — Comment Accuracy Fixes
 
 **Date:** 2026-06-05
@@ -3790,6 +4183,7 @@ This is the same bug that caused the real scratch-file problem during Sprint 0 r
 
 
 ---
+
 
 # Roger Handoff: Refactor 3 GREEN
 
@@ -3960,6 +4354,208 @@ Both cycles declared **REVIEW-COMPLETE** with diminishing returns. All findings 
 
 **Ship cleared for Refactor 3.** Feature PR ready to merge.
 
+
+---
+
+### 2026-06-06T22:03:01-07:00: Queued follow-ups — WAL / Walkthrough B (non-blocking)
+**By:** Aaron Kubly (via Copilot) — approved to queue for later
+**Source:** Laura's Walkthrough B GREEN sign-off.
+1. **Edge-case RED test:** "prior rows survive a later veto" — append N committed rows, VETO on row N+1, assert exactly N rows remain (vetoed row absent, prior rows intact). Not covered by current hook-veto.test.ts. Owner candidate: Laura (RED) → Roger (GREEN) if it drives impl change.
+2. **§4.1 doc polish:** add a TypeScript-name column to the §4.1 verdict table so the intentional doc(`'veto'`)/code(`'VETO'`) casing split is explicit. Non-blocking; Owner candidate: Graham. (Casing split is intentional and type-safe — accepted, not a bug.)
+
+
+---
+
+
+# Roger — WAL File Backend Decisions
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-06-06T22:03:01-07:00  
+**Branch:** squad/crucible-wal-substrate-walkthrough-b  
+**Status:** CLOSED — 7 new file-backend tests GREEN, full suite 35/35
+
+---
+
+## D-WB-FS-1: On-disk layout matches §3.2
+
+```
+<rootDir>/
+├── meta/
+│   └── manifest.json
+├── wal/
+│   └── sessions/<sessionId>/
+│       ├── 000000.seg     binary records via codec.ts framing
+│       └── index.idx      NDJSON: {offset, seg, byteOffset} one line per row
+└── cas/
+    └── <2-hex-shard>/
+        └── <64-hex-hash>.cbor   raw payload / readSet bytes
+```
+
+This matches the §3.2 spec tree exactly. `rootDir` is caller-supplied (not
+hard-coded to `~/.crucible`) so tests use a temp dir with no repo leakage.
+
+---
+
+## D-WB-FS-2: Manifest schema (schemaVersion=1)
+
+```json
+{
+  "schemaVersion": 1,
+  "sessionId": "<sessionId>",
+  "segmentRange": [0, 0],
+  "lastCommitOffset": -1
+}
+```
+
+- `schemaVersion: 1` — upgrade path reserved for when §6 CBOR canonicalization lands.
+- `lastCommitOffset: -1` — sentinel for "no rows committed yet".
+- `segmentRange: [first, last]` — only `[0, 0]` for now (single-segment; roll-over deferred).
+- Written on every `commitRow` via synchronous `writeFileSync` (simpler than fdatasync for v0.1).
+
+---
+
+## D-WB-FS-3: Index format — NDJSON, append-only
+
+`index.idx` is written by appending a newline-delimited JSON object per committed row:
+```
+{"offset":0,"seg":0,"byteOffset":0}
+{"offset":1,"seg":0,"byteOffset":164}
+```
+
+This matches the §3.2 advisory index contract: rebuild from segment scan if corrupted.
+Currently the reopen path performs a sequential segment scan (not index lookup) for
+simplicity — the index exists as the spec requires but fast random-access lookup is
+deferred until a RED test drives it.
+
+---
+
+## D-WB-FS-4: primitiveKind stored in envelopeCbor as UTF-8
+
+The segment record's `envelopeCbor` field stores `primitiveKind` as raw UTF-8 bytes
+(e.g., `Buffer.from('observation', 'utf8')`). This allows reopen to reconstruct the full
+`LedgerEvent.primitiveKind` field without additional metadata.
+
+**Deferred upgrade:** When §6 primitive taxonomy is locked, replace this with a CBOR
+envelope that carries the kind byte, schemaVersion, and other envelope fields.
+Changing the envelopeCbor format requires a `schemaVersion` bump in manifest.json and
+a segment migration pass.
+
+---
+
+## D-WB-FS-5: CAS write-before-WAL ordering respected
+
+Per §3.2: "WAL never references CAS content that is not durable." In `FileSystemWalBackend.commitRow`:
+1. `cas.put(payloadBytes)` — writes `.cbor` file synchronously
+2. `cas.put(readSetBytes)` — writes `.cbor` file synchronously (if non-empty)
+3. `appendFileSync(activeSegPath, recordBuf)` — appends WAL record
+
+`fdatasync` is not explicitly called in v0.1 (deferred alongside group-commit in §3.5).
+The ordering guarantee holds: CAS bytes exist on disk before the WAL record referencing
+their hash is appended.
+
+---
+
+## D-WB-FS-6: Scope fences — NOT touched (no RED test)
+
+- **Single-writer advisory file lock** (§3.4.1): deferred to next cycle.
+- **Group-commit batching + seal-and-split on PAUSE** (§3.5): deferred.
+- **64 MiB segment roll-over**: deferred.
+- **fdatasync per group-commit**: deferred alongside group-commit.
+- **crc32c real computation**: deferred (4 zero bytes, as before).
+
+
+
+# Roger WAL Review Fixes — Cycle 1 Decisions Log
+
+**Date:** 2026-06-07
+**Branch:** squad/crucible-wal-substrate-walkthrough-b
+**Author:** Roger Wilco (Platform Dev, Crucible)
+
+---
+
+## M4 — sessionId / factory export
+
+**Decision: DROP `sessionId` from `LedgerFactoryOptions`; EXPORT `createFileSystemWalBackend`.**
+
+Rationale:
+- `sessionId` was declared in `LedgerFactoryOptions` but never read in `createLedger()`.  No test references it.  Wiring it to a default file-system backend would require committing to a stable `~/.crucible` rootDir contract that isn't established yet — premature.  Cleanest fix: remove the unused field.
+- `createFileSystemWalBackend` IS the public durable entrypoint and was already a named export from `wal-backend-fs.ts` but not re-exported from `index.ts`.  Added alongside `WriteLockHeldError`, `ReadOnlyWalBackendError`, and `FileSystemWalBackendOptions`.
+
+---
+
+## New error types introduced
+
+| Name | Location | Thrown when |
+|------|----------|-------------|
+| `ReadOnlyWalBackendError` | `wal-backend-fs.ts` | `commitRow()` is called on a backend opened with `{ readOnly: true }` |
+
+`WriteLockHeldError` was already present; no change to its shape.
+
+---
+
+## I5 — encodeFlags extraction
+
+`encodeFlags` was duplicated in `codec.ts` (wire framing) and `hash-chain.ts` (hash pre-image).  Extracted to `wal/flags.ts`; both files now import from there.  Intentional: these two callers MUST stay identical.  Having a single source of truth prevents silent bit-mapping drift between the on-disk frame and the hash commitment.
+
+---
+
+## M3 — VERDICT_TO_WAL centralisation
+
+Moved to `wal/types.ts` (same file as the WAL-layer type definitions).  Both `wal-backend-fs.ts` and `wal-backend-in-memory.ts` import it from there.  The key type is `Record<'COMMIT' | 'OBSERVE' | 'PAUSE', number>` — equivalent to the old `Record<Exclude<HookVerdict, 'VETO'>, number>` but expressed without the ledger-layer `HookVerdict` import, keeping the `wal/` sub-package dependency-clean from the parent `ledger/` layer.
+
+---
+
+## Deferred (NOT touched in this wave)
+
+- **#56** (crash-durability): CAS fsync gap — acknowledged with a comment in `cas-fs.ts`; no behavior change.
+- **#57** (verdict no-match encoding): Not touched.
+
+
+---
+
+# WAL Substrate + Walkthrough B — 2-Cycle Persona Review
+
+**Author:** Scribe  
+**Date:** 2026-06-07T23:59:26.964-07:00  
+**Branch:** squad/crucible-wal-substrate-walkthrough-b  
+**Status:** REVIEW-COMPLETE — 75/75 tests green, 0 blocking sustained
+
+## Summary
+
+Two-cycle persona review of Crucible WAL substrate (Roger) + Walkthrough B prototype (Laura/Graham seam test).
+
+**Cycle 1 (Code Panel — 5 personas):** 13 findings (1 blocking / 8 important / 4 minor)
+- Blocking B1: lock empty-file race — FIXED (commit b5b03dc)
+- Important findings: 8 of 8 accepted and fixed
+- Minor findings: 4 deferred / accepted as-is
+- Result: 74/75 tests green
+
+**Cycle 2 (Re-review — 3 personas):** 2 important / 1 minor, 0 blocking
+- Contract suite hardened: now asserts verdict bytes + PAUSE-across-reopen
+- Lock PID write hardened against short-write
+- sessionId removal documented in release notes
+- Result: 75/75 tests green, lint clean, build clean
+
+## Dispositions
+
+| Item | Disposition |
+|------|-------------|
+| B1 (lock empty-file race) | FIXED (b5b03dc) |
+| I2 (crash-durability / CAS fsync) | DEFERRED → GitHub issue #56 |
+| I7 (verdict no-match vs continue encoding) | DEFERRED → GitHub issue #57 |
+| I1, I3, I4, I5, I6, M1, M2, M3, M4, M5 | FIXED (b5b03dc + 028cdee) |
+
+## Branch Commits
+
+- 6ef2a61: feat WAL + WalkthroughB
+- b432f8d: squad artifacts
+- b5b03dc: cycle-1 fixes
+- 028cdee: cycle-2 fixes
+
+## Follow-up
+
+- #56: CAS fsync gap (crash durability window)
+- #57: Verdict encoding clarification (no-match vs continue)
 ---
 
 ## 2026-06-06: Refined Scope Rule for Doc-Hygiene Inbox-Path Sweeps

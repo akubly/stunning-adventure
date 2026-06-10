@@ -51,12 +51,11 @@ A Crucible session lives under `~/.crucible/`:
 │   ├── sessions/<sessionId>/  # one directory per session (forks included)
 │   │   ├── 000000.seg         # 64 MiB rolling append segments
 │   │   ├── 000001.seg
-│   │   └── index.idx          # offset → (segment, byteOffset) sparse index
+│   │   ├── index.idx          # offset → (segment, byteOffset) sparse index
+│   │   └── manifest.json      # schemaVersion, segmentRange, lastCommitOffset (per-session)
 │   └── cas/                   # content-addressed store, sharded by first byte
 │       ├── 00/<blake3>.cbor
 │       └── …
-└── meta/
-    └── manifest.json          # schemaVersion, segment range, lastCommitOffset
 ```
 
 **Segment format.** Each `.seg` file is an append-only sequence of fixed-prefix

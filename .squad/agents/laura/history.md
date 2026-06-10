@@ -1,22 +1,27 @@
+# 📌 Laura — Recent Session Summary
 # SUMMARY — Last Updated 2026-06-07T06:03Z (Size: 144911 bytes → see history-archive.md for entries before 2026-06-01)
 
 📌 **M8 Slice C audit complete** (2026-06-05): Audited Roger's `SqliteFactStore` (FTS5 BM25 search, cursor pagination, minTrust floor, session isolation). Verdict: ✅ ACCEPT-WITH-FOLLOWUPS. Added `fact-store-sqlite-edges.test.ts` (12 new tests, FS-SE-1..12). Test count: 109 → 121. Key learnings:
 
-> Correction (2026-06-05): Test count reflects FS-SE-1..13 (13 invariants). FS-SE-13 added post-audit for non-FTS SQLITE_ERROR propagation (commit `f08c746`).
-- **FTS5 BM25 sign convention**: `bm25()` returns NEGATIVE (more-negative=better). Correct ordering is `ORDER BY (-bm25(facts_fts)) * trust DESC`. The footgun: if you forget negation, best matches sort LAST (ascending on negatives). Lock this with a term-frequency ordering test.
-- **BM25 normalization proof approach**: Seed 3 facts with very different term densities for the same keyword; assert `results[0].relevance === 1.0` and descending order. Simpler than computing expected BM25 values.
-- **Cursor pagination gotchas**: (1) Offset cursors are deterministic only for a fixed query+session+data; concurrent inserts between pages can cause gaps/dupes — document as Slice D+ concern, not a blocker for single-writer v1. (2) Garbage cursors (invalid base64, negative offsets) must fall back to offset=0, not crash — test by comparing against no-cursor baseline. (3) The `limit+1` fetch trick has a degenerate case at `limit=0` (nextCursor loops on offset=0) — not exposed by contract, document as known edge.
-- **Per-page normalization distortion**: Sole result on a sparse final page always gets `relevance=1.0` regardless of actual BM25 quality. Clients must not compare relevance across pages. This is intentional v1 behavior but should be machine-documented with a test (FS-SE-12).
-- **FTS5 input sanitization gap (FINDING FSE-1, MEDIUM)**: Queries with unclosed double-quotes or bare operators (FTS5 syntax) propagate as rejected promises — no try/catch around `stmt.all()`. For v1 this is MEDIUM (non-blocking follow-up), but any user-input path hitting search() is a crash surface.
+## Current Focus
+- M8 Slice C complete (SqliteFactStore + FTS5 BM25 audit, 121/121 tests green)
+- Crucible Walkthrough B: RED→GREEN acceptance test (hook-veto.test.ts)
+- WAL substrate 2-cycle review COMPLETE (75/75 tests green)
 
-> Correction (2026-06-05): FSE-1 fixed in this PR (commit `f08c746`). `SqliteFactStore.search()` now wraps `stmt.all()` in try/catch, catches FTS5 parse-error patterns, and returns `{ results: [] }` instead of rejecting. FS-SE-11 updated to test empty results (not rejection).
-- Decision drop: `.squad/decisions.md` (§ Audit — Laura M8 Slice C, line 228). — Laura
+## Key Learnings (Recent)
 
-# SUMMARY (as of 2026-06-01)
-📌 **M8 Slice B ready for audit** (2026-06-05): Roger completed SqliteTrustUpdater implementation on branch `eureka/m8-slice-b-sqlite-trust-updater` (4 commits). Key: atomic transactions via `rawTxn.immediate(args)`, contract suite relocated from activities to storage layer with tombstone pattern. Test results: 93 passing + 1 todo, new contract contributes 14 tests (7 InMemory + 7 SQLite). Ready for your audit when Aaron dispatches. Decisions merged: `.squad/decisions.md` (2026-06-05 entry + inbox). — Scribe
+### 2026-06-08: Crucible WAL Review COMPLETE
+WAL substrate + Walkthrough B 2-cycle review COMPLETE. Laura's RED acceptance test (hook-veto.test.ts) for §4.2 policy-gate seam verified GREEN against Roger's HookBus + LedgerImpl. Contract suite cycle 2 hardening: hookVerdict bytes persisted + validated across close+reopen, PAUSE-across-reopen scenario passing. Acceptance + 27 unit tests: 28/28 green. Branch ready for merge.
 
-📌 **M8 Slice A Cycle-2 Re-validation** (2026-06-02): Re-validated Roger's 6-commit cycle-2 drop (I1/I4/I5/I6/I2/M1–M5). All 9 mandatory checks passed. Key findings: (1) subpath export `@akubly/eureka/sqlite` resolves correctly — `SqliteFactReader` / `openDatabase` / `applyMigrations` all `function`, root path correctly rejects `SqliteFactReader` import; (2) `better-sqlite3` correctly in `optionalDependencies`; (3) migration IMMEDIATE transaction confirmed as actual CALL via `txFn.immediate()` (better-sqlite3 idiom); (4) WAL fallback writes to `process.stderr.write()` — MCP stdio rule honored; (5) `busy_timeout = 5000` present; (6) M3 seed uses `INSERT OR REPLACE`; (7) M4 cleanup wired in `afterEach`; (8) I2 deferral comment present. Added DB-CL-6 (concurrent first-open race: two handles, applyMigrations twice → schema_version=1, no error) and DB-CL-7/M3 (seed-twice via INSERT OR REPLACE does not throw, last value wins). Test count: 84 → 86. Verdict: ✅ ACCEPT. Decision drop: `.squad/decisions/inbox/laura-m8-slice-a-cycle2-audit.md`. — Laura
+### 2026-06-06: Walkthrough B Acceptance Testing
+Wrote RED acceptance test (hook-veto.test.ts) per §4.2 TDD spec. Confirmed RED (missing createLedger export). Then verified GREEN once Roger landed the Ledger implementation. Test structure: no beforeEach (fresh factory), vi.fn() hook for .toHaveBeenCalledWith assertion, expect.any(Object) on metadata (shape TBD). Result: 1/1 acceptance + 27/27 unit tests passing.
 
+### 2026-06-05: M8 Slice C Audit Complete
+Audited Roger's SqliteFactStore (FTS5 BM25 search, cursor pagination, minTrust floor, session isolation). Verdict: ✅ ACCEPT-WITH-FOLLOWUPS. Added fact-store-sqlite-edges.test.ts (13 new tests). Key learnings: (1) FTS5 BM25 sign convention — bm25() returns NEGATIVE, correct ordering is ORDER BY (-bm25(facts_fts)) * trust DESC. (2) Per-page normalization distortion — sole result on sparse final page always gets relevance=1.0. (3) Cursor pagination with concurrent inserts causes gaps/dupes (single-writer v1 concern, document for Slice D+).
+
+---
+
+For complete earlier history, see history-archive.md.
 📌 **M8 Slice A contract audit + edges** (2026-06-01): Audited CL-1..CL-5 in `fact-reader.contract.test.ts` for SQLite-semantic completeness. 4 of 5 invariants survived unchanged. CL-4 was silent on whether `seed` must write to the backing store — tightened: comment + test name now explicitly state "NaN trust round-trips through the storage write/read cycle" and document the NaN→NULL→NaN conversion requirement. Roger independently arrived at the same strengthening in his commit (convergence = confidence). Added `fact-reader-sqlite-edges.test.ts` with 5 real (non-todo) edge tests: DB-CL-1 (NaN through disk close+reopen), DB-CL-2 (UNIQUE constraint enforced), DB-CL-3 (applyMigrations idempotent), DB-CL-4 (WAL persistence), DB-CL-5 (trust=0 + empty content boundary). All 84 tests green. Roger's impl passes. Decision drop: `.squad/decisions/inbox/laura-m8-slice-a-contract-audit.md`. — Laura
 
 📌 **ADR-0019 CONTRIBUTION** (2026-05-30T194147Z): Wall-clock replay-determinism bug finding (independent convergence with Graham) + 8 A-Fork-* acceptance scenarios added to §16.9. Key insight: hermetic replay requires logical-time (offset), not wall-clock time. Multi-persona convergence on this correctness violation made the blocker non-negotiable. Test tier coverage: contract (A-Fork-1/2/3), component (A-Fork-4/6/7), acceptance (A-Fork-5/8). Capture for future: Cross-persona review with distinct lenses (Architect + Tester) surfaces correctness bugs that unit tests or single-reviewer design alone would miss.
