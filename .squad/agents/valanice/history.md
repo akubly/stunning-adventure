@@ -46,3 +46,17 @@ File size: 81281 bytes. See history-archive.md for earlier entries.
 
 📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Valanice (§9 Aperture edits ×4), Gabriel (Applier/infra ×3), Roger (CLI verbs ×2), Laura (test strategy + ADR template ×2), Rosella (Generators/branching ×7 + 2 options docs), Graham (L3.5 Phase 0.5 stub). Options docs PA-B4 + childSid awaiting Aaron ruling. Orchestration logs + session log + decisions merged. — Scribe
 
+---
+
+**[2026-06-06T19:23:48Z — Scribe Cross-Agent Update]**
+
+## Team Notifications
+
+Two infrastructure changes approved in PRs #50 and #52:
+
+1. **PR #50 — Root lint cross-platform fix (Issue #37, Gabriel):** Root package.json lint script now uses workspace delegation to enable cross-platform execution. Per-package lint scripts added to 7 packages. Windows developers will now see linting errors locally.
+
+2. **PR #52 — Doc-hygiene back-reference sweep (Issue #46, Gabriel):** Gitignored-path back-references removed from committed prose across decisions.md, decisions-archive.md, and agent history files. Forward writer-targets (charters, templates, skills) preserved. Classification heuristic documented for future hygiene sweeps.
+
+**Action for you:** No immediate action required. Lint workspace changes take effect after merge and 
+pm install restart. Doc-hygiene scope established for future improvements.

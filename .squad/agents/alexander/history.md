@@ -20,3 +20,17 @@
 - 2026-06-05 📌 M3: Forge prescriber wired to HintDispositionProvider seam for disposition consumption (dismissed→suppress, resolved→boost). See .squad/decisions/inbox/graham-forge-m3-disposition-consumer.md.
 - 2026-06-06 📌 M3: HintDispositionProvider seam finalized on squad/42-forge-m3-disposition (3 commits, 1563 tests green, READY TO SHIP). Constants coupling: shared hintStateTransitionConstants.ts owns event format (type, source, payload keys, resolution values). Wave 2 autoApplyEligible propagation depends on disposition seam stability — this finalization unblocks downstream integration work.
 
+---
+
+**[2026-06-06T19:23:48Z — Scribe Cross-Agent Update]**
+
+## Team Notifications
+
+Two infrastructure changes approved in PRs #50 and #52:
+
+1. **PR #50 — Root lint cross-platform fix (Issue #37, Gabriel):** Root package.json lint script now uses workspace delegation to enable cross-platform execution. Per-package lint scripts added to 7 packages. Windows developers will now see linting errors locally.
+
+2. **PR #52 — Doc-hygiene back-reference sweep (Issue #46, Gabriel):** Gitignored-path back-references removed from committed prose across decisions.md, decisions-archive.md, and agent history files. Forward writer-targets (charters, templates, skills) preserved. Classification heuristic documented for future hygiene sweeps.
+
+**Action for you:** No immediate action required. Lint workspace changes take effect after merge and 
+pm install restart. Doc-hygiene scope established for future improvements.

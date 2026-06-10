@@ -15,6 +15,7 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
+    "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist coverage"
   },

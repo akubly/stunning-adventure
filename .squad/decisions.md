@@ -125,6 +125,12 @@ L1Subscriber broadcast to the §5 Router is deferred to its own RED cycle.
 **Rationale:** Preserves §3.4.1's auto-release-on-termination *intent* without a native dependency; avoids opaque "stuck forever after crash" failures (correctness compounds across agent actions).
 **Follow-up filed:** GitHub issue **#55** — reconsider a true OS advisory lock (flock/LockFileEx via maintained dependency) vs PID-liveness later (label squad:roger).
 **Supersedes:** Roger's recommended Option (a) manual-clear (D-LOCK-2). §3.4.1 spec guarantee is now honored by PID-liveness, not downgraded.
+### 2026-05-30: WI-A Implementation Log — Issue #11 (Roger history restoration)
+
+From decision drop: roger-issue-11-implementation (local-only, WI-A history, cross-referenced)
+
+**Cloud Review Cycles 1-5 completed** — Worktree-aware session resolution now in place. Schema version 16. Partial UNIQUE indexes for NULL-workdir case. All 1405 tests green. Ready for WI-B (coordinator dispatch).
+
 
 
 ---
@@ -693,6 +699,499 @@ Added JSDoc at two locations:
 **Date:** 2026-06-01  
 **Author:** Roger (Platform Dev)  
 **Status:** GREEN confirmed — acceptance test passing
+---
+
+# M8 Slice D — SQLite Production Deps Factory (Roger, Laura, Graham)
+
+## 2026-06-06: Slice D Wiring Decision — SQLite Production Deps Factory (Roger)
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-06-06T21:48:05-07:00  
+**Slice:** M8 Slice D  
+**Status:** SHIPPED — build clean, 145/145 tests passing
+
+### The Design Tension
+
+Slice D spec: "make SQLite the default deps in `index.ts`."  
+Existing constraint: `better-sqlite3` is deliberately isolated behind the `./sqlite`
+subpath (Slice A, PR #43). The core `.` entry must stay native-dep-free.
+
+These are in direct conflict. One of them has to yield.
+
+### Options Considered
+
+**Option A — Production wiring factory in `./sqlite` subpath (CHOSEN)**
+
+Add `createSqliteRecallDeps(db)` and `createSqliteFeedbackDeps(db)` as named
+exports from `@akubly/eureka/sqlite`. Production consumers import one subpath and
+get batteries-included deps. Core `.` entry unchanged.
+
+Pros:
+- Preserves the native-dep isolation established in Slice A (no rework).
+- Zero cost for in-memory consumers — they never load `better-sqlite3`.
+- Factory is pure: takes an already-opened DB handle, returns a plain object.
+  No hidden state, no module-level side effects.
+- Explicit for callers: `openDatabase()` + `createSqliteRecallDeps(db)` is a
+  two-line setup, readable and discoverable.
+
+Cons:
+- The Slice D spec said "index.ts" — we're diverging from letter-of-spec.
+  Mitigation: the spirit of the spec (production callers get SQLite by default)
+  is fully satisfied; the letter was written before the isolation constraint was
+  established.
+
+**Option B — Import SQLite impls directly in `packages/eureka/src/index.ts`**
+
+Set up `SqliteFactStore` + `SqliteTrustUpdater` as module-level singletons in
+the core entry, export a pre-assembled `defaultDeps` object.
+
+Why rejected:
+1. Pulls `better-sqlite3` (native addon) into the `@akubly/eureka` main bundle.
+   Any consumer that does `import '@akubly/eureka'` loads a native binary — even
+   if they never call SQLite-backed functions.
+2. Requires the database path to be known at module load time (or lazy-init
+   with a global singleton) — neither is clean in a library context.
+3. Contradicts the explicit architecture decision in Slice A (PR #43 commit
+   `4235f8c`) that moved `SqliteFactReader` out of core surface specifically to
+   avoid this problem.
+4. The `createRequire` guard in `openDatabase.ts` softens the missing-addon
+   error but does not remove the module from the dependency graph — tree-shaking
+   does not eliminate a `new DatabaseCtor(path)` at module init.
+
+### Chosen Approach: Option A
+
+Two new factory functions added to `@akubly/eureka/sqlite`:
+
+```typescript
+import { openDatabase, createSqliteRecallDeps, createSqliteFeedbackDeps }
+  from '@akubly/eureka/sqlite';
+import { recall, applyFeedback } from '@akubly/eureka';
+
+const db   = openDatabase();                   // opens ~/.eureka/eureka.db
+const deps = createSqliteRecallDeps(db);       // RecallDeps
+const fbDeps = createSqliteFeedbackDeps(db);   // ApplyFeedbackDeps
+
+const results = await recall(options, deps);
+await applyFeedback(options, fbDeps);
+```
+
+### Public Surface (for Laura's integration test + Graham's review)
+
+**Import path:** `@akubly/eureka/sqlite`  
+**New exports:**
+
+| Name | Signature | Returns |
+|------|-----------|---------|
+| `createSqliteRecallDeps` | `(db: Database.Database) => RecallDeps` | `{ factStore: SqliteFactStore, clock: systemClock }` |
+| `createSqliteFeedbackDeps` | `(db: Database.Database) => ApplyFeedbackDeps` | `{ trustUpdater: SqliteTrustUpdater }` |
+
+**Unchanged exports (still available):**  
+`SqliteFactReader`, `SqliteTrustUpdater`, `SqliteFactStore`, `openDatabase`, `applyMigrations`
+
+**Core `.` entry — NO CHANGE:**  
+Activities (`recall`, `recallWithScores`, `applyFeedback`, `applyFeedbackById`),
+types (`RecallDeps`, `FactStore`, `ClockProvider`, …), errors — all unchanged.  
+`InMemoryFactReader` remains importable for test harnesses via `@akubly/eureka`
+(re-exported through `storage/index.ts`).
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `packages/eureka/src/sqlite/deps.ts` | **NEW** — factory functions |
+| `packages/eureka/src/sqlite/index.ts` | Added `export … from './deps.js'` |
+| `packages/eureka/dist/sqlite/deps.*` | Compiled output (build artifact) |
+
+### Build / Test Status
+
+- `npm run build --workspace=@akubly/eureka` → ✅ clean (exit 0)
+- `npm run test --workspace=@akubly/eureka` → ✅ 145/145 passing
+- No regressions in other packages (build is workspace-scoped; no cross-package changes)
+
+---
+
+## 2026-06-06: Laura — Slice D Smoke Test Verdict
+
+**Date:** 2026-06-06T21:48:05-07:00  
+**Author:** Laura (Tester)  
+**Slice:** M8 Slice D — Integration smoke test: recall() end-to-end with SqliteFactStore
+
+### What was tested
+
+Two smoke tests in `packages/eureka/src/activities/__tests__/recall-sqlite-smoke.test.ts`, wired via the production factory `createSqliteRecallDeps(db)` (Roger's Slice D wiring):
+
+| ID   | Test name | What it proves |
+|------|-----------|----------------|
+| SD-1 | seeded fact round-trips through real SQLite/FTS5 — content returned, ordering sane | `openDatabase(':memory:')` + `applyMigrations` + INSERT-via-trigger → FTS5 index populated → `SqliteFactStore.search()` BM25 query → `recall()` FR-2 composite ranking → content round-trips intact, high-trust×high-BM25 fact ranks first |
+| SD-2 | non-matching query returns empty array — FTS5 no-match path is clean | FTS5 zero-match path propagates cleanly as `[]` without throwing |
+
+### Production surface exercised
+
+- **`openDatabase(':memory:')`** — real DB open + full migration (schema_version, `facts`, `facts_fts`, `facts_ai`/`facts_au`/`facts_ad` triggers)
+- **`createSqliteRecallDeps(db)`** — Roger's Slice D factory; assembles `{ factStore: SqliteFactStore, clock: systemClock }` — the real production composition root
+- **`recall()`** — FR-2 composite scoring, trust-floor post-filter (defense-in-depth), slice to k
+
+### Test count delta
+
+**+2 tests** (SD-1, SD-2)  
+**Total suite: 145 → 147 passing.** Full suite green. Build clean (TypeScript, no errors).
+
+### Pass/fail
+
+✅ **PASS** — Both smoke tests green against production factory. Full 147-test suite green. Build green.
+
+### Factory wiring
+
+✅ **Switched to `createSqliteRecallDeps(db)`** — Roger's factory merged 2026-06-06. The smoke test now exercises the production composition root end-to-end. No follow-up needed for factory wiring.
+
+### Gaps (documented, not blocking)
+
+- **SD-3 (session isolation)**: Not added — already locked by FS-6 in the contract suite. Adding it would duplicate coverage without adding signal.
+- **Cursor smoke**: Not added — cursor correctness is exhaustively covered by FS-SE-3/4/10/12. Smoke test budget per spec is +1 or 2.
+- **Recency scoring**: Wall-clock clock used (not a fixed mock). Recency precision is not under test here — that's a recall.test.ts concern (M4 clock seam). For a smoke test, any `nowMs` large enough to floor recency is fine.
+
+---
+
+## 2026-06-06: Graham — M8 Slice D Architectural Review
+
+**Author:** Graham (Lead / Architect)  
+**Date:** 2026-06-06T21:59:05-07:00  
+**Slice:** M8 Slice D — SQLite Production Deps Factory  
+**Review Type:** Architectural gate (pre-merge)
+
+### Verdict
+
+**✅ ACCEPT-WITH-FOLLOWUPS**
+
+Slice D is architecturally sound. Roger's interpretation is correct; the decisions ledger needs a minor amendment.
+
+### Review Focus Areas
+
+#### 1. Spec vs. Implementation Tension — ✅ RESOLVED CORRECTLY
+
+**The tension:** Slice D spec said "update index.ts to export SQLite-backed instances as default deps." The Slice A isolation boundary (PR #43) established that the core `@akubly/eureka` entry must NOT pull in `better-sqlite3`.
+
+**Roger's resolution:** Factory functions (`createSqliteRecallDeps`, `createSqliteFeedbackDeps`) live on the `@akubly/eureka/sqlite` subpath. Production consumers import from one subpath and get batteries-included deps. The core `.` entry is unchanged.
+
+**Assessment:** This is the architecturally correct interpretation. The spec's intent was "production callers get SQLite by default" — that intent is fully satisfied. The spec's letter ("update index.ts") was written before the isolation constraint was established; the constraint takes precedence. A two-line composition root (`openDatabase()` + `createSqliteRecallDeps(db)`) is explicit, discoverable, and preserves the invariant that casual importers don't load a native binary.
+
+**Follow-up:** The decisions ledger should capture the as-built shape (factory-on-subpath, not root-entry-mutation). This is a documentation update, not a code change.
+
+#### 2. Composition Root Clarity — ✅ CLEAN
+
+The factory functions are pure: they take an already-opened DB handle and return a plain object. No hidden state, no module-level singletons, no side effects. The DB lifecycle (open/close) is explicitly owned by the caller.
+
+**`createSqliteRecallDeps(db)` returns:**
+```typescript
+{ factStore: SqliteFactStore, clock: systemClock }
+```
+
+**`createSqliteFeedbackDeps(db)` returns:**
+```typescript
+{ trustUpdater: SqliteTrustUpdater }
+```
+
+**Clock wiring:** `systemClock` is a module-level const (`{ now: () => Date.now() }`). This is appropriate for production — no injectable clock needed for SQLite deps since recall's clock is for composite scoring, not storage concerns.
+
+**Cross-session concern:** The factories are session-agnostic (they don't encode a session ID). Session scoping happens at call time via `RecallOptions.sessionId`. This is correct — the composition root shouldn't bake in runtime state.
+
+#### 3. Test Sufficiency — ✅ ADEQUATE FOR SMOKE GATE
+
+**SD-1** proves the end-to-end production path: `openDatabase(':memory:')` → real migrations → real FTS5 BM25 → `createSqliteRecallDeps(db)` → `recall()` → composite-scored results. Content round-trips intact; ordering is FR-2 compliant (high-trust × high-BM25 first).
+
+**SD-2** proves the FTS5 no-match path returns `[]` without throwing.
+
+**Assessment:** +2 tests is right-sized for a smoke gate. The contract suite (32 tests on `FactStore`, 18 on `TrustUpdater`) already exhaustively covers edge cases. These smoke tests prove the wiring is correct — that the factory assembles real impls into a working whole.
+
+**Not tested (acceptable):** Cursor pagination, session isolation, recency scoring. All covered by contract tests or deliberately out-of-scope for smoke (Laura documented gaps correctly).
+
+#### 4. Boundary Integrity — ✅ VERIFIED
+
+**Core `@akubly/eureka` entry (`packages/eureka/src/index.ts`):**
+- Exports only from `./activities/recall.js` and `./activities/errors.js`
+- Zero imports of `sqlite/`, `db/`, or `storage/*-sqlite.ts`
+- Zero references to `better-sqlite3`
+
+**Grep verification:** No transitive path from `index.ts` to the native dependency. The isolation boundary established in Slice A holds.
+
+### Build / Test Status
+
+- **Suite:** 147/147 passing (confirmed by fresh run)
+- **Build:** Clean (TypeScript, no errors)
+- **Boundary:** Core entry has no SQLite dependency
+
+---
+
+## Slice D as-built (2026-06-06) — SD-F1 Amendment
+
+**Added per Graham's SD-F1 follow-up:** Production deps wiring shipped as factory functions on `@akubly/eureka/sqlite` (`createSqliteRecallDeps`, `createSqliteFeedbackDeps`), NOT as root-entry mutations. This preserves the Slice A isolation boundary — the core `@akubly/eureka` entry does not transitively load `better-sqlite3`. Production consumers use a two-line composition root: `const db = openDatabase(); const deps = createSqliteRecallDeps(db);`. 
+
+**Slice D Status:** ✅ **COMPLETE** — 147/147 tests passing, factory-on-subpath wiring verified, Graham ACCEPT-WITH-FOLLOWUPS, SD-F1 ledger amendment applied.
+
+---
+
+### 2026-06-06: Ralph Round 1 — PRs #50, #52, #53 Orchestration Outcomes
+
+# Decision: Switch Root Lint to Workspace Iteration for Windows Compatibility
+
+**Agent:** Gabriel (Infrastructure)  
+**Date:** 2026-06-06  
+**Issue:** #37  
+**PR:** #50 (`squad/37-windows-lint-workspace`)
+
+## What Changed
+
+**Root `package.json`:**
+- Before: `"lint": "eslint packages/*/src/"`
+- After: `"lint": "npm run lint --workspaces --if-present"`
+
+**Per-package `package.json` files** (7 packages updated — cairn already had it):
+- Added `"lint": "eslint src/"` to: `types`, `crucible-cli`, `crucible-core`, `eureka`, `forge`, `runtime-cli`, `skillsmith-runtime`
+
+## Why
+
+The root glob `packages/*/src/` is not expanded by Windows PowerShell — eslint received the literal string, found no matching files, and silently exited 0. Lint errors were invisible to local Windows developers and only caught by Linux CI.
+
+The workspace delegation pattern (`npm run lint --workspaces --if-present`) is cross-platform: it calls each package's own `lint` script, where the path `src/` is a literal, not a glob. This mirrors how `test` and other cross-package scripts already work in this monorepo.
+
+## Impact
+
+- `npm run lint` now correctly invokes eslint in all 8 workspace packages on both Windows and Linux.
+- The `--if-present` flag ensures future packages without a lint script do not fail the root command.
+- Pre-existing `any` type warnings in `cairn` and `eureka` surface (out of scope for this fix — tracked separately).
+- Exit code remains 0 (warnings only, no errors introduced by this change).
+
+---
+
+# Decision: Scoped Doc-Hygiene Sweep — Gitignored Back-References (Issue #46)
+
+**Date:** 2026-06-06  
+**Author:** Gabriel (Infrastructure)  
+**Status:** FINAL  
+**Related:** Issue #46, PR to be opened from `squad/46-doc-hygiene-backref-sweep`
+
+## Decision
+
+Performed the correctly-scoped sweep of gitignored-path back-references in committed prose, as specified in Issue #46. Preserved all forward writer-target paths in charters, templates, and skill files.
+
+## Scope
+
+**Fixed (back-references):**
+- `.squad/decisions-archive.md` — 4 occurrences → 0
+- `.squad/orchestration-log.md` — 1 occurrence → 0
+- 17 agent history files (`history.md` / `history-archive.md`) — 100+ occurrences → 0
+
+**Preserved (forward writer-targets):**
+- All `agents/*/charter.md` files — writer-target paths intact (25 hits confirmed)
+- All `templates/*.md` files — writer-target paths intact
+- All skill files — writer-target paths intact
+- `.squad/skills/doc-references-respect-gitignore/SKILL.md` — not modified per task instructions
+
+## Classification Heuristic
+
+**Forward writer-target (leave alone):** Lines using template syntax (`{name}-{slug}`) or imperative instructions telling agents WHERE to write. Context: charters, templates, skills.
+
+**Back-reference (fix):** Lines recording completed work by citing a concrete inbox filename. Context: history files, archive entries, orchestration logs. Past-tense patterns: "Decision drop: ...", "Written to ...", "Memo Location: ...", "Full analysis written to ...", "Inbox: ...".
+
+**Directory-only references** (`.squad/decisions/inbox/` without a filename) in committed prose: replaced with "Scribe decision inbox" or "decision inbox" — path-free description that preserves the meaning.
+
+## Verification Results
+
+| Criterion | Result |
+|-----------|--------|
+| `grep -rn 'decisions/inbox/' .squad/decisions.md .squad/decisions-archive.md` | **ZERO hits** ✅ |
+| `grep -rn 'decisions/inbox/' .squad/templates .squad/agents/*/charter.md` | **25 hits** (forward writer-targets preserved) ✅ |
+
+## Why This Matters
+
+Broken inbox links in committed prose cause:
+- Confusion for contributors who don't have local inbox files
+- CI link-checker failures (if ever enabled)
+- Eroded trust in the documentation as a navigable resource
+
+The carve-out for forward writer-targets ensures agents continue to know where to drop decisions during parallel work sessions.
+
+---
+
+# Decision: Worktree Fallback Must Emit User-Visible Warning
+
+**Author:** Graham (Lead / Architect)  
+**Date:** 2026-06-06  
+**Issue:** #31  
+**PR:** #53  
+**Status:** Proposed (pending merge)
+
+## Context
+
+When `SQUAD_WORKTREES=1` is set, the coordinator's Pre-Spawn: Worktree Setup flow can silently degrade isolation in two ways:
+
+1. **Step 2(c):** `git worktree add` fails (lock error, permissions error, or any other error) → coordinator falls back to the main checkout with `WORKTREE_MODE=false`.
+2. **Step 2(d):** Junction/symlink dependency linking fails → coordinator falls back to `npm install` in the worktree, losing the shared-`node_modules` isolation model.
+
+In both cases the existing behavior was to write a log entry to `.squad/orchestration-log/` only. The user received no signal.
+
+## Decision
+
+**Both fallback paths MUST emit a one-line user-visible warning in addition to the existing log entry.** The log entry is preserved unchanged.
+
+### Warning text
+
+**Step 2(c) — worktree creation failure:**
+```
+⚠️  Worktree creation failed — falling back to main checkout. Isolation disabled for this spawn.
+```
+
+**Step 2(d) — dependency linking failure:**
+```
+⚠️  Worktree dependency linking failed — fell back to npm install. Dependency isolation is degraded for this spawn.
+```
+
+## Rationale
+
+The user opted into worktree isolation by setting `SQUAD_WORKTREES=1`. Silent degradation violates the principle of least surprise — the user's assumption (isolation is active) diverges from reality (isolation is disabled) with no signal. This is especially dangerous in multi-agent parallel dispatch where the user is relying on per-issue isolation to avoid cross-contamination.
+
+The chosen fix is additive (log + warn, not log → warn): the log entry stays for post-hoc debugging, and the warning surfaces the degradation in real time.
+
+## Alternatives Considered
+
+1. **Block on failure instead of falling back** — too disruptive; some lock errors are transient and the step-2(c) retry already handles that. Fallback with warning is the right UX.
+2. **Warn only, remove log** — removes auditability. Rejected.
+3. **Add a config flag to suppress warning** — YAGNI at this scale; skip for now.
+
+## Scope
+
+Change is confined to `.github/agents/squad.agent.md` (governance/documentation), steps 2(c) and 2(d) error-handling bullets. No code changes required.
+
+## ⚠️ Coordinator Restart Note
+
+Because this change modifies the coordinator's own governance file, any running coordinator session will operate on stale instructions until it is restarted. Inform the user when this PR is merged.
+
+---
+
+### 2026-06-01: Crucible Sprint 0 — First GREEN Cycle (Roger)
+
+# Roger: Crucible First GREEN — Decision Inbox
+
+**Date:** 2026-06-01  
+**Author:** Roger (Platform Dev)  
+**Status:** GREEN confirmed — acceptance test passing
+
+---
+
+## 1. Packages Scaffolded
+
+### `packages/crucible-core/`
+New package `@akubly/crucible-core` v0.1.0.
+
+Files created:
+- `package.json` — name `@akubly/crucible-core`, type module, `main/types` → `dist/`, scripts: build/test/typecheck/clean, deps: `@akubly/types: *`, devDeps: `@types/node ^25.5.0`, `vitest ^3`
+- `tsconfig.json` — mirrors crucible-cli: ES2022, Node16 module, composite, strict, references `../types`
+- `README.md` — one paragraph description
+- `vitest.config.ts` — standard node environment, `include: ['src/**/*.test.ts']`
+- `src/types.ts` — types-only module (no runtime code)
+- `src/session.ts` — createSession + fork implementation
+- `src/index.ts` — barrel re-export
+
+### `packages/crucible-cli/` (modified)
+- `src/index.ts` — now re-exports `{ createSession, fork }` from `@akubly/crucible-core`
+- `package.json` — added `"@akubly/crucible-core": "*"` to dependencies
+- `tsconfig.json` — added `{ "path": "../crucible-core" }` to references
+
+### Root `tsconfig.json`
+Added references: `packages/crucible-core` and `packages/crucible-cli`.
+
+---
+
+## 2. Public Types and Functions — Shapes
+
+```ts
+// §6 five-kind vocabulary
+type PrimitiveKind = 'request' | 'artifact' | 'observation' | 'decision' | 'question';
+
+interface PrimitiveInput {
+  primitiveKind: PrimitiveKind;
+  primitivePayload: unknown;
+  causalReadSet: string[];
+}
+
+// Committed primitive — PrimitiveInput + logical offset
+interface Primitive extends PrimitiveInput {
+  offset: number;
+}
+
+interface SessionMetadata {
+  parentSessionId: string | null;
+  forkPointEventId: number | null;
+  createdAt: number;
+}
+
+interface Session {
+  id: string;
+  metadata: SessionMetadata;
+  append(p: PrimitiveInput): Promise<void>;
+  query(opts: { range: [number, number] }): Promise<Primitive[]>;
+}
+
+function createSession(): Promise<Session>;
+function fork(parentId: string, opts: { atOffset: number }): Promise<Session>;
+```
+
+---
+
+## 3. Range Convention: Inclusive-Inclusive
+
+**Decision:** `query({ range: [a, b] })` is **inclusive on both ends**:  
+- `[0, 46]` returns 47 primitives (offsets 0, 1, …, 46)  
+- `[0, 23]` returns 24 primitives  
+
+**Evidence from test:** `query({ range: [0, 46] })` → `toHaveLength(47)` → 47 = 46 − 0 + 1 ✓
+
+---
+
+## 4. In-Memory Parent-Registry Approach
+
+A module-level `Map<string, Primitive[]>` holds each session's **own events**:
+
+- **Root sessions:** own events are the complete event log; offset = array index.
+- **Child (forked) sessions:** own events contain only primitives appended *after* the fork. Events at offset ≤ `forkPointEventId` are served by **delegating to the parent registry entry** — no physical copy.
+
+**Rationale:** This satisfies A1 invariant 3 (child prefix equals parent prefix [0..23]) and invariant 4 (parent unmodified) without copying. The parent's `registry` entry remains untouched; the child's `query` reads from it transparently.
+
+**Offset assignment for child append:**
+```ts
+const baseOffset = forkPointEventId === null ? 0 : forkPointEventId + 1;
+const offset = baseOffset + ownEvents.length;
+```
+
+---
+
+## 5. GREEN Confirmation
+
+```
+> @akubly/crucible-cli@0.1.0 test
+> vitest run
+
+ RUN  v3.2.4 D:/git/harness/packages/crucible-cli
+
+ ✓ src/__tests__/acceptance/session-fork.test.ts (1 test) 3ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  23:22:14
+   Duration  436ms (transform 71ms, setup 0ms, collect 73ms, tests 3ms, environment 0ms, prepare 148ms)
+```
+
+**Invariants confirmed GREEN:**
+- A1-1: `childSession.metadata.parentSessionId === parentSession.id` ✓
+- A1-2: `childSession.metadata.forkPointEventId === 23` ✓
+- A1-3: `childPrefix.toEqual(parentPrefix)` for range [0,23] ✓
+- A1-4: `parentEventsAfter.toHaveLength(47)` for range [0,46] ✓
+
+---
+
+## 6. Deferred: Ledger Abstraction
+
+No `Ledger` class, no `WAL` interface, no Cairn integration in this turn. This is the **GREEN phase only** — simplest correct implementation behind the acceptance API. The REFACTOR step (next TDD cycle) is where a Ledger collaborator abstraction would be introduced, followed by the London-school descent to introduce an L1 mock layer. Deferred per Graham's sprint plan (OQ-2).
 
 ---
 
@@ -3801,7 +4300,7 @@ The SQLite adapter is the substrate for any future Refactor 4 / Phase 2 work (fi
 - **Refactor 3 proceeds with zero DB-interface rework.** The current `DB` interface (`getSession`/`insertSession`/`queryEvents` + extended `getOwnEvents`/`getMetadata`/`insertRootSession`/`pushEvent`) survives. The real SQLite adapter is a standalone `better-sqlite3(':memory:')` with Crucible's own two-table schema, no Cairn dependency.
 - Estimated ~2 days cheaper than Option A for Refactor 3; gap widens as Crucible's schema evolves independently.
 
-**Source briefs:** `.squad/decisions/inbox/graham-oq2-substrate-brief.md`, `genesta-oq2-substrate-brief.md`, `roger-oq2-substrate-brief.md`.
+**Source briefs:** decision drops: graham-oq2-substrate-brief, genesta-oq2-substrate-brief, roger-oq2-substrate-brief (all local-only).
 
 
 ---
@@ -4057,3 +4556,59 @@ Two-cycle persona review of Crucible WAL substrate (Roger) + Walkthrough B proto
 
 - #56: CAS fsync gap (crash durability window)
 - #57: Verdict encoding clarification (no-match vs continue)
+---
+
+## 2026-06-06: Refined Scope Rule for Doc-Hygiene Inbox-Path Sweeps
+
+**Date:** 2026-06-06  
+**Author:** Graham Knight (Lead / Architect)  
+**Status:** FINAL  
+**Context:** PR #52 re-scope (issue #46), per Aaron's direction after persona-review panel findings
+
+### Decision
+
+When sweeping committed prose to remove broken `.squad/decisions/inbox/` path references, apply a **three-way distinction**:
+
+#### 1. FIX — Specific inbox file-path pointers
+
+**Definition:** Prose that cites a concrete `inbox/{name}-{slug}.md` filename as if it were a stable, followable link.
+
+**Action:** Replace the path with a slug-preserving plain-text description. Per Skeptic panel suggestion, retaining the filename slug (without the directory path) preserves searchability — e.g., `decision drop: graham-ctd-phase4-synthesis (local-only, now incorporated in this archive)`.
+
+**Also fix:** Any malformed prose introduced by the replacement — dangling "— this file" self-references should become "— this decision entry".
+
+**Examples fixed in PR #52:**
+- `Merged from .squad/decisions/inbox/graham-ctd-phase4-synthesis.md` → `Merged from decision drop: graham-ctd-phase4-synthesis (local-only, now incorporated in this archive)`
+- `.squad/decisions/inbox/laura-crucible-first-red-test.md — this file` → `decision drop: laura-crucible-first-red-test (local-only) — this decision entry`
+
+#### 2. KEEP / RESTORE — Gitignore-policy documentation
+
+**Definition:** Bulleted "Explicitly prohibited (gitignored runtime state)" lists that name the inbox path as one of several gitignored directories.
+
+**Action:** Keep the literal `.squad/decisions/inbox/` path verbatim. These bullets document the gitignore policy — they are not broken pointers to any specific file. All sibling paths (`.squad/orchestration-log/`, `.squad/log/`, `.squad/sessions/`, `.squad/.scratch/`) are kept; stripping only the inbox path is over-reach.
+
+#### 3. KEEP — Generic directory narration
+
+**Definition:** Narrative sentences that describe where transient files were written, without citing a specific filename (e.g., "resolutions captured as directive files in `.squad/decisions/inbox/`").
+
+**Action:** Keep the path. This is accurate location description, not a broken pointer.
+
+#### 4. NEVER TOUCH — Forward writer-target paths
+
+**Definition:** Charters, templates, skills, routing files that tell future agents where to write files.
+
+**Action:** Leave entirely unchanged. These are instructions, not references.
+
+### Acceptance Criterion (Relaxed, Aaron-approved 2026-06-06)
+
+Issue #46's original literal criterion was "zero `decisions/inbox/` hits in decisions.md AND decisions-archive.md."
+
+**Relaxed criterion:** Zero *broken followable pointers* — specific `inbox/{file}.md` citations that cannot be followed. The three policy-list bullets in `decisions-archive.md` that document the gitignore rule may (and should) retain the literal path.
+
+### Why
+
+The literal "zero hits" criterion over-interprets the spirit of the issue. Issue #46 is about links that are broken for contributors and CI — not about erasing every mention of the path. Policy documentation that *explains why the path is gitignored* is useful, accurate, and should be preserved. Removing it degrades the policy audit trail.
+
+### Append-Only History Rule
+
+**Separately and absolutely:** Agent `history.md` and `history-archive.md` files are append-only. Any hygiene sweep that edits previously committed history entries is a scope violation, regardless of whether the edit improves clarity. This mirrors the over-reach that caused PR #44 to be reverted.
