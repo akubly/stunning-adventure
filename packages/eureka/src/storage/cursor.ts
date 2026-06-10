@@ -78,7 +78,7 @@ export function decodeCursor(cursor: string): DecodedCursor {
 
     const v = raw['v'];
 
-    if ('v' in raw) {
+    if (Object.hasOwn(raw, 'v')) {
       // v key is PRESENT — must be exactly the integer 1 (v1 format).
       // null, 0, negatives, floats, strings, future versions > 1 → throw.
       // Only a truly absent v key (legacy v0 cursors) falls through to the v0 path.

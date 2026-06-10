@@ -13,7 +13,7 @@
  *         CU-3c  v:99 → throw (far future)
  *         CU-3d  v:"2" (string) → throw (not a number)
  *         CU-3e  v:1.5 (non-integer float) → throw
- *         CU-3f  v:NaN → throw
+ *         CU-3f  v:null (NaN serializes to null in JSON) → throw
  *   CU-4  unparseable / non-base64 cursor → { version: 0, offset: 0 } (FS-SE-3 unchanged)
  *   CU-5  CursorVersionUnsupportedError re-throw path
  *   CU-6  scopeFingerprint determinism (same params → same result)
