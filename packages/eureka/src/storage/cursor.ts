@@ -83,7 +83,7 @@ export function decodeCursor(cursor: string): DecodedCursor {
       // null, 0, negatives, floats, strings, future versions > 1 → throw.
       // Only a truly absent v key (legacy v0 cursors) falls through to the v0 path.
       if (typeof v !== 'number' || !Number.isInteger(v) || v !== 1) {
-        throw new CursorVersionUnsupportedError(typeof v === 'number' ? v : NaN);
+        throw new CursorVersionUnsupportedError(v);
       }
 
       // v === 1

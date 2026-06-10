@@ -60,11 +60,11 @@ export class CursorScopeMismatchError extends Error {
  */
 export class CursorVersionUnsupportedError extends Error {
   readonly code = 'CURSOR_VERSION_UNSUPPORTED' as const;
-  readonly version: number;
+  readonly version: unknown;
 
-  constructor(version: number) {
+  constructor(version: unknown) {
     super(
-      `Cursor version ${version} is not supported by this implementation. ` +
+      `Cursor version ${JSON.stringify(version)} is not supported by this implementation. ` +
         'Restart pagination from page 0.',
     );
     this.name = 'CursorVersionUnsupportedError';
