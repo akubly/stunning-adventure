@@ -110,4 +110,5 @@ FS-SE-15 had a seed/query mismatch: FTS5 AND mode requires ALL query tokens to a
 
 - 2026-06-08 📌 FTS5 AND-to-OR: Don't change production search semantics to satisfy test data. Semantic changes need explicit design approval, not test-driven improvisation.
 
+- 2026-06-08 📌 Documented FSE-2 (offset cursor gaps/dupes under concurrent writes) and FSE-3 (limit > 0 TypeError contract) as interface-level JSDoc @remarks on FactStore. No behavior change; build + tests (164/164) green.
 

@@ -111,6 +111,63 @@ For any read-seam interface:
 
 ---
 
+## Adding RED Tests to an Existing Contract Suite (London TDD)
+
+When a new feature adds error-throwing paths to an existing interface, add the RED tests
+inside `runXContract` so they exercise ALL implementations simultaneously.
+
+### Error type scaffold pattern
+
+If the new error classes don't exist yet, create minimal stubs in `storage/errors.ts` (or
+the appropriate `errors.ts` alongside the implementation). This is NOT stubbing the
+implementation — the `throw` sites in the methods are the implementation. The error class
+definitions are the test contract. Creating them allows:
+
+1. Import statements to resolve (no module-not-found crash that breaks all 30+ existing tests)
+2. RED failures to be assertion failures: `"promise resolved instead of rejecting"` — the
+   right RED signal (wrong behavior) rather than `"module not found"` (unrelated crash)
+
+```typescript
+// storage/errors.ts — type scaffold, NOT the implementation
+export class CursorScopeMismatchError extends Error {
+  readonly code = 'CURSOR_SCOPE_MISMATCH' as const;
+  constructor() {
+    super('...');
+    this.name = 'CursorScopeMismatchError';
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+```
+
+### Backward-compat tests start GREEN intentionally
+
+A test that validates EXISTING behavior (e.g. "v0 cursors still accepted") will start GREEN.
+This is correct — it is a non-regression lock, not a feature test. Not every test in a RED
+suite needs to be individually RED.
+
+### RED anchor for format-change tests
+
+If a feature changes OUTPUT FORMAT (e.g. cursor v0 → v1), round-trip tests like FS-5 would
+start and stay GREEN (the opaque round-trip works either way). To anchor the test RED, add
+an explicit assertion on the NEW format:
+
+```typescript
+const decoded = JSON.parse(Buffer.from(nextCursor, 'base64').toString('utf8'));
+// RED: current impl emits v0 { offset }; Roger's GREEN must emit { v:1, offset, scope }
+expect(decoded).toMatchObject({ v: 1, offset: expect.any(Number), scope: expect.any(String) });
+```
+
+### Scope-mismatch cursor acquisition
+
+To test that a cursor from context A is rejected in context B:
+1. Call `search(params_A)` → capture `nextCursor`
+2. Call `search(params_B, cursor: nextCursor)` where params_B changes exactly ONE parameter
+3. `expect(step2).rejects.toThrow(ScopeMismatchError)`
+
+This avoids hard-coding the internal fingerprint and stays valid if the algorithm changes.
+
+---
+
 ## Example: FactReader (Eureka M7-C)
 
 ```typescript

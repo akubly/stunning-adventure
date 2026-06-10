@@ -11,6 +11,20 @@ File size: 34712 bytes. See history-archive.md for earlier entries.
 
 ## Learnings
 
+### 2026-06-08: Pre-Merge Review Gate — Test-Data Defects Can Smuggle Production Semantic Changes
+
+**Finding:** Roger's GREEN changed FTS5 from implicit AND to explicit OR to make FS-SE-15 pass. The test's seed data only contained 4/8 query tokens — under AND, FTS5 correctly returned 0 rows. Roger's fix made the test green by widening production recall semantics system-wide. The correct fix was always "fix the test seed to contain the query tokens" — a 1-line data fix, not a production semantics change.
+
+**Pattern:** When a NEW test fails and the fix involves changing production behavior OUTSIDE the slice's scope, the first hypothesis must always be "the test data is wrong." Anti-anchoring: enumerate (A) test defect vs (B) production defect, then check which evidence supports. Key signal: if the test's PURPOSE doesn't require the semantic change (FS-SE-15 tests cursor byte-length, not FTS5 recall mode), the production change is unjustified regardless of whether it makes the test green.
+
+**Gate rule applied:** Reject with fix assigned to test author (Laura), not original GREEN implementer (Roger). Reviewer Rejection Protocol: the production revert goes to whoever introduced the root-cause defect (mismatched test data), not whoever worked around it.
+
+### 2026-06-08: Slice D+ Cursor Versioning Design — Smallest Correct Increment Principle
+
+**Finding:** When hardening an existing mechanism (offset cursor), the temptation is to also fix the adjacent concern (keyset pagination for concurrent-write stability). Resist. The `v` field in the cursor format ENABLES future keyset (v:2) without coupling it to the scope-fingerprint work. Separating versioning+fingerprint from keyset means: (1) smaller blast radius per PR, (2) independent test surfaces, (3) keyset can be evaluated on its own merits (BM25 floating-point stability across writes is a real constraint). The version envelope is the architectural primitive that makes future migration cheap — ship the envelope first.
+
+**Pattern:** When two safety improvements share a data structure (cursor), version the structure first, then layer features into separate version bumps. Each version is a separately testable, separately shippable unit.
+
 ### 2026-06-06: M8 Slice D Review — Spec/Implementation Tension Resolution
 
 **Finding:** When a spec written early ("update index.ts to export SQLite-backed instances as default deps") conflicts with a later-established constraint (Slice A's native-dep isolation boundary), the constraint wins. Roger's factory-on-subpath approach correctly interprets "default" as "batteries-included on the production path" rather than "exported from the root entry point." The two-line composition root (`openDatabase` + `createSqliteRecallDeps(db)`) is explicit, discoverable, and preserves the isolation invariant. Updated decisions ledger recommended to capture the as-built shape.
