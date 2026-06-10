@@ -44,10 +44,11 @@ describe('decodeCursor — v0 (no v field)', () => {
     expect(result).toEqual({ version: 0, offset: 5 });
   });
 
-  it('CU-1b: v0 cursor with null v field → v0 path', () => {
-    const cursor = makeCursor({ v: null, offset: 3 });
+  it('CU-1b: cursor with extra non-v fields → v0 path (additional keys ignored)', () => {
+    // genuine v0: no `v` key present; extra fields are tolerated.
+    const cursor = makeCursor({ offset: 7, extra: 'ignored' });
     const result = decodeCursor(cursor);
-    expect(result).toEqual({ version: 0, offset: 3 });
+    expect(result).toEqual({ version: 0, offset: 7 });
   });
 
   it('CU-1c: v0 cursor with bad offset → offset clamps to 0', () => {
@@ -111,16 +112,11 @@ describe('decodeCursor — present-but-invalid v field → CursorVersionUnsuppor
     expect(() => decodeCursor(cursor)).toThrow(CursorVersionUnsupportedError);
   });
 
-  it('CU-3f: v:NaN → throws CursorVersionUnsupportedError', () => {
-    // JSON.stringify({v: NaN}) produces {v: null} — which hits the v0 (null) path.
-    // Use a trick: encode the string "NaN" via a manual Buffer round-trip.
-    // Actually, JSON.stringify NaN → null, which hits v0. This case is covered by
-    // v:null → v0. Skip NaN-as-field (JSON can't represent it). This test is
-    // intentionally passing as v0 (NaN becomes null in JSON).
+  it('CU-3f: v:null (including NaN-serialized-to-null) → throws CursorVersionUnsupportedError', () => {
+    // JSON.stringify({v: NaN}) → {"v":null} — the v key IS present (value null).
+    // A present v key that is not exactly 1 must throw per the approved contract.
     const raw = Buffer.from('{"v":null,"offset":0}').toString('base64');
-    const result = decodeCursor(raw);
-    // v:null → v0 path (same as absent v)
-    expect(result.version).toBe(0);
+    expect(() => decodeCursor(raw)).toThrow(CursorVersionUnsupportedError);
   });
 });
 

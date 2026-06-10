@@ -169,14 +169,17 @@ export class SqliteFactStore implements FactStore {
     // Decode the cursor BEFORE the empty-query short-circuit so that an
     // invalid/unsupported cursor version always throws — even when query is empty.
     // This keeps cursor validation behavior consistent with InMemoryFactStore.
-    const currentScope = scopeFingerprint(query, sessionId as string, minTrust, limit);
+    // Fix J: scopeFingerprint is computed lazily — only when needed (v1 scope
+    // check, or emitting nextCursor).  Avoids hashing on empty-query calls.
 
     let offset = 0;
+    let computedScope: string | undefined;
     if (cursor !== undefined) {
       const decoded = decodeCursor(cursor); // may throw CursorVersionUnsupportedError
       if (decoded.version === 1) {
-        if (decoded.scope !== currentScope) {
-          throw new CursorScopeMismatchError(decoded.scope, currentScope);
+        computedScope = scopeFingerprint(query, sessionId as string, minTrust, limit);
+        if (decoded.scope !== computedScope) {
+          throw new CursorScopeMismatchError(decoded.scope, computedScope);
         }
         offset = decoded.offset;
       } else {
@@ -245,7 +248,7 @@ export class SqliteFactStore implements FactStore {
       // importance and lastAccessed omitted — not in schema yet (Slice C gap).
     }));
 
-    const nextCursor = hasMore ? encodeCursor(offset + limit, currentScope) : undefined;
+    const nextCursor = hasMore ? encodeCursor(offset + limit, computedScope ?? scopeFingerprint(query, sessionId as string, minTrust, limit)) : undefined;
     return { results, nextCursor };
   }
 }

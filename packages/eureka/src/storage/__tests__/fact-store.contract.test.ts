@@ -67,14 +67,17 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
         throw new TypeError(`InMemoryFactStore.search: minTrust must be a finite number in [0, 1], got ${minTrust}`);
       }
 
-      const currentScope = scopeFingerprint(query, sessionId as string, minTrust, limit);
-
+      // Fix J: scopeFingerprint is computed lazily — only when needed (v1 scope
+      // check or emitting nextCursor).  Cursor decode still precedes empty-query
+      // short-circuit (Fix E ordering preserved).
       let offset = 0;
+      let computedScope: string | undefined;
       if (cursor !== undefined) {
         const decoded = decodeCursor(cursor); // may throw CursorVersionUnsupportedError
         if (decoded.version === 1) {
-          if (decoded.scope !== currentScope) {
-              throw new CursorScopeMismatchError(decoded.scope, currentScope);
+          computedScope = scopeFingerprint(query, sessionId as string, minTrust, limit);
+          if (decoded.scope !== computedScope) {
+              throw new CursorScopeMismatchError(decoded.scope, computedScope);
           }
           offset = decoded.offset;
         } else {
@@ -119,7 +122,7 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
             : (f.termCount - minTC) / (maxTC - minTC),
       }));
 
-      const nextCursor = hasMore ? encodeCursor(offset + limit, currentScope) : undefined;
+      const nextCursor = hasMore ? encodeCursor(offset + limit, computedScope ?? scopeFingerprint(query, sessionId as string, minTrust, limit)) : undefined;
       return { results, nextCursor };
     },
   };
