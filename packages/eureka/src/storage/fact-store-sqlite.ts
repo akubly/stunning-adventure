@@ -36,11 +36,12 @@
  *     cannot collide with a different (query, sessionId) pair).
  *
  * Version dispatch: see storage/cursor.ts.  Key rules:
- *   - v0 cursors are accepted without scope validation (backward compat).
- *   - v1 cursors whose scope fingerprint mismatches the current params throw
- *     `CursorScopeMismatchError` (fail fast — caller contract violation).
- *   - Unknown future version (v > 1) throws `CursorVersionUnsupportedError`.
- *   - Structurally garbage cursors still fall back to offset 0 (FS-SE-3).
+ *   - v0 (absent v key): offset honored as-is, no scope validation (backward compat).
+ *   - v1 (v === 1): scope fingerprint checked against current params;
+ *     mismatch throws `CursorScopeMismatchError` (fail fast — caller contract violation).
+ *   - Any present v not exactly 1 (including null, 0, floats, strings, v > 1):
+ *     throws `CursorVersionUnsupportedError`.
+ *   - Structurally unparseable/non-JSON: falls back to offset 0 (FS-SE-3).
  *
  * Offset-based pagination is deterministic within a request (same params, no writes
  * between pages). It is NOT stable under concurrent writes between pages — the

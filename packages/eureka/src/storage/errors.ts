@@ -52,10 +52,11 @@ export class CursorScopeMismatchError extends Error {
 // ---------------------------------------------------------------------------
 
 /**
- * Thrown by `FactStore.search()` when a cursor carries a `v` field with an
- * unrecognised version number (i.e. v > 1 at time of writing). This protects
- * against a new-format cursor being passed to an old implementation that cannot
- * correctly interpret it.
+ * Thrown by `FactStore.search()` when a cursor carries a `v` field that is not
+ * exactly the integer 1 (including null, 0, floats, strings, and v > 1). Only a
+ * truly absent `v` key (legacy v0 cursors) is accepted. This protects against
+ * misformatted cursors and new-format cursors that old implementations cannot
+ * correctly interpret.
  */
 export class CursorVersionUnsupportedError extends Error {
   readonly code = 'CURSOR_VERSION_UNSUPPORTED' as const;
