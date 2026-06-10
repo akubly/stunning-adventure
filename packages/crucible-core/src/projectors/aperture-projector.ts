@@ -13,7 +13,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { LedgerEvent, LedgerSubscriber } from '../ledger/ledger.js';
-import { NotificationPolicy } from './notification-policy.js';
+import { NotificationPolicy, isQuarantine } from './notification-policy.js';
 
 // ─── NotificationService port ─────────────────────────────────────────────────
 
@@ -120,14 +120,7 @@ export class ApertureProjector implements LedgerSubscriber {
   // ─── Private helpers ────────────────────────────────────────────────────────
 
   private categorize(event: LedgerEvent): string {
-    const payload = event.primitivePayload;
-    if (
-      payload !== null &&
-      typeof payload === 'object' &&
-      (payload as Record<string, unknown>)['type'] === 'quarantine'
-    ) {
-      return 'system';
-    }
+    if (isQuarantine(event.primitivePayload)) return 'system';
     if (event.primitiveKind === 'decision') return 'decision';
     return 'observation';
   }

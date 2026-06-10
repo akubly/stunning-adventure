@@ -74,11 +74,19 @@ class LedgerImpl implements Ledger {
     // (d) Non-VETO path — delegate to WAL backend
     const offset = await this.walBackend.commitRow(input, result);
 
-    // (e) Notify subscribers — fired after durable commit, before append resolves
+    // (e) Notify subscribers — fired after durable commit, before append resolves.
+    // Each subscriber is isolated: a throwing subscriber MUST NOT affect the
+    // returned offset, durability of the committed row, or other subscribers.
+    // The row is already durable; swallowing the error prevents false retries
+    // that would produce duplicate committed rows.
     if (this.subscribers.length > 0) {
       const event: LedgerEvent = { ...input, offset };
       for (const sub of this.subscribers) {
-        sub.onCommit(offset, event);
+        try {
+          sub.onCommit(offset, event);
+        } catch {
+          // intentionally swallowed — see contract note on LedgerSubscriber
+        }
       }
     }
 

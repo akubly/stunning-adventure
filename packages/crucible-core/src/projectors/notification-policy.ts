@@ -9,6 +9,20 @@
  *   getIcon     — icon character for a category/payload/level combination
  *   getPriority — numeric sort priority for a given level
  */
+
+/**
+ * Returns true if the primitive payload represents a quarantine event.
+ * Shared by NotificationPolicy.getIcon() and ApertureProjector.categorize()
+ * to avoid duplicating the same structural check.
+ */
+export function isQuarantine(payload: unknown): boolean {
+  return (
+    payload !== null &&
+    typeof payload === 'object' &&
+    (payload as Record<string, unknown>)['type'] === 'quarantine'
+  );
+}
+
 export class NotificationPolicy {
   /**
    * Returns true for levels that warrant a badge push (attention or urgent).
@@ -34,11 +48,7 @@ export class NotificationPolicy {
    * @param level    - Event level from EventMetadata ('urgent' | 'attention' | ...)
    */
   getIcon(category: string, payload: unknown, level?: string): string {
-    if (
-      payload !== null &&
-      typeof payload === 'object' &&
-      (payload as Record<string, unknown>)['type'] === 'quarantine'
-    ) {
+    if (isQuarantine(payload)) {
       return '🔒';
     }
     if (category === 'decision') return '📋';

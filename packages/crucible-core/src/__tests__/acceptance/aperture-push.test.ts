@@ -31,7 +31,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { createLedger, ApertureProjector } from '../../index.js';
-import type { NotificationService } from '../../index.js';
+import type { NotificationService, LedgerSubscriber } from '../../index.js';
 
 describe('Aperture Push Notifications', () => {
   it(
@@ -85,6 +85,44 @@ describe('Aperture Push Notifications', () => {
       // ── Assert: nothing materialized, no push (A5 invariant 6) ──────────
       expect(projector.queryEvents()).toHaveLength(0);
       expect(mockNotifier.push).not.toHaveBeenCalled();
+    },
+  );
+
+  it(
+    'Acceptance: throwing subscriber does not affect durability, offset, or other subscribers [F1 regression]',
+    async () => {
+      // ── Arrange: ledger with one throwing and one well-behaved subscriber ──
+      const ledger = await createLedger();
+
+      const throws: LedgerSubscriber = {
+        onCommit: () => { throw new Error('subscriber exploded'); },
+      };
+      const notified: Array<{ offset: number }> = [];
+      const good: LedgerSubscriber = {
+        onCommit: (offset) => { notified.push({ offset }); },
+      };
+
+      ledger.subscribe(throws);
+      ledger.subscribe(good);
+
+      // ── Act: append must resolve (not throw) even though sub[0] throws ────
+      const offset = await ledger.append({
+        primitiveKind: 'observation',
+        primitivePayload: { content: 'durable' },
+        causalReadSet: [],
+        metadata: { level: 'info' },
+      });
+
+      // ── Assert (a): correct offset returned — row committed ───────────────
+      expect(offset).toBe(0);
+
+      // ── Assert (b): well-behaved subscriber still notified ────────────────
+      expect(notified).toEqual([{ offset: 0 }]);
+
+      // ── Assert (c): row is queryable / durable ────────────────────────────
+      const events = await ledger.queryEvents({ range: [0, 0] });
+      expect(events).toHaveLength(1);
+      expect(events[0].primitivePayload).toEqual({ content: 'durable' });
     },
   );
 });

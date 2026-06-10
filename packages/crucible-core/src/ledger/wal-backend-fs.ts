@@ -142,7 +142,11 @@ export interface FileSystemWalBackendOptions {
    */
   batchDeadlineMs?: number;
   /**
-   * Injectable sync barrier (seam for testing §3.5 atomicity).
+   * Injectable sync barrier (seam for testing §3.5 atomicity and §3.2 CAS
+   * ordering). Called in two places per flush:
+   *   Phase 2.5 — once per new CAS file (via cas.syncAll), ensuring CAS blobs
+   *               are durable BEFORE the segment record referencing them is written.
+   *   Phase 3   — once for the segment fd, the ONE group-commit fsync barrier.
    * Default: (fd) => fs.fsyncSync(fd).  Tests pass a spy or a throwing stub.
    */
   syncFn?: (fd: number) => void;
@@ -413,6 +417,10 @@ export class FileSystemWalBackend implements WalBackend {
           causalReadSet = parsed;
         }
 
+        // NOTE (v1 / #67): metadata is not persisted in the WAL record — only
+        // primitiveKind, primitivePayload, causalReadSet, and offset are replayed.
+        // Subscribers receive a metadata-less LedgerEvent during replay-based
+        // catchup. A future slice will persist metadata in the WAL envelope.
         this.events.push({ primitiveKind, primitivePayload, causalReadSet, offset });
         this.prevRoot = new Uint8Array(rec.selfRoot);
       }
@@ -523,7 +531,7 @@ export class FileSystemWalBackend implements WalBackend {
    *   2. CAS-write payloads for committed rows.
    *   3. Build entire hash chain for committed rows in one call.
    *   4. Encode all records to buffers.
-   *   4.5 fsync all newly-written CAS files via syncAll(syncFn) — CAS durable
+   *   2.5 fsync all newly-written CAS files via syncAll(syncFn) — CAS durable
    *       BEFORE segment written (§3.2 / issue #59).
    *   5. Open segment fd, write all buffers, call syncFn(fd) — ONE barrier.
    *   6. On success: update prevRoot, write index entries, update manifest,

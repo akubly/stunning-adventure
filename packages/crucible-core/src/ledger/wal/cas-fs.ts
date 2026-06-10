@@ -79,7 +79,9 @@ export class FileSystemCas {
   }
 
   /**
-   * Retrieve bytes by BLAKE3 hash. Returns null on CAS_MISS.
+   * Retrieve bytes by BLAKE3 hash. Returns null on CAS_MISS (ENOENT only).
+   * All other I/O errors (permission denied, corruption, etc.) are re-thrown
+   * so callers surface real disk failures rather than receiving a misleading null.
    */
   get(hash: Blake3Hash): Uint8Array | null {
     const hex  = Buffer.from(hash).toString('hex');
@@ -87,8 +89,9 @@ export class FileSystemCas {
     try {
       const buf = fs.readFileSync(filePath);
       return new Uint8Array(buf);
-    } catch {
-      return null;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw err;
     }
   }
 

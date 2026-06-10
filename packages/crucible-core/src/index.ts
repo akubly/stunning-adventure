@@ -39,7 +39,7 @@ export type {
   ApertureEvent,
   ApertureQueryOpts,
 } from './projectors/aperture-projector.js';
-export { NotificationPolicy } from './projectors/notification-policy.js';
+export { NotificationPolicy, isQuarantine } from './projectors/notification-policy.js';
 // Durable WAL backend — file-system substrate (§3.2 on-disk layout).
 export {
   createFileSystemWalBackend,
