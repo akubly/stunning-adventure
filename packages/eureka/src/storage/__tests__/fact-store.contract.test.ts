@@ -7,10 +7,10 @@
  * The helper definition (runFactStoreContract + FactStoreHarness) lives in:
  *   ./fact-store-contract.helper.ts
  *
- * Each call to runFactStoreContract adds 16 tests (FS-1..FS-9; FS-5b×2, FS-8×3, FS-9×4 via it.each).
- * InMemoryFactStore wired below → 16 contract tests.
- * SqliteFactStore wired below   → 16 contract tests.
- * Total: 32
+ * Each call to runFactStoreContract adds 23 tests (FS-1..FS-10g; FS-5b×2, FS-8×3, FS-9×4, FS-10a–g×7 via it/it.each).
+ * InMemoryFactStore wired below → 23 contract tests.
+ * SqliteFactStore wired below   → 23 contract tests.
+ * Total: 46 (32 pre-D+ + 14 new RED cursor-versioning tests)
  */
 
 import Database from 'better-sqlite3';
@@ -18,6 +18,8 @@ import type { FactStore, RecallResult } from '../../activities/recall.js';
 import type { SessionId } from '@akubly/types';
 import { SqliteFactStore, applyMigrations } from '../../sqlite/index.js';
 import { runFactStoreContract, type FactStoreHarness } from './fact-store-contract.helper.js';
+import { scopeFingerprint, encodeCursor, decodeCursor } from '../cursor.js';
+import { CursorScopeMismatchError } from '../errors.js';
 
 // ---------------------------------------------------------------------------
 // InMemoryFactStore — reference implementation (test-only, not exported)
@@ -44,20 +46,8 @@ function storeKey(sessionId: SessionId, factId: string): string {
   return `${sessionId}\0${factId}`;
 }
 
-function encodeCursorInMemory(offset: number): string {
-  return Buffer.from(JSON.stringify({ offset })).toString('base64');
-}
-
-function decodeCursorInMemory(cursor: string): number {
-  try {
-    const payload = JSON.parse(Buffer.from(cursor, 'base64').toString()) as { offset: number };
-    return typeof payload.offset === 'number' && Number.isFinite(payload.offset) && Number.isInteger(payload.offset) && payload.offset >= 0
-      ? payload.offset
-      : 0;
-  } catch {
-    return 0;
-  }
-}
+// Cursor helpers are shared with SqliteFactStore via storage/cursor.ts.
+// InMemoryFactStore uses identical v1 encoding + scope fingerprint logic.
 
 function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['seed'] } {
   const store = new Map<string, StoredFact>();
@@ -77,7 +67,20 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
         throw new TypeError(`InMemoryFactStore.search: minTrust must be a finite number in [0, 1], got ${minTrust}`);
       }
 
-      const offset = cursor !== undefined ? decodeCursorInMemory(cursor) : 0;
+      const currentScope = scopeFingerprint(query, sessionId as string, minTrust, limit);
+
+      let offset = 0;
+      if (cursor !== undefined) {
+        const decoded = decodeCursor(cursor); // may throw CursorVersionUnsupportedError
+        if (decoded.version === 1) {
+          if (decoded.scope !== currentScope) {
+            throw new CursorScopeMismatchError();
+          }
+          offset = decoded.offset;
+        } else {
+          offset = decoded.offset;
+        }
+      }
 
       if (!query.trim()) return { results: [] };
 
@@ -116,7 +119,7 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
             : (f.termCount - minTC) / (maxTC - minTC),
       }));
 
-      const nextCursor = hasMore ? encodeCursorInMemory(offset + limit) : undefined;
+      const nextCursor = hasMore ? encodeCursor(offset + limit, currentScope) : undefined;
       return { results, nextCursor };
     },
   };

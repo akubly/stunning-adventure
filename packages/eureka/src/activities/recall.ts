@@ -42,11 +42,25 @@ export interface ScoredResult {
   score: number;
 }
 
-/** FactStore seam — injected, never instantiated here (§55 §2.1 London form). */
+/**
+ * FactStore seam — injected, never instantiated here (§55 §2.1 London form).
+ *
+ * @remarks Offset-based cursor pagination (v1) can skip or duplicate rows if facts
+ * are inserted or trust values mutate between page fetches. This is an acceptable
+ * limitation for single-writer v1. True keyset pagination (last composite rank + last
+ * fact id as cursor) will resist concurrent mutations and is deferred to Slice D++.
+ */
 export interface FactStore {
   search(args: {
     query: string;
     sessionId: SessionId;
+    /**
+     * Number of results per page.
+     *
+     * @throws {TypeError} Throws if `limit` is not a positive integer.
+     * Degenerate values (≤ 0, NaN, non-integer) are rejected at the call boundary
+     * and treated as contract violations, not as empty-result requests.
+     */
     limit: number;
     /** Trust floor predicate per §20 §7.4 — store applies WHERE trust >= minTrust. Default 0.15. */
     minTrust?: number;

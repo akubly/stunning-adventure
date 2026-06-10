@@ -15,3 +15,4 @@ export { SqliteFactStore } from '../storage/fact-store-sqlite.js';
 export { openDatabase } from '../db/openDatabase.js';
 export { applyMigrations } from '../db/schema.js';
 export { createSqliteRecallDeps, createSqliteFeedbackDeps } from './deps.js';
+export { CursorScopeMismatchError, CursorVersionUnsupportedError } from '../storage/errors.js';
