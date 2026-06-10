@@ -468,10 +468,6 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
   // Two search() calls with identical parameters must produce nextCursors
   // whose decoded `scope` field is identical. This locks that
   // scopeFingerprint() is a pure function with no random/time component.
-  //
-  // RED: current impl emits v0 cursors `{ offset }` with no `scope` field.
-  // After Roger's GREEN: both cursors are v1 `{ v:1, offset, scope }` and
-  // scope === scope.
   // ─────────────────────────────────────────────────────────────────────────
 
   it('FS-SE-14: scope fingerprint deterministic — same params produce same fingerprint across calls', async () => {
@@ -489,8 +485,6 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
     const decodedA = JSON.parse(Buffer.from(p1a.nextCursor!, 'base64').toString('utf8')) as Record<string, unknown>;
     const decodedB = JSON.parse(Buffer.from(p1b.nextCursor!, 'base64').toString('utf8')) as Record<string, unknown>;
 
-    // RED: current v0 cursor has no `scope` field — decodedA.scope is undefined.
-    // Roger's GREEN impl must produce identical non-undefined scope on both calls.
     expect(decodedA.scope).toBeDefined();
     expect(typeof decodedA.scope).toBe('string');
     expect(decodedA.scope).toBe(decodedB.scope);
@@ -505,9 +499,6 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
   //
   // This is a safety guardrail against accidentally encoding the full canonical
   // scope string (pre-hash) inside the cursor rather than its digest.
-  //
-  // RED: current impl emits v0 cursors (no v/scope fields). The v1 format
-  // assertion makes this RED until Roger's GREEN impl is in place.
   // ─────────────────────────────────────────────────────────────────────────
 
   it('FS-SE-15: cursor string stays under 256 bytes for typical params (no unbounded growth)', async () => {
@@ -525,8 +516,6 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
     // Safety guardrail: cursor must not grow unboundedly even with long params.
     expect(result.nextCursor!.length).toBeLessThan(256);
 
-    // RED: current impl emits v0 cursor (no `v` field).
-    // Roger's GREEN impl must emit v1 `{ v:1, offset, scope }`.
     const decoded = JSON.parse(Buffer.from(result.nextCursor!, 'base64').toString('utf8')) as Record<string, unknown>;
     expect(decoded).toMatchObject({ v: 1 });
   });

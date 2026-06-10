@@ -74,7 +74,7 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
         const decoded = decodeCursor(cursor); // may throw CursorVersionUnsupportedError
         if (decoded.version === 1) {
           if (decoded.scope !== currentScope) {
-            throw new CursorScopeMismatchError();
+              throw new CursorScopeMismatchError(decoded.scope, currentScope);
           }
           offset = decoded.offset;
         } else {

@@ -1,13 +1,14 @@
 /**
  * Cursor error types for FactStore versioned cursor validation.
  *
- * ## Type scaffold — Roger's implementation needed at throw sites
- *
- * These class definitions are the ERROR CONTRACT that the FS-10a–g tests
- * import and assert against. Defining them here does NOT implement any cursor
- * behavior — the actual `throw` sites belong in:
- *   - `fact-store-sqlite.ts` → SqliteFactStore.search() scope-check path
- *   - `fact-store.contract.test.ts` → InMemoryFactStore.search() (RED test reference impl)
+ * Defines the two error classes thrown at the cursor validation seam:
+ *   - `CursorScopeMismatchError` — thrown by `FactStore.search()` when a v1 cursor's
+ *     scope fingerprint does not match the current search parameters (query, sessionId,
+ *     minTrust, limit). Throw site: `fact-store-sqlite.ts` scope-check + the
+ *     InMemoryFactStore reference impl in `fact-store.contract.test.ts`.
+ *   - `CursorVersionUnsupportedError` — thrown by `decodeCursor()` in `cursor.ts`
+ *     when a cursor carries an unsupported `v` value (any present `v` that is not
+ *     exactly 1, including v:0, floats, strings, and future versions > 1).
  *
  * Follows the M7-A error-hierarchy conventions (code discriminator, name override,
  * Object.setPrototypeOf guard for bundler safety).
@@ -30,13 +31,18 @@
  */
 export class CursorScopeMismatchError extends Error {
   readonly code = 'CURSOR_SCOPE_MISMATCH' as const;
+  readonly cursorScope: string;
+  readonly currentScope: string;
 
-  constructor() {
+  constructor(cursorScope: string, currentScope: string) {
     super(
       'Cursor scope fingerprint does not match current search parameters. ' +
-        'Do not reuse cursors across different query/sessionId/minTrust/limit combinations.',
+        'Do not reuse cursors across different query/sessionId/minTrust/limit combinations. ' +
+        `(cursorScope=${cursorScope}, currentScope=${currentScope})`,
     );
     this.name = 'CursorScopeMismatchError';
+    this.cursorScope = cursorScope;
+    this.currentScope = currentScope;
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }

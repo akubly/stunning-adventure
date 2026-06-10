@@ -43,10 +43,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { FactStore } from '../../activities/recall.js';
 import type { SessionId } from '@akubly/types';
-// RED: CursorScopeMismatchError and CursorVersionUnsupportedError throw sites are not yet
-// implemented in SqliteFactStore or InMemoryFactStore — Roger's GREEN work. These imports
-// resolve now that storage/errors.ts defines the type scaffold, but search() never throws
-// them until Roger adds the scope-check path. Tests FS-10b–g will fail assertion-RED.
 import { CursorScopeMismatchError, CursorVersionUnsupportedError } from '../errors.js';
 
 // ---------------------------------------------------------------------------
@@ -374,13 +370,13 @@ export function runFactStoreContract(
     );
 
     // =======================================================================
-    // FS-10 — Cursor versioning + scope fingerprint (Slice D+)
+    // FS-10 — Cursor versioning + scope fingerprint (Slice D+, GREEN)
     //
-    // RED test suite — Roger's GREEN impl needed in both SqliteFactStore and
-    // the InMemoryFactStore reference impl above. These tests MUST FAIL until:
-    //   1. encodeCursor emits { v:1, offset, scope } (v1 format).
-    //   2. decodeCursor validates v field; throws on v>1.
-    //   3. search() checks scope fingerprint on v1 cursors; throws on mismatch.
+    // Implemented: encodeCursor emits { v:1, offset, scope }; decodeCursor
+    // throws CursorVersionUnsupportedError for any present v ≠ 1; search()
+    // checks scope fingerprint on v1 cursors and throws CursorScopeMismatchError
+    // on mismatch. InMemoryFactStore reference impl lives in
+    // `fact-store.contract.test.ts` (not in this file).
     //
     // Strategy for scope-mismatch tests (FS-10b–e):
     //   • Get a real cursor by calling search() with params A → nextCursor.
@@ -393,8 +389,7 @@ export function runFactStoreContract(
     // FS-10a — v1 cursor with correct scope → pagination advances normally
     //
     // Verify that the opaque round-trip still works AND that the cursor emitted
-    // is now in v1 format (has `v:1` and a `scope` field). The v1 format
-    // assertion is the RED anchor — current impl emits v0 `{ offset }`.
+    // is in v1 format (has `v:1` and a `scope` field).
     // -----------------------------------------------------------------------
 
     it('FS-10a: v1 cursor with correct scope fingerprint → pagination advances normally', async () => {
@@ -406,8 +401,6 @@ export function runFactStoreContract(
       expect(p1.results).toHaveLength(1);
       expect(p1.nextCursor).toBeDefined();
 
-      // RED: current impl emits v0 `{ offset }` — no `v` or `scope` fields.
-      // Roger's GREEN impl must emit `{ v: 1, offset, scope }`.
       const decoded = JSON.parse(Buffer.from(p1.nextCursor!, 'base64').toString('utf8')) as Record<string, unknown>;
       expect(decoded).toMatchObject({ v: 1, offset: expect.any(Number), scope: expect.any(String) });
 
@@ -422,7 +415,6 @@ export function runFactStoreContract(
     //
     // Get a cursor from a 'versioning' search. Re-use it in a 'different'
     // search. Scope fingerprint includes query → mismatch → throw.
-    // RED: current search() ignores scope — no throw.
     // -----------------------------------------------------------------------
 
     it('FS-10b: v1 cursor with wrong query scope → throws CursorScopeMismatchError', async () => {
@@ -435,7 +427,6 @@ export function runFactStoreContract(
       expect(p1.nextCursor).toBeDefined();
 
       // Pass that cursor to a search with a different query → scope mismatch.
-      // RED: CursorScopeMismatchError is never thrown by the current impl.
       await expect(
         impl.search({ query: 'different', sessionId: SESSION_A, limit: 1, cursor: p1.nextCursor }),
       ).rejects.toThrow(CursorScopeMismatchError);
@@ -446,7 +437,6 @@ export function runFactStoreContract(
     //
     // Scope fingerprint includes sessionId (defense-in-depth against accidental
     // cross-session cursor sharing). Mismatch must throw.
-    // RED: current search() ignores scope — no throw.
     // -----------------------------------------------------------------------
 
     it('FS-10c: v1 cursor with wrong sessionId scope → throws CursorScopeMismatchError', async () => {
@@ -459,7 +449,6 @@ export function runFactStoreContract(
       expect(p1.nextCursor).toBeDefined();
 
       // Pass that cursor to a search under SESSION_B → sessionId mismatch.
-      // RED: CursorScopeMismatchError is never thrown by the current impl.
       await expect(
         impl.search({ query: 'versioning', sessionId: SESSION_B, limit: 1, cursor: p1.nextCursor }),
       ).rejects.toThrow(CursorScopeMismatchError);
@@ -470,7 +459,6 @@ export function runFactStoreContract(
     //
     // minTrust changes the WHERE predicate; a cursor from minTrust=0.15 is not
     // safe to reuse with minTrust=0.5 (different result set). Must throw.
-    // RED: current search() ignores scope — no throw.
     // -----------------------------------------------------------------------
 
     it('FS-10d: v1 cursor with wrong minTrust scope → throws CursorScopeMismatchError', async () => {
@@ -483,7 +471,6 @@ export function runFactStoreContract(
       expect(p1.nextCursor).toBeDefined();
 
       // Pass that cursor to a search with minTrust=0.5 → minTrust mismatch.
-      // RED: CursorScopeMismatchError is never thrown by the current impl.
       await expect(
         impl.search({ query: 'versioning', sessionId: SESSION_A, limit: 1, minTrust: 0.5, cursor: p1.nextCursor }),
       ).rejects.toThrow(CursorScopeMismatchError);
@@ -494,7 +481,6 @@ export function runFactStoreContract(
     //
     // limit changes the page stride; reusing a limit=1 cursor with limit=2
     // would skip every other row. Scope fingerprint includes limit → must throw.
-    // RED: current search() ignores scope — no throw.
     // -----------------------------------------------------------------------
 
     it('FS-10e: v1 cursor with wrong limit scope → throws CursorScopeMismatchError', async () => {
@@ -508,7 +494,6 @@ export function runFactStoreContract(
       expect(p1.nextCursor).toBeDefined();
 
       // Pass that cursor to a search with limit=2 → limit mismatch.
-      // RED: CursorScopeMismatchError is never thrown by the current impl.
       await expect(
         impl.search({ query: 'versioning', sessionId: SESSION_A, limit: 2, cursor: p1.nextCursor }),
       ).rejects.toThrow(CursorScopeMismatchError);
@@ -552,7 +537,6 @@ export function runFactStoreContract(
     // A cursor carrying an unrecognised version number must be rejected so
     // that a stale (old) implementation doesn't silently misinterpret a
     // future (new) cursor format. Must throw CursorVersionUnsupportedError.
-    // RED: current decodeCursor extracts offset=0 and proceeds — no throw.
     // -----------------------------------------------------------------------
 
     it('FS-10g: cursor with v:99 (unknown future version) → throws CursorVersionUnsupportedError', async () => {
@@ -563,11 +547,27 @@ export function runFactStoreContract(
         JSON.stringify({ v: 99, offset: 0, scope: 'deadbeefcafe0000' }),
       ).toString('base64');
 
-      // RED: CursorVersionUnsupportedError is never thrown by the current impl.
-      // decodeCursor currently treats any cursor with a numeric offset as v0
-      // and returns offset=0, proceeding normally with no version check.
       await expect(
         impl.search({ query: 'versioning', sessionId: SESSION_A, limit: 1, cursor: futureCursor }),
+      ).rejects.toThrow(CursorVersionUnsupportedError);
+    });
+
+    // -----------------------------------------------------------------------
+    // FS-10h — empty query + unsupported cursor version → consistent throw
+    //
+    // Both impls MUST validate/decode the cursor BEFORE the empty-query
+    // short-circuit so that an invalid cursor version always throws —
+    // regardless of whether the query string is empty or not.
+    // -----------------------------------------------------------------------
+
+    it('FS-10h: empty query + v:99 cursor → throws CursorVersionUnsupportedError (cursor validated before query check)', async () => {
+      const futureCursor = Buffer.from(
+        JSON.stringify({ v: 99, offset: 0, scope: 'deadbeefcafe0001' }),
+      ).toString('base64');
+
+      // Both impls must throw — cursor validation must precede empty-query short-circuit.
+      await expect(
+        impl.search({ query: '', sessionId: SESSION_A, limit: 10, cursor: futureCursor }),
       ).rejects.toThrow(CursorVersionUnsupportedError);
     });
   });

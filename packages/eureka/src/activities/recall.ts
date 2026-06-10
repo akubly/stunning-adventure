@@ -68,6 +68,17 @@ export interface FactStore {
      * Opaque pagination cursor returned by a prior search call.
      * Absent on first page. Consumers MUST NOT parse cursor internals.
      * Q2-locked: included now to avoid a breaking change when cross-session queries arrive.
+     *
+     * @throws {CursorScopeMismatchError} Throws if a v1 cursor's scope fingerprint does
+     * not match the current search parameters (query/sessionId/minTrust/limit). This
+     * indicates the cursor was obtained from a different search context and cannot be
+     * safely reused. Callers that intentionally restart pagination may catch and retry
+     * from page 0 (no cursor).
+     *
+     * @throws {CursorVersionUnsupportedError} Throws if the cursor carries a `v` field
+     * with an unsupported version value — any present `v` that is not exactly 1,
+     * including v:0, floats, strings, and any future version the implementation does
+     * not recognise. Completely unparseable cursors fall back to offset 0 (no throw).
      */
     cursor?: string;
   }): Promise<{

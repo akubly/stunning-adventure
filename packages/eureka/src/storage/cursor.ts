@@ -8,12 +8,17 @@
  *
  * ## Version dispatch
  *
- * | Decoded payload                        | Behavior                              |
- * |----------------------------------------|---------------------------------------|
- * | Valid JSON, missing `v`, numeric offset | v0 — offset honored, no scope check   |
- * | `v: 1`, valid offset, valid scope       | v1 — scope fingerprint check in search |
- * | `v: N` where N > 1                      | throw CursorVersionUnsupportedError    |
- * | Unparseable / missing offset            | return { version: 0, offset: 0 }       |
+ * | Decoded payload                        | Behavior                                   |
+ * |----------------------------------------|--------------------------------------------|
+ * | Valid JSON, missing `v`, numeric offset | v0 — offset honored, no scope check        |
+ * | `v: 1`, valid offset, valid scope       | v1 — scope fingerprint check in search     |
+ * | `v` present but not exactly 1          | throw CursorVersionUnsupportedError        |
+ * | `v: N` where N > 1                     | throw CursorVersionUnsupportedError        |
+ * | Unparseable / missing offset            | return { version: 0, offset: 0 }           |
+ *
+ * Any `v` that is present and is not exactly the integer 1 (including v:0,
+ * floats, strings, future versions > 1) is treated as a contract violation and
+ * throws.  Only completely unparseable/non-JSON input falls back to offset 0.
  *
  * @see .squad/decisions/inbox/graham-slice-dplus-cursor-versioning.md §1
  */
@@ -42,7 +47,7 @@ export function scopeFingerprint(
   minTrust: number,
   limit: number,
 ): string {
-  const canonical = `query=${query}\nsessionId=${sessionId}\nminTrust=${minTrust}\nlimit=${limit}`;
+  const canonical = JSON.stringify({ query, sessionId, minTrust, limit });
   return createHash('sha256').update(canonical).digest('hex').slice(0, 16);
 }
 
@@ -60,7 +65,7 @@ export function encodeCursor(offset: number, scope: string): string {
 // decodeCursor
 //
 // Returns a DecodedCursor discriminated union.
-// Throws CursorVersionUnsupportedError for v > 1 (unknown future version).
+// Throws CursorVersionUnsupportedError for any present v that is not exactly 1.
 // Returns { version: 0, offset: 0 } for structurally garbage input (FS-SE-3).
 // ---------------------------------------------------------------------------
 
@@ -72,44 +77,43 @@ export function decodeCursor(cursor: string): DecodedCursor {
 
     const v = raw['v'];
 
-    if (v === undefined || v === null) {
-      // v0 legacy path — honor offset as-is, no scope field expected.
-      const offset = raw['offset'];
-      return {
-        version: 0,
-        offset:
-          typeof offset === 'number' &&
-          Number.isFinite(offset) &&
-          Number.isInteger(offset) &&
-          offset >= 0
-            ? offset
-            : 0,
-      };
+    if (v !== undefined && v !== null) {
+      // v is present — must be exactly the integer 1 (v1 format).
+      // Any other value (v:0, float, string, future v>1) is a contract violation:
+      // the cursor came from a system that knows about versioning but emitted
+      // a version we can't interpret.  Throw rather than silently misinterpreting.
+      if (typeof v !== 'number' || !Number.isInteger(v) || v !== 1) {
+        throw new CursorVersionUnsupportedError(typeof v === 'number' ? v : NaN);
+      }
+
+      // v === 1
+      const rawOffset = raw['offset'];
+      const offset =
+        typeof rawOffset === 'number' &&
+        Number.isFinite(rawOffset) &&
+        Number.isInteger(rawOffset) &&
+        rawOffset >= 0
+          ? rawOffset
+          : 0;
+
+      const rawScope = raw['scope'];
+      const scope = typeof rawScope === 'string' ? rawScope : '';
+
+      return { version: 1, offset, scope };
     }
 
-    if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) {
-      // Unrecognisable v field type → treat as garbage.
-      return { version: 0, offset: 0 };
-    }
-
-    if (v > 1) {
-      throw new CursorVersionUnsupportedError(v);
-    }
-
-    // v === 1
-    const rawOffset = raw['offset'];
-    const offset =
-      typeof rawOffset === 'number' &&
-      Number.isFinite(rawOffset) &&
-      Number.isInteger(rawOffset) &&
-      rawOffset >= 0
-        ? rawOffset
-        : 0;
-
-    const rawScope = raw['scope'];
-    const scope = typeof rawScope === 'string' ? rawScope : '';
-
-    return { version: 1, offset, scope };
+    // v absent or null → v0 legacy path — honor offset as-is, no scope field expected.
+    const offset = raw['offset'];
+    return {
+      version: 0,
+      offset:
+        typeof offset === 'number' &&
+        Number.isFinite(offset) &&
+        Number.isInteger(offset) &&
+        offset >= 0
+          ? offset
+          : 0,
+    };
   } catch (err) {
     if (err instanceof CursorVersionUnsupportedError) {
       throw err; // re-throw — not garbage, intentional version rejection

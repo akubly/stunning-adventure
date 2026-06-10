@@ -30,8 +30,10 @@
  * Cursors are base64-encoded JSON in one of two formats:
  *   v0 (legacy): `{ offset: number }` — accepted as-is, no scope check.
  *   v1 (current): `{ v: 1, offset: number, scope: string }` — scope is a
- *     SHA-256 hex (first 16 chars) of the canonical param string:
- *       `query=${q}\nsessionId=${sid}\nminTrust=${mt}\nlimit=${lim}`
+ *     SHA-256 hex (first 16 chars) of the JSON-serialised param object:
+ *       `JSON.stringify({ query, sessionId, minTrust, limit })`
+ *     JSON encoding is injection-resistant (a query containing "\nsessionId="
+ *     cannot collide with a different (query, sessionId) pair).
  *
  * Version dispatch: see storage/cursor.ts.  Key rules:
  *   - v0 cursors are accepted without scope validation (backward compat).
@@ -164,11 +166,9 @@ export class SqliteFactStore implements FactStore {
       throw new TypeError(`SqliteFactStore.search: minTrust must be a finite number in [0, 1], got ${minTrust}`);
     }
 
-    // FTS5 MATCH with an empty string throws — short-circuit to empty results.
-    if (!query.trim()) {
-      return { results: [] };
-    }
-
+    // Decode the cursor BEFORE the empty-query short-circuit so that an
+    // invalid/unsupported cursor version always throws — even when query is empty.
+    // This keeps cursor validation behavior consistent with InMemoryFactStore.
     const currentScope = scopeFingerprint(query, sessionId as string, minTrust, limit);
 
     let offset = 0;
@@ -176,13 +176,18 @@ export class SqliteFactStore implements FactStore {
       const decoded = decodeCursor(cursor); // may throw CursorVersionUnsupportedError
       if (decoded.version === 1) {
         if (decoded.scope !== currentScope) {
-          throw new CursorScopeMismatchError();
+          throw new CursorScopeMismatchError(decoded.scope, currentScope);
         }
         offset = decoded.offset;
       } else {
         // v0 — honor offset as-is, no scope check (backward compat)
         offset = decoded.offset;
       }
+    }
+
+    // FTS5 MATCH with an empty string throws — short-circuit to empty results.
+    if (!query.trim()) {
+      return { results: [] };
     }
 
     // Fetch limit+1 rows to detect whether a next page exists without a
