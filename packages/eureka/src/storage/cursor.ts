@@ -115,7 +115,11 @@ export function decodeCursor(cursor: string): DecodedCursor {
           : 0,
     };
   } catch (err) {
-    if (err instanceof CursorVersionUnsupportedError) {
+    if (
+      err !== null &&
+      typeof err === 'object' &&
+      (err as { code?: unknown }).code === 'CURSOR_VERSION_UNSUPPORTED'
+    ) {
       throw err; // re-throw — not garbage, intentional version rejection
     }
     return { version: 0, offset: 0 };
