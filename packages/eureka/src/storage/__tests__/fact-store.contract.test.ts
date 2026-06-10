@@ -7,10 +7,10 @@
  * The helper definition (runFactStoreContract + FactStoreHarness) lives in:
  *   ./fact-store-contract.helper.ts
  *
- * Each call to runFactStoreContract adds 23 tests (FS-1..FS-10g; FS-5b×2, FS-8×3, FS-9×4, FS-10a–g×7 via it/it.each).
- * InMemoryFactStore wired below → 23 contract tests.
- * SqliteFactStore wired below   → 23 contract tests.
- * Total: 46 (32 pre-D+ + 14 new RED cursor-versioning tests)
+ * Each call to runFactStoreContract adds 24 tests (FS-1..FS-10h; FS-5b×2, FS-8×3, FS-9×4, FS-10a–h×8 via it/it.each).
+ * InMemoryFactStore wired below → 24 contract tests.
+ * SqliteFactStore wired below   → 24 contract tests.
+ * Total: 48 (32 pre-D+ + 16 new cursor-versioning tests)
  */
 
 import Database from 'better-sqlite3';
@@ -77,7 +77,7 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
         if (decoded.version === 1) {
           computedScope = scopeFingerprint(query, sessionId as string, minTrust, limit);
           if (decoded.scope !== computedScope) {
-              throw new CursorScopeMismatchError(decoded.scope, computedScope);
+            throw new CursorScopeMismatchError(decoded.scope, computedScope);
           }
           offset = decoded.offset;
         } else {

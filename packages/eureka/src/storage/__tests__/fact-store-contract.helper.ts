@@ -33,6 +33,7 @@
  * FS-10e v1 cursor wrong limit    — throws CursorScopeMismatchError
  * FS-10f v0 cursor backward compat — unversioned cursor accepted, offset honored, no throw
  * FS-10g unknown version v:99     — throws CursorVersionUnsupportedError
+ * FS-10h empty query + bad cursor version — cursor decoded before empty-query short-circuit; CursorVersionUnsupportedError always thrown
  *
  * ## Export visibility
  *
@@ -93,8 +94,8 @@ const SESSION_B = 'fs-contract-session-B' as SessionId;
 /**
  * Run the full FactStore contract suite against a given implementation factory.
  *
- * Each call to `runFactStoreContract` adds 23 tests (FS-1..FS-10g; FS-5b×2, FS-8×3,
- * FS-9×4, FS-10a–g×7 via it/it.each).
+ * Each call to `runFactStoreContract` adds 24 tests (FS-1..FS-10h; FS-5b×2, FS-8×3,
+ * FS-9×4, FS-10a–h×8 via it/it.each).
  *
  * @param implName    Human-readable label shown in test output (e.g. 'SqliteFactStore').
  * @param makeHarness Factory called once per test (via beforeEach) to produce a fresh,
