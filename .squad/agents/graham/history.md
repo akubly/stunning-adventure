@@ -371,6 +371,17 @@ Pitfall #5 incorrectly stated that `resolveOptimizationHint` was not exported fr
 **Documentation debt pattern:** when a public API export is added as a review fix, also update any SKILL.md pitfalls that reference the non-exported version. Export additions don't automatically propagate to narrative documentation.
 
 
+---
+
+## 2026-06-08: WAL Substrate 2-Cycle Review COMPLETE — Seam Contract Validated
+
+**Scribe note:** Crucible WAL substrate + Walkthrough B 2-cycle persona review COMPLETE. Graham's locked Ledger seam contract (VETO Option A) passed contract hardening in cycle 2:
+- hookVerdict bytes (0x00/0x01/0x02) persisted and validated across close+reopen for both WalBackend impls
+- Seam lock interface NOT reshaped; contract remains (Exclude<HookVerdict, 'VETO'>) for all WAL-layer verdicts
+- Result: 75/75 tests green
+
+**Branch ready for merge. See decisions.md for cycle dispositions.**
+
 ## 2026-06-07 — M8 Slice D Complete
 
 **Slice:** M8 Slice D — SQLite Production Deps Factory (Roger, Laura, Graham)  
