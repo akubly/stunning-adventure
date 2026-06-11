@@ -264,6 +264,82 @@ describe("createTokenCollector", () => {
 // Outcome collector
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// skill_id propagation (Slice 1)
+// ---------------------------------------------------------------------------
+
+describe("skillId propagation", () => {
+  it("drift: flush() stamps skillId when factory receives one", () => {
+    const c = createDriftCollector("my-skill");
+    c.collect(evt("turn_end"));
+    const s = c.flush("sess-1")!;
+    expect(s.skillId).toBe("my-skill");
+  });
+
+  it("drift: flush() leaves skillId undefined when factory receives none", () => {
+    const c = createDriftCollector();
+    c.collect(evt("turn_end"));
+    const s = c.flush("sess-1")!;
+    expect(s.skillId).toBeUndefined();
+  });
+
+  it("drift: existing flush metadata is unchanged when skillId provided", () => {
+    const c = createDriftCollector("sk");
+    c.collect(evt("turn_end"));
+    const s = c.flush("sess-1")!;
+    expect(s.kind).toBe("drift");
+    expect(s.sessionId).toBe("sess-1");
+    expect(typeof s.value).toBe("number");
+    expect(s.metadata.turnCount).toBe(1);
+  });
+
+  it("token: flush() stamps skillId when factory receives one", () => {
+    const c = createTokenCollector("my-skill");
+    c.collect(evt("model_call", { inputTokens: 10, outputTokens: 5, totalNanoAiu: 100 }));
+    const s = c.flush("sess-1")!;
+    expect(s.skillId).toBe("my-skill");
+  });
+
+  it("token: flush() leaves skillId undefined when factory receives none", () => {
+    const c = createTokenCollector();
+    c.collect(evt("model_call", { inputTokens: 10, outputTokens: 5, totalNanoAiu: 100 }));
+    const s = c.flush("sess-1")!;
+    expect(s.skillId).toBeUndefined();
+  });
+
+  it("token: existing flush metadata is unchanged when skillId provided", () => {
+    const c = createTokenCollector("sk");
+    c.collect(evt("model_call", { inputTokens: 10, outputTokens: 5, totalNanoAiu: 100 }));
+    const s = c.flush("sess-1")!;
+    expect(s.kind).toBe("token");
+    expect(s.value).toBe(100);
+    expect(s.metadata.callCount).toBe(1);
+  });
+
+  it("outcome: flush() stamps skillId when factory receives one", () => {
+    const c = createOutcomeCollector("my-skill");
+    c.collect(evt("session_end"));
+    const s = c.flush("sess-1")!;
+    expect(s.skillId).toBe("my-skill");
+  });
+
+  it("outcome: flush() leaves skillId undefined when factory receives none", () => {
+    const c = createOutcomeCollector();
+    c.collect(evt("session_end"));
+    const s = c.flush("sess-1")!;
+    expect(s.skillId).toBeUndefined();
+  });
+
+  it("outcome: existing flush metadata is unchanged when skillId provided", () => {
+    const c = createOutcomeCollector("sk");
+    c.collect(evt("session_end"));
+    const s = c.flush("sess-1")!;
+    expect(s.kind).toBe("outcome");
+    expect(s.value).toBe(1);
+    expect(s.metadata.succeeded).toBe(true);
+  });
+});
+
 describe("createOutcomeCollector", () => {
   it("emits succeeded=false when no session_end event seen", () => {
     const c = createOutcomeCollector();
