@@ -18,6 +18,7 @@ import type {
   LedgerEvent,
   LedgerFactoryOptions,
   LedgerQueryOpts,
+  LedgerSubscriber,
   WalBackend,
 } from './ledger.js';
 import type {
@@ -39,10 +40,16 @@ function isNonVeto(
 }
 
 class LedgerImpl implements Ledger {
+  private readonly subscribers: LedgerSubscriber[] = [];
+
   constructor(
     private readonly hookBus: HookBusPort,
     private readonly walBackend: WalBackend,
   ) {}
+
+  subscribe(subscriber: LedgerSubscriber): void {
+    this.subscribers.push(subscriber);
+  }
 
   async append(input: PrimitiveInput): Promise<number> {
     // (a) Build hook context — no I/O, no WAL staging
@@ -65,7 +72,25 @@ class LedgerImpl implements Ledger {
     }
 
     // (d) Non-VETO path — delegate to WAL backend
-    return this.walBackend.commitRow(input, result);
+    const offset = await this.walBackend.commitRow(input, result);
+
+    // (e) Notify subscribers — fired after durable commit, before append resolves.
+    // Each subscriber is isolated: a throwing subscriber MUST NOT affect the
+    // returned offset, durability of the committed row, or other subscribers.
+    // The row is already durable; swallowing the error prevents false retries
+    // that would produce duplicate committed rows.
+    if (this.subscribers.length > 0) {
+      const event: LedgerEvent = { ...input, offset };
+      for (const sub of this.subscribers) {
+        try {
+          sub.onCommit(offset, event);
+        } catch {
+          // intentionally swallowed — see contract note on LedgerSubscriber
+        }
+      }
+    }
+
+    return offset;
   }
 
   async registerHook(

@@ -142,7 +142,11 @@ export interface FileSystemWalBackendOptions {
    */
   batchDeadlineMs?: number;
   /**
-   * Injectable sync barrier (seam for testing §3.5 atomicity).
+   * Injectable sync barrier (seam for testing §3.5 atomicity and §3.2 CAS
+   * ordering). Called in two places per flush:
+   *   Phase 2.5 — once per new CAS file (via cas.syncAll), ensuring CAS blobs
+   *               are durable BEFORE the segment record referencing them is written.
+   *   Phase 3   — once for the segment fd, the ONE group-commit fsync barrier.
    * Default: (fd) => fs.fsyncSync(fd).  Tests pass a spy or a throwing stub.
    */
   syncFn?: (fd: number) => void;
@@ -263,9 +267,19 @@ export class FileSystemWalBackend implements WalBackend {
     this.activeSegPath = this.segPath(this.activeSeg);
     this.indexPath     = path.join(this.segDir, 'index.idx');
 
-    if (this.manifest.lastCommitOffset >= 0) {
-      this.replayFromSegments();
-    }
+    // Always replay from segment files — the segment IS the ground truth.
+    //
+    // The former guard `if (manifest.lastCommitOffset >= 0)` was a performance
+    // micro-opt that silently dropped durable rows on crash: if the process died
+    // after the segment fdatasync (Phase 3) but before the manifest.json update
+    // (Phase 4), lastCommitOffset would still be -1 on the next open, and replay
+    // was skipped entirely — making committed rows invisible (issue #56).
+    //
+    // scanSegmentFile() returns [] for non-existent / zero-byte segment files,
+    // so this call is a safe no-op for fresh sessions. The manifest's
+    // lastCommitOffset is retained for informational purposes only; it is NOT
+    // used as a replay gate.
+    this.replayFromSegments();
   }
 
   /**
@@ -403,6 +417,10 @@ export class FileSystemWalBackend implements WalBackend {
           causalReadSet = parsed;
         }
 
+        // NOTE (v1 / #67): metadata is not persisted in the WAL record — only
+        // primitiveKind, primitivePayload, causalReadSet, and offset are replayed.
+        // Subscribers receive a metadata-less LedgerEvent during replay-based
+        // catchup. A future slice will persist metadata in the WAL envelope.
         this.events.push({ primitiveKind, primitivePayload, causalReadSet, offset });
         this.prevRoot = new Uint8Array(rec.selfRoot);
       }
@@ -513,6 +531,8 @@ export class FileSystemWalBackend implements WalBackend {
    *   2. CAS-write payloads for committed rows.
    *   3. Build entire hash chain for committed rows in one call.
    *   4. Encode all records to buffers.
+   *   2.5 fsync all newly-written CAS files via syncAll(syncFn) — CAS durable
+   *       BEFORE segment written (§3.2 / issue #59).
    *   5. Open segment fd, write all buffers, call syncFn(fd) — ONE barrier.
    *   6. On success: update prevRoot, write index entries, update manifest,
    *      push to in-memory events, resolve all committed promises,
@@ -578,6 +598,23 @@ export class FileSystemWalBackend implements WalBackend {
     // ── Phase 2: Build hash chain for the entire committed batch ──────────────
     const chained       = buildChain(rowInputs, this.prevRoot);
     const recordBuffers = chained.map(r => encodeRecord(r));
+
+    // ── Phase 2.5: fsync all newly-written CAS files (§3.2 / issue #59) ───────
+    // CAS blobs must be durable BEFORE the segment record referencing them is
+    // written (let alone fsynced). Batched into the group-commit barrier so
+    // amortised cost is O(K) new CAS files per flush, not O(rows).
+    // Ordering invariant: CAS durable → segment written → segment durable.
+    try {
+      this.cas.syncAll(this.syncFn);
+    } catch (err) {
+      // Segment not yet opened — no truncation needed. Reject committed
+      // entries and re-queue restaged entries (their promises stay pending).
+      for (const { row: entry } of committed) entry.reject(err);
+      if (restaged.length > 0) {
+        this.stagingQueue.unshift(...restaged.map(r => r.row));
+      }
+      throw err;
+    }
 
     // ── Phase 3: Write to segment + ONE fsync barrier ─────────────────────────
     const segFd = fs.openSync(this.activeSegPath, 'a');

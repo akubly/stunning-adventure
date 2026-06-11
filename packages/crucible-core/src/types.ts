@@ -15,11 +15,26 @@ export type PrimitiveKind =
   | 'decision'
   | 'question';
 
+/** Closed set of attention tiers used in EventMetadata.level. */
+export type EventLevel = 'urgent' | 'attention' | 'notice' | 'info';
+
+/**
+ * Optional caller-supplied event metadata.
+ * Carries tier/level and any other caller-supplied fields.
+ */
+export interface EventMetadata {
+  /** Attention tier. Closed set — use EventLevel for exhaustive matching. */
+  level?: EventLevel;
+  [key: string]: unknown;
+}
+
 /** Input shape for appending a primitive to a session ledger. */
 export interface PrimitiveInput {
   primitiveKind: PrimitiveKind;
   primitivePayload: unknown;
   causalReadSet: string[];
+  /** Optional event metadata — carries tier/level and caller-supplied fields. */
+  metadata?: EventMetadata;
 }
 
 /**
