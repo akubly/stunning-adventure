@@ -45,10 +45,11 @@ export interface ScoredResult {
 /**
  * FactStore seam — injected, never instantiated here (§55 §2.1 London form).
  *
- * @remarks Offset-based cursor pagination (v1) can skip or duplicate rows if facts
- * are inserted or trust values mutate between page fetches. This is an acceptable
- * limitation for single-writer v1. True keyset pagination (last composite rank + last
- * fact id as cursor) will resist concurrent mutations and is deferred to Slice D++.
+ * @remarks Keyset cursor pagination (Slice D++): cursors encode the composite
+ * score and row id of the last returned row, making subsequent pages stable
+ * under concurrent inserts and trust mutations. FSE-2 is closed by construction.
+ * Per-page relevance normalization (D3) is unchanged — relevance is not
+ * comparable across pages.
  */
 export interface FactStore {
   search(args: {
@@ -80,7 +81,7 @@ export interface FactStore {
      * @throws {CursorVersionUnsupportedError} Throws if the cursor carries a `v` field
      * with an unsupported version value — any present `v` that is not exactly 1,
      * including v:0, floats, strings, and any future version the implementation does
-     * not recognise. Completely unparseable cursors fall back to offset 0 (no throw).
+     * not recognise. Completely unparseable cursors fall back to a page-1 restart (no throw).
      * Exported from `@akubly/eureka/sqlite`.
      */
     cursor?: string;

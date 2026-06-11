@@ -27,7 +27,7 @@ import { CursorScopeMismatchError } from '../errors.js';
 //
 // Simple keyword search: splits query into tokens, counts occurrences in
 // content (case-insensitive), multiplies by trust for composite score.
-// Pagination via base64-JSON offset cursor (mirrors SqliteFactStore's format).
+// Pagination via base64-JSON keyset cursor (mirrors SqliteFactStore's format).
 //
 // Satisfies all 11 contract invariants using pure in-memory computation —
 // no SQLite required. Serves as the substitutability reference for FS-1..FS-8.
@@ -51,7 +51,7 @@ function storeKey(sessionId: SessionId, factId: string): string {
 
 function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['seed'] } {
   const store = new Map<string, StoredFact>();
-  let insertionCounter = 0;
+  let insertionCounter = 1; // 1-based to match SQLite autoincrement (decodeCursor requires lastId > 0)
 
   const impl: FactStore = {
     async search(args) {
@@ -70,7 +70,8 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
       // Fix J: scopeFingerprint is computed lazily — only when needed (v1 scope
       // check or emitting nextCursor).  Cursor decode still precedes empty-query
       // short-circuit (Fix E ordering preserved).
-      let offset = 0;
+      let keysetLastSort: number | undefined;
+      let keysetLastId: number | undefined;
       let computedScope: string | undefined;
       if (cursor !== undefined) {
         const decoded = decodeCursor(cursor); // may throw CursorVersionUnsupportedError
@@ -79,10 +80,10 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
           if (decoded.scope !== computedScope) {
             throw new CursorScopeMismatchError(decoded.scope, computedScope);
           }
-          offset = decoded.offset;
-        } else {
-          offset = decoded.offset;
+          keysetLastSort = decoded.lastSort;
+          keysetLastId = decoded.lastId;
         }
+        // version 0 (restart sentinel) → no keyset → first page
       }
 
       if (!query.trim()) return { results: [] };
@@ -105,8 +106,17 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
         })
         .sort((a, b) => b.score - a.score || a.insertionOrder - b.insertionOrder);
 
-      const page = scored.slice(offset, offset + limit);
-      const hasMore = scored.length > offset + limit;
+      // Apply keyset filter: only rows strictly after (keysetLastSort, keysetLastId).
+      // Mirrors the SQL predicate: score < lastSort OR (score = lastSort AND id > lastId).
+      const afterCursor = (keysetLastSort !== undefined && keysetLastId !== undefined)
+        ? scored.filter(f =>
+            f.score < keysetLastSort! ||
+            (f.score === keysetLastSort! && f.insertionOrder > keysetLastId!)
+          )
+        : scored;
+
+      const page = afterCursor.slice(0, limit);
+      const hasMore = afterCursor.length > limit;
 
       const termCounts = page.map(f => f.termCount);
       const minTC = Math.min(...termCounts);
@@ -122,7 +132,12 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
             : (f.termCount - minTC) / (maxTC - minTC),
       }));
 
-      const nextCursor = hasMore ? encodeCursor(offset + limit, computedScope ?? scopeFingerprint(query, sessionId as string, minTrust, limit)) : undefined;
+      let nextCursor: string | undefined;
+      if (hasMore) {
+        const lastRow = page[page.length - 1];
+        const scope = computedScope ?? scopeFingerprint(query, sessionId as string, minTrust, limit);
+        nextCursor = encodeCursor(lastRow.score, lastRow.insertionOrder, scope);
+      }
       return { results, nextCursor };
     },
   };

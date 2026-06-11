@@ -1,27 +1,28 @@
 /**
- * Cursor utilities — v1 versioned cursor encoding/decoding + scope fingerprint.
+ * Cursor utilities — v1 keyset cursor encoding/decoding + scope fingerprint.
  *
  * ## Wire format
  *
- * v0 (legacy): base64(JSON `{ offset: number }`)            — no `v` field
- * v1 (current): base64(JSON `{ v: 1, offset: number, scope: string }`)
+ * v1 (current): base64(JSON `{ v: 1, lastSort: number, lastId: number, scope: string }`)
+ *   lastSort = composite score of the last returned row: (-bm25_score) * trust
+ *   lastId   = fact row id (autoincrement integer) of the last returned row
+ *   scope    = scopeFingerprint(query, sessionId, minTrust, limit) — 16-char hex digest
  *
  * ## Version dispatch
  *
- * | Decoded payload                        | Behavior                                   |
- * |----------------------------------------|--------------------------------------------|
- * | Valid JSON, `v` key not present, numeric offset | v0 — offset honored, no scope check        |
- * | `v: 1`, valid offset, valid scope               | v1 — scope fingerprint check in search     |
- * | `v` key present but not exactly 1               | throw CursorVersionUnsupportedError        |
- * | `v: N` where N > 1                              | throw CursorVersionUnsupportedError        |
- * | Unparseable / missing offset                    | return { version: 0, offset: 0 }           |
+ * | Decoded payload                                   | Behavior                                        |
+ * |---------------------------------------------------|-------------------------------------------------|
+ * | `v: 1`, finite lastSort, positive-integer lastId  | v1 keyset — advance past (lastSort, lastId)     |
+ * | `v: 1`, invalid lastSort or lastId                | restart sentinel `{ version: 0 }` (page 1)     |
+ * | `v` key present but not exactly integer 1         | throw CursorVersionUnsupportedError             |
+ * | `v` key absent (legacy v0 / any garbage)          | restart sentinel `{ version: 0 }` (page 1)     |
+ * | Unparseable / non-JSON / non-base64               | restart sentinel `{ version: 0 }` (page 1)     |
  *
- * Any present `v` key that is not exactly the integer 1 (including null, v:0,
- * floats, strings, future versions > 1) is treated as a contract violation and
- * throws.  Only a truly ABSENT `v` key is treated as a legacy v0 cursor.
- * Completely unparseable/non-JSON input still falls back to offset 0.
+ * v0 backward-compat is DELETED (Slice D++): a cursor with no `v` field is now treated
+ * as garbage and returns the restart sentinel — the offset it may carry is NOT honored.
+ * Any present `v` key that is not exactly the integer 1 throws CursorVersionUnsupportedError.
  *
- * @see .squad/decisions.md (M8 Slice D+ — Cursor Versioning & Scope Fingerprint §1)
+ * @see .squad/decisions/inbox/crispin-dpp-keyset-green.md
  */
 
 import { createHash } from 'node:crypto';
@@ -32,8 +33,11 @@ import { CursorVersionUnsupportedError } from './errors.js';
 // ---------------------------------------------------------------------------
 
 export type DecodedCursor =
-  | { version: 0; offset: number }
-  | { version: 1; offset: number; scope: string };
+  | { version: 0 }
+  | { version: 1; lastSort: number; lastId: number; scope: string };
+
+// Shared restart sentinel — returned for all garbage / invalid-keyset-field cases.
+const RESTART: DecodedCursor = { version: 0 };
 
 // ---------------------------------------------------------------------------
 // Scope fingerprint
@@ -55,19 +59,26 @@ export function scopeFingerprint(
 // ---------------------------------------------------------------------------
 // encodeCursor
 //
-// Emits a v1 cursor string.  scope must be the result of scopeFingerprint().
+// Emits a v1 keyset cursor.
+//   lastSort — composite score of the last row on the current page: (-bm25) * trust
+//   lastId   — row id (autoincrement integer) of the last row on the current page
+//   scope    — result of scopeFingerprint() for the current search params
 // ---------------------------------------------------------------------------
 
-export function encodeCursor(offset: number, scope: string): string {
-  return Buffer.from(JSON.stringify({ v: 1, offset, scope })).toString('base64');
+export function encodeCursor(lastSort: number, lastId: number, scope: string): string {
+  return Buffer.from(JSON.stringify({ v: 1, lastSort, lastId, scope })).toString('base64');
 }
 
 // ---------------------------------------------------------------------------
 // decodeCursor
 //
 // Returns a DecodedCursor discriminated union.
-// Throws CursorVersionUnsupportedError for any present v that is not exactly 1.
-// Returns { version: 0, offset: 0 } for structurally garbage input (FS-SE-3).
+//
+// Throws CursorVersionUnsupportedError for any present `v` that is not exactly 1.
+// Returns the restart sentinel { version: 0 } for:
+//   - Structurally garbage / non-parseable input (FS-SE-3)
+//   - v-absent payload (legacy v0 — backward-compat deleted, Slice D++)
+//   - v=1 with invalid lastSort (non-finite) or invalid lastId (non-positive-integer)
 // ---------------------------------------------------------------------------
 
 export function decodeCursor(cursor: string): DecodedCursor {
@@ -79,41 +90,36 @@ export function decodeCursor(cursor: string): DecodedCursor {
     const v = raw['v'];
 
     if (Object.hasOwn(raw, 'v')) {
-      // v key is PRESENT — must be exactly the integer 1 (v1 format).
-      // null, 0, negatives, floats, strings, future versions > 1 → throw.
-      // Only a truly absent v key (legacy v0 cursors) falls through to the v0 path.
+      // v key is PRESENT — must be exactly the integer 1 (v1 keyset format).
+      // null, 0, negatives, floats, strings, future versions → throw (contract violation).
       if (typeof v !== 'number' || !Number.isInteger(v) || v !== 1) {
         throw new CursorVersionUnsupportedError(v);
       }
 
-      // v === 1
-      const rawOffset = raw['offset'];
-      const offset =
-        typeof rawOffset === 'number' &&
-        Number.isFinite(rawOffset) &&
-        Number.isInteger(rawOffset) &&
-        rawOffset >= 0
-          ? rawOffset
-          : 0;
+      // v === 1 — validate keyset fields; bad values → restart sentinel (page 1).
+      const rawLastSort = raw['lastSort'];
+      if (typeof rawLastSort !== 'number' || !Number.isFinite(rawLastSort)) {
+        return RESTART;
+      }
+
+      const rawLastId = raw['lastId'];
+      if (
+        typeof rawLastId !== 'number' ||
+        !Number.isInteger(rawLastId) ||
+        rawLastId <= 0
+      ) {
+        return RESTART;
+      }
 
       const rawScope = raw['scope'];
       const scope = typeof rawScope === 'string' ? rawScope : '';
 
-      return { version: 1, offset, scope };
+      return { version: 1, lastSort: rawLastSort, lastId: rawLastId, scope };
     }
 
-    // v key absent → v0 legacy path — honor offset as-is, no scope field expected.
-    const offset = raw['offset'];
-    return {
-      version: 0,
-      offset:
-        typeof offset === 'number' &&
-        Number.isFinite(offset) &&
-        Number.isInteger(offset) &&
-        offset >= 0
-          ? offset
-          : 0,
-    };
+    // v key absent → legacy v0 cursor (backward-compat deleted Slice D++) → restart.
+    // The offset field, if present, is intentionally NOT honored.
+    return RESTART;
   } catch (err) {
     if (
       err !== null &&
@@ -122,6 +128,6 @@ export function decodeCursor(cursor: string): DecodedCursor {
     ) {
       throw err; // re-throw — not garbage, intentional version rejection
     }
-    return { version: 0, offset: 0 };
+    return RESTART;
   }
 }

@@ -1,24 +1,39 @@
 /**
- * cursor.ts unit tests — Fix F (Slice D+ review cycle 1)
+ * cursor.ts unit tests — Slice D++ keyset pagination (RED phase)
  *
  * Focused unit coverage for encodeCursor / decodeCursor / scopeFingerprint.
  * These tests run against the pure utility functions only — no FactStore, no SQLite.
  *
  * Invariants covered:
- *   CU-1  v0 cursor accepted (no `v` field)
- *   CU-2  v1 round-trip (encode → decode → same offset + scope)
- *   CU-3  present-but-invalid version throws CursorVersionUnsupportedError (Fix C RED→GREEN)
+ *   CU-1  v0 cursor (no `v` field) → NOW restart sentinel (v0 backward-compat deleted)
+ *   CU-2  v1 keyset round-trip: encodeCursor(lastSort, lastId, scope) → decodeCursor
+ *         → { version:1, lastSort, lastId, scope }
+ *         CU-2a  normal round-trip
+ *         CU-2b  version discriminant is 1
+ *         CU-2c  bad lastSort (null/NaN in JSON) → restart sentinel
+ *         CU-2d  bad lastSort (Infinity serialised as 1e309) → restart sentinel
+ *         CU-2e  bad lastId (negative) → restart sentinel
+ *         CU-2f  bad lastId (non-integer float) → restart sentinel
+ *         CU-2g  missing lastId → restart sentinel
+ *   CU-3  present-but-invalid version throws CursorVersionUnsupportedError (UNCHANGED)
  *         CU-3a  v:0  → throw
  *         CU-3b  v:2  → throw (future version)
  *         CU-3c  v:99 → throw (far future)
  *         CU-3d  v:"2" (string) → throw (not a number)
  *         CU-3e  v:1.5 (non-integer float) → throw
  *         CU-3f  v:null (NaN serializes to null in JSON) → throw
- *   CU-4  unparseable / non-base64 cursor → { version: 0, offset: 0 } (FS-SE-3 unchanged)
- *   CU-5  CursorVersionUnsupportedError re-throw path
- *   CU-6  scopeFingerprint determinism (same params → same result)
- *   CU-7  scopeFingerprint injection-resistance: query containing '\nsessionId=' does NOT
- *         collide with a query that legitimately embeds that substring (Fix B)
+ *   CU-4  unparseable / non-base64 cursor → restart sentinel { version: 0 }
+ *   CU-5  CursorVersionUnsupportedError re-throw path (UNCHANGED)
+ *   CU-6  scopeFingerprint determinism (UNCHANGED)
+ *   CU-7  scopeFingerprint injection-resistance (UNCHANGED)
+ *
+ * ## RED state expected
+ *
+ * CU-1, CU-2, CU-4 will FAIL against the current offset implementation because:
+ *   - encodeCursor still takes 2 args (offset, scope) not 3 (lastSort, lastId, scope)
+ *   - decodeCursor still returns { version:0, offset:N } for garbage/v0 (not { version:0 })
+ *   - v1 cursors encode/decode offset not lastSort/lastId
+ * This is the expected RED state for Slice D++ TDD.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -34,47 +49,107 @@ function makeCursor(payload: Record<string, unknown>): string {
 }
 
 // ---------------------------------------------------------------------------
-// CU-1 — v0 cursor accepted
+// CU-1 — v0 cursor (absent v field) → restart sentinel
+//
+// Slice D++ deletes v0 backward-compat: a cursor with no `v` key is now
+// treated as garbage and returns the restart sentinel { version: 0 }.
+// Offset values in such cursors MUST NOT be honored.
+//
+// RED: current impl returns { version:0, offset:N } (honors offset).
+// GREEN: returns { version:0 } (no offset — restart from page 1).
 // ---------------------------------------------------------------------------
 
-describe('decodeCursor — v0 (no v field)', () => {
-  it('CU-1a: valid v0 cursor → { version: 0, offset: <n> }', () => {
+describe('decodeCursor — v0 (no v field) → restart sentinel (v0 backward-compat deleted)', () => {
+  it('CU-1a: v0 cursor with valid offset → restart sentinel (offset NOT honored)', () => {
     const cursor = makeCursor({ offset: 5 });
     const result = decodeCursor(cursor);
-    expect(result).toEqual({ version: 0, offset: 5 });
+    expect(result).toEqual({ version: 0 });
   });
 
-  it('CU-1b: cursor with extra non-v fields → v0 path (additional keys ignored)', () => {
-    // genuine v0: no `v` key present; extra fields are tolerated.
+  it('CU-1b: v0 cursor with extra non-v fields → restart sentinel (keys ignored)', () => {
     const cursor = makeCursor({ offset: 7, extra: 'ignored' });
     const result = decodeCursor(cursor);
-    expect(result).toEqual({ version: 0, offset: 7 });
+    expect(result).toEqual({ version: 0 });
   });
 
-  it('CU-1c: v0 cursor with bad offset → offset clamps to 0', () => {
+  it('CU-1c: v0 cursor with bad offset → restart sentinel (same as any other v0)', () => {
     const cursor = makeCursor({ offset: -1 });
     const result = decodeCursor(cursor);
-    expect(result).toEqual({ version: 0, offset: 0 });
+    expect(result).toEqual({ version: 0 });
   });
 });
 
 // ---------------------------------------------------------------------------
-// CU-2 — v1 round-trip
+// CU-2 — v1 keyset round-trip
+//
+// Slice D++ changes encodeCursor from 2-arg (offset, scope) to 3-arg
+// (lastSort, lastId, scope).  decodeCursor v1 branch now returns
+// { version:1, lastSort, lastId, scope } — no offset field.
+//
+// Bad keyset field values in an otherwise-valid v1 cursor:
+//   - lastSort: must be a finite number; null/NaN/Infinity → restart sentinel
+//   - lastId: must be a positive integer; negative/float/missing → restart sentinel
+//
+// RED: current impl uses 2-arg encodeCursor and returns { version:1, offset, scope }.
+// GREEN: 3-arg encodeCursor, returns { version:1, lastSort, lastId, scope }.
 // ---------------------------------------------------------------------------
 
-describe('encodeCursor / decodeCursor — v1 round-trip', () => {
-  it('CU-2a: encode → decode preserves offset and scope', () => {
+describe('encodeCursor / decodeCursor — v1 keyset round-trip', () => {
+  it('CU-2a: encode(lastSort, lastId, scope) → decode → { version:1, lastSort, lastId, scope }', () => {
     const scope = scopeFingerprint('recall', 'sess-abc', 0.15, 10);
-    const encoded = encodeCursor(42, scope);
+    const encoded = encodeCursor(42.5, 17, scope);
     const decoded = decodeCursor(encoded);
-    expect(decoded).toEqual({ version: 1, offset: 42, scope });
+    expect(decoded).toEqual({ version: 1, lastSort: 42.5, lastId: 17, scope });
   });
 
-  it('CU-2b: decoded cursor has version: 1 discriminant', () => {
+  it('CU-2b: decoded cursor has version:1 discriminant', () => {
     const scope = scopeFingerprint('test', 'sess-123', 0.5, 5);
-    const encoded = encodeCursor(0, scope);
+    const encoded = encodeCursor(0, 1, scope);
     const decoded = decodeCursor(encoded);
     expect(decoded.version).toBe(1);
+  });
+
+  it('CU-2c: bad lastSort (null/NaN in JSON) in v1 cursor → restart sentinel', () => {
+    // JSON.stringify({lastSort: NaN}) → {"lastSort":null} — the `v` key IS present.
+    // A v1 cursor with non-finite lastSort must fall back to restart, not throw.
+    const scope = scopeFingerprint('recall', 'sess-abc', 0.15, 10);
+    const raw = Buffer.from(
+      JSON.stringify({ v: 1, lastSort: NaN, lastId: 5, scope }),
+    ).toString('base64');
+    expect(decodeCursor(raw)).toEqual({ version: 0 });
+  });
+
+  it('CU-2d: bad lastSort (Infinity via 1e309) in v1 cursor → restart sentinel', () => {
+    const scope = scopeFingerprint('recall', 'sess-abc', 0.15, 10);
+    // JSON.parse('{"v":1,"lastSort":1e309}') → { lastSort: Infinity }; exercises isFinite guard.
+    const raw = Buffer.from(
+      `{"v":1,"lastSort":1e309,"lastId":5,"scope":"${scope}"}`,
+    ).toString('base64');
+    expect(decodeCursor(raw)).toEqual({ version: 0 });
+  });
+
+  it('CU-2e: bad lastId (negative) in v1 cursor → restart sentinel', () => {
+    const scope = scopeFingerprint('recall', 'sess-abc', 0.15, 10);
+    const raw = Buffer.from(
+      JSON.stringify({ v: 1, lastSort: 1.5, lastId: -1, scope }),
+    ).toString('base64');
+    expect(decodeCursor(raw)).toEqual({ version: 0 });
+  });
+
+  it('CU-2f: bad lastId (non-integer float) in v1 cursor → restart sentinel', () => {
+    const scope = scopeFingerprint('recall', 'sess-abc', 0.15, 10);
+    const raw = Buffer.from(
+      JSON.stringify({ v: 1, lastSort: 1.5, lastId: 0.5, scope }),
+    ).toString('base64');
+    expect(decodeCursor(raw)).toEqual({ version: 0 });
+  });
+
+  it('CU-2g: missing lastId in v1 cursor → restart sentinel', () => {
+    const scope = scopeFingerprint('recall', 'sess-abc', 0.15, 10);
+    const raw = Buffer.from(
+      JSON.stringify({ v: 1, lastSort: 1.5, scope }),
+    ).toString('base64');
+    expect(decodeCursor(raw)).toEqual({ version: 0 });
   });
 });
 
@@ -121,21 +196,26 @@ describe('decodeCursor — present-but-invalid v field → CursorVersionUnsuppor
 });
 
 // ---------------------------------------------------------------------------
-// CU-4 — unparseable / non-base64 / structurally garbage cursor → offset 0
+// CU-4 — unparseable / non-base64 / structurally garbage cursor → restart sentinel
+//
+// Restart sentinel is { version: 0 } — no offset field.
+//
+// RED: current impl returns { version: 0, offset: 0 } (extra offset field).
+// GREEN: returns { version: 0 } — no offset field (keyset doesn't use offset).
 // ---------------------------------------------------------------------------
 
-describe('decodeCursor — garbage input → { version: 0, offset: 0 }', () => {
-  it('CU-4a: random non-base64 string → { version: 0, offset: 0 }', () => {
-    expect(decodeCursor('not-valid-base64!!!')).toEqual({ version: 0, offset: 0 });
+describe('decodeCursor — garbage input → restart sentinel { version: 0 }', () => {
+  it('CU-4a: random non-base64 string → restart sentinel', () => {
+    expect(decodeCursor('not-valid-base64!!!')).toEqual({ version: 0 });
   });
 
-  it('CU-4b: valid base64 but non-JSON content → { version: 0, offset: 0 }', () => {
+  it('CU-4b: valid base64 but non-JSON content → restart sentinel', () => {
     const cursor = Buffer.from('hello, not json').toString('base64');
-    expect(decodeCursor(cursor)).toEqual({ version: 0, offset: 0 });
+    expect(decodeCursor(cursor)).toEqual({ version: 0 });
   });
 
-  it('CU-4c: empty string → { version: 0, offset: 0 }', () => {
-    expect(decodeCursor('')).toEqual({ version: 0, offset: 0 });
+  it('CU-4c: empty string → restart sentinel', () => {
+    expect(decodeCursor('')).toEqual({ version: 0 });
   });
 });
 
