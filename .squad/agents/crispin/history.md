@@ -211,4 +211,19 @@ pm install restart. Doc-hygiene scope established for future improvements.
 
 **Logger seam:** `SqliteFactStore` constructor now accepts `logger?: { warn(msg: string): void }` (default `console`). The FTS5 parse-error catch block uses `this.logger.warn(...)`. Removed the TODO comment. Existing construction calls without `logger` arg are backward-compatible.
 
+---
+
+### 2026-06-10: Persona-Review Fix Wave — Accuracy, Ergonomics, Consistency (Slice D++)
+
+**Context:** Nine accepted findings from persona review of D++ keyset slice. All addressed in a single follow-up commit.
+
+**FSE-2 guarantee — correct scope:** Keyset pagination is INSERT-safe (new inserts can't cause cross-page dups) but NOT trust-mutation-safe. If a row returned on page 1 has its trust mutated, its recomputed composite re-crosses the lastSort anchor → re-appears on a later page. **"Stable under concurrent trust writes" is too strong a claim.** The correct claim: "prevents INSERT-caused cross-page duplication." Callers needing strict stability under trust mutations must restart pagination. This distinction matters for documentation precision — Genesta's phrasing was over-optimistic and was corrected in both the module JSDoc and the FS-11 contract test header.
+
+**encodeCursor object param pattern:** Two positional numbers of the same type (`lastSort: number, lastId: number`) type-check when swapped but silently corrupt all subsequent pages. Converting to a single object param `{ lastSort, lastId, scope }` makes argument order a compile error at the call site. Apply this pattern whenever two adjacent function parameters are the same primitive type and both are meaningful scalars (not flags).
+
+**CTE refactor for bm25 double-evaluation:** Original stmtKeyset called `bm25(facts_fts)` twice in the WHERE predicate. The two-level CTE (`base` → `ranked`) computes it once in `base` and derives `composite` in `ranked`; the outer SELECT filters on the pre-computed column. **Key correctness invariant:** the composite expression in the CTE MUST be bit-identical to the JS expression used to compute `lastRowComposite` for the cursor. If the sort key formula ever changes, both must change together — or the keyset boundary silently breaks.
+
+**Logger seam threading:** The original logger seam was incomplete — `SqliteFactStore` accepted the logger but `deps.ts` didn't expose it and `recall.ts` still used `console.warn` directly. Threading requires: (1) `RecallDeps` interface gains `logger?` field, (2) `createSqliteRecallDeps` accepts options with `logger` and passes it to both `SqliteFactStore` and the returned `RecallDeps`, (3) `recallWithScores` uses `deps.logger ?? console`. **Lesson:** a seam is not "done" until it's threaded all the way from the injection boundary to the consumption site. Half-threaded seams leave tests unable to capture warnings from the full call path.
+
+**IDF-drift is a second-order keyset edge case worth documenting:** SQLite bm25() IDF weights are corpus-dependent. Inserting facts between pages shifts IDF → some rows' recomputed composite scores drift from the stored lastSort anchor. For typical workloads this is negligible (few inserts, small IDF shift), but for high-insert workloads with exact-match pagination it can cause edge-case skips. Future mitigation: snapshot composite as a stored column (eliminates recomputation). Not fixing now; documented for future reference.
 
