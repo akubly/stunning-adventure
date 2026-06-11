@@ -1468,3 +1468,9 @@ Use a `computedScope: string | undefined` variable initialized to undefined. Com
 ## Learnings (2026-06-09 — Cycle-3 cleanup)
 
 **Object.hasOwn(raw, 'v') improves robustness over 'v' in raw.** Both are functionally identical for well-formed JSON payloads, but Object.hasOwn avoids prototype-chain lookups if the object ever inherits non-standard prototypes — a good defensive practice for untrusted input even when we don't expect it.
+
+---
+
+## Learnings (2026-06-10 — D++ keyset migration doc sweep)
+
+**Comment drift is a blind spot in code review:** Genesta's keyset-migration audit caught 4 stale offset-pagination references in comments/JSDoc (recall.ts, fact-store-contract.helper.ts, fact-store.contract.test.ts, errors.ts) that logic changes didn't touch. All 199 tests pass post-fix, confirming comment-only corrections don't break behavior—but doctrine should be updated during refactoring, not after.
