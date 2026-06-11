@@ -34,6 +34,7 @@ import {
   CorruptSegmentError,
   CasMissError,
 } from '../../ledger/wal-backend-fs.js';
+import { encodeCbor } from '../../ledger/wal/cbor.js';
 import { verifyChain, buildChain, ZERO_HASH } from '../../ledger/wal/hash-chain.js';
 import { encodeRecord } from '../../ledger/wal/codec.js';
 import { hashBytes } from '../../ledger/wal/hash.js';
@@ -302,11 +303,11 @@ async function writeCorruptSession(opts: {
   rootDir:          string;
   sessionId:        string;
   envelopeCbor:     Uint8Array;
-  readSetCasJson?:  string;   // if set, compute a non-zero readSetHash with this JSON content
+  readSetCasData?:  unknown;  // if set, compute a non-zero readSetHash with this CBOR content
   omitPayloadCas?:  boolean;  // compute hash but DON'T write the CAS file → CAS_MISS on replay
   omitReadSetCas?:  boolean;  // compute readSet hash but DON'T write its CAS file → CAS_MISS
 }): Promise<void> {
-  const { rootDir, sessionId, envelopeCbor, readSetCasJson,
+  const { rootDir, sessionId, envelopeCbor, readSetCasData,
           omitPayloadCas = false, omitReadSetCas = false } = opts;
   const sessionDir = path.join(rootDir, 'wal', 'sessions', sessionId);
   const casDir     = path.join(rootDir, 'cas');
@@ -314,7 +315,7 @@ async function writeCorruptSession(opts: {
   fs.mkdirSync(casDir, { recursive: true });
 
   // Compute payload hash; write CAS file unless omitPayloadCas
-  const payloadBytes = new Uint8Array(Buffer.from(JSON.stringify({ data: 'test' }), 'utf8'));
+  const payloadBytes = encodeCbor({ data: 'test' });
   const payloadHash  = hashBytes(payloadBytes);
   if (!omitPayloadCas) {
     const payloadHex   = Buffer.from(payloadHash).toString('hex');
@@ -324,8 +325,8 @@ async function writeCorruptSession(opts: {
   }
 
   let readSetHash = new Uint8Array(32); // zero = no readSet
-  if (readSetCasJson !== undefined) {
-    const rsBytes  = new Uint8Array(Buffer.from(readSetCasJson, 'utf8'));
+  if (readSetCasData !== undefined) {
+    const rsBytes  = encodeCbor(readSetCasData);
     readSetHash    = hashBytes(rsBytes);
     if (!omitReadSetCas) {
       const rsHex    = Buffer.from(readSetHash).toString('hex');
@@ -362,7 +363,7 @@ describe('WAL FileSystemWalBackend — Group 2 replay validation (CorruptSegment
     await writeCorruptSession({
       rootDir,
       sessionId,
-      envelopeCbor: new Uint8Array(Buffer.from('bogus_kind', 'utf8')),
+      envelopeCbor: encodeCbor('bogus_kind'),
     });
 
     await expect(
@@ -377,8 +378,8 @@ describe('WAL FileSystemWalBackend — Group 2 replay validation (CorruptSegment
     await writeCorruptSession({
       rootDir,
       sessionId,
-      envelopeCbor:    new Uint8Array(Buffer.from('observation', 'utf8')),
-      readSetCasJson:  JSON.stringify([1, 2, 3]), // numbers, not strings
+      envelopeCbor:    encodeCbor('observation'),
+      readSetCasData:  [1, 2, 3], // numbers, not strings
     });
 
     await expect(
@@ -400,7 +401,7 @@ describe('WAL FileSystemWalBackend — Group 3 CAS_MISS on replay (CasMissError)
     await writeCorruptSession({
       rootDir,
       sessionId,
-      envelopeCbor:   new Uint8Array(Buffer.from('observation', 'utf8')),
+      envelopeCbor:   encodeCbor('observation'),
       omitPayloadCas: true, // hash in segment, no corresponding CAS file
     });
 
@@ -416,8 +417,8 @@ describe('WAL FileSystemWalBackend — Group 3 CAS_MISS on replay (CasMissError)
     await writeCorruptSession({
       rootDir,
       sessionId,
-      envelopeCbor:   new Uint8Array(Buffer.from('observation', 'utf8')),
-      readSetCasJson: JSON.stringify(['dep1']), // provides non-zero readSetHash...
+      envelopeCbor:   encodeCbor('observation'),
+      readSetCasData: ['dep1'], // provides non-zero readSetHash...
       omitReadSetCas: true,                    // ...but no CAS file written
     });
 
@@ -434,8 +435,8 @@ describe('WAL FileSystemWalBackend — Group 3 CAS_MISS on replay (CasMissError)
     await writeCorruptSession({
       rootDir,
       sessionId,
-      envelopeCbor: new Uint8Array(Buffer.from('observation', 'utf8')),
-      // readSetCasJson omitted → zero readSetHash
+      envelopeCbor: encodeCbor('observation'),
+      // readSetCasData omitted → zero readSetHash
     });
 
     const backend = await createFileSystemWalBackend(rootDir, sessionId, { readOnly: true });

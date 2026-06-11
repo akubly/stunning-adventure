@@ -10,9 +10,11 @@
  *   and fsynced in Phase 3. This guarantees: CAS durable → segment durable.
  *   A crash between Phase 2.5 and Phase 3 leaves no durable WAL record, so
  *   no CasMissError on reopen.
+ *   Each put() writes to `<hash>.cbor.tmp`; syncAll() fsyncs that temp file and
+ *   atomically renames it to `<hash>.cbor`. The final CAS path is therefore
+ *   either absent or complete, eliminating the cross-session torn-blob gap.
  *
- * `.cbor` extension is a convention; the file content is raw bytes (not
- * CBOR-wrapped). CBOR envelope encoding is deferred until §6 locks.
+ * `.cbor` extension is a convention; the file content is raw bytes.
  */
 
 import fs from 'node:fs';
@@ -26,23 +28,19 @@ export class FileSystemCas {
    * Tracks CAS file paths written in the current flush batch but not yet
    * fsynced. Cleared by syncAll() after each successful sync.
    */
-  private readonly pendingSync = new Set<string>();
+  private readonly pendingSync = new Map<string, string>();
 
   constructor(private readonly casDir: string) {
     fs.mkdirSync(casDir, { recursive: true });
   }
 
   /**
-   * Store bytes under their BLAKE3 hash key. Idempotent.
+   * Store bytes under their BLAKE3 hash key using a temp file.
    * Returns the 32-byte hash (the CAS key for the WAL record header).
    *
-   * New files are tracked in pendingSync until syncAll() is called.
-   * Already-existing files are skipped (in-session dedup: the same hash
-   * written earlier in this process will have been added to pendingSync
-   * already, or was fsynced in a prior batch of this session).
-   * Note: existence does NOT guarantee durability across process restarts —
-   * a file written in a prior session that crashed before syncAll() may be
-   * torn/partial. That cross-session gap is tracked in #68.
+   * Always stages a fresh `<hash>.cbor.tmp` and tracks it in pendingSync until
+   * syncAll() fsyncs the temp file and renames it into place. Repeated puts of
+   * the same hash within a batch coalesce to one finalPath entry in the map.
    */
   put(bytes: Uint8Array): Blake3Hash {
     const hash = hashBytes(bytes);
@@ -51,11 +49,10 @@ export class FileSystemCas {
     const shardDir = path.join(this.casDir, shard);
     fs.mkdirSync(shardDir, { recursive: true });
 
-    const filePath = path.join(shardDir, `${hex}.cbor`);
-    if (!fs.existsSync(filePath)) {
-      fs.writeFileSync(filePath, bytes);
-      this.pendingSync.add(filePath);
-    }
+    const finalPath = path.join(shardDir, `${hex}.cbor`);
+    const tmpPath = `${finalPath}.tmp`;
+    fs.writeFileSync(tmpPath, bytes);
+    this.pendingSync.set(finalPath, tmpPath);
     return hash;
   }
 
@@ -64,21 +61,23 @@ export class FileSystemCas {
    * Must be called BEFORE the WAL segment fdatasync to maintain the
    * CAS-before-segment durability ordering (§3.2 / issue #59).
    *
-   * Opens each file with 'r+' (read-write) so FlushFileBuffers succeeds on
-   * Windows. Removes each path from pendingSync as it is successfully synced,
-   * so a failed sync leaves only un-synced paths for the next retry.
+   * Opens each temp file with 'r+' (read-write) so FlushFileBuffers succeeds
+   * on Windows. After a successful sync, rename the temp file into place.
+   * Removes each finalPath from pendingSync as it is successfully published,
+   * so a failed sync leaves only un-published paths for the next retry.
    *
    * @param syncFn - The injectable sync function (same seam as segment fsync).
    */
   syncAll(syncFn: (fd: number) => void): void {
-    for (const filePath of [...this.pendingSync]) {
-      const fd = fs.openSync(filePath, 'r+');
+    for (const [finalPath, tmpPath] of [...this.pendingSync]) {
+      const fd = fs.openSync(tmpPath, 'r+');
       try {
         syncFn(fd);
       } finally {
         fs.closeSync(fd);
       }
-      this.pendingSync.delete(filePath);
+      fs.renameSync(tmpPath, finalPath);
+      this.pendingSync.delete(finalPath);
     }
   }
 

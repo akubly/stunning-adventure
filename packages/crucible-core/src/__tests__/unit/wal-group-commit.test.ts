@@ -149,8 +149,8 @@ describe('WAL FileSystemWalBackend — group-commit batching (§3.5)', () => {
     await backend.flush();
     const o2 = await p2;
     expect(o2).toBe(2);
-    // Second flush: same payload as before → CAS file already durable → 0 CAS syncs + 1 segment = 1 more sync
-    expect(syncCount).toBe(3); // 2 (first batch) + 1 (second batch, segment only)
+    // Second flush: same payload as before → CAS temp file is re-synced, then segment
+    expect(syncCount).toBe(4); // 2 (first batch) + 2 (second batch: CAS temp + segment)
 
     // Now 3 records total
     const records2 = backend.readSegmentRecords();

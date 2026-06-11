@@ -25,13 +25,11 @@ export interface SegmentRecordInput {
   commitOffset:  bigint;           // u64 monotonic per session
   timestampNs:   bigint;           // u64 ns, monotonically non-decreasing
   primitiveKind: number;           // u8 enum (§6, locked separately)
-  hookVerdict:   number;           // u8: 0=continue, 1=observe, 2=pause
-                                    // (no-verdict/null distinction deferred — see #57)
+  hookVerdict:   number;           // u8: 0xFF=no predicate matched, 0x00=continue/explicit,
+                                    //     0x01=observe, 0x02=pause
   flags:         SegmentRecordFlags;
-  payloadHash:   Blake3Hash;       // BLAKE3(JSON UTF-8 bytes of primitivePayload);
-                                    // canonical CBOR hashing deferred — tracked in #60
-  readSetHash:   Blake3Hash;       // BLAKE3(JSON UTF-8 bytes of causalReadSet), or zero-hash;
-                                    // CBOR hashing deferred — tracked in #60
+  payloadHash:   Blake3Hash;       // BLAKE3(CBOR(primitivePayload)); canonical CBOR encoding (issue #60)
+  readSetHash:   Blake3Hash;       // BLAKE3(CBOR(causalReadSet)), or zero-hash if empty; canonical CBOR (issue #60)
   envelopeCbor:  Uint8Array;       // CBOR envelope tail; may be empty
 }
 
@@ -51,3 +49,15 @@ export const VERDICT_TO_WAL: Record<'COMMIT' | 'OBSERVE' | 'PAUSE', number> = {
   OBSERVE: 0x01,
   PAUSE:   0x02,
 };
+
+export const NO_MATCH_VERDICT_BYTE = 0xFF as const;
+
+export function hookResultToVerdictByte(
+  verdict: 'COMMIT' | 'OBSERVE' | 'PAUSE',
+  hookId: string | null,
+): number {
+  if (hookId === null && verdict === 'COMMIT') {
+    return NO_MATCH_VERDICT_BYTE;
+  }
+  return VERDICT_TO_WAL[verdict];
+}

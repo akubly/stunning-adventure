@@ -93,10 +93,11 @@ segment scan) so corruption only forces a rescan, never data loss.
 **fsync strategy.** Group-commit performs **one** `fdatasync(2)` on the active
 segment per batch (after the entire batch is written and the in-flight hash
 chain is finalized). `index.idx` is `fsync`'d on segment rotation and on
-session close. CAS writes use `O_APPEND` with `fsync` *before* the
-corresponding WAL record is written — the WAL never references CAS content
-that is not durable. On Windows, `fdatasync` is emulated via
-`FlushFileBuffers` against the segment handle.
+session close. CAS writes publish via temp-file + atomic rename:
+`<hash>.cbor.tmp` is written first, fsynced during the CAS phase, then renamed
+to `<hash>.cbor` before the corresponding WAL record is written — the WAL never
+references CAS content that is not durable. On Windows, `fdatasync` is
+emulated via `FlushFileBuffers` against the segment handle.
 
 **Forks.** A forked session at `(parentSessionId, forkOffset)` creates a new
 session directory whose segment 0 starts with a synthetic

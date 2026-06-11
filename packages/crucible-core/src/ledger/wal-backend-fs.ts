@@ -31,8 +31,8 @@
  *   - 64 MiB segment roll-over
  *   - appendFenced / optimistic head-offset check (§3.4.1)
  *
- * primitiveKind is stored in envelopeCbor as UTF-8 until §6 primitive enum
- * locks and CBOR canonicalization replaces it.
+ * primitiveKind is currently mirrored in envelopeCbor; canonical CBOR encoding
+ * is implemented for WAL payload hashing and envelope persistence.
  */
 
 import fs   from 'node:fs';
@@ -41,12 +41,13 @@ import path from 'node:path';
 import type { PrimitiveInput, PrimitiveKind } from '../types.js';
 import type { WalBackend, LedgerEvent, LedgerQueryOpts } from './ledger.js';
 import type { HookResult, HookVerdict } from './hook-bus.js';
+import { decodeCbor, encodeCbor }             from './wal/cbor.js';
 import { encodeRecord, decodeRecord, MAGIC } from './wal/codec.js';
 import { buildChain, ZERO_HASH }             from './wal/hash-chain.js';
 import { FileSystemCas }                     from './wal/cas-fs.js';
 import { sealAndSplit }                      from './wal/seal-and-split.js';
 import type { SegmentRecord, SegmentRecordInput } from './wal/types.js';
-import { VERDICT_TO_WAL }                    from './wal/types.js';
+import { hookResultToVerdictByte }           from './wal/types.js';
 
 // ─── Write-lock error ─────────────────────────────────────────────────────────
 
@@ -378,9 +379,25 @@ export class FileSystemWalBackend implements WalBackend {
         }
 
         // Validate primitiveKind — reject unknown values from corrupt segments
-        const primitiveKindRaw = rec.envelopeCbor.length > 0
-          ? Buffer.from(rec.envelopeCbor).toString('utf8')
-          : 'observation';
+        let primitiveKindRaw = 'observation';
+        if (rec.envelopeCbor.length > 0) {
+          try {
+            const decoded = decodeCbor(rec.envelopeCbor);
+            if (typeof decoded !== 'string') {
+              throw new CorruptSegmentError(
+                segFilePath,
+                `primitiveKind envelope at offset ${offset} is not a string`,
+              );
+            }
+            primitiveKindRaw = decoded;
+          } catch (err) {
+            if (err instanceof CorruptSegmentError) throw err;
+            throw new CorruptSegmentError(
+              segFilePath,
+              `invalid CBOR primitiveKind envelope at offset ${offset}`,
+            );
+          }
+        }
         if (!VALID_PRIMITIVE_KINDS.has(primitiveKindRaw)) {
           throw new CorruptSegmentError(
             segFilePath,
@@ -393,7 +410,15 @@ export class FileSystemWalBackend implements WalBackend {
         if (!payloadBuf) {
           throw new CasMissError(rec.payloadHash, offset);
         }
-        const primitivePayload = JSON.parse(Buffer.from(payloadBuf).toString('utf8')) as unknown;
+        let primitivePayload: unknown;
+        try {
+          primitivePayload = decodeCbor(payloadBuf);
+        } catch {
+          throw new CorruptSegmentError(
+            segFilePath,
+            `invalid CBOR payload at offset ${offset}`,
+          );
+        }
 
         let causalReadSet: string[] = [];
         if (!isZeroHash(rec.readSetHash)) {
@@ -401,7 +426,15 @@ export class FileSystemWalBackend implements WalBackend {
           if (!rsBuf) {
             throw new CasMissError(rec.readSetHash, offset);
           }
-          const parsed = JSON.parse(Buffer.from(rsBuf).toString('utf8')) as unknown;
+          let parsed: unknown;
+          try {
+            parsed = decodeCbor(rsBuf);
+          } catch {
+            throw new CorruptSegmentError(
+              segFilePath,
+              `invalid CBOR causalReadSet at offset ${offset}`,
+            );
+          }
           if (!Array.isArray(parsed)) {
             throw new CorruptSegmentError(
               segFilePath,
@@ -566,14 +599,14 @@ export class FileSystemWalBackend implements WalBackend {
       const { row: entry, verdict } = committed[i];
       const offset = baseOffset + i;
 
-      const payloadBytes = Buffer.from(JSON.stringify(entry.input.primitivePayload), 'utf8');
-      const payloadHash  = this.cas.put(new Uint8Array(payloadBytes));
+      const payloadBytes = encodeCbor(entry.input.primitivePayload);
+      const payloadHash  = this.cas.put(payloadBytes);
 
       const readSetHash  = entry.input.causalReadSet.length > 0
-        ? this.cas.put(new Uint8Array(Buffer.from(JSON.stringify(entry.input.causalReadSet), 'utf8')))
+        ? this.cas.put(encodeCbor(entry.input.causalReadSet))
         : new Uint8Array(32);
 
-      const envelopeCbor = new Uint8Array(Buffer.from(entry.input.primitiveKind, 'utf8'));
+      const envelopeCbor = encodeCbor(entry.input.primitiveKind);
 
       // §3.10 timestampNs monotonicity: clamp to lastTimestampNs when clock goes backward
       const nowNs = this.nowNs();
@@ -584,7 +617,7 @@ export class FileSystemWalBackend implements WalBackend {
         commitOffset:  BigInt(offset),
         timestampNs:   tsNs,
         primitiveKind: 0x01,
-        hookVerdict:   VERDICT_TO_WAL[verdict],
+        hookVerdict:   hookResultToVerdictByte(verdict, entry.hookResult.hookId),
         flags: {
           bootstrap: false, declaredWindow: false,
           syntheticOutput: false, taskBoundary: false, manifestRoot: false,

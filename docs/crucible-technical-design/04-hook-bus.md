@@ -45,7 +45,7 @@ Surface 2 semantics (commit-window verdicts against the in-flight group commit):
 
 | Verdict    | Effect on the staged batch                                                       | WAL recording                                       | Subscriber routing |
 |------------|----------------------------------------------------------------------------------|-----------------------------------------------------|--------------------|
-| `continue` | Row joins `committed` unchanged. Default verdict when no predicate matches.       | `hookVerdict = continue`; `hookVerdictWitness = null`. Zero-cost per P5. | None |
+| `continue` | Row joins `committed` unchanged when a predicate matched and explicitly approved the row. | `hookVerdict = continue` (wire byte `0x00`); `hookVerdictWitness = null`. Zero-cost per P5. | None |
 | `observe`  | Row joins `committed`; an attention-tier signal is emitted. Does not stall.        | `hookVerdict = observe`; `hookVerdictWitness = blake3(witnessBody)` in CAS. | Bus dispatches to `observe`-subscribed sinks (Aperture, Curator on opt-in). |
 | `pause`    | Row joins `committed` with the pause verdict durable; subsequent rows in the batch are restaged via §3.5 seal-and-split. | `hookVerdict = pause`; `hookVerdictWitness` durable. | Bus broadcasts to the Router (§5) via L1Subscriber on the paused row. |
 
@@ -55,15 +55,10 @@ Surface 1 semantics (Ledger-layer pre-stage gate — Aaron ruling 2026-06-06):
 |---------|--------|---------------|--------------------|
 | `veto`  | `Ledger.append` throws `Error('Append vetoed by hook: <id>')` immediately. Row never staged. | **None — no WAL row created.** WAL remains purely append-only. | None |
 
-`continue` is the default when no registered predicate matches the row's
-primitive kind; the WAL row stores `hookVerdict = null` in that case to
-distinguish "no predicate fired" from "a predicate fired and said continue."
-Both are zero-witness; only the bookkeeping distinguishes them.
-
-> **Deferred (#57):** The null-vs-continue encoding described above is planned
-> but not yet implemented by the current code. Today the implementation does not
-> distinguish "no predicate matched" from an explicit COMMIT verdict in the WAL
-> row. Tracked in issue #57.
+When no registered predicate matches the row's primitive kind, the WAL row
+stores `hookVerdict = null` with wire byte `0xFF` to distinguish "no predicate
+fired" from "a predicate fired and said continue" (`0x00`). Both are
+zero-witness; only the bookkeeping distinguishes them.
 
 ## 4.2 Predicate Registration and Kind-Indexed Dispatch
 

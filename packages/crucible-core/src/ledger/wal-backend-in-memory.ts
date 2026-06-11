@@ -19,8 +19,9 @@ import type {
 import type { HookResult, HookVerdict } from './hook-bus.js';
 import { buildChain } from './wal/hash-chain.js';
 import { InMemoryCas } from './wal/cas.js';
+import { encodeCbor } from './wal/cbor.js';
 import type { SegmentRecord, SegmentRecordInput } from './wal/types.js';
-import { VERDICT_TO_WAL } from './wal/types.js';
+import { hookResultToVerdictByte } from './wal/types.js';
 
 const ZERO_HASH = new Uint8Array(32);
 
@@ -55,12 +56,12 @@ export class InMemoryWalBackend implements WalBackend {
     const offset = this.events.length;
 
     // Write payload to CAS and get BLAKE3 hash
-    const payloadBytes = new TextEncoder().encode(JSON.stringify(input.primitivePayload));
+    const payloadBytes = encodeCbor(input.primitivePayload);
     const payloadHash = this.cas.put(payloadBytes);
 
     // readSet hash: zero-hash if empty causalReadSet
     const readSetHash = input.causalReadSet.length > 0
-      ? this.cas.put(new TextEncoder().encode(JSON.stringify(input.causalReadSet)))
+      ? this.cas.put(encodeCbor(input.causalReadSet))
       : new Uint8Array(32);
 
     // §3.10 timestampNs monotonicity: clamp to lastTimestampNs when clock goes backward
@@ -72,7 +73,7 @@ export class InMemoryWalBackend implements WalBackend {
       commitOffset:  BigInt(offset),
       timestampNs:   tsNs,
       primitiveKind: 0x01, // placeholder until §6 enum is locked
-      hookVerdict:   VERDICT_TO_WAL[hookResult.verdict],
+      hookVerdict:   hookResultToVerdictByte(hookResult.verdict, hookResult.hookId),
       flags: {
         bootstrap:       false,
         declaredWindow:  false,
@@ -82,7 +83,7 @@ export class InMemoryWalBackend implements WalBackend {
       },
       payloadHash,
       readSetHash,
-      envelopeCbor:  new Uint8Array(0),
+      envelopeCbor:  encodeCbor(input.primitiveKind),
     };
 
     // Build hash-chain link: genesis row gets prevRoot=ZERO_HASH,

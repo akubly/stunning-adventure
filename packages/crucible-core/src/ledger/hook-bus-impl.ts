@@ -46,9 +46,11 @@ export class PreCommitHookBus implements HookBusPort {
     let aggVerdict: HookVerdict = 'COMMIT';
     let aggHookId: string | null = null;
     let aggReason: string | undefined;
+    let matchedHookId: string | null = null;
 
     for (const [id, { predicate }] of this.hooks) {
       const result = await predicate(ctx);
+      matchedHookId ??= id;
       if (VERDICT_WEIGHT[result.verdict] > VERDICT_WEIGHT[aggVerdict]) {
         aggVerdict = result.verdict;
         aggHookId  = id;
@@ -58,6 +60,10 @@ export class PreCommitHookBus implements HookBusPort {
       if (aggVerdict === 'VETO') break;
     }
 
-    return { verdict: aggVerdict, hookId: aggHookId, reason: aggReason };
+    return {
+      verdict: aggVerdict,
+      hookId: aggHookId ?? matchedHookId,
+      reason: aggReason,
+    };
   }
 }

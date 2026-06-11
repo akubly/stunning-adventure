@@ -1468,3 +1468,19 @@ Use a `computedScope: string | undefined` variable initialized to undefined. Com
 ## Learnings (2026-06-09 — Cycle-3 cleanup)
 
 **Object.hasOwn(raw, 'v') improves robustness over 'v' in raw.** Both are functionally identical for well-formed JSON payloads, but Object.hasOwn avoids prototype-chain lookups if the object ever inherits non-standard prototypes — a good defensive practice for untrusted input even when we don't expect it.
+
+---
+
+## 2026-06-10: WAL/CAS Correctness Fixes #57/#60/#68 (S1)
+
+📌 **Roger:** Landed three WAL/CAS correctness fixes in one coherent branch (squad/crucible-wal-correctness-s1). London-school TDD: RED→GREEN×3.
+
+**#57 (verdict encoding):** Introduced `hookResultToVerdictByte(verdict, hookId)` in `wal/types.ts`. When `hookId === null && verdict === 'COMMIT'`, encodes as 0xFF (NO_MATCH/no predicate matched); otherwise `VERDICT_TO_WAL[verdict]`. Both backends updated. New CL-8 (no-match vs explicit-continue bytes) and CL-10 (FS reopen durability) contract tests. CL-3/CL-6 updated to use `hookId: 'test-hook-a'` for COMMIT rows. Persona-review follow-up fixed `PreCommitHookBus.fire()` to preserve a matched hook id on explicit COMMIT so ledger-driven WAL appends also persist 0x00 correctly; acceptance test `hook-continue-wal.test.ts` pins the integration.
+
+**#60 (canonical CBOR):** Created `wal/cbor.ts` using `cborg` library (pure-TS, ESM-compatible, no native compilation). Canonical encoding via `sortKeys()` (recursive lexicographic key sort) before `cborg.encode()`. Both backends now compute `payloadHash`/`readSetHash` as BLAKE3(CBOR(data)) and store `envelopeCbor` as CBOR-encoded string (not raw UTF-8). Replay updated to CBOR-decode. New CBOR-1 (key-order stability) and CBOR-2 (genuine CBOR envelope) tests. `writeCorruptSession` test helper updated to use CBOR.
+
+**#68 (CAS atomic write):** `FileSystemCas.put()` now always writes to `<hash>.cbor.tmp` (no existsSync skip); `syncAll()` fsyncs the .tmp then `fs.renameSync` to `<hash>.cbor` (atomic replace — libuv uses `MoveFileExW MOVEFILE_REPLACE_EXISTING` on Windows). Final CAS file is always either absent or complete — no torn-blob dedup vulnerability. CAS-F6 expectation updated (no longer skip-dedup optimization). TORN-1 test simulates a torn blob and asserts recovery.
+
+**Key paths:** `wal/types.ts`, `wal/cbor.ts` (new), `wal/cas-fs.ts`, `wal-backend-in-memory.ts`, `wal-backend-fs.ts`.
+
+**Final:** 136 tests, all green. Build clean.

@@ -204,13 +204,13 @@ describe('WAL FileSystemCas — CAS fsync ordering (issue #59)', () => {
     expect(rows).toHaveLength(0);
   });
 
-  // ── CAS-F6: Throughput note — existing CAS files (dedup) are NOT re-synced ──
+  // ── CAS-F6: Subsequent batch rewrites same hash via fresh temp file ──────────
   //
-  // If a CAS blob is already on disk (from a prior commit), put() is a no-op
-  // and the blob is NOT added to pendingSync. A second batch with the same
-  // payload does not incur a CAS sync (only the segment sync). Amortised cost.
+  // The torn-blob fix removes the old "skip CAS sync if final blob exists"
+  // optimization. A second batch with the same payload still writes/syncs a
+  // fresh temp file before atomically replacing the final CAS blob.
 
-  it('CAS-F6: already-persisted CAS blob not re-synced on subsequent batch', async () => {
+  it('CAS-F6: already-persisted CAS blob is re-synced on subsequent batch via temp file', async () => {
     const rootDir   = makeTmpDir();
     const sessionId = `sess-${randomUUID().slice(0, 8)}`;
 
@@ -224,7 +224,7 @@ describe('WAL FileSystemCas — CAS fsync ordering (issue #59)', () => {
     await backend.commitRow(makeInput('shared-payload'), commit());
     const firstBatchSyncs = syncCount;
 
-    // Second commit with SAME payload: CAS file already exists → only 1 sync (segment)
+    // Second commit with SAME payload: CAS blob is re-published via temp file
     syncCount = 0;
     await backend.commitRow(makeInput('shared-payload'), commit());
     const secondBatchSyncs = syncCount;
@@ -232,6 +232,47 @@ describe('WAL FileSystemCas — CAS fsync ordering (issue #59)', () => {
     await backend.close();
 
     expect(firstBatchSyncs).toBe(2);   // CAS + segment
-    expect(secondBatchSyncs).toBe(1);  // segment only (CAS already durable)
+    expect(secondBatchSyncs).toBe(2);  // CAS temp + segment
+  });
+
+  it('TORN-1: torn/partial existing CAS file is overwritten by put() + syncAll() (cross-session durability)', async () => {
+    const rootDir = makeTmpDir();
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+    const commitResult = { verdict: 'COMMIT' as const, hookId: null };
+
+    const backend1 = await createFileSystemWalBackend(rootDir, sessionId);
+    await backend1.commitRow(
+      { primitiveKind: 'observation', primitivePayload: { tag: 'original' }, causalReadSet: [] },
+      commitResult,
+    );
+    await backend1.close();
+
+    const casDir = path.join(rootDir, 'cas');
+    let casFilePath = '';
+    for (const shard of fs.readdirSync(casDir)) {
+      const shardDir = path.join(casDir, shard);
+      if (!fs.statSync(shardDir).isDirectory()) continue;
+      for (const file of fs.readdirSync(shardDir)) {
+        if (file.endsWith('.cbor')) {
+          casFilePath = path.join(shardDir, file);
+          break;
+        }
+      }
+      if (casFilePath) break;
+    }
+    expect(casFilePath, 'CAS blob must exist after first session').not.toBe('');
+
+    fs.writeFileSync(casFilePath, new Uint8Array([0xDE, 0xAD]));
+    expect(fs.readFileSync(casFilePath)).toHaveLength(2);
+
+    const backend2 = await createFileSystemWalBackend(rootDir, `sess-${randomUUID().slice(0, 8)}`);
+    await backend2.commitRow(
+      { primitiveKind: 'observation', primitivePayload: { tag: 'original' }, causalReadSet: [] },
+      commitResult,
+    );
+    await backend2.close();
+
+    const restoredContent = fs.readFileSync(casFilePath);
+    expect(restoredContent.length).toBeGreaterThan(2);
   });
 });

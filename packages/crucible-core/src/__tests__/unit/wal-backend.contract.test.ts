@@ -64,6 +64,13 @@ function commit(verdict: Exclude<HookVerdict, 'VETO'> = 'COMMIT'): HookResult & 
   return { verdict, hookId: null };
 }
 
+function commitFromHook(verdict: Exclude<HookVerdict, 'VETO'> = 'COMMIT'): HookResult & {
+  verdict: Exclude<HookVerdict, 'VETO'>;
+  hookId: string | null;
+} {
+  return { verdict, hookId: 'test-hook-a' };
+}
+
 // ─── Contract suite ───────────────────────────────────────────────────────────
 
 export function runWalBackendContract(
@@ -106,7 +113,7 @@ export function runWalBackendContract(
     });
 
     it('CL-3: verdict→hookVerdict byte: COMMIT=0x00, OBSERVE=0x01, PAUSE=0x02', async () => {
-      await h.backend.commitRow(makeInput('c'), commit('COMMIT'));
+      await h.backend.commitRow(makeInput('c'), commitFromHook('COMMIT'));
       await h.backend.commitRow(makeInput('o'), commit('OBSERVE'));
       await h.backend.commitRow(makeInput('p'), commit('PAUSE'));
       if (h.flush) await h.flush();
@@ -146,6 +153,15 @@ export function runWalBackendContract(
       expect(rows).toHaveLength(2);
       expect(rows[1].offset).toBe(1);
       expect((rows[1].primitivePayload as { content: string }).content).toBe('paused');
+    });
+
+    it('CL-8: no-match byte 0xFF (hookId=null, COMMIT) vs explicit-continue 0x00 (hookId non-null, COMMIT)', async () => {
+      await h.backend.commitRow(makeInput('no-match'), commit('COMMIT'));
+      await h.backend.commitRow(makeInput('explicit-continue'), commitFromHook('COMMIT'));
+      if (h.flush) await h.flush();
+
+      expect(await h.readVerdictByte(0)).toBe(0xFF);
+      expect(await h.readVerdictByte(1)).toBe(0x00);
     });
   });
 }
@@ -235,7 +251,7 @@ describe('WalBackend contract — FileSystemWalBackend durability (close+reopen)
   it('CL-6: PAUSE hookVerdict byte survives close+reopen (durable backend)', async () => {
     // Write COMMIT + PAUSE rows, then close
     const writer = await createFileSystemWalBackend(rootDir, sessionId);
-    await writer.commitRow(makeInput('c'), commit('COMMIT'));
+    await writer.commitRow(makeInput('c'), commitFromHook('COMMIT'));
     await writer.commitRow(makeInput('p'), commit('PAUSE'));
     await writer.close();
 
@@ -251,6 +267,22 @@ describe('WalBackend contract — FileSystemWalBackend durability (close+reopen)
     const rows = await reader.readRows({ range: [0, 10] });
     expect(rows).toHaveLength(2);
     expect(rows[1].offset).toBe(1);
+
+    await reader.close();
+  });
+
+  it('CL-10: NO_MATCH (0xFF) and explicit-COMMIT (0x00) hookVerdict bytes survive close+reopen', async () => {
+    const writer = await createFileSystemWalBackend(rootDir, sessionId);
+    await writer.commitRow(makeInput('no-match'), commit('COMMIT'));
+    await writer.commitRow(makeInput('explicit-commit'), commitFromHook('COMMIT'));
+    await writer.close();
+
+    const reader = await createFileSystemWalBackend(rootDir, sessionId, { readOnly: true });
+    const recs = reader.readSegmentRecords();
+
+    expect(recs).toHaveLength(2);
+    expect(recs[0].hookVerdict).toBe(0xFF);
+    expect(recs[1].hookVerdict).toBe(0x00);
 
     await reader.close();
   });
