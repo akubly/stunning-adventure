@@ -4619,7 +4619,7 @@ The literal "zero hits" criterion over-interprets the spirit of the issue. Issue
 
 **Author:** Graham (Lead / Architect)  
 **Date:** 2026-06-09T18:08:44-07:00  
-**Input:** Valanice's advisory UX review (`.squad/decisions/inbox/valanice-aperture-ux.md`)  
+**Input:** Valanice's advisory UX review (merged into .squad/decisions.md — Aperture UX Disposition section)  
 **Scope:** Walkthrough C — Aperture push-notification projector (§4.3)  
 **Delegated by:** Aaron Kubly ("defer to the Lead")
 
@@ -5223,7 +5223,7 @@ Files reviewed:
 - `packages/crucible-core/src/__tests__/unit/aperture-projector.test.ts`
 - `packages/crucible-core/src/__tests__/unit/aperture-projector-purity.test.ts`
 - `docs/crucible-tdd-strategy.md §4.3`
-- `.squad/decisions/inbox/roger-aperture-projector.md`
+- Aperture projector decision in `.squad/decisions.md`
 
 ---
 

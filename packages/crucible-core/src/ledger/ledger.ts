@@ -46,7 +46,7 @@ export type LedgerEvent = Primitive;
  *
  * Design decision (Walkthrough C): single-event callback (not batch) matches
  * the InMemoryWalBackend's per-row commit model. Batch delivery can be added
- * additively if the FS backend needs it (see roger-aperture-projector.md).
+ * additively if the FS backend needs it (see Aperture projector decision in .squad/decisions.md).
  */
 export interface LedgerSubscriber {
   /**
