@@ -37,8 +37,12 @@ export class FileSystemCas {
    * Returns the 32-byte hash (the CAS key for the WAL record header).
    *
    * New files are tracked in pendingSync until syncAll() is called.
-   * Already-existing files are not re-tracked (they were fsynced in a prior
-   * batch and are already durable).
+   * Already-existing files are skipped (in-session dedup: the same hash
+   * written earlier in this process will have been added to pendingSync
+   * already, or was fsynced in a prior batch of this session).
+   * Note: existence does NOT guarantee durability across process restarts —
+   * a file written in a prior session that crashed before syncAll() may be
+   * torn/partial. That cross-session gap is tracked in #68.
    */
   put(bytes: Uint8Array): Blake3Hash {
     const hash = hashBytes(bytes);

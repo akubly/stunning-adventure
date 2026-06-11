@@ -15,13 +15,16 @@ export type PrimitiveKind =
   | 'decision'
   | 'question';
 
+/** Closed set of attention tiers used in EventMetadata.level. */
+export type EventLevel = 'urgent' | 'attention' | 'notice' | 'info';
+
 /**
  * Optional caller-supplied event metadata.
  * Carries tier/level and any other caller-supplied fields.
  */
 export interface EventMetadata {
-  /** Attention tier: 'urgent' | 'attention' | 'notice' | 'info'. */
-  level?: string;
+  /** Attention tier. Closed set — use EventLevel for exhaustive matching. */
+  level?: EventLevel;
   [key: string]: unknown;
 }
 

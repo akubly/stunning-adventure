@@ -60,27 +60,3 @@ Two infrastructure changes approved in PRs #50 and #52:
 
 **Action for you:** No immediate action required. Lint workspace changes take effect after merge and 
 pm install restart. Doc-hygiene scope established for future improvements.
-
----
-
-## Learnings (2026-06-09)
-
-**Task:** Advisory UX review of Walkthrough C Aperture push-notification projector.
-
-**Key observations:**
-
-1. **Tier gating is correct** — pushing on `attention` + `urgent` only is sound attention hygiene. The two-tier gate gives the badge real signal value. The risk is in *what happens after* it fires, not in whether it fires.
-
-2. **`unreadCount` is a one-way ratchet** — `this.events.length` increments on every qualifying commit with no dismiss/ack path. Within a session, a burst of events (e.g., 20 quarantine sweeps) produces 20 sequential `push()` calls, each with an incrementing count. No coalescing. No read/seen semantics. This is the #1 desensitization risk in the design.
-
-3. **`getPriority()` is orphaned** — `NotificationPolicy.getPriority()` computes urgent=3/attention=2/notice=1/info=0 but the push payload only carries `{ unreadCount, icon }`. Priority is never surfaced to the renderer. This means an urgent event buried under 10 attention events is invisible in the badge.
-
-4. **ℹ️ as fallback for attention-tier is cognitively dissonant** — the info icon signals "no action needed" but an attention-tier event, by definition, requires the human to look. This is a label vs. intent mismatch.
-
-5. **✓ for decisions is ambiguous** — a check mark reads as "resolved/approved." Decision notifications could be rejections requiring follow-up. The icon doesn't communicate whether the decision needs a human response.
-
-6. **Emoji-only signaling has accessibility exposure** — no text label, no ARIA equivalent, no fallback for non-emoji contexts or screen-reader users.
-
-7. **`body_markdown` from the TDD doc was dropped** — the real `ApertureEvent` interface carries only `title`, not a human-readable body. The push payload carries even less (`unreadCount + icon` only). The renderer has minimal context to display actionable information.
-
-**Mental model stored:** "Increment on commit" is correct for projection purity but wrong for human notification UX. These are two different concerns that need explicit decoupling — the projection store can be append-only; the badge count needs read/dismiss semantics layered on top.

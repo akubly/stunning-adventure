@@ -18,6 +18,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import type { EventLevel } from '../../types.js';
 import { NotificationPolicy } from '../../projectors/notification-policy.js';
 
 describe('NotificationPolicy', () => {
@@ -30,8 +31,9 @@ describe('NotificationPolicy', () => {
     it('NP-1b: urgent → true',    () => expect(policy.shouldPush('urgent')).toBe(true));
     it('NP-2a: notice → false',   () => expect(policy.shouldPush('notice')).toBe(false));
     it('NP-2b: info → false',     () => expect(policy.shouldPush('info')).toBe(false));
-    it('NP-2c: empty → false',    () => expect(policy.shouldPush('')).toBe(false));
-    it('NP-2d: unknown → false',  () => expect(policy.shouldPush('debug')).toBe(false));
+    // Intentionally out-of-band values — cast to exercise runtime fallback robustness
+    it('NP-2c: empty → false',    () => expect(policy.shouldPush('' as EventLevel)).toBe(false));
+    it('NP-2d: unknown → false',  () => expect(policy.shouldPush('debug' as EventLevel)).toBe(false));
   });
 
   // ── NP-3 / NP-4 / NP-5: getIcon ───────────────────────────────────────────
@@ -68,6 +70,7 @@ describe('NotificationPolicy', () => {
     it('NP-6b: attention → 2', () => expect(policy.getPriority('attention')).toBe(2));
     it('NP-6c: notice → 1',    () => expect(policy.getPriority('notice')).toBe(1));
     it('NP-6d: info → 0',      () => expect(policy.getPriority('info')).toBe(0));
-    it('NP-7: unknown → 0',    () => expect(policy.getPriority('trace')).toBe(0));
+    // Intentionally out-of-band — cast to exercise the Record exhaustive mapping
+    it('NP-7: unknown → 0',    () => expect(policy.getPriority('trace' as EventLevel)).toBe(0));
   });
 });

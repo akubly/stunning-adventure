@@ -12,6 +12,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import type { EventLevel } from '../types.js';
 import type { LedgerEvent, LedgerSubscriber } from '../ledger/ledger.js';
 import { NotificationPolicy, isQuarantine } from './notification-policy.js';
 
@@ -40,8 +41,8 @@ export interface ApertureEvent {
   id: string;
   /** Aperture category: 'system' | 'decision' | 'observation'. */
   category: string;
-  /** Event level: 'urgent' | 'attention' | etc. */
-  level: string;
+  /** Event level from the EventMetadata closed tier set. */
+  level: EventLevel;
   /** Short title derived from the primitive payload. */
   title: string;
   /** Source primitive kind. */
@@ -56,7 +57,7 @@ export interface ApertureEvent {
 
 export interface ApertureQueryOpts {
   /** Filter by level (e.g. 'attention'). Omit to return all events. */
-  level?: string;
+  level?: EventLevel;
 }
 
 // ─── ApertureProjector ────────────────────────────────────────────────────────

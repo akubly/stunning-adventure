@@ -10,6 +10,8 @@
  *   getPriority — numeric sort priority for a given level
  */
 
+import type { EventLevel } from '../types.js';
+
 /**
  * Returns true if the primitive payload represents a quarantine event.
  * Shared by NotificationPolicy.getIcon() and ApertureProjector.categorize()
@@ -28,7 +30,7 @@ export class NotificationPolicy {
    * Returns true for levels that warrant a badge push (attention or urgent).
    * notice/info events are informational only — no push.
    */
-  shouldPush(level: string): boolean {
+  shouldPush(level: EventLevel): boolean {
     return level === 'attention' || level === 'urgent';
   }
 
@@ -45,9 +47,9 @@ export class NotificationPolicy {
    *
    * @param category - Aperture category ('system' | 'decision' | 'observation')
    * @param payload  - Primitive payload object (checked for quarantine type)
-   * @param level    - Event level from EventMetadata ('urgent' | 'attention' | ...)
+   * @param level    - Event level from EventMetadata
    */
-  getIcon(category: string, payload: unknown, level?: string): string {
+  getIcon(category: string, payload: unknown, level?: EventLevel): string {
     if (isQuarantine(payload)) {
       return '🔒';
     }
@@ -61,8 +63,8 @@ export class NotificationPolicy {
    * Returns a numeric sort priority for a given level.
    * Higher number = higher priority (urgent=3, attention=2, notice=1, info=0).
    */
-  getPriority(level: string): number {
-    const priorities: Record<string, number> = {
+  getPriority(level: EventLevel): number {
+    const priorities: Partial<Record<EventLevel, number>> = {
       urgent: 3,
       attention: 2,
       notice: 1,

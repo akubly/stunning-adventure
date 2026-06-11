@@ -5,7 +5,7 @@
  * REFACTOR: SessionManager + DB interface + ForkLineage value object extracted.
  * L1 WAL integration deferred to a future sprint (OQ-2).
  */
-export type { PrimitiveKind, PrimitiveInput, EventMetadata, Primitive, SessionMetadata, Session } from './types.js';
+export type { PrimitiveKind, EventLevel, PrimitiveInput, EventMetadata, Primitive, SessionMetadata, Session } from './types.js';
 export { createSession, fork } from './session.js';
 // Test isolation only — do not call from production code.
 export { resetInMemoryDb } from './session.js';
