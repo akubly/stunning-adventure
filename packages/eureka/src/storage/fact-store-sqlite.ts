@@ -25,20 +25,29 @@
  *   - `lastAccessed` is omitted (undefined → compositeScore uses Infinity → recency floor 0.1).
  * See `.squad/decisions.md` (M8 Slice C section) for the full record.
  *
- * ## Cursor design
+ * ## Cursor design (v1 — Slice D+)
  *
- * v1 uses a base64-encoded JSON offset cursor: `{ offset: number }`.
- * IMPORTANT: the cursor encodes only an offset integer. It is NOT bound to the
- * query string, sessionId, minTrust, or limit arguments. Passing a cursor from
- * one search call to a different query/session/minTrust/limit is undefined behavior.
- * Slice D should add cursor versioning + a scope fingerprint (query hash, sessionId,
- * minTrust, limit) to detect and reject cross-parameter cursor reuse.
+ * Cursors are base64-encoded JSON in one of two formats:
+ *   v0 (legacy): `{ offset: number }` — accepted as-is, no scope check.
+ *   v1 (current): `{ v: 1, offset: number, scope: string }` — scope is a
+ *     SHA-256 hex (first 16 chars) of the JSON-serialised param object:
+ *       `JSON.stringify({ query, sessionId, minTrust, limit })`
+ *     JSON encoding is injection-resistant (a query containing "\nsessionId="
+ *     cannot collide with a different (query, sessionId) pair).
+ *
+ * Version dispatch: see storage/cursor.ts.  Key rules:
+ *   - v0 (absent v key): offset honored as-is, no scope validation (backward compat).
+ *   - v1 (v === 1): scope fingerprint checked against current params;
+ *     mismatch throws `CursorScopeMismatchError` (fail fast — caller contract violation).
+ *   - Any present v not exactly 1 (including null, 0, floats, strings, v > 1):
+ *     throws `CursorVersionUnsupportedError`.
+ *   - Structurally unparseable/non-JSON: falls back to offset 0 (FS-SE-3).
  *
  * Offset-based pagination is deterministic within a request (same params, no writes
  * between pages). It is NOT stable under concurrent writes between pages — the
  * composite + f.id order can shift if new facts are inserted or trust is mutated.
  * A keyset cursor (last rank + last f.id) would resist concurrent writes; that
- * migration is deferred to Slice D+.
+ * migration is deferred to Slice D++.
  *
  * ## Session scoping
  *
@@ -60,6 +69,8 @@
 import type Database from 'better-sqlite3';
 import type { SessionId } from '@akubly/types';
 import type { FactStore, RecallResult } from '../activities/recall.js';
+import { scopeFingerprint, encodeCursor, decodeCursor } from './cursor.js';
+import { CursorScopeMismatchError } from './errors.js';
 
 // ---------------------------------------------------------------------------
 // Internal row type returned by the FTS5 + facts JOIN
@@ -79,35 +90,6 @@ type SearchBindParams = {
   limit: number;
   offset: number;
 };
-
-// ---------------------------------------------------------------------------
-// Cursor encoding
-//
-// IMPORTANT: offset-only cursor — encodes only an integer page offset.
-// It is NOT bound to query/sessionId/minTrust/limit. Passing a cursor from
-// one search call's result into a different call with changed parameters is
-// undefined behavior. Slice D should add a scope fingerprint (query hash,
-// sessionId, minTrust, limit) to detect and reject cross-parameter reuse.
-// ---------------------------------------------------------------------------
-
-interface CursorPayload {
-  offset: number;
-}
-
-function encodeCursor(offset: number): string {
-  return Buffer.from(JSON.stringify({ offset } satisfies CursorPayload)).toString('base64');
-}
-
-function decodeCursor(cursor: string): number {
-  try {
-    const payload = JSON.parse(Buffer.from(cursor, 'base64').toString('utf8')) as CursorPayload;
-    return typeof payload.offset === 'number' && Number.isFinite(payload.offset) && Number.isInteger(payload.offset) && payload.offset >= 0
-      ? payload.offset
-      : 0;
-  } catch {
-    return 0;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // BM25 relevance normalization
@@ -185,12 +167,32 @@ export class SqliteFactStore implements FactStore {
       throw new TypeError(`SqliteFactStore.search: minTrust must be a finite number in [0, 1], got ${minTrust}`);
     }
 
+    // Decode the cursor BEFORE the empty-query short-circuit so that an
+    // invalid/unsupported cursor version always throws — even when query is empty.
+    // This keeps cursor validation behavior consistent with InMemoryFactStore.
+    // Fix J: scopeFingerprint is computed lazily — only when needed (v1 scope
+    // check, or emitting nextCursor).  Avoids hashing on empty-query calls.
+
+    let offset = 0;
+    let computedScope: string | undefined;
+    if (cursor !== undefined) {
+      const decoded = decodeCursor(cursor); // may throw CursorVersionUnsupportedError
+      if (decoded.version === 1) {
+        computedScope = scopeFingerprint(query, sessionId as string, minTrust, limit);
+        if (decoded.scope !== computedScope) {
+          throw new CursorScopeMismatchError(decoded.scope, computedScope);
+        }
+        offset = decoded.offset;
+      } else {
+        // v0 — honor offset as-is, no scope check (backward compat)
+        offset = decoded.offset;
+      }
+    }
+
     // FTS5 MATCH with an empty string throws — short-circuit to empty results.
     if (!query.trim()) {
       return { results: [] };
     }
-
-    const offset = cursor !== undefined ? decodeCursor(cursor) : 0;
 
     // Fetch limit+1 rows to detect whether a next page exists without a
     // separate COUNT query. The extra row is never returned to the caller.
@@ -247,7 +249,7 @@ export class SqliteFactStore implements FactStore {
       // importance and lastAccessed omitted — not in schema yet (Slice C gap).
     }));
 
-    const nextCursor = hasMore ? encodeCursor(offset + limit) : undefined;
+    const nextCursor = hasMore ? encodeCursor(offset + limit, computedScope ?? scopeFingerprint(query, sessionId as string, minTrust, limit)) : undefined;
     return { results, nextCursor };
   }
 }

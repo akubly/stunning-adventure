@@ -42,11 +42,25 @@ export interface ScoredResult {
   score: number;
 }
 
-/** FactStore seam — injected, never instantiated here (§55 §2.1 London form). */
+/**
+ * FactStore seam — injected, never instantiated here (§55 §2.1 London form).
+ *
+ * @remarks Offset-based cursor pagination (v1) can skip or duplicate rows if facts
+ * are inserted or trust values mutate between page fetches. This is an acceptable
+ * limitation for single-writer v1. True keyset pagination (last composite rank + last
+ * fact id as cursor) will resist concurrent mutations and is deferred to Slice D++.
+ */
 export interface FactStore {
   search(args: {
     query: string;
     sessionId: SessionId;
+    /**
+     * Number of results per page.
+     *
+     * @throws {TypeError} Throws if `limit` is not a positive integer.
+     * Degenerate values (≤ 0, NaN, non-integer) are rejected at the call boundary
+     * and treated as contract violations, not as empty-result requests.
+     */
     limit: number;
     /** Trust floor predicate per §20 §7.4 — store applies WHERE trust >= minTrust. Default 0.15. */
     minTrust?: number;
@@ -54,6 +68,20 @@ export interface FactStore {
      * Opaque pagination cursor returned by a prior search call.
      * Absent on first page. Consumers MUST NOT parse cursor internals.
      * Q2-locked: included now to avoid a breaking change when cross-session queries arrive.
+     *
+     * @throws {CursorScopeMismatchError} Throws if a v1 cursor's scope fingerprint does
+     * not match the current search parameters (query/sessionId/minTrust/limit). This
+     * indicates the cursor was obtained from a different search context and cannot be
+     * safely reused. Callers that intentionally restart pagination may catch and retry
+     * from page 0 (no cursor). Both error classes are exported from `@akubly/eureka/sqlite`;
+     * callers who prefer not to import the class may catch by `.code` discriminator
+     * (`'CURSOR_SCOPE_MISMATCH'` / `'CURSOR_VERSION_UNSUPPORTED'`).
+     *
+     * @throws {CursorVersionUnsupportedError} Throws if the cursor carries a `v` field
+     * with an unsupported version value — any present `v` that is not exactly 1,
+     * including v:0, floats, strings, and any future version the implementation does
+     * not recognise. Completely unparseable cursors fall back to offset 0 (no throw).
+     * Exported from `@akubly/eureka/sqlite`.
      */
     cursor?: string;
   }): Promise<{

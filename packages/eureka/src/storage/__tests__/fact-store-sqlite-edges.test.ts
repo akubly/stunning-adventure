@@ -461,4 +461,62 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
       impl.search({ query: 'observable', sessionId: SESSION, limit: 10 }),
     ).rejects.toThrow();
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // FS-SE-14: Scope fingerprint is deterministic across calls (Slice D+)
+  //
+  // Two search() calls with identical parameters must produce nextCursors
+  // whose decoded `scope` field is identical. This locks that
+  // scopeFingerprint() is a pure function with no random/time component.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  it('FS-SE-14: scope fingerprint deterministic — same params produce same fingerprint across calls', async () => {
+    seed('se14-1', 'fingerprint deterministic alpha scope content', 0.8);
+    seed('se14-2', 'fingerprint deterministic beta scope content',  0.8);
+
+    const params = { query: 'fingerprint', sessionId: SESSION, limit: 1 } as const;
+
+    const p1a = await impl.search(params);
+    const p1b = await impl.search(params);
+
+    expect(p1a.nextCursor).toBeDefined();
+    expect(p1b.nextCursor).toBeDefined();
+
+    const decodedA = JSON.parse(Buffer.from(p1a.nextCursor!, 'base64').toString('utf8')) as Record<string, unknown>;
+    const decodedB = JSON.parse(Buffer.from(p1b.nextCursor!, 'base64').toString('utf8')) as Record<string, unknown>;
+
+    expect(decodedA.scope).toBeDefined();
+    expect(typeof decodedA.scope).toBe('string');
+    expect(decodedA.scope).toBe(decodedB.scope);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // FS-SE-15: Cursor string stays under 256 bytes for typical params
+  //
+  // Base64-encoded v1 cursor must not grow unboundedly with longer queries or
+  // session IDs. 16-hex-char SHA-256 truncation keeps the scope field short;
+  // even with a 60-char query + 40-char session, total cursor stays < 256 B.
+  //
+  // This is a safety guardrail against accidentally encoding the full canonical
+  // scope string (pre-hash) inside the cursor rather than its digest.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  it('FS-SE-15: cursor string stays under 256 bytes for typical params (no unbounded growth)', async () => {
+    // Use a realistic-length query and session ID to exercise the scope hash.
+    const longSession = 'se15-long-session-identifier-for-typical-use-case' as SessionId;
+    const longQuery = 'fingerprint cursor versioning scope deterministic limit offset pagination';
+
+    seed('se15-1', 'fingerprint cursor versioning scope deterministic limit offset pagination alpha', 0.8, longSession);
+    seed('se15-2', 'fingerprint cursor versioning scope deterministic limit offset pagination beta',  0.8, longSession);
+
+    const result = await impl.search({ query: longQuery, sessionId: longSession, limit: 1 });
+
+    expect(result.nextCursor).toBeDefined();
+
+    // Safety guardrail: cursor must not grow unboundedly even with long params.
+    expect(result.nextCursor!.length).toBeLessThan(256);
+
+    const decoded = JSON.parse(Buffer.from(result.nextCursor!, 'base64').toString('utf8')) as Record<string, unknown>;
+    expect(decoded).toMatchObject({ v: 1 });
+  });
 });
