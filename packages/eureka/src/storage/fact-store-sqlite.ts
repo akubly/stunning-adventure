@@ -35,14 +35,24 @@
  *   scope    = SHA-256 hex (first 16 chars) of JSON-serialised param object:
  *                `JSON.stringify({ query, sessionId, minTrust, limit })`
  *
- * Keyset predicate on continuation pages:
- *   AND ((-bm25(facts_fts)) * trust < $last_sort
- *        OR ((-bm25(facts_fts)) * trust = $last_sort AND f.id > $last_id))
+ * Keyset predicate on continuation pages (evaluated via CTE — single bm25 evaluation):
+ *   WHERE composite < $last_sort
+ *      OR (composite = $last_sort AND id > $last_id)
  *
- * This makes pagination stable under concurrent inserts and trust mutations —
- * FSE-2 is closed by construction (Slice D++).  Two prepared statements are used:
- * stmtFirst (no keyset predicate, first page) and stmtKeyset (keyset predicate,
- * continuation pages) since better-sqlite3 bindings are fixed to the SQL string.
+ * Keyset prevents INSERT-caused cross-page duplication (FSE-2 closed for concurrent
+ * inserts). Trust mutations of already-returned rows can still cause re-appearance:
+ * if a row's trust changes after it is returned on page 1, its composite score
+ * re-crosses the lastSort anchor and may re-appear on a later page. Callers needing
+ * strict stability under concurrent trust writes should restart pagination.
+ * Two prepared statements: stmtFirst (no keyset, first page) and stmtKeyset (keyset
+ * predicate, continuation pages) — better-sqlite3 binds are fixed to the SQL string.
+ *
+ * ## IDF-drift caveat
+ *
+ * bm25() IDF weights are corpus-dependent: inserting new facts between pages changes
+ * the IDF for shared terms, which shifts some rows' recomputed composite scores vs the
+ * stored lastSort anchor. This is a second-order edge case for typical workloads. Future
+ * mitigation: snapshot composite as a stored column in the facts table.
  *
  * Version dispatch: see storage/cursor.ts.  Key rules:
  *   - v1 (v === 1): scope fingerprint checked against current params;
@@ -123,24 +133,31 @@ function normalizeRelevance(bm25Scores: number[]): number[] {
   return raw.map(s => (s - min) / (max - min));
 }
 
-// Shared SQL fragments to keep both statements consistent.
-const SQL_SELECT = `
-  SELECT
-    f.id,
-    f.content,
-    f.trust,
-    bm25(facts_fts) AS bm25_score
-  FROM facts_fts
-  JOIN facts f ON f.id = facts_fts.rowid
-  WHERE facts_fts MATCH $query
-    AND f.session_id = $session_id
-    AND f.trust IS NOT NULL
-    AND f.trust >= $min_trust
-`;
-
-const SQL_ORDER = `
-  ORDER BY (-bm25_score) * f.trust DESC, f.id ASC
-  LIMIT $limit
+// CTE base query — bm25(facts_fts) is called exactly once per row here.
+// The outer keyset query derives composite from the fetched bm25_score column
+// (pure arithmetic, no second bm25 call) so the boundary is bit-exact.
+const SQL_CTE_BASE = `
+  WITH base AS (
+    SELECT
+      f.id,
+      f.content,
+      f.trust,
+      bm25(facts_fts) AS bm25_score
+    FROM facts_fts
+    JOIN facts f ON f.id = facts_fts.rowid
+    WHERE facts_fts MATCH $query
+      AND f.session_id = $session_id
+      AND f.trust IS NOT NULL
+      AND f.trust >= $min_trust
+  ),
+  ranked AS (
+    -- ⚠️ INVARIANT: (-bm25_score) * trust MUST mirror the sort expression in SQL_ORDER.
+    -- If importance or other signals are ever folded into the sort key, update both here
+    -- and in SQL_ORDER simultaneously, or the keyset boundary silently breaks.
+    SELECT id, content, trust, bm25_score,
+           (-bm25_score) * trust AS composite
+    FROM base
+  )
 `;
 
 // ---------------------------------------------------------------------------
@@ -157,21 +174,34 @@ export class SqliteFactStore implements FactStore {
 
     // ⚠️ BM25 footgun: bm25(facts_fts) is NEGATIVE (more negative = better match).
     // ORDER BY (-bm25_score) * f.trust DESC gives composite descending sort.
-    // bm25_score is the SELECT alias — SQLite expands it in ORDER BY.
-    // In WHERE (keyset predicate) we must use bm25(facts_fts) directly since
-    // WHERE is evaluated before SELECT (aliases not in scope).
+    // bm25_score is a SELECT alias — SQLite expands it in ORDER BY.
     // f.id ASC is the deterministic tie-breaker for keyset stability.
-    this.stmtFirst = db.prepare<SearchBindFirst, SearchRow>(
-      `${SQL_SELECT}${SQL_ORDER}`,
-    );
+    this.stmtFirst = db.prepare<SearchBindFirst, SearchRow>(`
+      SELECT
+        f.id,
+        f.content,
+        f.trust,
+        bm25(facts_fts) AS bm25_score
+      FROM facts_fts
+      JOIN facts f ON f.id = facts_fts.rowid
+      WHERE facts_fts MATCH $query
+        AND f.session_id = $session_id
+        AND f.trust IS NOT NULL
+        AND f.trust >= $min_trust
+      ORDER BY (-bm25_score) * f.trust DESC, f.id ASC
+      LIMIT $limit
+    `);
 
+    // CTE computes bm25 once (in `base`) then derives composite in `ranked`.
+    // The outer SELECT filters on pre-computed composite — no second bm25 call.
     this.stmtKeyset = db.prepare<SearchBindKeyset, SearchRow>(`
-      ${SQL_SELECT}
-        AND (
-          (-bm25(facts_fts)) * f.trust < $last_sort
-          OR ((-bm25(facts_fts)) * f.trust = $last_sort AND f.id > $last_id)
-        )
-      ${SQL_ORDER}
+      ${SQL_CTE_BASE}
+      SELECT id, content, trust, bm25_score
+      FROM ranked
+      WHERE composite < $last_sort
+         OR (composite = $last_sort AND id > $last_id)
+      ORDER BY composite DESC, id ASC
+      LIMIT $limit
     `);
   }
 
@@ -280,11 +310,11 @@ export class SqliteFactStore implements FactStore {
     let nextCursor: string | undefined;
     if (hasMore) {
       const lastRow = pageRows[pageRows.length - 1];
-      // Compute composite score in JS to match the SQL ORDER BY expression bit-exactly.
-      // lastRow.bm25_score = bm25(facts_fts) for that row; both use IEEE 754 doubles.
+      // f.trust IS NOT NULL in SQL makes null impossible here; the NaN fallback
+      // produces a non-finite lastSort → decodeCursor returns restart on the next call.
       const lastRowComposite = (-lastRow.bm25_score) * (lastRow.trust ?? NaN);
       const scope = computedScope ?? scopeFingerprint(query, sessionId as string, minTrust, limit);
-      nextCursor = encodeCursor(lastRowComposite, lastRow.id, scope);
+      nextCursor = encodeCursor({ lastSort: lastRowComposite, lastId: lastRow.id, scope });
     }
 
     return { results, nextCursor };

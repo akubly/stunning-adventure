@@ -46,8 +46,10 @@ export interface ScoredResult {
  * FactStore seam — injected, never instantiated here (§55 §2.1 London form).
  *
  * @remarks Keyset cursor pagination (Slice D++): cursors encode the composite
- * score and row id of the last returned row, making subsequent pages stable
- * under concurrent inserts and trust mutations. FSE-2 is closed by construction.
+ * score and row id of the last returned row. This prevents INSERT-caused
+ * cross-page duplication (FSE-2 closed for concurrent inserts). Trust mutations
+ * of already-returned rows can still cause re-appearance — callers needing
+ * strict stability under concurrent trust writes should restart pagination.
  * Per-page relevance normalization (D3) is unchanged — relevance is not
  * comparable across pages.
  */
@@ -140,6 +142,8 @@ export interface RecallDeps {
   clock: ClockProvider;
   /** Optional custom ranker — when provided, replaces inline compositeScore. */
   ranker?: Ranker;
+  /** Optional logger for attention-tier warnings; defaults to console. */
+  logger?: { warn(msg: string): void };
 }
 
 // TODO(M5+): per-call trustFloor override via RecallOptions — needs §-decision;
@@ -221,6 +225,7 @@ export async function recallWithScores(
 ): Promise<ScoredResult[]> {
   const { query, sessionId, k } = options;
   const { factStore, clock, ranker } = deps;
+  const logger = deps.logger ?? console;
 
   // C4: Validate k at the entry point.
   // k === 0: valid — return [] without touching factStore (avoids SQLite limit:0 edge cases).
@@ -256,7 +261,7 @@ export async function recallWithScores(
 
   // C1: Emit ONE warn per recallWithScores call for all unrecognised tier values found.
   if (unknownTiers.size > 0) {
-    console.warn(
+    logger.warn(
       `[eureka.recall] Unknown attention_tier values encountered: ${[...unknownTiers].join(', ')}. Defaulted to 1.0 multiplier. Validate at FactStore boundary.`,
     );
   }

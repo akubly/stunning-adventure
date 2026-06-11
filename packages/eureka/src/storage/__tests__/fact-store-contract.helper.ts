@@ -21,7 +21,7 @@
  * FS-3  minTrust floor           — below-threshold facts excluded
  * FS-4  Composite sort lock      — equal-trust higher-freq fact ranks first (BM25 footgun lock)
  * FS-5  Cursor pagination        — nextCursor returned when more rows exist; round-trip yields next page
- * FS-5b Bad-offset cursor        — structurally-valid cursor with bad offset clamps to page 0
+ * FS-5b Bad cursor (garbage/restart)  — structurally-invalid cursor restarts from page 1
  * FS-6  Cross-session isolation  — search in sessionA MUST NOT return sessionB facts
  * FS-7  Tie-breaker pagination   — equal composite scores paginate without skip or dup
  * FS-8  Invalid limit            — limit ≤ 0 / NaN throws TypeError
@@ -34,7 +34,10 @@
  * FS-10f DELETED                  — v0 backward-compat removed (Slice D++); v-absent = garbage = restart
  * FS-10g unknown version v:99     — throws CursorVersionUnsupportedError
  * FS-10h empty query + bad cursor version — cursor decoded before empty-query short-circuit
- * FS-11  FSE-2 closure            — concurrent insert between pages does NOT cause dup (keyset safety)
+ * FS-11  FSE-2 closure (insert-safe)  — concurrent insert between pages does NOT cause dup (keyset safety).
+ *                                        Trust mutations of already-returned rows are an explicit out-of-scope
+ *                                        case: callers needing strict stability under concurrent trust writes
+ *                                        should restart pagination.
  *
  * ## Export visibility
  *
@@ -546,14 +549,6 @@ export function runFactStoreContract(
         impl.search({ query: 'versioning', sessionId: SESSION_A, limit: 1, cursor: futureCursor }),
       ).rejects.toThrow(CursorVersionUnsupportedError);
     });
-
-    // -----------------------------------------------------------------------
-    // FS-10h — empty query + unsupported cursor version → consistent throw
-    //
-    // Both impls MUST validate/decode the cursor BEFORE the empty-query
-    // short-circuit so that an invalid cursor version always throws —
-    // regardless of whether the query string is empty or not.
-    // -----------------------------------------------------------------------
 
     // -----------------------------------------------------------------------
     // FS-10h — empty query + unsupported cursor version → consistent throw

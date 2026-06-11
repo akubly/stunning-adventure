@@ -1,12 +1,12 @@
 /**
- * cursor.ts unit tests — Slice D++ keyset pagination (RED phase)
+ * cursor.ts unit tests — Slice D++ keyset pagination
  *
  * Focused unit coverage for encodeCursor / decodeCursor / scopeFingerprint.
  * These tests run against the pure utility functions only — no FactStore, no SQLite.
  *
  * Invariants covered:
  *   CU-1  v0 cursor (no `v` field) → NOW restart sentinel (v0 backward-compat deleted)
- *   CU-2  v1 keyset round-trip: encodeCursor(lastSort, lastId, scope) → decodeCursor
+ *   CU-2  v1 keyset round-trip: encodeCursor({ lastSort, lastId, scope }) → decodeCursor
  *         → { version:1, lastSort, lastId, scope }
  *         CU-2a  normal round-trip
  *         CU-2b  version discriminant is 1
@@ -26,14 +26,6 @@
  *   CU-5  CursorVersionUnsupportedError re-throw path (UNCHANGED)
  *   CU-6  scopeFingerprint determinism (UNCHANGED)
  *   CU-7  scopeFingerprint injection-resistance (UNCHANGED)
- *
- * ## RED state expected
- *
- * CU-1, CU-2, CU-4 will FAIL against the current offset implementation because:
- *   - encodeCursor still takes 2 args (offset, scope) not 3 (lastSort, lastId, scope)
- *   - decodeCursor still returns { version:0, offset:N } for garbage/v0 (not { version:0 })
- *   - v1 cursors encode/decode offset not lastSort/lastId
- * This is the expected RED state for Slice D++ TDD.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -51,12 +43,9 @@ function makeCursor(payload: Record<string, unknown>): string {
 // ---------------------------------------------------------------------------
 // CU-1 — v0 cursor (absent v field) → restart sentinel
 //
-// Slice D++ deletes v0 backward-compat: a cursor with no `v` key is now
-// treated as garbage and returns the restart sentinel { version: 0 }.
-// Offset values in such cursors MUST NOT be honored.
-//
-// RED: current impl returns { version:0, offset:N } (honors offset).
-// GREEN: returns { version:0 } (no offset — restart from page 1).
+// Slice D++ deleted v0 backward-compat: a cursor with no `v` key is treated
+// as garbage and returns the restart sentinel { version: 0 }.
+// Offset values in such cursors are NOT honored.
 // ---------------------------------------------------------------------------
 
 describe('decodeCursor — v0 (no v field) → restart sentinel (v0 backward-compat deleted)', () => {
@@ -82,29 +71,26 @@ describe('decodeCursor — v0 (no v field) → restart sentinel (v0 backward-com
 // ---------------------------------------------------------------------------
 // CU-2 — v1 keyset round-trip
 //
-// Slice D++ changes encodeCursor from 2-arg (offset, scope) to 3-arg
-// (lastSort, lastId, scope).  decodeCursor v1 branch now returns
+// encodeCursor takes an object param { lastSort, lastId, scope } to prevent
+// silent swap of the two numeric args.  decodeCursor v1 branch returns
 // { version:1, lastSort, lastId, scope } — no offset field.
 //
 // Bad keyset field values in an otherwise-valid v1 cursor:
 //   - lastSort: must be a finite number; null/NaN/Infinity → restart sentinel
 //   - lastId: must be a positive integer; negative/float/missing → restart sentinel
-//
-// RED: current impl uses 2-arg encodeCursor and returns { version:1, offset, scope }.
-// GREEN: 3-arg encodeCursor, returns { version:1, lastSort, lastId, scope }.
 // ---------------------------------------------------------------------------
 
 describe('encodeCursor / decodeCursor — v1 keyset round-trip', () => {
-  it('CU-2a: encode(lastSort, lastId, scope) → decode → { version:1, lastSort, lastId, scope }', () => {
+  it('CU-2a: encode({ lastSort, lastId, scope }) → decode → { version:1, lastSort, lastId, scope }', () => {
     const scope = scopeFingerprint('recall', 'sess-abc', 0.15, 10);
-    const encoded = encodeCursor(42.5, 17, scope);
+    const encoded = encodeCursor({ lastSort: 42.5, lastId: 17, scope });
     const decoded = decodeCursor(encoded);
     expect(decoded).toEqual({ version: 1, lastSort: 42.5, lastId: 17, scope });
   });
 
   it('CU-2b: decoded cursor has version:1 discriminant', () => {
     const scope = scopeFingerprint('test', 'sess-123', 0.5, 5);
-    const encoded = encodeCursor(0, 1, scope);
+    const encoded = encodeCursor({ lastSort: 0, lastId: 1, scope });
     const decoded = decodeCursor(encoded);
     expect(decoded.version).toBe(1);
   });

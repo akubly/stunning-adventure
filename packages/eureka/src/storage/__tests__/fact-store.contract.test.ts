@@ -136,7 +136,7 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
       if (hasMore) {
         const lastRow = page[page.length - 1];
         const scope = computedScope ?? scopeFingerprint(query, sessionId as string, minTrust, limit);
-        nextCursor = encodeCursor(lastRow.score, lastRow.insertionOrder, scope);
+        nextCursor = encodeCursor({ lastSort: lastRow.score, lastId: lastRow.insertionOrder, scope });
       }
       return { results, nextCursor };
     },

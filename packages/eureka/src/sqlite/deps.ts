@@ -27,13 +27,21 @@ const systemClock = { now: (): number => Date.now() };
  * Returns `{ factStore: SqliteFactStore, clock: ClockProvider }` — pass directly
  * to `recall()` / `recallWithScores()`.
  *
- * @param db  An already-opened, migration-applied `Database` handle from
- *            `openDatabase()`.  This factory does not open or close the DB.
+ * @param db       An already-opened, migration-applied `Database` handle from
+ *                 `openDatabase()`.  This factory does not open or close the DB.
+ * @param options  Optional overrides; `logger` is forwarded to `SqliteFactStore`
+ *                 and set on the returned `RecallDeps` so the same logger handles
+ *                 both FTS parse-error warnings and attention-tier warnings.
  */
-export function createSqliteRecallDeps(db: Database.Database): RecallDeps {
+export function createSqliteRecallDeps(
+  db: Database.Database,
+  options?: { logger?: { warn(msg: string): void } },
+): RecallDeps {
+  const logger = options?.logger;
   return {
-    factStore: new SqliteFactStore(db),
+    factStore: new SqliteFactStore(db, logger),
     clock: systemClock,
+    ...(logger ? { logger } : {}),
   };
 }
 

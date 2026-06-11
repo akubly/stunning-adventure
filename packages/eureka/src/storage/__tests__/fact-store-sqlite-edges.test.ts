@@ -185,7 +185,7 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
       cursor: '!!!not-valid-base64-at-all!!!',
     });
 
-    // Garbage cursor must fall back to offset=0 → identical results to no-cursor baseline.
+    // Garbage cursor must restart (page 1) → identical results to no-cursor baseline.
     expect(withGarbage.results.map(r => r.content)).toEqual(
       baseline.results.map(r => r.content),
     );
