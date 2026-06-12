@@ -1473,55 +1473,14 @@ Use a `computedScope: string | undefined` variable initialized to undefined. Com
 
 ## Learnings (2026-06-10 — D++ keyset migration doc sweep)
 
-**Comment drift is a blind spot in code review:** Genesta's keyset-migration audit caught 4 stale offset-pagination references in comments/JSDoc (recall.ts, fact-store-contract.helper.ts, fact-store.contract.test.ts, errors.ts) that logic changes didn't touch. All 199 tests pass post-fix, confirming comment-only corrections don't break behavior—but doctrine should be updated during refactoring, not after.
+**Comment drift is a blind spot in code review:** Genesta's keyset-migration audit caught 4 stale offset-pagination references in comments/JSDoc that logic changes didn't touch. All 199 tests pass post-fix, confirming comment-only corrections don't break behavior—but doctrine should be updated during refactoring, not after.
 
 ---
 
 ## 2026-06-10: M8 Slice D++ Shipped to Branch
 
-**Session:** M8 Slice D++ keyset pagination (quad spawn)  
-**Branch:** eureka/m8-slice-dpp-keyset  
-**Status:** ✅ SHIPPED
+**Session:** M8 Slice D++ keyset pagination. **Branch:** eureka/m8-slice-dpp-keyset. **Status:** SHIPPED
 
-Slice D++ completed with four-agent parallel execution. Genesta's architecture memo locked three interlocked decisions on cursor design, schema migration, and normalization strategy. Laura wrote 22 RED keyset tests. Crispin implemented migration 002, keyset GREEN phase, and persona fixes (cycle 2 clean). Roger completed doc sweep (N1-N4 stale comment fixes).
+Genesta locked three interlocked decisions (D1 mutate cursor v1 to keyset; D2 importance/lastAccessed NOT in SQL sort key; D3 per-page normalization). Laura wrote 22 RED tests, Crispin implemented migration 002 + keyset GREEN + persona fixes, Roger did the N1-N4 doc sweep. FSE-2 corrected: INSERT-safe only (not trust-mutation-safe).
 
-**Decisions locked:** D1=mutate cursor v1 in place to keyset; D2=importance/lastAccessed NOT in SQL sort key (time-varying recency breaks stability); D3=per-page normalization status quo. FSE-2 guarantee corrected: INSERT-safe only (not trust-mutation-safe).
-
-Ready to merge.
-
----
-
-## HISTORY SUMMARIZATION — 2026-06-11
-
-**File size at session close:** 
-- laura/history.md: 157,469 bytes (→ exceeds 15,360 threshold; summary appended)
-- crispin/history.md: 24,816 bytes (→ exceeds 15,360 threshold; summary appended)
-- roger/history.md: 168,012 bytes (→ exceeds 15,360 threshold; summary appended)
-
-### High-Level Summary (All Recent Work)
-
-**Laura (Tester):**
-- M8 Slice C audit (SqliteFactStore + FTS5 BM25): ✅ ACCEPT-WITH-FOLLOWUPS (121 tests)
-- Crucible WAL Walkthrough B acceptance testing: ✅ COMPLETE (hook-veto RED→GREEN)
-- M8 Slice D++ keyset pagination RED tests: ✅ 22 tests written (cursor v1 mutation, FSE-2 closure)
-- Key learnings: FTS5 sign convention, per-page normalization, cursor pagination with concurrent inserts
-
-**Crispin (KR Specialist):**
-- Design Ceremony R1–R8: Advocated Path A initially, adopted Path D post-source-reading, locked v4-final schema
-- M7-A review cycle: Observed (Edgar lead); M7-C next (Real FactReader contract)
-- M8 Slice D++ implementation: Migration 002 + keyset GREEN + persona fixes (cycle 2 clean)
-  - Migration 002: importance/lastAccessed/attentionTier columns (NOT in SQL sort key)
-  - Keyset: v1 mutated in place, encodeCursor object param, logger seam threaded
-  - FSE-2 corrected: INSERT-safe (no dupes), NOT trust-mutation-safe
-
-**Roger (Platform Dev / Doc):**
-- PR #58 Copilot review cycle-6: hook-veto.test.ts comment polish, HookBus docs
-- PR #58 cycle-4: timestampNs monotonicity (clock seam), replay validation, CAS header doc
-- PR #58 cycle-3: session-scoped manifest (isolation fix), short-write guard, codec recordLen validation
-- PR #58 cycle-2: Node engine bump to 20.19.0, ESM compatibility docs
-- PR #58 final: gitignore polish, inbox path citations swept
-- Crucible WAL Walkthrough B: hash-chain + CAS + codec + ledger seam (28/28 green)
-- M8 Slice A cycle-2 fixes: busy_timeout, WAL pragma, BEGIN IMMEDIATE, subpath export (75 tests)
-- M8 Slice D++ doc sweep: N1-N4 stale comment fixes (keyset, migration, cursor versioning)
-
-**Append-Only Rule Applied:** All prior entries remain unchanged. This summary provides high-level context only.
+**Note:** Re-appended at file end during PR #72 cloud review to honor the Append-Only History Rule (Scribe summarization had reordered prior entries).
