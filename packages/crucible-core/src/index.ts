@@ -5,7 +5,7 @@
  * REFACTOR: SessionManager + DB interface + ForkLineage value object extracted.
  * L1 WAL integration deferred to a future sprint (OQ-2).
  */
-export type { PrimitiveKind, PrimitiveInput, Primitive, SessionMetadata, Session } from './types.js';
+export type { PrimitiveKind, EventLevel, PrimitiveInput, EventMetadata, Primitive, SessionMetadata, Session } from './types.js';
 export { createSession, fork } from './session.js';
 // Test isolation only — do not call from production code.
 export { resetInMemoryDb } from './session.js';
@@ -26,11 +26,20 @@ export type {
 export type {
   Ledger,
   LedgerEvent,
+  LedgerSubscriber,
   LedgerQueryOpts,
   LedgerFactoryOptions,
   CreateLedger,
   WalBackend,
 } from './ledger/ledger.js';
+// Aperture projector — post-commit projection for attention-tier events (§4.3 Walkthrough C).
+export { ApertureProjector } from './projectors/aperture-projector.js';
+export type {
+  NotificationService,
+  ApertureEvent,
+  ApertureQueryOpts,
+} from './projectors/aperture-projector.js';
+export { NotificationPolicy, isQuarantine } from './projectors/notification-policy.js';
 // Durable WAL backend — file-system substrate (§3.2 on-disk layout).
 export {
   createFileSystemWalBackend,

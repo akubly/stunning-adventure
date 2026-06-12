@@ -34,6 +34,43 @@ export type { HookVerdict, HookPredicate, HookRegistrationOpts, HookResult };
  */
 export type LedgerEvent = Primitive;
 
+// ─── Ledger subscriber (post-commit projection seam) ─────────────────────────
+
+/**
+ * LedgerSubscriber — observer called after each successful commit.
+ *
+ * Wired via Ledger.subscribe(). Subscribers receive the committed event
+ * synchronously after walBackend.commitRow() resolves. This is the minimal
+ * seam that lets ApertureProjector (§4.3 Walkthrough C) observe committed rows
+ * without polling and without coupling to the WAL internals.
+ *
+ * Design decision (Walkthrough C): single-event callback (not batch) matches
+ * the InMemoryWalBackend's per-row commit model. Batch delivery can be added
+ * additively if the FS backend needs it (see Aperture projector decision in .squad/decisions.md).
+ */
+export interface LedgerSubscriber {
+  /**
+   * Called once per committed row, after walBackend.commitRow() succeeds.
+   * offset === event.offset (redundant but explicit for pattern-matching consumers).
+   *
+   * Contract:
+   *   - Must be fast (synchronous, O(1) / in-memory): the call is made on the
+   *     append() hot path before the Promise resolves. A slow subscriber adds
+   *     latency to every append. Async dispatch is deferred to a future slice.
+   *   - Must not throw: LedgerImpl wraps each call in try/catch and swallows
+   *     errors so a misbehaving subscriber cannot affect append durability,
+   *     the returned offset, or other subscribers.
+   *   - v1 metadata note: the LedgerEvent passed here carries metadata as
+   *     supplied by the caller (via PrimitiveInput.metadata). However, metadata
+   *     is NOT persisted in the WAL record and is therefore NOT available to
+   *     subscribers during replay-based catchup (post-reopen). A future slice
+   *     will persist metadata in the WAL envelope (tracked in #67). Subscribers
+   *     that depend on metadata for filtering (e.g. ApertureProjector) must
+   *     be re-hydrated via a separate catchup mechanism until then.
+   */
+  onCommit(offset: number, event: LedgerEvent): void;
+}
+
 // ─── Query options ───────────────────────────────────────────────────────────
 
 /**
@@ -101,6 +138,17 @@ export type CreateLedger = (opts?: LedgerFactoryOptions) => Promise<Ledger>;
  * There MUST NOT be any WAL write, CAS write, or fdatasync between steps (b) and (c).
  */
 export interface Ledger {
+  /**
+   * Register a post-commit subscriber (projection seam, §4.3 Walkthrough C).
+   *
+   * The subscriber's onCommit() fires synchronously after each successful
+   * walBackend.commitRow() call, before append() resolves to the caller.
+   * Multiple subscribers are fired in registration order.
+   *
+   * VETO'd rows never reach subscribers (append() throws before commitRow).
+   */
+  subscribe(subscriber: LedgerSubscriber): void;
+
   /**
    * Append a primitive to the ledger.
    *

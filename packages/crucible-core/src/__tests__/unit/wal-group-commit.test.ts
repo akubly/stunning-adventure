@@ -67,11 +67,12 @@ describe('WAL FileSystemWalBackend — group-commit batching (§3.5)', () => {
     // No sync yet — queue hasn't reached batchSize (10), timer not fired
     expect(syncs).toHaveLength(0);
 
-    // Explicit flush — should sync exactly once for all three rows
+    // Explicit flush — CAS files synced + segment synced.
+    // All 3 rows share the same payload → 1 unique CAS file + 1 segment = 2 syncs.
     await backend.flush();
     const [o1, o2, o3] = await Promise.all([p1, p2, p3]);
 
-    expect(syncs).toHaveLength(1);
+    expect(syncs).toHaveLength(2); // 1 CAS sync + 1 segment sync
     expect(o1).toBe(0);
     expect(o2).toBe(1);
     expect(o3).toBe(2);
@@ -101,7 +102,8 @@ describe('WAL FileSystemWalBackend — group-commit batching (§3.5)', () => {
 
     const [o1, o2, o3] = await Promise.all([p1, p2, p3]);
 
-    expect(syncCount).toBe(1);
+    // 3 rows, same payload → 1 unique CAS file + 1 segment = 2 syncs
+    expect(syncCount).toBe(2);
     expect(o1).toBe(0);
     expect(o2).toBe(1);
     expect(o3).toBe(2);
@@ -135,7 +137,7 @@ describe('WAL FileSystemWalBackend — group-commit batching (§3.5)', () => {
 
     expect(o0).toBe(0);
     expect(o1).toBe(1);
-    expect(syncCount).toBe(1); // one sync for the first committed batch
+    expect(syncCount).toBe(2); // 1 CAS sync + 1 segment sync for first committed batch
 
     // WAL has exactly 2 records so far
     const records1 = backend.readSegmentRecords();
@@ -147,7 +149,8 @@ describe('WAL FileSystemWalBackend — group-commit batching (§3.5)', () => {
     await backend.flush();
     const o2 = await p2;
     expect(o2).toBe(2);
-    expect(syncCount).toBe(2); // second sync for restaged batch
+    // Second flush: same payload as before → CAS file already durable → 0 CAS syncs + 1 segment = 1 more sync
+    expect(syncCount).toBe(3); // 2 (first batch) + 1 (second batch, segment only)
 
     // Now 3 records total
     const records2 = backend.readSegmentRecords();
