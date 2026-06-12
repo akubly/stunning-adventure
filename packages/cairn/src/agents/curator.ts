@@ -26,6 +26,8 @@ import {
 } from '../db/changeVectors.js';
 import type { CairnEvent, CuratorStatus } from '../types/index.js';
 import { parseSqliteDateToMs } from '../utils/timestamps.js';
+import { buildProfiles } from './profileBuilder.js';
+import type { BuildResult } from './profileBuilder.js';
 
 export const AGENT_NAME = 'curator';
 export const AGENT_DESCRIPTION = 'Knowledge custodian, error processor, RCA pipeline';
@@ -143,6 +145,8 @@ export interface CurateResult {
   changeVectorSweep: ChangeVectorSweepResult;
   /** Per-skill prescriber orchestration results for skills whose vectors were just computed. */
   prescribers?: PrescriberRunResult[];
+  /** Summary of the profile-build step run before the change-vector sweep. */
+  profileBuild?: BuildResult;
 }
 
 /**
@@ -218,6 +222,14 @@ export async function curate(
 
   updateLastRunTimestamp(db);
 
+  let profileBuild: BuildResult | undefined;
+  try {
+    profileBuild = buildProfiles(db);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`curate: buildProfiles failed, continuing without profile build: ${message}`);
+  }
+
   const changeVectorSweep = sweepChangeVectors(db, changeVectorConfig);
   const prescribers = prescriberOrchestrationConfig
     ? await runPrescribersForComputedSkills(
@@ -235,6 +247,7 @@ export async function curate(
     insightsChanged: totalCreated > 0 || totalReinforced > 0,
     changeVectorSweep,
     ...(prescribers !== undefined ? { prescribers } : {}),
+    ...(profileBuild !== undefined ? { profileBuild } : {}),
   };
 }
 

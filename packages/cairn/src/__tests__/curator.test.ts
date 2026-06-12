@@ -12,6 +12,8 @@ import {
   deletePrunedInsights,
   setInsightStatus,
 } from '../db/insights.js';
+import { insertSignalSamples } from '../db/signalSamples.js';
+import { getExecutionProfile } from '../db/executionProfiles.js';
 import { curate, getCuratorStatus, TIME_BUDGET_MS } from '../agents/curator.js';
 
 let db: ReturnType<typeof getDb>;
@@ -665,5 +667,66 @@ describe('curate time cap', () => {
     const result = await curate();
     expect(result.eventsProcessed).toBe(500);
     expect(result.capped).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slice 3: buildProfiles wired into curate()
+// ---------------------------------------------------------------------------
+
+describe('profile build inside curate()', () => {
+  let sessionId: string;
+
+  beforeEach(() => {
+    db = getDb(':memory:');
+    sessionId = createSession(db, 'org_repo', 'main');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('should surface profileBuild on CurateResult when signal_samples exist', async () => {
+    insertSignalSamples(db, [
+      { kind: 'drift', sessionId, skillId: 'skill-a', value: 0.5, collectedAt: '2026-06-11 00:00:00' },
+      { kind: 'drift', sessionId, skillId: 'skill-a', value: 0.6, collectedAt: '2026-06-11 00:01:00' },
+    ]);
+
+    const result = await curate();
+
+    expect(result.profileBuild).toBeDefined();
+    expect(result.profileBuild!.profilesBuilt).toBeGreaterThan(0);
+    expect(result.profileBuild!.samplesConsumed).toBe(2);
+    expect(result.profileBuild!.skillIds).toContain('skill-a');
+    expect(result.profileBuild!.skillIds).toContain('global');
+  });
+
+  it('should build execution_profiles before sweepChangeVectors runs', async () => {
+    insertSignalSamples(db, [
+      { kind: 'drift', sessionId, skillId: 'skill-b', value: 0.4, collectedAt: '2026-06-11 00:00:00' },
+    ]);
+
+    const result = await curate();
+
+    // Profile must be in the DB (built pre-sweep so sweep can read it)
+    const profile = getExecutionProfile(db, 'skill-b', 'per-skill', 'global');
+    expect(profile).not.toBeNull();
+    expect(result.profileBuild).toBeDefined();
+    expect(result.profileBuild!.skillIds).toContain('skill-b');
+  });
+
+  it('should complete curate() and run sweepChangeVectors even if buildProfiles throws', async () => {
+    db = getDb();
+    // Force a throw by dropping the signal_samples table
+    db.prepare('DROP TABLE signal_samples').run();
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const result = await curate();
+
+    expect(result).toBeDefined();
+    expect(result.profileBuild).toBeUndefined();
+    expect(result.changeVectorSweep).toBeDefined();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('buildProfiles'));
   });
 });
