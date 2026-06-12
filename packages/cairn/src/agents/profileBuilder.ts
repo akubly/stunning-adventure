@@ -146,7 +146,16 @@ export function buildProfiles(db: Database.Database, options?: BuildOptions): Bu
     return { profilesBuilt: 0, skillIds: [], samplesConsumed: 0 };
   }
 
-  const allSamples = rows.map(rowToSignalSample);
+  // Sort all samples chronologically (oldest-first, id tiebreak) so that
+  // aggregateSignals sees them in the order it expects when deriving drift.trend
+  // (compares first vs last element). The default reader returns newest-first
+  // (ORDER BY collected_at DESC, id DESC), so we must re-sort here.
+  const sortedRows = [...rows].sort((a, b) => {
+    const tDiff = a.collectedAt.localeCompare(b.collectedAt);
+    if (tDiff !== 0) return tDiff;
+    return a.id - b.id;
+  });
+  const allSamples = sortedRows.map(rowToSignalSample);
 
   // Group by non-null skill_id for per-skill profiles
   const bySkill = new Map<string, SignalSample[]>();

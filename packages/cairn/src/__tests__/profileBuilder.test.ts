@@ -15,6 +15,7 @@ import { buildProfiles } from '../agents/profileBuilder.js';
 import type { SignalSampleRow } from '../db/signalSamples.js';
 import type { ExecutionProfileUpsert } from '../db/executionProfiles.js';
 import type { SignalSample, AggregationResult } from '@akubly/types';
+import { aggregateSignals } from '@akubly/types';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -280,5 +281,56 @@ describe('buildProfiles', () => {
     expect(perSkill.outcome.toolErrorRate).toBeCloseTo(0.03);
     expect(perSkill.drift.mean).toBeCloseTo(0.2);
     expect(perSkill.drift.trend).toBe('stable');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Ordering-contract tests — real aggregator, mock reader + persister
+  //
+  // The default DB reader returns rows newest-first (ORDER BY collected_at DESC,
+  // id DESC). aggregateSignals derives drift.trend by comparing first vs last
+  // element of the batch and assumes OLDEST-FIRST ordering. buildProfiles must
+  // sort samples chronologically before handing them to the aggregator.
+  // ---------------------------------------------------------------------------
+
+  it("drift.trend is 'improving' when the real aggregator receives reader rows in newest-first order (decreasing drift over time)", () => {
+    // Rows as the real DB returns them: newest first, drift decreasing over time
+    // (i.e. later dates have lower drift = genuine improvement).
+    const rows: SignalSampleRow[] = [
+      makeRow({ id: 3, skillId: 'skill-trend', sessionId: 's3', kind: 'drift', value: 0.2, collectedAt: '2026-06-03T00:00:00.000Z' }),
+      makeRow({ id: 2, skillId: 'skill-trend', sessionId: 's2', kind: 'drift', value: 0.5, collectedAt: '2026-06-02T00:00:00.000Z' }),
+      makeRow({ id: 1, skillId: 'skill-trend', sessionId: 's1', kind: 'drift', value: 0.8, collectedAt: '2026-06-01T00:00:00.000Z' }),
+    ];
+
+    const reader = vi.fn().mockReturnValue(rows);
+    const capturedProfiles: ExecutionProfileUpsert[] = [];
+    const persister = vi.fn((p: ExecutionProfileUpsert) => { capturedProfiles.push(p); return 1; });
+
+    // Real aggregator — NOT mocked
+    buildProfiles(null as never, { reader, persister, aggregator: aggregateSignals });
+
+    const perSkill = capturedProfiles.find((p) => p.skillId === 'skill-trend');
+    expect(perSkill).toBeDefined();
+    expect(perSkill!.drift.trend).toBe('improving');
+  });
+
+  it("drift.trend is 'degrading' when the real aggregator receives reader rows in newest-first order (increasing drift over time)", () => {
+    // Rows as the real DB returns them: newest first, drift increasing over time
+    // (i.e. later dates have higher drift = genuine degradation).
+    const rows: SignalSampleRow[] = [
+      makeRow({ id: 3, skillId: 'skill-trend', sessionId: 's3', kind: 'drift', value: 0.9, collectedAt: '2026-06-03T00:00:00.000Z' }),
+      makeRow({ id: 2, skillId: 'skill-trend', sessionId: 's2', kind: 'drift', value: 0.5, collectedAt: '2026-06-02T00:00:00.000Z' }),
+      makeRow({ id: 1, skillId: 'skill-trend', sessionId: 's1', kind: 'drift', value: 0.1, collectedAt: '2026-06-01T00:00:00.000Z' }),
+    ];
+
+    const reader = vi.fn().mockReturnValue(rows);
+    const capturedProfiles: ExecutionProfileUpsert[] = [];
+    const persister = vi.fn((p: ExecutionProfileUpsert) => { capturedProfiles.push(p); return 1; });
+
+    // Real aggregator — NOT mocked
+    buildProfiles(null as never, { reader, persister, aggregator: aggregateSignals });
+
+    const perSkill = capturedProfiles.find((p) => p.skillId === 'skill-trend');
+    expect(perSkill).toBeDefined();
+    expect(perSkill!.drift.trend).toBe('degrading');
   });
 });
