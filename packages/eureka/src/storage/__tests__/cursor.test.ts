@@ -142,7 +142,8 @@ describe('encodeCursor / decodeCursor — v1 keyset round-trip', () => {
 // ---------------------------------------------------------------------------
 // CU-3 — present-but-invalid version → CursorVersionUnsupportedError
 //
-// RED until Fix C is implemented in decodeCursor.
+// decodeCursor throws CursorVersionUnsupportedError when the v field is
+// present and numeric but is not the supported version (1).
 // ---------------------------------------------------------------------------
 
 describe('decodeCursor — present-but-invalid v field → CursorVersionUnsupportedError', () => {
@@ -185,9 +186,8 @@ describe('decodeCursor — present-but-invalid v field → CursorVersionUnsuppor
 // CU-4 — unparseable / non-base64 / structurally garbage cursor → restart sentinel
 //
 // Restart sentinel is { version: 0 } — no offset field.
-//
-// RED: current impl returns { version: 0, offset: 0 } (extra offset field).
-// GREEN: returns { version: 0 } — no offset field (keyset doesn't use offset).
+// decodeCursor returns exactly { version: 0 } for all garbage inputs (keyset
+// does not use an offset field, so no extra properties appear on the sentinel).
 // ---------------------------------------------------------------------------
 
 describe('decodeCursor — garbage input → restart sentinel { version: 0 }', () => {

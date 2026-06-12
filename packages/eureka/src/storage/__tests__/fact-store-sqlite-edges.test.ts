@@ -536,8 +536,7 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
     expect(result.nextCursor!.length).toBeLessThan(256);
 
     const decoded = JSON.parse(Buffer.from(result.nextCursor!, 'base64').toString('utf8')) as Record<string, unknown>;
-    // Slice D++ keyset format: must carry v:1, lastSort (composite score), lastId (row id).
-    // RED until keyset implementation ships — current cursor carries `offset` not `lastSort`/`lastId`.
+    // Keyset format guarantee: cursor encodes the sort anchor (v:1, lastSort, lastId), not an offset.
     expect(decoded).toMatchObject({
       v: 1,
       lastSort: expect.any(Number),

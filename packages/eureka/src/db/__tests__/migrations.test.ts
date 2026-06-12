@@ -11,8 +11,9 @@
  * ## Invariants locked
  *
  *   MIG-1  schema_version reaches 2 after applying both migrations
- *   MIG-2  existing row (inserted after 001, before 002 schema awareness) receives
- *          default values: importance=0, last_accessed=NULL, attention_tier='warm'
+ *   MIG-2  row inserted after migration 001 and BEFORE migration 002 receives
+ *          non-breaking defaults when 002 is subsequently applied:
+ *          importance=0, last_accessed=NULL, attention_tier='warm'
  *   MIG-3  row inserted post-002 with only (fact_id, session_id, content, trust)
  *          carries identical defaults: importance=0, last_accessed=NULL, attention_tier='warm'
  *   MIG-4  CHECK rejects attention_tier values outside ('hot','warm','cold')
@@ -25,6 +26,8 @@
 import { describe, it, beforeEach, afterEach, expect } from 'vitest';
 import Database from 'better-sqlite3';
 import { applyMigrations } from '../schema.js';
+import { migration001 } from '../migrations/001-facts.js';
+import { migration002 } from '../migrations/002-facts-attention.js';
 
 // ---------------------------------------------------------------------------
 // Suite
@@ -61,7 +64,7 @@ describe('Eureka schema migrations', () => {
   // currently hard-codes in the Slice-C gap.
   // ─────────────────────────────────────────────────────────────────────────
 
-  it('MIG-2/MIG-3: freshly-inserted row carries correct defaults (importance=0, last_accessed=NULL, attention_tier=warm)', () => {
+  it('MIG-3: freshly-inserted row carries correct defaults (importance=0, last_accessed=NULL, attention_tier=warm)', () => {
     db.prepare(
       `INSERT INTO facts (fact_id, session_id, content, trust)
        VALUES ('f-defaults', 'session-1', 'hello world', 0.9)`,
@@ -146,5 +149,51 @@ describe('Eureka schema migrations', () => {
       .prepare('SELECT MAX(version) AS version FROM schema_version')
       .get() as { version: number };
     expect(row.version).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MIG-2: existing-row default backfill
+//
+// Verifies the "non-breaking defaults for existing rows" claim from D2.
+// The beforeEach above applies both migrations before any insert, so this
+// guarantee requires a standalone test that drives migrations one at a time.
+// ---------------------------------------------------------------------------
+
+describe('MIG-2: existing-row default backfill when 002 is applied after an insert', () => {
+  it('MIG-2: row inserted after 001 and before 002 receives non-breaking defaults', () => {
+    const testDb = new Database(':memory:');
+    try {
+      // Step 1: apply only migration 001 (facts table + FTS, no attention columns).
+      migration001.up(testDb);
+
+      // Step 2: insert a row using only the columns that exist after 001.
+      testDb
+        .prepare(
+          `INSERT INTO facts (fact_id, session_id, content, trust)
+           VALUES ('pre-002', 'session-backfill', 'existing row', 0.7)`,
+        )
+        .run();
+
+      // Step 3: apply migration 002 (adds importance, last_accessed, attention_tier).
+      migration002.up(testDb);
+
+      // Step 4: pre-existing row must carry the non-breaking defaults from D2.
+      const row = testDb
+        .prepare(
+          `SELECT importance, last_accessed, attention_tier
+           FROM facts WHERE fact_id = 'pre-002'`,
+        )
+        .get() as { importance: number; last_accessed: number | null; attention_tier: string };
+
+      // importance=0 → compositeScore importance term = 0 (matches Slice-C hard-coded default)
+      expect(row.importance).toBe(0);
+      // last_accessed=NULL → tDays=Infinity → recency floors to 0.1 (F3)
+      expect(row.last_accessed).toBeNull();
+      // attention_tier='warm' → ATTENTION_MULTIPLIERS['warm'] = 1.0 (identity multiplier)
+      expect(row.attention_tier).toBe('warm');
+    } finally {
+      testDb.close();
+    }
   });
 });

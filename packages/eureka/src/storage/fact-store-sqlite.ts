@@ -151,9 +151,9 @@ const SQL_CTE_BASE = `
       AND f.trust >= $min_trust
   ),
   ranked AS (
-    -- ⚠️ INVARIANT: (-bm25_score) * trust MUST mirror the sort expression in SQL_ORDER.
+    -- ⚠️ INVARIANT: (-bm25_score) * trust MUST mirror the ORDER BY expression in stmtFirst.
     -- If importance or other signals are ever folded into the sort key, update both here
-    -- and in SQL_ORDER simultaneously, or the keyset boundary silently breaks.
+    -- and in stmtFirst's ORDER BY simultaneously, or the keyset boundary silently breaks.
     SELECT id, content, trust, bm25_score,
            (-bm25_score) * trust AS composite
     FROM base

@@ -416,7 +416,7 @@ export function runFactStoreContract(
       expect(p1.nextCursor).toBeDefined();
 
       // Slice D++ keyset format: v:1, lastSort (composite score), lastId (row id), scope.
-      // No `offset` field.  RED until keyset implementation ships.
+      // No `offset` field — keyset cursor carries sort anchor, not a positional offset.
       const decoded = JSON.parse(Buffer.from(p1.nextCursor!, 'base64').toString('utf8')) as Record<string, unknown>;
       expect(decoded).toMatchObject({
         v: 1,
@@ -591,9 +591,9 @@ export function runFactStoreContract(
     //      - Offset impl: new sort order [C, A, B]; OFFSET 1 → returns A (DUPLICATE!)
     //      - Keyset impl: WHERE composite < composite(A) → returns B (correct, no dup)
     //
-    // RED: current offset impl returns A on page 2 (dup of page 1), causing
-    //   `page2.results[0].content` to contain 'alpha', making the assertion fail.
-    // GREEN: keyset impl returns B.
+    // FSE-2 insert-safe guarantee: the keyset WHERE clause anchors on (lastSort, lastId),
+    // so rows scored above the cursor anchor (C) are excluded and no previously-seen row
+    // (A) can re-appear regardless of concurrent inserts — page 2 returns B, no skip or dup.
     // =======================================================================
 
     it('FS-11: FSE-2 — inserting a higher-ranked fact between page fetches does NOT produce a duplicate', async () => {
