@@ -222,8 +222,9 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
 
       const baseline      = await impl.search({ query: 'topology', sessionId: SESSION, limit: 10 });
 
-      // Compute the matching scope so the cursor passes the scope check.
-      // Bad lastSort/lastId must be detected AFTER scope validation.
+      // Compute the matching scope so decodeCursor sees a valid string scope field.
+      // Bad lastSort/lastId are caught by decodeCursor's keyset-field validation and
+      // return the restart sentinel — the scope fingerprint check in search() is never reached.
       const scope = scopeFingerprint('topology', SESSION as string, 0.15, 10);
       const payload = { v: 1, scope, ...fields };
       const badCursor = Buffer.from(JSON.stringify(payload)).toString('base64');

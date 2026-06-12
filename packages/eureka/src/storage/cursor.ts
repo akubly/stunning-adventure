@@ -22,7 +22,7 @@
  * as garbage and returns the restart sentinel — the offset it may carry is NOT honored.
  * Any present `v` key that is not exactly the integer 1 throws CursorVersionUnsupportedError.
  *
- * @see .squad/decisions/inbox/crispin-dpp-keyset-green.md
+ * @see .squad/decisions.md
  */
 
 import { createHash } from 'node:crypto';
