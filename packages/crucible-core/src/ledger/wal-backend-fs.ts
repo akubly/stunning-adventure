@@ -41,13 +41,13 @@ import path from 'node:path';
 import type { PrimitiveInput, PrimitiveKind } from '../types.js';
 import type { WalBackend, LedgerEvent, LedgerQueryOpts } from './ledger.js';
 import type { HookResult, HookVerdict } from './hook-bus.js';
-import { decodeCbor, encodeCbor }             from './wal/cbor.js';
+import { decodeCbor }                        from './wal/cbor.js';
 import { encodeRecord, decodeRecord, MAGIC } from './wal/codec.js';
 import { buildChain, ZERO_HASH }             from './wal/hash-chain.js';
 import { FileSystemCas }                     from './wal/cas-fs.js';
 import { sealAndSplit }                      from './wal/seal-and-split.js';
+import { materializeRow }                    from './wal/materialize.js';
 import type { SegmentRecord, SegmentRecordInput } from './wal/types.js';
-import { hookResultToVerdictByte }           from './wal/types.js';
 
 // ─── Write-lock error ─────────────────────────────────────────────────────────
 
@@ -101,6 +101,27 @@ export class CasMissError extends Error {
     this.name = 'CasMissError';
   }
 }
+
+/**
+ * Thrown when manifest.schemaVersion does not match CURRENT_SCHEMA_VERSION.
+ *
+ * WAL v1 (WAL1) uses CBOR encoding — the inaugural shipped format.
+ * JSON encoding was never shipped; no migration is owed for any prior data.
+ * If a future format change bumps schemaVersion to 2+, this error surfaces
+ * immediately at open/replay rather than as a generic corruption during decode.
+ */
+export class UnsupportedSchemaVersionError extends Error {
+  constructor(found: number, expected: number) {
+    super(
+      `Unsupported WAL schemaVersion ${found}; ` +
+      `this implementation only understands schemaVersion ${expected} (WAL1/CBOR)`,
+    );
+    this.name = 'UnsupportedSchemaVersionError';
+  }
+}
+
+/** The only schemaVersion understood by this implementation (WAL1/CBOR). */
+const CURRENT_SCHEMA_VERSION = 1;
 
 // ─── Internal types ───────────────────────────────────────────────────────────
 
@@ -343,10 +364,18 @@ export class FileSystemWalBackend implements WalBackend {
   private loadOrInitManifest(): Manifest {
     const p = this.manifestPath();
     if (fs.existsSync(p)) {
-      return JSON.parse(fs.readFileSync(p, 'utf8')) as Manifest;
+      const m = JSON.parse(fs.readFileSync(p, 'utf8')) as Manifest;
+      // B1 — Format versioning backstop: refuse to open a manifest with an
+      // unknown schemaVersion rather than attempting decode and producing
+      // confusing corruption errors.  WAL v1 (WAL1/CBOR) is the only version
+      // ever shipped; no migration is owed for schemaVersion < 1 or > 1.
+      if (m.schemaVersion !== CURRENT_SCHEMA_VERSION) {
+        throw new UnsupportedSchemaVersionError(m.schemaVersion, CURRENT_SCHEMA_VERSION);
+      }
+      return m;
     }
     const m: Manifest = {
-      schemaVersion:    1,
+      schemaVersion:    CURRENT_SCHEMA_VERSION,
       sessionId:        this.sessionId,
       segmentRange:     [0, 0],
       lastCommitOffset: -1,
@@ -599,14 +628,17 @@ export class FileSystemWalBackend implements WalBackend {
       const { row: entry, verdict } = committed[i];
       const offset = baseOffset + i;
 
-      const payloadBytes = encodeCbor(entry.input.primitivePayload);
-      const payloadHash  = this.cas.put(payloadBytes);
+      // Shared materialization: CBOR encoding + hashing is done once via the
+      // shared helper so both backends produce identical payloadHash/readSetHash/
+      // envelopeCbor/verdictByte for the same input (I2).
+      const mat = materializeRow(entry.input, verdict, entry.hookResult.hookId);
 
-      const readSetHash  = entry.input.causalReadSet.length > 0
-        ? this.cas.put(encodeCbor(entry.input.causalReadSet))
-        : new Uint8Array(32);
-
-      const envelopeCbor = encodeCbor(entry.input.primitiveKind);
+      // Store CAS blobs (CAS.put re-hashes internally; we use mat.payloadHash
+      // directly so the shared helper's hash is the authoritative value).
+      this.cas.put(mat.payloadBytes);
+      if (mat.readSetBytes !== null) {
+        this.cas.put(mat.readSetBytes);
+      }
 
       // §3.10 timestampNs monotonicity: clamp to lastTimestampNs when clock goes backward
       const nowNs = this.nowNs();
@@ -617,14 +649,14 @@ export class FileSystemWalBackend implements WalBackend {
         commitOffset:  BigInt(offset),
         timestampNs:   tsNs,
         primitiveKind: 0x01,
-        hookVerdict:   hookResultToVerdictByte(verdict, entry.hookResult.hookId),
+        hookVerdict:   mat.verdictByte,
         flags: {
           bootstrap: false, declaredWindow: false,
           syntheticOutput: false, taskBoundary: false, manifestRoot: false,
         },
-        payloadHash,
-        readSetHash,
-        envelopeCbor,
+        payloadHash:  mat.payloadHash,
+        readSetHash:  mat.readSetHash,
+        envelopeCbor: mat.envelopeCbor,
       });
     }
 

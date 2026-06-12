@@ -262,9 +262,11 @@ describe('WAL FileSystemCas — CAS fsync ordering (issue #59)', () => {
     }
     expect(casFilePath, 'CAS blob must exist after first session').not.toBe('');
 
+    // Corrupt the CAS blob with partial/torn bytes
     fs.writeFileSync(casFilePath, new Uint8Array([0xDE, 0xAD]));
     expect(fs.readFileSync(casFilePath)).toHaveLength(2);
 
+    // Second session writes the same payload — atomic rename must overwrite the torn blob
     const backend2 = await createFileSystemWalBackend(rootDir, `sess-${randomUUID().slice(0, 8)}`);
     await backend2.commitRow(
       { primitiveKind: 'observation', primitivePayload: { tag: 'original' }, causalReadSet: [] },
@@ -272,7 +274,60 @@ describe('WAL FileSystemCas — CAS fsync ordering (issue #59)', () => {
     );
     await backend2.close();
 
+    // I7: exact content check — must be the CBOR bytes for { tag: 'original' }
+    // encodeCbor({ tag: 'original' }) = a163746167686f726967696e616c (RFC 8949 §4.2.1)
+    const { encodeCbor: enc } = await import('../../ledger/wal/cbor.js');
+    const expectedBytes = enc({ tag: 'original' });
     const restoredContent = fs.readFileSync(casFilePath);
-    expect(restoredContent.length).toBeGreaterThan(2);
+    expect(Buffer.from(restoredContent).toString('hex'))
+      .toBe(Buffer.from(expectedBytes).toString('hex'));
+  });
+
+  // ── CAS-F7: stale pendingSync cleared on mid-iteration abort (I4) ────────────
+  //
+  // If syncAll() throws mid-iteration, pendingSync must be cleared so the NEXT
+  // batch starts with a clean slate.  Without this fix, stale temp entries from
+  // the failed batch would be re-fsynced in the next call, causing incorrect
+  // sync-call counts and potential orphan blob races.
+
+  it('CAS-F7: pendingSync cleared on mid-iteration sync failure; subsequent batch starts clean', async () => {
+    const rootDir   = makeTmpDir();
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+    let   syncCallIdx = 0;
+    let   failOnCall  = -1; // armed below
+
+    // batchSize=1: each commitRow triggers its own flush (1 CAS + 1 segment = 2 calls)
+    const backend = await createFileSystemWalBackend(rootDir, sessionId, {
+      batchSize: 1,
+      syncFn: () => {
+        syncCallIdx++;
+        if (failOnCall > 0 && syncCallIdx === failOnCall) {
+          throw new Error('injected-mid-iteration-failure');
+        }
+      },
+    });
+
+    // First batch: succeeds normally (2 calls: 1 CAS + 1 segment)
+    await backend.commitRow(makeInput('r0'), commit());
+    expect(syncCallIdx).toBe(2);
+
+    // Second batch: arm failure on the CAS sync call (call #3 overall)
+    syncCallIdx = 0;
+    failOnCall  = 1; // fail on first call of next batch = CAS sync
+    await expect(
+      backend.commitRow(makeInput('r1'), commit()),
+    ).rejects.toThrow('injected-mid-iteration-failure');
+
+    // Third batch: disarm failure; if pendingSync was NOT cleared, stale entries
+    // from the second batch would be re-synced here, causing syncCallIdx to
+    // exceed 2 (the expected 1 CAS + 1 segment for a fresh single-payload batch).
+    syncCallIdx = 0;
+    failOnCall  = -1;
+    await backend.commitRow(makeInput('r2'), commit());
+
+    // Must be exactly 2 syncs: 1 fresh CAS file + 1 segment (no stale carryover)
+    expect(syncCallIdx).toBe(2);
+
+    await backend.close();
   });
 });

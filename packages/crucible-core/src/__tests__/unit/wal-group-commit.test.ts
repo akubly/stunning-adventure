@@ -128,7 +128,7 @@ describe('WAL FileSystemWalBackend — group-commit batching (§3.5)', () => {
     const input = makeInput();
 
     const p0 = backend.commitRow(input, { verdict: 'COMMIT', hookId: null });
-    const p1 = backend.commitRow(input, { verdict: 'PAUSE',  hookId: null });
+    const p1 = backend.commitRow(input, { verdict: 'PAUSE',  hookId: 'test-hook' });
     const p2 = backend.commitRow(input, { verdict: 'COMMIT', hookId: null }); // will be restaged
 
     // Flush: sealAndSplit commits rows 0..1, restages row 2
@@ -171,7 +171,7 @@ describe('WAL FileSystemWalBackend — group-commit batching (§3.5)', () => {
 
     const input = makeInput();
     const p0 = backend.commitRow(input, { verdict: 'COMMIT', hookId: null });
-    const p1 = backend.commitRow(input, { verdict: 'PAUSE',  hookId: null });
+    const p1 = backend.commitRow(input, { verdict: 'PAUSE',  hookId: 'test-hook' });
 
     await backend.flush();
     await Promise.all([p0, p1]);
@@ -199,7 +199,7 @@ describe('WAL FileSystemWalBackend — group-commit batching (§3.5)', () => {
 
     const input = makeInput();
     const p0 = backend.commitRow(input, { verdict: 'COMMIT', hookId: null });
-    const p1 = backend.commitRow(input, { verdict: 'PAUSE',  hookId: null });
+    const p1 = backend.commitRow(input, { verdict: 'PAUSE',  hookId: 'test-hook' });
 
     await backend.flush();
     await Promise.all([p0, p1]);

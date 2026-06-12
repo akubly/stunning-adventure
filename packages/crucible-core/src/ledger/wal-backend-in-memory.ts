@@ -19,9 +19,8 @@ import type {
 import type { HookResult, HookVerdict } from './hook-bus.js';
 import { buildChain } from './wal/hash-chain.js';
 import { InMemoryCas } from './wal/cas.js';
-import { encodeCbor } from './wal/cbor.js';
+import { materializeRow } from './wal/materialize.js';
 import type { SegmentRecord, SegmentRecordInput } from './wal/types.js';
-import { hookResultToVerdictByte } from './wal/types.js';
 
 const ZERO_HASH = new Uint8Array(32);
 
@@ -55,14 +54,16 @@ export class InMemoryWalBackend implements WalBackend {
   ): Promise<number> {
     const offset = this.events.length;
 
-    // Write payload to CAS and get BLAKE3 hash
-    const payloadBytes = encodeCbor(input.primitivePayload);
-    const payloadHash = this.cas.put(payloadBytes);
+    // Shared materialization: CBOR encoding + hashing via the shared helper
+    // so both backends produce identical payloadHash/readSetHash/envelopeCbor
+    // for the same input (I2).
+    const mat = materializeRow(input, hookResult.verdict, hookResult.hookId);
 
-    // readSet hash: zero-hash if empty causalReadSet
-    const readSetHash = input.causalReadSet.length > 0
-      ? this.cas.put(encodeCbor(input.causalReadSet))
-      : new Uint8Array(32);
+    // Store in in-memory CAS
+    this.cas.put(mat.payloadBytes);
+    if (mat.readSetBytes !== null) {
+      this.cas.put(mat.readSetBytes);
+    }
 
     // §3.10 timestampNs monotonicity: clamp to lastTimestampNs when clock goes backward
     const nowNs = this.nowNs();
@@ -73,7 +74,7 @@ export class InMemoryWalBackend implements WalBackend {
       commitOffset:  BigInt(offset),
       timestampNs:   tsNs,
       primitiveKind: 0x01, // placeholder until §6 enum is locked
-      hookVerdict:   hookResultToVerdictByte(hookResult.verdict, hookResult.hookId),
+      hookVerdict:   mat.verdictByte,
       flags: {
         bootstrap:       false,
         declaredWindow:  false,
@@ -81,9 +82,9 @@ export class InMemoryWalBackend implements WalBackend {
         taskBoundary:    false,
         manifestRoot:    false,
       },
-      payloadHash,
-      readSetHash,
-      envelopeCbor:  encodeCbor(input.primitiveKind),
+      payloadHash:  mat.payloadHash,
+      readSetHash:  mat.readSetHash,
+      envelopeCbor: mat.envelopeCbor,
     };
 
     // Build hash-chain link: genesis row gets prevRoot=ZERO_HASH,

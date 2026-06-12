@@ -33,6 +33,7 @@ import {
   createFileSystemWalBackend,
   CorruptSegmentError,
   CasMissError,
+  UnsupportedSchemaVersionError,
 } from '../../ledger/wal-backend-fs.js';
 import { encodeCbor } from '../../ledger/wal/cbor.js';
 import { verifyChain, buildChain, ZERO_HASH } from '../../ledger/wal/hash-chain.js';
@@ -443,5 +444,99 @@ describe('WAL FileSystemWalBackend — Group 3 CAS_MISS on replay (CasMissError)
     const rows = await backend.readRows({ range: [0, 0] });
     expect(rows).toHaveLength(1);
     expect(rows[0].causalReadSet).toEqual([]);
+  });
+});
+
+// ─── Group 4: Format versioning backstop (B1) ─────────────────────────────────
+//
+// WAL v1 (WAL1/CBOR) is the inaugural shipped format. JSON encoding was never
+// shipped; no migration is owed for any prior data. On open/replay, if the
+// manifest's schemaVersion does not equal 1, throw UnsupportedSchemaVersionError
+// immediately rather than attempting decode and producing confusing corruption.
+
+describe('WAL FileSystemWalBackend — Group 4 schemaVersion validation (B1)', () => {
+  it('Group4-1: manifest with unknown schemaVersion (999) is rejected with UnsupportedSchemaVersionError', async () => {
+    const rootDir   = makeTmpDir();
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+    const sessionDir = path.join(rootDir, 'wal', 'sessions', sessionId);
+    fs.mkdirSync(sessionDir, { recursive: true });
+
+    // Write a manifest with a future/unknown schemaVersion
+    const badManifest = {
+      schemaVersion:    999,
+      sessionId,
+      segmentRange:     [0, 0],
+      lastCommitOffset: -1,
+    };
+    fs.writeFileSync(
+      path.join(sessionDir, 'manifest.json'),
+      JSON.stringify(badManifest),
+      'utf8',
+    );
+
+    await expect(
+      createFileSystemWalBackend(rootDir, sessionId, { readOnly: true }),
+    ).rejects.toThrow(UnsupportedSchemaVersionError);
+
+    await expect(
+      createFileSystemWalBackend(rootDir, sessionId, { readOnly: true }),
+    ).rejects.toThrow(/schemaVersion 999/);
+  });
+
+  it('Group4-2: manifest with schemaVersion 1 opens normally', async () => {
+    const rootDir   = makeTmpDir();
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+
+    // Create a normal backend — manifest.json will have schemaVersion: 1
+    const backend = await createFileSystemWalBackend(rootDir, sessionId);
+    await backend.commitRow(
+      { primitiveKind: 'observation', primitivePayload: { x: 1 }, causalReadSet: [] },
+      { verdict: 'COMMIT', hookId: null },
+    );
+    await backend.close();
+
+    // Reopen — should succeed with schemaVersion 1
+    const reader = await createFileSystemWalBackend(rootDir, sessionId, { readOnly: true });
+    const rows = await reader.readRows({ range: [0, 0] });
+    expect(rows).toHaveLength(1);
+    await reader.close();
+  });
+});
+
+// ─── Group 5: hookResultToVerdictByte precondition (I6) ───────────────────────
+//
+// hookId === null is only valid with COMMIT (no-match byte 0xFF).
+// Passing hookId=null with OBSERVE or PAUSE is a programming error that must
+// throw rather than silently returning 0x01/0x02 and bypassing 0xFF.
+
+describe('WAL hookResultToVerdictByte — precondition (I6)', () => {
+  it('I6-1: hookId=null with OBSERVE verdict throws (precondition)', async () => {
+    const backend = new (await import('../../ledger/wal-backend-in-memory.js')).InMemoryWalBackend();
+    await expect(
+      backend.commitRow(
+        { primitiveKind: 'observation', primitivePayload: {}, causalReadSet: [] },
+        { verdict: 'OBSERVE', hookId: null },
+      ),
+    ).rejects.toThrow(/Precondition violated/);
+  });
+
+  it('I6-2: hookId=null with PAUSE verdict throws (precondition)', async () => {
+    const backend = new (await import('../../ledger/wal-backend-in-memory.js')).InMemoryWalBackend();
+    await expect(
+      backend.commitRow(
+        { primitiveKind: 'observation', primitivePayload: {}, causalReadSet: [] },
+        { verdict: 'PAUSE', hookId: null },
+      ),
+    ).rejects.toThrow(/Precondition violated/);
+  });
+
+  it('I6-3: hookId=null with COMMIT returns 0xFF (no-match, not a precondition violation)', async () => {
+    const backend = new (await import('../../ledger/wal-backend-in-memory.js')).InMemoryWalBackend();
+    await backend.commitRow(
+      { primitiveKind: 'observation', primitivePayload: {}, causalReadSet: [] },
+      { verdict: 'COMMIT', hookId: null },
+    );
+    const recs = backend.readSegmentRecords();
+    expect(recs[0].hookVerdict).toBe(0xFF);
   });
 });

@@ -21,7 +21,7 @@
  * commitmentMethod) are deferred until §6 primitive enum is locked.
  */
 
-import type { SegmentRecord, SegmentRecordFlags } from './types.js';
+import type { SegmentRecord, SegmentRecordFlags, VerdictByte } from './types.js';
 import { encodeFlags } from './flags.js';
 
 export const MAGIC = 0x57414c31 as const;
@@ -131,7 +131,7 @@ export function decodeRecord(buf: Buffer): SegmentRecord {
     commitOffset:  buf.readBigUInt64LE(OFF_COMMIT_OFFSET),
     timestampNs:   buf.readBigUInt64LE(OFF_TIMESTAMP_NS),
     primitiveKind: buf.readUInt8(OFF_PRIMITIVE_KIND),
-    hookVerdict:   buf.readUInt8(OFF_HOOK_VERDICT),
+    hookVerdict:   buf.readUInt8(OFF_HOOK_VERDICT) as VerdictByte, // cast: valid segment bytes only
     flags:         decodeFlags(buf.readUInt16LE(OFF_FLAGS)),
     prevRoot:      new Uint8Array(buf.buffer, buf.byteOffset + OFF_PREV_ROOT, 32).slice(),
     selfRoot:      new Uint8Array(buf.buffer, buf.byteOffset + OFF_SELF_ROOT, 32).slice(),
