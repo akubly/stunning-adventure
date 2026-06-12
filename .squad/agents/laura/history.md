@@ -32,44 +32,7 @@ File size: 17270 bytes. See history-archive.md for earlier entries.
 
 ## Learnings
 
-### 2026-06-10: M8 Slice D++ — Keyset Pagination RED Tests
-
-**Context:** Wrote the RED test surface for the keyset pagination migration (FSE-2 closure, cursor v1 payload change from `{offset}` to `{lastSort, lastId}`). London-school TDD RED phase — no implementation changes, tests written against the new contract and confirmed failing for the right reasons.
-
-**Files modified:**
-- `packages/eureka/src/storage/__tests__/cursor.test.ts`
-- `packages/eureka/src/storage/__tests__/fact-store-contract.helper.ts`
-- `packages/eureka/src/storage/__tests__/fact-store-sqlite-edges.test.ts`
-
-**Test count delta:** 129 → 150 (22 new/updated tests RED, 107 existing unchanged GREEN).
-- 22 failing: keyset contract not yet implemented.
-- 107 passing: unchanged invariants (CU-3, CU-5..7, FS-1..4, FS-5-existing, FS-6..9, FS-10b..10h, FS-SE-1..3, SE-5..14).
-
-**RED tests written:**
-- **CU-1a/b/c**: v0 (absent `v`) now → restart sentinel `{version:0}` not `{version:0, offset:N}`.
-- **CU-2a**: `encodeCursor(lastSort, lastId, scope)` → 3-arg round-trip.
-- **CU-2c-g**: bad lastSort (NaN/Infinity) and bad lastId (negative/float/missing) in v1 cursor → restart sentinel.
-- **CU-4a/b/c**: garbage → `{version:0}` (no offset field — keyset restart sentinel).
-- **FS-5b** (third case): v0 cursor with valid offset=5 → currently honored (page 2) but must restart (page 1). RED. 
-- **FS-10a** (×2 impls): cursor format check: `offset:` removed, `lastSort:` and `lastId:` required.
-- **FS-10f**: DELETED — v0 backward-compat is gone; no test case for it.
-- **FS-11** (×2 impls): FSE-2 — inserting a higher-ranked fact between page 1 and page 2 fetches causes OFFSET impl to return a duplicate; keyset impl returns correct next row.
-- **FS-SE-4** (×3 cases): v1 cursors with bad keyset fields (NaN lastSort, negative lastId, float lastId) + `offset:1` → current impl honors offset (returns page 2) → RED.
-- **FS-SE-15**: Updated `toMatchObject` to require `lastSort: expect.any(Number), lastId: expect.any(Number)` — RED because current cursor has `offset` not `lastSort`/`lastId`.
-
-**Key RED failure pattern:** Every new test fails because the current `decodeCursor` reads `raw['offset']` and `encodeCursor` takes `(offset, scope)`. Once Roger implements the keyset `(lastSort, lastId)` payload, all 22 tests should flip to GREEN without touching test files.
-
-**Contract ID changes:**
-- FS-10f: DELETED (v0 backward-compat removed).
-- FS-11: NEW (FSE-2 concurrent-insert safety).
-- FS-5b: EXTENDED (third case added — v0-with-valid-offset now garbage/restart).
-- FS-SE-4: REPLACED (bad-offset → bad-keyset-fields).
-
-**Design insight — restart sentinel shape:** The restart sentinel was changed from `{version:0, offset:0}` to `{version:0}` (no offset field). This makes it unambiguous that keyset impl should not attempt to use an offset value. Tests assert `toEqual({version:0})` which fails against current `{version:0, offset:0}`. Roger should update `DecodedCursor` type to `{version:0} | {version:1, lastSort:number, lastId:number, scope:string}`.
-
-**FSE-2 test design:** Used term-frequency-based scoring to make content ranks deterministic across both InMemoryFactStore (term count × trust) and SqliteFactStore (BM25 × trust). Seeded C with 4× term frequency after page 1, making it rank above A (3×). Offset impl then returns A on page 2 (dup). Keyset returns B correctly.
-
-— Laura
+### 2026-06-06: M8 Slice D — recall() Integration Smoke Test
 
 **Context:** Wrote the Slice D integration smoke test (`recall-sqlite-smoke.test.ts`) as specified in decisions.md §"Slice D". Roger's production factory (`createSqliteRecallDeps` / `createDefaultDeps`) was not yet available (no inbox drop), so wired `SqliteFactStore` + `recall()` directly with a TODO to switch once merged.
 
@@ -1814,3 +1777,24 @@ Ready to merge.
 - M8 Slice D++ doc sweep: N1-N4 stale comment fixes (keyset, migration, cursor versioning)
 
 **Append-Only Rule Applied:** All prior entries remain unchanged. This summary provides high-level context only.
+
+---
+
+### 2026-06-10: M8 Slice D++ — Keyset Pagination RED Tests
+
+**Context:** Wrote the RED test surface for the keyset pagination migration (FSE-2 closure, cursor v1 payload change from `{offset}` to `{lastSort, lastId}`). London-school TDD RED phase — no implementation changes, tests written against the new contract and confirmed failing for the right reasons.
+
+**Files modified:**
+- `packages/eureka/src/storage/__tests__/cursor.test.ts`
+- `packages/eureka/src/storage/__tests__/fact-store-contract.helper.ts`
+- `packages/eureka/src/storage/__tests__/fact-store-sqlite-edges.test.ts`
+
+**Test count delta:** 129 -> 150 (22 new/updated tests RED, 107 existing unchanged GREEN).
+
+**RED tests written:** CU-1a/b/c (v0 absent -> restart sentinel), CU-2a (3-arg round-trip), CU-2c-g (bad lastSort/lastId -> restart), CU-4a/b/c (garbage -> {version:0}), FS-5b (v0 offset -> restart), FS-10a (cursor format), FS-10f DELETED, FS-11 (FSE-2 concurrent-insert), FS-SE-4 (bad keyset fields), FS-SE-15 (lastSort/lastId required).
+
+**FSE-2 test design:** Term-frequency-based scoring makes ranks deterministic across InMemory (term count x trust) and Sqlite (BM25 x trust). Seeded C with 4x term frequency after page 1 (ranks above A 3x); offset impl returns A on page 2 (dup), keyset returns B correctly.
+
+**Note:** This entry was relocated to the file end during PR #72 cloud review to honor the Append-Only History Rule (it had been inserted mid-file during the RED phase).
+
+— Laura
