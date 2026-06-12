@@ -46,12 +46,16 @@ export interface ScoredResult {
  * FactStore seam — injected, never instantiated here (§55 §2.1 London form).
  *
  * @remarks Keyset cursor pagination (Slice D++): cursors encode the composite
- * score and row id of the last returned row. This prevents INSERT-caused
- * cross-page duplication (FSE-2 closed for concurrent inserts). Trust mutations
- * of already-returned rows can still cause re-appearance — callers needing
- * strict stability under concurrent trust writes should restart pagination.
- * Per-page relevance normalization (D3) is unchanged — relevance is not
- * comparable across pages.
+ * score and row id of the last returned row. This eliminates the OFFSET-shift
+ * duplication/skip mechanism (FSE-2): a higher-ranked insert between pages can
+ * no longer shift rows so that a previously-returned row re-appears or a row is
+ * silently skipped. This is NOT a blanket concurrent-insert safety guarantee —
+ * the SQLite implementation has a documented IDF-drift caveat (see SqliteFactStore)
+ * for a residual second-order insert-boundary effect where bm25() IDF recomputation
+ * can perturb the composite boundary. Trust mutations of already-returned rows can
+ * still cause re-appearance — callers needing strict stability under concurrent
+ * trust writes should restart pagination. Per-page relevance normalization (D3) is
+ * unchanged — relevance is not comparable across pages.
  */
 export interface FactStore {
   search(args: {

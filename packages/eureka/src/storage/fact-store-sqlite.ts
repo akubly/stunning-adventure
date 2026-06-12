@@ -39,11 +39,16 @@
  *   WHERE composite < $last_sort
  *      OR (composite = $last_sort AND id > $last_id)
  *
- * Keyset prevents INSERT-caused cross-page duplication (FSE-2 closed for concurrent
- * inserts). Trust mutations of already-returned rows can still cause re-appearance:
- * if a row's trust changes after it is returned on page 1, its composite score
- * re-crosses the lastSort anchor and may re-appear on a later page. Callers needing
- * strict stability under concurrent trust writes should restart pagination.
+ * Keyset eliminates the OFFSET-shift duplication/skip mechanism (the original FSE-2
+ * problem: a new higher-ranked insert shifting row offsets so a previously-returned
+ * row re-appears on the next page, or a row is silently skipped). This is NOT a
+ * blanket "any concurrent insert is safe" guarantee — a residual second-order effect
+ * remains: bm25() IDF is corpus-dependent, so inserts between pages can shift some
+ * rows' recomputed composite vs the stored lastSort anchor (see IDF-drift caveat
+ * below). Trust mutations of already-returned rows can also cause re-appearance: if
+ * a row's trust changes after page 1, its composite may re-cross the lastSort anchor
+ * and reappear on a later page. Callers needing strict stability under concurrent
+ * mutations should restart pagination.
  * Two prepared statements: stmtFirst (no keyset, first page) and stmtKeyset (keyset
  * predicate, continuation pages) — better-sqlite3 binds are fixed to the SQL string.
  *
@@ -51,7 +56,9 @@
  *
  * bm25() IDF weights are corpus-dependent: inserting new facts between pages changes
  * the IDF for shared terms, which shifts some rows' recomputed composite scores vs the
- * stored lastSort anchor. This is a second-order edge case for typical workloads. Future
+ * stored lastSort anchor. This is the residual insert-induced effect that keyset does
+ * not eliminate — structural OFFSET-shift is gone, but IDF perturbation of the
+ * composite boundary remains as a second-order edge case for typical workloads. Future
  * mitigation: snapshot composite as a stored column in the facts table.
  *
  * Version dispatch: see storage/cursor.ts.  Key rules:
