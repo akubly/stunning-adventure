@@ -1492,3 +1492,68 @@ Use a `computedScope: string | undefined` variable initialized to undefined. Com
 **#68 (CAS atomic write):** FileSystemCas.put() now always writes to <hash>.cbor.tmp (no existsSync skip); syncAll() fsyncs the .tmp then fs.renameSync to <hash>.cbor (atomic replace — libuv uses MoveFileExW MOVEFILE_REPLACE_EXISTING on Windows). Final CAS file is always either absent or complete — no torn-blob dedup vulnerability. CAS-F6 expectation updated; TORN-1 test simulates a torn blob and asserts recovery.
 
 **Key paths:** wal/types.ts, wal/cbor.ts (new), wal/cas-fs.ts, wal-backend-in-memory.ts, wal-backend-fs.ts.
+
+---
+
+## 2026-06-11: Crucible WAL Correctness S1 — Cycle-2 Panel Remediation
+
+**Context:** The 5-persona Code Panel on squad/crucible-wal-correctness-s1 (commit 8af65c4) found
+design-depth gaps after the S1 batch (issues #57, #60, #68) landed GREEN at 136 tests. Aaron
+dispositioned the two blockers (B1, B2) and I addressed all 10 findings (B1, B2, I1–I8) plus M1, M2.
+
+**Commit:** d74242b on squad/crucible-wal-correctness-s1
+
+**Key changes and learnings:**
+
+**B2 (RFC 8949 canonical CBOR):** The manual sortKeys pre-pass was both wrong and redundant.
+Wrong: it used JS lexicographic sort, not RFC 8949 bytewise ordering (though cborg's own mapSorter
+corrected this anyway). Redundant: cborg re-sorts regardless of object key insertion order.
+The real problem was relying on cborg's implicit defaults rather than fc8949EncodeOptions.
+Fix: remove sortKeys, call ncode(data, rfc8949EncodeOptions), add ssertJsonLike() type guard.
+
+**Learning: fc8949EncodeOptions is a function-typed export.** JSON.stringify(rfc8949EncodeOptions)
+shows only { float64: true } because functions don't serialize. The object also carries
+mapSorter: rfc8949MapSorter and quickEncodeToken. Always inspect with Object.keys() or source.
+
+**B1 (schemaVersion validation):** The backstop is a single equality check at manifest load time.
+WAL1/CBOR is the inaugural shipped format; no migration is owed. The CURRENT_SCHEMA_VERSION = 1
+constant makes the check self-documenting and easy to update when WAL2 arrives.
+
+**I1 (CAS temp name uniqueness):** Fixed temp suffix → <hash>-<pid>-<counter>.cbor.tmp.
+Also: treating EEXIST on rename as success is the correct pattern for content-addressed storage —
+the concurrent winner has identical bytes. This prevents an ENOENT when the temp file disappears
+after a concurrent rename.
+
+**I3 (shard dir fsync):** Easy to overlook: enameSync() only makes the inode durable, not the
+directory entry. On Linux ext4 ordered mode, the dir entry needs an explicit fsync too.
+The process.platform !== 'win32' guard is the correct idiom — NTFS is synchronous on rename.
+
+**I4 (clear pendingSync on abort):** catch { pendingSync.clear(); throw; } is a one-liner fix
+with outsized correctness impact. Without it, a failed batch's stale temp entries corrupt the
+next batch's sync-call counts and create orphan blob races.
+
+**I5/I6 (VerdictByte + precondition):** Type narrowing (	ype VerdictByte = 0xFF|0x00|0x01|0x02)
+caught nothing at compile time because s VerdictByte is always accepted by TypeScript.
+The real value is the runtime precondition throw in hookResultToVerdictByte and the
+eadUInt8() as VerdictByte cast comment on the decode path. Existing tests that used
+commit('OBSERVE') / commit('PAUSE') with hookId: null needed updating — they had been
+inadvertently testing the now-invalid (hookId=null, non-COMMIT) path.
+
+**I2 (shared materialize helper):** The shared helper is not about performance (hashing twice
+is negligible) but about preventing silent drift. CAS.put() and materializeRow() both hash,
+but the helper's value is that it's the authoritative source — backends use its hashes, not
+cas.put()'s return value. The CL-9 contract tests enforce this at CI time.
+
+**I7 (TORN-1 exact assertion):** 	oBeGreaterThan(2) was a lazy assertion that passed even if
+the content was [0xDE, 0xAD, 0x00] (3 bytes of garbage). The correct pattern is to compute
+ncodeCbor(expectedPayload) and compare the exact hex — this is also self-documenting.
+
+**Golden vector tests:** Computing exact CBOR bytes requires running cborg in the Node REPL.
+Always include the input, the expected hex, and a brief decode annotation as a comment in the test.
+
+**Test count:** 156 total (up from 136). 20 new tests across 4 test files.
+**Build:** 
+pm run build clean (exit 0). **Lint:** 
+pm run lint --workspace @akubly/crucible-core clean.
+
+— Roger
