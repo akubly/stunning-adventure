@@ -53,10 +53,10 @@ export class CursorScopeMismatchError extends Error {
 
 /**
  * Thrown by `FactStore.search()` when a cursor carries a `v` field that is not
- * exactly the integer 1 (including null, 0, floats, strings, and v > 1). Only a
- * truly absent `v` key (legacy v0 cursors) is accepted. This protects against
- * misformatted cursors and new-format cursors that old implementations cannot
- * correctly interpret.
+ * exactly the integer 1 (including null, 0, floats, strings, and v > 1). A truly
+ * absent `v` key (legacy v0 cursors) is treated as garbage and triggers a page-1
+ * restart (does not throw). This protects against misformatted cursors and
+ * new-format cursors that old implementations cannot correctly interpret.
  */
 export class CursorVersionUnsupportedError extends Error {
   readonly code = 'CURSOR_VERSION_UNSUPPORTED' as const;

@@ -1726,3 +1726,75 @@ Construct manually: Buffer.from(JSON.stringify({ v: 99, offset: 0, scope: 'deadb
 
 - 2026-06-08 📌 FTS5 AND-to-OR: Don't change production search semantics to satisfy test data. Semantic changes need explicit design approval, not test-driven improvisation.
 
+
+---
+
+## 2026-06-10: M8 Slice D++ Shipped to Branch
+
+**Session:** M8 Slice D++ keyset pagination (quad spawn)  
+**Branch:** eureka/m8-slice-dpp-keyset  
+**Status:** ✅ SHIPPED
+
+Slice D++ completed with four-agent parallel execution. Genesta's architecture memo locked three interlocked decisions on cursor design, schema migration, and normalization strategy. Laura wrote 22 RED keyset tests. Crispin implemented migration 002, keyset GREEN phase, and persona fixes (cycle 2 clean). Roger completed doc sweep (N1-N4 stale comment fixes).
+
+**Decisions locked:** D1=mutate cursor v1 in place to keyset; D2=importance/lastAccessed NOT in SQL sort key (time-varying recency breaks stability); D3=per-page normalization status quo. FSE-2 guarantee corrected: INSERT-safe only (not trust-mutation-safe).
+
+Ready to merge.
+
+---
+
+## HISTORY SUMMARIZATION — 2026-06-11
+
+**File size at session close:** 
+- laura/history.md: 157,469 bytes (→ exceeds 15,360 threshold; summary appended)
+- crispin/history.md: 24,816 bytes (→ exceeds 15,360 threshold; summary appended)
+- roger/history.md: 168,012 bytes (→ exceeds 15,360 threshold; summary appended)
+
+### High-Level Summary (All Recent Work)
+
+**Laura (Tester):**
+- M8 Slice C audit (SqliteFactStore + FTS5 BM25): ✅ ACCEPT-WITH-FOLLOWUPS (121 tests)
+- Crucible WAL Walkthrough B acceptance testing: ✅ COMPLETE (hook-veto RED→GREEN)
+- M8 Slice D++ keyset pagination RED tests: ✅ 22 tests written (cursor v1 mutation, FSE-2 closure)
+- Key learnings: FTS5 sign convention, per-page normalization, cursor pagination with concurrent inserts
+
+**Crispin (KR Specialist):**
+- Design Ceremony R1–R8: Advocated Path A initially, adopted Path D post-source-reading, locked v4-final schema
+- M7-A review cycle: Observed (Edgar lead); M7-C next (Real FactReader contract)
+- M8 Slice D++ implementation: Migration 002 + keyset GREEN + persona fixes (cycle 2 clean)
+  - Migration 002: importance/lastAccessed/attentionTier columns (NOT in SQL sort key)
+  - Keyset: v1 mutated in place, encodeCursor object param, logger seam threaded
+  - FSE-2 corrected: INSERT-safe (no dupes), NOT trust-mutation-safe
+
+**Roger (Platform Dev / Doc):**
+- PR #58 Copilot review cycle-6: hook-veto.test.ts comment polish, HookBus docs
+- PR #58 cycle-4: timestampNs monotonicity (clock seam), replay validation, CAS header doc
+- PR #58 cycle-3: session-scoped manifest (isolation fix), short-write guard, codec recordLen validation
+- PR #58 cycle-2: Node engine bump to 20.19.0, ESM compatibility docs
+- PR #58 final: gitignore polish, inbox path citations swept
+- Crucible WAL Walkthrough B: hash-chain + CAS + codec + ledger seam (28/28 green)
+- M8 Slice A cycle-2 fixes: busy_timeout, WAL pragma, BEGIN IMMEDIATE, subpath export (75 tests)
+- M8 Slice D++ doc sweep: N1-N4 stale comment fixes (keyset, migration, cursor versioning)
+
+**Append-Only Rule Applied:** All prior entries remain unchanged. This summary provides high-level context only.
+
+---
+
+### 2026-06-10: M8 Slice D++ — Keyset Pagination RED Tests
+
+**Context:** Wrote the RED test surface for the keyset pagination migration (FSE-2 closure, cursor v1 payload change from `{offset}` to `{lastSort, lastId}`). London-school TDD RED phase — no implementation changes, tests written against the new contract and confirmed failing for the right reasons.
+
+**Files modified:**
+- `packages/eureka/src/storage/__tests__/cursor.test.ts`
+- `packages/eureka/src/storage/__tests__/fact-store-contract.helper.ts`
+- `packages/eureka/src/storage/__tests__/fact-store-sqlite-edges.test.ts`
+
+**Test count delta:** 129 -> 150 (22 new/updated tests RED, 107 existing unchanged GREEN).
+
+**RED tests written:** CU-1a/b/c (v0 absent -> restart sentinel), CU-2a (3-arg round-trip), CU-2c-g (bad lastSort/lastId -> restart), CU-4a/b/c (garbage -> {version:0}), FS-5b (v0 offset -> restart), FS-10a (cursor format), FS-10f DELETED, FS-11 (FSE-2 concurrent-insert), FS-SE-4 (bad keyset fields), FS-SE-15 (lastSort/lastId required).
+
+**FSE-2 test design:** Term-frequency-based scoring makes ranks deterministic across InMemory (term count x trust) and Sqlite (BM25 x trust). Seeded C with 4x term frequency after page 1 (ranks above A 3x); offset impl returns A on page 2 (dup), keyset returns B correctly.
+
+**Note:** This entry was relocated to the file end during PR #72 cloud review to honor the Append-Only History Rule (it had been inserted mid-file during the RED phase).
+
+— Laura

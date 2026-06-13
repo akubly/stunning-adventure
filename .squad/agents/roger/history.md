@@ -1468,3 +1468,19 @@ Use a `computedScope: string | undefined` variable initialized to undefined. Com
 ## Learnings (2026-06-09 — Cycle-3 cleanup)
 
 **Object.hasOwn(raw, 'v') improves robustness over 'v' in raw.** Both are functionally identical for well-formed JSON payloads, but Object.hasOwn avoids prototype-chain lookups if the object ever inherits non-standard prototypes — a good defensive practice for untrusted input even when we don't expect it.
+
+---
+
+## Learnings (2026-06-10 — D++ keyset migration doc sweep)
+
+**Comment drift is a blind spot in code review:** Genesta's keyset-migration audit caught 4 stale offset-pagination references in comments/JSDoc that logic changes didn't touch. All 199 tests pass post-fix, confirming comment-only corrections don't break behavior—but doctrine should be updated during refactoring, not after.
+
+---
+
+## 2026-06-10: M8 Slice D++ Shipped to Branch
+
+**Session:** M8 Slice D++ keyset pagination. **Branch:** eureka/m8-slice-dpp-keyset. **Status:** SHIPPED
+
+Genesta locked three interlocked decisions (D1 mutate cursor v1 to keyset; D2 importance/lastAccessed NOT in SQL sort key; D3 per-page normalization). Laura wrote 22 RED tests, Crispin implemented migration 002 + keyset GREEN + persona fixes, Roger did the N1-N4 doc sweep. FSE-2 corrected: INSERT-safe only (not trust-mutation-safe).
+
+**Note:** Re-appended at file end during PR #72 cloud review to honor the Append-Only History Rule (Scribe summarization had reordered prior entries).
