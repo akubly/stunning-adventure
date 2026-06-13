@@ -168,7 +168,52 @@ This avoids hard-coding the internal fingerprint and stays valid if the algorith
 
 ---
 
-## Example: FactReader (Eureka M7-C)
+## Extending Seed to Exercise New Columns Across All Impls
+
+When a storage schema gains new columns that must be observable via the seam's read interface,
+promote coverage to the contract suite using the **optional trailing opts** pattern:
+
+### Step-by-step
+
+1. **Extend the `SeedFn` type** with an optional trailing opts argument — never positional,
+   never a new parameter in the middle:
+
+   ```typescript
+   type SeedFn = (
+     id: string,
+     scope: ScopeId,
+     content: string,
+     trust: number,
+     opts?: {                           // ← new optional trailing opts
+       newColA?: string;
+       newColB?: number | null;         // null = explicit SQL NULL → undefined in results
+     },
+   ) => Promise<void>;
+   ```
+
+   All existing call sites omit `opts` — no breaking change.
+
+2. **Make the in-memory reference impl model the new columns.** Extend the stored-record
+   interface and the search/return path. `null` opts values map to `undefined` in results
+   (mirrors SQL NULL → absent semantics).
+
+3. **Update all harness seeds** (both in-memory and I/O-backed) to accept and store `opts`.
+   Use `opts?.newColA ?? defaultVal` so existing callers get identical behaviour.
+
+4. **Add contract assertions** inside `runXContract` for:
+   - Non-default values (set via opts) surface unchanged from the read method.
+   - Default-seeded (no opts) returns the documented default for each field.
+
+### Why this beats a separate impl-specific test
+
+An impl-specific edge-case file cannot enforce that the reference (in-memory) impl also
+models the new column. The optional-opts pattern forces the in-memory impl to catch up and
+proves substitutability at the same time. The sqlite-edges file should be reserved for
+genuinely SQLite-specific concerns (FTS5 BM25 math, CHECK constraints, NULL-type coercion)
+that have no analogue in memory-backed impls.
+
+---
+
 
 ```typescript
 // packages/eureka/src/storage/__tests__/fact-reader.contract.test.ts
