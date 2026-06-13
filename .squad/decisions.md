@@ -5551,6 +5551,692 @@ The literal "zero hits" criterion over-interprets the spirit of the issue. Issue
 ### Append-Only History Rule
 
 **Separately and absolutely:** Agent `history.md` and `history-archive.md` files are append-only. Any hygiene sweep that edits previously committed history entries is a scope violation, regardless of whether the edit improves clarity. This mirrors the over-reach that caused PR #44 to be reverted.
+# D++ Keyset Pagination — Three Interlocked Decisions
+
+**Author:** Genesta (Cognitive Systems Lead — Eureka)  
+**Date:** 2026-06-10  
+**Status:** OPTIONS ANALYSIS — awaiting Aaron's decision gate  
+**Scope:** M8 Slice D++ keyset pagination, Slice C schema-gap migration, cross-page relevance normalization
+
+---
+
+## Decision 1 — Keyset Cursor (v:2) Design
+
+### Context
+
+Current state: v1 cursors encode `{v:1, offset, scope}`. SQL uses `OFFSET $offset`. The `v` dispatch in `cursor.ts` already reserves v≥2 (throws `CursorVersionUnsupportedError`). §3 of decisions.md explicitly deferred keyset to D++ and flagged BM25 float stability as a risk.
+
+The SQL sort expression is `(-bm25(facts_fts)) * f.trust DESC, f.id ASC`. A keyset cursor must encode the LAST row's sort-key value + the `f.id` tiebreaker, replacing `OFFSET` with:
+
+```sql
+WHERE ((-bm25_score) * f.trust < $lastSort)
+   OR ((-bm25_score) * f.trust = $lastSort AND f.id > $lastId)
+```
+
+### The BM25 Float Stability Question
+
+This is the load-bearing risk §3 flagged. BM25 scores are computed by SQLite's FTS5 engine at query time. Two concerns:
+
+1. **Across-call stability:** If the FTS5 index hasn't changed, will `bm25(facts_fts)` return bit-identical floats for the same row across separate queries? Answer: **yes, within a single connection and unchanged index.** FTS5 BM25 is deterministic given the same term statistics (total docs, avg doc length, term frequency). No stochastic component. The score for row R will be identical across calls as long as no INSERT/UPDATE/DELETE touches `facts_fts` between them.
+
+2. **Under concurrent writes:** If a new fact is inserted between pages, FTS5 global statistics (average document length, total doc count) shift, and BM25 scores for ALL rows change slightly. The keyset boundary `$lastSort` was computed from the OLD statistics — a row that was just above the boundary might now score just below it (or vice versa). This is the **keyset boundary drift** problem.
+
+   **Mitigation:** The composite sort key is `(-bm25) * trust`. Trust is stable (only mutated by explicit `applyFeedback`). BM25 drift under single-writer (our current model) only occurs if the writer inserts facts mid-pagination. This is the same class of instability that offset-based pagination already has (§3, FSE-2), and keyset is strictly BETTER than offset under this scenario: offset skips/dups when rows shift position; keyset at worst re-returns a boundary row or skips one, but never loses interior rows.
+
+   **Verdict:** BM25 float stability is sufficient for keyset. The risk is real but strictly less severe than the offset risk it replaces.
+
+### Options for v:2 Payload
+
+**Option A — Composite float + id:**
+```ts
+{ v: 2, lastSort: number, lastId: number, scope: string }
+```
+`lastSort` = the `(-bm25) * trust` value of the final row on the current page. `lastId` = that row's `f.id`. SQL becomes:
+```sql
+WHERE ((-bm25(facts_fts)) * f.trust < $lastSort
+   OR ((-bm25(facts_fts)) * f.trust = $lastSort AND f.id > $lastId))
+```
+**Pro:** Simple, minimal payload. Directly mirrors the SQL sort key.  
+**Con:** Float equality comparison (`= $lastSort`) in SQL. IEEE 754 doubles compared via `=` in SQLite are bit-exact, which is fine for values that came from the same FTS5 computation — but fragile if the composite expression changes (Decision 2 entanglement).
+
+**Option B — Separate BM25 + trust + id:**
+```ts
+{ v: 2, lastBm25: number, lastTrust: number, lastId: number, scope: string }
+```
+Store the components separately; reconstruct the composite in the WHERE clause.  
+**Pro:** If the composite formula changes (Decision 2), old cursors can be invalidated by scope fingerprint mismatch rather than silently producing wrong results.  
+**Con:** Larger payload. Reconstructing `(-lastBm25) * lastTrust` in SQL introduces a second float multiplication that must match the ORDER BY expression exactly — SQLite query planner may not recognize them as equivalent, breaking index usage.
+
+**Option C — Row-id only (no float):**
+```ts
+{ v: 2, lastId: number, scope: string }
+```
+Use `WHERE f.id > $lastId` as a crude keyset on the tiebreaker alone, but still ORDER BY the composite. Effectively: "give me rows with id > X, ordered by composite, LIMIT N."  
+**Pro:** No float stability concern at all. Dead simple.  
+**Con:** **Incorrect.** A row with `f.id = 50` and high composite score should appear on page 1, but would be excluded if `$lastId = 45`. This only works if the primary sort is by `f.id` — it isn't. **Rejected.**
+
+### Backward Compatibility
+
+- **v0/v1 cursors continue to decode** — `decodeCursor` already handles them via the `v` dispatch. No change needed.
+- **Mid-paginate version bump:** A caller holding a v1 cursor cannot use it as v2 (different semantics — offset vs keyset). The scope fingerprint would still match, but the fields are wrong. The v2 decoder should simply not look for `offset` — it looks for `lastSort`/`lastId`. A v1 cursor decoded as v2 would fail field validation → fall back to page 0 or throw. **Recommendation:** Throw `CursorVersionUnsupportedError` if a v1 cursor is presented to a v2-only store. Callers restart pagination from page 0. This is safe because cursor version is an internal implementation detail — callers treat cursors as opaque.
+- **Emission:** Once v2 is implemented, `encodeCursor` should emit v2. There is no reason to keep emitting v1 — the scope fingerprint already prevents cross-version reuse across different store instances.
+
+### Scope Fingerprint
+
+v2 cursors still carry `scope` (SHA-256 hex, first 16 chars). The fingerprint inputs (`query, sessionId, minTrust, limit`) remain the same. If Decision 2 adds new columns to the sort key, `scope` doesn't need to change — it guards against parameter drift, not sort-key drift. Sort-key changes are guarded by the `v` version field itself.
+
+### ★ RECOMMENDATION: Option A
+
+Composite float + id is the right design. It's minimal, directly mirrors the SQL, and BM25 float equality is safe within a connection. The scope fingerprint handles parameter-drift protection. The `v:2` version tag handles sort-key evolution. No need to over-engineer the payload.
+
+---
+
+## Decision 2 — Schema-Gap Migration: Do importance/lastAccessed Join the SQL Sort Key?
+
+### Context
+
+Migration 002 will add columns to `facts`:
+- `importance REAL DEFAULT 0` — [0,1] signal
+- `last_accessed INTEGER DEFAULT NULL` — Unix epoch ms
+- `attention_tier TEXT DEFAULT 'warm'` — hot/warm/cold
+
+The pivotal question: does the SQL `ORDER BY` change from `(-bm25)*trust` to the full FR-2 composite `0.50·relevance + 0.20·importance + 0.20·trust + 0.10·recency` (with tier multiplier)?
+
+### The Core Tension
+
+**Keyset pagination orders by the SQL sort key.** If the recall layer re-ranks each page by `compositeScore` AFTER fetching, then cross-page ordering by compositeScore is impossible — re-rank only shuffles within a page. So:
+
+- If importance/recency should affect GLOBAL ordering → they MUST be in the SQL sort key → they're in the keyset cursor.
+- If they stay in the recall-layer re-rank → ordering is page-local → composite ordering across pages is approximate at best.
+
+This is the fundamental entanglement between D1 and D2.
+
+### Option A — Full composite in SQL
+
+```sql
+ORDER BY (
+  0.50 * (-bm25(facts_fts))_normalized * ... 
+  + 0.20 * COALESCE(f.importance, 0)
+  + 0.20 * f.trust
+  + 0.10 * max(0.1, pow(1 + max(0, (julianday('now') - julianday(f.last_accessed, 'unixepoch')) ), -0.5))
+) * CASE f.attention_tier WHEN 'hot' THEN 1.2 WHEN 'cold' THEN 0.8 ELSE 1.0 END DESC,
+f.id ASC
+```
+
+**Pro:** Global ordering matches compositeScore exactly. Keyset works perfectly. No recall-layer re-rank needed (or it becomes a no-op).  
+**Con:** 
+1. **Recency is time-dependent.** `julianday('now')` changes between pages. A row's recency-based sort value at page-fetch-1 differs from page-fetch-2. The keyset boundary `$lastSort` was computed at time T₁ but the WHERE clause evaluates at time T₂. Rows near the boundary can shift across it. This is the **time-varying sort key** problem — fundamentally incompatible with stable keyset pagination.
+2. **BM25 normalization problem.** `compositeScore` expects relevance ∈ [0,1], but raw `-bm25` is unbounded. You'd need to normalize in SQL, which requires knowing min/max across the full result set — a separate query, or a window function that defeats the keyset WHERE optimization.
+3. **Expression complexity.** The SQL becomes a maintenance hazard. Any tweak to FR-2 weights requires a migration or at minimum a coordinated code+SQL change.
+4. **Edgar dependency.** The composite formula is a learning/ranking concern. Baking it into SQL couples storage to the ranker's evolution.
+
+**Verdict: Reject.** The time-varying recency term makes this fundamentally unstable for keyset pagination.
+
+### Option B — SQL keeps `(-bm25)*trust` only; recall re-rank stays page-local (status quo ordering)
+
+Migration 002 adds the columns but the SQL `ORDER BY` doesn't change. `compositeScore` in `recall.ts` continues to re-rank the fetched page using all four signals.
+
+**Pro:** Simplest migration. No SQL change. Keyset cursor (Decision 1) encodes `(-bm25)*trust` — stable, time-independent. Recall layer owns the ranking formula — easy to evolve without SQL coupling.  
+**Con:**
+1. **Cross-page compositeScore ordering is impossible.** If fact F₁ has high importance but low BM25, it might rank at the bottom of page 1 by SQL order but top of page 1 after re-rank. Meanwhile, fact F₂ on page 2 (lower BM25×trust) might have even higher compositeScore. The caller never sees F₂ ahead of F₁ because pagination already decided page membership.
+2. **Overfetch mitigates but doesn't solve.** `RANKER_OVERFETCH_FACTOR = 3` already pulls 3× candidates for re-ranking. This helps within the overfetch window but doesn't help if the best-by-compositeScore fact is on page 5 by BM25×trust.
+
+**Practical impact:** Today, `recall` calls `factStore.search({ limit: k * 3 })` — a SINGLE page, no pagination. The re-rank surface is already the full overfetch window. Cross-page compositeScore ordering only matters if a caller paginates AND expects globally-ordered compositeScore results. Currently, no caller paginates for composite ordering — pagination is for exhaustive traversal (e.g., a future "export all facts" or "batch re-score" use case). For exhaustive traversal, page-local re-rank order doesn't matter — the caller is consuming everything.
+
+**Verdict: Strong candidate.** The practical impact of the limitation is near-zero given current usage.
+
+### Option C — Time-independent subset in SQL, recency stays page-local
+
+```sql
+ORDER BY (-bm25(facts_fts)) * f.trust 
+         * (CASE f.attention_tier WHEN 'hot' THEN 1.2 WHEN 'cold' THEN 0.8 ELSE 1.0 END)
+         * (1.0 + COALESCE(f.importance, 0))
+         DESC, f.id ASC
+```
+
+Fold importance and tier into the SQL sort key (both are time-independent, stable between pages). Leave recency to the recall-layer re-rank.
+
+**Pro:** Gets ~80% of the composite signal into SQL. Keyset boundary is stable (no time-varying terms). Important facts bubble up globally, not just within-page.  
+**Con:**
+1. **Formula divergence.** The SQL sort formula and `compositeScore` in recall.ts now express DIFFERENT formulas. The SQL uses a multiplicative blend; compositeScore uses an additive weighted sum. These are not order-equivalent. Maintaining two formulas is a bug factory.
+2. **Keyset cursor grows.** The v:2 payload would need to encode the full composite value (which now includes importance and tier), or the individual components. Either way, the cursor is coupled to the formula.
+3. **Partial ordering improvement.** Importance and tier affect global order, but recency doesn't. A recently-accessed fact with mediocre BM25 still gets buried by SQL ordering — the recall re-rank can only rescue it if it's on the same page.
+
+**Verdict: Possible but complex.** The formula divergence risk is high. Only justified if importance/tier materially affect ordering AND callers need globally-ordered results.
+
+### Migration Mechanics (applies to all options)
+
+```sql
+ALTER TABLE facts ADD COLUMN importance REAL DEFAULT 0;
+ALTER TABLE facts ADD COLUMN last_accessed INTEGER DEFAULT NULL;
+ALTER TABLE facts ADD COLUMN attention_tier TEXT DEFAULT 'warm';
+```
+
+- `importance DEFAULT 0` → compositeScore uses 0 → preserves current behavior (0.20 × 0 = 0 contribution).
+- `last_accessed DEFAULT NULL` → compositeScore treats NULL as Infinity → recency floors to 0.1 → preserves current behavior.
+- `attention_tier DEFAULT 'warm'` → multiplier 1.0 → preserves current behavior.
+- **Backfill:** Not needed. Defaults match the hard-coded values in `SqliteFactStore.search()` today (lines 248–249). Existing rows behave identically.
+- **FTS5 triggers:** No change needed — new columns are not FTS-indexed.
+- **Column types:** Crispin should confirm `attention_tier TEXT` vs an integer enum. TEXT is simpler and matches the TypeScript union `'hot' | 'warm' | 'cold'` directly. A CHECK constraint (`CHECK(attention_tier IN ('hot', 'warm', 'cold'))`) is optional but recommended.
+
+### ★ RECOMMENDATION: Option B
+
+Keep SQL ordering at `(-bm25)*trust`, recall-layer re-rank stays page-local. Reasoning:
+
+1. No current caller paginates for globally-ordered compositeScore results. `recall` uses single-page overfetch.
+2. The time-varying recency term makes full-composite SQL ordering fundamentally incompatible with keyset stability (kills Option A).
+3. Option C's formula divergence risk outweighs its partial ordering benefit for a signal (importance) that doesn't even exist in the data yet.
+4. When a caller genuinely needs globally-ordered compositeScore, the right solution is a different API (e.g., a `reindex` or `materialize-scores` batch job), not baking a time-varying formula into the pagination sort key.
+5. The migration is trivial and non-breaking — just add columns with correct defaults.
+
+---
+
+## Decision 3 — Cross-Page Relevance Normalization
+
+### Context
+
+Today, `relevance` is per-page min-max normalized to [0,1]. FSE-4 / FS-SE-12 document that relevance is NOT comparable across pages. With keyset pagination, multi-page traversal becomes the norm, making this limitation more visible.
+
+`compositeScore` consumes relevance as a [0,1] term weighted at 0.50 — the largest single weight. Breaking the [0,1] bound would produce compositeScores outside their expected range.
+
+### Option A — Keep per-page min-max (status quo)
+
+**Pro:** No change. Simple. compositeScore stays bounded. Within-page relative ranking is meaningful.  
+**Con:** Cross-page relevance is incomparable. A sole result on the last page gets relevance=1.0 even if it's a weak match (FS-SE-12). Under multi-page traversal this becomes more visible.
+
+### Option B — Raw/absolute (-bm25) as relevance
+
+Emit `-bm25(facts_fts)` directly (positive, unbounded).
+
+**Pro:** Globally comparable across pages. Deterministic (same row, same query → same value).  
+**Con:** 
+1. **Breaks [0,1] bound.** compositeScore's `0.50 * relevance` term becomes `0.50 * (some unbounded positive float)`. The composite score is no longer in a predictable range. The tier multiplier and weight ratios become meaningless.
+2. **Scale varies by query.** A 1-token query might produce BM25 scores in [0.5, 3.0]; a 5-token query might produce [2.0, 15.0]. Raw scores are comparable within a query but not across queries — which is fine for pagination (same query) but surprising for callers expecting [0,1].
+
+### Option C — Page-1 min/max as fixed reference in cursor
+
+Carry `{ refMin, refMax }` from page 1 in the cursor. All subsequent pages normalize against the same reference.
+
+```ts
+{ v: 2, lastSort, lastId, scope, refMin: number, refMax: number }
+```
+
+**Pro:** Cross-page comparable. Still [0,1] bounded relative to page 1's range. Consistent compositeScore behavior.  
+**Con:**
+1. **First-page-dependent.** If page 1 has an outlier (very high or very low BM25), the reference range is skewed for all subsequent pages. A page-3 result could get relevance > 1.0 or < 0.0 if its raw BM25 exceeds page-1's range — requires clamping.
+2. **Statefulness.** The cursor grows. The reference is now part of the pagination contract — changing page size or re-starting from a different page produces different relevance values for the same fact.
+3. **Complicates cursor.** More fields = more validation, more surface for bugs.
+
+### Option D — Global min/max via a preflight query
+
+Before the first page, run `SELECT MIN(bm25(...)), MAX(bm25(...))` across the full matched result set. Use these as the normalization reference for all pages.
+
+**Pro:** Truly global normalization. Stable, not first-page-dependent.  
+**Con:**
+1. **Extra query.** The preflight scans the full FTS5 match set — could be expensive for broad queries. Negates some of keyset's performance benefit.
+2. **Stale reference.** If facts are inserted between the preflight and later pages, new rows may exceed the reference range. Same clamping issue as Option C.
+3. **Where to store?** The global min/max would need to go in the cursor (same statefulness as C) or be recomputed per page (defeating the purpose).
+
+### Option E — Normalize to query-specific [0,1] using a sigmoid/log transform
+
+Apply a monotonic transform like `relevance = 1 / (1 + exp(-k * rawBm25))` or `relevance = log(1 + rawBm25) / log(1 + maxExpectedBm25)` to squash raw BM25 into [0,1] without needing min/max.
+
+**Pro:** Globally comparable. No reference needed. No cursor growth. Always [0,1].  
+**Con:**
+1. **Parameter tuning.** The sigmoid's `k` or the log's `maxExpectedBm25` are magic numbers. Different corpora produce different BM25 ranges. Poor tuning compresses all scores into a narrow band.
+2. **Non-linear distortion.** The transform changes the RELATIVE spacing of scores. Two facts with raw BM25 of 2.0 and 4.0 (2× ratio) might get sigmoid relevances of 0.88 and 0.98 (1.1× ratio). compositeScore's linear weighting assumes linear relevance.
+3. **Edgar territory.** Choosing the right transform is a learning/tuning question.
+
+### Entanglement with Decision 2
+
+If Decision 2 = Option B (recommended), then `compositeScore` re-ranks page-local. Relevance is consumed page-locally too — so per-page normalization (Option A) is actually **coherent** with the design: the re-rank operates on a single page where per-page normalization is consistent.
+
+Cross-page relevance comparability only matters if a caller collects results across pages and then sorts/filters by relevance or compositeScore. With Option B's page-local re-rank, that's already an invalid use case.
+
+### ★ RECOMMENDATION: Option A (status quo) with documentation upgrade
+
+1. Per-page min-max is coherent with Decision 2's page-local re-rank design.
+2. compositeScore stays bounded and predictable.
+3. The limitation is already documented (FSE-4, FS-SE-12). Upgrade the docs to explicitly state that keyset pagination does NOT make relevance cross-page comparable.
+4. If a future use case genuinely needs global relevance comparability, Option E (sigmoid transform) is the most promising — but it requires Edgar's input on parameterization and should be its own slice.
+
+---
+
+## Entanglement Map
+
+```
+Decision 1 (cursor v:2)  ←──────→  Decision 2 (sort key)
+   │                                    │
+   │  The v:2 payload encodes the       │
+   │  LAST ROW's sort-key value.        │
+   │  If D2 changes the sort key,       │
+   │  D1's payload must match.          │
+   │                                    │
+   │  D2-A (full composite in SQL)      │
+   │  → D1 payload = full composite     │
+   │    float (time-varying → unstable  │
+   │    keyset boundary → REJECTED)     │
+   │                                    │
+   │  D2-B (SQL keeps bm25*trust)       │
+   │  → D1 payload = bm25*trust float   │
+   │    (stable → WORKS)                │
+   │                                    │
+   │  D2-C (partial composite in SQL)   │
+   │  → D1 payload = partial composite  │
+   │    float (stable but formula       │
+   │    divergence risk)                │
+   │                                    │
+   └──────────→  Decision 3 (relevance normalization)
+                     │
+   D2-B (page-local re-rank) makes      │
+   per-page normalization coherent.     │
+   D2-A (global ordering) would         │
+   demand global normalization.         │
+                                        │
+   D3-A (per-page) + D2-B = coherent   │
+   D3-C/D (global ref) + D2-B = over-  │
+   engineered (re-rank is page-local   │
+   anyway, global relevance unused)    │
+```
+
+**The three decisions form a consistent package only in specific combinations:**
+
+| D1 | D2 | D3 | Coherent? | Notes |
+|----|----|----|-----------|-------|
+| A (composite float+id) | B (bm25×trust SQL) | A (per-page) | ✅ **YES** | Recommended path |
+| A | A (full composite SQL) | C or D (global ref) | ❌ | D2-A killed by time-varying recency |
+| A | C (partial composite) | A or C | ⚠️ | Works but formula divergence risk |
+| B (separate components) | B | A | ⚠️ | Over-engineered cursor for no benefit |
+
+---
+
+## Combined Recommended Path
+
+| Decision | Choice | Key rationale |
+|----------|--------|---------------|
+| **D1** | Option A — `{v:2, lastSort, lastId, scope}` | Minimal, mirrors SQL, BM25 floats stable enough |
+| **D2** | Option B — SQL keeps `(-bm25)*trust`, recall re-rank page-local | Time-varying recency kills full-composite SQL; no current caller needs global composite ordering |
+| **D3** | Option A — Per-page min-max (status quo + doc upgrade) | Coherent with D2-B's page-local re-rank; compositeScore stays bounded |
+
+**Migration 002:** Add `importance REAL DEFAULT 0`, `last_accessed INTEGER DEFAULT NULL`, `attention_tier TEXT DEFAULT 'warm'` to `facts`. No backfill. No ORDER BY change. No FTS5 trigger changes.
+
+**Cursor v:2:** Encode `{v:2, lastSort: number, lastId: number, scope: string}`. SQL WHERE becomes keyset predicate. `decodeCursor` gains a v:2 branch. v0/v1 cursors throw `CursorVersionUnsupportedError` when presented to a v2 store (callers restart pagination). `encodeCursor` emits v2 only.
+
+**InMemoryFactStore:** Must implement v:2 keyset logic using its `score` (termCount × trust) as the equivalent of `(-bm25) * trust`, and `insertionOrder` as the equivalent of `f.id`.
+
+---
+
+## External Input Needed
+
+| Who | What | Why |
+|-----|------|-----|
+| **Crispin** | Migration 002 column types + CHECK constraint on `attention_tier` | Schema/representation is Crispin's domain. TEXT vs integer enum, constraint strictness. |
+| **Crispin** | Confirm `last_accessed INTEGER` (Unix epoch ms) vs `TEXT` (ISO 8601) | Convention alignment with `created_at`/`updated_at` (currently TEXT datetime). |
+| **Edgar** | Future: sigmoid/log relevance transform parameterization (if D3 evolves past Option A) | Learning algorithms concern — Genesta flags but doesn't own the transform design. |
+| **Edgar** | Future: whether compositeScore formula should evolve to be SQL-expressible (would reopen D2) | If Edgar wants the ranker formula in SQL, D2-C or a materialized-score approach becomes necessary. |
+
+---
+
+*Genesta — 2026-06-10. Activities are runtime verbs, not storage nouns.*
+ 
+
+ # Decision Drop — M8 Slice D++ Keyset Pagination: RED Test Surface
+
+**Author:** Laura (Tester)  
+**Date:** 2026-06-10T22:20:20-07:00  
+**Phase:** London-school TDD RED — tests written, implementation NOT changed  
+**Status:** 22 tests RED (expected), 107 tests GREEN (unchanged)
+
+---
+
+## Summary
+
+Wrote the RED test surface for the Slice D++ keyset pagination migration. All failing tests
+describe the NEW keyset contract and will flip to GREEN once Roger implements:
+1. `encodeCursor(lastSort, lastId, scope)` — 3-arg signature
+2. `decodeCursor` v1 branch → `{version:1, lastSort, lastId, scope}` (no `offset`)
+3. `decodeCursor` garbage/v0 → `{version:0}` restart sentinel (no `offset` field)
+4. `SqliteFactStore.search()` keyset WHERE clause
+5. `InMemoryFactStore.search()` keyset slice logic (Roger's task)
+
+---
+
+## Contract ID Changes
+
+| ID | Change | Reason |
+|----|--------|--------|
+| FS-10f | **DELETED** | v0 backward-compat removed; v-absent cursor now treated as garbage (restart) |
+| FS-11 | **NEW** | FSE-2 concurrent-insert safety (keyset prevents duplicate on page N+1 after insert between pages) |
+| FS-5b | **EXTENDED** | Added third `.each` case: v0 cursor with valid `offset:5` now must restart (not honor offset) |
+| FS-SE-4 | **REPLACED** | Tests now cover bad v1 keyset fields (`lastSort`/`lastId`) instead of bad v0 offset values |
+| FS-SE-15 | **UPDATED** | Assertion extended: requires `lastSort: any(Number), lastId: any(Number)` in decoded cursor |
+| CU-1a/b/c | **UPDATED** | v0 absent now → `{version:0}` restart sentinel (was `{version:0, offset:N}`) |
+| CU-2a/b | **UPDATED** | 3-arg `encodeCursor(lastSort, lastId, scope)` round-trip assertions |
+| CU-2c–g | **NEW** | Bad keyset field validation: NaN/Infinity lastSort, negative/float/missing lastId → restart |
+| CU-4a/b/c | **UPDATED** | Garbage → `{version:0}` (no `offset` field in restart sentinel) |
+
+---
+
+## RED Test List (22 failing)
+
+### cursor.test.ts (11 failing)
+- CU-1a, CU-1b, CU-1c — v0 absent → restart `{version:0}` not `{version:0, offset:N}`
+- CU-2a — `encodeCursor(42.5, 17, scope)` round-trip (3-arg signature)
+- CU-2c — bad lastSort NaN → restart
+- CU-2d — bad lastSort Infinity → restart
+- CU-2e — bad lastId negative → restart
+- CU-2f — bad lastId float → restart
+- CU-2g — missing lastId → restart
+- CU-4a, CU-4b, CU-4c — garbage → `{version:0}` (no extra `offset` field)
+
+### fact-store-contract.helper.ts — both InMemoryFactStore + SqliteFactStore (6 failing)
+- FS-5b ×2 (third case: v0-valid-offset-5 must restart, not advance)
+- FS-10a ×2 (cursor must have `lastSort`/`lastId` not `offset`)
+- FS-11 ×2 (**FSE-2**: insert between pages → no dup; offset impl produces dup)
+
+### fact-store-sqlite-edges.test.ts (4 failing)
+- FS-SE-4 ×3 (bad v1 keyset fields with `offset:1` → current impl honors offset → page 2 = empty ≠ baseline)
+- FS-SE-15 (cursor must have `lastSort`/`lastId` fields)
+
+---
+
+## Invariants UNCHANGED (still GREEN)
+
+CU-3 (a–f), CU-5, CU-6, CU-7 — version-rejection and fingerprint tests unchanged.  
+CU-2b — version:1 discriminant (passes with both current and new impl).  
+FS-1..4, FS-5 (original), FS-6, FS-7, FS-8, FS-9 — core search semantics unchanged.  
+FS-10b–e (scope mismatch), FS-10g (v:99), FS-10h (empty query) — unchanged.  
+FS-SE-1, SE-1b, SE-2, SE-3, SE-5..14 — unchanged.  
+FS-SE-12 (per-page normalization), FS-SE-14 (fingerprint determinism) — explicitly unchanged per plan.
+
+---
+
+## Restart Sentinel Shape Decision
+
+New `DecodedCursor` type for Roger to implement:
+
+```typescript
+export type DecodedCursor =
+  | { version: 0 }                                           // restart from page 1; no offset
+  | { version: 1; lastSort: number; lastId: number; scope: string };
+```
+
+Tests assert `toEqual({ version: 0 })` for garbage/v0 cases — the extra `offset:0` field in the
+current return value makes those assertions fail. This is the correct shape for keyset because:
+- `version:0` signals "no valid keyset anchor; start from page 1"
+- No `offset` field prevents accidental OFFSET fallback in any future code path
+
+---
+
+## FSE-2 Test Design (FS-11)
+
+Sequence:
+1. Seed A (`fse2safety` ×3, trust=0.8) and B (`fse2safety` ×1, trust=0.8)
+2. Page 1 (limit=1): returns A; cursor stores keyset anchor
+3. Seed C (`fse2safety` ×4, trust=0.8) — ranks ABOVE A
+4. Page 2 with cursor:
+   - **Offset impl:** sorted=[C,A,B], OFFSET 1 → returns A again (DUPLICATE → RED)
+   - **Keyset impl:** WHERE composite < composite(A) → returns B (correct → GREEN)
+
+Both InMemoryFactStore and SqliteFactStore covered via `runFactStoreContract` harness.
+
+---
+
+## What Roger Needs to Implement (GREEN phase)
+
+1. **cursor.ts** — `DecodedCursor` type update; `encodeCursor(lastSort, lastId, scope)` 3-arg; `decodeCursor` v1 branch reads `lastSort`/`lastId`; garbage/v0 returns `{version:0}` (no offset).
+2. **fact-store-sqlite.ts** — keyset WHERE: `AND ((-bm25_score)*f.trust < $lastSort OR ((-bm25_score)*f.trust = $lastSort AND f.id > $lastId))`. Replace `OFFSET $offset`. `nextCursor = encodeCursor(lastRow.composite, lastRow.id, scope)`.
+3. **InMemoryFactStore** (in `fact-store.contract.test.ts`) — keyset slice logic using `insertionOrder` as `lastId` analog and `score` as `lastSort` analog.
+ 
+
+ # Decision Drop: Migration 002 — Attention Tier Columns
+
+**Author:** Crispin (Knowledge Representation Specialist)
+**Date:** 2026-06-10T22:20:20-07:00
+**Context:** M8 Slice D++ — closes the Slice C schema gap
+
+---
+
+## What Was Delivered
+
+Migration 002 (`packages/eureka/src/db/migrations/002-facts-attention.ts`) adds
+three columns to the `facts` table and registers as version 2 in schema.ts. A
+dedicated migration test suite (`src/db/__tests__/migrations.test.ts`, 5 tests,
+all green) locks the column defaults, CHECK enforcement, and idempotency.
+
+---
+
+## Column Design Decisions
+
+### `importance REAL NOT NULL DEFAULT 0`
+
+**Type: REAL.** Importance is a normalized signal ∈ [0,1] consumed by
+`compositeScore` as a float. `REAL` (IEEE 754 double) is the correct SQLite
+type for a continuous fractional value.
+
+**NOT NULL with constant default 0.** SQLite's ADD COLUMN constraint: `NOT NULL`
+is permissible when the default is a constant non-NULL value. Default `0` exactly
+reproduces the SqliteFactStore Slice-C hard-code (`importance ?? 0` in
+`compositeScore`). No behavioral change for existing or new rows that omit the
+column.
+
+**Why not nullable?** Nullable importance would require every consumer to guard
+against NULL before arithmetic. `NOT NULL DEFAULT 0` eliminates the NULL case at
+the SQL layer: the storage contract is "0 means unscored" — SQL never emits NULL.
+
+---
+
+### `last_accessed INTEGER DEFAULT NULL`
+
+**Type: INTEGER.** Unix epoch milliseconds is a 64-bit integer; SQLite INTEGER
+stores up to 8 bytes, sufficient for epoch-ms well past year 9999. This is the
+standard convention for numeric timestamp fields (distinguish from `created_at`
+and `updated_at` in migration 001, which use `TEXT` + `datetime('now')` for
+human-readable wall-clock display — those are not arithmetic targets).
+
+**Nullable (no NOT NULL).** NULL is the load-bearing sentinel for
+"never accessed". The compositeScore F3 guard converts `lastAccessed = undefined`
+(JavaScript) / NULL (SQL) to `Infinity` tDays → `recency = Math.max(0.1, ...)
+= 0.1`. Forcing NOT NULL would require a magic sentinel integer (e.g., 0 =
+epoch, which would be "accessed in 1970" — wrong semantics). NULL is the
+correct representation of "no access has occurred."
+
+**No DEFAULT expression.** `DEFAULT NULL` (explicit) and omitting DEFAULT both
+yield NULL; explicit declaration is clearer in the schema for future readers.
+
+---
+
+### `attention_tier TEXT NOT NULL DEFAULT 'warm'`
+
+**Type: TEXT.** Enum-as-string is idiomatic SQLite for a small closed set of
+named values. The TypeScript type `'hot' | 'warm' | 'cold'` maps cleanly to
+three TEXT literals; no integer-to-name join table needed for a 3-value enum.
+
+**NOT NULL with constant default 'warm'.** Same rationale as `importance`:
+constant default satisfies the NOT NULL constraint for ADD COLUMN. Default
+'warm' reproduces the SqliteFactStore Slice-C hard-code (`attentionTier: 'warm'`
+with multiplier 1.0 — the identity value). Warm tier is the "do nothing" tier,
+making it the correct zero-disturbance default.
+
+**CHECK constraint on ADD COLUMN — verified.**
+SQLite DOES accept `CHECK (attention_tier IN ('hot', 'warm', 'cold'))` in an
+`ALTER TABLE ADD COLUMN` statement (verified at runtime against better-sqlite3
+which bundles a recent SQLite). The CHECK is enforced for all future
+INSERTs/UPDATEs. Existing rows at ALTER time are NOT validated — they receive
+the default 'warm', which passes the CHECK regardless. No table-rebuild pattern
+was needed.
+
+Test MIG-4 confirms: inserting with `attention_tier = 'lukewarm'` throws.
+Test MIG-5 confirms: 'hot' and 'cold' are accepted.
+
+---
+
+## Locked Decision: No ORDER BY Change (D2)
+
+The SQL `ORDER BY (-bm25_score) * f.trust DESC, f.id ASC` is **not modified**.
+The `importance`, `last_accessed`, and `attention_tier` columns are NOT part of
+the sort key. Rationale (locked by Aaron):
+
+The recall-layer `compositeScore` recency term is query-time-varying: it depends
+on `now()` at call time, not on a stored value. Folding a time-varying term into
+SQL ORDER BY would break keyset-cursor stability (last-rank + last-id cursors
+would be computed against one `now()` and validated against a different `now()`
+on the next page). The columns are stored for the application layer to consume;
+SQL ordering remains deterministic and cursor-stable.
+
+---
+
+## What Is NOT Wired
+
+`SqliteFactStore.search()` still hard-codes `attentionTier: 'warm'` and omits
+`importance`/`lastAccessed` from the SELECT. That wiring — reading the new
+columns from SQL into `RecallResult` — is the GREEN implementation phase,
+separately scoped. The hard-coded defaults remain behaviorally correct until
+that phase lands (they match the SQL defaults exactly).
+
+---
+
+## Test Coverage
+
+| ID    | Assertion |
+|-------|-----------|
+| MIG-1 | `MAX(version) = 2` after applying both migrations |
+| MIG-2/3 | Freshly-inserted row: `importance=0`, `last_accessed=NULL`, `attention_tier='warm'` |
+| MIG-4 | CHECK rejects `attention_tier = 'lukewarm'` |
+| MIG-5 | 'hot' and 'cold' accepted; values round-trip correctly |
+| MIG-6 | `applyMigrations` idempotent — second call does not throw |
+
+Also updated DB-CL-3 and DB-CL-6 in `fact-reader-sqlite-edges.test.ts` from
+`schema_version = 1` to `= 2` (schema_version row count now 2, max version 2).
+ 
+
+ # Decision Drop: Keyset Cursor — GREEN Phase (Slice D++)
+
+**Author:** Crispin (Knowledge Representation Specialist)
+**Date:** 2026-06-10T22:56:47-07:00
+**Context:** M8 Slice D++ GREEN — implements keyset pagination for `FactStore.search()`
+
+---
+
+## What Shipped
+
+Four files changed; 22 RED tests turned green; 177 pre-existing tests stay green (199 total).
+
+| File | Change |
+|------|--------|
+| `src/storage/cursor.ts` | v1 mutated in place to keyset; v0 compat deleted |
+| `src/storage/fact-store-sqlite.ts` | Two prepared statements; keyset SQL; logger seam |
+| `src/storage/__tests__/fact-store.contract.test.ts` | InMemoryFactStore keyset parity |
+| `src/activities/recall.ts` | FactStore interface JSDoc updated; FSE-2 closed note |
+
+---
+
+## v1 Mutated In Place (Not Bumped to v2)
+
+`DecodedCursor` v1 variant changes from `{ offset }` to `{ lastSort, lastId }`. The version
+number stays `1`. Rationale: the old v1 format never shipped to a stable public API (Slice D+
+was an internal cursor upgrade); no external cursors exist in the wild. Bumping to v2 would
+require recognizing and rejecting old `{ v:1, offset }` cursors — adding a case for a format
+that was never persisted externally. The cleaner cut is: v1 now means keyset; anything with
+`v` absent or `v !== 1` is either garbage (restart) or a contract violation (throw). No
+migration of existing cursor strings is needed.
+
+---
+
+## FSE-2 Guarantee — Corrected (Fix Wave #1)
+
+With keyset pagination, the WHERE predicate anchors on `(lastSort, lastId)` — the composite
+score and row id of the last returned row. Any fact **inserted** between page fetches with a
+higher composite score than `lastSort` is naturally excluded (it appears "before" the cursor
+anchor in sort order). **Concurrent inserts cannot cause duplicate rows** — FSE-2 is closed
+for INSERT-induced cross-page duplication. FS-11 verifies this directly.
+
+**Trust-mutation caveat (corrected from initial drop):** If a row already returned on page 1
+has its trust score mutated between page fetches, its recomputed composite can re-cross the
+`lastSort` anchor → the row may re-appear on a subsequent page. Callers needing strict
+stability under concurrent trust writes must restart pagination. This is an explicit
+out-of-scope case documented in the FS-11 contract test header.
+
+---
+
+## Two-Statement Design (Updated: CTE Refactor — Fix Wave #9)
+
+`SqliteFactStore` prepares two SQL statements at construction:
+
+- `stmtFirst` — no keyset predicate; used on first page (no cursor or restart sentinel)
+- `stmtKeyset` — two-level CTE: `base` selects and computes `bm25(facts_fts) AS bm25_score`
+  once; `ranked` derives `(-bm25_score)*trust AS composite`; outer query filters on `composite`
+
+**Why CTE?** The original stmtKeyset called `bm25(facts_fts)` twice in the WHERE predicate
+(once for `< $last_sort`, once for `= $last_sort`). The CTE computes bm25 once in `base`,
+derives composite once in `ranked`, and the outer SELECT filters on the pre-computed value.
+Single bm25 evaluation + cleaner boundary — the composite expression in the CTE MUST mirror
+the sort expression in stmtFirst's ORDER BY or the keyset boundary silently breaks.
+
+**Bit-exact boundary:** `lastSort` = `(-row.bm25_score) * (row.trust ?? NaN)` in JS.
+The CTE `ranked` derives `(-bm25_score)*trust AS composite`. Both are IEEE 754 double
+arithmetic on the same operand values — bit-exact match guaranteed.
+
+**Why two statements, not conditional SQL?** `better-sqlite3` `prepare()` compiles a fixed SQL
+string at construction time; bind params are typed to that string. Two statements is idiomatic.
+
+**Alias in ORDER BY:** SQLite can expand SELECT aliases in ORDER BY. stmtFirst uses
+`(-bm25_score) * f.trust DESC` in ORDER BY; stmtKeyset CTE uses `composite DESC`. Semantically
+identical.
+
+---
+
+## Bit-Exact Boundary
+
+`lastSort` stored in the cursor = `(-row.bm25_score) * (row.trust ?? NaN)` computed in
+JavaScript from the fetched row. The WHERE keyset predicate computes
+`(-bm25(facts_fts)) * f.trust`. Both use IEEE 754 double arithmetic on the same operand
+values. The comparison is bit-exact. If `trust` is somehow NULL (filtered by `IS NOT NULL`
+but guarded defensively), `NaN` propagates into the cursor and decodeCursor treats it as a
+restart sentinel (non-finite lastSort → RESTART) — safe degradation.
+
+---
+
+## InMemoryFactStore Keyset Parity
+
+Keyset filter in InMemoryFactStore:
+```typescript
+scored.filter(f =>
+  f.score < keysetLastSort ||
+  (f.score === keysetLastSort && f.insertionOrder > keysetLastId)
+)
+```
+This mirrors the SQL predicate exactly. `insertionOrder` starts at 1 (not 0) to match
+SQLite autoincrement semantics — `decodeCursor` rejects `lastId <= 0` as a restart sentinel.
+
+---
+
+## encodeCursor Object Param (Fix Wave #2)
+
+Original signature: `encodeCursor(lastSort: number, lastId: number, scope: string)` — three
+positional args, two of the same type. Swapping `lastSort` and `lastId` would type-check but
+silently corrupt all subsequent pages. Changed to single object param:
+`encodeCursor({ lastSort, lastId, scope })`. All call sites updated.
+
+---
+
+## Logger Seam (Updated: Full Threading — Fix Wave #3)
+
+`SqliteFactStore` constructor: `constructor(db, logger?: { warn(msg): void })`. Default: `console`.
+`deps.ts` `createSqliteRecallDeps(db, options?)` now accepts `{ logger? }` in options and
+threads it to `SqliteFactStore` and onto the returned `RecallDeps`. `recall.ts` `recallWithScores`
+uses `deps.logger ?? console` instead of `console.warn` directly. Same logger instance handles
+both FTS5 parse-error warnings and attention-tier warnings. Backward-compatible — no caller
+forced to provide a logger.
+
+---
+
+## Deviations from Spec
+
+None. All four implementation requirements (cursor.ts, fact-store-sqlite.ts, InMemoryFactStore,
+recall.ts JSDoc) delivered. All specified constraints honored (sort key unchanged, per-page
+normalization unchanged, FS-4 footgun lock intact, scope fingerprint check preserved for v1).
+ 
 
 ---
 
