@@ -745,6 +745,38 @@ describe('profile build inside curate()', () => {
     expect(result.profileBuild!.durationMs).toBeGreaterThanOrEqual(0);
   });
 
+  it('should run sweep/cap even when buildProfiles throws (isolated failure)', async () => {
+    // RED spec: sweep/cap must execute in their OWN guarded block, independent
+    // of buildProfiles success.  With the old single-try structure this FAILS
+    // because the buildProfiles throw skips the sweep entirely.
+    db = getDb();
+    const oldAt = '2020-01-01T00:00:00.000Z'; // well beyond the 7-day TTL
+    insertSignalSamples(db, [
+      { kind: 'drift' as const, sessionId, skillId: 'skill-sweep-isolated', value: 0.1, collectedAt: oldAt },
+      { kind: 'drift' as const, sessionId, skillId: 'skill-sweep-isolated', value: 0.2, collectedAt: oldAt },
+    ]);
+    // Drop execution_profiles: buildProfiles fails on upsert, but signal_samples
+    // remains fully accessible so sweep/cap can still operate.
+    db.prepare('DROP TABLE execution_profiles').run();
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const result = await curate();
+
+    expect(result).toBeDefined();
+    expect(result.changeVectorSweep).toBeDefined();
+    expect(result.profileBuild).toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('buildProfiles'),
+      expect.anything(),
+    );
+    // KEY: TTL sweep must have run — old rows must be gone despite build failure
+    const remaining = db
+      .prepare("SELECT COUNT(*) AS c FROM signal_samples WHERE skill_id = 'skill-sweep-isolated'")
+      .get() as { c: number };
+    expect(remaining.c).toBe(0);
+  });
+
   it('curate() enforces signal_samples cap so table stays bounded after many samples', async () => {
     // Insert more than SIGNAL_SAMPLE_CAP rows to verify curate trims the table.
     // We use a small proxy cap rather than 10 000 rows to keep the test fast:

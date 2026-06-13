@@ -134,14 +134,15 @@ export const PRESCRIBER_TIME_BUDGET_MS = 5000;
 
 /**
  * Maximum rows kept in the signal_samples table (matches migration comment:
- * "7-day TTL, capped at 10K rows"). Enforced by curate() after each
- * successful buildProfiles run.
+ * "7-day TTL, capped at 10K rows"). Enforced by curate() in its own guarded
+ * block, independent of buildProfiles success.
  */
 const SIGNAL_SAMPLE_CAP = 10_000;
 
 /**
  * TTL for signal_samples rows (7 days, matching migration design note).
- * Rows older than this are swept by curate() after each buildProfiles run.
+ * Rows older than this are swept by curate() in its own guarded block,
+ * independent of buildProfiles success.
  */
 const SIGNAL_SAMPLE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
@@ -239,13 +240,18 @@ export async function curate(
   let profileBuild: BuildResult | undefined;
   try {
     profileBuild = buildProfiles(db);
-    // Bound the table after a successful build: sweep expired TTL rows first,
-    // then enforce the absolute row cap so stale-profile drift stays observable.
+  } catch (error: unknown) {
+    console.warn('curate: buildProfiles failed, skipping profile build', error);
+  }
+
+  // Bound signal_samples regardless of whether buildProfiles succeeded — the
+  // table must stay within its TTL/cap invariant even during build failures.
+  try {
     const cutoffIso = new Date(Date.now() - SIGNAL_SAMPLE_TTL_MS).toISOString();
     sweepSignalSamples(db, cutoffIso);
     enforceSignalSampleCap(db, SIGNAL_SAMPLE_CAP);
   } catch (error: unknown) {
-    console.warn('curate: buildProfiles failed, continuing without profile build', error);
+    console.warn('curate: signal_samples sweep/cap failed, table may grow unbounded', error);
   }
 
   const changeVectorSweep = sweepChangeVectors(db, changeVectorConfig);

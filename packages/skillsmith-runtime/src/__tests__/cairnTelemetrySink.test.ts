@@ -1,7 +1,7 @@
 /**
  * cairnTelemetrySink — London-school TDD (RED → GREEN).
  *
- * Verifies that `createCairnTelemetrySink(db)` produces a TelemetrySink
+ * Verifies that `createCairnTelemetrySink(db)` produces a SignalSampleSink
  * whose `enqueueSample` + `flush` persists rows into the `signal_samples`
  * table of a cairn DB, including null-mapping for untagged (no-skillId) samples.
  */

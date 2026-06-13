@@ -3,7 +3,7 @@
  *
  * Defines the contract that ForgeClient/ForgeSession must implement so that
  * three telemetry collectors observe the bridge event stream and a
- * TelemetrySink receives the derived SignalSamples on session disconnect.
+ * SignalSampleSink receives the derived SignalSamples on session disconnect.
  *
  * STATUS: RED — ForgeSession instrumentation is not yet implemented.
  *         Roger implements GREEN (collector creation + event feed + sink flush)
@@ -11,7 +11,7 @@
  *
  * Config field names assumed (Roger adds these to ForgeSessionConfig):
  *   skillId?: string             — forwarded to all three collector factories
- *   telemetrySink?: TelemetrySink — receives flushed SignalSamples at disconnect
+ *   telemetrySink?: SignalSampleSink — receives flushed SignalSamples at disconnect
  *
  * Lifecycle contract Roger must satisfy:
  *   1. createSession(config) → create createDriftCollector(config.skillId),
