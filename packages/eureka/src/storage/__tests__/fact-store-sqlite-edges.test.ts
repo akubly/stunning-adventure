@@ -27,6 +27,11 @@
  *   FS-SE-13 Non-FTS SQLITE_ERROR (e.g. missing table) propagates as rejected Promise
  *   FS-SE-15 Cursor stays under 256 bytes; keyset fields (lastSort/lastId) present (Slice D++)
  *
+ * Note: FS-SE-16a–e (attention-column read-through) were removed from this file.
+ * Crispin wired SqliteFactStore GREEN (all 205 pass). Those invariants are now
+ * promoted to the shared contract suite as FS-12 / FS-13 (fact-store-contract.helper.ts)
+ * and run for BOTH SqliteFactStore and InMemoryFactStore.
+ *
  * All tests use :memory: databases (no disk I/O needed — disk/WAL edges are
  * already covered by fact-reader-sqlite-edges.test.ts).
  */
@@ -543,4 +548,23 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
       lastId: expect.any(Number),
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // FS-SE-16 — Attention-column coverage (MOVED TO CONTRACT SUITE)
+  //
+  // Attention-column read-through (attentionTier, importance, lastAccessed)
+  // is now enforced at the shared contract level (FS-12 / FS-13 in
+  // fact-store-contract.helper.ts), running for BOTH SqliteFactStore and
+  // InMemoryFactStore on every contract-suite execution.
+  //
+  // Placement rationale update: FS-SE-16a–e were originally placed here
+  // because SeedFact had no attention-column params and InMemoryFactStore
+  // did not model these columns — making this a SQLite-specific concern.
+  // That constraint was intentionally reversed: SeedFact now accepts an
+  // optional `attention` opts argument and InMemoryFactStore stores and
+  // returns all three migration-002 columns. The invariant is now contract-
+  // level; the sqlite-edges file no longer carries these tests to avoid
+  // duplicate coverage.
+  // ─────────────────────────────────────────────────────────────────────────
 });
+

@@ -23,9 +23,10 @@
  *   ORDER BY (-bm25_score) * f.trust DESC, f.id ASC
  * importance/last_accessed/attention_tier are NOT in the sort key — they are
  * consumed by the recall-layer compositeScore at query time, not at SQL time.
- * The SqliteFactStore still hard-codes these defaults in the RecallResult shape
- * (attentionTier='warm', importance/lastAccessed omitted) — reading them from
- * the new columns is deferred to the next GREEN phase.
+ * SqliteFactStore now reads `attention_tier` → `attentionTier`, `importance` →
+ * `importance`, and `last_accessed` → `lastAccessed` (SQL NULL mapped to `undefined`).
+ * The migration-002 defaults (attention_tier='warm', importance 0, last_accessed NULL)
+ * reproduce the pre-wiring behaviour exactly.
  *
  * ## Cursor design (v1 keyset — Slice D++)
  *
@@ -106,6 +107,9 @@ interface SearchRow {
   content: string;
   trust: number | null;
   bm25_score: number;
+  importance: number;
+  last_accessed: number | null;
+  attention_tier: string;
 }
 
 type SearchBindFirst = {
@@ -149,7 +153,10 @@ const SQL_CTE_BASE = `
       f.id,
       f.content,
       f.trust,
-      bm25(facts_fts) AS bm25_score
+      bm25(facts_fts) AS bm25_score,
+      f.importance,
+      f.last_accessed,
+      f.attention_tier
     FROM facts_fts
     JOIN facts f ON f.id = facts_fts.rowid
     WHERE facts_fts MATCH $query
@@ -162,7 +169,8 @@ const SQL_CTE_BASE = `
     -- If importance or other signals are ever folded into the sort key, update both here
     -- and in stmtFirst's ORDER BY simultaneously, or the keyset boundary silently breaks.
     SELECT id, content, trust, bm25_score,
-           (-bm25_score) * trust AS composite
+           (-bm25_score) * trust AS composite,
+           importance, last_accessed, attention_tier
     FROM base
   )
 `;
@@ -188,7 +196,10 @@ export class SqliteFactStore implements FactStore {
         f.id,
         f.content,
         f.trust,
-        bm25(facts_fts) AS bm25_score
+        bm25(facts_fts) AS bm25_score,
+        f.importance,
+        f.last_accessed,
+        f.attention_tier
       FROM facts_fts
       JOIN facts f ON f.id = facts_fts.rowid
       WHERE facts_fts MATCH $query
@@ -203,7 +214,7 @@ export class SqliteFactStore implements FactStore {
     // The outer SELECT filters on pre-computed composite — no second bm25 call.
     this.stmtKeyset = db.prepare<SearchBindKeyset, SearchRow>(`
       ${SQL_CTE_BASE}
-      SELECT id, content, trust, bm25_score
+      SELECT id, content, trust, bm25_score, importance, last_accessed, attention_tier
       FROM ranked
       WHERE composite < $last_sort
          OR (composite = $last_sort AND id > $last_id)
@@ -308,9 +319,9 @@ export class SqliteFactStore implements FactStore {
       content: row.content,
       // NULL trust is excluded by the WHERE clause but guard defensively.
       trust: row.trust === null ? NaN : row.trust,
-      // attentionTier/importance/lastAccessed columns exist in migration 002 but
-      // are not yet wired into SELECT — reading them is deferred to the next GREEN phase.
-      attentionTier: 'warm',
+      attentionTier: row.attention_tier as 'hot' | 'warm' | 'cold',
+      importance: row.importance,
+      lastAccessed: row.last_accessed ?? undefined,
       relevance: relevances[i],
     }));
 
