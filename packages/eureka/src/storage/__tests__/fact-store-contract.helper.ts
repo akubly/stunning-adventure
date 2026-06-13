@@ -40,6 +40,9 @@
  *                                        should restart pagination.
  * FS-12  Attention-column read-through — non-default attentionTier/importance/lastAccessed seeded
  *                                         via SeedFact opts surface unchanged from search() for ALL impls.
+ * FS-12b Attention-column read-through (cold) — cold-tier fact surfaces attentionTier 'cold' via search().
+ * FS-12c Attention-column cursor keyset path  — attention fields (attentionTier/importance/lastAccessed)
+ *                                               surface correctly on page-2 (keyset SELECT path; all impls).
  * FS-13  Attention-column defaults     — a fact seeded without attention opts returns attentionTier 'warm',
  *                                         importance 0, lastAccessed absent (undefined).
  *
@@ -113,9 +116,9 @@ const SESSION_B = 'fs-contract-session-B' as SessionId;
  *
  * Slice D++ update: FS-10f deleted (v0 backward-compat removed); FS-11 added (FSE-2
  * concurrent-insert safety). FS-5b gains a third RED case (v0-with-valid-offset).
- * Attention-column contract (FS-12/FS-13) added: SeedFact extended with optional `attention`
- * opts; both InMemoryFactStore and SqliteFactStore seeds honour them.
- * Each call adds 27 tests (FS-1..FS-13; FS-5b×3, FS-8×3, FS-9×4, FS-10a–h×7 via it/it.each).
+ * Attention-column contract (FS-12/FS-12b/FS-12c/FS-13) added: SeedFact extended with optional
+ * `attention` opts; both InMemoryFactStore and SqliteFactStore seeds honour them.
+ * Each call adds 29 tests (FS-1..FS-13 + FS-12c; FS-5b×3, FS-8×3, FS-9×4, FS-10a–h×7 via it/it.each).
  *
  * @param implName    Human-readable label shown in test output (e.g. 'SqliteFactStore').
  * @param makeHarness Factory called once per test (via beforeEach) to produce a fresh,
@@ -686,6 +689,47 @@ export function runFactStoreContract(
       const found = results.find(r => r.content.includes('cold tier archive signal'));
       expect(found).toBeDefined();
       expect(found!.attentionTier).toBe('cold');
+    });
+
+    // =======================================================================
+    // FS-12c — Attention-column cursor keyset path
+    //
+    // FS-12 and FS-12b only exercise first-page reads (no cursor). This test
+    // verifies that the keyset continuation path (stmtKeyset SELECT in
+    // SqliteFactStore; afterCursor filter in InMemoryFactStore) also returns
+    // attentionTier, importance, and lastAccessed correctly on PAGE-2 rows.
+    //
+    // Strategy: seed two facts for the same query. The page-1 anchor has a
+    // higher composite score (higher trust, same term count) so it reliably
+    // lands on page 1. The page-2 attention fact carries hot-tier data and
+    // must surface those values intact after cursor continuation.
+    // =======================================================================
+
+    it('FS-12c: attention columns surface correctly on page-2 row (keyset continuation path)', async () => {
+      const epochMs = 1_749_600_000_000; // 2025-06-11T00:00:00.000Z — fixed, not Date.now()
+      // Page-1 anchor: higher composite score via higher trust (1 term × 0.9 > 1 term × 0.8).
+      await seed('fs12c-p1', SESSION_A, 'cursorattn alpha page1 anchor', 0.9);
+      // Page-2 attention fact: lower composite score, carries hot-tier data.
+      await seed('fs12c-p2', SESSION_A, 'cursorattn beta page2 signal', 0.8, {
+        attentionTier: 'hot',
+        importance: 0.75,
+        lastAccessed: epochMs,
+      });
+
+      // Fetch page 1 — exercises stmtFirst / first-page path.
+      const page1 = await impl.search({ query: 'cursorattn', sessionId: SESSION_A, limit: 1 });
+      expect(page1.results).toHaveLength(1);
+      expect(page1.nextCursor).toBeDefined();
+      expect(page1.results[0].content).toContain('alpha page1 anchor');
+
+      // Fetch page 2 via cursor — exercises the stmtKeyset / afterCursor path.
+      const page2 = await impl.search({ query: 'cursorattn', sessionId: SESSION_A, limit: 1, cursor: page1.nextCursor });
+      expect(page2.results).toHaveLength(1);
+      const found = page2.results[0];
+      expect(found.content).toContain('beta page2 signal');
+      expect(found.attentionTier).toBe('hot');
+      expect(found.importance).toBeCloseTo(0.75, 5);
+      expect(found.lastAccessed).toBe(epochMs);
     });
 
     // =======================================================================

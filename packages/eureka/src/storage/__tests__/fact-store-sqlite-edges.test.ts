@@ -27,10 +27,9 @@
  *   FS-SE-13 Non-FTS SQLITE_ERROR (e.g. missing table) propagates as rejected Promise
  *   FS-SE-15 Cursor stays under 256 bytes; keyset fields (lastSort/lastId) present (Slice D++)
  *
- * Note: FS-SE-16a–e (attention-column read-through) were removed from this file.
- * Crispin wired SqliteFactStore GREEN (all 205 pass). Those invariants are now
- * promoted to the shared contract suite as FS-12 / FS-13 (fact-store-contract.helper.ts)
- * and run for BOTH SqliteFactStore and InMemoryFactStore.
+ * Note: FS-SE-16a–e (attention-column read-through) are now covered at the contract level
+ * (FS-12 / FS-13 in fact-store-contract.helper.ts) for both SqliteFactStore and
+ * InMemoryFactStore; removed here to avoid duplicate coverage.
  *
  * All tests use :memory: databases (no disk I/O needed — disk/WAL edges are
  * already covered by fact-reader-sqlite-edges.test.ts).
@@ -425,7 +424,7 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
   // incomparability. Callers that need cross-page comparison must not rely on
   // the absolute relevance value.
   //
-  // Roger acknowledged this in his decision drop §2: "The downside is that
+  // The accepted design (see decision log §2) acknowledges that "the downside is that
   // relevance scores are not comparable across pages." This test makes that
   // statement machine-verifiable.
   // ─────────────────────────────────────────────────────────────────────────

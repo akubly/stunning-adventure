@@ -7,10 +7,10 @@
  * The helper definition (runFactStoreContract + FactStoreHarness) lives in:
  *   ./fact-store-contract.helper.ts
  *
- * Each call to runFactStoreContract adds 27 tests (FS-1..FS-13; FS-5b×3, FS-8×3, FS-9×4, FS-10a–h×7 via it/it.each).
- * InMemoryFactStore wired below → 27 contract tests.
- * SqliteFactStore wired below   → 27 contract tests.
- * Total: 54 (48 pre-attention + 6 new FS-12/FS-13 attention-column contract tests)
+ * Each call to runFactStoreContract adds 29 tests (FS-1..FS-13 + FS-12c; FS-5b×3, FS-8×3, FS-9×4, FS-10a–h×7 via it/it.each).
+ * InMemoryFactStore wired below → 29 contract tests.
+ * SqliteFactStore wired below   → 29 contract tests.
+ * Total: 58 (25 pre-attention × 2 impls + 8 attention-column contract tests × 2 impls)
  */
 
 import Database from 'better-sqlite3';
@@ -130,7 +130,7 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
         trust: f.trust,
         attentionTier: f.attentionTier,
         importance: f.importance,
-        ...(f.lastAccessed !== undefined ? { lastAccessed: f.lastAccessed } : {}),
+        lastAccessed: f.lastAccessed,
         relevance:
           termCounts.length <= 1 || maxTC === minTC
             ? 1.0
