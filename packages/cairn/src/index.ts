@@ -102,6 +102,18 @@ export {
   getTestHistory,
   getLatestTestRun,
 } from './db/skillTestResults.js';
+export {
+  insertSignalSample,
+  insertSignalSamples,
+  querySignalSamples,
+  countSignalSamples,
+  sweepSignalSamples,
+  enforceSignalSampleCap,
+  clearSignalSamples,
+} from './db/signalSamples.js';
+export type { SignalSampleInsert, SignalSampleRow, SignalSampleQuery } from './db/signalSamples.js';
+export { buildProfiles } from './agents/profileBuilder.js';
+export type { BuildOptions, BuildResult } from './agents/profileBuilder.js';
 
 // Types
 export type {
