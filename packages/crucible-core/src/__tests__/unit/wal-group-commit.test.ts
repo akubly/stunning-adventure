@@ -128,7 +128,7 @@ describe('WAL FileSystemWalBackend — group-commit batching (§3.5)', () => {
     const input = makeInput();
 
     const p0 = backend.commitRow(input, { verdict: 'COMMIT', hookId: null });
-    const p1 = backend.commitRow(input, { verdict: 'PAUSE',  hookId: null });
+    const p1 = backend.commitRow(input, { verdict: 'PAUSE',  hookId: 'test-hook' });
     const p2 = backend.commitRow(input, { verdict: 'COMMIT', hookId: null }); // will be restaged
 
     // Flush: sealAndSplit commits rows 0..1, restages row 2
@@ -149,8 +149,8 @@ describe('WAL FileSystemWalBackend — group-commit batching (§3.5)', () => {
     await backend.flush();
     const o2 = await p2;
     expect(o2).toBe(2);
-    // Second flush: same payload as before → CAS file already durable → 0 CAS syncs + 1 segment = 1 more sync
-    expect(syncCount).toBe(3); // 2 (first batch) + 1 (second batch, segment only)
+    // Second flush: same payload as before → CAS temp file is re-synced, then segment
+    expect(syncCount).toBe(4); // 2 (first batch) + 2 (second batch: CAS temp + segment)
 
     // Now 3 records total
     const records2 = backend.readSegmentRecords();
@@ -171,7 +171,7 @@ describe('WAL FileSystemWalBackend — group-commit batching (§3.5)', () => {
 
     const input = makeInput();
     const p0 = backend.commitRow(input, { verdict: 'COMMIT', hookId: null });
-    const p1 = backend.commitRow(input, { verdict: 'PAUSE',  hookId: null });
+    const p1 = backend.commitRow(input, { verdict: 'PAUSE',  hookId: 'test-hook' });
 
     await backend.flush();
     await Promise.all([p0, p1]);
@@ -199,7 +199,7 @@ describe('WAL FileSystemWalBackend — group-commit batching (§3.5)', () => {
 
     const input = makeInput();
     const p0 = backend.commitRow(input, { verdict: 'COMMIT', hookId: null });
-    const p1 = backend.commitRow(input, { verdict: 'PAUSE',  hookId: null });
+    const p1 = backend.commitRow(input, { verdict: 'PAUSE',  hookId: 'test-hook' });
 
     await backend.flush();
     await Promise.all([p0, p1]);

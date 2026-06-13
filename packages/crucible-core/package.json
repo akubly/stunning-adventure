@@ -27,7 +27,8 @@
   "dependencies": {
     "@akubly/types": "*",
     "@noble/hashes": "^2.2.0",
-    "better-sqlite3": "^12.8.0"
+    "better-sqlite3": "^12.8.0",
+    "cborg": "^5.1.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

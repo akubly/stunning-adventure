@@ -1729,6 +1729,17 @@ Construct manually: Buffer.from(JSON.stringify({ v: 99, offset: 0, scope: 'deadb
 
 ---
 
+## 2026-06-11: Crucible S1 WAL Correctness — Landing Notification (from Roger)
+
+**Event:** S1 WAL correctness batch landed on squad/crucible-wal-correctness-s1. Circulating for S2 planning:
+- **#57**: Verdict encoding (null vs continue) -> 0xFF/0x00 encoding now stable
+- **#60**: Canonical CBOR hashing via wal/cbor.ts (deterministic serialization locked)
+- **#68**: CAS torn-blob mitigation (temp-file + atomic rename replaces existsSync-skip dedup)
+
+**Metrics:** 136/136 tests green (+8 new), tsc --build clean. Skills extracted: atomic-cas-write, canonical-cbor-hashing.
+Impact for S2: WAL substrate hardened; Phase 0.5 walking skeleton can proceed with confidence in blob atomicity and CBOR determinism.
+
+**2026-06-12:** Crucible S1 WAL Correctness — 2-cycle persona review COMPLETE, ship-ready (Scribe).
 ## 2026-06-10: M8 Slice D++ Shipped to Branch
 
 **Session:** M8 Slice D++ keyset pagination (quad spawn)  

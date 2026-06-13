@@ -64,6 +64,13 @@ function commit(verdict: Exclude<HookVerdict, 'VETO'> = 'COMMIT'): HookResult & 
   return { verdict, hookId: null };
 }
 
+function commitFromHook(verdict: Exclude<HookVerdict, 'VETO'> = 'COMMIT'): HookResult & {
+  verdict: Exclude<HookVerdict, 'VETO'>;
+  hookId: string | null;
+} {
+  return { verdict, hookId: 'test-hook-a' };
+}
+
 // ─── Contract suite ───────────────────────────────────────────────────────────
 
 export function runWalBackendContract(
@@ -106,9 +113,9 @@ export function runWalBackendContract(
     });
 
     it('CL-3: verdict→hookVerdict byte: COMMIT=0x00, OBSERVE=0x01, PAUSE=0x02', async () => {
-      await h.backend.commitRow(makeInput('c'), commit('COMMIT'));
-      await h.backend.commitRow(makeInput('o'), commit('OBSERVE'));
-      await h.backend.commitRow(makeInput('p'), commit('PAUSE'));
+      await h.backend.commitRow(makeInput('c'), commitFromHook('COMMIT'));
+      await h.backend.commitRow(makeInput('o'), commitFromHook('OBSERVE'));
+      await h.backend.commitRow(makeInput('p'), commitFromHook('PAUSE'));
       if (h.flush) await h.flush();
 
       // Offsets must be assigned sequentially regardless of verdict
@@ -139,13 +146,22 @@ export function runWalBackendContract(
 
     it('CL-5: PAUSE-verdict row is visible via readRows after flush', async () => {
       await h.backend.commitRow(makeInput('before'), commit('COMMIT'));
-      await h.backend.commitRow(makeInput('paused'), commit('PAUSE'));
+      await h.backend.commitRow(makeInput('paused'), commitFromHook('PAUSE'));
       if (h.flush) await h.flush();
 
       const rows = await h.backend.readRows({ range: [0, 10] });
       expect(rows).toHaveLength(2);
       expect(rows[1].offset).toBe(1);
       expect((rows[1].primitivePayload as { content: string }).content).toBe('paused');
+    });
+
+    it('CL-8: no-match byte 0xFF (hookId=null, COMMIT) vs explicit-continue 0x00 (hookId non-null, COMMIT)', async () => {
+      await h.backend.commitRow(makeInput('no-match'), commit('COMMIT'));
+      await h.backend.commitRow(makeInput('explicit-continue'), commitFromHook('COMMIT'));
+      if (h.flush) await h.flush();
+
+      expect(await h.readVerdictByte(0)).toBe(0xFF);
+      expect(await h.readVerdictByte(1)).toBe(0x00);
     });
   });
 }
@@ -235,8 +251,8 @@ describe('WalBackend contract — FileSystemWalBackend durability (close+reopen)
   it('CL-6: PAUSE hookVerdict byte survives close+reopen (durable backend)', async () => {
     // Write COMMIT + PAUSE rows, then close
     const writer = await createFileSystemWalBackend(rootDir, sessionId);
-    await writer.commitRow(makeInput('c'), commit('COMMIT'));
-    await writer.commitRow(makeInput('p'), commit('PAUSE'));
+    await writer.commitRow(makeInput('c'), commitFromHook('COMMIT'));
+    await writer.commitRow(makeInput('p'), commitFromHook('PAUSE'));
     await writer.close();
 
     // Reopen read-only — segment is re-read from disk
@@ -251,6 +267,22 @@ describe('WalBackend contract — FileSystemWalBackend durability (close+reopen)
     const rows = await reader.readRows({ range: [0, 10] });
     expect(rows).toHaveLength(2);
     expect(rows[1].offset).toBe(1);
+
+    await reader.close();
+  });
+
+  it('CL-10: NO_MATCH (0xFF) and explicit-COMMIT (0x00) hookVerdict bytes survive close+reopen', async () => {
+    const writer = await createFileSystemWalBackend(rootDir, sessionId);
+    await writer.commitRow(makeInput('no-match'), commit('COMMIT'));
+    await writer.commitRow(makeInput('explicit-commit'), commitFromHook('COMMIT'));
+    await writer.close();
+
+    const reader = await createFileSystemWalBackend(rootDir, sessionId, { readOnly: true });
+    const recs = reader.readSegmentRecords();
+
+    expect(recs).toHaveLength(2);
+    expect(recs[0].hookVerdict).toBe(0xFF);
+    expect(recs[1].hookVerdict).toBe(0x00);
 
     await reader.close();
   });
@@ -323,6 +355,84 @@ describe('WalBackend contract — CL-7: timestampNs monotonicity (clock goes bac
     expect(recs[1].timestampNs).toBeGreaterThanOrEqual(recs[0].timestampNs);
 
     await backend2.close();
+    try { fs.rmSync(rootDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+  });
+});
+
+// ─── CL-9: Record materialization parity (I2) ─────────────────────────────────
+//
+// Both backends must produce identical payloadHash, readSetHash, and envelopeCbor
+// for the same PrimitiveInput.  This test catches drift if one backend's
+// materializeRow path diverges from the other's (e.g. different CBOR options,
+// different hash seam, different readSet handling).
+
+describe('WalBackend contract — CL-9: materialization parity (I2)', () => {
+  it('CL-9a: InMemory and FS backends produce identical payloadHash for same payload', async () => {
+    const rootDir   = path.join(os.tmpdir(), `crucible-cl9-${randomUUID()}`);
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+    fs.mkdirSync(rootDir, { recursive: true });
+
+    const inMem = new InMemoryWalBackend();
+    const fsBe  = await createFileSystemWalBackend(rootDir, sessionId);
+
+    const input: PrimitiveInput = {
+      primitiveKind:    'observation',
+      primitivePayload: { b: 2, a: 1, nested: { z: 99 } },
+      causalReadSet:    ['dep-a', 'dep-b'],
+    };
+    const hr: HookResult & { verdict: Exclude<HookVerdict, 'VETO'>; hookId: string | null } =
+      { verdict: 'COMMIT', hookId: null };
+
+    await inMem.commitRow(input, hr);
+    await fsBe.commitRow(input, hr);
+
+    const imRec = inMem.readSegmentRecords()[0];
+    const fsRec = fsBe.readSegmentRecords()[0];
+
+    expect(Buffer.from(imRec.payloadHash).toString('hex'))
+      .toBe(Buffer.from(fsRec.payloadHash).toString('hex'));
+    expect(Buffer.from(imRec.readSetHash).toString('hex'))
+      .toBe(Buffer.from(fsRec.readSetHash).toString('hex'));
+    expect(Buffer.from(imRec.envelopeCbor).toString('hex'))
+      .toBe(Buffer.from(fsRec.envelopeCbor).toString('hex'));
+
+    await fsBe.close();
+    try { fs.rmSync(rootDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+  });
+
+  it('CL-9b: both backends produce identical payloadHash with keys in reversed insertion order', async () => {
+    const rootDir   = path.join(os.tmpdir(), `crucible-cl9b-${randomUUID()}`);
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+    fs.mkdirSync(rootDir, { recursive: true });
+
+    const inMem1 = new InMemoryWalBackend();
+    const inMem2 = new InMemoryWalBackend();
+    const fsBe   = await createFileSystemWalBackend(rootDir, sessionId);
+
+    const hr: HookResult & { verdict: Exclude<HookVerdict, 'VETO'>; hookId: string | null } =
+      { verdict: 'COMMIT', hookId: null };
+
+    await inMem1.commitRow(
+      { primitiveKind: 'observation', primitivePayload: { aa: 1, z: 2 }, causalReadSet: [] },
+      hr,
+    );
+    await inMem2.commitRow(
+      { primitiveKind: 'observation', primitivePayload: { z: 2, aa: 1 }, causalReadSet: [] },
+      hr,
+    );
+    await fsBe.commitRow(
+      { primitiveKind: 'observation', primitivePayload: { aa: 1, z: 2 }, causalReadSet: [] },
+      hr,
+    );
+
+    const h1 = Buffer.from(inMem1.readSegmentRecords()[0].payloadHash).toString('hex');
+    const h2 = Buffer.from(inMem2.readSegmentRecords()[0].payloadHash).toString('hex');
+    const h3 = Buffer.from(fsBe.readSegmentRecords()[0].payloadHash).toString('hex');
+
+    expect(h1).toBe(h2);
+    expect(h1).toBe(h3);
+
+    await fsBe.close();
     try { fs.rmSync(rootDir, { recursive: true, force: true }); } catch { /* best-effort */ }
   });
 });
