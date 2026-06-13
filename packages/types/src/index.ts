@@ -132,6 +132,8 @@ export interface SessionIdentity {
 /** Pluggable sink for emitting bridge events. */
 export interface TelemetrySink {
   emit(event: CairnBridgeEvent): void | Promise<void>;
+  /** Enqueue a derived signal sample for persistence. */
+  enqueueSample(sample: SignalSample): void;
   flush?(): Promise<void>;
   close?(): Promise<void>;
 }

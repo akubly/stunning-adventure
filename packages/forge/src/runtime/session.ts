@@ -9,11 +9,17 @@
  */
 
 import type { SessionEvent } from "@github/copilot-sdk";
-import type { CairnBridgeEvent } from "@akubly/types";
+import type { CairnBridgeEvent, TelemetrySink } from "@akubly/types";
 
 import { bridgeEvent } from "../bridge/index.js";
 import { HookComposer, type HookObserver } from "../hooks/index.js";
 import type { ModelChangeRecord, ReasoningEffort } from "../session/index.js";
+import {
+  createDriftCollector,
+  createTokenCollector,
+  createOutcomeCollector,
+  type TelemetryCollector,
+} from "../telemetry/collectors.js";
 
 // ---------------------------------------------------------------------------
 // ForgeSessionConfig — passed by ForgeClient at construction time
@@ -26,6 +32,10 @@ export interface ForgeSessionConfig {
   workingDirectory?: string;
   /** Hook observers to compose and wire into the session. */
   observers?: HookObserver[];
+  /** Skill identifier forwarded to all three collector factories. */
+  skillId?: string;
+  /** Sink that receives flushed SignalSamples at session disconnect. */
+  telemetrySink?: TelemetrySink;
 }
 
 // ---------------------------------------------------------------------------
@@ -67,17 +77,29 @@ export class ForgeSession {
   private eventSubscriptions: Array<() => void> = [];
   private _disconnected = false;
   private _onDisconnect?: () => void;
+  private _collectors: TelemetryCollector[] | null = null;
+  private _telemetrySink: TelemetrySink | null = null;
 
   constructor(
     sdkSession: SDKSession,
     hookComposer: HookComposer,
-    _config: ForgeSessionConfig,
+    config: ForgeSessionConfig,
     options?: { onDisconnect?: () => void; preSessionEvents?: CairnBridgeEvent[] },
   ) {
     this.sdkSession = sdkSession;
     this.sessionId = sdkSession.sessionId;
     this.hookComposer = hookComposer;
     this._onDisconnect = options?.onDisconnect;
+
+    // Wire telemetry collectors if a sink was provided.
+    if (config.telemetrySink) {
+      this._collectors = [
+        createDriftCollector(config.skillId),
+        createTokenCollector(config.skillId),
+        createOutcomeCollector(config.skillId),
+      ];
+      this._telemetrySink = config.telemetrySink;
+    }
 
     // Merge any events captured during session creation (onEvent bridge)
     if (options?.preSessionEvents) {
@@ -91,6 +113,15 @@ export class ForgeSession {
         const bridged = bridgeEvent(this.sessionId, event);
         if (bridged) {
           this.bridgeEvents.push(bridged);
+          if (this._collectors) {
+            for (const c of this._collectors) {
+              try {
+                c.collect(bridged);
+              } catch (err) {
+                console.warn(`[ForgeSession] collector error: ${err}`);
+              }
+            }
+          }
         }
 
         // Track model changes for audit trail
@@ -136,6 +167,24 @@ export class ForgeSession {
       }
     }
     this.eventSubscriptions = [];
+
+    // Flush telemetry collectors into sink before closing the session.
+    if (this._collectors && this._telemetrySink) {
+      try {
+        for (const c of this._collectors) {
+          try {
+            const sample = c.flush(this.sessionId);
+            if (sample) this._telemetrySink.enqueueSample(sample);
+          } catch (err) {
+            console.warn(`[ForgeSession] collector flush error: ${err}`);
+          }
+        }
+        await this._telemetrySink.flush?.();
+      } catch (err) {
+        console.warn(`[ForgeSession] sink flush error: ${err}`);
+      }
+    }
+
     await this.sdkSession.disconnect();
     this._onDisconnect?.();
   }
