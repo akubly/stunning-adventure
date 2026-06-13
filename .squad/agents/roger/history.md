@@ -1678,3 +1678,5 @@ wal-cbor.test.ts. The suite is committed green code; comments now describe passi
 **Commit:** fdffd0d
 
 — Roger
+
+2026-06-12 — cloud cycle 2 — made forced-float64 explicit in crucibleEncodeOptions (was implicitly inherited from cborg rfc8949 preset); Copilot's float16 bug claim was empirically false but explicit-is-better hardening applied. (commit 32a49c9)
