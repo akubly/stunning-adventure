@@ -276,7 +276,7 @@ describe('WAL FileSystemCas — CAS fsync ordering (issue #59)', () => {
     await backend2.close();
 
     // I7: exact content check — must be the CBOR bytes for { tag: 'original' }
-    // encodeCbor({ tag: 'original' }) = a163746167686f726967696e616c (RFC 8949 §4.2.1)
+    // encodeCbor({ tag: 'original' }) = a163746167686f726967696e616c (Crucible canonical CBOR profile)
     const { encodeCbor: enc } = await import('../../ledger/wal/cbor.js');
     const expectedBytes = enc({ tag: 'original' });
     const restoredContent = fs.readFileSync(casFilePath);

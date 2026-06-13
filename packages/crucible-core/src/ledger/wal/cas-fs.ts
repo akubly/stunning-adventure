@@ -143,11 +143,16 @@ export class FileSystemCas {
         // Linux (ext4 ordered mode).  Skipped on Windows because NTFS writes
         // directory entries synchronously during rename; opening and fsyncing the
         // dir is a no-op on Windows but not harmful.
+        // NOTE: uses fs.fsyncSync directly — NOT syncFn — because directory-entry
+        // durability is a separate, always-real concern from the WAL/CAS data-file
+        // barrier seam.  Routing it through syncFn would inflate sync-call counts
+        // and break callers that pass fdatasync-only implementations (fdatasync
+        // does not flush directory metadata on Linux).
         if (process.platform !== 'win32') {
           const shardDir = path.dirname(finalPath);
           const dirFd = fs.openSync(shardDir, 'r');
           try {
-            syncFn(dirFd);
+            fs.fsyncSync(dirFd);
           } finally {
             fs.closeSync(dirFd);
           }

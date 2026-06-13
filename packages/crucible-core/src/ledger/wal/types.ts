@@ -37,8 +37,11 @@ export interface SegmentRecordInput {
   hookVerdict:   VerdictByte;      // u8: 0xFF=no predicate matched, 0x00=continue/explicit,
                                     //     0x01=observe, 0x02=pause
   flags:         SegmentRecordFlags;
-  payloadHash:   Blake3Hash;       // BLAKE3(CBOR(primitivePayload)); RFC 8949 §4.2.1 (issue #60)
-  readSetHash:   Blake3Hash;       // BLAKE3(CBOR(causalReadSet)), or zero-hash if empty; RFC 8949 §4.2.1
+  payloadHash:   Blake3Hash;       // BLAKE3(CBOR(primitivePayload)); Crucible canonical CBOR profile
+                                    //   (RFC 8949 §4.2.1 map-key ordering + shortest integers +
+                                    //    forced IEEE-754 binary64 for non-integer numbers; issue #60)
+  readSetHash:   Blake3Hash;       // BLAKE3(CBOR(causalReadSet)), or zero-hash if empty;
+                                    //   same Crucible canonical CBOR profile as payloadHash
   envelopeCbor:  Uint8Array;       // CBOR envelope tail; may be empty
 }
 
