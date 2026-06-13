@@ -633,11 +633,11 @@ export class FileSystemWalBackend implements WalBackend {
       // envelopeCbor/verdictByte for the same input (I2).
       const mat = materializeRow(entry.input, verdict, entry.hookResult.hookId);
 
-      // Store CAS blobs (CAS.put re-hashes internally; we use mat.payloadHash
-      // directly so the shared helper's hash is the authoritative value).
-      this.cas.put(mat.payloadBytes);
+      // Store CAS blobs. Pass the pre-computed hash from materializeRow so the
+      // CAS layer skips re-hashing (encode-once, hash-once hot path — A2).
+      this.cas.put(mat.payloadBytes, mat.payloadHash);
       if (mat.readSetBytes !== null) {
-        this.cas.put(mat.readSetBytes);
+        this.cas.put(mat.readSetBytes, mat.readSetHash);
       }
 
       // §3.10 timestampNs monotonicity: clamp to lastTimestampNs when clock goes backward
@@ -672,8 +672,11 @@ export class FileSystemWalBackend implements WalBackend {
     try {
       this.cas.syncAll(this.syncFn);
     } catch (err) {
-      // Segment not yet opened — no truncation needed. Reject committed
-      // entries and re-queue restaged entries (their promises stay pending).
+      // CAS sync failed — this commit is NOT durable. The WAL segment has not
+      // been written; the caller must retry the entire batch. Reject all
+      // committed entries so their promises are settled with an error.
+      // (pendingSync is already cleared inside syncAll's catch block, so a
+      // later batch will not re-sync orphaned temp blobs from this failed one.)
       for (const { row: entry } of committed) entry.reject(err);
       if (restaged.length > 0) {
         this.stagingQueue.unshift(...restaged.map(r => r.row));

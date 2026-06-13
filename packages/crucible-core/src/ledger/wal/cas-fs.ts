@@ -47,6 +47,11 @@ export class FileSystemCas {
    * Store bytes under their BLAKE3 hash key using a uniquely-named temp file.
    * Returns the 32-byte hash (the CAS key for the WAL record header).
    *
+   * @param bytes           - The bytes to store.
+   * @param precomputedHash - Optional pre-computed BLAKE3 hash. When provided,
+   *   the internal hash call is skipped (single-hash hot path for callers that
+   *   already computed the hash in materializeRow).
+   *
    * Uses a per-put unique suffix (`<hash>-<pid>-<n>.cbor.tmp`) so concurrent
    * writers for the same hash — across sessions or threads — each write to
    * their own temp file and never clobber each other before the atomic rename.
@@ -54,8 +59,8 @@ export class FileSystemCas {
    * Repeated puts of the same hash within a batch coalesce to one finalPath
    * entry in pendingSync (the latest tmpPath wins; all have identical content).
    */
-  put(bytes: Uint8Array): Blake3Hash {
-    const hash = hashBytes(bytes);
+  put(bytes: Uint8Array, precomputedHash?: Blake3Hash): Blake3Hash {
+    const hash = precomputedHash ?? hashBytes(bytes);
     const hex  = Buffer.from(hash).toString('hex');
     const shard = hex.slice(0, 2);
     const shardDir = path.join(this.casDir, shard);
@@ -86,11 +91,16 @@ export class FileSystemCas {
    *   On Windows (NTFS), directory entries are written synchronously as part of
    *   the rename operation, so the extra fsync is a no-op but harmless.
    *
-   * Abort semantics:
+   * Abort semantics / durability contract:
    *   If syncFn throws at any point, pendingSync is cleared in the catch block.
    *   This prevents a later syncAll() from picking up stale entries from the
    *   failed batch (orphan blobs ahead of WAL) and avoids incorrect call-count
    *   assertions in tests that inject mid-iteration failures.
+   *   A rejected (thrown) syncAll() means the commit is NOT durable — the CAS
+   *   blobs were not fsynced and the WAL segment was not written. The caller
+   *   (executeFlush) MUST reject all staged rows; they must be retried by the
+   *   application. pendingSync is cleared on abort so a later batch never
+   *   re-syncs orphaned temp blobs from the failed batch.
    *
    * Removes each finalPath from pendingSync as it is successfully published, so
    * a successful partial sync leaves only un-published paths for retry.

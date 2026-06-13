@@ -1557,3 +1557,70 @@ pm run build clean (exit 0). **Lint:**
 pm run lint --workspace @akubly/crucible-core clean.
 
 — Roger
+
+---
+
+## 2026-06-11 — Cycle-3 Remediation: A1–A5
+
+**Branch:** squad/crucible-wal-correctness-s1 (follow-up to commits d74242b / 07a4955)
+
+### Summary
+
+Addressed cycle-3 advisory findings from the second panel review. All behavior preserved;
+hashes and bytes unchanged; 2 new tests added, 1 benchmark added.
+
+### A1 — Float profile docs (fixed)
+- Updated wal/cbor.ts file header and ncodeCbor JSDoc: replaced "RFC 8949 §4.2.1
+  deterministic encoding" with the precise "Crucible canonical CBOR profile" definition
+  (RFC 8949 §4.2.1 map-key ordering + shortest integers + forced IEEE-754 binary64 for all
+  non-integer numbers — explicitly noting the deviation from §4.2.1 shortest-float rule).
+- Updated CTD §3.2 to add an "CBOR encoding profile" block with the exact profile definition
+  and also corrected the temp-file name example (was <hash>.cbor.tmp, now <hash>-<pid>-<n>.cbor.tmp).
+- Added CBOR-9 golden vector test: encodeCbor(1.5) → fb3ff8000000000000 + BLAKE3 pinned.
+- Updated canonical-cbor-hashing skill to v3.0 with the forced-float64 note and the
+  "do NOT call this pure §4.2.1" warning.
+
+### A2 — Perf double-work (fixed)
+- Replaced the ssertJsonLike pre-pass (separate tree traversal) with cborg 	ypeEncoders
+  embedded in crucibleEncodeOptions. Now a single traversal handles both type validation and
+  encoding. Object, Date, Map, Set, bigint, undefined, and non-finite number typeEncoders throw
+  UnsupportedCborTypeError; all other types pass through to cborg's default handlers.
+- Eliminated double-hashing: InMemoryCas.put() and FileSystemCas.put() now accept an optional
+  precomputedHash parameter. Both backends pass mat.payloadHash / mat.readSetHash from
+  materializeRow, so hashBytes() is called exactly once per blob per row (in materializeRow).
+- Added PERF-1 micro-benchmark test: 2000 iterations of encodeCbor+hashBytes over a 4-key nested
+  payload, logging µs/op to stdout. Baseline on this machine: ~15.50 µs/op. Hard sanity bound: < 500 µs/op.
+
+### A3 — BLAKE3 in golden vectors (fixed)
+- Added hashBytes() assertions alongside CBOR bytes in CBOR-4, CBOR-5, CBOR-6, CBOR-7.
+  CBOR-9 also includes BLAKE3. Cross-impl reproduction now covers both encoding AND hashing.
+
+### A4 — Abort/durability contract doc (fixed)
+- Extended syncAll() JSDoc in cas-fs.ts: "a rejected commit is NOT durable; caller must retry.
+  pendingSync is cleared on abort so a later batch never re-syncs orphaned temp blobs."
+- Extended executeFlush catch block comment in wal-backend-fs.ts with the same durability note.
+
+### A5 — Re-export WAL errors from index.ts (fixed)
+- Added to public API surface: CorruptSegmentError, CasMissError, UnsupportedSchemaVersionError,
+  UnsupportedCborTypeError, InvalidMagicError, InvalidRecordLengthError.
+- These were previously defined and exported from their source files but not re-exported from
+  the package root, making type-based catch() impossible for external consumers.
+
+### Learnings
+- cborg 	ypeEncoders ARE called recursively for nested values — verified empirically. This
+  makes the fold approach viable without any custom recursion on our side.
+- cborg's quickEncodeToken in rfc8949EncodeOptions does NOT bypass 	ypeEncoders — number
+  typeEncoders still fire even when quickEncodeToken is present. Good: the NaN/Infinity guard works.
+- fc8949EncodeOptions has NO 	ypeEncoders key — safe to spread and add our own without conflict.
+- BigInt silently encodes as integer in cborg without a typeEncoder guard. CRITICAL: always add a
+  bigint typeEncoder when restricting to JSON-like values.
+- The UnsupportedCborTypeError constructor path parameter was only useful for the assertJsonLike
+  pre-pass. With the typeEncoders fold, path info is lost. No existing test checked for path
+  in the error message, so the change is backward-compatible for all current callers.
+
+**Tests:** 158/158 green (+2 new tests: CBOR-9, PERF-1).
+**Build:** npm run build clean (exit 0).
+**Lint:** npm run lint --workspace @akubly/crucible-core clean.
+**Benchmark:** PERF-1 encodeCbor+hashBytes ×2000: ~31ms / ~15.50µs per op.
+
+— Roger

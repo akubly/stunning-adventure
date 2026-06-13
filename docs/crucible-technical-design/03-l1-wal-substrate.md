@@ -90,11 +90,20 @@ in the CAS. The segment is a compact index over content addresses.
 flush-once tail-record per group-commit; it is **advisory** (rebuildable from
 segment scan) so corruption only forces a rescan, never data loss.
 
+**CBOR encoding profile.** All hashed blobs (payload, readSet, envelope, witness) are serialized using the **Crucible canonical CBOR profile**:
+- Map keys sorted by plain bytewise order of their CBOR-encoded form (RFC 8949 §4.2.1 map-key ordering).
+- Integers use smallest encoding (RFC 8949 §4.2.1 unsigned integer rule).
+- **All non-integer numbers encoded as IEEE-754 binary64** (8 bytes, always). This deviates from RFC 8949 §4.2.1's shortest-float rule to ensure cross-language reproducibility — no float16/float32 round-trip ambiguity.
+- Definite-length items only; no indefinite-length encoding.
+- Only JSON-like values are accepted: `null`, `boolean`, finite `number`, `string`, plain `Array`, plain `Object`. `Date`, `Map`, `Set`, `BigInt`, class instances, and non-finite numbers are rejected with a typed error.
+
+This profile is the inaugural shipped format; WAL1 (magic `0x57414C31`) with Crucible canonical CBOR is v1. No prior JSON encoding was ever shipped; no migration is owed.
+
 **fsync strategy.** Group-commit performs **one** `fdatasync(2)` on the active
 segment per batch (after the entire batch is written and the in-flight hash
 chain is finalized). `index.idx` is `fsync`'d on segment rotation and on
 session close. CAS writes publish via temp-file + atomic rename:
-`<hash>.cbor.tmp` is written first, fsynced during the CAS phase, then renamed
+`<hash>-<pid>-<n>.cbor.tmp` is written first, fsynced during the CAS phase, then renamed
 to `<hash>.cbor` before the corresponding WAL record is written — the WAL never
 references CAS content that is not durable. On Windows, `fdatasync` is
 emulated via `FlushFileBuffers` against the segment handle.

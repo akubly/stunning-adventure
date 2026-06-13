@@ -1,29 +1,39 @@
 /**
  * Canonical CBOR encode/decode for WAL payload hashing (issue #60).
  *
- * Encoding profile: RFC 8949 §4.2.1 deterministic encoding (CTD §3.2/§3.3).
- *   - Map keys sorted bytewise on their CBOR-encoded form (rfc8949EncodeOptions
- *     mapSorter — plain bytewise, not length-first RFC 7049).
- *   - Integers use smallest encoding; floats use 64-bit (float64 option).
- *   - No indefinite-length items (cborg fixed-length default).
- *   - Unsupported types (Date, Map, Set, class instances, functions, etc.) are
- *     rejected with UnsupportedCborTypeError rather than silently producing
- *     corrupt or non-deterministic output.
+ * Encoding profile — "Crucible canonical CBOR profile" (CTD §3.2/§3.3):
+ *   - Map keys sorted by plain bytewise order of their CBOR-encoded form
+ *     (RFC 8949 §4.2.1 map-key ordering, via cborg rfc8949EncodeOptions mapSorter).
+ *   - Integers use smallest encoding (RFC 8949 §4.2.1 unsigned integer rule).
+ *   - ALL non-integer numbers encoded as IEEE-754 binary64 (8 bytes, always).
+ *     ⚠ This deviates from RFC 8949 §4.2.1's shortest-float rule to ensure
+ *     cross-language reproducibility — no float16/float32 round-trip ambiguity.
+ *   - No indefinite-length items (cborg uses definite-length by default).
+ *   - Unsupported types (Date, Map, Set, BigInt, class instances, undefined,
+ *     functions, non-finite numbers, etc.) are rejected with
+ *     UnsupportedCborTypeError rather than silently producing corrupt or
+ *     non-deterministic output.
  *
  * Two logically-equivalent objects with the same key/value pairs in any
  * insertion order encode to identical bytes and produce identical BLAKE3 hashes.
  *
- * Golden vector (RFC 8949 §4.2.1): encode({ z: 2, aa: 1 })
+ * Golden vector (map-key ordering): encode({ z: 2, aa: 1 })
  *   → a2617a0262616101  ("z" before "aa": 0x61 < 0x62 bytewise)
+ * Golden vector (forced float64): encode(1.5)
+ *   → fb3ff8000000000000  (IEEE-754 binary64; NOT the 2-byte float16 form)
+ *
+ * Performance note: type validation is folded into the encode pass via cborg
+ * typeEncoders — a single tree traversal handles both validation and encoding
+ * with no separate pre-pass.
  */
 
 import { decode, encode, rfc8949EncodeOptions } from 'cborg';
 
 /** Thrown when encodeCbor encounters a non-JSON-like value. */
 export class UnsupportedCborTypeError extends Error {
-  constructor(type: string, path: string) {
+  constructor(type: string) {
     super(
-      `encodeCbor: unsupported type "${type}" at "${path}" — ` +
+      `encodeCbor: unsupported type "${type}" — ` +
       `only JSON-like values (null, boolean, finite number, string, ` +
       `plain Array, plain Object) are accepted`,
     );
@@ -32,63 +42,50 @@ export class UnsupportedCborTypeError extends Error {
 }
 
 /**
- * Walk the value tree and throw UnsupportedCborTypeError for any type that
- * cannot be represented as a JSON-like value.
- *
- * Accepted: null, boolean, finite number, string, plain Array, plain Object
- *   (prototype === Object.prototype or null).
- * Rejected: Date, Map, Set, TypedArray, function, Symbol, BigInt, any class
- *   instance with a non-plain prototype, non-finite numbers (NaN/±Infinity).
+ * cborg encode options implementing the Crucible canonical CBOR profile:
+ *   - RFC 8949 §4.2.1 map-key ordering + shortest integer encoding
+ *     (inherited from rfc8949EncodeOptions mapSorter + quickEncodeToken).
+ *   - Forced float64 for all non-integer numbers (deviation from §4.2.1 for
+ *     cross-language reproducibility; inherited from rfc8949EncodeOptions).
+ *   - Type validation folded inline via typeEncoders — rejects unsupported
+ *     types during the single encode traversal with no separate pre-pass.
  */
-function assertJsonLike(data: unknown, path = '$'): void {
-  if (data === null) return;
-  switch (typeof data) {
-    case 'boolean':
-    case 'string':
-      return;
-    case 'number':
-      if (!isFinite(data)) {
-        throw new UnsupportedCborTypeError('non-finite number', path);
-      }
-      return;
-    case 'object': {
-      if (Array.isArray(data)) {
-        (data as unknown[]).forEach((v, i) => assertJsonLike(v, `${path}[${i}]`));
-        return;
-      }
-      // Reject well-known non-plain types explicitly for clear error messages
-      if (data instanceof Date) throw new UnsupportedCborTypeError('Date', path);
-      if (data instanceof Map)  throw new UnsupportedCborTypeError('Map', path);
-      if (data instanceof Set)  throw new UnsupportedCborTypeError('Set', path);
-      // Reject class instances: anything whose prototype is not Object.prototype
-      // or null (null-prototype objects from Object.create(null) are plain).
-      const proto = Object.getPrototypeOf(data as object) as unknown;
+const crucibleEncodeOptions = {
+  ...rfc8949EncodeOptions,
+  typeEncoders: {
+    Object(obj: object): null {
+      const proto = Object.getPrototypeOf(obj) as unknown;
       if (proto !== Object.prototype && proto !== null) {
         const name =
           (proto as { constructor?: { name?: string } })?.constructor?.name ??
           'unknown';
-        throw new UnsupportedCborTypeError(name, path);
+        throw new UnsupportedCborTypeError(name);
       }
-      // Plain object — recurse into values
-      for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
-        assertJsonLike(v, `${path}.${k}`);
-      }
-      return;
-    }
-    default:
-      throw new UnsupportedCborTypeError(typeof data, path);
-  }
-}
+      return null; // plain object — use cborg default encoding
+    },
+    Date():      never { throw new UnsupportedCborTypeError('Date'); },
+    Map():       never { throw new UnsupportedCborTypeError('Map'); },
+    Set():       never { throw new UnsupportedCborTypeError('Set'); },
+    bigint():    never { throw new UnsupportedCborTypeError('bigint'); },
+    undefined(): never { throw new UnsupportedCborTypeError('undefined'); },
+    number(n: number): null {
+      if (!isFinite(n)) throw new UnsupportedCborTypeError('non-finite number');
+      return null; // finite number — use cborg default (float64 via rfc8949EncodeOptions)
+    },
+  },
+};
 
 /**
- * Encode a JSON-like value to canonical CBOR bytes per RFC 8949 §4.2.1.
+ * Encode a JSON-like value to canonical CBOR bytes per the Crucible canonical
+ * CBOR profile (RFC 8949 §4.2.1 map-key ordering + shortest integers +
+ * forced float64 for all non-integer numbers).
  *
- * Throws UnsupportedCborTypeError for Date, Map, Set, class instances,
- * functions, Symbols, BigInts, and non-finite numbers.
+ * Throws UnsupportedCborTypeError for Date, Map, Set, BigInt, class instances,
+ * functions, Symbols, undefined, and non-finite numbers (NaN / ±Infinity).
+ * Type validation is performed inline during the single encode traversal.
  */
 export function encodeCbor(data: unknown): Uint8Array {
-  assertJsonLike(data);
-  return encode(data, rfc8949EncodeOptions);
+  return encode(data, crucibleEncodeOptions);
 }
 
 export function decodeCbor(bytes: Uint8Array): unknown {

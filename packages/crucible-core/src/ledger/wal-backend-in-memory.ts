@@ -59,10 +59,11 @@ export class InMemoryWalBackend implements WalBackend {
     // for the same input (I2).
     const mat = materializeRow(input, hookResult.verdict, hookResult.hookId);
 
-    // Store in in-memory CAS
-    this.cas.put(mat.payloadBytes);
+    // Store in in-memory CAS. Pass the pre-computed hash from materializeRow so
+    // the CAS layer skips re-hashing (encode-once, hash-once hot path — A2).
+    this.cas.put(mat.payloadBytes, mat.payloadHash);
     if (mat.readSetBytes !== null) {
-      this.cas.put(mat.readSetBytes);
+      this.cas.put(mat.readSetBytes, mat.readSetHash);
     }
 
     // §3.10 timestampNs monotonicity: clamp to lastTimestampNs when clock goes backward

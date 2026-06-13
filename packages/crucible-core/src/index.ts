@@ -45,8 +45,14 @@ export {
   createFileSystemWalBackend,
   WriteLockHeldError,
   ReadOnlyWalBackendError,
+  CorruptSegmentError,
+  CasMissError,
+  UnsupportedSchemaVersionError,
 } from './ledger/wal-backend-fs.js';
 export type { FileSystemWalBackendOptions } from './ledger/wal-backend-fs.js';
+// WAL encoding errors — exported so consumers can catch by type.
+export { UnsupportedCborTypeError } from './ledger/wal/cbor.js';
+export { InvalidMagicError, InvalidRecordLengthError } from './ledger/wal/codec.js';
 export { createInMemoryDB } from './in-memory-db.js';
 export type { InMemoryDB } from './in-memory-db.js';
 export { createSQLiteDB } from './sqlite-db.js';
