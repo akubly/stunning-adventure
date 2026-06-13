@@ -9,7 +9,7 @@
  */
 
 import type { SessionEvent } from "@github/copilot-sdk";
-import type { CairnBridgeEvent, TelemetrySink } from "@akubly/types";
+import type { CairnBridgeEvent, SignalSampleSink } from "@akubly/types";
 
 import { bridgeEvent } from "../bridge/index.js";
 import { HookComposer, type HookObserver } from "../hooks/index.js";
@@ -35,7 +35,7 @@ export interface ForgeSessionConfig {
   /** Skill identifier forwarded to all three collector factories. */
   skillId?: string;
   /** Sink that receives flushed SignalSamples at session disconnect. */
-  telemetrySink?: TelemetrySink;
+  telemetrySink?: SignalSampleSink;
 }
 
 // ---------------------------------------------------------------------------
@@ -78,7 +78,7 @@ export class ForgeSession {
   private _disconnected = false;
   private _onDisconnect?: () => void;
   private _collectors: TelemetryCollector[] | null = null;
-  private _telemetrySink: TelemetrySink | null = null;
+  private _telemetrySink: SignalSampleSink | null = null;
 
   constructor(
     sdkSession: SDKSession,
@@ -104,6 +104,19 @@ export class ForgeSession {
     // Merge any events captured during session creation (onEvent bridge)
     if (options?.preSessionEvents) {
       this.bridgeEvents.push(...options.preSessionEvents);
+      // Replay through collectors so early events (e.g. session_end emitted
+      // before on() was wired) are not lost from the telemetry pipeline.
+      if (this._collectors) {
+        for (const event of options.preSessionEvents) {
+          for (const c of this._collectors) {
+            try {
+              c.collect(event);
+            } catch (err) {
+              console.warn('[ForgeSession] preSessionEvent collector error', err);
+            }
+          }
+        }
+      }
     }
 
     // Auto-wire bridge event subscription
@@ -118,7 +131,7 @@ export class ForgeSession {
               try {
                 c.collect(bridged);
               } catch (err) {
-                console.warn(`[ForgeSession] collector error: ${err}`);
+                console.warn('[ForgeSession] collector error', err);
               }
             }
           }
@@ -169,6 +182,16 @@ export class ForgeSession {
     this.eventSubscriptions = [];
 
     // Flush telemetry collectors into sink before closing the session.
+    //
+    // ASSUMPTION: terminal events (session.shutdown → session_end) arrive via
+    // the SDK event stream BEFORE disconnect() is called, so collectors observe
+    // them prior to flush. This is true for the current CLI-driven flow where
+    // the session runner calls disconnect() only after the event loop drains.
+    //
+    // TODO(forge-telemetry): verify against live SDK event ordering when a
+    // production session runner adopts ForgeClient; if session_end is emitted
+    // DURING sdkSession.disconnect(), outcome.succeeded would be a false-negative
+    // and flush must move after terminal events.
     if (this._collectors && this._telemetrySink) {
       try {
         for (const c of this._collectors) {
@@ -176,7 +199,7 @@ export class ForgeSession {
             const sample = c.flush(this.sessionId);
             if (sample) this._telemetrySink.enqueueSample(sample);
           } catch (err) {
-            console.warn(`[ForgeSession] collector flush error: ${err}`);
+            console.warn('[ForgeSession] collector flush error', err);
           }
         }
         await this._telemetrySink.flush?.();

@@ -24,6 +24,7 @@ import {
   computeNetImpact,
   DEFAULT_MIN_SESSIONS,
 } from '../db/changeVectors.js';
+import { enforceSignalSampleCap, sweepSignalSamples } from '../db/signalSamples.js';
 import type { CairnEvent, CuratorStatus } from '../types/index.js';
 import { parseSqliteDateToMs } from '../utils/timestamps.js';
 import { buildProfiles } from './profileBuilder.js';
@@ -131,6 +132,19 @@ export const TIME_BUDGET_MS = 3000;
 /** Soft time cap (ms) for post-sweep prescriber orchestration. */
 export const PRESCRIBER_TIME_BUDGET_MS = 5000;
 
+/**
+ * Maximum rows kept in the signal_samples table (matches migration comment:
+ * "7-day TTL, capped at 10K rows"). Enforced by curate() after each
+ * successful buildProfiles run.
+ */
+const SIGNAL_SAMPLE_CAP = 10_000;
+
+/**
+ * TTL for signal_samples rows (7 days, matching migration design note).
+ * Rows older than this are swept by curate() after each buildProfiles run.
+ */
+const SIGNAL_SAMPLE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
+
 // ---------------------------------------------------------------------------
 // Core pipeline
 // ---------------------------------------------------------------------------
@@ -225,9 +239,13 @@ export async function curate(
   let profileBuild: BuildResult | undefined;
   try {
     profileBuild = buildProfiles(db);
+    // Bound the table after a successful build: sweep expired TTL rows first,
+    // then enforce the absolute row cap so stale-profile drift stays observable.
+    const cutoffIso = new Date(Date.now() - SIGNAL_SAMPLE_TTL_MS).toISOString();
+    sweepSignalSamples(db, cutoffIso);
+    enforceSignalSampleCap(db, SIGNAL_SAMPLE_CAP);
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(`curate: buildProfiles failed, continuing without profile build: ${message}`);
+    console.warn('curate: buildProfiles failed, continuing without profile build', error);
   }
 
   const changeVectorSweep = sweepChangeVectors(db, changeVectorConfig);

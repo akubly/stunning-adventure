@@ -132,10 +132,23 @@ export interface SessionIdentity {
 /** Pluggable sink for emitting bridge events. */
 export interface TelemetrySink {
   emit(event: CairnBridgeEvent): void | Promise<void>;
-  /** Enqueue a derived signal sample for persistence. */
-  enqueueSample(sample: SignalSample): void;
   flush?(): Promise<void>;
   close?(): Promise<void>;
+}
+
+/**
+ * Narrow sink capability for enqueuing derived signal samples.
+ *
+ * Introduced to decouple emit-only implementers (e.g. remote event sinks)
+ * from the local-DB sample-persistence path. ForgeSession uses this narrower
+ * interface rather than the base TelemetrySink so that an emit-only sink
+ * can satisfy TelemetrySink without having to implement enqueueSample.
+ */
+export interface SignalSampleSink {
+  /** Push a signal sample into the sink for persistence. */
+  enqueueSample(sample: SignalSample): void;
+  /** Flush buffered samples to the backing store. */
+  flush?(): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -498,6 +511,12 @@ function sumMeta(metas: Array<Record<string, unknown>>, key: string): number {
  * @param samples        - New signal samples since last aggregation
  * @param granularity    - Aggregation level
  * @param granularityKey - Key for the aggregation level
+ *
+ * @remarks
+ * **Precondition:** For correct mean computation, callers should provide all
+ * three sample kinds (drift, token, outcome) for each session. Partial inputs
+ * (e.g. only drift samples) will produce a profile where means for the absent
+ * kinds are zero-weighted, which may skew aggregated metric trends.
  */
 export function aggregateSignals(
   existing: ExecutionProfile | null,

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { closeDb, getDb, getKnowledgeDbPath, insertSignalSamples, buildProfiles, getExecutionProfile } from '@akubly/cairn';
 import type { SignalSampleInsert } from '@akubly/cairn';
@@ -96,6 +97,9 @@ function synthSamples(skillId: string, sessionId: string, index: number): Signal
   return [drift, token, outcome];
 }
 
+/** Maximum synthetic session count allowed by the CLI and the programmatic API. */
+const MAX_SESSION_COUNT = 10_000;
+
 export interface SeedProfileOptions {
   skillId: string;
   sessionCount: number;
@@ -120,6 +124,11 @@ export interface SeedProfileResult {
  * structurally identical to one produced by live telemetry.
  */
 export function runForgeSeedProfile(options: SeedProfileOptions): SeedProfileResult {
+  if (options.sessionCount > MAX_SESSION_COUNT) {
+    throw new Error(
+      `--session-count must not exceed ${MAX_SESSION_COUNT}; got ${options.sessionCount}.`,
+    );
+  }
   const db = getDb(options.dbPath);
 
   const samples: SignalSampleInsert[] = [];
@@ -182,6 +191,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     console.error(`--session-count must be a positive integer; got "${parsed.values['session-count']}".`);
     return 2;
   }
+  if (sessionCount > MAX_SESSION_COUNT) {
+    console.error(`--session-count must not exceed ${MAX_SESSION_COUNT}; got ${sessionCount}.`);
+    return 2;
+  }
 
   try {
     const result = runForgeSeedProfile({
@@ -207,14 +220,16 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 }
 
 
-main()
-  .then((code) => {
-    process.exitCode = code;
-  })
-  .catch((error) => {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`Failed to run forge-seed-profile: ${message}`);
-    process.exitCode = 2;
-    closeDb();
-  });
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main()
+    .then((code) => {
+      process.exitCode = code;
+    })
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to run forge-seed-profile: ${message}`);
+      process.exitCode = 2;
+      closeDb();
+    });
+}
 

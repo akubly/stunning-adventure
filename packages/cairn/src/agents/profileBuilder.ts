@@ -62,11 +62,15 @@ export interface BuildOptions {
  * - `skillIds`        — distinct skill_id values for which profiles were built,
  *                       plus `'global'` for the global tier
  * - `samplesConsumed` — total signal_samples rows read from the DB
+ * - `durationMs`      — wall-clock time (ms) the build took; observable by
+ *                       the curate() budget monitor to detect trend growth
  */
 export interface BuildResult {
   profilesBuilt: number;
   skillIds: string[];
   samplesConsumed: number;
+  /** Wall-clock duration (ms) of the buildProfiles call. */
+  durationMs: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,6 +87,7 @@ function rowToSignalSample(row: SignalSampleRow): SignalSample {
     value: row.value,
     metadata: row.metadata,
     collectedAt: row.collectedAt,
+    // id/createdAt intentionally not mapped to the aggregator input
   };
 }
 
@@ -117,6 +122,7 @@ function profileToUpsert(profile: ExecutionProfile, skillIdOverride: string): Ex
       meanConvergence: profile.outcomes.meanConvergenceTurns,
       toolErrorRate: profile.outcomes.toolErrorRate,
     },
+    // signals not persisted in v1 schema
   };
 }
 
@@ -140,10 +146,11 @@ export function buildProfiles(db: Database.Database, options?: BuildOptions): Bu
   const persister = options?.persister ?? ((p: ExecutionProfileUpsert) => upsertExecutionProfile(db, p));
   const agg = options?.aggregator ?? aggregateSignals;
 
+  const startMs = Date.now();
   const rows = reader();
 
   if (rows.length === 0) {
-    return { profilesBuilt: 0, skillIds: [], samplesConsumed: 0 };
+    return { profilesBuilt: 0, skillIds: [], samplesConsumed: 0, durationMs: Date.now() - startMs };
   }
 
   // Sort all samples chronologically (oldest-first, id tiebreak) so that
@@ -188,5 +195,6 @@ export function buildProfiles(db: Database.Database, options?: BuildOptions): Bu
     profilesBuilt,
     skillIds: builtSkillIds,
     samplesConsumed: rows.length,
+    durationMs: Date.now() - startMs,
   };
 }

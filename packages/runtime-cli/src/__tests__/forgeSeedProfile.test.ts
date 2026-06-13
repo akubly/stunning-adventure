@@ -44,4 +44,13 @@ describe('forge-seed-profile CLI', () => {
     const exitCode = await main(['--skill', 'baz', '--session-count', '0']);
     expect(exitCode).toBe(2);
   });
+
+  it('exits 2 when --session-count exceeds the upper bound (10 000)', async () => {
+    const exitCode = await main(['--skill', 'qux', '--session-count', '10001']);
+    expect(exitCode).toBe(2);
+  });
+
+  it('runForgeSeedProfile throws when sessionCount exceeds 10 000', () => {
+    expect(() => runForgeSeedProfile({ skillId: 'x', sessionCount: 10_001 })).toThrow();
+  });
 });

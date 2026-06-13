@@ -15,7 +15,7 @@ import type Database from 'better-sqlite3';
 import { insertSignalSample } from '@akubly/cairn';
 import type { SignalSampleInsert } from '@akubly/cairn';
 import { createLocalDBOMSink } from '@akubly/forge';
-import type { SignalSample, TelemetrySink } from '@akubly/types';
+import type { SignalSample, SignalSampleSink } from '@akubly/types';
 
 function mapSampleToInsert(sample: SignalSample): SignalSampleInsert {
   return {
@@ -29,13 +29,13 @@ function mapSampleToInsert(sample: SignalSample): SignalSampleInsert {
 }
 
 /**
- * Create a TelemetrySink backed by cairn's `signal_samples` table.
+ * Create a SignalSampleSink backed by cairn's `signal_samples` table.
  *
  * Samples enqueued via `enqueueSample()` are buffered and written to the
  * provided DB on `flush()`. skillId is mapped to NULL when absent
  * (fold-to-global semantics).
  */
-export function createCairnTelemetrySink(db: Database.Database): TelemetrySink {
+export function createCairnTelemetrySink(db: Database.Database): SignalSampleSink {
   return createLocalDBOMSink({
     persistSample: (sample: SignalSample) =>
       void insertSignalSample(db, mapSampleToInsert(sample)),

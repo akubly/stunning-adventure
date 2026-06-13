@@ -30,7 +30,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { SessionEvent } from '@github/copilot-sdk';
-import type { TelemetrySink, SignalSample } from '@akubly/types';
+import type { SignalSample, SignalSampleSink, CairnBridgeEvent } from '@akubly/types';
 import {
   createMockClient,
   createMockSession,
@@ -42,7 +42,9 @@ import {
   type MockCopilotClient,
 } from './helpers/index.js';
 import { ForgeClient } from '../runtime/index.js';
+import { ForgeSession } from '../runtime/session.js';
 import { createLocalDBOMSink } from '../telemetry/sink.js';
+import { HookComposer } from '../hooks/index.js';
 import type { ForgeSessionConfig } from '../runtime/session.js';
 
 // ---------------------------------------------------------------------------
@@ -60,7 +62,7 @@ interface ExtendedSessionConfig extends ForgeSessionConfig {
   /** Skill identifier forwarded to all three collector factory calls. */
   skillId?: string;
   /** Sink that receives SignalSamples produced by collector flush at disconnect. */
-  telemetrySink?: TelemetrySink;
+  telemetrySink?: SignalSampleSink;
 }
 
 /** Cast helper: lets us pass the extended config without a TypeScript error. */
@@ -301,5 +303,51 @@ describe('Telemetry wiring — edge cases', () => {
     mockSession._emit(makeSessionShutdownEvent());
 
     await expect(session.disconnect()).resolves.not.toThrow();
+  });
+});
+
+// ===========================================================================
+// preSessionEvents — events emitted during session creation flow through collectors
+// ===========================================================================
+
+describe('Telemetry wiring — preSessionEvents replay through collectors', () => {
+  it('a session_end preSessionEvent is replayed through collectors so outcome.succeeded=true', async () => {
+    // Arrange: build a ForgeSession directly with a pre-session shutdown event.
+    // The event is bridged before session.on() was wired (simulates the real
+    // ForgeClient onEvent path). Collectors must observe it via constructor replay.
+    const captured: SignalSample[] = [];
+    const sink = createLocalDBOMSink({ persistSample: (s) => captured.push(s) });
+
+    const mockSdk = createMockSession({ sessionId: 'test-presession-unit' });
+
+    // Build a pre-session bridge event for session_end / session.shutdown
+    const preShutdownEvent: CairnBridgeEvent = {
+      sessionId: 'test-presession-unit',
+      eventType: 'session_end',
+      payload: JSON.stringify({ succeeded: true }),
+      createdAt: new Date().toISOString(),
+      provenanceTier: 'internal',
+    };
+
+    const hookComposer = new HookComposer();
+    const session = new ForgeSession(
+      mockSdk,
+      hookComposer,
+      asConfig({ skillId: 'skill-pre', telemetrySink: sink }),
+      { preSessionEvents: [preShutdownEvent] },
+    );
+
+    // Emit a turn_end so drift collector can flush non-null, plus usage for tokens.
+    mockSdk._emit(assistantUsageEvent({ inputTokens: 5, outputTokens: 5 }));
+    mockSdk._emit(makeTurnEndEvent());
+    // No additional session.shutdown — the outcome relies entirely on the pre-session event.
+
+    await session.disconnect();
+
+    const outcomeSample = captured.find(s => s.kind === 'outcome');
+    expect(outcomeSample, 'outcome sample must be produced').toBeDefined();
+    // outcome.succeeded must be true — driven by the pre-session session_end event
+    expect((outcomeSample!.metadata as Record<string, unknown>).succeeded,
+      'preSessionEvent session_end must set succeeded=true on outcome collector').toBe(true);
   });
 });
