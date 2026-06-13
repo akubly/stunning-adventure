@@ -61,7 +61,11 @@ Skip on Windows because NTFS writes dir entries synchronously during rename.
 ```typescript
 if (process.platform !== 'win32') {
   const dirFd = fs.openSync(path.dirname(finalPath), 'r');
-  try { syncFn(dirFd); } finally { fs.closeSync(dirFd); }
+  // Use fs.fsyncSync directly — NOT syncFn. syncFn is the injectable WAL/CAS
+  // data-file barrier seam (countable, test-injectable). Directory-entry
+  // durability is a separate, always-real concern; routing it through syncFn
+  // inflates sync counts and breaks fdatasync-only implementations.
+  try { fs.fsyncSync(dirFd); } finally { fs.closeSync(dirFd); }
 }
 ```
 
@@ -116,5 +120,5 @@ expect(Buffer.from(fs.readFileSync(casFilePath)).toString('hex'))
 
 - `packages/crucible-core/src/ledger/wal/cas-fs.ts`
 - `packages/crucible-core/src/__tests__/unit/wal-cas-fsync.test.ts` — TORN-1, CAS-F7
-- `.squad/decisions/inbox/roger-crucible-wal-correctness-s1-remediation.md`
+- `.squad/decisions.md` §D-CAS-1 (atomic write strategy), §D-CAS-2 (unique temp names), §D-CAS-3 (shard dir fsync), §D-CAS-4 (single-hash hot path)
 - Issues #68 (torn-blob), #59 (CAS-before-segment ordering)

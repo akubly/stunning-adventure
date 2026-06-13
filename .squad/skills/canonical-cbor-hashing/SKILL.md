@@ -171,5 +171,5 @@ encodeCbor(1.5)          // ok → fb3ff8000000000000 (forced float64)
 - `packages/crucible-core/src/ledger/wal/cbor.ts`
 - `packages/crucible-core/src/ledger/wal/materialize.ts`
 - `packages/crucible-core/src/__tests__/unit/wal-cbor.test.ts` — CBOR-1 through CBOR-9, PERF-1
-- `.squad/decisions/inbox/roger-crucible-wal-correctness-s1-remediation.md` D-CBOR-3
+- `.squad/decisions.md` §D-CBOR-3 (Crucible canonical CBOR profile final definition, cycle-3)
 - CTD §3.2 encoding profile block
