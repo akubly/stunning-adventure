@@ -91,3 +91,21 @@ Slice D++ completed with four-agent parallel execution. Genesta's architecture m
 **Decisions locked:** D1=mutate cursor v1 in place to keyset; D2=importance/lastAccessed NOT in SQL sort key (time-varying recency breaks stability); D3=per-page normalization status quo. FSE-2 guarantee corrected: INSERT-safe only (not trust-mutation-safe).
 
 Ready to merge.
+
+---
+
+## 2026-06-13: M8 Slice D++ Follow-up — Attention Columns Wired into FactStore Reads
+
+**Agent spawn:** Laura (RED) + Crispin (GREEN)  
+**Task:** Wire migration-002 columns into compositeScore input path  
+**Status:** ✅ COMPLETE
+
+Five new edge tests (FS-SE-16a–e) in `fact-store-sqlite-edges.test.ts` confirm `FactStore.search()` now hydrates `importance`, `last_accessed`, `attention_tier` from the SQL layer into `RecallResult` for every page.
+
+**Wiring:** `SqliteFactStore.search()` extended: `SearchRow` interface + stmtFirst/stmtKeyset SELECTs + row mapper (importance, lastAccessed, attentionTier fields). Composite sort key (`-bm25*trust DESC, id ASC`) unchanged; attention columns are passenger data flowing into `compositeScore` calculation (FR-2 in recall.ts).
+
+**Schema defaults preserved:** New facts get `importance=0`, `attention_tier='warm'`, `last_accessed=NULL` — identical output to pre-wire-up behavior (FS-SE-16e verified).
+
+**Test result:** 205/205 passing, tsc clean.
+
+Ready for Eureka activity layer to consume via compositeScore. Milestone M8 read-wiring complete.
