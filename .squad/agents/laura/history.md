@@ -1738,3 +1738,5 @@ Construct manually: Buffer.from(JSON.stringify({ v: 99, offset: 0, scope: 'deadb
 
 **Metrics:** 136/136 tests green (+8 new), tsc --build clean. Skills extracted: atomic-cas-write, canonical-cbor-hashing.
 Impact for S2: WAL substrate hardened; Phase 0.5 walking skeleton can proceed with confidence in blob atomicity and CBOR determinism.
+
+**2026-06-12:** Crucible S1 WAL Correctness — 2-cycle persona review COMPLETE, ship-ready (Scribe).

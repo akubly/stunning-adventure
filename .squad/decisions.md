@@ -6348,3 +6348,190 @@ Worth stating explicitly:
 
 
 
+
+
+
+# Decisions: Crucible WAL Correctness S1 — Cycle-2 Remediation
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-06-11  
+**Branch:** `squad/crucible-wal-correctness-s1`  
+**Commit:** d74242b  
+
+---
+
+## D-CBOR-2: RFC 8949 §4.2.1 as the Canonical CBOR Profile
+
+**Decision:** Pin `rfc8949EncodeOptions` from cborg as the explicit encoding options for all
+WAL CBOR serialization (payloadHash, readSetHash, envelopeCbor).
+
+**Profile:**
+- Map keys sorted by plain bytewise comparison of their CBOR-encoded byte representations
+  (RFC 8949 §4.2.1 deterministic encoding — NOT RFC 7049 length-first)
+- Integers use smallest-possible encoding
+- Floats encoded as 64-bit (float64 option) for cross-platform stability
+- No indefinite-length items (cborg fixed-length default)
+
+**Context:** The prior implementation used a manual `sortKeys` JS lexicographic pre-pass, which
+(a) used the wrong ordering rule for CBOR canonical form, and (b) relied on cborg's implicit
+defaults rather than explicit options. The two rules happened to agree for short string keys, but
+the manual pre-pass was redundant (cborg's own mapSorter re-sorts) and silently mangled non-plain
+objects (Date → `{}`, Map → `{}`).
+
+**Cross-language note:** For a non-JS implementation to reproduce the canonical form:
+- Compare map keys bytewise on their full CBOR encoding (first byte = `0x60 | len` for strings ≤23 chars)
+- Apply recursively to nested maps
+- Golden vectors: `{ aa: 1, z: 2 }` → `a2617a0262616101` (z before aa: 0x61 < 0x62 bytewise)
+
+**References:** `wal/cbor.ts`, `wal-cbor.test.ts` CBOR-4 through CBOR-7 golden vectors
+
+---
+
+## D-SCHEMA-1: WAL1/CBOR is the Inaugural Shipped Format — No Migration Owed
+
+**Decision:** schemaVersion 1 (WAL1/CBOR) is the first and only format ever shipped.
+JSON encoding was used in development but never reached durable on-disk storage in a
+released version. No migration code is owed for any prior data.
+
+**Format identity:** WAL1 = binary segment records with CBOR-encoded payloads, identified
+by the 4-byte magic `0x57414C31` ("WAL1") in every segment record header.
+
+**Backstop behavior:** On WAL open/replay, if `manifest.schemaVersion !== 1`, throw
+`UnsupportedSchemaVersionError` immediately. This refuses to attempt decode of an unrecognized
+format rather than producing confusing corruption errors. Implemented in `loadOrInitManifest()`.
+
+**Future changes:** If a WAL2 format is introduced, it must bump schemaVersion to 2 and supply
+explicit migration logic. The `CURRENT_SCHEMA_VERSION = 1` constant in `wal-backend-fs.ts` is the
+single place to update.
+
+**References:** `wal-backend-fs.ts` (UnsupportedSchemaVersionError, CURRENT_SCHEMA_VERSION),
+`wal-backend-file.test.ts` Group4-1/4-2
+
+---
+
+## D-CAS-2: Unique Temp Names + EEXIST-as-success for CAS Writes
+
+**Decision:** CAS temp files use `<hash>-<pid>-<counter>.cbor.tmp` (unique per `put()` call)
+rather than the shared `<hash>.cbor.tmp`. On rename, EEXIST is treated as success since
+content-addressed storage guarantees identical bytes from any concurrent writer.
+
+**Rationale:** The shared `.tmp` name created a clobber race when two sessions/processes wrote
+the same hash simultaneously. The unique name eliminates this race. EEXIST-as-success prevents
+an ENOENT error when the concurrent writer renamed first (the temp file is already gone).
+
+**References:** `wal/cas-fs.ts`, `wal-cas-fsync.test.ts` TORN-1
+
+---
+
+## D-CAS-3: Shard Directory fsync After Rename (Linux/ext4)
+
+**Decision:** After each `renameSync()` in `syncAll()`, open and fsync the parent shard directory
+to make the new directory entry durable on Linux ext4 (ordered mode). Skip on Windows (NTFS
+writes directory entries synchronously as part of rename; extra fsync is a no-op).
+
+**Rationale:** On Linux ext4, a crash between `renameSync()` and shard-dir fsync can lose the
+directory entry — the exact hole described in issue #68 applies at the directory level too.
+This closes the last crash window in the CAS-before-segment durability chain.
+
+**References:** `wal/cas-fs.ts` syncAll()
+
+---
+
+## D-VERDICT-1: VerdictByte Type Discriminant + Precondition Enforcement
+
+**Decision:** Define `type VerdictByte = 0xFF | 0x00 | 0x01 | 0x02` in `wal/types.ts`.
+`hookResultToVerdictByte` now throws `Error` if `hookId === null` and `verdict !== 'COMMIT'`.
+
+**Rationale:** `hookId === null` with OBSERVE/PAUSE is a programming error (no hook fired
+but a non-commit verdict was returned). Previously the code silently fell through to
+`VERDICT_TO_WAL[verdict]`, which could return 0x01/0x02 without the 0xFF guard. The explicit
+precondition throw ensures a future default-OBSERVE path can't silently corrupt verdict bytes.
+
+**Affected tests:** All existing tests using `commit('OBSERVE')` / `commit('PAUSE')` with
+`hookId: null` were corrected to use `commitFromHook('OBSERVE')` / `commitFromHook('PAUSE')`.
+
+**References:** `wal/types.ts`, `wal-backend-file.test.ts` Group5-I6 tests
+
+---
+
+## D-MAT-1: Shared materializeRow Helper to Prevent Backend Drift
+
+**Decision:** Extract `materializeRow()` to `wal/materialize.ts`. Both `FileSystemWalBackend`
+and `InMemoryWalBackend` call this helper to compute `payloadBytes/payloadHash/readSetBytes/
+readSetHash/envelopeCbor/verdictByte`. CAS storage remains backend-specific.
+
+**Rationale:** The CBOR encoding + hashing logic was duplicated in both backends. A future
+change to one backend (e.g. different CBOR options) would silently diverge the other. The shared
+helper + CL-9 contract tests catch this at CI time.
+
+**References:** `wal/materialize.ts`, `wal-backend.contract.test.ts` CL-9a/9b
+
+---
+
+## D-CBOR-3: Crucible Canonical CBOR Profile — Final Definition (Cycle-3)
+
+**Date:** 2026-06-11  
+**Decision:** The encoding used for all WAL CBOR blobs is the **Crucible canonical CBOR profile**,
+defined precisely as:
+
+> RFC 8949 §4.2.1 map-key ordering (keys sorted by plain bytewise comparison of their deterministic
+> CBOR encodings) + integers in shortest form + **ALL non-integer numbers encoded as IEEE-754 binary64**
+> (forced float64, deviating from §4.2.1's shortest-float rule for cross-language reproducibility) +
+> definite-length items only.
+
+**This profile is NOT identical to RFC 8949 §4.2.1** because §4.2.1 mandates shortest-float
+(float16 for 1.5, etc.) and we force float64. The profile retains §4.2.1 for everything else.
+
+**Rationale for keeping forced float64:** Shortest-float introduces float16/float32 round-trip
+ambiguity in non-JS runtimes. Forced float64 guarantees the same 8-byte representation on every
+platform and language without any special float16 codec. The bytes `fb3ff8000000000000` for `1.5`
+are pinned by golden vector test CBOR-9.
+
+**Implementation:** `cborg` `rfc8949EncodeOptions` with `typeEncoders` for inline type validation
+(replaces the separate `assertJsonLike` pre-pass — single tree traversal for both validation and
+encoding).
+
+**Documentation:** `wal/cbor.ts` file header, `encodeCbor` JSDoc, CTD §3.2 encoding profile block.
+
+**Golden vectors (CBOR bytes → BLAKE3, all canonical):**
+- `{ aa:1, z:2 }` → `a2617a0262616101` → blake3 `019d473cc09257855925ff98a82dac52898c7ded08fe0b35b14428b6d498a818`
+- `{ nested:{bb:2,a:1}, top:42 }` → `a263746f70182a666e6573746564a261610162626202` → `ca3a08eebcc2b8da9850edaf204d824b91300b7e2fedfaea6f7412b7f4978ad4`
+- `1` → `01` → `48fc721fbbc172e0925fa27af1671de225ba927134802998b10a1568a188652b`
+- `'hello'` → `6568656c6c6f` → `90eeb71f0d4b768a5d449e30035beb7ffccd75d228e5b38e8e9cbfaa01ddfae9`
+- `1.5` (float64) → `fb3ff8000000000000` → `02a6136608c9b30d4e355cf9cd9911808f3997eb4cc351c7e0d08f89a74f90c5`
+
+**References:** `wal/cbor.ts`, `wal-cbor.test.ts` CBOR-4..9, CTD §3.2 encoding profile block
+
+---
+
+## D-CAS-4: Single Encode + Hash Per Row (Cycle-3 A2)
+
+**Decision:** Eliminate double-hashing in the hot path. `materializeRow()` is the single source of
+truth for `payloadHash`/`readSetHash`. Both CAS implementations (`InMemoryCas`, `FileSystemCas`)
+accept an optional `precomputedHash` parameter in `put(bytes, precomputedHash?)`. When the hash is
+supplied by the caller, the internal `hashBytes()` call is skipped.
+
+**Rationale:** Before this change, `materializeRow()` called `hashBytes(payloadBytes)` to produce
+the WAL record field, and then `cas.put(payloadBytes)` re-called `hashBytes()` internally —
+computing the same hash twice per row. This change removes the second call on the hot path.
+
+**Type validation fold:** The separate `assertJsonLike` pre-pass (a full tree traversal) has been
+replaced with inline validation via cborg `typeEncoders`. The payload tree is now traversed exactly
+once — validation and encoding happen in the same pass.
+
+**Benchmark baseline (2026-06-11):** 15.50 µs/op for `encodeCbor + hashBytes` over a 4-key nested
+payload (×2000 iterations, warm). Pinned by test PERF-1 in `wal-cbor.test.ts`.
+
+**References:** `wal/cbor.ts` (crucibleEncodeOptions), `wal/cas.ts`, `wal/cas-fs.ts`,
+`wal-backend-fs.ts`, `wal-backend-in-memory.ts`, `wal-cbor.test.ts` PERF-1
+
+---
+
+## D-EXPORT-1: Re-export All WAL Error Classes from index.ts (Cycle-3 A5)
+
+**Decision:** Export `CorruptSegmentError`, `CasMissError`, `UnsupportedSchemaVersionError`,
+`UnsupportedCborTypeError`, `InvalidMagicError`, `InvalidRecordLengthError` from
+`packages/crucible-core/src/index.ts`. Package consumers can now `catch` these by type.
+
+**References:** `src/index.ts`
+
