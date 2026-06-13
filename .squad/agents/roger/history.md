@@ -1680,3 +1680,5 @@ wal-cbor.test.ts. The suite is committed green code; comments now describe passi
 — Roger
 
 2026-06-12 — cloud cycle 2 — made forced-float64 explicit in crucibleEncodeOptions (was implicitly inherited from cborg rfc8949 preset); Copilot's float16 bug claim was empirically false but explicit-is-better hardening applied. (commit 32a49c9)
+
+2026-06-12 — cloud cycle 3 — T-A: dir-entry fsync in cas-fs.ts now calls fs.fsyncSync directly (not syncFn); syncFn is data-file barrier only, dir durability is always-real. T-B: types.ts payloadHash/readSetHash comments updated to 'Crucible canonical CBOR profile' wording. (commit ceee9eb)
