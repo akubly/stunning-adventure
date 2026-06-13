@@ -109,3 +109,25 @@ Five new edge tests (FS-SE-16a–e) in `fact-store-sqlite-edges.test.ts` confirm
 **Test result:** 205/205 passing, tsc clean.
 
 Ready for Eureka activity layer to consume via compositeScore. Milestone M8 read-wiring complete.
+
+---
+
+## 2026-06-12: Attention-Column Read-Through Contract Enforcement
+
+**Agents:** Laura (contract promotion), Crispin (wiring complete)  
+**Task:** Promote attention-column hydration from SQLite-edges to shared FactStore contract  
+**Status:** ✅ COMPLETE
+
+Aaron directed: **attention-column read-through MUST be enforced at the contract level** so every FactStore implementation (including InMemoryFactStore) is held to the same invariant.
+
+**Changes:**
+- Extended `SeedFact` type with optional `attention` opts (5th parameter)
+- Updated `InMemoryFactStore` to model `importance`, `lastAccessed`, `attentionTier` (no longer hardcoded defaults)
+- Added contract assertions FS-12, FS-12b, FS-13 to `runFactStoreContract` — run for ALL implementations
+- Removed FS-SE-16a–e from sqlite-edges (consolidated into contract suite)
+
+**Pattern captured:** Optional seed opts for new columns across all impls. When storage schema gains observable columns, extend SeedFact → update all impls → add contract assertions for defaults AND non-defaults.
+
+**Test result:** 206/206 passing (205 pre-existing + 1 net new). tsc clean. Both InMemoryFactStore and SqliteFactStore now enforce attention-column contract uniformly.
+
+**Impact on Genesta/Cairn integration:** Attention columns now surfaced consistently at the FactStore contract level. Any future Cairn consumer of FactStore reads gets predictable attention metadata (not just SQLite-specific values). Extraction-ready design confirmed.

@@ -1,5 +1,4 @@
 
-
 # Decision: Attention Columns Now Wired into FactStore Reads
 
 **Author:** Crispin  
@@ -11,111 +10,236 @@
 
 ## Decision
 
-The three attention columns added in migration 002 (`importance`, `last_accessed`, `attention_tier`) are now fully wired into `SqliteFactStore.search()` reads. The mapper produces correct `RecallResult` values for all three fields on every page of results.
+The three attention columns added in migration 002 (importance, last_accessed, ttention_tier) are now fully wired into SqliteFactStore.search() reads. The mapper produces correct RecallResult values for all three fields on every page of results.
 
 ---
 
 ## What Changed
 
-**File:** `packages/eureka/src/storage/fact-store-sqlite.ts`
+**File:** packages/eureka/src/storage/fact-store-sqlite.ts
 
-1. `SearchRow` interface extended with `importance: number`, `last_accessed: number | null`, `attention_tier: string`.
-2. `stmtFirst` SELECT extended with `f.importance, f.last_accessed, f.attention_tier`.
-3. `SQL_CTE_BASE` updated: columns added to `base` CTE SELECT and `ranked` CTE SELECT (pass-through), then to the outer `SELECT … FROM ranked` in `stmtKeyset`.
-4. Row mapper updated: `attentionTier: row.attention_tier as 'hot' | 'warm' | 'cold'`, `importance: row.importance`, `lastAccessed: row.last_accessed ?? undefined`.
+1. SearchRow interface extended with importance: number, last_accessed: number | null, ttention_tier: string.
+2. stmtFirst SELECT extended with .importance, f.last_accessed, f.attention_tier.
+3. SQL_CTE_BASE updated: columns added to ase CTE SELECT and anked CTE SELECT (pass-through), then to the outer SELECT … FROM ranked in stmtKeyset.
+4. Row mapper updated: ttentionTier: row.attention_tier as 'hot' | 'warm' | 'cold', importance: row.importance, lastAccessed: row.last_accessed ?? undefined.
 
 ---
 
 ## Ordering / Cursor Semantics: UNCHANGED
 
-The composite sort expression `(-bm25_score) * trust` and `ORDER BY (-bm25_score) * f.trust DESC, f.id ASC` are unchanged. The new columns are passenger data only — they do not appear in ORDER BY, the keyset WHERE predicate, or the cursor encode/decode logic. Decision D2 (locked sort key) is preserved.
+The composite sort expression (-bm25_score) * trust and ORDER BY (-bm25_score) * f.trust DESC, f.id ASC are unchanged. The new columns are passenger data only — they do not appear in ORDER BY, the keyset WHERE predicate, or the cursor encode/decode logic. Decision D2 (locked sort key) is preserved.
 
 ---
 
 ## Default Rows Preserve Behavior
 
-Facts inserted without explicit attention-column values get DB defaults: `importance=0`, `attention_tier='warm'`, `last_accessed=NULL`. The mapper produces `importance: 0`, `attentionTier: 'warm'`, `lastAccessed: undefined` for such rows — identical recall output and ordering to before the GREEN phase. This was verified by FS-SE-16e (the default-row RED test, now green).
+Facts inserted without explicit attention-column values get DB defaults: importance=0, ttention_tier='warm', last_accessed=NULL. The mapper produces importance: 0, ttentionTier: 'warm', lastAccessed: undefined for such rows — identical recall output and ordering to before the GREEN phase. This was verified by FS-SE-16e (the default-row RED test, now green).
 
 ---
 
 ## Test Result
 
-All 205 tests pass (200 pre-existing + 5 new FS-SE-16a..e). `npx tsc --build packages/eureka` exits clean with no type errors.
+All 205 tests pass (200 pre-existing + 5 new FS-SE-16a..e). 
+px tsc --build packages/eureka exits clean with no type errors.
 
 
 ---
+# Decision: Attention-Column Read-Through Promoted to FactStore Contract Suite
 
+**Date:** 2026-06-12T22:40:01.901-07:00
+**Author:** Laura (Tester)
+**Status:** ACCEPTED
 
-# Decision: Attention-Column RED Tests — Placement in sqlite-edges (not contract suite)
+---
 
-**Author:** Laura  
-**Date:** 2026-06-12T22:40:01.901-07:00  
-**Phase:** TDD RED (FS-SE-16a..e)  
-**For:** Crispin (GREEN phase), team awareness
+## Context
+
+Migration 002 added three columns to the `facts` table:
+- `importance REAL NOT NULL DEFAULT 0`
+- `last_accessed INTEGER DEFAULT NULL`
+- `attention_tier TEXT NOT NULL DEFAULT 'warm' CHECK(...)`
+
+In Slice D++, Laura wrote RED tests FS-SE-16a–e in `fact-store-sqlite-edges.test.ts` to lock
+attention-column hydration before Crispin's GREEN wiring. Those tests were placed in the
+SQLite-edges file with an explicit rationale: `SeedFact` had no attention-column params, and
+extending it would require `InMemoryFactStore` to model columns it intentionally did not model.
+Attention-column hydration was treated as a SQLite-specific SELECT→RecallResult mapping concern.
+
+Crispin wired `SqliteFactStore` GREEN — all 205 tests passed.
+
+Aaron then decided: **we WANT this behaviour enforced at the contract level** so EVERY
+`FactStore` implementation (including `InMemoryFactStore`) is held to the attention-column
+read-through contract.
 
 ---
 
 ## Decision
 
-Placed the attention-column hydration RED tests in `fact-store-sqlite-edges.test.ts` (new tests FS-SE-16a..e) rather than in the shared contract suite (`fact-store.contract.test.ts` / `fact-store-contract.helper.ts`).
+**Attention-column read-through is now a contract-level invariant, not a SQLite-specific one.**
+
+The earlier placement decision (sqlite-edges file) is reversed. The new home for these
+assertions is `runFactStoreContract` in `fact-store-contract.helper.ts`, running for every
+registered implementation automatically.
 
 ---
 
-## Rationale
+## Changes
 
-The shared contract suite uses `SeedFact` — typed as `(factId, sessionId, content, trust) => Promise<void>`. There is no attention-column slot in this signature.
+### 1. `SeedFact` extended with optional `attention` opts (5th arg)
 
-To add attention-column seeding to the contract suite I would have needed to:
-1. Extend `SeedFact` to accept optional attention-column params, and
-2. Update the `InMemoryFactStore` harness to model and store `importance`, `lastAccessed`, `attentionTier`.
+```typescript
+export type SeedFact = (
+  factId: string,
+  sessionId: SessionId,
+  content: string,
+  trust: number,
+  attention?: {
+    importance?: number;
+    lastAccessed?: number | null;
+    attentionTier?: 'hot' | 'warm' | 'cold';
+  },
+) => Promise<void>;
+```
 
-`InMemoryFactStore` is a test-only reference implementation that intentionally has no notion of attention columns. Adding them would either (a) require `InMemoryFactStore` to implement attention-column behavior before it's designed, or (b) require the contract helper to skip attention assertions for implementations that don't yet support them — which defeats the purpose of a shared contract.
+All existing call sites omit the 5th arg — no breaking change. The optional trailing-options
+pattern ensures backward compatibility without touching any existing seed call.
 
-**Attention-column hydration is a SQLite SELECT→RecallResult mapping concern.** The contract invariant that ALL FactStore impls share is "attentionTier must be one of hot/warm/cold" — not "the value stored in the DB must be returned". The latter is a SQLite-specific storage-layer correctness requirement.
+### 2. `InMemoryFactStore` now models attention columns
 
-The SQLite-edges file (`fact-store-sqlite-edges.test.ts`) already contains a direct `db.prepare()` harness with full access to the underlying schema, making it the natural home for per-column hydration tests.
+`StoredFact` interface extended with `importance`, `lastAccessed`, `attentionTier`.
+`search()` returns live values from stored state (no longer hardcodes `attentionTier: 'warm'`).
+`seed()` stores attention values from opts; defaults: importance=0, lastAccessed=undefined,
+attentionTier='warm'. `null` lastAccessed maps to `undefined` in results (mirrors SQLite NULL→absent).
+
+### 3. `SqliteFactStore` contract harness seed updated
+
+Full 7-column INSERT replacing the previous 4-column INSERT. Passes attention opts when provided;
+uses column defaults otherwise. `attention?.lastAccessed ?? null` correctly passes SQL NULL.
+
+### 4. New contract assertions: FS-12, FS-12b, FS-13
+
+Added inside `runFactStoreContract` — run for every wired implementation:
+- **FS-12**: fact seeded with `attentionTier: 'hot'`, `importance: 0.9`, `lastAccessed: <epoch ms>` → all three surface unchanged via `search()`.
+- **FS-12b**: fact seeded with `attentionTier: 'cold'` → surfaces 'cold'.
+- **FS-13**: fact seeded without attention opts → surfaces `attentionTier: 'warm'`, `importance: 0`, `lastAccessed: undefined`.
+
+### 5. FS-SE-16a–e removed from `fact-store-sqlite-edges.test.ts`
+
+Replaced with a comment documenting the reversal and pointing to FS-12/FS-13 as the canonical
+location. The `seedWithAttention` helper was also removed (no longer needed; the contract harness
+seed now handles attention opts directly).
+
+---
+
+## Test Count Impact
+
+| Before | After | Delta |
+|--------|-------|-------|
+| 205    | 206   | +1    |
+
+- Removed: 5 tests (FS-SE-16a–e from sqlite-edges)
+- Added: 6 tests (FS-12 + FS-12b + FS-13, each ×2 impls = 6)
+- Net: +1
 
 ---
 
-## What Was Added
+## Invariant: No Production Code Modified
 
-**File:** `packages/eureka/src/storage/__tests__/fact-store-sqlite-edges.test.ts`
-
-Five new tests (FS-SE-16a..e) plus a `seedWithAttention` helper inside the describe block:
-
-| Test | Assertion | RED reason |
-|------|-----------|-----------|
-| FS-SE-16a | `attentionTier === 'hot'` for `attention_tier='hot'` row | Mapper hardcodes `'warm'` |
-| FS-SE-16b | `attentionTier === 'cold'` for `attention_tier='cold'` row | Mapper hardcodes `'warm'` |
-| FS-SE-16c | `importance ≈ 0.9` for `importance=0.9` row | Column not in SELECT |
-| FS-SE-16d | `lastAccessed === 1749600000000` for non-null `last_accessed` row | Column not in SELECT |
-| FS-SE-16e | `importance === 0` for default-column row | Column not in SELECT (partial RED) |
-
-FS-SE-16e also asserts `attentionTier === 'warm'` (currently GREEN — hardcoded) and `lastAccessed === undefined` for NULL column (expected GREEN before and after GREEN phase).
+`SqliteFactStore`, `recall.ts`, and all migrations are unchanged. The contract assertions
+pass against `SqliteFactStore` as-is (Crispin's GREEN wiring is sufficient). If a contract
+assertion had failed for `SqliteFactStore`, that would be a production bug requiring a stop-and-report.
 
 ---
 
-## Migration Harness Status
+## Pattern Captured
 
-`applyMigrations(db)` in `fact-store-sqlite-edges.test.ts` `beforeEach` includes migration 002 (verified in `packages/eureka/src/db/schema.ts` — migration002 is in the `migrations` array). All three attention columns exist in every test DB. No harness change required for Crispin's GREEN phase.
+**Optional seed opts for new columns across all impls.** When a storage schema gains new
+columns that must be observable via a seam's read interface, the correct path is:
+
+1. Extend the `SeedFact` (or equivalent) type with an optional trailing opts argument.
+2. Make the reference in-memory impl model the new columns.
+3. Update all harness seeds to pass the new column values.
+4. Add contract assertions that exercise both non-default values and default values.
+
+This keeps existing call sites untouched and makes the contract exhaustive across all impls.
+
+---
+
+# Gabriel — decisions-archive.md Overwrite Incident + Append-Only Fix
+
+**Author:** Gabriel (Infrastructure)
+**Date:** 2026-06-12T22:40:01.901-07:00
+**Type:** Incident report + remediation
+**Status:** RESOLVED — fix commit 5925df4
 
 ---
 
-## Crispin's GREEN Phase Requirements
+## Incident
 
-To make FS-SE-16a..e go green, Crispin must wire into `fact-store-sqlite.ts`:
+Scribe commit **5747329** ("Scribe: Merge attention-column decisions, archive old entries, log orchestration")
+was supposed to APPEND ~274 newly-archived lines to `.squad/decisions-archive.md`. Instead it **OVERWROTE** the
+file — replacing the full prior archive (4782 lines, including the `# Archived Decisions` header and all earlier
+dated entries) with only this session's freshly-archived block (186 lines starting `### 2026-05-30`).
 
-1. Add `f.importance`, `f.last_accessed`, `f.attention_tier` to the `SearchRow` interface.
-2. Add these three columns to the SELECT in both `stmtFirst` and `stmtKeyset`.
-3. Update the mapper (~line 307) to:
-   - Use `row.attention_tier` (cast to `'hot' | 'warm' | 'cold'`) instead of hardcoded `'warm'`
-   - Set `importance: row.importance` (REAL, already non-null by DB constraint + DEFAULT)
-   - Set `lastAccessed: row.last_accessed ?? undefined` (NULL → absent)
-
-Note: The keyset ORDER BY is unchanged — `(-bm25_score) * trust DESC, f.id ASC` (decision D2, locked). Importance is not folded into the sort key in this slice.
-
+**Impact:** ~4596 lines of prior archived history were silently dropped.
 
 ---
+
+## Evidence
+
+Verified line counts:
+
+- `git show HEAD~1:.squad/decisions-archive.md | Measure-Object -Line` → **4782 lines** (full archive, header present)
+- `git show HEAD:.squad/decisions-archive.md | Measure-Object -Line` → **186 lines** (only new block, no header)
+
+HEAD~1 head: `# Archived Decisions` / `# Squad Decisions Archive (Entries Older Than 7 Days)`
+HEAD head: `### 2026-05-30: WI-A Implementation Log` — no header, prior content gone.
+
+---
+
+## Remediation
+
+1. Captured HEAD~1 (4782 lines) and HEAD (186 lines) to `$env:TEMP`.
+2. Confirmed new block carried no duplicate top-level header.
+3. Reconstructed archive: old content + blank separator + new block via `[System.IO.File]::WriteAllLines` with UTF-8 no-BOM.
+4. Verified restored file:
+   - **4968 lines** (> 4782 — strictly larger ✓)
+   - `Entries archived on 2026-06-05` present ✓
+   - `# Archived Decisions` header present exactly once ✓
+   - `### 2026-05-30: WI-A Implementation Log` present (also exists briefly in old archive — expected) ✓
+5. Staged only `.squad/decisions-archive.md`, committed as new forward-only fix commit **5925df4**.
+   - Did NOT amend or force-push. History remains forward-only.
+   - Did NOT touch `decisions.md` (verified correct state).
+
+---
+
+## Root Cause
+
+Scribe used an overwrite operation (likely `Set-Content` or `>` redirection) instead of an append operation when
+writing the archive file. The Append-Only History Rule was not enforced by a post-commit gate.
+
+---
+
+## Recommended Guard (Infra)
+
+After any Scribe archive step, assert line count strictly increases:
+
+```powershell
+$before = (git show HEAD~1:.squad/decisions-archive.md | Measure-Object -Line).Lines
+$after  = (git show HEAD:.squad/decisions-archive.md   | Measure-Object -Line).Lines
+if ($after -le $before) { throw "Archive overwrite detected: $after lines (was $before)" }
+```
+
+This guard is now documented in `.copilot/skills/archive-append-guard/SKILL.md`.
+
+---
+
+## Files Changed
+
+- `.squad/decisions-archive.md` — restored (fix commit 5925df4)
+- `.squad/agents/gabriel/history.md` — Learnings section updated
+- `.copilot/skills/archive-append-guard/SKILL.md` — new skill documenting the append-only assertion pattern
+
 ### 2026-06-08: FSE-2 and FSE-3 JSDoc Documentation Complete (Roger)
 
 **Author:** Roger Wilco (Platform Dev)  
@@ -425,18 +549,6 @@ Add CI check to detect `npm run lint` (bare) in agent logs and fail CI with help
 Added JSDoc at two locations:
 - `RecallResult.relevance` field — clarifies per-page min-max, NOT comparable across pages
 - `FactStore.search` return type (on `nextCursor?`) — same note for consumers reading the return shape
-
-# Roger: Crucible First GREEN — Decision Inbox
-
-**Date:** 2026-06-01  
-**Author:** Roger (Platform Dev)  
-**Status:** GREEN confirmed — acceptance test passing
-- **Production wiring:** `index.ts` default deps are NOT changed to `SqliteFactStore`. That is Slice D.
-- **`attentionTier` / `importance` / `lastAccessed` columns:** Future migration.
-- **Cross-session aggregation:** `FactStore.search()` is session-scoped in M8. Querying across sessions is a later milestone.
-- **Embeddings/semantic search:** BM25 via FTS5 only. Vector similarity is out of scope.
-
----
 
 # M8 Slice D — SQLite Production Deps Factory (Roger, Laura, Graham)
 
@@ -794,201 +906,6 @@ L1Subscriber broadcast to the §5 Router is deferred to its own RED cycle.
 **Rationale:** Preserves §3.4.1's auto-release-on-termination *intent* without a native dependency; avoids opaque "stuck forever after crash" failures (correctness compounds across agent actions).
 **Follow-up filed:** GitHub issue **#55** — reconsider a true OS advisory lock (flock/LockFileEx via maintained dependency) vs PID-liveness later (label squad:roger).
 **Supersedes:** Roger's recommended Option (a) manual-clear (D-LOCK-2). §3.4.1 spec guarantee is now honored by PID-liveness, not downgraded.
-### 2026-06-02: M2 Cycle-2 Doc Alignment (Gabriel)
-
-**Author:** Gabriel (Infrastructure)  
-**Date:** 2026-06-02T00:16Z  
-**PR:** #44 (branch squad/m2-forge-mcp-bash-hooks)  
-**Commit:** bacb3f4
-
-Cycle-2 review (APPROVE_WITH_NITS) confirmed all three cycle-1 code fixes are correct. Two doc-drift nits addressed: (1) SKILL.md pattern #7 replaced — the original taught the two-pass sed approach that cycle-1 rejected as buggy; the updated pattern now shows the `_remove_block` bash state-machine that was actually shipped, with a new Anti-Pattern entry documenting the specific sequencing failure mode (blank-line pass consumes MARKER_START, orphaning the block body) and the byte-identical roundtrip acceptance criterion. (2) README uninstall description updated from "using sed (GNU/BSD)" to "pure-bash line-by-line filter (no sed dependency; identical behavior on Linux, macOS, and Git Bash on Windows)". Both changes are doc-only; no code or behavior changed. M2 is now review-complete and ready to merge.
-
----
-
-### 2026-06-02: M2 Cycle-1 Fixes (Gabriel)
-
-**Author:** Gabriel (Infrastructure)  
-**Date:** 2026-06-01T00:00Z  
-**PR:** #44 (branch squad/m2-forge-mcp-bash-hooks)  
-**Commit:** e7ef8f3
-
-## Findings addressed
-
-### F1 — BLOCKING — uninstall.sh two-pass sed
-
-**Root cause:** The first sed pass consumed MARKER_START when it appeared immediately after a blank line (the two patterns match the same region). This made the second range-delete pass a no-op — block body and MARKER_END stayed in the file. Subsequent install runs appended a new block on top of the orphan.
-
-**Fix:** Replaced both sed passes with a single bash state-machine loop. Buffers blank lines one-deep; suppresses the separator blank only when MARKER_START immediately follows.
-
-**Verification:** install → uninstall → byte-identical (cycle 1 and cycle 2) against a synthetic bashrc with existing content, ran via Git Bash.
-
-### F2 — IMPORTANT — shell-init.sh: npm root -g on foreground path
-
-**Root cause:** `_forge_mcp_resolve_script` was called before the `&` so the 150ms–1s+ `npm root -g` shell-out blocked every new interactive session.
-
-**Fix:** Moved both resolution and `node` execution into the background subshell (`( ... ) &>/dev/null &`). Subshell inherits `_forge_mcp_resolve_script` (bash forks copy parent functions). Shell startup path is now a single `( ) &` with no blocking work.
-
-### F3 — MEDIUM — shell-init.sh: pkg_json dirname depth
-
-**Root cause:** Two `dirname` calls landed in `dist/` (no package.json there). Path: `dist/hooks/sessionStart.js` → `dist/hooks` → `dist`.
-
-**Fix:** Three `dirname` calls reach the package root: `dist/hooks` → `dist` → `skillsmith-runtime`. `forge_mcp_check` now prints `version: 0.1.0`. Verified against the actual `packages/skillsmith-runtime/package.json`.
-
----
-
-## Build / test status
-
-- `npm run build` — ✅ clean
-- `npm test` — ✅ 49/49 passing
-
-## Files changed
-
-- `.github/hooks/cairn/uninstall.sh` — replaced two-pass sed with bash loop
-- `.github/hooks/cairn/shell-init.sh` — background resolution (F2) + pkg_json depth (F3)
-
----
-
-### 2026-06-05: Audit — Laura M8 Slice C (SqliteFactStore + FTS5 BM25 Search)
-
-**Author:** Laura (Tester)
-**Date:** 2026-06-05
-**Branch:** `eureka/m8-slice-c-factstore`
-**PR:** #48
-**Verdict:** ✅ ACCEPT-WITH-FOLLOWUPS
-
----
-
-## Baseline Verified
-
-- Checked out `eureka/m8-slice-c-factstore`, pulled FF-only. Branch was already at `643f106` (Roger's drop).
-- `npm test` (packages/eureka): **109 tests, 8 files, all green**. Matches Roger's claimed count.
-- `npm run build` (packages/eureka): **clean** (tsc, no errors).
-
----
-
-## Audit Areas & Findings
-
-### 1. BM25 Ordering — Critical Regression Lock
-
-**Status: PASS.** Roger's `ORDER BY (-bm25(facts_fts)) * f.trust DESC` is correct.
-
-Sign analysis:
-- `bm25()` returns NEGATIVE (more-negative = better match)
-- `-bm25(...)` flips to positive (larger = better)
-- Multiplied by `trust ∈ [0,1]` gives composite score, still positive
-- `DESC` orders highest composite first = best matches first
-
-FS-4 in the contract suite locks this: seeds two facts with different term frequencies (3× vs 1×) and asserts the higher-frequency fact ranks first. If the negation were dropped (`bm25()` used directly with DESC), best matches would appear LAST (most-negative = "largest" in signed comparison = first in DESC, which is wrong). FS-4 catches this.
-
-**Normalization**: `normalizeRelevance()` correctly flips sign then applies min-max. Top result always gets `relevance = 1.0`. The all-equal branch (`max === min → 1.0`) handles single-result and identical-score cases.
-
-**Per-page normalization note (non-blocking):** Roger's decision drop §2 acknowledges that relevance scores are not comparable across pages. A sole result on page 2 gets `relevance = 1.0` even if it's a weak match. This is intentional for v1 (single-page recall). Locked in FS-SE-12.
-
-### 2. Cursor Pagination
-
-**Status: PASS.** FS-5 in the contract suite already covers the 3-page round-trip (disjoint, complete, no nextCursor on final page). My FS-SE-3/4 add:
-
-- **Garbage cursor (FS-SE-3)**: Invalid base64 decodes to non-JSON, `catch` block returns 0. Verified by comparing with no-cursor baseline — results are identical.
-- **Negative offset (FS-SE-4)**: `{ offset: -5 }` → `payload.offset >= 0` fails → returns 0. Correct guard.
-
-**Concurrent-insert caveat** (non-blocking, document only): Offset cursors can skip or repeat rows if facts are inserted between page fetches. This is a known limitation of offset-based pagination, acknowledged in Roger's decision drop §3 and the code comments. Not a blocker for single-writer v1; flagged as Slice D+ concern.
-
-**limit=0 degenerate case** (VERY LOW, note only): Calling `search({ limit: 0 })` directly (not via `recallWithScores`, which guards k=0 before touching FactStore) would loop: `hasMore = (1 row > 0) = true`, `nextCursor = encodeCursor(0)`. Not reachable through the normal activity path; no action required.
-
-### 3. minTrust Floor at SQL Layer
-
-**Status: PASS.** All boundary cases:
-
-| Trust | minTrust | Expected | Result |
-|-------|----------|----------|--------|
-| 0.15 | 0.15 | INCLUDED | ✅ FS-SE-5 |
-| 0.149 | 0.15 | EXCLUDED | ✅ FS-SE-6 |
-| NULL | 0 | EXCLUDED | ✅ FS-SE-7 |
-| 0.14 | (omitted, default 0.15) | EXCLUDED | ✅ FS-SE-8 |
-| 0.0 | 0 | INCLUDED | ✅ FS-SE-7 (confirms trust=0 ≠ NULL) |
-
-The WHERE clause `f.trust IS NOT NULL AND f.trust >= $min_trust` correctly sequences the NULL check before the >= comparison, so NULL trust is excluded at any floor including 0.
-
-### 4. Session Isolation
-
-**Status: PASS.** FS-6 in the contract suite covers this with a direct assertion. Roger's `AND f.session_id = $session_id` on every query ensures facts never bleed across session boundaries. The session is a `$`-param, not string-interpolated, so SQL injection is not a concern.
-
-### 5. Empty / Degenerate Queries
-
-**Status: PASS WITH FINDING.**
-
-- Whitespace-only query (`"   "`, `"\t"`, etc.): short-circuited by `if (!query.trim())` before FTS5. Returns `{ results: [] }`. ✅ FS-SE-9.
-- Single result → no nextCursor. ✅ FS-SE-10.
-- **FINDING FSE-1 (MEDIUM): FTS5 syntax characters not sanitized.** Queries containing FTS5 operator characters (unclosed `"`, bare `AND`/`OR` operators) propagate as rejected Promises rather than graceful empty results. `stmt.all()` is synchronous; the error becomes a rejection of the async `search()` return value. FS-SE-11 locks this current behavior. Recommend: wrap `stmt.all()` in try/catch; on FTS5 parse error, return `{ results: [] }`. This is MEDIUM — not a data corruption issue, but any user-supplied query string reaching `search()` is a potential crash path.
-
-> Superseded by M8 Slice C review-cycle fixes (commit `f08c746`): `SqliteFactStore.search()` now wraps `stmt.all()` in try/catch, catches FTS5 parse-error patterns, and returns `{ results: [] }` instead of rejecting. FS-SE-11 updated to verify empty results (not rejection). FSE-1 marked done below.
-
-### 6. Interface Reconciliation / recall Consumer
-
-**Status: PASS.** `recallWithScores` correctly destructures `{ results: candidates }` from `factStore.search()`. All 18 recall tests pass. The `cursor` parameter in `FactStore.search()` is optional and not used by `recallWithScores` (which does a single-page overfetch). No regression.
-
----
-
-## Edge Tests Added
-
-File: `packages/eureka/src/storage/__tests__/fact-store-sqlite-edges.test.ts`
-Committed on branch as `f08c746`, pushed to PR #48.
-
-| ID | What it locks |
-|----|---------------|
-| FS-SE-1 | BM25 normalization: top result `relevance=1.0`, descending order, all ∈ [0,1] |
-| FS-SE-2 | Single match: `relevance=1.0` (all-equal branch in normalizeRelevance) |
-| FS-SE-3 | Garbage cursor: safe fallback to offset=0, no crash |
-| FS-SE-4 | Negative-offset cursor: guard `>= 0` fires, fallback to 0 |
-| FS-SE-5 | minTrust exact floor: `trust=0.15` with `minTrust=0.15` is INCLUDED |
-| FS-SE-6 | minTrust just-below: `trust=0.149` excluded at `minTrust=0.15` |
-| FS-SE-7 | NULL trust excluded even at `minTrust=0`; `trust=0` IS allowed at `minTrust=0` |
-| FS-SE-8 | Default `minTrust=0.15` when omitted: `trust=0.14` excluded |
-| FS-SE-9 | Whitespace-only query: empty results, no crash (4 variants) |
-| FS-SE-10 | Final page: `nextCursor` absent |
-| FS-SE-11 | FTS5 unclosed-quote resolves to empty results (FSE-1 fixed) |
-| FS-SE-12 | Per-page normalization distortion: sole page-2 result gets `relevance=1.0` |
-| FS-SE-13 | Non-FTS SQLITE_ERROR (e.g. missing table) propagates as rejected Promise |
-
----
-
-## Follow-up Items (Non-Blocking)
-
-These do NOT block acceptance. File in backlog:
-
-| ID | Severity | Status | Description |
-|----|----------|--------|-------------|
-| FSE-1 | MEDIUM | ✅ DONE | Wrap `stmt.all()` in try/catch in `SqliteFactStore.search()`; FTS5 parse errors now return `{ results: [] }` rather than rejecting (commit `f08c746`). FS-SE-11 verifies graceful empty results. |
-| FSE-2 | LOW | pending | Offset cursor gaps/dupes under concurrent inserts — document in `FactStore` interface JSDoc. Non-issue for single-writer v1; relevant before cross-session queries (Slice D+). |
-| FSE-3 | LOW | pending | `search({ limit: 0 })` constraint: implementation now throws `TypeError` (FS-8 locked behavior). Contract surface is `limit` must be positive integer; degenerate values are caught at call boundary, not treated as empty results. Document in JSDoc. |
-| FSE-4 | NOTE | ✅ DONE | Cross-page relevance incomparability — documented in FS-SE-12 and in `FactStore.search()` interface JSDoc (`@note relevance is per-page normalized, independent of result order). |
-
----
-
-## Contract Invariant Note for Roger
-
-One invariant belongs in the shared contract helper (applies to ALL FactStore impls), but I am NOT editing `fact-store-contract.helper.ts` directly per the audit mandate. **Roger to add:**
-
-> **FS-7 (proposed)**: A fact with `trust=NULL` (NaN sentinel per CL-4) MUST never appear in search results regardless of `minTrust`. The `seed` helper in the contract fixture intentionally writes only valid `number` trust values; NULL must be tested via an impl-specific side-channel that bypasses `seed`. Note this in the helper's contract invariant list.
-
----
-
-## Final State
-
-- **Test count:** 109 → **121** (+12 edge tests)
-- **Build:** ✅ clean (`tsc`, no errors)
-- **All 9 test files pass**
-
----
-
-## Verdict
-
-**✅ ACCEPT-WITH-FOLLOWUPS**
-
-Roger's Slice C is correct and well-structured. The BM25 sign convention is right, cursor safety is solid, minTrust boundaries are precise, and session isolation holds. The one genuine finding (FSE-1: no FTS5 input sanitization) is MEDIUM severity — it's a real crash path for user-supplied queries, but not a correctness, isolation, or data-loss issue. It does not block the slice. Filed as a follow-up with a test that locks current behavior.
-
-
-
 # Decision Drop — Roger M8 Slice C (FactStore + FTS5 BM25 search)
 
 **Author:** Roger Wilco (Platform Dev)  
@@ -1078,23 +995,6 @@ Added JSDoc at two locations:
 - `RecallResult.relevance` field — clarifies per-page min-max, NOT comparable across pages
 - `FactStore.search` return type (on `nextCursor?`) — same note for consumers reading the return shape
 
-
-# Roger: Crucible First GREEN — Decision Inbox
-
-**Date:** 2026-06-01  
-**Author:** Roger (Platform Dev)  
-**Status:** GREEN confirmed — acceptance test passing
-- **Production wiring:** `index.ts` default deps are NOT changed to `SqliteFactStore`. That is Slice D.
-- **`attentionTier` / `importance` / `lastAccessed` columns:** Future migration.
-- **Cross-session aggregation:** `FactStore.search()` is session-scoped in M8. Querying across sessions is a later milestone.
-- **Embeddings/semantic search:** BM25 via FTS5 only. Vector similarity is out of scope.
-
-# Roger: Crucible First GREEN — Decision Inbox
-
-**Date:** 2026-06-01  
-**Author:** Roger (Platform Dev)  
-**Status:** GREEN confirmed — acceptance test passing
----
 
 # M8 Slice D — SQLite Production Deps Factory (Roger, Laura, Graham)
 
@@ -7061,6 +6961,3 @@ Worth stating explicitly:
 | N-2 | Do-not-disturb mode | Nice | Medium |
 | N-3 | Escalation logic | Nice | High |
 | N-4 | Per-type snooze | Nice | High |
-
-
-

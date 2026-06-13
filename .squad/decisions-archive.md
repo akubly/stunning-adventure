@@ -7235,5 +7235,71 @@ Four other test files updated: version assertion 16 → 17 (db, discovery, migra
 **Test Result:** 40/40 passing throughout all cycles. Build clean.
 
 ---
+### 2026-06-02: M2 Cycle-2 Doc Alignment (Gabriel)
 
+**Author:** Gabriel (Infrastructure)  
+**Date:** 2026-06-02T00:16Z  
+**PR:** #44 (branch squad/m2-forge-mcp-bash-hooks)  
+**Commit:** bacb3f4
 
+Cycle-2 review (APPROVE_WITH_NITS) confirmed all three cycle-1 code fixes are correct. Two doc-drift nits addressed: (1) SKILL.md pattern #7 replaced — the original taught the two-pass sed approach that cycle-1 rejected as buggy; the updated pattern now shows the _remove_block bash state-machine that was actually shipped, with a new Anti-Pattern entry documenting the specific sequencing failure mode (blank-line pass consumes MARKER_START, orphaning the block body) and the byte-identical roundtrip acceptance criterion. (2) README uninstall description updated from "using sed (GNU/BSD)" to "pure-bash line-by-line filter (no sed dependency; identical behavior on Linux, macOS, and Git Bash on Windows)". Both changes are doc-only; no code or behavior changed. M2 is now review-complete and ready to merge.
+
+---
+### 2026-06-02: M2 Cycle-1 Fixes (Gabriel)
+
+**Author:** Gabriel (Infrastructure)  
+**Date:** 2026-06-01T00:00Z  
+**PR:** #44 (branch squad/m2-forge-mcp-bash-hooks)  
+**Commit:** e7ef8f3
+
+## Findings addressed
+
+### F1 — BLOCKING — uninstall.sh two-pass sed
+
+**Root cause:** The first sed pass consumed MARKER_START when it appeared immediately after a blank line (the two patterns match the same region). This made the second range-delete pass a no-op — block body and MARKER_END stayed in the file. Subsequent install runs appended a new block on top of the orphan.
+
+**Fix:** Replaced both sed passes with a single bash state-machine loop. Buffers blank lines one-deep; suppresses the separator blank only when MARKER_START immediately follows.
+
+**Verification:** install → uninstall → byte-identical (cycle 1 and cycle 2) against a synthetic bashrc with existing content, ran via Git Bash.
+
+### F2 — IMPORTANT — shell-init.sh: npm root -g on foreground path
+
+**Root cause:** _forge_mcp_resolve_script was called before the & so the 150ms–1s+ 
+pm root -g shell-out blocked every new interactive session.
+
+**Fix:** Moved both resolution and 
+ode execution into the background subshell (( ... ) &>/dev/null &). Subshell inherits _forge_mcp_resolve_script (bash forks copy parent functions). Shell startup path is now a single ( ) & with no blocking work.
+
+### F3 — MEDIUM — shell-init.sh: pkg_json dirname depth
+
+**Root cause:** Two dirname calls landed in dist/ (no package.json there). Path: dist/hooks/sessionStart.js → dist/hooks → dist.
+
+**Fix:** Three dirname calls reach the package root: dist/hooks → dist → skillsmith-runtime. orge_mcp_check now prints ersion: 0.1.0. Verified against the actual packages/skillsmith-runtime/package.json.
+
+---
+
+## Build / test status
+
+- 
+pm run build — ✅ clean
+- 
+pm test — ✅ 49/49 passing
+
+## Files changed
+
+- .github/hooks/cairn/uninstall.sh — replaced two-pass sed with bash loop
+- .github/hooks/cairn/shell-init.sh — background resolution (F2) + pkg_json depth (F3)
+
+---
+
+# Roger: Crucible First GREEN — Decision Inbox
+
+**Date:** 2026-06-01  
+**Author:** Roger (Platform Dev)  
+**Status:** GREEN confirmed — acceptance test passing
+- **Production wiring:** index.ts default deps are NOT changed to SqliteFactStore. That is Slice D.
+- **ttentionTier / importance / lastAccessed columns:** Future migration.
+- **Cross-session aggregation:** FactStore.search() is session-scoped in M8. Querying across sessions is a later milestone.
+- **Embeddings/semantic search:** BM25 via FTS5 only. Vector similarity is out of scope.
+
+---
