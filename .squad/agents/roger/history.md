@@ -1624,3 +1624,57 @@ hashes and bytes unchanged; 2 new tests added, 1 benchmark added.
 **Benchmark:** PERF-1 encodeCbor+hashBytes ×2000: ~31ms / ~15.50µs per op.
 
 — Roger
+
+---
+
+## 2026-06-12 — PR #73 Cloud Review Fixes (commit fdffd0d)
+
+**Branch:** squad/crucible-wal-correctness-s1 (follow-up to cycle-3 commit a899d03)
+
+### T1 — CAS duplicate-hash put() orphan temp files (fixed)
+When the same hash was put() twice in one flush batch, pendingSync.set(finalPath, tmpPath) silently
+overwrote the prior tmpPath entry, orphaning the earlier *.cbor.tmp on disk (write amplification + leak).
+Fix: check pendingSync.has(finalPath) before writing a new temp — if already pending, skip and return
+the hash. Content-addressed bytes are guaranteed identical so the existing entry covers the put.
+New test: CAS-T1 — asserts no orphan temp files AND correct sync count of 1 (not 2) after dedup.
+
+### T2 — CAS abort does not unlink temp files (fixed)
+The syncAll() catch block cleared pendingSync but never unlinked the on-disk *.cbor.tmp files for entries
+that were never renamed. Since the map was cleared, no future syncAll() would ever clean them up. Repeated
+failures accumulated garbage indefinitely.
+Fix: iterate pendingSync.values() before clearing, best-effort unlink each tmpPath.
+New test: CAS-T2 — injects a sync failure, asserts zero *.cbor.tmp files remain on disk after abort.
+
+### T3/T4/T5 — Remove gitignored files (removed)
+Three files committed in e17d306 under .squad/orchestration-log/ and .squad/log/ were gitignored but
+force-committed. No content was lost (decisions already in .squad/decisions.md). Removed via git rm.
+
+### T6 — hookVerdict byte validation in codec.ts (fixed)
+decodeRecord() cast the on-disk byte to VerdictByte without validating it. A corrupted segment with verdict
+byte 0x03 would produce a SegmentRecord with hookVerdict typed VerdictByte but value outside the union —
+unsound. Added VALID_VERDICT_BYTES set ({0xFF,0x00,0x01,0x02}) and validation before the cast; throws new
+InvalidVerdictByteError (added to codec.ts, re-exported from index.ts) for any other value.
+New tests: T6a (all 4 valid bytes round-trip), T6b (0x03 rejected with typed error + hex message),
+T6c (0xFE rejected).
+
+### T7/T8 — Stale test comments (fixed)
+Removed 'RED PHASE' header and 'Currently FAILS' / 'JSON.stringify is key-order-sensitive' framing from
+wal-cbor.test.ts. The suite is committed green code; comments now describe passing behaviour.
+
+### Learnings
+- The dedup-by-finalPath approach (skip second write entirely) is simpler than unlink-then-replace: no
+  unlink race, no extra filesystem call. Content-addressing makes dedup trivially correct.
+- Aborting without unlink is a classic cleanup gap: clearing a map removes bookkeeping but NOT disk state.
+  Always iterate and cleanup BEFORE clearing.
+- TypeScript type unions (VerdictByte = 0xFF|0x00|0x01|0x02) do not enforce runtime values — external
+  data (file I/O, network) requires explicit validation before casting.
+- The OFF_HOOK_VERDICT offset (25) must be a magic constant in tests when patching encoded buffers. Cross-
+  check with the codec constants to avoid offset drift.
+
+**New tests:** CAS-T1, CAS-T2, T6a, T6b, T6c (5 new).
+**Total tests:** 163/163 green.
+**Build:** npm run build clean (exit 0).
+**Lint:** npm run lint --workspace @akubly/crucible-core clean.
+**Commit:** fdffd0d
+
+— Roger
