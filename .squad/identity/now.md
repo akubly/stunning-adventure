@@ -1,7 +1,7 @@
 ---
-updated_at: 2026-06-06T11:32:14Z
-focus_area: OQ-2 LOCKED (FEDERATE) + Refactor 3 SHIP-READY (2-cycle persona review: Cycle 1 [1 blocking→resolved + 5 important→resolved], Cycle 2 [0 blocking + 1 important→resolved + minor nits]; 15/15 tests green; FEDERATE invariant upheld; cleared for merge)
-previous_focus: Implementation phase ready — Crucible CTD design review COMPLETE; ADR-0019 (childSid hybrid) landed
+updated_at: 2026-06-13T06:53:26Z
+focus_area: Crucible S1 (WAL/CAS correctness — Option A: harden substrate) SHIPPED ✅ — PR #73 squash-merged to main (30ee08f), closing #57/#60/#68. 2-cycle persona review (17 findings) + 4-cycle Copilot cloud review (18 threads) all resolved; 163/163 tests, clean CI (node 20 & 22). Canonical CBOR profile locked: RFC 8949 §4.2.1 map ordering + forced binary64. NEXT: S2 (substrate hardening #69/#67, veto edge test #61, doc/governance #62/#71), then Phase 0.5 walking skeleton.
+previous_focus: OQ-2 LOCKED (FEDERATE) + Refactor 3 shipped; Crucible CTD design review COMPLETE; ADR-0019 (childSid hybrid) landed
 parallel_track: Eureka M7 (B+C+D) SHIPPED on main; M1 runway clear; Phase 5 roadmap next
 active_issues:
   - "**Eureka M7 (B+C+D) COMPLETE & SHIPPED** ✅ (2026-06-02) — PR #41 cloud-review-cycle marathon: 5 cycles, 22 unique findings (44 threads), 74 tests green, tsc-clean, lint-clean, merged to main as ed6be2c; M7-A (error typing) + M7-B (error narrowing) + M7-C (atomicity contract) + M7-D (regression locks) all delivered"
