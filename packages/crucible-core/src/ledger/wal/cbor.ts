@@ -45,13 +45,18 @@ export class UnsupportedCborTypeError extends Error {
  * cborg encode options implementing the Crucible canonical CBOR profile:
  *   - RFC 8949 §4.2.1 map-key ordering + shortest integer encoding
  *     (inherited from rfc8949EncodeOptions mapSorter + quickEncodeToken).
- *   - Forced float64 for all non-integer numbers (deviation from §4.2.1 for
- *     cross-language reproducibility; inherited from rfc8949EncodeOptions).
+ *   - Forced float64 for ALL non-integer numbers (deviation from §4.2.1 for
+ *     cross-language reproducibility). `float64: true` is set EXPLICITLY below
+ *     so the Crucible profile does not depend on cborg's library preset —
+ *     cborg 5.x rfc8949EncodeOptions also enables it, but we own the contract.
  *   - Type validation folded inline via typeEncoders — rejects unsupported
  *     types during the single encode traversal with no separate pre-pass.
  */
 const crucibleEncodeOptions = {
   ...rfc8949EncodeOptions,
+  float64: true, // explicit: forced IEEE-754 binary64 for all non-integer numbers;
+                 // belt-and-suspenders — cborg rfc8949 preset also sets this in 5.x,
+                 // but we declare it here so the Crucible profile is self-contained.
   typeEncoders: {
     Object(obj: object): null {
       const proto = Object.getPrototypeOf(obj) as unknown;
@@ -70,7 +75,7 @@ const crucibleEncodeOptions = {
     undefined(): never { throw new UnsupportedCborTypeError('undefined'); },
     number(n: number): null {
       if (!isFinite(n)) throw new UnsupportedCborTypeError('non-finite number');
-      return null; // finite number — use cborg default (float64 via rfc8949EncodeOptions)
+      return null; // finite number — float64 via the explicit float64:true on crucibleEncodeOptions
     },
   },
 };
