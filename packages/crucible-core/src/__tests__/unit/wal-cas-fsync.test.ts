@@ -33,6 +33,7 @@ import fs                       from 'node:fs';
 import {
   createFileSystemWalBackend,
 } from '../../ledger/wal-backend-fs.js';
+import { FileSystemCas } from '../../ledger/wal/cas-fs.js';
 import type { PrimitiveInput } from '../../types.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -329,5 +330,69 @@ describe('WAL FileSystemCas — CAS fsync ordering (issue #59)', () => {
     expect(syncCallIdx).toBe(2);
 
     await backend.close();
+  });
+
+  // ── CAS-T1: duplicate-hash put() in a batch must not orphan temp files ───────
+  //
+  // When two puts with the same hash are made within a single batch, the second
+  // put must NOT write a second temp file (T1). The batch should still produce
+  // exactly one CAS sync call.
+
+  it('CAS-T1: duplicate-hash put() within a batch dedupes — no orphan temp files, correct sync count', async () => {
+    const casDir = makeTmpDir();
+    const cas    = new FileSystemCas(casDir);
+    const bytes  = Buffer.from('hello-world');
+
+    let syncCalls = 0;
+    const syncFn = () => { syncCalls++; };
+
+    // Two puts of the same bytes → same hash → second put should skip writing
+    cas.put(bytes);
+    cas.put(bytes); // duplicate — must NOT write a second *.cbor.tmp
+
+    cas.syncAll(syncFn);
+
+    // Only 1 CAS sync (not 2): deduplication collapsed the batch
+    expect(syncCalls).toBe(1);
+
+    // No orphan *.cbor.tmp files in any shard subdirectory
+    const tmpFiles: string[] = [];
+    for (const shard of fs.readdirSync(casDir)) {
+      const shardDir = path.join(casDir, shard);
+      if (!fs.statSync(shardDir).isDirectory()) continue;
+      for (const f of fs.readdirSync(shardDir)) {
+        if (f.endsWith('.cbor.tmp')) tmpFiles.push(f);
+      }
+    }
+    expect(tmpFiles, 'no orphan *.cbor.tmp files after syncAll').toHaveLength(0);
+  });
+
+  // ── CAS-T2: abort unlinks temp files — no *.cbor.tmp garbage on disk ─────────
+  //
+  // When syncAll() throws, all pending temp files must be best-effort unlinked
+  // before the map is cleared. Without this fix, repeated failures accumulate
+  // *.cbor.tmp files that are never cleaned up (the cleared map orphans them).
+
+  it('CAS-T2: syncAll() abort unlinks pending temp files; no *.cbor.tmp garbage remains', async () => {
+    const casDir = makeTmpDir();
+    const cas    = new FileSystemCas(casDir);
+    const bytes  = Buffer.from('abort-test-payload');
+
+    // Write a temp file into pendingSync
+    cas.put(bytes);
+
+    // syncFn throws immediately → abort path
+    expect(() => cas.syncAll(() => { throw new Error('disk-error'); })).toThrow('disk-error');
+
+    // All *.cbor.tmp files must have been unlinked on abort
+    const tmpFiles: string[] = [];
+    for (const shard of fs.readdirSync(casDir)) {
+      const shardDir = path.join(casDir, shard);
+      if (!fs.statSync(shardDir).isDirectory()) continue;
+      for (const f of fs.readdirSync(shardDir)) {
+        if (f.endsWith('.cbor.tmp')) tmpFiles.push(f);
+      }
+    }
+    expect(tmpFiles, 'no *.cbor.tmp files should remain after abort').toHaveLength(0);
   });
 });

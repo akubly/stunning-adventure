@@ -1,9 +1,9 @@
 /**
- * RED PHASE — Canonical CBOR encoding for WAL payload hashing (issue #60).
+ * Canonical CBOR encoding regression locks for WAL payload hashing (issue #60).
  *
  * §3.2/§3.3 specify: payloadHash = BLAKE3(CBOR(primitivePayload)),
  *                    readSetHash = BLAKE3(CBOR(causalReadSet)).
- * envelopeCbor must store genuinely CBOR-encoded data, not raw UTF-8.
+ * envelopeCbor stores CBOR-encoded data (not raw UTF-8).
  *
  * Encoding profile: Crucible canonical CBOR profile (CTD §3.2/§3.3).
  *   = RFC 8949 §4.2.1 map-key ordering + shortest integers
@@ -11,12 +11,11 @@
  *     §4.2.1's shortest-float rule, for cross-language reproducibility).
  *
  * CBOR-1: payloadHash is stable under key insertion order (canonical CBOR).
- *   Two objects with same data in different key order must produce the same hash.
- *   Currently FAILS: JSON.stringify is key-order-sensitive.
+ *   Two objects with same data in different key order produce the same hash.
  *
  * CBOR-2: envelopeCbor in FS backend stores genuine CBOR-encoded primitiveKind.
- *   After write+read, the envelopeCbor first byte must be a CBOR text string header (0x6b for 11 chars).
- *   Currently FAILS: stored as raw UTF-8 (first byte 0x6f = 'o').
+ *   After write+read, the envelopeCbor first byte is a CBOR text string header
+ *   (0x6b = major type 3 | len 11 for 'observation').
  *
  * CBOR-4 to CBOR-9: Golden vectors — pin exact CBOR bytes + BLAKE3 so a
  *   future regression (e.g. cborg major bump, encoding option change) produces

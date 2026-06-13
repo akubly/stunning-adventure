@@ -56,8 +56,9 @@ export class FileSystemCas {
    * writers for the same hash — across sessions or threads — each write to
    * their own temp file and never clobber each other before the atomic rename.
    *
-   * Repeated puts of the same hash within a batch coalesce to one finalPath
-   * entry in pendingSync (the latest tmpPath wins; all have identical content).
+   * Repeated puts of the same hash within a batch are deduplicated: if the
+   * finalPath is already in pendingSync, no new temp file is written (the
+   * existing pending entry covers the put — content-addressed bytes are identical).
    */
   put(bytes: Uint8Array, precomputedHash?: Blake3Hash): Blake3Hash {
     const hash = precomputedHash ?? hashBytes(bytes);
@@ -67,6 +68,14 @@ export class FileSystemCas {
     fs.mkdirSync(shardDir, { recursive: true });
 
     const finalPath = path.join(shardDir, `${hex}.cbor`);
+
+    // Deduplicate within a batch: if this hash is already pending a sync+rename,
+    // skip writing a second temp file. Content-addressed storage guarantees the
+    // bytes are identical, so the existing pending entry covers this put.
+    if (this.pendingSync.has(finalPath)) {
+      return hash;
+    }
+
     const tmpPath   = path.join(shardDir, `${hex}-${process.pid}-${++tmpCounter}.cbor.tmp`);
     fs.writeFileSync(tmpPath, bytes);
     this.pendingSync.set(finalPath, tmpPath);
@@ -92,10 +101,9 @@ export class FileSystemCas {
    *   the rename operation, so the extra fsync is a no-op but harmless.
    *
    * Abort semantics / durability contract:
-   *   If syncFn throws at any point, pendingSync is cleared in the catch block.
-   *   This prevents a later syncAll() from picking up stale entries from the
-   *   failed batch (orphan blobs ahead of WAL) and avoids incorrect call-count
-   *   assertions in tests that inject mid-iteration failures.
+   *   If syncFn throws at any point, all pending temp files are best-effort
+   *   unlinked (to avoid accumulating *.cbor.tmp garbage on repeated failures),
+   *   then pendingSync is cleared so the NEXT batch starts with a clean slate.
    *   A rejected (thrown) syncAll() means the commit is NOT durable — the CAS
    *   blobs were not fsynced and the WAL segment was not written. The caller
    *   (executeFlush) MUST reject all staged rows; they must be retried by the
@@ -148,10 +156,14 @@ export class FileSystemCas {
         this.pendingSync.delete(finalPath);
       }
     } catch (err) {
-      // On abort, clear the entire map so the NEXT batch starts clean.
-      // Stale entries from a failed batch must not be re-synced in a later call
-      // (they would be orphan temp blobs ahead of any WAL record, and re-syncing
-      // them would violate the exact call-count invariant tested in CAS-F tests).
+      // On abort, best-effort unlink every temp file that was written but not yet
+      // renamed. Without this cleanup, repeated syncAll() failures accumulate
+      // *.cbor.tmp garbage indefinitely — the cleared map means no future
+      // syncAll() will ever clean them up.
+      for (const tmpPath of this.pendingSync.values()) {
+        try { fs.unlinkSync(tmpPath); } catch { /* best effort */ }
+      }
+      // Clear the map so the NEXT batch starts with a clean slate.
       this.pendingSync.clear();
       throw err;
     }
