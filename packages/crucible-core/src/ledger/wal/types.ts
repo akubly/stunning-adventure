@@ -18,6 +18,15 @@ export interface SegmentRecordFlags {
 }
 
 /**
+ * Discriminated union of the four valid hookVerdict byte values.
+ *   0xFF — no predicate matched (hookId === null, verdict COMMIT)
+ *   0x00 — explicit continue (hook fired, verdict COMMIT)
+ *   0x01 — observe
+ *   0x02 — pause
+ */
+export type VerdictByte = 0xFF | 0x00 | 0x01 | 0x02;
+
+/**
  * Fields supplied by the caller before hash-chain linking.
  * prevRoot and selfRoot are computed by hash-chain.ts — they are not inputs.
  */
@@ -25,13 +34,14 @@ export interface SegmentRecordInput {
   commitOffset:  bigint;           // u64 monotonic per session
   timestampNs:   bigint;           // u64 ns, monotonically non-decreasing
   primitiveKind: number;           // u8 enum (§6, locked separately)
-  hookVerdict:   number;           // u8: 0=continue, 1=observe, 2=pause
-                                    // (no-verdict/null distinction deferred — see #57)
+  hookVerdict:   VerdictByte;      // u8: 0xFF=no predicate matched, 0x00=continue/explicit,
+                                    //     0x01=observe, 0x02=pause
   flags:         SegmentRecordFlags;
-  payloadHash:   Blake3Hash;       // BLAKE3(JSON UTF-8 bytes of primitivePayload);
-                                    // canonical CBOR hashing deferred — tracked in #60
-  readSetHash:   Blake3Hash;       // BLAKE3(JSON UTF-8 bytes of causalReadSet), or zero-hash;
-                                    // CBOR hashing deferred — tracked in #60
+  payloadHash:   Blake3Hash;       // BLAKE3(CBOR(primitivePayload)); Crucible canonical CBOR profile
+                                    //   (RFC 8949 §4.2.1 map-key ordering + shortest integers +
+                                    //    forced IEEE-754 binary64 for non-integer numbers; issue #60)
+  readSetHash:   Blake3Hash;       // BLAKE3(CBOR(causalReadSet)), or zero-hash if empty;
+                                    //   same Crucible canonical CBOR profile as payloadHash
   envelopeCbor:  Uint8Array;       // CBOR envelope tail; may be empty
 }
 
@@ -46,8 +56,32 @@ export interface SegmentRecord extends SegmentRecordInput {
 // The strings must exactly match the HookVerdict union in hook-bus.ts.
 
 /** Ledger verdict → WAL hookVerdict byte (§4 seam §5). */
-export const VERDICT_TO_WAL: Record<'COMMIT' | 'OBSERVE' | 'PAUSE', number> = {
+export const VERDICT_TO_WAL: Record<'COMMIT' | 'OBSERVE' | 'PAUSE', VerdictByte> = {
   COMMIT:  0x00,
   OBSERVE: 0x01,
   PAUSE:   0x02,
 };
+
+export const NO_MATCH_VERDICT_BYTE = 0xFF as const satisfies VerdictByte;
+
+export function hookResultToVerdictByte(
+  verdict: 'COMMIT' | 'OBSERVE' | 'PAUSE',
+  hookId: string | null,
+): VerdictByte {
+  if (hookId === null && verdict === 'COMMIT') {
+    // No hook fired — no predicate matched (§4 seam §5).
+    return NO_MATCH_VERDICT_BYTE;
+  }
+  if (hookId === null) {
+    // Precondition: hookId === null is only valid with COMMIT (no-match case).
+    // A null hookId with OBSERVE or PAUSE means no hook fired but a non-commit
+    // verdict was returned, which is a programming error. This path is
+    // unreachable today but must throw explicitly so a future default-OBSERVE
+    // path cannot silently bypass 0xFF and produce incorrect verdict bytes.
+    throw new Error(
+      `Precondition violated: hookId is null with verdict "${verdict}". ` +
+      `Only COMMIT is valid when no hook matched (expected 0xFF byte).`,
+    );
+  }
+  return VERDICT_TO_WAL[verdict];
+}

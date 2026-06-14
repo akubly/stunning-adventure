@@ -263,64 +263,826 @@ FSE-2 and FSE-3 LOW-priority documentation follow-ups are now complete. Both ite
 - ✅ TypeScript build: clean (`tsc --build`)
 - ✅ Test suite: 164/164 green (eureka)
 - ✅ No behavior changes (doc-only)
+# Graham: Crucible Next Slice — Sequencing Recommendation
+
+**Date:** 2026-06-10  
+**Author:** Graham Knight (Lead / Architect)  
+**Status:** RECOMMENDATION — awaiting Aaron's direction
 
 ---
 
-### 2026-06-02: M2 Cycle-2 Doc Alignment (Gabriel)
+## Current State Assessment
 
-**Author:** Gabriel (Infrastructure)  
-**Date:** 2026-06-02T00:16Z  
-**PR:** #44 (branch squad/m2-forge-mcp-bash-hooks)  
-**Commit:** bacb3f4
+### What's Built (128 tests green in crucible-core, 9 in crucible-cli)
 
-Cycle-2 review (APPROVE_WITH_NITS) confirmed all three cycle-1 code fixes are correct. Two doc-drift nits addressed: (1) SKILL.md pattern #7 replaced — the original taught the two-pass sed approach that cycle-1 rejected as buggy; the updated pattern now shows the `_remove_block` bash state-machine that was actually shipped, with a new Anti-Pattern entry documenting the specific sequencing failure mode (blank-line pass consumes MARKER_START, orphaning the block body) and the byte-identical roundtrip acceptance criterion. (2) README uninstall description updated from "using sed (GNU/BSD)" to "pure-bash line-by-line filter (no sed dependency; identical behavior on Linux, macOS, and Git Bash on Windows)". Both changes are doc-only; no code or behavior changed. M2 is now review-complete and ready to merge.
+| Component | Status | PR | Notes |
+|-----------|--------|-----|-------|
+| **L1 WAL substrate** | ✅ SHIPPED | #58 | File-backed, hash-chained, CBOR-encoded segments, CAS blobs, group-commit, crash-durability, seal-and-split, index.idx |
+| **Pre-commit hook bus** | ✅ SHIPPED | #58 | FIFO dispatch, VETO>PAUSE>OBSERVE>COMMIT precedence, HookBusPort seam |
+| **Aperture projector** | ✅ SHIPPED | #70 | L2 post-commit projection, NotificationPolicy value object, purity contract test, push notifications |
+| **Session fork (A1)** | ✅ SHIPPED | #45 | createSession/fork, ForkLineage, SessionManager, in-memory + SQLite DB adapters |
+| **OQ-2 FEDERATE substrate** | ✅ SHIPPED | #51 | Crucible owns its own WAL; no Cairn coupling. SQLite adapter standalone. |
+| **WAL backend contract tests** | ✅ SHIPPED | #51/#58 | InMemory + FileSystem backends with shared CL-1..CL-7 contract suite |
 
----
+### What's Stubbed or Partially Built
 
-### 2026-06-02: M2 Cycle-1 Fixes (Gabriel)
+- **Hook bus**: FIFO only — no kind-indexed dispatch, no subscriber policy, no CAS hookVerdictWitness writes
+- **Session fork**: In-memory parent-registry; no WAL-backed fork lineage persistence
+- **L0 Bridge/Provider**: Not started (§2, §12)
+- **L4 Router**: Not started (§5)
+- **L3 Generators**: Not started (§7)
+- **L5 Investigation/Sonny**: Not started
+- **Hermetic replay (§11)**: Not started
+- **CLI verbs beyond fork**: Not started
 
-**Author:** Gabriel (Infrastructure)  
-**Date:** 2026-06-01T00:00Z  
-**PR:** #44 (branch squad/m2-forge-mcp-bash-hooks)  
-**Commit:** e7ef8f3
+### CTD Roadmap Position
 
-## Findings addressed
-
-### F1 — BLOCKING — uninstall.sh two-pass sed
-
-**Root cause:** The first sed pass consumed MARKER_START when it appeared immediately after a blank line (the two patterns match the same region). This made the second range-delete pass a no-op — block body and MARKER_END stayed in the file. Subsequent install runs appended a new block on top of the orphan.
-
-**Fix:** Replaced both sed passes with a single bash state-machine loop. Buffers blank lines one-deep; suppresses the separator blank only when MARKER_START immediately follows.
-
-**Verification:** install → uninstall → byte-identical (cycle 1 and cycle 2) against a synthetic bashrc with existing content, ran via Git Bash.
-
-### F2 — IMPORTANT — shell-init.sh: npm root -g on foreground path
-
-**Root cause:** `_forge_mcp_resolve_script` was called before the `&` so the 150ms–1s+ `npm root -g` shell-out blocked every new interactive session.
-
-**Fix:** Moved both resolution and `node` execution into the background subshell (`( ... ) &>/dev/null &`). Subshell inherits `_forge_mcp_resolve_script` (bash forks copy parent functions). Shell startup path is now a single `( ) &` with no blocking work.
-
-### F3 — MEDIUM — shell-init.sh: pkg_json dirname depth
-
-**Root cause:** Two `dirname` calls landed in `dist/` (no package.json there). Path: `dist/hooks/sessionStart.js` → `dist/hooks` → `dist`.
-
-**Fix:** Three `dirname` calls reach the package root: `dist/hooks` → `dist` → `skillsmith-runtime`. `forge_mcp_check` now prints `version: 0.1.0`. Verified against the actual `packages/skillsmith-runtime/package.json`.
+- **Phase 0** (§2+§6 foundation): ✅ Done (types, primitive vocabulary)
+- **Phase 0.5** (walking skeleton): ❌ NOT STARTED — gates Phase 1 fan-out
+- **Phase 1** (core stack parallel lanes): Partially started — Roger's §3+§4 lane is ahead; other lanes not started
+- **Walkthroughs A/B/C**: All SHIPPED (session fork, hook veto, Aperture push)
+- **No Walkthrough D exists** in the TDD strategy — the three walkthroughs are the full set
 
 ---
 
-## Build / test status
+## Open Issue Triage
 
-- `npm run build` — ✅ clean
-- `npm test` — ✅ 49/49 passing
+### (a) Correctness/Security Blockers — Must Land Before New Features
 
-## Files changed
+| Issue | Severity | Owner | Reasoning |
+|-------|----------|-------|-----------|
+| **#68 CAS torn-blob** | HIGH | Roger | Data integrity: put skips re-sync for existing-but-partial blob. Silent data corruption path. Cross-session attack surface. |
+| **#60 CBOR hashing** | MEDIUM | Roger | Hash determinism: JSON UTF-8 is not canonical. Replay integrity depends on deterministic hashing. Must fix before any replay work (§11). |
+| **#57 Verdict encoding** | MEDIUM | Roger | Semantic ambiguity: null (no predicate matched) vs continue encoded identically. Affects hook bus replay fidelity. |
 
-- `.github/hooks/cairn/uninstall.sh` — replaced two-pass sed with bash loop
-- `.github/hooks/cairn/shell-init.sh` — background resolution (F2) + pkg_json depth (F3)
+### (b) Feature Increments
+
+| Issue | Severity | Owner | Reasoning |
+|-------|----------|-------|-----------|
+| **#65 aperture getPriority()** | LOW | Roger | UX polish — surface priority in push payload. Non-blocking. |
+| **#66 aperture unreadCount ack** | MEDIUM | Roger+Valanice | Functional gap — no dismiss path means badge count grows forever. Needs UX design (Valanice) + implementation (Roger). |
+
+### (c) Doc/Test Debt
+
+| Issue | Severity | Owner | Reasoning |
+|-------|----------|-------|-----------|
+| **#62 Hook-bus verdict table** | LOW | Graham | Doc completeness — add TypeScript-name column to §4.1. Trivial. |
+| **#61 Prior-rows-survive-veto edge test** | LOW | Laura | Test gap — edge case coverage for Walkthrough B. Non-blocking but valuable. |
+
+### (d) Governance
+
+| Issue | Severity | Owner | Reasoning |
+|-------|----------|-------|-----------|
+| **#71 Scribe append-only violation** | MEDIUM | Graham | Process bug — Scribe's history summarization gate mutates history, violating the Append-Only History Rule. Needs governance fix, not code. |
+| **#55 OS advisory lock vs PID reclaim** | LOW | Roger | Design decision — deferred; current PID-liveness approach is functional. |
+| **#67 WAL metadata in envelope** | LOW | Roger | Enhancement — enables filtered replay-based catchup. Not blocking current work. |
+| **#69 Ledger observability hook** | LOW | Roger | Resilience — swallowed subscriber errors are invisible. Important but not blocking. |
 
 ---
 
+## Options for Next Slice
 
+### Option A: "Harden Substrate, Then Skeleton" (RECOMMENDED)
+
+**Sequence:**
+1. **Slice S1 (serial, ~1 day):** Fix #68 (CAS torn-blob) + #60 (CBOR hashing) + #57 (verdict encoding) — all Roger, all correctness. These three share the WAL internals context and should batch into one PR.
+2. **Slice S2 (parallel, ~2 days):**
+   - Roger: #69 (observability hook) + #67 (WAL metadata envelope) — substrate resilience
+   - Laura: #61 (prior-rows-survive-veto edge test) — test gap closure
+   - Graham: #62 (verdict table doc) + #71 (Scribe governance fix)
+3. **Slice S3 (~3 days):** Phase 0.5 Walking Skeleton — the CTD's gate for Phase 1 fan-out. Requires L0 stub (Alexander), minimal `crucible status` + `crucible replay` (Valanice CLI + Laura A2 conformance), FifoScheduler stub (Gabriel).
+
+**Trade-offs:**
+- ✅ Correctness issues (#68, #60, #57) are fixed BEFORE building on top of them
+- ✅ Walking skeleton gates Phase 1 properly — no speculative parallel work
+- ✅ Roger's S1 batch is efficient (shared context, one PR)
+- ❌ ~1 day slower to reach new feature work
+- ❌ Alexander, Rosella, Gabriel, Valanice idle during S1
+
+**Parallelism:** S1 is Roger-only (critical path). S2 fans out to 3 lanes. S3 fans out to 4+ lanes.
+
+### Option B: "Skeleton First, Fix Substrate In Flight"
+
+**Sequence:**
+1. **Slice S1 (parallel, ~3 days):** Jump directly to Phase 0.5 Walking Skeleton. Roger works on skeleton WAL pieces AND fixes #68/#60/#57 as he encounters them.
+2. **Slice S2 (~2 days):** Remainder of substrate hardening + debt (#61, #62, #67, #69, #71).
+
+**Trade-offs:**
+- ✅ Reaches skeleton faster (~1 day gain)
+- ✅ Everyone has work immediately (Alexander, Gabriel, Valanice all engaged)
+- ❌ Building on a substrate with known correctness gaps — skeleton may encode wrong assumptions
+- ❌ Roger carries dual-track cognitive load (skeleton + substrate fixes)
+- ❌ If #60 CBOR fix changes hash format, skeleton replay test needs rewrite
+
+### Option C: "Aperture Feature Push"
+
+**Sequence:**
+1. **Slice S1 (parallel):** #65 + #66 (Aperture features) — Roger + Valanice
+2. **Slice S2:** Substrate fixes (#68, #60, #57)
+3. **Slice S3:** Walking skeleton
+
+**Trade-offs:**
+- ✅ Visible UX progress — badge ack/dismiss is user-facing
+- ❌ Building UX features on a substrate with known data integrity issues
+- ❌ Delays the walking skeleton gate further — Phase 1 fan-out blocked longer
+- ❌ Wrong sequencing discipline: correctness before features is a principle, not a preference
+
+---
+
+## Recommendation: Option A
+
+**Reasoning:** The CTD's Phase 0.5 walking skeleton is the gate for Phase 1 fan-out. We can't responsibly build the skeleton on a WAL substrate with a torn-blob vulnerability (#68) and non-canonical hashing (#60). These are cheap fixes (Roger has full context from PR #58) but expensive to retrofit if skeleton tests encode the wrong hash format.
+
+The 1-day "delay" from Option A vs Option B is illusory — it's actually risk reduction. Option B's dual-track cognitive load on Roger is the real cost: Roger is already the critical path (CTD §7, Risk 1). Don't overload the bottleneck.
+
+Option C violates sequencing discipline. Aperture features are nice-to-have; WAL correctness is load-bearing.
+
+**Next action:** Aaron confirms Option A (or picks B/C), then Roger starts S1 immediately.
+
+---
+
+## Owner Map (Option A)
+
+| Slice | Who | What | Depends On |
+|-------|-----|------|------------|
+| S1 | Roger | #68 + #60 + #57 (WAL correctness batch) | — |
+| S2a | Roger | #69 + #67 (substrate resilience) | S1 |
+| S2b | Laura | #61 (veto edge test) | — |
+| S2c | Graham | #62 (doc) + #71 (governance) | — |
+| S3 | Roger + Alexander + Gabriel + Valanice + Laura | Phase 0.5 Walking Skeleton | S1 |
+
+---
+
+# Roger — Crucible WAL Correctness S1 Decision Inbox
+**Date:** 2026-06-10T22:53:13-07:00
+**Branch:** squad/crucible-wal-correctness-s1
+**Issues:** #57 (verdict encoding), #60 (CBOR hashing), #68 (CAS atomic write)
+
+## D-CBOR-1: CBOR Library Choice (issue #60)
+
+**Decision:** Use `cborg` v1.x+ for canonical CBOR encoding.
+
+**Trade-offs evaluated:**
+| Option | Pros | Cons |
+|---|---|---|
+| `cborg` | Pure TS/JS, ESM-native, no native compilation, well-maintained (Protocol Labs/IPFS ecosystem), straightforward encode/decode API | Requires a key-sorting wrapper for canonical map encoding (not built-in by default) |
+| `cbor-x` | Fast, feature-rich | More complex API, less clear on canonical mode |
+| `@ipld/dag-cbor` | Always canonical (IPLD DAG-CBOR spec) | Adds IPLD dependency chain, heavier |
+| `cbor` (npm) | Mature | Larger, more complex, older API style |
+
+**Rationale:** `cborg` has the smallest surface area, no native compilation (critical for CI matrix without OS-specific build steps), and is used extensively in the IPFS ecosystem where CBOR determinism is production-tested. We add a `sortKeys()` wrapper to provide canonical map key ordering. Cross-language replay implementors should sort map keys lexicographically by UTF-8 key bytes before encoding — this is the canonical form.
+
+**Cross-language note for replay:** To verify `payloadHash` / `readSetHash` in a non-JS implementation, encode the payload object to CBOR with deterministic/canonical mode (RFC 8949 §4.2 or equivalent). Sort map keys by their CBOR-encoded byte representation (which is equivalent to UTF-8 string sort for text keys). Hash with BLAKE3-256.
+
+## D-VERDICT-1: WAL Verdict Encoding for No-Match (issue #57)
+
+**Decision:** Reserve byte `0xFF` for "no predicate matched" (WalRow.hookVerdict = null in §3.3). Byte `0x00` means "a predicate fired and said continue."
+
+**Encoding table (final):**
+| Byte | Meaning | TypeScript hookVerdict |
+|------|---------|----------------------|
+| 0xFF | No predicate matched this row | null |
+| 0x00 | Predicate fired, said continue | 'continue' / COMMIT |
+| 0x01 | Predicate fired, observe | 'observe' / OBSERVE |
+| 0x02 | Predicate fired, pause | 'pause' / PAUSE |
+
+**Wire discriminant:** The distinction is carried in `hookResult.hookId`: `hookId === null` → no predicate determined the verdict → encode as 0xFF.
+
+**Cross-language replay note:** When decoding a WAL row, `hookVerdict = 0xFF` means no hook predicate matched. `hookVerdict = 0x00` means a predicate explicitly approved the row. Audit tools that count "hooks evaluated" must distinguish these.
+
+## D-CAS-1: CAS Atomic Write Strategy (issue #68)
+
+**Decision:** Temp-file + atomic rename (`<hash>.cbor.tmp` → `<hash>.cbor`).
+
+**On Windows:** `fs.renameSync(src, dst)` in Node.js/libuv calls `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING`, providing atomic file replacement within the same filesystem volume. Verified: correct behavior for same-drive CAS directory.
+
+**Invariant restored:** After this fix, a CAS file at `<hash>.cbor` is guaranteed to be complete (either absent or fully written + renamed). The prior `existsSync` dedup shortcut is removed — every `put()` call writes a fresh `.tmp` to ensure no torn-blob from a prior crashed session can poison dedup logic.
+
+---
+
+### 2026-06-08: FSE-2 and FSE-3 JSDoc Documentation Complete (Roger)
+
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-06-08  
+**Status:** ✅ COMPLETE
+
+FSE-2 and FSE-3 LOW-priority documentation follow-ups are now complete. Both items have been documented as interface-level JSDoc on the `FactStore` contract in `packages/eureka/src/activities/recall.ts`.
+
+#### FSE-2: Offset Cursor Pagination Gaps/Dupes
+
+**Location:** `FactStore` interface @remarks (line 48–51)  
+**Content:** Documented that offset-based cursor pagination (v1) can skip or duplicate rows if facts are inserted or trust values mutate between page fetches. Noted this is acceptable for single-writer v1, and true keyset pagination (deferred to Slice D++) will resist concurrent mutations.
+
+#### FSE-3: Limit Parameter Contract
+
+**Location:** `search()` method parameter `limit` JSDoc (line 57–63)  
+**Content:** Documented that `limit` must be a positive integer. Degenerate values (≤ 0, NaN, non-integer) throw `TypeError` at the call boundary and are treated as contract violations, not as empty-result requests.
+
+#### Verification
+
+- ✅ TypeScript build: clean (`tsc --build`)
+- ✅ Test suite: 164/164 green (eureka)
+- ✅ No behavior changes (doc-only)
+
+---
+
+### 2026-06-05: Audit — Laura M8 Slice C (SqliteFactStore + FTS5 BM25 Search)
+
+**Author:** Laura (Tester)
+**Date:** 2026-06-05
+**Branch:** `eureka/m8-slice-c-factstore`
+**PR:** #48
+**Verdict:** ✅ ACCEPT-WITH-FOLLOWUPS
+
+---
+
+## Baseline Verified
+
+- Checked out `eureka/m8-slice-c-factstore`, pulled FF-only. Branch was already at `643f106` (Roger's drop).
+- `npm test` (packages/eureka): **109 tests, 8 files, all green**. Matches Roger's claimed count.
+- `npm run build` (packages/eureka): **clean** (tsc, no errors).
+
+---
+
+## Audit Areas & Findings
+
+### 1. BM25 Ordering — Critical Regression Lock
+
+**Status: PASS.** Roger's `ORDER BY (-bm25(facts_fts)) * f.trust DESC` is correct.
+
+Sign analysis:
+- `bm25()` returns NEGATIVE (more-negative = better match)
+- `-bm25(...)` flips to positive (larger = better)
+- Multiplied by `trust ∈ [0,1]` gives composite score, still positive
+- `DESC` orders highest composite first = best matches first
+
+FS-4 in the contract suite locks this: seeds two facts with different term frequencies (3× vs 1×) and asserts the higher-frequency fact ranks first. If the negation were dropped (`bm25()` used directly with DESC), best matches would appear LAST (most-negative = "largest" in signed comparison = first in DESC, which is wrong). FS-4 catches this.
+
+**Normalization**: `normalizeRelevance()` correctly flips sign then applies min-max. Top result always gets `relevance = 1.0`. The all-equal branch (`max === min → 1.0`) handles single-result and identical-score cases.
+
+**Per-page normalization note (non-blocking):** Roger's decision drop §2 acknowledges that relevance scores are not comparable across pages. A sole result on page 2 gets `relevance = 1.0` even if it's a weak match. This is intentional for v1 (single-page recall). Locked in FS-SE-12.
+
+### 2. Cursor Pagination
+
+**Status: PASS.** FS-5 in the contract suite already covers the 3-page round-trip (disjoint, complete, no nextCursor on final page). My FS-SE-3/4 add:
+
+- **Garbage cursor (FS-SE-3)**: Invalid base64 decodes to non-JSON, `catch` block returns 0. Verified by comparing with no-cursor baseline — results are identical.
+- **Negative offset (FS-SE-4)**: `{ offset: -5 }` → `payload.offset >= 0` fails → returns 0. Correct guard.
+
+**Concurrent-insert caveat** (non-blocking, document only): Offset cursors can skip or repeat rows if facts are inserted between page fetches. This is a known limitation of offset-based pagination, acknowledged in Roger's decision drop §3 and the code comments. Not a blocker for single-writer v1; flagged as Slice D+ concern.
+
+**limit=0 degenerate case** (VERY LOW, note only): Calling `search({ limit: 0 })` directly (not via `recallWithScores`, which guards k=0 before touching FactStore) would loop: `hasMore = (1 row > 0) = true`, `nextCursor = encodeCursor(0)`. Not reachable through the normal activity path; no action required.
+
+### 3. minTrust Floor at SQL Layer
+
+**Status: PASS.** All boundary cases:
+
+| Trust | minTrust | Expected | Result |
+|-------|----------|----------|--------|
+| 0.15 | 0.15 | INCLUDED | ✅ FS-SE-5 |
+| 0.149 | 0.15 | EXCLUDED | ✅ FS-SE-6 |
+| NULL | 0 | EXCLUDED | ✅ FS-SE-7 |
+| 0.14 | (omitted, default 0.15) | EXCLUDED | ✅ FS-SE-8 |
+| 0.0 | 0 | INCLUDED | ✅ FS-SE-7 (confirms trust=0 ≠ NULL) |
+
+The WHERE clause `f.trust IS NOT NULL AND f.trust >= $min_trust` correctly sequences the NULL check before the >= comparison, so NULL trust is excluded at any floor including 0.
+
+### 4. Session Isolation
+
+**Status: PASS.** FS-6 in the contract suite covers this with a direct assertion. Roger's `AND f.session_id = $session_id` on every query ensures facts never bleed across session boundaries. The session is a `$`-param, not string-interpolated, so SQL injection is not a concern.
+
+### 5. Empty / Degenerate Queries
+
+**Status: PASS WITH FINDING.**
+
+- Whitespace-only query (`"   "`, `"\t"`, etc.): short-circuited by `if (!query.trim())` before FTS5. Returns `{ results: [] }`. ✅ FS-SE-9.
+- Single result → no nextCursor. ✅ FS-SE-10.
+- **FINDING FSE-1 (MEDIUM): FTS5 syntax characters not sanitized.** Queries containing FTS5 operator characters (unclosed `"`, bare `AND`/`OR` operators) propagate as rejected Promises rather than graceful empty results. `stmt.all()` is synchronous; the error becomes a rejection of the async `search()` return value. FS-SE-11 locks this current behavior. Recommend: wrap `stmt.all()` in try/catch; on FTS5 parse error, return `{ results: [] }`. This is MEDIUM — not a data corruption issue, but any user-supplied query string reaching `search()` is a potential crash path.
+
+> Superseded by M8 Slice C review-cycle fixes (commit `f08c746`): `SqliteFactStore.search()` now wraps `stmt.all()` in try/catch, catches FTS5 parse-error patterns, and returns `{ results: [] }` instead of rejecting. FS-SE-11 updated to verify empty results (not rejection). FSE-1 marked done below.
+
+### 6. Interface Reconciliation / recall Consumer
+
+**Status: PASS.** `recallWithScores` correctly destructures `{ results: candidates }` from `factStore.search()`. All 18 recall tests pass. The `cursor` parameter in `FactStore.search()` is optional and not used by `recallWithScores` (which does a single-page overfetch). No regression.
+
+---
+
+## Edge Tests Added
+
+File: `packages/eureka/src/storage/__tests__/fact-store-sqlite-edges.test.ts`
+Committed on branch as `f08c746`, pushed to PR #48.
+
+| ID | What it locks |
+|----|---------------|
+| FS-SE-1 | BM25 normalization: top result `relevance=1.0`, descending order, all ∈ [0,1] |
+| FS-SE-2 | Single match: `relevance=1.0` (all-equal branch in normalizeRelevance) |
+| FS-SE-3 | Garbage cursor: safe fallback to offset=0, no crash |
+| FS-SE-4 | Negative-offset cursor: guard `>= 0` fires, fallback to 0 |
+| FS-SE-5 | minTrust exact floor: `trust=0.15` with `minTrust=0.15` is INCLUDED |
+| FS-SE-6 | minTrust just-below: `trust=0.149` excluded at `minTrust=0.15` |
+| FS-SE-7 | NULL trust excluded even at `minTrust=0`; `trust=0` IS allowed at `minTrust=0` |
+| FS-SE-8 | Default `minTrust=0.15` when omitted: `trust=0.14` excluded |
+| FS-SE-9 | Whitespace-only query: empty results, no crash (4 variants) |
+| FS-SE-10 | Final page: `nextCursor` absent |
+| FS-SE-11 | FTS5 unclosed-quote resolves to empty results (FSE-1 fixed) |
+| FS-SE-12 | Per-page normalization distortion: sole page-2 result gets `relevance=1.0` |
+| FS-SE-13 | Non-FTS SQLITE_ERROR (e.g. missing table) propagates as rejected Promise |
+
+---
+
+## Follow-up Items (Non-Blocking)
+
+These do NOT block acceptance. File in backlog:
+
+| ID | Severity | Status | Description |
+|----|----------|--------|-------------|
+| FSE-1 | MEDIUM | ✅ DONE | Wrap `stmt.all()` in try/catch in `SqliteFactStore.search()`; FTS5 parse errors now return `{ results: [] }` rather than rejecting (commit `f08c746`). FS-SE-11 verifies graceful empty results. |
+| FSE-2 | LOW | ✅ DONE | Offset cursor gaps/dupes under concurrent inserts — documented in `FactStore` interface JSDoc (2026-06-08). Non-issue for single-writer v1; relevant before cross-session queries (Slice D+). |
+| FSE-3 | LOW | ✅ DONE | `search({ limit: 0 })` constraint: implementation throws `TypeError` (FS-8 locked behavior). Documented in `search()` method JSDoc that `limit` must be positive integer; degenerate values are caught at call boundary (2026-06-08). |
+| FSE-4 | NOTE | ✅ DONE | Cross-page relevance incomparability — documented in FS-SE-12 and in `FactStore.search()` interface JSDoc (`@note relevance is per-page normalized, independent of result order). |
+
+---
+
+## Contract Invariant Note for Roger
+
+One invariant belongs in the shared contract helper (applies to ALL FactStore impls), but I am NOT editing `fact-store-contract.helper.ts` directly per the audit mandate. **Roger to add:**
+
+> **FS-7 (proposed)**: A fact with `trust=NULL` (NaN sentinel per CL-4) MUST never appear in search results regardless of `minTrust`. The `seed` helper in the contract fixture intentionally writes only valid `number` trust values; NULL must be tested via an impl-specific side-channel that bypasses `seed`. Note this in the helper's contract invariant list.
+
+---
+
+## Final State
+
+- **Test count:** 109 → **121** (+12 edge tests)
+- **Build:** ✅ clean (`tsc`, no errors)
+- **All 9 test files pass**
+
+---
+
+## Verdict
+
+**✅ ACCEPT-WITH-FOLLOWUPS**
+
+Roger's Slice C is correct and well-structured. The BM25 sign convention is right, cursor safety is solid, minTrust boundaries are precise, and session isolation holds. The one genuine finding (FSE-1: no FTS5 input sanitization) is MEDIUM severity — it's a real crash path for user-supplied queries, but not a correctness, isolation, or data-loss issue. It does not block the slice. Filed as a follow-up with a test that locks current behavior.
+
+
+# Decision Drop — Roger M8 Slice C (FactStore + FTS5 BM25 search)
+
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-06-05  
+**Branch:** `eureka/m8-slice-c-factstore`  
+**Status:** Merged into PR (open)
+
+---
+
+## 1. FactStore Interface Reconciliation (Q2-approved wrapped form)
+
+**Decision:** Changed `FactStore.search()` return type from `Promise<RecallResult[]>` (plain array) to `Promise<{ results: RecallResult[]; nextCursor?: string }>` (wrapped form with optional cursor), and added `cursor?: string` to the args.
+
+**Rationale:** Aaron approved the wrapped form (Q2=lock cursor now) in the M8 scope proposal session. Adding `cursor` now (optional, not required) is backward-compatible. Adding it later would be a breaking change to a locked interface once cross-session queries arrive in a later milestone.
+
+**Consumer impact:** `recallWithScores` in `recall.ts` updated to destructure `.results` from the awaited call. All `recall.test.ts` mocks updated from `mockResolvedValue([...])` to `mockResolvedValue({ results: [...] })`. 10 mock sites updated; all 97 pre-existing tests remain green.
+
+---
+
+## 2. BM25 Sign-Convention Normalization
+
+**Decision:** Order by `(-bm25(facts_fts)) * trust DESC`. Expose normalized `relevance ∈ [0,1]` via min-max normalization per page: `(rawScore - pageMin) / (pageMax - pageMin)`. All-equal-score pages (single result or identical BM25) set `relevance = 1.0`.
+
+**Rationale:**  
+- **Sign convention:** SQLite FTS5 `bm25()` returns NEGATIVE values where more-negative = better match. Using `bm25()` directly in ASC order would sort best matches LAST — the classic footgun. Negating with `-bm25()` gives a positive value where larger = better.  
+- **Composite ordering:** `-bm25(facts_fts) * trust` ensures a highly-trusted lower-relevance fact doesn't outrank a high-relevance lower-trust fact in pathological cases, while still rewarding trust.  
+- **Per-page normalization choice:** Min-max across the result page is simple and produces a [0,1] range. The downside is that relevance scores are not comparable across pages (page 1 facts always have higher max than page 2). For v1 where recall uses a single-page fetch (RANKER_OVERFETCH_FACTOR × k), this is acceptable. Cross-page normalization deferred.
+
+**Regression lock:** FS-4 in `runFactStoreContract` seeds two facts with different term frequencies and asserts the higher-frequency fact ranks first. This is the primary regression lock against BM25 sign reversal.
+
+---
+
+## 3. Cursor Strategy
+
+**Decision:** Offset-based cursor, encoded as base64 JSON `{ offset: number }`. Example: offset=3 → `eyJvZmZzZXQiOjN9`.
+
+**Rationale:** Rowid+rank keyset cursors require stable rank values across calls — BM25 scores are floating-point and stable within a DB session but not across writes. For v1 (single-page recall, no cross-session queries), offset is deterministic for a given query+session between pages of the same logical request. True keyset cursors are a Slice D+ concern when cross-session pagination arrives.
+
+**Detectability:** `nextCursor` is set when `rows.length > limit` (fetch limit+1 to detect, return limit). Callers receive `undefined` on the final page.
+
+**Contract:** FS-5 tests a 3-page round-trip with limit=1 over 3 seeded facts, asserting no duplicates across pages and `nextCursor` absent on the final page.
+
+---
+
+## 4. Schema Gaps (Deferred Fields)
+
+The `facts` table (migration 001) does not carry `attentionTier`, `importance`, or `lastAccessed`. Slice C handles this as follows:
+
+| Field | Schema status | Slice C behavior |
+|-------|---------------|------------------|
+| `attentionTier` | Not in schema | Default to `'warm'` (identity multiplier 1.0 in FR-2) |
+| `importance` | Not in schema | Omitted (undefined → FR-2 uses 0) |
+| `lastAccessed` | Not in schema | Omitted (undefined → FR-2 uses Infinity → recency floor 0.1) |
+| `relevance` | Not in schema | Computed from BM25 at query time; normalized to [0,1] |
+
+**Impact on FR-2 composite scoring:** With `attentionTier='warm'` (multiplier 1.0), `importance=0`, and `lastAccessed` absent (recency=0.1 floor), the `compositeScore` function in `recall.ts` will compute deterministic but conservative scores. This is acceptable for M8: the storage layer supplies `relevance` from BM25, and the activity layer applies FR-2 on top. The missing fields will become load-bearing when a future migration adds them.
+
+**Forward path:** A migration `002-fact-fields.ts` adding `attention_tier TEXT DEFAULT 'warm'`, `importance REAL`, `last_accessed INTEGER` columns would unlock all FR-2 terms without breaking Slice C's `SqliteFactStore` (it currently SELECTs `content`, `trust`, and `bm25_score` only).
+
+---
+
+## 5. Session Scoping (MUST invariant)
+
+Every search query includes `AND f.session_id = $session_id`. Facts from session A are never returned in session B's search results. Verified by FS-6 in the contract suite.
+
+NULL trust facts (NaN sentinel) are excluded by `AND f.trust IS NOT NULL` before the `>= $min_trust` check — they can never surface regardless of the floor.
+
+---
+
+## 7. FSE-1 Follow-up: FTS5 Error Narrowing (2026-06-05)
+
+**Fix:** Wrapped `stmt.all()` in `SqliteFactStore.search()` with try/catch. On `SQLITE_ERROR` with a message matching FTS5 patterns, returns `{ results: [] }`. Other errors rethrow unchanged.
+
+**Narrowing (message-matched):** `code === 'SQLITE_ERROR' && /fts5|unterminated|syntax error|malformed MATCH/i.test(message)`. This pattern correctly catches FTS5 tokenizer errors (e.g., `"unterminated string"` for unclosed `"`) and FTS5 syntax errors (e.g., `"fts5: syntax error near..."`) while letting non-FTS `SQLITE_ERROR` propagate (e.g., `"no such table: facts_fts"` from a dropped table — message doesn't match pattern, rethrows correctly).
+
+**FS-SE-11 updated:** from `rejects.toThrow()` to `resolves { results: [], nextCursor: undefined }`. The `(FSE-1 fix)` label in the title preserves the audit trail.
+
+Add CI check to detect `npm run lint` (bare) in agent logs and fail CI with helpful error message pointing to Issue #37 + workaround.
+
+```
+
+**Applied to:** PR #32 body re-render in alexander-5. Prevents escape-sequence garble in future multiline content.
+
+## 8. FSE-4 Follow-up: Per-Page Normalization Documentation (2026-06-05)
+
+Added JSDoc at two locations:
+- `RecallResult.relevance` field — clarifies per-page min-max, NOT comparable across pages
+- `FactStore.search` return type (on `nextCursor?`) — same note for consumers reading the return shape
+
+# Roger: Crucible First GREEN — Decision Inbox
+
+**Date:** 2026-06-01  
+**Author:** Roger (Platform Dev)  
+**Status:** GREEN confirmed — acceptance test passing
+- **Production wiring:** `index.ts` default deps are NOT changed to `SqliteFactStore`. That is Slice D.
+- **`attentionTier` / `importance` / `lastAccessed` columns:** Future migration.
+- **Cross-session aggregation:** `FactStore.search()` is session-scoped in M8. Querying across sessions is a later milestone.
+- **Embeddings/semantic search:** BM25 via FTS5 only. Vector similarity is out of scope.
+
+---
+
+# M8 Slice D — SQLite Production Deps Factory (Roger, Laura, Graham)
+
+## 2026-06-06: Slice D Wiring Decision — SQLite Production Deps Factory (Roger)
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-06-06T21:48:05-07:00  
+**Slice:** M8 Slice D  
+**Status:** SHIPPED — build clean, 145/145 tests passing
+
+### The Design Tension
+
+Slice D spec: "make SQLite the default deps in `index.ts`."  
+Existing constraint: `better-sqlite3` is deliberately isolated behind the `./sqlite`
+subpath (Slice A, PR #43). The core `.` entry must stay native-dep-free.
+
+These are in direct conflict. One of them has to yield.
+
+### Options Considered
+
+**Option A — Production wiring factory in `./sqlite` subpath (CHOSEN)**
+
+Add `createSqliteRecallDeps(db)` and `createSqliteFeedbackDeps(db)` as named
+exports from `@akubly/eureka/sqlite`. Production consumers import one subpath and
+get batteries-included deps. Core `.` entry unchanged.
+
+Pros:
+- Preserves the native-dep isolation established in Slice A (no rework).
+- Zero cost for in-memory consumers — they never load `better-sqlite3`.
+- Factory is pure: takes an already-opened DB handle, returns a plain object.
+  No hidden state, no module-level side effects.
+- Explicit for callers: `openDatabase()` + `createSqliteRecallDeps(db)` is a
+  two-line setup, readable and discoverable.
+
+Cons:
+- The Slice D spec said "index.ts" — we're diverging from letter-of-spec.
+  Mitigation: the spirit of the spec (production callers get SQLite by default)
+  is fully satisfied; the letter was written before the isolation constraint was
+  established.
+
+**Option B — Import SQLite impls directly in `packages/eureka/src/index.ts`**
+
+Set up `SqliteFactStore` + `SqliteTrustUpdater` as module-level singletons in
+the core entry, export a pre-assembled `defaultDeps` object.
+
+Why rejected:
+1. Pulls `better-sqlite3` (native addon) into the `@akubly/eureka` main bundle.
+   Any consumer that does `import '@akubly/eureka'` loads a native binary — even
+   if they never call SQLite-backed functions.
+2. Requires the database path to be known at module load time (or lazy-init
+   with a global singleton) — neither is clean in a library context.
+3. Contradicts the explicit architecture decision in Slice A (PR #43 commit
+   `4235f8c`) that moved `SqliteFactReader` out of core surface specifically to
+   avoid this problem.
+4. The `createRequire` guard in `openDatabase.ts` softens the missing-addon
+   error but does not remove the module from the dependency graph — tree-shaking
+   does not eliminate a `new DatabaseCtor(path)` at module init.
+
+### Chosen Approach: Option A
+
+Two new factory functions added to `@akubly/eureka/sqlite`:
+
+```typescript
+import { openDatabase, createSqliteRecallDeps, createSqliteFeedbackDeps }
+  from '@akubly/eureka/sqlite';
+import { recall, applyFeedback } from '@akubly/eureka';
+
+const db   = openDatabase();                   // opens ~/.eureka/eureka.db
+const deps = createSqliteRecallDeps(db);       // RecallDeps
+const fbDeps = createSqliteFeedbackDeps(db);   // ApplyFeedbackDeps
+
+const results = await recall(options, deps);
+await applyFeedback(options, fbDeps);
+```
+
+### Public Surface (for Laura's integration test + Graham's review)
+
+**Import path:** `@akubly/eureka/sqlite`  
+**New exports:**
+
+| Name | Signature | Returns |
+|------|-----------|---------|
+| `createSqliteRecallDeps` | `(db: Database.Database) => RecallDeps` | `{ factStore: SqliteFactStore, clock: systemClock }` |
+| `createSqliteFeedbackDeps` | `(db: Database.Database) => ApplyFeedbackDeps` | `{ trustUpdater: SqliteTrustUpdater }` |
+
+**Unchanged exports (still available):**  
+`SqliteFactReader`, `SqliteTrustUpdater`, `SqliteFactStore`, `openDatabase`, `applyMigrations`
+
+**Core `.` entry — NO CHANGE:**  
+Activities (`recall`, `recallWithScores`, `applyFeedback`, `applyFeedbackById`),
+types (`RecallDeps`, `FactStore`, `ClockProvider`, …), errors — all unchanged.  
+`InMemoryFactReader` remains importable for test harnesses via `@akubly/eureka`
+(re-exported through `storage/index.ts`).
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `packages/eureka/src/sqlite/deps.ts` | **NEW** — factory functions |
+| `packages/eureka/src/sqlite/index.ts` | Added `export … from './deps.js'` |
+| `packages/eureka/dist/sqlite/deps.*` | Compiled output (build artifact) |
+
+### Build / Test Status
+
+- `npm run build --workspace=@akubly/eureka` → ✅ clean (exit 0)
+- `npm run test --workspace=@akubly/eureka` → ✅ 145/145 passing
+- No regressions in other packages (build is workspace-scoped; no cross-package changes)
+
+---
+
+## 2026-06-06: Laura — Slice D Smoke Test Verdict
+
+**Date:** 2026-06-06T21:48:05-07:00  
+**Author:** Laura (Tester)  
+**Slice:** M8 Slice D — Integration smoke test: recall() end-to-end with SqliteFactStore
+
+### What was tested
+
+Two smoke tests in `packages/eureka/src/activities/__tests__/recall-sqlite-smoke.test.ts`, wired via the production factory `createSqliteRecallDeps(db)` (Roger's Slice D wiring):
+
+| ID   | Test name | What it proves |
+|------|-----------|----------------|
+| SD-1 | seeded fact round-trips through real SQLite/FTS5 — content returned, ordering sane | `openDatabase(':memory:')` + `applyMigrations` + INSERT-via-trigger → FTS5 index populated → `SqliteFactStore.search()` BM25 query → `recall()` FR-2 composite ranking → content round-trips intact, high-trust×high-BM25 fact ranks first |
+| SD-2 | non-matching query returns empty array — FTS5 no-match path is clean | FTS5 zero-match path propagates cleanly as `[]` without throwing |
+
+### Production surface exercised
+
+- **`openDatabase(':memory:')`** — real DB open + full migration (schema_version, `facts`, `facts_fts`, `facts_ai`/`facts_au`/`facts_ad` triggers)
+- **`createSqliteRecallDeps(db)`** — Roger's Slice D factory; assembles `{ factStore: SqliteFactStore, clock: systemClock }` — the real production composition root
+- **`recall()`** — FR-2 composite scoring, trust-floor post-filter (defense-in-depth), slice to k
+
+### Test count delta
+
+**+2 tests** (SD-1, SD-2)  
+**Total suite: 145 → 147 passing.** Full suite green. Build clean (TypeScript, no errors).
+
+### Pass/fail
+
+✅ **PASS** — Both smoke tests green against production factory. Full 147-test suite green. Build green.
+
+### Factory wiring
+
+✅ **Switched to `createSqliteRecallDeps(db)`** — Roger's factory merged 2026-06-06. The smoke test now exercises the production composition root end-to-end. No follow-up needed for factory wiring.
+
+### Gaps (documented, not blocking)
+
+- **SD-3 (session isolation)**: Not added — already locked by FS-6 in the contract suite. Adding it would duplicate coverage without adding signal.
+- **Cursor smoke**: Not added — cursor correctness is exhaustively covered by FS-SE-3/4/10/12. Smoke test budget per spec is +1 or 2.
+- **Recency scoring**: Wall-clock clock used (not a fixed mock). Recency precision is not under test here — that's a recall.test.ts concern (M4 clock seam). For a smoke test, any `nowMs` large enough to floor recency is fine.
+
+---
+
+## 2026-06-06: Graham — M8 Slice D Architectural Review
+
+**Author:** Graham (Lead / Architect)  
+**Date:** 2026-06-06T21:59:05-07:00  
+**Slice:** M8 Slice D — SQLite Production Deps Factory  
+**Review Type:** Architectural gate (pre-merge)
+
+### Verdict
+
+**✅ ACCEPT-WITH-FOLLOWUPS**
+
+Slice D is architecturally sound. Roger's interpretation is correct; the decisions ledger needs a minor amendment.
+
+### Review Focus Areas
+
+#### 1. Spec vs. Implementation Tension — ✅ RESOLVED CORRECTLY
+
+**The tension:** Slice D spec said "update index.ts to export SQLite-backed instances as default deps." The Slice A isolation boundary (PR #43) established that the core `@akubly/eureka` entry must NOT pull in `better-sqlite3`.
+
+**Roger's resolution:** Factory functions (`createSqliteRecallDeps`, `createSqliteFeedbackDeps`) live on the `@akubly/eureka/sqlite` subpath. Production consumers import from one subpath and get batteries-included deps. The core `.` entry is unchanged.
+
+**Assessment:** This is the architecturally correct interpretation. The spec's intent was "production callers get SQLite by default" — that intent is fully satisfied. The spec's letter ("update index.ts") was written before the isolation constraint was established; the constraint takes precedence. A two-line composition root (`openDatabase()` + `createSqliteRecallDeps(db)`) is explicit, discoverable, and preserves the invariant that casual importers don't load a native binary.
+
+**Follow-up:** The decisions ledger should capture the as-built shape (factory-on-subpath, not root-entry-mutation). This is a documentation update, not a code change.
+
+#### 2. Composition Root Clarity — ✅ CLEAN
+
+The factory functions are pure: they take an already-opened DB handle and return a plain object. No hidden state, no module-level singletons, no side effects. The DB lifecycle (open/close) is explicitly owned by the caller.
+
+**`createSqliteRecallDeps(db)` returns:**
+```typescript
+{ factStore: SqliteFactStore, clock: systemClock }
+```
+
+**`createSqliteFeedbackDeps(db)` returns:**
+```typescript
+{ trustUpdater: SqliteTrustUpdater }
+```
+
+**Clock wiring:** `systemClock` is a module-level const (`{ now: () => Date.now() }`). This is appropriate for production — no injectable clock needed for SQLite deps since recall's clock is for composite scoring, not storage concerns.
+
+**Cross-session concern:** The factories are session-agnostic (they don't encode a session ID). Session scoping happens at call time via `RecallOptions.sessionId`. This is correct — the composition root shouldn't bake in runtime state.
+
+#### 3. Test Sufficiency — ✅ ADEQUATE FOR SMOKE GATE
+
+**SD-1** proves the end-to-end production path: `openDatabase(':memory:')` → real migrations → real FTS5 BM25 → `createSqliteRecallDeps(db)` → `recall()` → composite-scored results. Content round-trips intact; ordering is FR-2 compliant (high-trust × high-BM25 first).
+
+**SD-2** proves the FTS5 no-match path returns `[]` without throwing.
+
+**Assessment:** +2 tests is right-sized for a smoke gate. The contract suite (32 tests on `FactStore`, 18 on `TrustUpdater`) already exhaustively covers edge cases. These smoke tests prove the wiring is correct — that the factory assembles real impls into a working whole.
+
+**Not tested (acceptable):** Cursor pagination, session isolation, recency scoring. All covered by contract tests or deliberately out-of-scope for smoke (Laura documented gaps correctly).
+
+#### 4. Boundary Integrity — ✅ VERIFIED
+
+**Core `@akubly/eureka` entry (`packages/eureka/src/index.ts`):**
+- Exports only from `./activities/recall.js` and `./activities/errors.js`
+- Zero imports of `sqlite/`, `db/`, or `storage/*-sqlite.ts`
+- Zero references to `better-sqlite3`
+
+**Grep verification:** No transitive path from `index.ts` to the native dependency. The isolation boundary established in Slice A holds.
+
+### Build / Test Status
+
+- **Suite:** 147/147 passing (confirmed by fresh run)
+- **Build:** Clean (TypeScript, no errors)
+- **Boundary:** Core entry has no SQLite dependency
+
+---
+
+## Slice D as-built (2026-06-06) — SD-F1 Amendment
+
+**Added per Graham's SD-F1 follow-up:** Production deps wiring shipped as factory functions on `@akubly/eureka/sqlite` (`createSqliteRecallDeps`, `createSqliteFeedbackDeps`), NOT as root-entry mutations. This preserves the Slice A isolation boundary — the core `@akubly/eureka` entry does not transitively load `better-sqlite3`. Production consumers use a two-line composition root: `const db = openDatabase(); const deps = createSqliteRecallDeps(db);`. 
+
+**Slice D Status:** ✅ **COMPLETE** — 147/147 tests passing, factory-on-subpath wiring verified, Graham ACCEPT-WITH-FOLLOWUPS, SD-F1 ledger amendment applied.
+
+---
+
+# Roger — WAL Group-Commit + Seal-and-Split Decisions (§3.5)
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-06-06T22:03:01-07:00  
+**Branch:** squad/crucible-wal-substrate-walkthrough-b  
+**Status:** CLOSED — 16 new tests GREEN (9 sealAndSplit + 7 group-commit), full suite 60/60
+
+---
+
+## D-GC-1: sealAndSplit as a pure function (own module)
+
+**Choice:** `packages/crucible-core/src/ledger/wal/seal-and-split.ts` —
+exported as a standalone pure function, no I/O, generic over the row type `T`.
+
+**Rationale:**
+- Pure function is trivially unit-testable (9 cases; no temp dirs, no async).
+- Generic `sealAndSplit<T>(staged, verdicts)` lets the backend pass `StagedEntry[]`
+  directly, preserving the `resolve`/`reject` callbacks for promise resolution.
+- `pauseBatchIndex: number` annotation on restaged rows records the batch-relative
+  position of the PAUSE row; the backend enriches this with the actual commit
+  offset in Phase 4 (post-fsync) if needed by the Router in a future cycle.
+
+**Key rules implemented:**
+- COMMIT | OBSERVE → row joins `committed` with its verdict preserved.
+- PAUSE at index i → rows 0..i join `committed` (pause row carries durable PAUSE
+  verdict per exactly-once-pause); rows i+1..end join `restaged`. First PAUSE wins.
+- VETO is not present in the verdicts array (intercepted pre-WAL by the Ledger layer).
+
+---
+
+## D-GC-2: Group-commit staging in FileSystemWalBackend
+
+**Choice:** Internal `stagingQueue: StagedEntry[]` in `FileSystemWalBackend`.
+`commitRow()` stages the row and returns a Promise that resolves only after
+the containing batch is fdatasync'd. Flush triggers:
+  (a) `stagingQueue.length >= batchSize` (batchSize trigger)
+  (b) deadline timer fires after `batchDeadlineMs`
+  (c) explicit `flush()` call
+
+**Default batchSize: 1** — preserves existing per-row immediate-flush semantics
+for all existing tests (no regressions). Tests for group-commit pass `batchSize: N`
+and `batchDeadlineMs: 60_000` (suppress timer).
+
+**Seam impact on Graham's locked interface:**
+- `WalBackend.commitRow()` signature UNCHANGED.
+- `WalBackend.readRows()` signature UNCHANGED.
+- `flush()` and `close()` are on the CONCRETE class only (same pattern as the
+  existing `close()`). Graham's locked `WalBackend` interface was NOT touched.
+- **Additive only — no seam reshaping.**
+
+---
+
+## D-GC-3: ONE fdatasync barrier per batch
+
+**Mechanism:**
+1. Phase 1: CAS writes + build `SegmentRecordInput[]` for all committed rows.
+2. Phase 2: `buildChain(rowInputs, this.prevRoot)` chains the entire batch in one call.
+3. Phase 3: `fs.openSync(seg, 'a')` → `fs.writeSync` all records → `syncFn(fd)` → `fs.closeSync(fd)`.
+4. Phase 4 (success only): update `prevRoot`, write index entries, update manifest,
+   push to in-memory event cache, resolve row promises, fire `onPause`, re-queue restaged.
+
+**Single barrier:** `syncFn(fd)` fires exactly once per `executeFlush()` call.
+Tests inject a spy via `syncFn` option; the spy count verifies the one-sync invariant.
+
+---
+
+## D-GC-4: Atomic abort — path-based truncation (Windows fix)
+
+**Problem:** `fs.ftruncateSync(fd, size)` on a file opened in append mode (`'a'`)
+is unreliable on Windows (O_APPEND semantics interfere with SetEndOfFile).
+
+**Fix:** On failure in Phase 3, close the fd first, then call
+`fs.truncateSync(this.activeSegPath, preBatchSegSize)` (path-based). This works
+identically on Windows and Unix and guarantees no partial-batch bytes survive.
+
+**Hash-chain root rollback:** `this.prevRoot` is updated only in Phase 4 (success
+path). If Phase 3 fails, `this.prevRoot` is never advanced — the next batch
+correctly restarts from the pre-batch chain head. No explicit save/restore needed.
+
+**Manifest invariant:** `manifest.lastCommitOffset` is updated only in Phase 4.
+On abort, it retains its pre-batch value. On crash-recovery replay, the scanner
+reads segment bytes directly; records beyond `lastCommitOffset` would be orphaned
+(but are now absent due to truncation).
+
+**Residual:** CAS body files (`.cbor`) written in Phase 1 are NOT rolled back on
+abort. They are content-addressed (BLAKE3), so orphaned CAS files are harmless
+(they're simply never referenced by a committed WAL row). A future GC cycle can
+reclaim them.
+
+---
+
+## D-GC-5: syncFn injectable seam
+
+`FileSystemWalBackendOptions.syncFn?: (fd: number) => void` replaces the
+hard-coded `fs.fsyncSync(fd)` call. Default remains `(fd) => fs.fsyncSync(fd)`.
+Tests inject either a spy (count calls) or a throwing stub (test abort path).
+This avoids ESM module-spy issues and keeps the seam explicit.
+
+---
+
+## D-GC-6: onPause L1Subscriber stub
+
+`FileSystemWalBackendOptions.onPause?: (commitOffset: number) => void` is the
+minimal Router notification seam (§3.5: "Router receives the pause verdict via
+the L1Subscriber broadcast on the paused row"). The callback fires after
+fdatasync (durable), passing the commit offset of the PAUSE row. Full
+L1Subscriber broadcast to the §5 Router is deferred to its own RED cycle.
+
+---
+
+## D-GC-7: Scope fences confirmed NOT touched
+
+- 64 MiB segment roll-over — deferred
+- `appendFenced` / optimistic head-offset check (§3.4.1) — deferred
+- Full L1Subscriber broadcast / §5 Router integration — deferred
+- Group-commit deadline timer unit test (vi.useFakeTimers) — not needed to pass
+  RED tests; the timer logic is exercised implicitly via batchSize auto-flush.
+
+
+---
+
+### 2026-06-06T22:03:01-07:00: Aaron's ruling — WAL write.lock stale-lock policy (resolves D-LOCK-2)
+**By:** Aaron Kubly (via Copilot)
+**Decision:** Option (b) — **PID + liveness reclaim** for v1. The `write.lock` file records the owner PID; on an acquisition conflict, check whether that PID is alive — reclaim the lock if the owner is dead, throw `WriteLockHeldError` if alive. Driven by a dedicated RED→GREEN cycle.
+**Rationale:** Preserves §3.4.1's auto-release-on-termination *intent* without a native dependency; avoids opaque "stuck forever after crash" failures (correctness compounds across agent actions).
+**Follow-up filed:** GitHub issue **#55** — reconsider a true OS advisory lock (flock/LockFileEx via maintained dependency) vs PID-liveness later (label squad:roger).
+**Supersedes:** Roger's recommended Option (a) manual-clear (D-LOCK-2). §3.4.1 spec guarantee is now honored by PID-liveness, not downgraded.
 ### 2026-06-05: Audit — Laura M8 Slice C (SqliteFactStore + FTS5 BM25 Search)
 
 **Author:** Laura (Tester)
@@ -6961,3 +7723,194 @@ Worth stating explicitly:
 | N-2 | Do-not-disturb mode | Nice | Medium |
 | N-3 | Escalation logic | Nice | High |
 | N-4 | Per-type snooze | Nice | High |
+| N-4 | Per-type snooze | Nice | High |
+
+
+
+
+
+
+# Decisions: Crucible WAL Correctness S1 — Cycle-2 Remediation
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-06-11  
+**Branch:** `squad/crucible-wal-correctness-s1`  
+**Commit:** d74242b  
+
+---
+
+## D-CBOR-2: RFC 8949 §4.2.1 as the Canonical CBOR Profile
+
+**Decision:** Pin `rfc8949EncodeOptions` from cborg as the explicit encoding options for all
+WAL CBOR serialization (payloadHash, readSetHash, envelopeCbor).
+
+**Profile:**
+- Map keys sorted by plain bytewise comparison of their CBOR-encoded byte representations
+  (RFC 8949 §4.2.1 deterministic encoding — NOT RFC 7049 length-first)
+- Integers use smallest-possible encoding
+- Floats encoded as 64-bit (float64 option) for cross-platform stability
+- No indefinite-length items (cborg fixed-length default)
+
+**Context:** The prior implementation used a manual `sortKeys` JS lexicographic pre-pass, which
+(a) used the wrong ordering rule for CBOR canonical form, and (b) relied on cborg's implicit
+defaults rather than explicit options. The two rules happened to agree for short string keys, but
+the manual pre-pass was redundant (cborg's own mapSorter re-sorts) and silently mangled non-plain
+objects (Date → `{}`, Map → `{}`).
+
+**Cross-language note:** For a non-JS implementation to reproduce the canonical form:
+- Compare map keys bytewise on their full CBOR encoding (first byte = `0x60 | len` for strings ≤23 chars)
+- Apply recursively to nested maps
+- Golden vectors: `{ aa: 1, z: 2 }` → `a2617a0262616101` (z before aa: 0x61 < 0x62 bytewise)
+
+**References:** `wal/cbor.ts`, `wal-cbor.test.ts` CBOR-4 through CBOR-7 golden vectors
+
+---
+
+## D-SCHEMA-1: WAL1/CBOR is the Inaugural Shipped Format — No Migration Owed
+
+**Decision:** schemaVersion 1 (WAL1/CBOR) is the first and only format ever shipped.
+JSON encoding was used in development but never reached durable on-disk storage in a
+released version. No migration code is owed for any prior data.
+
+**Format identity:** WAL1 = binary segment records with CBOR-encoded payloads, identified
+by the 4-byte magic `0x57414C31` ("WAL1") in every segment record header.
+
+**Backstop behavior:** On WAL open/replay, if `manifest.schemaVersion !== 1`, throw
+`UnsupportedSchemaVersionError` immediately. This refuses to attempt decode of an unrecognized
+format rather than producing confusing corruption errors. Implemented in `loadOrInitManifest()`.
+
+**Future changes:** If a WAL2 format is introduced, it must bump schemaVersion to 2 and supply
+explicit migration logic. The `CURRENT_SCHEMA_VERSION = 1` constant in `wal-backend-fs.ts` is the
+single place to update.
+
+**References:** `wal-backend-fs.ts` (UnsupportedSchemaVersionError, CURRENT_SCHEMA_VERSION),
+`wal-backend-file.test.ts` Group4-1/4-2
+
+---
+
+## D-CAS-2: Unique Temp Names + EEXIST-as-success for CAS Writes
+
+**Decision:** CAS temp files use `<hash>-<pid>-<counter>.cbor.tmp` (unique per `put()` call)
+rather than the shared `<hash>.cbor.tmp`. On rename, EEXIST is treated as success since
+content-addressed storage guarantees identical bytes from any concurrent writer.
+
+**Rationale:** The shared `.tmp` name created a clobber race when two sessions/processes wrote
+the same hash simultaneously. The unique name eliminates this race. EEXIST-as-success prevents
+an ENOENT error when the concurrent writer renamed first (the temp file is already gone).
+
+**References:** `wal/cas-fs.ts`, `wal-cas-fsync.test.ts` TORN-1
+
+---
+
+## D-CAS-3: Shard Directory fsync After Rename (Linux/ext4)
+
+**Decision:** After each `renameSync()` in `syncAll()`, open and fsync the parent shard directory
+to make the new directory entry durable on Linux ext4 (ordered mode). Skip on Windows (NTFS
+writes directory entries synchronously as part of rename; extra fsync is a no-op).
+
+**Rationale:** On Linux ext4, a crash between `renameSync()` and shard-dir fsync can lose the
+directory entry — the exact hole described in issue #68 applies at the directory level too.
+This closes the last crash window in the CAS-before-segment durability chain.
+
+**References:** `wal/cas-fs.ts` syncAll()
+
+---
+
+## D-VERDICT-1: VerdictByte Type Discriminant + Precondition Enforcement
+
+**Decision:** Define `type VerdictByte = 0xFF | 0x00 | 0x01 | 0x02` in `wal/types.ts`.
+`hookResultToVerdictByte` now throws `Error` if `hookId === null` and `verdict !== 'COMMIT'`.
+
+**Rationale:** `hookId === null` with OBSERVE/PAUSE is a programming error (no hook fired
+but a non-commit verdict was returned). Previously the code silently fell through to
+`VERDICT_TO_WAL[verdict]`, which could return 0x01/0x02 without the 0xFF guard. The explicit
+precondition throw ensures a future default-OBSERVE path can't silently corrupt verdict bytes.
+
+**Affected tests:** All existing tests using `commit('OBSERVE')` / `commit('PAUSE')` with
+`hookId: null` were corrected to use `commitFromHook('OBSERVE')` / `commitFromHook('PAUSE')`.
+
+**References:** `wal/types.ts`, `wal-backend-file.test.ts` Group5-I6 tests
+
+---
+
+## D-MAT-1: Shared materializeRow Helper to Prevent Backend Drift
+
+**Decision:** Extract `materializeRow()` to `wal/materialize.ts`. Both `FileSystemWalBackend`
+and `InMemoryWalBackend` call this helper to compute `payloadBytes/payloadHash/readSetBytes/
+readSetHash/envelopeCbor/verdictByte`. CAS storage remains backend-specific.
+
+**Rationale:** The CBOR encoding + hashing logic was duplicated in both backends. A future
+change to one backend (e.g. different CBOR options) would silently diverge the other. The shared
+helper + CL-9 contract tests catch this at CI time.
+
+**References:** `wal/materialize.ts`, `wal-backend.contract.test.ts` CL-9a/9b
+
+---
+
+## D-CBOR-3: Crucible Canonical CBOR Profile — Final Definition (Cycle-3)
+
+**Date:** 2026-06-11  
+**Decision:** The encoding used for all WAL CBOR blobs is the **Crucible canonical CBOR profile**,
+defined precisely as:
+
+> RFC 8949 §4.2.1 map-key ordering (keys sorted by plain bytewise comparison of their deterministic
+> CBOR encodings) + integers in shortest form + **ALL non-integer numbers encoded as IEEE-754 binary64**
+> (forced float64, deviating from §4.2.1's shortest-float rule for cross-language reproducibility) +
+> definite-length items only.
+
+**This profile is NOT identical to RFC 8949 §4.2.1** because §4.2.1 mandates shortest-float
+(float16 for 1.5, etc.) and we force float64. The profile retains §4.2.1 for everything else.
+
+**Rationale for keeping forced float64:** Shortest-float introduces float16/float32 round-trip
+ambiguity in non-JS runtimes. Forced float64 guarantees the same 8-byte representation on every
+platform and language without any special float16 codec. The bytes `fb3ff8000000000000` for `1.5`
+are pinned by golden vector test CBOR-9.
+
+**Implementation:** `cborg` `rfc8949EncodeOptions` with `typeEncoders` for inline type validation
+(replaces the separate `assertJsonLike` pre-pass — single tree traversal for both validation and
+encoding).
+
+**Documentation:** `wal/cbor.ts` file header, `encodeCbor` JSDoc, CTD §3.2 encoding profile block.
+
+**Golden vectors (CBOR bytes → BLAKE3, all canonical):**
+- `{ aa:1, z:2 }` → `a2617a0262616101` → blake3 `019d473cc09257855925ff98a82dac52898c7ded08fe0b35b14428b6d498a818`
+- `{ nested:{bb:2,a:1}, top:42 }` → `a263746f70182a666e6573746564a261610162626202` → `ca3a08eebcc2b8da9850edaf204d824b91300b7e2fedfaea6f7412b7f4978ad4`
+- `1` → `01` → `48fc721fbbc172e0925fa27af1671de225ba927134802998b10a1568a188652b`
+- `'hello'` → `6568656c6c6f` → `90eeb71f0d4b768a5d449e30035beb7ffccd75d228e5b38e8e9cbfaa01ddfae9`
+- `1.5` (float64) → `fb3ff8000000000000` → `02a6136608c9b30d4e355cf9cd9911808f3997eb4cc351c7e0d08f89a74f90c5`
+
+**References:** `wal/cbor.ts`, `wal-cbor.test.ts` CBOR-4..9, CTD §3.2 encoding profile block
+
+---
+
+## D-CAS-4: Single Encode + Hash Per Row (Cycle-3 A2)
+
+**Decision:** Eliminate double-hashing in the hot path. `materializeRow()` is the single source of
+truth for `payloadHash`/`readSetHash`. Both CAS implementations (`InMemoryCas`, `FileSystemCas`)
+accept an optional `precomputedHash` parameter in `put(bytes, precomputedHash?)`. When the hash is
+supplied by the caller, the internal `hashBytes()` call is skipped.
+
+**Rationale:** Before this change, `materializeRow()` called `hashBytes(payloadBytes)` to produce
+the WAL record field, and then `cas.put(payloadBytes)` re-called `hashBytes()` internally —
+computing the same hash twice per row. This change removes the second call on the hot path.
+
+**Type validation fold:** The separate `assertJsonLike` pre-pass (a full tree traversal) has been
+replaced with inline validation via cborg `typeEncoders`. The payload tree is now traversed exactly
+once — validation and encoding happen in the same pass.
+
+**Benchmark baseline (2026-06-11):** 15.50 µs/op for `encodeCbor + hashBytes` over a 4-key nested
+payload (×2000 iterations, warm). Pinned by test PERF-1 in `wal-cbor.test.ts`.
+
+**References:** `wal/cbor.ts` (crucibleEncodeOptions), `wal/cas.ts`, `wal/cas-fs.ts`,
+`wal-backend-fs.ts`, `wal-backend-in-memory.ts`, `wal-cbor.test.ts` PERF-1
+
+---
+
+## D-EXPORT-1: Re-export All WAL Error Classes from index.ts (Cycle-3 A5)
+
+**Decision:** Export `CorruptSegmentError`, `CasMissError`, `UnsupportedSchemaVersionError`,
+`UnsupportedCborTypeError`, `InvalidMagicError`, `InvalidRecordLengthError` from
+`packages/crucible-core/src/index.ts`. Package consumers can now `catch` these by type.
+
+**References:** `src/index.ts`
+

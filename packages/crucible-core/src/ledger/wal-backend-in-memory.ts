@@ -19,8 +19,8 @@ import type {
 import type { HookResult, HookVerdict } from './hook-bus.js';
 import { buildChain } from './wal/hash-chain.js';
 import { InMemoryCas } from './wal/cas.js';
+import { materializeRow } from './wal/materialize.js';
 import type { SegmentRecord, SegmentRecordInput } from './wal/types.js';
-import { VERDICT_TO_WAL } from './wal/types.js';
 
 const ZERO_HASH = new Uint8Array(32);
 
@@ -54,14 +54,17 @@ export class InMemoryWalBackend implements WalBackend {
   ): Promise<number> {
     const offset = this.events.length;
 
-    // Write payload to CAS and get BLAKE3 hash
-    const payloadBytes = new TextEncoder().encode(JSON.stringify(input.primitivePayload));
-    const payloadHash = this.cas.put(payloadBytes);
+    // Shared materialization: CBOR encoding + hashing via the shared helper
+    // so both backends produce identical payloadHash/readSetHash/envelopeCbor
+    // for the same input (I2).
+    const mat = materializeRow(input, hookResult.verdict, hookResult.hookId);
 
-    // readSet hash: zero-hash if empty causalReadSet
-    const readSetHash = input.causalReadSet.length > 0
-      ? this.cas.put(new TextEncoder().encode(JSON.stringify(input.causalReadSet)))
-      : new Uint8Array(32);
+    // Store in in-memory CAS. Pass the pre-computed hash from materializeRow so
+    // the CAS layer skips re-hashing (encode-once, hash-once hot path — A2).
+    this.cas.put(mat.payloadBytes, mat.payloadHash);
+    if (mat.readSetBytes !== null) {
+      this.cas.put(mat.readSetBytes, mat.readSetHash);
+    }
 
     // §3.10 timestampNs monotonicity: clamp to lastTimestampNs when clock goes backward
     const nowNs = this.nowNs();
@@ -72,7 +75,7 @@ export class InMemoryWalBackend implements WalBackend {
       commitOffset:  BigInt(offset),
       timestampNs:   tsNs,
       primitiveKind: 0x01, // placeholder until §6 enum is locked
-      hookVerdict:   VERDICT_TO_WAL[hookResult.verdict],
+      hookVerdict:   mat.verdictByte,
       flags: {
         bootstrap:       false,
         declaredWindow:  false,
@@ -80,9 +83,9 @@ export class InMemoryWalBackend implements WalBackend {
         taskBoundary:    false,
         manifestRoot:    false,
       },
-      payloadHash,
-      readSetHash,
-      envelopeCbor:  new Uint8Array(0),
+      payloadHash:  mat.payloadHash,
+      readSetHash:  mat.readSetHash,
+      envelopeCbor: mat.envelopeCbor,
     };
 
     // Build hash-chain link: genesis row gets prevRoot=ZERO_HASH,

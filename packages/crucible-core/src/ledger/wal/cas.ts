@@ -16,11 +16,18 @@ export class InMemoryCas {
   private readonly store = new Map<string, Uint8Array>();
 
   /**
-   * Store bytes and return their BLAKE3 hash (the CAS key).
+   * Store bytes under their BLAKE3 hash key.
+   * Returns the 32-byte hash (the CAS key for the WAL record header).
+   *
+   * @param bytes           - The bytes to store.
+   * @param precomputedHash - Optional pre-computed BLAKE3 hash. When provided,
+   *   the internal hash call is skipped (single-hash hot path for callers that
+   *   already computed the hash in materializeRow).
+   *
    * Idempotent: putting the same bytes twice returns the same hash.
    */
-  put(bytes: Uint8Array): Blake3Hash {
-    const hash = hashBytes(bytes);
+  put(bytes: Uint8Array, precomputedHash?: Blake3Hash): Blake3Hash {
+    const hash = precomputedHash ?? hashBytes(bytes);
     const key = Buffer.from(hash).toString('hex');
     if (!this.store.has(key)) {
       this.store.set(key, new Uint8Array(bytes));

@@ -21,7 +21,7 @@
  * commitmentMethod) are deferred until §6 primitive enum is locked.
  */
 
-import type { SegmentRecord, SegmentRecordFlags } from './types.js';
+import type { SegmentRecord, SegmentRecordFlags, VerdictByte } from './types.js';
 import { encodeFlags } from './flags.js';
 
 export const MAGIC = 0x57414c31 as const;
@@ -44,6 +44,24 @@ export class InvalidRecordLengthError extends Error {
     this.name = 'InvalidRecordLengthError';
   }
 }
+
+/**
+ * Thrown by decodeRecord when the hookVerdict byte is not one of the four
+ * defined values (0xFF=no-match, 0x00=continue, 0x01=observe, 0x02=pause).
+ * Indicates a corrupt segment or a future format not understood by this version.
+ */
+export class InvalidVerdictByteError extends Error {
+  constructor(found: number) {
+    super(
+      `Invalid WAL hookVerdict byte 0x${found.toString(16).padStart(2, '0')}: ` +
+      `expected one of 0xFF (no-match), 0x00 (continue), 0x01 (observe), 0x02 (pause)`,
+    );
+    this.name = 'InvalidVerdictByteError';
+  }
+}
+
+/** Valid verdict bytes — the four legal values of VerdictByte. */
+const VALID_VERDICT_BYTES: ReadonlySet<number> = new Set([0xFF, 0x00, 0x01, 0x02]);
 
 // Byte offsets for fixed-prefix fields
 const OFF_MAGIC         = 0;
@@ -127,11 +145,16 @@ export function decodeRecord(buf: Buffer): SegmentRecord {
     envelopeLen,
   );
 
+  const verdictRaw = buf.readUInt8(OFF_HOOK_VERDICT);
+  if (!VALID_VERDICT_BYTES.has(verdictRaw)) {
+    throw new InvalidVerdictByteError(verdictRaw);
+  }
+
   return {
     commitOffset:  buf.readBigUInt64LE(OFF_COMMIT_OFFSET),
     timestampNs:   buf.readBigUInt64LE(OFF_TIMESTAMP_NS),
     primitiveKind: buf.readUInt8(OFF_PRIMITIVE_KIND),
-    hookVerdict:   buf.readUInt8(OFF_HOOK_VERDICT),
+    hookVerdict:   verdictRaw as VerdictByte,
     flags:         decodeFlags(buf.readUInt16LE(OFF_FLAGS)),
     prevRoot:      new Uint8Array(buf.buffer, buf.byteOffset + OFF_PREV_ROOT, 32).slice(),
     selfRoot:      new Uint8Array(buf.buffer, buf.byteOffset + OFF_SELF_ROOT, 32).slice(),

@@ -33,6 +33,7 @@ import fs                       from 'node:fs';
 import {
   createFileSystemWalBackend,
 } from '../../ledger/wal-backend-fs.js';
+import { FileSystemCas } from '../../ledger/wal/cas-fs.js';
 import type { PrimitiveInput } from '../../types.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -204,13 +205,13 @@ describe('WAL FileSystemCas — CAS fsync ordering (issue #59)', () => {
     expect(rows).toHaveLength(0);
   });
 
-  // ── CAS-F6: Throughput note — existing CAS files (dedup) are NOT re-synced ──
+  // ── CAS-F6: Subsequent batch rewrites same hash via fresh temp file ──────────
   //
-  // If a CAS blob is already on disk (from a prior commit), put() is a no-op
-  // and the blob is NOT added to pendingSync. A second batch with the same
-  // payload does not incur a CAS sync (only the segment sync). Amortised cost.
+  // The torn-blob fix removes the old "skip CAS sync if final blob exists"
+  // optimization. A second batch with the same payload still writes/syncs a
+  // fresh temp file before atomically replacing the final CAS blob.
 
-  it('CAS-F6: already-persisted CAS blob not re-synced on subsequent batch', async () => {
+  it('CAS-F6: already-persisted CAS blob is re-synced on subsequent batch via temp file', async () => {
     const rootDir   = makeTmpDir();
     const sessionId = `sess-${randomUUID().slice(0, 8)}`;
 
@@ -224,7 +225,7 @@ describe('WAL FileSystemCas — CAS fsync ordering (issue #59)', () => {
     await backend.commitRow(makeInput('shared-payload'), commit());
     const firstBatchSyncs = syncCount;
 
-    // Second commit with SAME payload: CAS file already exists → only 1 sync (segment)
+    // Second commit with SAME payload: CAS blob is re-published via temp file
     syncCount = 0;
     await backend.commitRow(makeInput('shared-payload'), commit());
     const secondBatchSyncs = syncCount;
@@ -232,6 +233,166 @@ describe('WAL FileSystemCas — CAS fsync ordering (issue #59)', () => {
     await backend.close();
 
     expect(firstBatchSyncs).toBe(2);   // CAS + segment
-    expect(secondBatchSyncs).toBe(1);  // segment only (CAS already durable)
+    expect(secondBatchSyncs).toBe(2);  // CAS temp + segment
+  });
+
+  it('TORN-1: torn/partial existing CAS file is overwritten by put() + syncAll() (cross-session durability)', async () => {
+    const rootDir = makeTmpDir();
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+    const commitResult = { verdict: 'COMMIT' as const, hookId: null };
+
+    const backend1 = await createFileSystemWalBackend(rootDir, sessionId);
+    await backend1.commitRow(
+      { primitiveKind: 'observation', primitivePayload: { tag: 'original' }, causalReadSet: [] },
+      commitResult,
+    );
+    await backend1.close();
+
+    const casDir = path.join(rootDir, 'cas');
+    let casFilePath = '';
+    for (const shard of fs.readdirSync(casDir)) {
+      const shardDir = path.join(casDir, shard);
+      if (!fs.statSync(shardDir).isDirectory()) continue;
+      for (const file of fs.readdirSync(shardDir)) {
+        if (file.endsWith('.cbor')) {
+          casFilePath = path.join(shardDir, file);
+          break;
+        }
+      }
+      if (casFilePath) break;
+    }
+    expect(casFilePath, 'CAS blob must exist after first session').not.toBe('');
+
+    // Corrupt the CAS blob with partial/torn bytes
+    fs.writeFileSync(casFilePath, new Uint8Array([0xDE, 0xAD]));
+    expect(fs.readFileSync(casFilePath)).toHaveLength(2);
+
+    // Second session writes the same payload — atomic rename must overwrite the torn blob
+    const backend2 = await createFileSystemWalBackend(rootDir, `sess-${randomUUID().slice(0, 8)}`);
+    await backend2.commitRow(
+      { primitiveKind: 'observation', primitivePayload: { tag: 'original' }, causalReadSet: [] },
+      commitResult,
+    );
+    await backend2.close();
+
+    // I7: exact content check — must be the CBOR bytes for { tag: 'original' }
+    // encodeCbor({ tag: 'original' }) = a163746167686f726967696e616c (Crucible canonical CBOR profile)
+    const { encodeCbor: enc } = await import('../../ledger/wal/cbor.js');
+    const expectedBytes = enc({ tag: 'original' });
+    const restoredContent = fs.readFileSync(casFilePath);
+    expect(Buffer.from(restoredContent).toString('hex'))
+      .toBe(Buffer.from(expectedBytes).toString('hex'));
+  });
+
+  // ── CAS-F7: stale pendingSync cleared on mid-iteration abort (I4) ────────────
+  //
+  // If syncAll() throws mid-iteration, pendingSync must be cleared so the NEXT
+  // batch starts with a clean slate.  Without this fix, stale temp entries from
+  // the failed batch would be re-fsynced in the next call, causing incorrect
+  // sync-call counts and potential orphan blob races.
+
+  it('CAS-F7: pendingSync cleared on mid-iteration sync failure; subsequent batch starts clean', async () => {
+    const rootDir   = makeTmpDir();
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+    let   syncCallIdx = 0;
+    let   failOnCall  = -1; // armed below
+
+    // batchSize=1: each commitRow triggers its own flush (1 CAS + 1 segment = 2 calls)
+    const backend = await createFileSystemWalBackend(rootDir, sessionId, {
+      batchSize: 1,
+      syncFn: () => {
+        syncCallIdx++;
+        if (failOnCall > 0 && syncCallIdx === failOnCall) {
+          throw new Error('injected-mid-iteration-failure');
+        }
+      },
+    });
+
+    // First batch: succeeds normally (2 calls: 1 CAS + 1 segment)
+    await backend.commitRow(makeInput('r0'), commit());
+    expect(syncCallIdx).toBe(2);
+
+    // Second batch: arm failure on the CAS sync call (call #3 overall)
+    syncCallIdx = 0;
+    failOnCall  = 1; // fail on first call of next batch = CAS sync
+    await expect(
+      backend.commitRow(makeInput('r1'), commit()),
+    ).rejects.toThrow('injected-mid-iteration-failure');
+
+    // Third batch: disarm failure; if pendingSync was NOT cleared, stale entries
+    // from the second batch would be re-synced here, causing syncCallIdx to
+    // exceed 2 (the expected 1 CAS + 1 segment for a fresh single-payload batch).
+    syncCallIdx = 0;
+    failOnCall  = -1;
+    await backend.commitRow(makeInput('r2'), commit());
+
+    // Must be exactly 2 syncs: 1 fresh CAS file + 1 segment (no stale carryover)
+    expect(syncCallIdx).toBe(2);
+
+    await backend.close();
+  });
+
+  // ── CAS-T1: duplicate-hash put() in a batch must not orphan temp files ───────
+  //
+  // When two puts with the same hash are made within a single batch, the second
+  // put must NOT write a second temp file (T1). The batch should still produce
+  // exactly one CAS sync call.
+
+  it('CAS-T1: duplicate-hash put() within a batch dedupes — no orphan temp files, correct sync count', async () => {
+    const casDir = makeTmpDir();
+    const cas    = new FileSystemCas(casDir);
+    const bytes  = Buffer.from('hello-world');
+
+    let syncCalls = 0;
+    const syncFn = () => { syncCalls++; };
+
+    // Two puts of the same bytes → same hash → second put should skip writing
+    cas.put(bytes);
+    cas.put(bytes); // duplicate — must NOT write a second *.cbor.tmp
+
+    cas.syncAll(syncFn);
+
+    // Only 1 CAS sync (not 2): deduplication collapsed the batch
+    expect(syncCalls).toBe(1);
+
+    // No orphan *.cbor.tmp files in any shard subdirectory
+    const tmpFiles: string[] = [];
+    for (const shard of fs.readdirSync(casDir)) {
+      const shardDir = path.join(casDir, shard);
+      if (!fs.statSync(shardDir).isDirectory()) continue;
+      for (const f of fs.readdirSync(shardDir)) {
+        if (f.endsWith('.cbor.tmp')) tmpFiles.push(f);
+      }
+    }
+    expect(tmpFiles, 'no orphan *.cbor.tmp files after syncAll').toHaveLength(0);
+  });
+
+  // ── CAS-T2: abort unlinks temp files — no *.cbor.tmp garbage on disk ─────────
+  //
+  // When syncAll() throws, all pending temp files must be best-effort unlinked
+  // before the map is cleared. Without this fix, repeated failures accumulate
+  // *.cbor.tmp files that are never cleaned up (the cleared map orphans them).
+
+  it('CAS-T2: syncAll() abort unlinks pending temp files; no *.cbor.tmp garbage remains', async () => {
+    const casDir = makeTmpDir();
+    const cas    = new FileSystemCas(casDir);
+    const bytes  = Buffer.from('abort-test-payload');
+
+    // Write a temp file into pendingSync
+    cas.put(bytes);
+
+    // syncFn throws immediately → abort path
+    expect(() => cas.syncAll(() => { throw new Error('disk-error'); })).toThrow('disk-error');
+
+    // All *.cbor.tmp files must have been unlinked on abort
+    const tmpFiles: string[] = [];
+    for (const shard of fs.readdirSync(casDir)) {
+      const shardDir = path.join(casDir, shard);
+      if (!fs.statSync(shardDir).isDirectory()) continue;
+      for (const f of fs.readdirSync(shardDir)) {
+        if (f.endsWith('.cbor.tmp')) tmpFiles.push(f);
+      }
+    }
+    expect(tmpFiles, 'no *.cbor.tmp files should remain after abort').toHaveLength(0);
   });
 });
