@@ -251,6 +251,56 @@ describe('WAL metadata envelope round-trip (#67)', () => {
     await reader.close();
   });
 
+  it('META-7: map envelope with scalar "m" throws CorruptSegmentError (F2)', async () => {
+    // Build a segment where the envelope map has a scalar (number) for "m"
+    // instead of a valid object — must throw CorruptSegmentError on reopen.
+    const rootDir   = makeTmpDir();
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+    const segDir    = path.join(rootDir, 'wal', 'sessions', sessionId);
+    fs.mkdirSync(segDir, { recursive: true });
+
+    // Craft envelope with scalar m: {k: "observation", m: 42} — corrupt
+    const corruptEnvelope = encodeCbor({ k: 'observation', m: 42 });
+    const payloadBytes    = encodeCbor({ x: 1 });
+    const payloadHash     = hashBytes(payloadBytes);
+    const casDir = path.join(rootDir, 'cas');
+    fs.mkdirSync(casDir, { recursive: true });
+    const shard   = Buffer.from(payloadHash).toString('hex').slice(0, 2);
+    const casFile = path.join(casDir, shard, `${Buffer.from(payloadHash).toString('hex')}.cbor`);
+    fs.mkdirSync(path.dirname(casFile), { recursive: true });
+    fs.writeFileSync(casFile, payloadBytes);
+
+    const rowInput: SegmentRecordInput = {
+      commitOffset:  0n,
+      timestampNs:   1_000_000n,
+      primitiveKind: 0x01,
+      hookVerdict:   0xFF,
+      flags: {
+        bootstrap: false, declaredWindow: false,
+        syntheticOutput: false, taskBoundary: false, manifestRoot: false,
+      },
+      payloadHash,
+      readSetHash:  new Uint8Array(32),
+      envelopeCbor: corruptEnvelope,
+    };
+    const [linked] = buildChain([rowInput]);
+    const segBuf = encodeRecord(linked);
+    fs.writeFileSync(path.join(segDir, '000000.seg'), segBuf);
+
+    const manifest = {
+      schemaVersion: 1,
+      sessionId,
+      segmentRange: [0, 0],
+      lastCommitOffset: 0,
+    };
+    fs.writeFileSync(path.join(segDir, 'manifest.json'), JSON.stringify(manifest), 'utf8');
+
+    // Reopen must throw CorruptSegmentError — non-object "m" is invalid
+    await expect(
+      createFileSystemWalBackend(rootDir, sessionId, { readOnly: true }),
+    ).rejects.toThrow(/non-object metadata "m"/);
+  });
+
   it('META-3b: full Ledger append+reopen+projector integration test', async () => {
     const rootDir   = makeTmpDir();
     const sessionId = `sess-${randomUUID().slice(0, 8)}`;

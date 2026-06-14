@@ -82,8 +82,7 @@ function runPriorRowsSurviveVetoSuite(
     });
 
     it(
-      'Acceptance: veto on non-empty ledger leaves prior N rows intact and hash-chain head unchanged' +
-      ` [${implName}, prior-rows-survive-veto]`,
+      'Acceptance: veto on non-empty ledger leaves prior N rows intact and hash-chain head unchanged',
       async () => {
         const N = 3;
         const { backend } = harness;
@@ -163,7 +162,7 @@ runPriorRowsSurviveVetoSuite('FileSystemWalBackend', async () => {
   });
 
   return {
-    backend: backend as unknown as BackendWithRecords,
+    backend,
     cleanup: async () => {
       await backend.close();
       try { fs.rmSync(rootDir, { recursive: true, force: true }); } catch { /* best-effort */ }

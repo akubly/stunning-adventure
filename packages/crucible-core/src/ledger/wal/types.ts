@@ -6,6 +6,24 @@
  * Graham's seam lock (see .squad/decisions.md).
  */
 
+import type { EventMetadata } from '../../types.js';
+
+/**
+ * Canonical v1 envelope map stored as envelopeCbor in each WAL segment record.
+ *
+ * Encode site (materialize.ts) produces this shape; decode site
+ * (wal-backend-fs.ts replayFromSegments) casts the decoded CBOR to this type
+ * while keeping runtime structural guards on `k`/`m`.
+ *
+ * Key ordering under the Crucible canonical CBOR profile (RFC 8949 §4.2.1):
+ *   "k" (0x6b) < "m" (0x6d) — enforced by rfc8949EncodeOptions mapSorter.
+ * "m" is omitted entirely when metadata is absent (minimal envelope).
+ */
+export interface EnvelopeMapV1 {
+  k: string;
+  m?: EventMetadata;
+}
+
 export type Blake3Hash = Uint8Array; // 32 bytes
 
 /** Bits for the 2-byte flags field in a segment record. */

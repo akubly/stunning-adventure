@@ -25,10 +25,9 @@
  */
 
 import type { PrimitiveInput } from '../../types.js';
-import type { EventMetadata } from '../../types.js';
 import { encodeCbor } from './cbor.js';
 import { hashBytes } from './hash.js';
-import type { Blake3Hash, VerdictByte } from './types.js';
+import type { Blake3Hash, EnvelopeMapV1, VerdictByte } from './types.js';
 import { hookResultToVerdictByte } from './types.js';
 
 const ZERO_HASH_32 = new Uint8Array(32);
@@ -84,7 +83,7 @@ export function materializeRow(
   // Key ordering: "k" (0x61 0x6b) < "m" (0x61 0x6d) under RFC 8949 §4.2.1 —
   // the Crucible canonical CBOR profile enforces this automatically via
   // rfc8949EncodeOptions mapSorter.
-  const envelopeObj: { k: string; m?: EventMetadata } = { k: input.primitiveKind };
+  const envelopeObj: EnvelopeMapV1 = { k: input.primitiveKind };
   if (input.metadata !== undefined) {
     envelopeObj.m = input.metadata;
   }

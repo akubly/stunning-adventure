@@ -90,8 +90,7 @@ class LedgerImpl implements Ledger {
         try {
           sub.onCommit(offset, event);
         } catch (err) {
-          // intentionally swallowed — see contract note on LedgerSubscriber
-          this.onSubscriberError?.(offset, event, err, sub);
+          try { this.onSubscriberError?.(offset, event, err, sub); } catch { /* last-resort: never let observability break append durability */ }
         }
       }
     }

@@ -121,4 +121,33 @@ describe('LedgerImpl subscriber error hook (#69)', () => {
 
     await expect(ledger.append(makeInput())).resolves.toBe(0);
   });
+
+  it('SE-7: a throwing onSubscriberError hook is itself swallowed — append still resolves, row is durable, subsequent subscriber still receives onCommit', async () => {
+    // The hook itself throws — must never escape append() or cancel other subscribers.
+    const throwingHook = vi.fn().mockImplementation(() => {
+      throw new Error('hook self-destruct');
+    });
+
+    const ledger = await createLedger({ onSubscriberError: throwingHook });
+
+    // Subscriber 1 throws (triggers the hook); subscriber 2 must still fire.
+    const sub2Called = vi.fn();
+    ledger.subscribe({ onCommit() { throw new Error('sub1 boom'); } });
+    ledger.subscribe({ onCommit: sub2Called });
+
+    // append() must resolve despite the throwing hook
+    const offset = await ledger.append(makeInput());
+    expect(typeof offset).toBe('number');
+
+    // The hook was called (and threw internally)
+    expect(throwingHook).toHaveBeenCalledTimes(1);
+
+    // Subscriber 2 still received onCommit — per-subscriber isolation preserved
+    expect(sub2Called).toHaveBeenCalledTimes(1);
+
+    // Row is durable and readable
+    const events = await ledger.queryEvents({ range: [0, 0] });
+    expect(events).toHaveLength(1);
+    expect(events[0].primitiveKind).toBe('observation');
+  });
 });

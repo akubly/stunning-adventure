@@ -108,6 +108,11 @@ export interface LedgerFactoryOptions {
    * no duplicate-write retry). Do NOT use console.error here; inject a counter
    * or structured error log via this callback instead.
    *
+   * **Best-effort contract**: if this hook itself throws, the exception is
+   * silently swallowed. A throwing hook must never break append durability or
+   * skip remaining subscribers — append() will still resolve and all other
+   * subscribers will still receive onCommit.
+   *
    * Called synchronously on the append hot path; must be fast (no I/O, no await).
    *
    * @param offset     - The commit offset of the row that triggered the dispatch.

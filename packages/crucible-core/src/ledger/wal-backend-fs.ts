@@ -47,7 +47,7 @@ import { buildChain, ZERO_HASH }             from './wal/hash-chain.js';
 import { FileSystemCas }                     from './wal/cas-fs.js';
 import { sealAndSplit }                      from './wal/seal-and-split.js';
 import { materializeRow }                    from './wal/materialize.js';
-import type { SegmentRecord, SegmentRecordInput } from './wal/types.js';
+import type { SegmentRecord, SegmentRecordInput, EnvelopeMapV1 } from './wal/types.js';
 
 // ─── Write-lock error ─────────────────────────────────────────────────────────
 
@@ -424,7 +424,7 @@ export class FileSystemWalBackend implements WalBackend {
               !Array.isArray(decoded)
             ) {
               // v1 envelope map: {k: primitiveKind, m?: metadata}
-              const env = decoded as Record<string, unknown>;
+              const env = decoded as EnvelopeMapV1;
               if (typeof env.k !== 'string') {
                 throw new CorruptSegmentError(
                   segFilePath,
@@ -439,6 +439,11 @@ export class FileSystemWalBackend implements WalBackend {
                 !Array.isArray(env.m)
               ) {
                 metadata = env.m as EventMetadata;
+              } else if ('m' in env) {
+                throw new CorruptSegmentError(
+                  segFilePath,
+                  `envelope map at offset ${offset} has non-object metadata "m"`,
+                );
               }
             } else {
               throw new CorruptSegmentError(
