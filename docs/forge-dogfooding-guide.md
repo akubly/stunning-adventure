@@ -46,7 +46,7 @@ Signal builds slowly — this is normal. Here is the expected timeline:
 2. **Seed a profile to bootstrap (current gap):** The forge prescriber requires an execution profile in `~/.cairn/knowledge.db` to generate hints. The telemetry → execution_profiles pipeline is wired end-to-end as of PR #75, but no production session runner drives live agent sessions through `ForgeClient` yet — so on a stock Copilot CLI install, profiles don't auto-populate from real usage. Use `forge-seed-profile` to bootstrap:
 
    ```bash
-   forge-seed-profile --skill <your-skill-id> --session-count 5
+   npx forge-seed-profile --skill <your-skill-id> --session-count 5
    ```
 
    This inserts synthetic signal samples and runs the real `buildProfiles` aggregation path, producing a profile that is structurally identical to one built from live telemetry. Once seeded, hints appear on the next prescriber run. See [Known Limitations](#known-limitations).
@@ -54,7 +54,7 @@ Signal builds slowly — this is normal. Here is the expected timeline:
 4. **Hints appear:** `list_optimization_hints` returns pending hints. You act on them.
 5. **On the next prescriber run:** Your dismissals suppress that category; your resolutions boost its confidence.
 
-> **Silence ≠ broken.** If you see no hints yet, check your session count with `forge-metrics --skill <id> --format table`. The Profile section shows how many sessions have been recorded. If it is below 3, re-run `forge-seed-profile --skill <id> --session-count <n>` to raise the count — the command is re-runnable and will add sessions. Sessions will also accumulate automatically once a production runner drives agent sessions through ForgeClient, but that consumer is not present on a stock Copilot CLI install today.
+> **Silence ≠ broken.** If you see no hints yet, check your session count with `npx forge-metrics --skill <id> --format table`. The Profile section shows how many sessions have been recorded. If it is below 3, re-run `npx forge-seed-profile --skill <id> --session-count <n>` to raise the count — the command is re-runnable and will add sessions. Sessions will also accumulate automatically once a production runner drives agent sessions through ForgeClient, but that consumer is not present on a stock Copilot CLI install today.
 
 ---
 
@@ -65,13 +65,13 @@ A **skill ID** is the identifier Cairn uses to group execution profiles and hint
 **Discover your skill IDs once you have data:**
 
 - In a Copilot chat, ask `list_optimization_hints`. Each hint in the response includes a `skill_id` field — that is a real skill ID with recorded data.
-- Run `forge-metrics --skill <id> --format table` to confirm a specific ID has a profile.
+- Run `npx forge-metrics --skill <id> --format table` to confirm a specific ID has a profile.
 - The `forge-prescribe` CLI prints `Skill: <id>` in its output when a profile is found.
 
 **Cold start (no hints yet):** If you have just installed and have not yet seeded a profile, none of the above will return skill IDs — because skill IDs only surface once execution profiles exist in `~/.cairn/knowledge.db`. Use `forge-seed-profile` to bootstrap one immediately:
 
 ```bash
-forge-seed-profile --skill <your-skill-id> --session-count 5
+npx forge-seed-profile --skill <your-skill-id> --session-count 5
 ```
 
 On a fresh install, `list_optimization_hints` returns nothing and `forge-metrics` reports `found: false` for any ID until a profile is seeded. See [Known Limitations](#known-limitations).
@@ -99,7 +99,7 @@ Use Copilot as usual. Cairn's `preToolUse` hook records tool calls and errors in
 Once a profile is seeded, check its recorded session count any time:
 
 ```bash
-forge-metrics --skill <your-skill-id> --format table
+npx forge-metrics --skill <your-skill-id> --format table
 ```
 
 The **Profile → Session Count** row shows how many sessions have been recorded against that skill.
@@ -178,9 +178,9 @@ The tool returns `inserted`, `skipped`, `errored`, `totalHints`, and the profile
 If `@akubly/runtime-cli` is linked or available via npx:
 
 ```bash
-forge-prescribe --skill <id>
-forge-prescribe --skill <id> --force
-forge-prescribe --skill <id> --db ~/.cairn/knowledge.db
+npx forge-prescribe --skill <id>
+npx forge-prescribe --skill <id> --force
+npx forge-prescribe --skill <id> --db ~/.cairn/knowledge.db
 ```
 
 The CLI prints a summary:
@@ -202,10 +202,10 @@ Total persisted: 3
 ### `forge-metrics` CLI
 
 ```bash
-forge-metrics --skill <id>                    # JSON output (default)
-forge-metrics --skill <id> --format table     # human-readable table
-forge-metrics --skill <id> --repo-key <key>   # scope session lookup to a repo
-forge-metrics --help
+npx forge-metrics --skill <id>                    # JSON output (default)
+npx forge-metrics --skill <id> --format table     # human-readable table
+npx forge-metrics --skill <id> --repo-key <key>   # scope session lookup to a repo
+npx forge-metrics --help
 ```
 
 The table output sections and what they mean:
@@ -261,7 +261,7 @@ Check that `node` is on your bash `PATH`. In Git Bash on Windows, Node.js instal
 **Check whether the profile exists:**
 
 ```bash
-forge-metrics --skill <id> --format table
+npx forge-metrics --skill <id> --format table
 ```
 
 - `Profile: found: false` → not enough sessions yet. The prescriber requires at least 3 sessions of recorded data.
@@ -282,7 +282,7 @@ list_optimization_hints status=pending
 Or force-regenerate via the CLI:
 
 ```bash
-forge-prescribe --skill <id> --force
+npx forge-prescribe --skill <id> --force
 ```
 
 ### An MCP tool fails with "tool not found"
@@ -324,7 +324,7 @@ forge_prescribe skill_id=<id> force=true
 Or via the CLI:
 
 ```bash
-forge-prescribe --skill <id> --force
+npx forge-prescribe --skill <id> --force
 ```
 
 This atomically expires all existing active hints for the skill and inserts fresh ones from the current profile. Prior `hint_state_transition` events (your dismissal/resolution history) are preserved.
@@ -335,7 +335,7 @@ This atomically expires all existing active hints for the skill and inserts fres
 
 The following are explicitly deferred, per the [dogfood-first decision](../.squad/decisions-archive.md#2026-05-30-forge-roadmap-priority--dogfood-first-aaron-directive):
 
-- **No production session runner yet:** The telemetry → execution_profiles → prescriber pipeline is built and tested (PR #75). The remaining gap is narrower: no production runner currently drives real agent sessions through `ForgeClient`/`ForgeSession`, so live sessions don't auto-populate profiles on a stock Copilot CLI install. Use `forge-seed-profile --skill <id> --session-count <n>` to bootstrap a real profile today. When a production runner lands (or when telemetry is wired into whatever drives sessions), profiles will populate automatically with no further changes required.
+- **No production session runner yet:** The telemetry → execution_profiles → prescriber pipeline is built and tested (PR #75). The remaining gap is narrower: no production runner currently drives real agent sessions through `ForgeClient`/`ForgeSession`, so live sessions don't auto-populate profiles on a stock Copilot CLI install. Use `npx forge-seed-profile --skill <id> --session-count <n>` to bootstrap a real profile today. When a production runner lands (or when telemetry is wired into whatever drives sessions), profiles will populate automatically with no further changes required.
 - **GP-tournament selection** (Phase 5 §2.4) — multi-armed bandit prescriber selection based on real signal. Deferred until dogfood signal is collected.
 - **Meta-optimization** (DBOM on prescriber decisions) — self-optimizing prescriber weights. Same gate.
 - **Eureka FactStore adapter + recall wiring** — episodic context (trust-scored facts) feeding the prescriber. Deferred until Eureka v1 stabilizes and the SQLite FactStore adapter is built.
