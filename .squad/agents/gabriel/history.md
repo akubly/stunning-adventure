@@ -277,3 +277,14 @@ The `src/` exemption rule avoids false positives on meta-packages that have no s
 
 **Append-only guard:** After any Scribe archive step, assert `(new line count) > (old line count)`. The correct test is `git show HEAD:.squad/decisions-archive.md | Measure-Object -Line` strictly greater than `git show HEAD~1:.squad/decisions-archive.md | Measure-Object -Line`. A same-or-lower count is definitive proof of overwrite. This assertion should be wired into any automated Scribe pipeline as a post-commit gate.
 
+
+## Learnings — 2026-06-12 Main Reconciliation (Gabriel)
+
+**Context:** main and origin/main had diverged (3 squad-bookkeeping commits on local main vs 3 origin commits including the eureka squash #74, now.md update, and Crucible S1 #73). Needed to bring both sets together without data loss and without re-introducing eureka code into history.
+
+**Approach — union merge + targeted cherry-pick:**
+git merge origin/main on main let git's merge=union driver auto-resolve .squad/decisions.md and .squad/decisions-archive.md by keeping content from both sides (append-only semantics preserved automatically). No manual conflict resolution was needed. The eureka squash b2a421e is the single canonical source of packages/eureka changes — cherry-picking only the squad bookkeeping commit (1f79813) from the scratch branch ensured no duplicate eureka code entered main history.
+
+**Append-only line-count guard:** Before merging, captured origin/main's decisions-archive.md line count (5038). After merge it rose to 5268 — proving origin's entries were preserved and nothing was dropped. Always verify the merged file is >= the upstream baseline, never just assume the union driver worked.
+
+**Why nap compaction was deferred:** stash@{0} contained a squad nap compaction of histories/decisions alongside 2 unrelated pre-existing edits. Applying the compaction via stash pop would have entangled the unrelated edits and potentially silently overwritten verbose append-only content with condensed summaries. The correct sequencing is: push clean bookkeeping to main first, then run squad nap cleanly on top of main so the compaction is an explicit, reviewable, standalone commit.
