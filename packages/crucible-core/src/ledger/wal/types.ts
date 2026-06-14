@@ -25,14 +25,21 @@ export interface EnvelopeMapV1 {
 }
 
 /**
- * Returns true iff v is a non-null, non-array plain object — the only shape
- * that is valid for an EventMetadata value in the WAL envelope.
+ * Returns true iff v is a non-null, non-array plain object whose prototype is
+ * exactly Object.prototype or null — the only shapes valid for an
+ * EventMetadata value in the WAL envelope.
+ *
+ * Class instances such as Date, Map, Set, etc. are explicitly rejected, since
+ * they do not round-trip safely through CBOR and contradict the "plain object"
+ * intent of the metadata field.
  *
  * Used by BOTH the encode path (materialize.ts write guard) and the decode
  * path (wal-backend-fs.ts replayFromSegments) so the two sites can never drift.
  */
 export function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false;
+  const proto = Object.getPrototypeOf(v) as unknown;
+  return proto === Object.prototype || proto === null;
 }
 
 export type Blake3Hash = Uint8Array; // 32 bytes

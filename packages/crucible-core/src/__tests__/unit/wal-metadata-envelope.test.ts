@@ -302,7 +302,8 @@ describe('WAL metadata envelope round-trip (#67)', () => {
     ).rejects.toThrow(/non-object metadata "m"/);
   });
 
-  it('META-3b: full Ledger append+reopen+projector integration test', async () => {    const rootDir   = makeTmpDir();
+  it('META-3b: full Ledger append+reopen+projector integration test', async () => {
+    const rootDir   = makeTmpDir();
     const sessionId = `sess-${randomUUID().slice(0, 8)}`;
 
     // Append via the full Ledger stack
@@ -368,6 +369,52 @@ describe('WAL metadata envelope round-trip (#67)', () => {
           primitivePayload: { x: 3 },
           causalReadSet:    [],
           metadata:         { level: 'info', source: 'test' },
+        },
+        'COMMIT',
+        null,
+      ),
+    ).not.toThrow();
+  });
+
+  it('META-11: materializeRow rejects a Date instance as metadata (class instance, not plain object)', () => {
+    expect(() =>
+      materializeRow(
+        {
+          primitiveKind:    'observation',
+          primitivePayload: { x: 1 },
+          causalReadSet:    [],
+          metadata:         new Date() as unknown as Record<string, unknown>,
+        },
+        'COMMIT',
+        null,
+      ),
+    ).toThrow(/metadata must be a plain object/);
+  });
+
+  it('META-12: materializeRow rejects a Map instance as metadata (class instance, not plain object)', () => {
+    expect(() =>
+      materializeRow(
+        {
+          primitiveKind:    'observation',
+          primitivePayload: { x: 1 },
+          causalReadSet:    [],
+          metadata:         new Map([['k', 'v']]) as unknown as Record<string, unknown>,
+        },
+        'COMMIT',
+        null,
+      ),
+    ).toThrow(/metadata must be a plain object/);
+  });
+
+  it('META-13: materializeRow accepts a null-prototype object (Object.create(null)) as metadata', () => {
+    const nullProtoMeta = Object.assign(Object.create(null) as Record<string, unknown>, { level: 'info' });
+    expect(() =>
+      materializeRow(
+        {
+          primitiveKind:    'observation',
+          primitivePayload: { x: 1 },
+          causalReadSet:    [],
+          metadata:         nullProtoMeta,
         },
         'COMMIT',
         null,
