@@ -6,7 +6,7 @@
 
 ## What Dogfooding Forge Means
 
-Every time you open a bash terminal, forge's session-start hook fires, analyses your execution profiles, and writes optimization hints to `~/.cairn/knowledge.db`. Those hints surface in your Copilot conversations via the Cairn MCP tools. When you act on a hint — accepting it as resolved or dismissing it — the system records that disposition. The next time the prescriber runs for the same skill, it reads those dispositions and either suppresses hints you dismissed or boosts confidence for categories you resolved.
+Every time you open a bash terminal, forge's session-start hook fires, analyzes your execution profiles, and writes optimization hints to `~/.cairn/knowledge.db`. Those hints surface in your Copilot conversations via the Cairn MCP tools. When you act on a hint — accepting it as resolved or dismissing it — the system records that disposition. The next time the prescriber runs for the same skill, it reads those dispositions and either suppresses hints you dismissed or boosts confidence for categories you resolved.
 
 That is the loop. It is live end-to-end as of M3 (PR #49).
 
@@ -34,7 +34,7 @@ The tools used in this guide are split across **two MCP servers**, both configur
 | `@akubly/skillsmith-runtime` | `forge` | `forge_prescribe` |
 | `@akubly/cairn` | `cairn` | `list_optimization_hints`, `resolve_optimization_hint`, `get_optimization_hint`, `get_status`, `list_insights`, `run_curate`, `show_growth`, `search_events`, and others |
 
-Both are auto-configured when you clone the repo and point Copilot CLI at it (the root README's "As a Copilot CLI plugin" section). If you are not using the plugin manifest, ensure both `cairn-mcp` and `forge-mcp` are registered in your MCP config.
+Both are auto-configured when you clone the repo and point Copilot CLI at it (the root README's "As a Copilot CLI plugin" section). If you are not using the plugin manifest, ensure both MCP servers (`cairn` and `forge`, which run the `cairn-mcp`/`forge-mcp` commands) are registered in your MCP config.
 
 ---
 
@@ -43,7 +43,7 @@ Both are auto-configured when you clone the repo and point Copilot CLI at it (th
 Signal builds slowly — this is normal. Here is the expected timeline:
 
 1. **Right now:** `forge_mcp_check` passes. Both MCP servers respond. The hook fires on every new bash session but emits nothing yet (no profile data).
-2. **Seed a profile to bootstrap (current gap):** The forge prescriber requires an execution profile in `~/.cairn/knowledge.db` to generate hints. The telemetry → execution_profile pipeline is wired end-to-end as of PR #75, but no production session runner drives live agent sessions through `ForgeClient` yet — so on a stock Copilot CLI install, profiles don't auto-populate from real usage. Use `forge-seed-profile` to bootstrap:
+2. **Seed a profile to bootstrap (current gap):** The forge prescriber requires an execution profile in `~/.cairn/knowledge.db` to generate hints. The telemetry → execution_profiles pipeline is wired end-to-end as of PR #75, but no production session runner drives live agent sessions through `ForgeClient` yet — so on a stock Copilot CLI install, profiles don't auto-populate from real usage. Use `forge-seed-profile` to bootstrap:
 
    ```bash
    forge-seed-profile --skill <your-skill-id> --session-count 5
@@ -82,7 +82,7 @@ On a fresh install, `list_optimization_hints` returns nothing and `forge-metrics
 
 ### Step 1 — Hook fires on session start
 
-When you open a new interactive bash shell, `~/.bashrc` sources `shell-init.sh`, which resolves the `sessionStart.js` entrypoint and runs it **detached in the background** — no blocking work on your prompt. The entrypoint analyses your execution profiles, checks prior dispositions, and writes any new optimization hints to `~/.cairn/knowledge.db`.
+When you open a new interactive bash shell, `~/.bashrc` sources `shell-init.sh`, which resolves the `sessionStart.js` entrypoint and runs it **detached in the background** — no blocking work on your prompt. The entrypoint analyzes your execution profiles, checks prior dispositions, and writes any new optimization hints to `~/.cairn/knowledge.db`.
 
 A summary line appears on stderr only when hints are actually inserted:
 
@@ -335,7 +335,7 @@ This atomically expires all existing active hints for the skill and inserts fres
 
 The following are explicitly deferred, per the [dogfood-first decision](../.squad/decisions-archive.md#2026-05-30-forge-roadmap-priority--dogfood-first-aaron-directive):
 
-- **No production session runner yet:** The telemetry → execution_profile → prescriber pipeline is built and tested (PR #75). The remaining gap is narrower: no production runner currently drives real agent sessions through `ForgeClient`/`ForgeSession`, so live sessions don't auto-populate profiles on a stock Copilot CLI install. Use `forge-seed-profile --skill <id> --session-count <n>` to bootstrap a real profile today. When a production runner lands (or when telemetry is wired into whatever drives sessions), profiles will populate automatically with no further changes required.
+- **No production session runner yet:** The telemetry → execution_profiles → prescriber pipeline is built and tested (PR #75). The remaining gap is narrower: no production runner currently drives real agent sessions through `ForgeClient`/`ForgeSession`, so live sessions don't auto-populate profiles on a stock Copilot CLI install. Use `forge-seed-profile --skill <id> --session-count <n>` to bootstrap a real profile today. When a production runner lands (or when telemetry is wired into whatever drives sessions), profiles will populate automatically with no further changes required.
 - **GP-tournament selection** (Phase 5 §2.4) — multi-armed bandit prescriber selection based on real signal. Deferred until dogfood signal is collected.
 - **Meta-optimization** (DBOM on prescriber decisions) — self-optimizing prescriber weights. Same gate.
 - **Eureka FactStore adapter + recall wiring** — episodic context (trust-scored facts) feeding the prescriber. Deferred until Eureka v1 stabilizes and the SQLite FactStore adapter is built.
