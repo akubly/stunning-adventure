@@ -5043,3 +5043,154 @@ This is the same bug that caused the real scratch-file problem during Sprint 0 r
 
 ---
 
+
+# Roger — Crucible S2 Persona-Review Cycle 1 Fix Wave
+
+**Date:** 2026-06-13  
+**Branch:** `squad/crucible-s2`  
+**Commit:** `40fd452`  
+**Author:** Roger Wilco (Platform Dev)  
+**Requested by:** Aaron Kubly (team lead — dispositions pre-triaged)
+
+---
+
+## Context
+
+A 5-persona Code Panel reviewed the S2 diff. Aaron triaged findings into
+ACCEPTED (F1, F2, F4, F5, F6, F-minor) and DEFERRED (F3 — envelope versioning,
+ship-gate). This document records the notable decisions made during implementation.
+
+---
+
+## D-FIX-1: onSubscriberError hook wrapped in inner try/catch (F1)
+
+**Decision:** Guard the hook call in its own try/catch and swallow any exception.
+
+**Rationale:** The hook is best-effort observability. The row is already durable
+when the hook fires. A throwing hook escaping the for-loop is the same class of
+bug as a throwing subscriber escaping it — it rejects append() AFTER a durable
+write, producing exactly the duplicate-write scenario #69 guards against. An inner
+try/catch with a `/* last-resort */` comment makes the invariant explicit in code.
+
+**Alternative considered:** Let the hook throw and propagate — rejected. This would
+re-introduce the durability/observability coupling we explicitly decided to break in
+the original #69 implementation.
+
+---
+
+## D-FIX-2: Non-object 'm' in envelope map → CorruptSegmentError (F2)
+
+**Decision:** Add `else if ('m' in env)` → throw, keeping the bare-string compat branch.
+
+**Rationale:** Silently dropping an invalid 'm' is asymmetric with the strict 'k'
+validation that already throws. A corrupted envelope map that has 'm' present with a
+scalar value (e.g., integer 42) is a genuine segment integrity violation — not a
+forward-compat unknown field. Throwing CorruptSegmentError is the correct response
+and matches the existing error taxonomy.
+
+**Aaron's explicit decision:** Bare-string backward-compat branch stays (do not remove).
+
+---
+
+## D-FIX-4: EnvelopeMapV1 interface in wal/types.ts (F4)
+
+**Decision:** Export `EnvelopeMapV1 { k: string; m?: EventMetadata }` from the
+shared `wal/types.ts` module. Use it at the encode site (materialize.ts) and
+decode site (wal-backend-fs.ts cast).
+
+**Rationale:** The inline type at the encode site and the `Record<string, unknown>`
+cast at the decode site were both correct but asymmetric — a rename of `k` or `m`
+would require two manual edits instead of one. The shared interface is the canonical
+source of truth for the envelope shape.
+
+**Scope:** Type-only refactor. Zero encoded bytes changed. Golden vectors unaffected.
+
+---
+
+## D-FIX-5: Remove double cast, expose concrete return type (F5)
+
+**Decision:** Remove `as unknown as BackendWithRecords` from the FS harness in
+hook-veto.test.ts. The function already returns `Promise<FileSystemWalBackend>`.
+
+**Rationale:** The double cast silences compile errors. A method rename would fail
+at runtime with a `TypeError: backend.readSegmentRecords is not a function` instead
+of a compile error. The concrete return type is the correct fix because TypeScript
+structural typing means `FileSystemWalBackend` already satisfies `BackendWithRecords`.
+
+---
+
+## D-FIX-6: Metadata contract tests in shared suite + FS reopen (F6)
+
+**Decision:** Add CL-11/CL-12 to the shared `runWalBackendContract` suite (both
+backends) and a standalone CL-13 FS-only reopen test alongside CL-6/CL-10.
+
+**Note on reopen variant:** The proxy-based harness in `runWalBackendContract` does
+not support close+reopen (the ensureOpen promise pattern complicates multi-instance).
+CL-13 is added as a standalone describe alongside the existing CL-6 and CL-10 tests
+in the same file. Reopen durability for metadata is also covered by META-1/META-2 in
+wal-metadata-envelope.test.ts.
+
+---
+
+# Scribe — Crucible S2 Persona-Review Cycle — Outcome (Session 2026-06-13)
+
+**Date:** 2026-06-13  
+**Process:** 2-cycle Code Panel review (5 personas: Correctness/Skeptic/Craft/Compliance/Architect)  
+**Branch:** squad/crucible-s2  
+**Commit:** 40fd452 (Cycle 1 fixes) + Cycle 2 re-review on fix delta  
+
+---
+
+## Cycle 1 Findings & Dispositions
+
+A 5-persona panel reviewed the S2 diff. Aaron pre-triaged findings into:
+- **ACCEPTED (6):** F1, F2, F4, F5, F6, F-minor  
+- **DEFERRED (1):** F3 (envelope versioning) → tracked as GitHub issue #76 (ship-gate)
+
+### Finding Details:
+
+| ID | Title | Disposition | Resolution |
+|----|-------|-------------|-----------|
+| F1 | onSubscriberError hook escape (append durability) | ACCEPTED | Inner try/catch wraps hook, exception swallowed. Comment added explaining invariant. Commit 40fd452. |
+| F2 | Non-object 'm' in envelope map validation | ACCEPTED | Added lse if ('m' in env) branch to throw CorruptSegmentError; bare-string compat retained per Aaron. Commit 40fd452. |
+| F3 | Envelope versioning forward-compat boundary | DEFERRED | Deferred to ship-gate decision. Tracked as GitHub issue #76. |
+| F4 | Asymmetric envelope shape type (encode vs. decode) | ACCEPTED | Exported shared EnvelopeMapV1 interface from wal/types.ts; used at encode (materialize.ts) and decode (wal-backend-fs.ts) sites. Type-only refactor, zero byte changes to golden vectors. Commit 40fd452. |
+| F5 | Double cast s unknown as BackendWithRecords in test harness | ACCEPTED | Removed double cast; createFileSystemWalBackend already returns Promise<FileSystemWalBackend>, which satisfies BackendWithRecords structurally. Commit 40fd452. |
+| F6 | Metadata contract-suite round-trip durability | ACCEPTED | Added CL-11/CL-12 to shared unWalBackendContract suite (both backends); standalone CL-13 FS-only reopen test added alongside CL-6/CL-10. Metadata reopen durability also covered by META-1/META-2 in wal-metadata-envelope.test.ts. Commit 40fd452. |
+| F-minor | Test title cleanup + documentation fixes | ACCEPTED | Miscellaneous test naming and doc clarity improvements applied. Commit 40fd452. |
+
+### Test Results (after Cycle 1 fixes):
+- All 186 unit tests passing  
+- TypeScript compilation clean (	sc exit 0)  
+- Linting clean (no new violations)  
+- Golden vector byte comparison: zero changes (encoded format unaffected)
+
+---
+
+## Cycle 2: Re-Review on Fix Delta
+
+The panel re-reviewed the dispositions and Cycle 1 fix implementations on the delta (40fd452).
+
+**Finding:** Architect persona flagged F5 as "public API widening" — the return type Promise<FileSystemWalBackend> supposedly new/exposed.
+
+**Investigation:** Git diff origin/main..HEAD on createFileSystemWalBackend signature showed **zero changes** — the function has returned Promise<FileSystemWalBackend> since before S2. Signature untouched. Return type not widened.
+
+**Disposition:** FALSE POSITIVE. F5 false-alarm resolved. No further action needed.
+
+### Cycle 2 Test Results:
+- All fixes verified correct  
+- No regressions introduced  
+- Contract suite round-trips validate metadata durability end-to-end
+
+---
+
+## Outcome
+
+**Status:** REVIEW-COMPLETE. Ready to ship.
+
+**Pre-Ship Decision (Aaron):** YAGNI principle applied — envelope versioning (F3) deferred to dedicated ship-gate decision process (GitHub issue #76). All blocking and important findings from Cycle 1 have been fixed, Cycle 2 re-review found no regressions, and false positives have been resolved.
+
+**Next Steps:** Merge branch squad/crucible-s2 to main per standard gate. F3 work (envelope versioning boundary definition) tracked separately as issue #76 for ship-gate gate consideration.
+
+---
+

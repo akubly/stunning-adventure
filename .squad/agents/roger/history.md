@@ -150,3 +150,38 @@ without metadata.
 ✓ 179 tests green, build+lint clean  
 ✓ Decisions merged into decisions.md  
 ✓ Branch: squad/crucible-s2, commit 49a0371
+
+## Learnings (2026-06-13 — Crucible S2 persona-review cycle 1 fix wave)
+
+**Branch:** `squad/crucible-s2`. **Commit:** `40fd452`. **Tests:** 186/186 ✅. tsc --build ✅. eslint ✅.
+
+### F1: Throwing onSubscriberError hook must be wrapped in its own try/catch.
+The original dispatch loop guarded subscriber throws with a try/catch, then called
+`this.onSubscriberError?.(...)` bare inside the catch. If that callback itself throws,
+the exception escapes the for-loop and rejects append() AFTER the row is already durable —
+exactly the duplicate-write risk #69 exists to prevent. Fix: wrap the hook call in its own
+inner try/catch and swallow. The hook is best-effort observability; it must never interfere
+with append durability or skip subsequent subscribers. Updated LedgerFactoryOptions JSDoc to
+document this clearly. Test SE-7 validates: throwing hook → append still resolves, row durable,
+subsequent subscriber still receives onCommit.
+
+### F2: Non-object envelope 'm' must throw CorruptSegmentError, not silently drop.
+The valid-object branch for 'm' (non-null, non-array object → EventMetadata) silently fell
+through for any other type (scalar, array). This is asymmetric with the strict 'k' check that
+throws. Fix: add `else if ('m' in env)` → throw CorruptSegmentError with a clear message.
+Bare-string backward-compat branch kept per Aaron's decision. Test META-7: scalar m (42) in map
+envelope → reopen throws CorruptSegmentError matching /non-object metadata "m"/.
+
+### F4: EnvelopeMapV1 shared interface eliminates encode/decode type asymmetry.
+Encode site (materialize.ts) used a local `{ k: string; m?: EventMetadata }` inline type.
+Decode site (wal-backend-fs.ts) cast to `Record<string, unknown>` — structurally valid but
+asymmetric. Fix: export `EnvelopeMapV1 { k: string; m?: EventMetadata }` from wal/types.ts,
+use it at both sites. Zero encoded bytes changed (type-only refactor, golden vectors unaffected).
+
+### F5: as unknown as BackendWithRecords double-cast was unnecessary.
+createFileSystemWalBackend already returns `Promise<FileSystemWalBackend>` — the concrete class
+with a public readSegmentRecords(). Removing the cast makes runtime failures (e.g., method renames)
+compile-time errors. General rule: always check what a factory's actual return type annotation is
+before reaching for a cast; the annotation may already be the concrete class.
+
+📌 2026-06-13: **Crucible S2 persona-review-cycle COMPLETE** — 2-cycle Code Panel review (Correctness/Skeptic/Craft/Compliance/Architect) on squad/crucible-s2 completed. Cycle 1: 7 findings triaged (6 ACCEPTED, 1 DEFERRED→#76). Your fixes in 40fd452 (F1/F2/F4/F5/F6 + minor) all verified correct in Cycle 2 re-review (zero regressions, 186/186 tests passing, golden vectors unchanged). F5 false-positive (API widening claim) resolved — signature untouched vs. origin/main. READY TO MERGE. — Scribe (session 2026-06-14T06:51:39Z)
