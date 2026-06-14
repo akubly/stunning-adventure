@@ -54,7 +54,7 @@ Signal builds slowly — this is normal. Here is the expected timeline:
 4. **Hints appear:** `list_optimization_hints` returns pending hints. You act on them.
 5. **On the next prescriber run:** Your dismissals suppress that category; your resolutions boost its confidence.
 
-> **Silence ≠ broken.** If you see no hints yet, check your session count with `forge-metrics --skill <id> --format table`. The Profile section shows how many sessions have been recorded. If it is below 3, keep working — signal is accumulating.
+> **Silence ≠ broken.** If you see no hints yet, check your session count with `forge-metrics --skill <id> --format table`. The Profile section shows how many sessions have been recorded. If it is below 3, re-run `forge-seed-profile --skill <id> --session-count <n>` to raise the count — the command is re-runnable and will add sessions. Sessions will also accumulate automatically once a production runner drives agent sessions through ForgeClient, but that consumer is not present on a stock Copilot CLI install today.
 
 ---
 
@@ -112,13 +112,13 @@ In a Copilot chat:
 list_optimization_hints
 ```
 
-Filter to active hints only:
+Filter to pending hints specifically (omitting `status` returns all active hints — pending, accepted, and deferred):
 
 ```text
 list_optimization_hints status=pending
 ```
 
-The response envelope includes `count`, `active_count`, and a `hints[]` array. Each hint has an `id`, `skill_id`, `category`, `recommendation`, `impact_score`, and `confidence_level` (high/medium/emerging).
+The response envelope includes `count` and a `hints[]` array. When no `status` filter is passed, it also includes `active_count` (total across pending/accepted/deferred). `active_count` is omitted when you filter by a specific status. Each hint has an `id`, `skill_id`, `category`, `recommendation`, `impact_score`, and `confidence_level` (high/medium/emerging).
 
 For full detail on a specific hint, in a Copilot chat:
 
