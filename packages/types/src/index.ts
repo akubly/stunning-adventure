@@ -513,10 +513,14 @@ function sumMeta(metas: Array<Record<string, unknown>>, key: string): number {
  * @param granularityKey - Key for the aggregation level
  *
  * @remarks
- * **Precondition:** For correct mean computation, callers should provide all
- * three sample kinds (drift, token, outcome) for each session. Partial inputs
- * (e.g. only drift samples) will produce a profile where means for the absent
- * kinds are zero-weighted, which may skew aggregated metric trends.
+ * **Precondition:** For correct per-session means, every session in the batch
+ * must contribute all three sample kinds (drift, token, outcome). When a batch
+ * contains no samples for a given kind, `weightedMean` preserves the prior
+ * running mean unchanged (it does NOT dilute by total session count). This is
+ * intentional, but it means that if a session omits a kind entirely its
+ * contribution to that kind's mean is silently skipped, yielding a mean that
+ * is not a true per-session average across all sessions. Callers must ensure
+ * every session emits all three kinds to get unbiased aggregated metrics.
  */
 export function aggregateSignals(
   existing: ExecutionProfile | null,

@@ -2,7 +2,7 @@
  * Telemetry — cairn-bound TelemetrySink factory.
  *
  * `createCairnTelemetrySink(db)` is the production binding that wires the
- * forge TelemetrySink contract to `insertSignalSample` in the cairn DB.
+ * forge `SignalSampleSink` contract to `insertSignalSample` in the cairn DB.
  * skillsmith-runtime is the only package that depends on both @akubly/forge
  * and @akubly/cairn, making it the correct home for this seam.
  *
