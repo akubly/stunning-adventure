@@ -43,7 +43,13 @@ Both are auto-configured when you clone the repo and point Copilot CLI at it (th
 Signal builds slowly — this is normal. Here is the expected timeline:
 
 1. **Right now:** `forge_mcp_check` passes. Both MCP servers respond. The hook fires on every new bash session but emits nothing yet (no profile data).
-2. **Execution profiles must be seeded first (current gap):** The forge prescriber requires an execution profile in `~/.cairn/knowledge.db` to generate hints. As of M3, profiles are not created automatically from recorded sessions — they must be seeded programmatically via `upsertExecutionProfile()` from `@akubly/cairn`. Once a profile is seeded with `sessionCount ≥ 3`, hints will appear on the next prescriber run. This is the primary bootstrap barrier for a fresh install; see [Known Limitations](#known-limitations).
+2. **Seed a profile to bootstrap (current gap):** The forge prescriber requires an execution profile in `~/.cairn/knowledge.db` to generate hints. The telemetry → execution_profile pipeline is wired end-to-end as of PR #75, but no production session runner drives live agent sessions through `ForgeClient` yet — so on a stock Copilot CLI install, profiles don't auto-populate from real usage. Use `forge-seed-profile` to bootstrap:
+
+   ```bash
+   forge-seed-profile --skill <your-skill-id> --session-count 5
+   ```
+
+   This inserts synthetic signal samples and runs the real `buildProfiles` aggregation path, producing a profile that is structurally identical to one built from live telemetry. Once seeded, hints appear on the next prescriber run. See [Known Limitations](#known-limitations).
 3. **After curation runs:** The Curator processes the event stream and generates insights. This happens automatically in the hook, or you can trigger it manually with `run_curate` in a Copilot chat.
 4. **Hints appear:** `list_optimization_hints` returns pending hints. You act on them.
 5. **On the next prescriber run:** Your dismissals suppress that category; your resolutions boost its confidence.
@@ -62,7 +68,13 @@ A **skill ID** is the identifier Cairn uses to group execution profiles and hint
 - Run `forge-metrics --skill <id> --format table` to confirm a specific ID has a profile.
 - The `forge-prescribe` CLI prints `Skill: <id>` in its output when a profile is found.
 
-**Cold start (no hints yet):** If you have just installed and have not yet generated any hints, none of the above will return skill IDs — because skill IDs only exist once execution profiles have been created in `~/.cairn/knowledge.db`. As of M3, execution profiles must be seeded programmatically via `upsertExecutionProfile()` from `@akubly/cairn`; the automated pipeline from recorded sessions to profiles is not yet wired. On a fresh install, `list_optimization_hints` returns nothing and `forge-metrics` reports `found: false` for any ID. This is a known gap; see [Known Limitations](#known-limitations).
+**Cold start (no hints yet):** If you have just installed and have not yet seeded a profile, none of the above will return skill IDs — because skill IDs only surface once execution profiles exist in `~/.cairn/knowledge.db`. Use `forge-seed-profile` to bootstrap one immediately:
+
+```bash
+forge-seed-profile --skill <your-skill-id> --session-count 5
+```
+
+On a fresh install, `list_optimization_hints` returns nothing and `forge-metrics` reports `found: false` for any ID until a profile is seeded. See [Known Limitations](#known-limitations).
 
 ---
 
@@ -323,7 +335,7 @@ This atomically expires all existing active hints for the skill and inserts fres
 
 The following are explicitly deferred, per the [dogfood-first decision](../.squad/decisions-archive.md#2026-05-30-forge-roadmap-priority--dogfood-first-aaron-directive):
 
-- **Telemetry-to-profile pipeline not yet wired:** Execution profiles (which the forge prescriber requires to generate hints) must be seeded programmatically via `upsertExecutionProfile()` from `@akubly/cairn`. There is no automated path from recorded sessions to execution profiles yet. This is the primary bootstrap barrier for dogfooding the forge prescriber loop on a fresh install.
+- **No production session runner yet:** The telemetry → execution_profile → prescriber pipeline is built and tested (PR #75). The remaining gap is narrower: no production runner currently drives real agent sessions through `ForgeClient`/`ForgeSession`, so live sessions don't auto-populate profiles on a stock Copilot CLI install. Use `forge-seed-profile --skill <id> --session-count <n>` to bootstrap a real profile today. When a production runner lands (or when telemetry is wired into whatever drives sessions), profiles will populate automatically with no further changes required.
 - **GP-tournament selection** (Phase 5 §2.4) — multi-armed bandit prescriber selection based on real signal. Deferred until dogfood signal is collected.
 - **Meta-optimization** (DBOM on prescriber decisions) — self-optimizing prescriber weights. Same gate.
 - **Eureka FactStore adapter + recall wiring** — episodic context (trust-scored facts) feeding the prescriber. Deferred until Eureka v1 stabilizes and the SQLite FactStore adapter is built.
