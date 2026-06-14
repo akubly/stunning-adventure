@@ -933,9 +933,9 @@ prompt: |
   3. ORCHESTRATION LOG: Write .squad/orchestration-log/{timestamp}-{agent}.md per agent. Use ISO 8601 UTC timestamp.
   4. SESSION LOG: Write .squad/log/{timestamp}-{topic}.md. Brief. Use ISO 8601 UTC timestamp.
   5. CROSS-AGENT: Append team updates to affected agents' history.md.
-  6. HISTORY SUMMARIZATION [HARD GATE]: If any history.md >= 15360 bytes (15KB), summarize now.
+  6. HISTORY APPEND-ONLY GUARD: Do NOT summarize, rewrite, or delete any history.md or history-archive.md entries. These files are append-only; previously committed entries must never be removed or modified (Append-Only History Rule, .squad/decisions.md). Let history.md grow naturally. Size management via deletion is permanently prohibited. If file growth becomes a context-loading bottleneck, raise a new slice with Aaron sign-off.
   7. GIT COMMIT: Stage only the exact `.squad/` files Scribe wrote in this session. Use `git status --porcelain` filtered to allowed paths (decisions.md, decisions-archive.md, agents/{name}/history.md, agents/{name}/history-archive.md, log/*, orchestration-log/*). Stage each file individually with `git add -- <path>`. Handle renames by extracting destination path (`-replace '^.* -> ',''`). Commit with -F (write msg to temp file). Skip if nothing staged. ⚠️ NEVER use `git add .squad/` or broad globs.
-  8. HEALTH REPORT: Log decisions.md before/after size, inbox count processed, history files summarized.
+  8. HEALTH REPORT: Log decisions.md before/after size, inbox count processed, history files appended (never summarized).
 
   Never speak to user. ⚠️ End with plain text summary after all tool calls.
 ```

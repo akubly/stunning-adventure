@@ -39,12 +39,15 @@ function isNonVeto(
   return r.verdict !== 'VETO';
 }
 
+type SubscriberErrorHook = NonNullable<LedgerFactoryOptions['onSubscriberError']>;
+
 class LedgerImpl implements Ledger {
   private readonly subscribers: LedgerSubscriber[] = [];
 
   constructor(
     private readonly hookBus: HookBusPort,
     private readonly walBackend: WalBackend,
+    private readonly onSubscriberError?: SubscriberErrorHook,
   ) {}
 
   subscribe(subscriber: LedgerSubscriber): void {
@@ -79,13 +82,16 @@ class LedgerImpl implements Ledger {
     // returned offset, durability of the committed row, or other subscribers.
     // The row is already durable; swallowing the error prevents false retries
     // that would produce duplicate committed rows.
+    // onSubscriberError (if injected) is called so callers can observe the fault
+    // without polluting test output or risking a rethrow (#69).
     if (this.subscribers.length > 0) {
       const event: LedgerEvent = { ...input, offset };
       for (const sub of this.subscribers) {
         try {
           sub.onCommit(offset, event);
-        } catch {
+        } catch (err) {
           // intentionally swallowed — see contract note on LedgerSubscriber
+          this.onSubscriberError?.(offset, event, err, sub);
         }
       }
     }
@@ -115,9 +121,10 @@ class LedgerImpl implements Ledger {
  *
  * No-arg call uses an in-memory WalBackend (suitable for tests).
  * Pass `opts.walBackend` to wire the durable §3 file-system substrate.
+ * Pass `opts.onSubscriberError` to observe swallowed subscriber errors (#69).
  */
 export async function createLedger(opts?: LedgerFactoryOptions): Promise<Ledger> {
   const walBackend = opts?.walBackend ?? new InMemoryWalBackend();
   const hookBus    = new PreCommitHookBus();
-  return new LedgerImpl(hookBus, walBackend);
+  return new LedgerImpl(hookBus, walBackend, opts?.onSubscriberError);
 }
