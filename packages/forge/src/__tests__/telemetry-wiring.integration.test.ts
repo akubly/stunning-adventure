@@ -1,23 +1,21 @@
 /**
- * Telemetry wiring integration test — RED spec for Slice 4.
+ * Telemetry wiring integration test — verifying ForgeSession instrumentation (Slice 4, GREEN).
  *
- * Defines the contract that ForgeClient/ForgeSession must implement so that
+ * Verifies the contract that ForgeClient/ForgeSession implements so that
  * three telemetry collectors observe the bridge event stream and a
  * SignalSampleSink receives the derived SignalSamples on session disconnect.
  *
- * STATUS: RED — ForgeSession instrumentation is not yet implemented.
- *         Roger implements GREEN (collector creation + event feed + sink flush)
- *         against this spec. Do NOT implement production code here.
+ * STATUS: GREEN — ForgeSession instrumentation is implemented and these tests pass.
  *
- * Config field names assumed (Roger adds these to ForgeSessionConfig):
+ * ForgeSessionConfig fields wired:
  *   skillId?: string             — forwarded to all three collector factories
  *   telemetrySink?: SignalSampleSink — receives flushed SignalSamples at disconnect
  *
- * Lifecycle contract Roger must satisfy:
- *   1. createSession(config) → create createDriftCollector(config.skillId),
+ * Lifecycle contract verified:
+ *   1. createSession(config) → creates createDriftCollector(config.skillId),
  *      createTokenCollector(config.skillId), createOutcomeCollector(config.skillId)
  *   2. Per bridged event (same stream ForgeSession.sdkSession.on() already uses):
- *      call collector.collect(bridgedEvent) for each of the three collectors
+ *      calls collector.collect(bridgedEvent) for each of the three collectors
  *   3. disconnect() (before sdkSession.disconnect()):
  *      for each collector { const s = collector.flush(sessionId); if (s) sink.enqueueSample(s) }
  *      then await sink.flush()

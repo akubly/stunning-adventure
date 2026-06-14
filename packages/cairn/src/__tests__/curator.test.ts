@@ -825,17 +825,22 @@ describe('profile build inside curate()', () => {
   });
 
   it('should run sweep/cap even when buildProfiles throws (isolated failure)', async () => {
-    // RED spec: sweep/cap must execute in their OWN guarded block, independent
-    // of buildProfiles success.  With the old single-try structure this FAILS
-    // because the buildProfiles throw skips the sweep entirely.
+    // Ordering: sweep/cap run FIRST in the new order, so they always execute
+    // independently of buildProfiles.  This test verifies that even when
+    // buildProfiles throws, the TTL sweep already ran and expired rows are gone.
     db = getDb();
-    const oldAt = '2020-01-01T00:00:00.000Z'; // well beyond the 7-day TTL
+    const oldAt = '2020-01-01T00:00:00.000Z'; // well beyond the 7-day TTL → swept
+    const recentAt = new Date().toISOString();  // within TTL → survives sweep
     insertSignalSamples(db, [
       { kind: 'drift' as const, sessionId, skillId: 'skill-sweep-isolated', value: 0.1, collectedAt: oldAt },
       { kind: 'drift' as const, sessionId, skillId: 'skill-sweep-isolated', value: 0.2, collectedAt: oldAt },
+      // Recent row survives the TTL sweep and gives buildProfiles rows to upsert,
+      // ensuring it reaches the dropped execution_profiles table and throws.
+      { kind: 'drift' as const, sessionId, skillId: 'skill-sweep-isolated', value: 0.3, collectedAt: recentAt },
     ]);
-    // Drop execution_profiles: buildProfiles fails on upsert, but signal_samples
-    // remains fully accessible so sweep/cap can still operate.
+    // Drop execution_profiles: buildProfiles fails on upsert (the recent row
+    // triggers the upsert path), but signal_samples remains accessible so
+    // sweep/cap can still operate.
     db.prepare('DROP TABLE execution_profiles').run();
 
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -849,10 +854,10 @@ describe('profile build inside curate()', () => {
       expect.stringContaining('buildProfiles'),
       expect.anything(),
     );
-    // KEY: TTL sweep must have run — old rows must be gone despite build failure
+    // KEY: TTL sweep must have run — expired rows must be gone despite build failure
     const remaining = db
-      .prepare("SELECT COUNT(*) AS c FROM signal_samples WHERE skill_id = 'skill-sweep-isolated'")
-      .get() as { c: number };
+      .prepare("SELECT COUNT(*) AS c FROM signal_samples WHERE skill_id = 'skill-sweep-isolated' AND collected_at = ?")
+      .get(oldAt) as { c: number };
     expect(remaining.c).toBe(0);
   });
 
@@ -884,5 +889,35 @@ describe('profile build inside curate()', () => {
     // All 10 old rows should have been removed by the TTL sweep
     const old = (rows as Array<{ collected_at: string }>).filter(r => r.collected_at === oldAt);
     expect(old).toHaveLength(0);
+  });
+
+  it('sweep/cap runs BEFORE buildProfiles — profiles are built from the bounded in-TTL set (ordering test)', async () => {
+    // RED under old order (buildProfiles first): buildProfiles sees all 5 rows
+    // (3 expired + 2 retained) → sessionCount = 5.  Test fails.
+    //
+    // GREEN under new order (sweep/cap first): the 3 expired rows are removed
+    // before buildProfiles reads the table → buildProfiles sees only 2 retained
+    // rows → sessionCount = 2.  Test passes.
+    const expiredAt = '2020-01-01T00:00:00.000Z'; // well beyond 7-day TTL → swept
+    const recentAt = new Date().toISOString();      // within TTL → retained
+
+    insertSignalSamples(db, [
+      { kind: 'drift' as const, sessionId: 'exp-sess-1', skillId: 'skill-ttl-order', value: 0.1, collectedAt: expiredAt },
+      { kind: 'drift' as const, sessionId: 'exp-sess-2', skillId: 'skill-ttl-order', value: 0.2, collectedAt: expiredAt },
+      { kind: 'drift' as const, sessionId: 'exp-sess-3', skillId: 'skill-ttl-order', value: 0.3, collectedAt: expiredAt },
+      { kind: 'drift' as const, sessionId: 'ret-sess-1', skillId: 'skill-ttl-order', value: 0.4, collectedAt: recentAt },
+      { kind: 'drift' as const, sessionId: 'ret-sess-2', skillId: 'skill-ttl-order', value: 0.5, collectedAt: recentAt },
+    ]);
+
+    await curate();
+
+    // buildProfiles must have seen only the 2 retained rows (sweep ran first).
+    // Under the old order it would see all 5 → sessionCount = 5.
+    const profile = getExecutionProfile(db, 'skill-ttl-order', 'per-skill', 'global');
+    expect(profile, 'per-skill profile for skill-ttl-order must exist').not.toBeNull();
+    expect(
+      profile!.sessionCount,
+      'sessionCount must be 2 (only retained rows after TTL sweep) — fails under old order where buildProfiles runs first',
+    ).toBe(2);
   });
 });

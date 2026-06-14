@@ -149,7 +149,7 @@ export class ForgeSession {
           });
         }
       } catch (err) {
-        console.warn(`[ForgeSession] bridge handler error: ${err}`);
+        console.warn('[ForgeSession] bridge handler error', err);
       }
     });
     if (unsub) this.eventSubscriptions.push(unsub);
@@ -176,7 +176,7 @@ export class ForgeSession {
       try {
         unsub();
       } catch (err) {
-        console.warn(`[ForgeSession] unsubscribe error: ${err}`);
+        console.warn('[ForgeSession] unsubscribe error', err);
       }
     }
     this.eventSubscriptions = [];
@@ -204,7 +204,7 @@ export class ForgeSession {
         }
         await this._telemetrySink.flush?.();
       } catch (err) {
-        console.warn(`[ForgeSession] sink flush error: ${err}`);
+        console.warn('[ForgeSession] sink flush error', err);
       }
     }
 

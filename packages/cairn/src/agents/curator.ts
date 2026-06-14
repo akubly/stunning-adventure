@@ -237,21 +237,22 @@ export async function curate(
 
   updateLastRunTimestamp(db);
 
-  let profileBuild: BuildResult | undefined;
-  try {
-    profileBuild = buildProfiles(db);
-  } catch (error: unknown) {
-    console.warn('curate: buildProfiles failed, skipping profile build', error);
-  }
-
-  // Bound signal_samples regardless of whether buildProfiles succeeded — the
-  // table must stay within its TTL/cap invariant even during build failures.
+  // Sweep signal_samples FIRST so buildProfiles reads the bounded, in-TTL
+  // retained set rather than the full table.  Fail-open: if sweep/cap throws,
+  // buildProfiles still runs (independent block).
   try {
     const cutoffIso = new Date(Date.now() - SIGNAL_SAMPLE_TTL_MS).toISOString();
     sweepSignalSamples(db, cutoffIso);
     enforceSignalSampleCap(db, SIGNAL_SAMPLE_CAP);
   } catch (error: unknown) {
     console.warn('curate: signal_samples sweep/cap failed, table may grow unbounded', error);
+  }
+
+  let profileBuild: BuildResult | undefined;
+  try {
+    profileBuild = buildProfiles(db);
+  } catch (error: unknown) {
+    console.warn('curate: buildProfiles failed, skipping profile build', error);
   }
 
   const changeVectorSweep = sweepChangeVectors(db, changeVectorConfig);
