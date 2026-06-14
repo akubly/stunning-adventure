@@ -2988,3 +2988,36 @@ compile-time errors. General rule: always check what a factory's actual return t
 before reaching for a cast; the annotation may already be the concrete class.
 
 📌 2026-06-13: **Crucible S2 persona-review-cycle COMPLETE** — 2-cycle Code Panel review (Correctness/Skeptic/Craft/Compliance/Architect) on squad/crucible-s2 completed. Cycle 1: 7 findings triaged (6 ACCEPTED, 1 DEFERRED→#76). Your fixes in 40fd452 (F1/F2/F4/F5/F6 + minor) all verified correct in Cycle 2 re-review (zero regressions, 186/186 tests passing, golden vectors unchanged). F5 false-positive (API widening claim) resolved — signature untouched vs. origin/main. READY TO MERGE. — Scribe (session 2026-06-14T06:51:39Z)
+
+## Learnings (2026-06-14 — PR #77 Copilot review: write-side metadata guard)
+
+**Branch:** `squad/crucible-s2`. **Commit:** `7702254`. **Tests:** 189/189 ✅. tsc --build ✅. eslint ✅.
+
+### Write/Read Symmetry: Guard Both Encode and Decode at the Shared Predicate
+
+The F2 decode guard (wal-backend-fs.ts replayFromSegments) throws CorruptSegmentError when envelope
+`m` is present but not a plain object (null / array / scalar). The encode side had no matching guard —
+materializeRow() would happily call encodeCbor() on any value EventMetadata's index signature accepted,
+producing a segment that immediately fails on reopen.
+
+Fix: extracted `isPlainObject()` from the inline decode predicate into wal/types.ts (already imported
+by both sites). Both materialize.ts (write) and wal-backend-fs.ts (decode) now use the same helper —
+symmetry-by-construction. The write guard throws a plain Error (not CorruptSegmentError) with a clear
+"got array / got number / got null" message; CorruptSegmentError is reserved for read-time
+segment-integrity violations, not programmer API misuse at write time.
+
+New tests META-8 (array metadata → throws at write), META-9 (scalar metadata → throws at write),
+META-10 (valid plain-object metadata → no throw) confirm the guard and the happy path. No CBOR bytes
+changed on the valid path (golden vectors unaffected).
+
+General rule: when a decode path has a structural validity predicate, extract it into a shared helper
+immediately and use it at the encode path too. The two sites drift if the predicate lives only in one.
+
+## Learnings
+
+📌 2026-06-14: **Plain-object prototype check (isPlainObject, PR #77)** — `typeof v === 'object' && !Array.isArray(v)` is NOT sufficient to guard `plain object` semantics. Class instances like `Date` and `Map` pass those checks but are NOT plain objects and cannot round-trip through CBOR safely. The correct guard requires a prototype check: `Object.getPrototypeOf(v) === Object.prototype || Object.getPrototypeOf(v) === null`. The `proto === null` branch is needed to accept `Object.create(null)` objects (which cbor-x may return on decode of CBOR maps). Both the encode guard (materialize.ts) and decode guard (wal-backend-fs.ts) use the same `isPlainObject` helper to stay in sync. — Roger
+
+
+## Learnings
+
+📌 2026-06-14: **PR #77 Copilot review polish pass (squad/crucible-s2) — #1/#2/#3 all fixed.** #1 (materialize.ts ~L94): replaced `String(input.metadata)` with a safe truncated `JSON.stringify` (try/catch fallback to typeof, max 80 chars) so the reject error now reads `metadata must be a plain object (got array: ["not","an","object"])` rather than `[object Object]`. Updated META-8/META-9 test regexes from `\(got array\)` → `\(got array:` / `\(got number:` to match the richer format. #2 (ledger-impl.ts ~L93): expanded the single-line durability-critical nested try/catch around `onSubscriberError` to a clear multi-line block with an explanatory comment: "A throwing observability hook must never break append durability or skip subsequent subscribers." Behavior identical. #3 (wal-backend-fs.ts ~L415): no test or fixture depends on the empty-envelopeCbor→'observation' silent fallback (confirmed by grep); changed the empty-envelope branch to throw `CorruptSegmentError` with offset + message. Decision: throw (not keep-with-comment) because the write path always produces a non-empty envelope — empty can only mean corruption or an unsupported format, silent misclassification would be worse. Build ✅ (tsc --build exit 0), vitest ✅ (192/192), lint ✅ (0 warnings). No golden-vector/CBOR byte changes. — Roger

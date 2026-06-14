@@ -96,9 +96,14 @@ export function materializeRow(
         : input.metadata === null
           ? 'null'
           : typeof input.metadata;
-      throw new Error(
-        `metadata must be a plain object (got ${tag}); received: ${String(input.metadata)}`,
-      );
+      let repr: string;
+      try {
+        const raw = JSON.stringify(input.metadata);
+        repr = raw !== undefined && raw.length > 80 ? raw.slice(0, 80) + '…' : (raw ?? tag);
+      } catch {
+        repr = tag;
+      }
+      throw new Error(`metadata must be a plain object (got ${tag}: ${repr})`);
     }
     envelopeObj.m = input.metadata;
   }

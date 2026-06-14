@@ -343,7 +343,7 @@ describe('WAL metadata envelope round-trip (#67)', () => {
         'COMMIT',
         null,
       ),
-    ).toThrow(/metadata must be a plain object \(got array\)/);
+    ).toThrow(/metadata must be a plain object \(got array:/);
   });
 
   it('META-9: materializeRow throws a plain Error (not CorruptSegmentError) when metadata is a scalar', () => {
@@ -358,7 +358,7 @@ describe('WAL metadata envelope round-trip (#67)', () => {
         'COMMIT',
         null,
       ),
-    ).toThrow(/metadata must be a plain object \(got number\)/);
+    ).toThrow(/metadata must be a plain object \(got number:/);
   });
 
   it('META-10: materializeRow accepts a valid plain-object metadata without throwing', () => {

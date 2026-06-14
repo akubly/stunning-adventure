@@ -412,6 +412,15 @@ export class FileSystemWalBackend implements WalBackend {
         // backward-compat bare CBOR string from pre-#67 segments).
         let primitiveKindRaw = 'observation';
         let metadata: EventMetadata | undefined;
+        // The write path (materializeRow) always produces a non-empty envelope.
+        // An empty envelopeCbor indicates a corrupted or unrecognised record —
+        // default to 'observation' would silently misclassify it.
+        if (rec.envelopeCbor.length === 0) {
+          throw new CorruptSegmentError(
+            segFilePath,
+            `empty envelopeCbor at offset ${offset} — record is corrupt or from an unsupported format`,
+          );
+        }
         if (rec.envelopeCbor.length > 0) {
           try {
             const decoded = decodeCbor(rec.envelopeCbor);

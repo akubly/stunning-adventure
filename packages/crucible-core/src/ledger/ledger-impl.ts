@@ -90,7 +90,13 @@ class LedgerImpl implements Ledger {
         try {
           sub.onCommit(offset, event);
         } catch (err) {
-          try { this.onSubscriberError?.(offset, event, err, sub); } catch { /* last-resort: never let observability break append durability */ }
+          // A throwing observability hook must never break append durability or
+          // skip subsequent subscribers — the row is already durable at this point.
+          try {
+            this.onSubscriberError?.(offset, event, err, sub);
+          } catch {
+            // Last resort: swallow — observability must not propagate.
+          }
         }
       }
     }

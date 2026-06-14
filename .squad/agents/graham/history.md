@@ -492,7 +492,7 @@ history.md requires deleting committed entries, which is permanently prohibited.
   restart session for updated Scribe template to take effect.
 - `.squad/decisions.md` — Append-Only History Rule sections (both occurrences) extended with S2c
   enforcement record.
-- `.squad/decisions/inbox/graham-crucible-s2.md` — policy decision filed.
+- `.squad/decisions.md` — policy decision recorded in `.squad/decisions.md` (S2c Append-Only History Rule section).
 
 
 ## 2026-06-14T06:10:36Z — Crucible S2 Shipped
