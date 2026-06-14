@@ -1876,3 +1876,41 @@ Ready to merge.
 **Note:** This entry was relocated to the file end during PR #72 cloud review to honor the Append-Only History Rule (it had been inserted mid-file during the RED phase).
 
 — Laura
+
+---
+
+## 2026-06-13: Crucible S2b — prior-rows-survive-veto (Issue #61)
+
+**Task:** Walkthrough B, Issue #61 — pin the invariant that a veto on a non-empty ledger leaves prior rows untouched.
+
+**Status:** ✅ GREEN (2 new tests pass; 165/165 total pass)
+
+**File modified:** `packages/crucible-core/src/__tests__/acceptance/hook-veto.test.ts`
+
+**Invariant pinned:**
+> When a session already has N committed rows and a hook VETOes row N+1, exactly N rows remain — vetoed row absent, prior rows intact and unmodified, hash-chain head unchanged.
+
+**Test design:**
+- Added `runPriorRowsSurviveVetoSuite(implName, makeHarness)` — a parametrized suite wired for BOTH `InMemoryWalBackend` and `FileSystemWalBackend` (batchSize:1 for immediate flush on FS backend).
+- Hash-chain head captured via `backend.readSegmentRecords()[last].selfRoot` (Uint8Array, 32 bytes) immediately before the vetoed `append()` call.
+- Post-veto: assert `selfRoot` is byte-identical to pre-veto snapshot using a `uint8Equal()` helper.
+- Also asserts: `queryEvents` returns exactly N rows; each row has correct offset, primitiveKind, and primitivePayload; `readSegmentRecords()` still has exactly N records.
+- `FileSystemWalBackend` harness uses `createFileSystemWalBackend(rootDir, sessionId, { batchSize: 1 })` so all commits are immediately durable and readable via `readSegmentRecords()`.
+
+**Key file paths:**
+- Test file: `packages/crucible-core/src/__tests__/acceptance/hook-veto.test.ts`
+- Hash-chain side channel: `InMemoryWalBackend.readSegmentRecords()` / `FileSystemWalBackend.readSegmentRecords()`
+- Type: `SegmentRecord.selfRoot: Blake3Hash` (Uint8Array, 32 bytes) in `src/ledger/wal/types.ts`
+
+**Learnings:**
+- `readSegmentRecords()` is a side-channel on the concrete backend implementations (not on the `WalBackend` interface). Cast via `as unknown as BackendWithRecords` when going through the interface boundary.
+- FS backend with `batchSize: 1` resolves `commitRow` immediately (no explicit `flush()` needed before `readSegmentRecords()`).
+- The veto gate fires in `LedgerImpl.append()` BEFORE `walBackend.commitRow()` is called; the implementation is already correct — both tests are GREEN from the start (behavior was correct as expected per issue #61 spec).
+
+## 2026-06-14T06:10:36Z — Crucible S2 Shipped
+
+✓ Issue #61: Prior-rows-survive-veto edge test (parametrized over InMemory+FileSystem)  
+✓ Pattern: Acceptance-level test with layer-separation contract  
+✓ Decisions merged into decisions.md  
+✓ Branch: squad/crucible-s2, commit 49a0371
+📌 2026-06-13: **Crucible S2 persona-review-cycle COMPLETE** — 2-cycle Code Panel review completed on squad/crucible-s2. Compliance findings (contract-suite, metadata durability) reviewed and fixed. All 186 unit tests + contract suite validation passing. No regressions. Metadata round-trip durability (CL-11/CL-12 shared suite + CL-13 FS reopen + META-1/META-2) verified correct. READY TO MERGE. — Scribe (session 2026-06-14T06:51:39Z)

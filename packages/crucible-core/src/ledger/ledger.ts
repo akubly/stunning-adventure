@@ -59,14 +59,12 @@ export interface LedgerSubscriber {
    *     latency to every append. Async dispatch is deferred to a future slice.
    *   - Must not throw: LedgerImpl wraps each call in try/catch and swallows
    *     errors so a misbehaving subscriber cannot affect append durability,
-   *     the returned offset, or other subscribers.
-   *   - v1 metadata note: the LedgerEvent passed here carries metadata as
-   *     supplied by the caller (via PrimitiveInput.metadata). However, metadata
-   *     is NOT persisted in the WAL record and is therefore NOT available to
-   *     subscribers during replay-based catchup (post-reopen). A future slice
-   *     will persist metadata in the WAL envelope (tracked in #67). Subscribers
-   *     that depend on metadata for filtering (e.g. ApertureProjector) must
-   *     be re-hydrated via a separate catchup mechanism until then.
+   *     the returned offset, or other subscribers. Inject `onSubscriberError`
+   *     into LedgerFactoryOptions to observe swallowed errors (#69).
+   *   - metadata note (#67 resolved): the LedgerEvent passed here carries
+   *     metadata as supplied by the caller (via PrimitiveInput.metadata).
+   *     As of S2, metadata IS persisted in the WAL envelope so replay-based
+   *     catchup (post-reopen) also receives metadata on replayed events.
    */
   onCommit(offset: number, event: LedgerEvent): void;
 }
@@ -103,6 +101,31 @@ export interface LedgerQueryOpts {
  */
 export interface LedgerFactoryOptions {
   walBackend?: WalBackend;
+  /**
+   * Optional observability hook invoked when a post-commit subscriber's
+   * onCommit() throws. The row IS already durable; this is a signal-only seam
+   * — the error is still swallowed to protect append durability (no rethrow,
+   * no duplicate-write retry). Do NOT use console.error here; inject a counter
+   * or structured error log via this callback instead.
+   *
+   * **Best-effort contract**: if this hook itself throws, the exception is
+   * silently swallowed. A throwing hook must never break append durability or
+   * skip remaining subscribers — append() will still resolve and all other
+   * subscribers will still receive onCommit.
+   *
+   * Called synchronously on the append hot path; must be fast (no I/O, no await).
+   *
+   * @param offset     - The commit offset of the row that triggered the dispatch.
+   * @param event      - The LedgerEvent that was passed to onCommit.
+   * @param error      - The thrown value (may be any type, not just Error).
+   * @param subscriber - The subscriber instance whose onCommit threw.
+   */
+  onSubscriberError?(
+    offset: number,
+    event: LedgerEvent,
+    error: unknown,
+    subscriber: LedgerSubscriber,
+  ): void;
 }
 
 /**

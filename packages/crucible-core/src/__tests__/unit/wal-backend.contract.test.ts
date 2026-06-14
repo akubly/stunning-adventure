@@ -163,6 +163,31 @@ export function runWalBackendContract(
       expect(await h.readVerdictByte(0)).toBe(0xFF);
       expect(await h.readVerdictByte(1)).toBe(0x00);
     });
+
+    it('CL-11: row committed WITH metadata survives commit→readRows with metadata intact', async () => {
+      const inputWithMeta: PrimitiveInput = {
+        primitiveKind:    'observation',
+        primitivePayload: { content: 'has-meta' },
+        causalReadSet:    [],
+        metadata:         { level: 'attention' },
+      };
+      await h.backend.commitRow(inputWithMeta, commit('COMMIT'));
+      if (h.flush) await h.flush();
+
+      const rows = await h.backend.readRows({ range: [0, 0] });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].metadata).toBeDefined();
+      expect(rows[0].metadata?.level).toBe('attention');
+    });
+
+    it('CL-12: row committed WITHOUT metadata replays as metadata===undefined (not {})', async () => {
+      await h.backend.commitRow(makeInput('no-meta'), commit('COMMIT'));
+      if (h.flush) await h.flush();
+
+      const rows = await h.backend.readRows({ range: [0, 0] });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].metadata).toBeUndefined();
+    });
   });
 }
 
@@ -284,6 +309,28 @@ describe('WalBackend contract — FileSystemWalBackend durability (close+reopen)
     expect(recs[0].hookVerdict).toBe(0xFF);
     expect(recs[1].hookVerdict).toBe(0x00);
 
+    await reader.close();
+  });
+
+  it('CL-13: metadata survives close+reopen (FS durability — row WITH metadata)', async () => {
+    const writer = await createFileSystemWalBackend(rootDir, sessionId);
+    await writer.commitRow(
+      {
+        primitiveKind:    'observation',
+        primitivePayload: { content: 'durable-meta' },
+        causalReadSet:    [],
+        metadata:         { level: 'attention' },
+      },
+      commit('COMMIT'),
+    );
+    await writer.close();
+
+    // Reopen — metadata must still be present after re-reading from disk
+    const reader = await createFileSystemWalBackend(rootDir, sessionId, { readOnly: true });
+    const rows   = await reader.readRows({ range: [0, 0] });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].metadata).toBeDefined();
+    expect(rows[0].metadata?.level).toBe('attention');
     await reader.close();
   });
 });

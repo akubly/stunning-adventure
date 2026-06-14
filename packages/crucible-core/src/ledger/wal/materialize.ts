@@ -12,13 +12,23 @@
  *
  * The CAS storage step (writing bytes to disk / in-memory map) is intentionally
  * NOT part of this helper — it remains backend-specific.
+ *
+ * Envelope format (#67 — v1 with metadata):
+ *   A CBOR map: {k: "<primitiveKind>", m: <metadata>} where "m" is omitted
+ *   when metadata is undefined or absent.  Key "k" sorts before "m" under the
+ *   Crucible canonical CBOR profile (RFC 8949 §4.2.1 bytewise key ordering:
+ *   0x6b < 0x6d in CBOR encoding).
+ *
+ *   Backward-compat note: older segments stored a bare CBOR string for the
+ *   envelope.  replayFromSegments detects the old format (first CBOR byte is
+ *   a text-string major type) and decodes without metadata (undefined).
  */
 
 import type { PrimitiveInput } from '../../types.js';
 import { encodeCbor } from './cbor.js';
 import { hashBytes } from './hash.js';
-import type { Blake3Hash, VerdictByte } from './types.js';
-import { hookResultToVerdictByte } from './types.js';
+import type { Blake3Hash, EnvelopeMapV1, VerdictByte } from './types.js';
+import { hookResultToVerdictByte, isPlainObject } from './types.js';
 
 const ZERO_HASH_32 = new Uint8Array(32);
 
@@ -35,7 +45,10 @@ export interface MaterializedRow {
   readSetBytes:  Uint8Array | null;
   /** BLAKE3(readSetBytes) when non-null; zero-hash (32 × 0x00) when empty. */
   readSetHash:   Blake3Hash;
-  /** CBOR-encoded primitiveKind string — stored as envelopeCbor in the record. */
+  /**
+   * CBOR-encoded envelope map — {k: primitiveKind, m?: metadata}.
+   * Stored as envelopeCbor in the segment record; also hashed into selfRoot.
+   */
   envelopeCbor:  Uint8Array;
   /** Encoded hookVerdict byte for the segment record header. */
   verdictByte:   VerdictByte;
@@ -65,7 +78,36 @@ export function materializeRow(
     readSetHash  = hashBytes(readSetBytes);
   }
 
-  const envelopeCbor = encodeCbor(input.primitiveKind);
+  // Build the envelope map. Only include "m" when metadata is defined to keep
+  // the envelope byte-count minimal for the common (no-metadata) case.
+  // Key ordering: "k" (0x61 0x6b) < "m" (0x61 0x6d) under RFC 8949 §4.2.1 —
+  // the Crucible canonical CBOR profile enforces this automatically via
+  // rfc8949EncodeOptions mapSorter.
+  const envelopeObj: EnvelopeMapV1 = { k: input.primitiveKind };
+  if (input.metadata !== undefined) {
+    // Write-side guard: mirror the decode-side validity condition in
+    // replayFromSegments (wal-backend-fs.ts) so the write path can never
+    // produce a segment that the replay path would reject.  This is a
+    // programmer/caller error at write time — throw a plain Error, NOT a
+    // CorruptSegmentError (which is a read-time segment-integrity signal).
+    if (!isPlainObject(input.metadata)) {
+      const tag = Array.isArray(input.metadata)
+        ? 'array'
+        : input.metadata === null
+          ? 'null'
+          : typeof input.metadata;
+      let repr: string;
+      try {
+        const raw = JSON.stringify(input.metadata);
+        repr = raw !== undefined && raw.length > 80 ? raw.slice(0, 80) + '…' : (raw ?? tag);
+      } catch {
+        repr = tag;
+      }
+      throw new Error(`metadata must be a plain object (got ${tag}: ${repr})`);
+    }
+    envelopeObj.m = input.metadata;
+  }
+  const envelopeCbor = encodeCbor(envelopeObj);
   const verdictByte  = hookResultToVerdictByte(verdict, hookId);
 
   return { payloadBytes, payloadHash, readSetBytes, readSetHash, envelopeCbor, verdictByte };

@@ -78,7 +78,7 @@ describe('WAL CBOR encoding (issue #60)', () => {
       .toBe(Buffer.from(recs2[0].payloadHash).toString('hex'));
   });
 
-  it('CBOR-2: envelopeCbor in FS backend stores CBOR-encoded primitiveKind (not raw UTF-8)', async () => {
+  it('CBOR-2: envelopeCbor in FS backend stores CBOR-encoded envelope map (not raw UTF-8 or bare string)', async () => {
     const rootDir = makeTmpDir();
     const sessionId = `sess-${randomUUID().slice(0, 8)}`;
     const backend = await createFileSystemWalBackend(rootDir, sessionId);
@@ -91,10 +91,12 @@ describe('WAL CBOR encoding (issue #60)', () => {
     const reader = await createFileSystemWalBackend(rootDir, sessionId, { readOnly: true });
     const recs = reader.readSegmentRecords();
     expect(recs).toHaveLength(1);
-    // 0x6b = CBOR major type 3 (0x60) | len 11 (0x0b) = 0x6b; "observation" is 11 chars
-    // so the header byte is 0x6b followed by 11 UTF-8 payload bytes = 12 bytes total
-    expect(recs[0].envelopeCbor[0]).toBe(0x6b);
-    expect(recs[0].envelopeCbor.length).toBe(12);
+    // v1 envelope is a CBOR map {k: "observation"} (no metadata).
+    // 0xa1 = CBOR map(1); then key "k" (0x61 0x6b) + value "observation" (0x6b + 11 bytes).
+    // Total: 1 (map hdr) + 2 (key) + 12 (value) = 15 bytes.
+    // Updated from the pre-#67 bare-string format (0x6b / 12 bytes).
+    expect(recs[0].envelopeCbor[0]).toBe(0xa1); // CBOR map(1)
+    expect(recs[0].envelopeCbor.length).toBe(15);
     await reader.close();
   });
 

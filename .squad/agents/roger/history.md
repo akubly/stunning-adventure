@@ -2884,3 +2884,140 @@ Use a `computedScope: string | undefined` variable initialized to undefined. Com
 Genesta locked three interlocked decisions (D1 mutate cursor v1 to keyset; D2 importance/lastAccessed NOT in SQL sort key; D3 per-page normalization). Laura wrote 22 RED tests, Crispin implemented migration 002 + keyset GREEN + persona fixes, Roger did the N1-N4 doc sweep. FSE-2 corrected: INSERT-safe only (not trust-mutation-safe).
 
 **Note:** Re-appended at file end during PR #72 cloud review to honor the Append-Only History Rule (Scribe summarization had reordered prior entries).
+
+---
+
+## Learnings (2026-06-13 — Crucible S2: #69 subscriber error hook + #67 WAL metadata envelope)
+
+**Branch:** `squad/crucible-s2`. **Tests:** 179/179 ✅. Build ✅. Lint ✅.
+
+### Issue #69: Subscriber error observability hook
+
+**Seam shape chosen: `onSubscriberError?` callback on `LedgerFactoryOptions`.**
+Factory options is the right injection point (mirrors `walBackend`, `onPause`). The
+callback is typed as `(offset, event, error, subscriber) => void`. Passing `subscriber`
+as the fourth argument enables callers to map `LedgerSubscriber` instance → error count
+without parsing error messages. The seam is optional and additive — zero behavioral change
+for callers that don't inject it.
+
+**Ruled out explicitly:** `console.error` (test pollution), rethrow (breaks durability),
+counter on `Ledger` interface (couples observability to the public contract),
+adding to the `Ledger` interface itself (heavier, breaks all interface implementors).
+
+**Key files:** `ledger.ts` (LedgerFactoryOptions), `ledger-impl.ts` (SubscriberErrorHook alias,
+LedgerImpl constructor, catch block, createLedger factory).
+**Test file:** `src/__tests__/unit/ledger-subscriber-error-hook.test.ts` (7 tests: SE-1…SE-6, SE-1b).
+
+### Issue #67: WAL metadata envelope layout
+
+**Envelope layout decision (D-ENV-1):**
+Before: `envelopeCbor = encodeCbor(primitiveKind)` — bare CBOR text string.
+After: `envelopeCbor = encodeCbor({k: primitiveKind, m?: metadata})` — CBOR map.
+Key "k" sorts before "m" under RFC 8949 §4.2.1 bytewise ordering (0x6b < 0x6d),
+so no explicit sort is needed — the canonical profile handles it.
+
+**Backward compat:** Decode site (`replayFromSegments`) checks CBOR major type of
+first byte. Major type 3 (text string, 0x60..0x7b) → old bare-string format, decode
+primitiveKind only, metadata=undefined. Major type 5 (map, 0xa0..0xbf) → new format,
+extract `k` and optional `m`. This lets pre-#67 segment files replay without error
+after upgrade — `metadata` comes back as undefined, which is the same as before.
+
+**Golden vector change:** CBOR-2 test updated deliberately. Old: `envelopeCbor[0]===0x6b,
+length===12`. New: `envelopeCbor[0]===0xa1` (CBOR map(1)), `length===15`. The change
+in envelopeCbor bytes also changes `selfRoot` for any newly-written row (since
+`hash-chain.ts` includes `envelopeCbor` in the selfRoot input). This is correct and
+intentional — the richer envelope changes the chain hash. All other CBOR golden
+vectors (CBOR-4 through CBOR-9) are unaffected (they test `encodeCbor` with generic
+values, not the envelope path).
+
+**Key files:** `wal/materialize.ts` (envelope build + new EventMetadata import),
+`wal-backend-fs.ts` (import EventMetadata, replayFromSegments decode + push site).
+**Test file:** `src/__tests__/unit/wal-metadata-envelope.test.ts` (7 tests: META-1…META-6, META-3b).
+
+### Gotcha: inline `import('...')` in let declarations works in TS but prefer named imports
+The first draft used `let metadata: import('../types.js').EventMetadata | undefined` —
+valid TypeScript but noisy. Replaced with a proper `import type { EventMetadata }` at the
+top of the file. Always check existing imports before reaching for inline type imports.
+
+### Gotcha: in-memory backend already had metadata (spread of PrimitiveInput)
+`InMemoryWalBackend.commitRow` does `this.events.push({ ...input, offset })` which
+already spreads `metadata` from `PrimitiveInput`. No change needed there. Only the
+FS backend's **replay path** needed fixing — it explicitly constructed a new object
+without metadata.
+
+
+## 2026-06-14T06:10:36Z — Crucible S2 Shipped
+
+✓ Issue #69: onSubscriberError hook on LedgerFactoryOptions (D-SUB-ERR-1)  
+✓ Issue #67: WAL metadata envelope, canonical CBOR map (D-ENV-1)  
+✓ 179 tests green, build+lint clean  
+✓ Decisions merged into decisions.md  
+✓ Branch: squad/crucible-s2, commit 49a0371
+
+## Learnings (2026-06-13 — Crucible S2 persona-review cycle 1 fix wave)
+
+**Branch:** `squad/crucible-s2`. **Commit:** `40fd452`. **Tests:** 186/186 ✅. tsc --build ✅. eslint ✅.
+
+### F1: Throwing onSubscriberError hook must be wrapped in its own try/catch.
+The original dispatch loop guarded subscriber throws with a try/catch, then called
+`this.onSubscriberError?.(...)` bare inside the catch. If that callback itself throws,
+the exception escapes the for-loop and rejects append() AFTER the row is already durable —
+exactly the duplicate-write risk #69 exists to prevent. Fix: wrap the hook call in its own
+inner try/catch and swallow. The hook is best-effort observability; it must never interfere
+with append durability or skip subsequent subscribers. Updated LedgerFactoryOptions JSDoc to
+document this clearly. Test SE-7 validates: throwing hook → append still resolves, row durable,
+subsequent subscriber still receives onCommit.
+
+### F2: Non-object envelope 'm' must throw CorruptSegmentError, not silently drop.
+The valid-object branch for 'm' (non-null, non-array object → EventMetadata) silently fell
+through for any other type (scalar, array). This is asymmetric with the strict 'k' check that
+throws. Fix: add `else if ('m' in env)` → throw CorruptSegmentError with a clear message.
+Bare-string backward-compat branch kept per Aaron's decision. Test META-7: scalar m (42) in map
+envelope → reopen throws CorruptSegmentError matching /non-object metadata "m"/.
+
+### F4: EnvelopeMapV1 shared interface eliminates encode/decode type asymmetry.
+Encode site (materialize.ts) used a local `{ k: string; m?: EventMetadata }` inline type.
+Decode site (wal-backend-fs.ts) cast to `Record<string, unknown>` — structurally valid but
+asymmetric. Fix: export `EnvelopeMapV1 { k: string; m?: EventMetadata }` from wal/types.ts,
+use it at both sites. Zero encoded bytes changed (type-only refactor, golden vectors unaffected).
+
+### F5: as unknown as BackendWithRecords double-cast was unnecessary.
+createFileSystemWalBackend already returns `Promise<FileSystemWalBackend>` — the concrete class
+with a public readSegmentRecords(). Removing the cast makes runtime failures (e.g., method renames)
+compile-time errors. General rule: always check what a factory's actual return type annotation is
+before reaching for a cast; the annotation may already be the concrete class.
+
+📌 2026-06-13: **Crucible S2 persona-review-cycle COMPLETE** — 2-cycle Code Panel review (Correctness/Skeptic/Craft/Compliance/Architect) on squad/crucible-s2 completed. Cycle 1: 7 findings triaged (6 ACCEPTED, 1 DEFERRED→#76). Your fixes in 40fd452 (F1/F2/F4/F5/F6 + minor) all verified correct in Cycle 2 re-review (zero regressions, 186/186 tests passing, golden vectors unchanged). F5 false-positive (API widening claim) resolved — signature untouched vs. origin/main. READY TO MERGE. — Scribe (session 2026-06-14T06:51:39Z)
+
+## Learnings (2026-06-14 — PR #77 Copilot review: write-side metadata guard)
+
+**Branch:** `squad/crucible-s2`. **Commit:** `7702254`. **Tests:** 189/189 ✅. tsc --build ✅. eslint ✅.
+
+### Write/Read Symmetry: Guard Both Encode and Decode at the Shared Predicate
+
+The F2 decode guard (wal-backend-fs.ts replayFromSegments) throws CorruptSegmentError when envelope
+`m` is present but not a plain object (null / array / scalar). The encode side had no matching guard —
+materializeRow() would happily call encodeCbor() on any value EventMetadata's index signature accepted,
+producing a segment that immediately fails on reopen.
+
+Fix: extracted `isPlainObject()` from the inline decode predicate into wal/types.ts (already imported
+by both sites). Both materialize.ts (write) and wal-backend-fs.ts (decode) now use the same helper —
+symmetry-by-construction. The write guard throws a plain Error (not CorruptSegmentError) with a clear
+"got array / got number / got null" message; CorruptSegmentError is reserved for read-time
+segment-integrity violations, not programmer API misuse at write time.
+
+New tests META-8 (array metadata → throws at write), META-9 (scalar metadata → throws at write),
+META-10 (valid plain-object metadata → no throw) confirm the guard and the happy path. No CBOR bytes
+changed on the valid path (golden vectors unaffected).
+
+General rule: when a decode path has a structural validity predicate, extract it into a shared helper
+immediately and use it at the encode path too. The two sites drift if the predicate lives only in one.
+
+## Learnings
+
+📌 2026-06-14: **Plain-object prototype check (isPlainObject, PR #77)** — `typeof v === 'object' && !Array.isArray(v)` is NOT sufficient to guard `plain object` semantics. Class instances like `Date` and `Map` pass those checks but are NOT plain objects and cannot round-trip through CBOR safely. The correct guard requires a prototype check: `Object.getPrototypeOf(v) === Object.prototype || Object.getPrototypeOf(v) === null`. The `proto === null` branch is needed to accept `Object.create(null)` objects (which cbor-x may return on decode of CBOR maps). Both the encode guard (materialize.ts) and decode guard (wal-backend-fs.ts) use the same `isPlainObject` helper to stay in sync. — Roger
+
+
+## Learnings
+
+📌 2026-06-14: **PR #77 Copilot review polish pass (squad/crucible-s2) — #1/#2/#3 all fixed.** #1 (materialize.ts ~L94): replaced `String(input.metadata)` with a safe truncated `JSON.stringify` (try/catch fallback to typeof, max 80 chars) so the reject error now reads `metadata must be a plain object (got array: ["not","an","object"])` rather than `[object Object]`. Updated META-8/META-9 test regexes from `\(got array\)` → `\(got array:` / `\(got number:` to match the richer format. #2 (ledger-impl.ts ~L93): expanded the single-line durability-critical nested try/catch around `onSubscriberError` to a clear multi-line block with an explanatory comment: "A throwing observability hook must never break append durability or skip subsequent subscribers." Behavior identical. #3 (wal-backend-fs.ts ~L415): no test or fixture depends on the empty-envelopeCbor→'observation' silent fallback (confirmed by grep); changed the empty-envelope branch to throw `CorruptSegmentError` with offset + message. Decision: throw (not keep-with-comment) because the write path always produces a non-empty envelope — empty can only mean corruption or an unsupported format, silent misclassification would be worse. Build ✅ (tsc --build exit 0), vitest ✅ (192/192), lint ✅ (0 warnings). No golden-vector/CBOR byte changes. — Roger

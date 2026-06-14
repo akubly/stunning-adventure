@@ -43,17 +43,22 @@ type LedgerHookVerdict = WalHookVerdict | 'veto';
 
 Surface 2 semantics (commit-window verdicts against the in-flight group commit):
 
-| Verdict    | Effect on the staged batch                                                       | WAL recording                                       | Subscriber routing |
-|------------|----------------------------------------------------------------------------------|-----------------------------------------------------|--------------------|
-| `continue` | Row joins `committed` unchanged when a hook is registered and its verdict is continue. | `hookVerdict = continue` (wire byte `0x00`); `hookVerdictWitness = null`. Zero-cost per P5. | None |
-| `observe`  | Row joins `committed`; an attention-tier signal is emitted. Does not stall.        | `hookVerdict = observe`; `hookVerdictWitness = blake3(witnessBody)` in CAS. | Bus dispatches to `observe`-subscribed sinks (Aperture, Curator on opt-in). |
-| `pause`    | Row joins `committed` with the pause verdict durable; subsequent rows in the batch are restaged via §3.5 seal-and-split. | `hookVerdict = pause`; `hookVerdictWitness` durable. | Bus broadcasts to the Router (§5) via L1Subscriber on the paused row. |
+| Verdict    | TypeScript name (`HookVerdict`) | Effect on the staged batch                                                       | WAL recording                                       | Subscriber routing |
+|------------|---------------------------------|----------------------------------------------------------------------------------|-----------------------------------------------------|--------------------|
+| `continue` | `COMMIT`                        | Row joins `committed` unchanged when a hook is registered and its verdict is continue. | `hookVerdict = continue` (wire byte `0x00`); `hookVerdictWitness = null`. Zero-cost per P5. | None |
+| `observe`  | `OBSERVE`                       | Row joins `committed`; an attention-tier signal is emitted. Does not stall.        | `hookVerdict = observe`; `hookVerdictWitness = blake3(witnessBody)` in CAS. | Bus dispatches to `observe`-subscribed sinks (Aperture, Curator on opt-in). |
+| `pause`    | `PAUSE`                         | Row joins `committed` with the pause verdict durable; subsequent rows in the batch are restaged via §3.5 seal-and-split. | `hookVerdict = pause`; `hookVerdictWitness` durable. | Bus broadcasts to the Router (§5) via L1Subscriber on the paused row. |
 
 Surface 1 semantics (Ledger-layer pre-stage gate — Aaron ruling 2026-06-06):
 
-| Verdict | Effect | WAL recording | Subscriber routing |
-|---------|--------|---------------|--------------------|
-| `veto`  | `Ledger.append` throws `Error('Append vetoed by hook: <id>')` immediately. Row never staged. | **None — no WAL row created.** WAL remains purely append-only. | None |
+| Verdict | TypeScript name (`HookVerdict`) | Effect | WAL recording | Subscriber routing |
+|---------|----------------------------------|--------|---------------|--------------------|
+| `veto`  | `VETO`                           | `Ledger.append` throws `Error('Append vetoed by hook: <id>')` immediately. Row never staged. | **None — no WAL row created.** WAL remains purely append-only. | None |
+
+> **Note:** `VETO` is the Ledger-layer pre-stage gate exclusive to Surface 1. It never enters the
+> group-commit window or the WAL. This exclusion is enforced structurally in the TypeScript seam:
+> `commitRow` is typed as `Exclude<HookVerdict, 'VETO'>`, making it a compile-time guarantee that
+> no VETO verdict can reach the WAL backend.
 
 When no hooks are registered (`hooks.size === 0`), the WAL row stores
 `hookVerdict = null` with wire byte `0xFF` to represent "no hook fired" —

@@ -457,3 +457,49 @@ When a branch is behind main and decisions-archive.md diverged significantly, re
 Impact for S2: Roger's S1 fixes (#57 verdict encoding, #60 canonical CBOR hashing, #68 CAS atomic write) harden the WAL substrate. Phase 0.5 walking skeleton can now proceed with confidence in blob atomicity and CBOR determinism.
 
 **2026-06-12:** Crucible S1 WAL Correctness — 2-cycle persona review COMPLETE, ship-ready (Scribe).
+
+---
+
+## Learnings — 2026-06-13: Crucible S2 Doc/Governance Lane (Issues #62, #71)
+
+### §4.1 verdict-casing mapping (Issue #62)
+
+The §4.1 Hook Bus verdict tables use lowercase doc-vocabulary (continue/observe/pause/veto); the
+TypeScript seam uses UPPERCASE `HookVerdict` members (COMMIT/OBSERVE/PAUSE/VETO). The mapping is:
+
+| Doc | TypeScript `HookVerdict` |
+|-----|--------------------------|
+| `continue` | `COMMIT`         |
+| `observe`  | `OBSERVE`        |
+| `pause`    | `PAUSE`          |
+| `veto`     | `VETO`           |
+
+Source of truth: `packages/crucible-core/src/ledger/hook-bus.ts:38`.
+`VETO` is structurally excluded from the WAL via `Exclude<HookVerdict,'VETO'>` on `commitRow`
+(ledger.ts:230, wal-backend-fs.ts:144). Added a "TypeScript name" column to both verdict tables
+in `docs/crucible-technical-design/04-hook-bus.md`.
+
+### Append-Only History Rule — chosen size-management policy (Issue #71)
+
+**Policy: no size management.** History files grow unbounded. Rationale: the only append-only-
+compliant "archiving" mechanism (copy to history-archive.md, retain originals in history.md)
+does not reduce history.md size — it duplicates content. Any mechanism that actually shrinks
+history.md requires deleting committed entries, which is permanently prohibited.
+
+**Files updated:**
+- `.github/agents/squad.agent.md` — step 6 changed from "HISTORY SUMMARIZATION [HARD GATE]"
+  (destructive rewrite) to "HISTORY APPEND-ONLY GUARD" (prohibition). ⚠️ Coordinator must
+  restart session for updated Scribe template to take effect.
+- `.squad/decisions.md` — Append-Only History Rule sections (both occurrences) extended with S2c
+  enforcement record.
+- `.squad/decisions.md` — policy decision recorded in `.squad/decisions.md` (S2c Append-Only History Rule section).
+
+
+## 2026-06-14T06:10:36Z — Crucible S2 Shipped
+
+✓ Issue #62: Verdict table TypeScript-name column in CTD §4.1  
+✓ Issue #71: Append-Only History Rule governance (dropped size management)  
+✓ squad.agent.md Scribe template updated (HISTORY APPEND-ONLY GUARD)  
+✓ Decisions merged into decisions.md  
+✓ Branch: squad/crucible-s2, commit 49a0371
+📌 2026-06-13: **Crucible S2 persona-review-cycle COMPLETE** — 2-cycle Code Panel review completed on squad/crucible-s2. Cycle 1: Architect findings (design consistency, API contracts) reviewed and triaged by Aaron. Cycle 2: Design decisions re-verified correct across all fixes. F3 envelope versioning deferred to ship-gate (GitHub issue #76). S2 architecture APPROVED and ready to merge. — Scribe (session 2026-06-14T06:51:39Z)

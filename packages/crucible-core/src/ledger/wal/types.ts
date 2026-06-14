@@ -6,6 +6,42 @@
  * Graham's seam lock (see .squad/decisions.md).
  */
 
+import type { EventMetadata } from '../../types.js';
+
+/**
+ * Canonical v1 envelope map stored as envelopeCbor in each WAL segment record.
+ *
+ * Encode site (materialize.ts) produces this shape; decode site
+ * (wal-backend-fs.ts replayFromSegments) casts the decoded CBOR to this type
+ * while keeping runtime structural guards on `k`/`m`.
+ *
+ * Key ordering under the Crucible canonical CBOR profile (RFC 8949 §4.2.1):
+ *   "k" (0x6b) < "m" (0x6d) — enforced by rfc8949EncodeOptions mapSorter.
+ * "m" is omitted entirely when metadata is absent (minimal envelope).
+ */
+export interface EnvelopeMapV1 {
+  k: string;
+  m?: EventMetadata;
+}
+
+/**
+ * Returns true iff v is a non-null, non-array plain object whose prototype is
+ * exactly Object.prototype or null — the only shapes valid for an
+ * EventMetadata value in the WAL envelope.
+ *
+ * Class instances such as Date, Map, Set, etc. are explicitly rejected, since
+ * they do not round-trip safely through CBOR and contradict the "plain object"
+ * intent of the metadata field.
+ *
+ * Used by BOTH the encode path (materialize.ts write guard) and the decode
+ * path (wal-backend-fs.ts replayFromSegments) so the two sites can never drift.
+ */
+export function isPlainObject(v: unknown): v is Record<string, unknown> {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false;
+  const proto = Object.getPrototypeOf(v) as unknown;
+  return proto === Object.prototype || proto === null;
+}
+
 export type Blake3Hash = Uint8Array; // 32 bytes
 
 /** Bits for the 2-byte flags field in a segment record. */

@@ -38,7 +38,7 @@
 import fs   from 'node:fs';
 import path from 'node:path';
 
-import type { PrimitiveInput, PrimitiveKind } from '../types.js';
+import type { PrimitiveInput, PrimitiveKind, EventMetadata } from '../types.js';
 import type { WalBackend, LedgerEvent, LedgerQueryOpts } from './ledger.js';
 import type { HookResult, HookVerdict } from './hook-bus.js';
 import { decodeCbor }                        from './wal/cbor.js';
@@ -47,7 +47,8 @@ import { buildChain, ZERO_HASH }             from './wal/hash-chain.js';
 import { FileSystemCas }                     from './wal/cas-fs.js';
 import { sealAndSplit }                      from './wal/seal-and-split.js';
 import { materializeRow }                    from './wal/materialize.js';
-import type { SegmentRecord, SegmentRecordInput } from './wal/types.js';
+import type { SegmentRecord, SegmentRecordInput, EnvelopeMapV1 } from './wal/types.js';
+import { isPlainObject } from './wal/types.js';
 
 // ─── Write-lock error ─────────────────────────────────────────────────────────
 
@@ -407,18 +408,54 @@ export class FileSystemWalBackend implements WalBackend {
           this.lastTimestampNs = rec.timestampNs;
         }
 
-        // Validate primitiveKind — reject unknown values from corrupt segments
+        // Decode envelope (#67 v1 format: CBOR map {k, m?}; also handles
+        // backward-compat bare CBOR string from pre-#67 segments).
         let primitiveKindRaw = 'observation';
+        let metadata: EventMetadata | undefined;
+        // The write path (materializeRow) always produces a non-empty envelope.
+        // An empty envelopeCbor indicates a corrupted or unrecognised record —
+        // default to 'observation' would silently misclassify it.
+        if (rec.envelopeCbor.length === 0) {
+          throw new CorruptSegmentError(
+            segFilePath,
+            `empty envelopeCbor at offset ${offset} — record is corrupt or from an unsupported format`,
+          );
+        }
         if (rec.envelopeCbor.length > 0) {
           try {
             const decoded = decodeCbor(rec.envelopeCbor);
-            if (typeof decoded !== 'string') {
+            if (typeof decoded === 'string') {
+              // Backward compat: old segments stored a bare CBOR string for primitiveKind.
+              primitiveKindRaw = decoded;
+              // metadata remains undefined (not persisted in old format)
+            } else if (
+              typeof decoded === 'object' &&
+              decoded !== null &&
+              !Array.isArray(decoded)
+            ) {
+              // v1 envelope map: {k: primitiveKind, m?: metadata}
+              const env = decoded as EnvelopeMapV1;
+              if (typeof env.k !== 'string') {
+                throw new CorruptSegmentError(
+                  segFilePath,
+                  `envelope map at offset ${offset} missing string key "k"`,
+                );
+              }
+              primitiveKindRaw = env.k;
+              if ('m' in env && isPlainObject(env.m)) {
+                metadata = env.m as EventMetadata;
+              } else if ('m' in env) {
+                throw new CorruptSegmentError(
+                  segFilePath,
+                  `envelope map at offset ${offset} has non-object metadata "m"`,
+                );
+              }
+            } else {
               throw new CorruptSegmentError(
                 segFilePath,
-                `primitiveKind envelope at offset ${offset} is not a string`,
+                `primitiveKind envelope at offset ${offset} is not a string or map`,
               );
             }
-            primitiveKindRaw = decoded;
           } catch (err) {
             if (err instanceof CorruptSegmentError) throw err;
             throw new CorruptSegmentError(
@@ -479,11 +516,19 @@ export class FileSystemWalBackend implements WalBackend {
           causalReadSet = parsed;
         }
 
-        // NOTE (v1 / #67): metadata is not persisted in the WAL record — only
-        // primitiveKind, primitivePayload, causalReadSet, and offset are replayed.
-        // Subscribers receive a metadata-less LedgerEvent during replay-based
-        // catchup. A future slice will persist metadata in the WAL envelope.
-        this.events.push({ primitiveKind, primitivePayload, causalReadSet, offset });
+        // NOTE (v1 / #67 RESOLVED): metadata is now persisted in the WAL envelope
+        // (CBOR map {k: primitiveKind, m?: metadata}).  Replayed events carry the
+        // same metadata as the original commit, enabling replay-based catchup
+        // projectors (e.g. ApertureProjector) to filter by level after reopen.
+        // Old segments (bare CBOR string envelope) decode with metadata=undefined.
+        const replayedEvent: LedgerEvent = {
+          primitiveKind,
+          primitivePayload,
+          causalReadSet,
+          offset,
+          ...(metadata !== undefined ? { metadata } : {}),
+        };
+        this.events.push(replayedEvent);
         this.prevRoot = new Uint8Array(rec.selfRoot);
       }
     }
