@@ -278,3 +278,31 @@ Ready to merge.
 - M8 Slice D++ doc sweep: N1-N4 stale comment fixes (keyset, migration, cursor versioning)
 
 **Append-Only Rule Applied:** All prior entries remain unchanged. This summary provides high-level context only.
+
+---
+
+## Learnings
+
+### 2026-06-12: Attention-Column Hydration — TDD GREEN Phase (FS-SE-16a..e)
+
+**Hydration wiring (both SELECT paths + mapper + FactRow):**
+
+`SearchRow` (the internal interface for rows returned by `db.prepare`) was extended with three fields matching SQLite column names exactly: `importance: number`, `last_accessed: number | null`, `attention_tier: string`. This is the project convention — the interface mirrors the DB column names/types, not the JS camelCase output shape.
+
+Both SELECT paths were updated consistently:
+- **stmtFirst** (direct FTS5 + JOIN, no CTE): Added `f.importance, f.last_accessed, f.attention_tier` to the column list.
+- **stmtKeyset** (CTE-based): The columns must flow through TWO levels — (1) added to `base` CTE SELECT (where the `facts f` JOIN lives), (2) added to `ranked` CTE SELECT as pass-through columns, (3) added to the outer `SELECT … FROM ranked`. Failing to thread through all three levels would produce "no such column" at runtime.
+
+The row mapper was updated to replace the hardcoded `attentionTier: 'warm'` with `row.attention_tier as 'hot' | 'warm' | 'cold'`, add `importance: row.importance`, and `lastAccessed: row.last_accessed ?? undefined`.
+
+**Locked ORDER BY / cursor invariant:**
+
+The composite expression `(-bm25_score) * trust` in `ranked` CTE and the `ORDER BY (-bm25_score) * f.trust DESC, f.id ASC` in `stmtFirst` are **invariant** (decision D2). The new columns are passenger data only — they do NOT appear in ORDER BY, the keyset WHERE clause (`composite < $last_sort OR (composite = $last_sort AND id > $last_id)`), or the cursor encode/decode. Adding columns to the SELECT without touching the sort expression is safe and is the correct pattern for any future "read-only" column additions.
+
+**NULL → undefined mapping for lastAccessed:**
+
+`row.last_accessed ?? undefined` maps SQL NULL to JS `undefined` (not `null`). This matters because `compositeScore` in recall.ts checks `typeof fact.lastAccessed === 'number'` — passing `null` instead of `undefined` would make that check truthy (typeof null === 'object', not 'number'), but then `null` arithmetic would produce `NaN`, corrupting the recency penalty calculation. The `?? undefined` mapping ensures absent last_accessed falls through to the Infinity/stale path correctly.
+
+**Default-row behavior preserved:**
+
+The migration 002 defaults (`importance REAL NOT NULL DEFAULT 0`, `attention_tier TEXT NOT NULL DEFAULT 'warm'`, `last_accessed INTEGER` nullable) were chosen so that existing rows behave identically to before. `importance=0` has no effect on the composite sort (not in ORDER BY); `attention_tier='warm'` was already the hardcoded value; `last_accessed=NULL` maps to `undefined` which the compositeScore recency branch already handles as "no recency signal."

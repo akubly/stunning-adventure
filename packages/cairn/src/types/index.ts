@@ -18,6 +18,7 @@ export type {
   DBOMArtifact,
   SessionIdentity,
   TelemetrySink,
+  SignalSampleSink,
 } from '@akubly/types';
 
 /** Top-level Cairn configuration. */

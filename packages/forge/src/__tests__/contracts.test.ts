@@ -18,6 +18,7 @@ import type {
   DBOMDecisionEntry,
   DBOMStats,
   TelemetrySink,
+  SignalSampleSink,
 } from '@akubly/types';
 
 // ---------------------------------------------------------------------------
@@ -355,6 +356,7 @@ describe('TelemetrySink interface', () => {
   });
 
   it('flush and close are optional', () => {
+    // emit-only sink must satisfy TelemetrySink — enqueueSample is NOT required
     const minimalSink: TelemetrySink = {
       emit: () => {},
     };
@@ -370,6 +372,47 @@ describe('TelemetrySink interface', () => {
     };
     await expect(sink.flush!()).resolves.toBeUndefined();
     await expect(sink.close!()).resolves.toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SignalSampleSink — narrow sample-persistence contract
+// ---------------------------------------------------------------------------
+
+describe('SignalSampleSink interface', () => {
+  it('enqueueSample is required', () => {
+    const samples: import('@akubly/types').SignalSample[] = [];
+    const sink: SignalSampleSink = {
+      enqueueSample: (s) => { samples.push(s); },
+    };
+    const sample: import('@akubly/types').SignalSample = {
+      kind: 'drift',
+      sessionId: 'sess-ss-001',
+      value: 0.5,
+      metadata: {},
+      collectedAt: new Date().toISOString(),
+    };
+    sink.enqueueSample(sample);
+    expect(samples).toHaveLength(1);
+    expect(samples[0]).toBe(sample);
+  });
+
+  it('flush is optional on SignalSampleSink', () => {
+    const minimalSampleSink: SignalSampleSink = {
+      enqueueSample: () => {},
+    };
+    expect(minimalSampleSink.flush).toBeUndefined();
+  });
+
+  it('an object implementing both TelemetrySink and SignalSampleSink satisfies both contracts', () => {
+    const combined: TelemetrySink & SignalSampleSink = {
+      emit: () => {},
+      enqueueSample: () => {},
+      flush: async () => {},
+    };
+    expect(typeof combined.emit).toBe('function');
+    expect(typeof combined.enqueueSample).toBe('function');
+    expect(typeof combined.flush).toBe('function');
   });
 });
 

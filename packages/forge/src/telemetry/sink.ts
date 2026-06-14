@@ -13,7 +13,7 @@
  * worth persisting.
  */
 
-import type { CairnBridgeEvent, TelemetrySink } from "@akubly/types";
+import type { CairnBridgeEvent, TelemetrySink, SignalSampleSink } from "@akubly/types";
 import type { SignalSample } from "./types.js";
 
 export interface LocalDBOMSinkConfig {
@@ -23,7 +23,7 @@ export interface LocalDBOMSinkConfig {
   bufferSize?: number;
 }
 
-export interface LocalDBOMSink extends TelemetrySink {
+export interface LocalDBOMSink extends TelemetrySink, SignalSampleSink {
   /** Number of buffered samples awaiting flush. */
   readonly bufferedCount: number;
   /** Whether the sink has been closed. */

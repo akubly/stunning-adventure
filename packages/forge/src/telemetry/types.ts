@@ -1,31 +1,15 @@
 /**
  * Phase 4.5 telemetry-local types.
  *
- * `ExecutionProfile` and `ProfileGranularity` are re-exported from
- * @akubly/types because they are part of the cross-package feedback-loop
- * contract (see `FeedbackSource`). The remaining types are forge-internal.
+ * `ExecutionProfile`, `ProfileGranularity`, `SignalKind`, and `SignalSample`
+ * now live in @akubly/types (relocated so @akubly/cairn can reach the
+ * aggregator without depending on @akubly/forge). Re-exported here for
+ * back-compat — existing forge consumers keep compiling unchanged.
  */
 
-import type { ExecutionProfile, ProfileGranularity } from "@akubly/types";
+import type { ExecutionProfile, ProfileGranularity, SignalKind, SignalSample } from "@akubly/types";
 
-export type { ExecutionProfile, ProfileGranularity };
-
-export type SignalKind = "drift" | "token" | "outcome";
-
-export interface SignalSample {
-  /** Signal type. */
-  kind: SignalKind;
-  /** Session that produced this sample. */
-  sessionId: string;
-  /** Skill ID this sample relates to (if applicable). */
-  skillId?: string;
-  /** The raw signal value. */
-  value: number;
-  /** Structured metadata for the signal. */
-  metadata: Record<string, unknown>;
-  /** ISO-8601 timestamp. */
-  collectedAt: string;
-}
+export type { ExecutionProfile, ProfileGranularity, SignalKind, SignalSample };
 
 export interface TelemetryEvent {
   kind: SignalKind;

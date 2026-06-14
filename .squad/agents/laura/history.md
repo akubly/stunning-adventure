@@ -32,6 +32,73 @@ File size: 17270 bytes. See history-archive.md for earlier entries.
 
 ## Learnings
 
+### 2026-06-12: M8 Slice D++ — Attention-Column Coverage Promoted to Contract Suite
+
+**Context:** Crispin wired SqliteFactStore GREEN for the FS-SE-16a–e RED tests (all 205 tests passing). Aaron then decided attention-column read-through should be enforced at the CONTRACT level so InMemoryFactStore is also held to it. This reversed the earlier placement decision (see entry below).
+
+**Changes made:**
+
+1. **`SeedFact` extended with optional `attention` opts (5th arg):**
+   ```typescript
+   export type SeedFact = (
+     factId: string, sessionId: SessionId, content: string, trust: number,
+     attention?: { importance?: number; lastAccessed?: number | null; attentionTier?: 'hot'|'warm'|'cold' }
+   ) => Promise<void>;
+   ```
+   All existing call sites omit the 5th arg — no breaking change. The optional trailing-options pattern keeps backward compat trivially.
+
+2. **InMemoryFactStore now models attention columns:**
+   - `StoredFact` interface gained `importance: number`, `lastAccessed: number | undefined`, `attentionTier: 'hot'|'warm'|'cold'`.
+   - `search()` returns these fields from stored state (no hardcoded 'warm').
+   - `seed()` stores them from `attention` opts (defaults: importance=0, lastAccessed=undefined, attentionTier='warm').
+   - `lastAccessed: null` (explicit SQL NULL) maps to `undefined` in results — `null` is never stored in the in-memory record.
+
+3. **SqliteFactStore contract harness seed updated:**
+   Full INSERT with all 7 columns (including attention opts). `attention?.lastAccessed ?? null` passes JS null → SQL NULL correctly.
+
+4. **New contract assertions FS-12/FS-12b/FS-13 added to `runFactStoreContract`:**
+   - **FS-12**: hot-tier + importance=0.9 + non-null lastAccessed → surfaces unchanged
+   - **FS-12b**: cold-tier → surfaces attentionTier:'cold'
+   - **FS-13**: default-seeded (no opts) → attentionTier:'warm', importance:0, lastAccessed:undefined
+   These now run for BOTH impls automatically (×2).
+
+5. **FS-SE-16a–e removed from sqlite-edges file** (replaced by placement-rationale comment explaining the reversal). The `seedWithAttention` helper was deleted as no longer needed.
+
+**Test count:** 205 → 206 (−5 FS-SE-16a–e + 6 new contract tests × 2 impls / 2 = +6, net +1).
+Wait: −5 + 6 = +1. 205 → 206. ✓
+
+**Key pattern learned:** When a new impl column needs contract coverage, the right move is to extend `SeedFact` with an optional trailing opts arg (never a positional break) and make the reference impl model the column. The "impl doesn't know about this column yet" is a temporary constraint — once the decision is made to enforce it at contract level, the reference impl must catch up.
+
+---
+
+### 2026-06-12: M8 Slice D++ — Attention-Column Hydration RED Tests (FS-SE-16a..e)
+
+**Context:** Migration 002 (`002-facts-attention.ts`) added three columns to `facts`: `importance REAL NOT NULL DEFAULT 0`, `last_accessed INTEGER DEFAULT NULL`, `attention_tier TEXT NOT NULL DEFAULT 'warm' CHECK(...)`. The `SqliteFactStore` mapper hardcodes `attentionTier: 'warm'` and omits the other two columns from SELECT. These RED tests lock the hydration contract before Crispin's GREEN wiring.
+
+**Where the gap lives:**
+- `packages/eureka/src/storage/fact-store-sqlite.ts` ~line 313: mapper hardcodes `attentionTier: 'warm'` with an explicit comment "not yet wired into SELECT".
+- Both `stmtFirst` (~line 186) and `stmtKeyset` (~line 206) SELECT only `f.id, f.content, f.trust, bm25_score` — no attention columns.
+- `RecallResult` interface (recall.ts ~lines 18-37) already declares all three fields (`attentionTier`, `importance?`, `lastAccessed?`).
+
+**How the test harness applies migrations:**
+- Both `fact-store-sqlite-edges.test.ts` and the SQLite wiring in `fact-store.contract.test.ts` call `applyMigrations(db)` in `beforeEach`.
+- `applyMigrations` in `packages/eureka/src/db/schema.ts` iterates the `migrations` array which includes both `migration001` and `migration002` — so all three attention columns exist in every test-DB instance from the start. No harness change needed for the RED tests to be able to INSERT attention-column values.
+
+**Placement decision:** Added to `fact-store-sqlite-edges.test.ts` (not the shared contract suite). The `SeedFact` contract signature `(factId, sessionId, content, trust)` has no attention-column params; extending it would require changing `InMemoryFactStore` (which intentionally doesn't model these columns). Attention-column hydration is a SQLite SELECT→RecallResult mapping concern, making the SQLite-edges file the correct home.
+
+**RED assertions added (FS-SE-16a..e):**
+- **16a**: `attentionTier: 'hot'` → `expected 'warm' to be 'hot'` (mapper hardcodes 'warm')
+- **16b**: `attentionTier: 'cold'` → `expected 'warm' to be 'cold'` (mapper hardcodes 'warm')
+- **16c**: `importance: 0.9` → `expected undefined to be close to 0.9` (column not selected)
+- **16d**: `lastAccessed: 1749600000000` → `expected undefined to be 1749600000000` (column not selected)
+- **16e**: default-column fact → `expected undefined to be +0` (importance=0 not returned, lastAccessed correctly absent — this test is partially RED on `importance`)
+
+**New helper added:** `seedWithAttention(factId, content, trust, opts, sessionId?)` inside the `describe` block — direct `db.prepare().run()` INSERT that accepts `importance`, `lastAccessed`, `attentionTier` without touching the `SeedFact` contract type.
+
+**Test count delta:** 200 → 205 (+5 tests: FS-SE-16a..e). All existing 200 tests remain green; 5 new tests fail for assertion-mismatch reasons only.
+
+---
+
 ### 2026-06-06: M8 Slice D — recall() Integration Smoke Test
 
 **Context:** Wrote the Slice D integration smoke test (`recall-sqlite-smoke.test.ts`) as specified in decisions.md §"Slice D". Roger's production factory (`createSqliteRecallDeps` / `createDefaultDeps`) was not yet available (no inbox drop), so wired `SqliteFactStore` + `recall()` directly with a TODO to switch once merged.

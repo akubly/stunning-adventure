@@ -185,6 +185,7 @@ describe('L3: Error Isolation', () => {
     // Verify the error was caught and warned
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('[ForgeSession] bridge handler error'),
+      expect.anything(),
     );
 
     // Stream should continue — subsequent events still captured
@@ -213,6 +214,7 @@ describe('L3: Error Isolation', () => {
     expect(mockSession.disconnect).toHaveBeenCalledOnce();
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('unsubscribe error'),
+      expect.anything(),
     );
     // Idempotent — second call is a no-op
     await session.disconnect();
