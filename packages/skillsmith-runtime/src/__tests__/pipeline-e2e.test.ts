@@ -270,8 +270,10 @@ describe('E2E pipeline: telemetry → signal_samples → curate() → prescriber
     const globalRow = cairn.getExecutionProfile(db, 'global', 'global', 'global');
     expect(globalRow, 'global tier built from null-skill samples').not.toBeNull();
 
-    // No named per-skill profile should appear for the e2e SKILL_ID (or any non-global skill)
-    const namedSkillRow = cairn.getExecutionProfile(db, SKILL_ID, 'per-skill', 'global');
-    expect(namedSkillRow, 'no per-skill profile created from null-skill samples').toBeNull();
+    // The per-skill tier must be completely empty — no rows at all, regardless of key.
+    // (Probing only SKILL_ID would be tautological: that key was never seeded here.)
+    const allProfiles = cairn.listExecutionProfiles(db);
+    const perSkillProfiles = allProfiles.filter((p) => p.granularity === 'per-skill');
+    expect(perSkillProfiles.length, 'per-skill tier is empty — null samples fold to global only').toBe(0);
   });
 });
