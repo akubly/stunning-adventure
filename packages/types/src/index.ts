@@ -663,7 +663,8 @@ export function aggregateSignals(
     ),
   };
 
-  const skillId = samples[0]?.skillId ?? existing?.skillId ?? 'unknown';
+  const skillId =
+    granularity === 'global' ? 'global' : (samples[0]?.skillId ?? existing?.skillId ?? 'unknown');
 
   return {
     profile: {

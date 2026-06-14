@@ -124,9 +124,14 @@ export interface SeedProfileResult {
  * structurally identical to one produced by live telemetry.
  */
 export function runForgeSeedProfile(options: SeedProfileOptions): SeedProfileResult {
+  if (!Number.isInteger(options.sessionCount) || options.sessionCount < 1) {
+    throw new Error(
+      `sessionCount must be a positive integer (>= 1); got ${options.sessionCount}.`,
+    );
+  }
   if (options.sessionCount > MAX_SESSION_COUNT) {
     throw new Error(
-      `--session-count must not exceed ${MAX_SESSION_COUNT}; got ${options.sessionCount}.`,
+      `sessionCount must not exceed ${MAX_SESSION_COUNT}; got ${options.sessionCount}.`,
     );
   }
   const db = getDb(options.dbPath);

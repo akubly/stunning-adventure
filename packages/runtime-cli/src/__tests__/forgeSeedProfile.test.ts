@@ -53,4 +53,22 @@ describe('forge-seed-profile CLI', () => {
   it('runForgeSeedProfile throws when sessionCount exceeds 10 000', () => {
     expect(() => runForgeSeedProfile({ skillId: 'x', sessionCount: 10_001 })).toThrow();
   });
+
+  it('runForgeSeedProfile throws when sessionCount is 0', () => {
+    expect(() => runForgeSeedProfile({ skillId: 'x', sessionCount: 0 })).toThrow(
+      /positive integer/,
+    );
+  });
+
+  it('runForgeSeedProfile throws when sessionCount is negative', () => {
+    expect(() => runForgeSeedProfile({ skillId: 'x', sessionCount: -5 })).toThrow(
+      /positive integer/,
+    );
+  });
+
+  it('runForgeSeedProfile throws when sessionCount is fractional', () => {
+    expect(() => runForgeSeedProfile({ skillId: 'x', sessionCount: 1.5 })).toThrow(
+      /positive integer/,
+    );
+  });
 });

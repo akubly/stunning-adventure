@@ -33,7 +33,7 @@ import {
   toolExecutionStartEvent,
   toolExecutionCompleteEvent,
   resetEventCounter,
-} from '../../../forge/src/__tests__/helpers/index.js';
+} from './helpers/mockSession.js';
 
 // ---------------------------------------------------------------------------
 // Inline event factories — types not in the shared event-factory.ts

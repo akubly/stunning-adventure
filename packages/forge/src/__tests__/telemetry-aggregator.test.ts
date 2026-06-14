@@ -91,10 +91,19 @@ describe("aggregateSignals — first aggregation", () => {
     expect(r.profile.sessionCount).toBe(1); // one unique sessionId
   });
 
-  it("falls back to skillId='unknown' when no samples and no existing profile", () => {
+  it("returns skillId='global' for granularity='global' even when no samples and no existing profile", () => {
     const r = aggregateSignals(null, [], "global", "global");
-    expect(r.profile.skillId).toBe("unknown");
+    expect(r.profile.skillId).toBe("global");
     expect(r.profile.sessionCount).toBe(0);
+  });
+
+  it("returns skillId='global' for granularity='global' regardless of sample skillIds", () => {
+    const samples = [
+      drift("s1", 0.2, "skill-A"),
+      drift("s2", 0.3, "skill-B"),
+    ];
+    const r = aggregateSignals(null, samples, "global", "global");
+    expect(r.profile.skillId).toBe("global");
   });
 });
 
