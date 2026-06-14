@@ -7356,3 +7356,2409 @@ ode_modules re-install after worktree removal — cleanup flow handles junction 
 ---
 
 
+### 2026-06-08: FSE-2 and FSE-3 JSDoc Documentation Complete (Roger)
+
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-06-08  
+**Status:** ✅ COMPLETE
+
+FSE-2 and FSE-3 LOW-priority documentation follow-ups are now complete. Both items have been documented as interface-level JSDoc on the `FactStore` contract in `packages/eureka/src/activities/recall.ts`.
+
+#### FSE-2: Offset Cursor Pagination Gaps/Dupes
+
+**Location:** `FactStore` interface @remarks (line 48–51)  
+**Content:** Documented that offset-based cursor pagination (v1) can skip or duplicate rows if facts are inserted or trust values mutate between page fetches. Noted this is acceptable for single-writer v1, and true keyset pagination (deferred to Slice D++) will resist concurrent mutations.
+
+#### FSE-3: Limit Parameter Contract
+
+**Location:** `search()` method parameter `limit` JSDoc (line 57–63)  
+**Content:** Documented that `limit` must be a positive integer. Degenerate values (≤ 0, NaN, non-integer) throw `TypeError` at the call boundary and are treated as contract violations, not as empty-result requests.
+
+#### Verification
+
+- ✅ TypeScript build: clean (`tsc --build`)
+- ✅ Test suite: 164/164 green (eureka)
+- ✅ No behavior changes (doc-only)
+
+---
+
+### 2026-06-06T22:03:01-07:00: Aaron's ruling — WAL write.lock stale-lock policy (resolves D-LOCK-2)
+**By:** Aaron Kubly (via Copilot)
+**Decision:** Option (b) — **PID + liveness reclaim** for v1. The `write.lock` file records the owner PID; on an acquisition conflict, check whether that PID is alive — reclaim the lock if the owner is dead, throw `WriteLockHeldError` if alive. Driven by a dedicated RED→GREEN cycle.
+**Rationale:** Preserves §3.4.1's auto-release-on-termination *intent* without a native dependency; avoids opaque "stuck forever after crash" failures (correctness compounds across agent actions).
+**Follow-up filed:** GitHub issue **#55** — reconsider a true OS advisory lock (flock/LockFileEx via maintained dependency) vs PID-liveness later (label squad:roger).
+**Supersedes:** Roger's recommended Option (a) manual-clear (D-LOCK-2). §3.4.1 spec guarantee is now honored by PID-liveness, not downgraded.
+### 2026-06-06: Ralph Round 1 — PRs #50, #52, #53 Orchestration Outcomes
+
+# Decision: Switch Root Lint to Workspace Iteration for Windows Compatibility
+
+**Agent:** Gabriel (Infrastructure)  
+**Date:** 2026-06-06  
+**Issue:** #37  
+**PR:** #50 (`squad/37-windows-lint-workspace`)
+
+## What Changed
+
+**Root `package.json`:**
+- Before: `"lint": "eslint packages/*/src/"`
+- After: `"lint": "npm run lint --workspaces --if-present"`
+
+**Per-package `package.json` files** (7 packages updated — cairn already had it):
+- Added `"lint": "eslint src/"` to: `types`, `crucible-cli`, `crucible-core`, `eureka`, `forge`, `runtime-cli`, `skillsmith-runtime`
+
+## Why
+
+The root glob `packages/*/src/` is not expanded by Windows PowerShell — eslint received the literal string, found no matching files, and silently exited 0. Lint errors were invisible to local Windows developers and only caught by Linux CI.
+
+The workspace delegation pattern (`npm run lint --workspaces --if-present`) is cross-platform: it calls each package's own `lint` script, where the path `src/` is a literal, not a glob. This mirrors how `test` and other cross-package scripts already work in this monorepo.
+
+## Impact
+
+- `npm run lint` now correctly invokes eslint in all 8 workspace packages on both Windows and Linux.
+- The `--if-present` flag ensures future packages without a lint script do not fail the root command.
+- Pre-existing `any` type warnings in `cairn` and `eureka` surface (out of scope for this fix — tracked separately).
+- Exit code remains 0 (warnings only, no errors introduced by this change).
+
+---
+
+# Decision: Scoped Doc-Hygiene Sweep — Gitignored Back-References (Issue #46)
+
+**Date:** 2026-06-06  
+**Author:** Gabriel (Infrastructure)  
+**Status:** FINAL  
+**Related:** Issue #46, PR to be opened from `squad/46-doc-hygiene-backref-sweep`
+
+## Decision
+
+Performed the correctly-scoped sweep of gitignored-path back-references in committed prose, as specified in Issue #46. Preserved all forward writer-target paths in charters, templates, and skill files.
+
+## Scope
+
+**Fixed (back-references):**
+- `.squad/decisions-archive.md` — 4 occurrences → 0
+- `.squad/orchestration-log.md` — 1 occurrence → 0
+- 17 agent history files (`history.md` / `history-archive.md`) — 100+ occurrences → 0
+
+**Preserved (forward writer-targets):**
+- All `agents/*/charter.md` files — writer-target paths intact (25 hits confirmed)
+- All `templates/*.md` files — writer-target paths intact
+- All skill files — writer-target paths intact
+- `.squad/skills/doc-references-respect-gitignore/SKILL.md` — not modified per task instructions
+
+## Classification Heuristic
+
+**Forward writer-target (leave alone):** Lines using template syntax (`{name}-{slug}`) or imperative instructions telling agents WHERE to write. Context: charters, templates, skills.
+
+**Back-reference (fix):** Lines recording completed work by citing a concrete inbox filename. Context: history files, archive entries, orchestration logs. Past-tense patterns: "Decision drop: ...", "Written to ...", "Memo Location: ...", "Full analysis written to ...", "Inbox: ...".
+
+**Directory-only references** (`.squad/decisions/inbox/` without a filename) in committed prose: replaced with "Scribe decision inbox" or "decision inbox" — path-free description that preserves the meaning.
+
+## Verification Results
+
+| Criterion | Result |
+|-----------|--------|
+| `grep -rn 'decisions/inbox/' .squad/decisions.md .squad/decisions-archive.md` | **ZERO hits** ✅ |
+| `grep -rn 'decisions/inbox/' .squad/templates .squad/agents/*/charter.md` | **25 hits** (forward writer-targets preserved) ✅ |
+
+## Why This Matters
+
+Broken inbox links in committed prose cause:
+- Confusion for contributors who don't have local inbox files
+- CI link-checker failures (if ever enabled)
+- Eroded trust in the documentation as a navigable resource
+
+The carve-out for forward writer-targets ensures agents continue to know where to drop decisions during parallel work sessions.
+
+---
+
+# Decision: Worktree Fallback Must Emit User-Visible Warning
+
+**Author:** Graham (Lead / Architect)  
+**Date:** 2026-06-06  
+**Issue:** #31  
+**PR:** #53  
+**Status:** Proposed (pending merge)
+
+## Context
+
+When `SQUAD_WORKTREES=1` is set, the coordinator's Pre-Spawn: Worktree Setup flow can silently degrade isolation in two ways:
+
+1. **Step 2(c):** `git worktree add` fails (lock error, permissions error, or any other error) → coordinator falls back to the main checkout with `WORKTREE_MODE=false`.
+2. **Step 2(d):** Junction/symlink dependency linking fails → coordinator falls back to `npm install` in the worktree, losing the shared-`node_modules` isolation model.
+
+In both cases the existing behavior was to write a log entry to `.squad/orchestration-log/` only. The user received no signal.
+
+## Decision
+
+**Both fallback paths MUST emit a one-line user-visible warning in addition to the existing log entry.** The log entry is preserved unchanged.
+
+### 2026-06-06: OQ-2 LOCKED — Event-substrate topology = FEDERATE (Option B)
+
+**Status:** ✅ LOCKED by Aaron Kubly
+**Date:** 2026-06-06
+**Deciders:** Graham (Architect) · Genesta (Eureka/Cairn) · Roger (Platform/impl) — unanimous recommendation; Aaron holds and exercised the lock.
+**Supersedes:** OQ-2 "MEDIUM — pre-sprint-2 sync required" deferral (decisions.md ~line 1268).
+
+**Decision:** Crucible's L1 WAL stays **federated** from Cairn's `event_log`. Crucible owns its own append-only, hash-chained WAL substrate, its own SQLite projection schema, migrations, and test fixtures. Cairn's `event_log` remains separate. The two stores are bridged only via the shared `SessionId` brand and the offline `cairn reconcile` federation seam. The two-event-log cost is an accepted tax (CTD §15).
+
+**Rejected:** Option A (MERGE Crucible primitives into Cairn `event_log`).
+
+**Rationale (convergent):**
+- **Storage-contract incompatibility:** Cairn = CRUD + shadow-events; Crucible = append-only + CAS hash-chain. Not "two lenses on one substrate" — two distinct storage contracts. (Genesta)
+- **Replay determinism:** MERGE breaks Crucible's hash-chain integrity, gutting CTD §3 / ADR-0020. (Graham)
+- **Dual-write trap is unavoidable under MERGE:** Crucible's canonical store is the binary `.seg` WAL files; routing Primitive writes to Cairn adds a *second incompatible writer*. (Roger)
+- **Reversibility is asymmetric:** federate-now/merge-later is moderate effort; merge-now/extract-later risks permanent hash-chain corruption.
+- **CTD already locks B** across §3, §14, §15 ("share identifiers, fork everything else").
+
+**Consequences / unblocks:**
+- **Refactor 3 proceeds with zero DB-interface rework.** The current `DB` interface (`getSession`/`insertSession`/`queryEvents` + extended `getOwnEvents`/`getMetadata`/`insertRootSession`/`pushEvent`) survives. The real SQLite adapter is a standalone `better-sqlite3(':memory:')` with Crucible's own two-table schema, no Cairn dependency.
+- Estimated ~2 days cheaper than Option A for Refactor 3; gap widens as Crucible's schema evolves independently.
+
+**Source briefs:** decision drops: graham-oq2-substrate-brief, genesta-oq2-substrate-brief, roger-oq2-substrate-brief (all local-only).
+
+
+---
+
+
+
+
+---
+
+### 2026-06-06: Refactor 3 SQLite Adapter — 2-Cycle Persona Review COMPLETE (Ship-Ready)
+
+**Date:** 2026-06-06  
+**Agents:** Roger (Platform Dev), Laura (Tester)  
+**Cycle 1:** Code Panel (5 personas: correctness/skeptic/craft/compliance/architect) → 1 blocking + 5 important + 4 minor findings  
+**Cycle 2:** Code Panel (5 personas, verification) → 0 blocking; all prior findings resolved; 1 important (constraint-specificity) + minor nits  
+
+**Decision:** Refactor 3 (SQLite adapter work) passes both cycles and is **SHIP-READY** at diminishing returns.
+
+---
+
+## Cycle 1 Remediations (Commits a57f95f, 324c287)
+
+**Roger (a57f95f):** Dependency placement (better-sqlite3 → dependencies), single-source schema.ts, pushEvent session-guard parity, stale RED-phase artifact cleanup, JSDoc clarification, adapter framing.  
+**Laura (324c287):** Removed stale RED-phase prose, added SQLite-specific constraint assertion [SQLite-C1].  
+
+---
+
+## Cycle 2 Remediations (Commits d4ca4ce, 6c14402)
+
+**Laura (d4ca4ce):** Constraint-specific error assertion (toThrow→toThrow with regex matcher), removed stale commit-hash comment.  
+**Roger (6c14402):** Removed redundant better-sqlite3 + @types/better-sqlite3 devDeps from crucible-cli.  
+
+---
+
+## Final State
+
+- ✅ **15 tests green** — 6 crucible-core, 9 crucible-cli (all phases)
+- ✅ **tsc clean** — no TypeScript errors
+- ✅ **FEDERATE invariant upheld** — no Cairn imports introduced
+- ✅ **Declarations confirmed:**
+  - OQ-2 LOCKED (Event-substrate topology = FEDERATE)
+  - Agent history.md commits are IN-SCOPE
+  - Internal helpers: unexport + shrink test surface (Path A)
+  - JSON.parse boundary discipline (3-tier: unknown + validate + drift-guard)
+
+---
+
+## Persona Panel Consensus
+
+Both cycles declared **REVIEW-COMPLETE** with diminishing returns. All findings either RESOLVED or documented as deferred (splitting integration tests, migration/user_version seam, L1 WAL).
+
+**Ship cleared for Refactor 3.** Feature PR ready to merge.
+
+---
+
+## 2026-06-06: Refined Scope Rule for Doc-Hygiene Inbox-Path Sweeps
+
+**Date:** 2026-06-06  
+**Author:** Graham Knight (Lead / Architect)  
+**Status:** FINAL  
+**Context:** PR #52 re-scope (issue #46), per Aaron's direction after persona-review panel findings
+
+### Acceptance Criterion (Relaxed, Aaron-approved 2026-06-06)
+
+Issue #46's original literal criterion was "zero `decisions/inbox/` hits in decisions.md AND decisions-archive.md."
+
+**Relaxed criterion:** Zero *broken followable pointers* — specific `inbox/{file}.md` citations that cannot be followed. The three policy-list bullets in `decisions-archive.md` that document the gitignore rule may (and should) retain the literal path.
+
+### 2026-06-06: OQ-2 LOCKED — Event-substrate topology = FEDERATE (Option B)
+
+**Status:** ✅ LOCKED by Aaron Kubly
+**Date:** 2026-06-06
+**Deciders:** Graham (Architect) · Genesta (Eureka/Cairn) · Roger (Platform/impl) — unanimous recommendation; Aaron holds and exercised the lock.
+**Supersedes:** OQ-2 "MEDIUM — pre-sprint-2 sync required" deferral (decisions.md ~line 1268).
+
+**Decision:** Crucible's L1 WAL stays **federated** from Cairn's `event_log`. Crucible owns its own append-only, hash-chained WAL substrate, its own SQLite projection schema, migrations, and test fixtures. Cairn's `event_log` remains separate. The two stores are bridged only via the shared `SessionId` brand and the offline `cairn reconcile` federation seam. The two-event-log cost is an accepted tax (CTD §15).
+
+**Rejected:** Option A (MERGE Crucible primitives into Cairn `event_log`).
+
+**Rationale (convergent):**
+- **Storage-contract incompatibility:** Cairn = CRUD + shadow-events; Crucible = append-only + CAS hash-chain. Not "two lenses on one substrate" — two distinct storage contracts. (Genesta)
+- **Replay determinism:** MERGE breaks Crucible's hash-chain integrity, gutting CTD §3 / ADR-0020. (Graham)
+- **Dual-write trap is unavoidable under MERGE:** Crucible's canonical store is the binary `.seg` WAL files; routing Primitive writes to Cairn adds a *second incompatible writer*. (Roger)
+- **Reversibility is asymmetric:** federate-now/merge-later is moderate effort; merge-now/extract-later risks permanent hash-chain corruption.
+- **CTD already locks B** across §3, §14, §15 ("share identifiers, fork everything else").
+
+**Consequences / unblocks:**
+- **Refactor 3 proceeds with zero DB-interface rework.** The current `DB` interface (`getSession`/`insertSession`/`queryEvents` + extended `getOwnEvents`/`getMetadata`/`insertRootSession`/`pushEvent`) survives. The real SQLite adapter is a standalone `better-sqlite3(':memory:')` with Crucible's own two-table schema, no Cairn dependency.
+- Estimated ~2 days cheaper than Option A for Refactor 3; gap widens as Crucible's schema evolves independently.
+
+**Source briefs:** decision drops: graham-oq2-substrate-brief, genesta-oq2-substrate-brief, roger-oq2-substrate-brief (all local-only).
+
+
+---
+
+
+
+
+---
+
+### 2026-06-06: Refactor 3 SQLite Adapter — 2-Cycle Persona Review COMPLETE (Ship-Ready)
+
+**Date:** 2026-06-06  
+**Agents:** Roger (Platform Dev), Laura (Tester)  
+**Cycle 1:** Code Panel (5 personas: correctness/skeptic/craft/compliance/architect) → 1 blocking + 5 important + 4 minor findings  
+**Cycle 2:** Code Panel (5 personas, verification) → 0 blocking; all prior findings resolved; 1 important (constraint-specificity) + minor nits  
+
+**Decision:** Refactor 3 (SQLite adapter work) passes both cycles and is **SHIP-READY** at diminishing returns.
+
+---
+
+## Cycle 1 Remediations (Commits a57f95f, 324c287)
+
+**Roger (a57f95f):** Dependency placement (better-sqlite3 → dependencies), single-source schema.ts, pushEvent session-guard parity, stale RED-phase artifact cleanup, JSDoc clarification, adapter framing.  
+**Laura (324c287):** Removed stale RED-phase prose, added SQLite-specific constraint assertion [SQLite-C1].  
+
+---
+
+## Cycle 2 Remediations (Commits d4ca4ce, 6c14402)
+
+**Laura (d4ca4ce):** Constraint-specific error assertion (toThrow→toThrow with regex matcher), removed stale commit-hash comment.  
+**Roger (6c14402):** Removed redundant better-sqlite3 + @types/better-sqlite3 devDeps from crucible-cli.  
+
+---
+
+## Final State
+
+- ✅ **15 tests green** — 6 crucible-core, 9 crucible-cli (all phases)
+- ✅ **tsc clean** — no TypeScript errors
+- ✅ **FEDERATE invariant upheld** — no Cairn imports introduced
+- ✅ **Declarations confirmed:**
+  - OQ-2 LOCKED (Event-substrate topology = FEDERATE)
+  - Agent history.md commits are IN-SCOPE
+  - Internal helpers: unexport + shrink test surface (Path A)
+  - JSON.parse boundary discipline (3-tier: unknown + validate + drift-guard)
+
+---
+
+## Persona Panel Consensus
+
+Both cycles declared **REVIEW-COMPLETE** with diminishing returns. All findings either RESOLVED or documented as deferred (splitting integration tests, migration/user_version seam, L1 WAL).
+
+**Ship cleared for Refactor 3.** Feature PR ready to merge.
+
+
+---
+
+### 2026-06-06T22:03:01-07:00: Queued follow-ups — WAL / Walkthrough B (non-blocking)
+**By:** Aaron Kubly (via Copilot) — approved to queue for later
+**Source:** Laura's Walkthrough B GREEN sign-off.
+1. **Edge-case RED test:** "prior rows survive a later veto" — append N committed rows, VETO on row N+1, assert exactly N rows remain (vetoed row absent, prior rows intact). Not covered by current hook-veto.test.ts. Owner candidate: Laura (RED) → Roger (GREEN) if it drives impl change.
+2. **§4.1 doc polish:** add a TypeScript-name column to the §4.1 verdict table so the intentional doc(`'veto'`)/code(`'VETO'`) casing split is explicit. Non-blocking; Owner candidate: Graham. (Casing split is intentional and type-safe — accepted, not a bug.)
+
+
+---
+
+
+# Roger — WAL File Backend Decisions
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-06-06T22:03:01-07:00  
+**Branch:** squad/crucible-wal-substrate-walkthrough-b  
+**Status:** CLOSED — 7 new file-backend tests GREEN, full suite 35/35
+
+---
+
+## D-WB-FS-1: On-disk layout matches §3.2
+
+```
+<rootDir>/
+├── meta/
+│   └── manifest.json
+├── wal/
+│   └── sessions/<sessionId>/
+│       ├── 000000.seg     binary records via codec.ts framing
+│       └── index.idx      NDJSON: {offset, seg, byteOffset} one line per row
+└── cas/
+    └── <2-hex-shard>/
+        └── <64-hex-hash>.cbor   raw payload / readSet bytes
+```
+
+This matches the §3.2 spec tree exactly. `rootDir` is caller-supplied (not
+hard-coded to `~/.crucible`) so tests use a temp dir with no repo leakage.
+
+---
+
+## D-WB-FS-2: Manifest schema (schemaVersion=1)
+
+```json
+{
+  "schemaVersion": 1,
+  "sessionId": "<sessionId>",
+  "segmentRange": [0, 0],
+  "lastCommitOffset": -1
+}
+```
+
+- `schemaVersion: 1` — upgrade path reserved for when §6 CBOR canonicalization lands.
+- `lastCommitOffset: -1` — sentinel for "no rows committed yet".
+- `segmentRange: [first, last]` — only `[0, 0]` for now (single-segment; roll-over deferred).
+- Written on every `commitRow` via synchronous `writeFileSync` (simpler than fdatasync for v0.1).
+
+---
+
+## D-WB-FS-3: Index format — NDJSON, append-only
+
+`index.idx` is written by appending a newline-delimited JSON object per committed row:
+```
+{"offset":0,"seg":0,"byteOffset":0}
+{"offset":1,"seg":0,"byteOffset":164}
+```
+
+This matches the §3.2 advisory index contract: rebuild from segment scan if corrupted.
+Currently the reopen path performs a sequential segment scan (not index lookup) for
+simplicity — the index exists as the spec requires but fast random-access lookup is
+deferred until a RED test drives it.
+
+---
+
+## D-WB-FS-4: primitiveKind stored in envelopeCbor as UTF-8
+
+The segment record's `envelopeCbor` field stores `primitiveKind` as raw UTF-8 bytes
+(e.g., `Buffer.from('observation', 'utf8')`). This allows reopen to reconstruct the full
+`LedgerEvent.primitiveKind` field without additional metadata.
+
+**Deferred upgrade:** When §6 primitive taxonomy is locked, replace this with a CBOR
+envelope that carries the kind byte, schemaVersion, and other envelope fields.
+Changing the envelopeCbor format requires a `schemaVersion` bump in manifest.json and
+a segment migration pass.
+
+---
+
+## D-WB-FS-5: CAS write-before-WAL ordering respected
+
+Per §3.2: "WAL never references CAS content that is not durable." In `FileSystemWalBackend.commitRow`:
+1. `cas.put(payloadBytes)` — writes `.cbor` file synchronously
+2. `cas.put(readSetBytes)` — writes `.cbor` file synchronously (if non-empty)
+3. `appendFileSync(activeSegPath, recordBuf)` — appends WAL record
+
+`fdatasync` is not explicitly called in v0.1 (deferred alongside group-commit in §3.5).
+The ordering guarantee holds: CAS bytes exist on disk before the WAL record referencing
+their hash is appended.
+
+---
+
+## D-WB-FS-6: Scope fences — NOT touched (no RED test)
+
+- **Single-writer advisory file lock** (§3.4.1): deferred to next cycle.
+- **Group-commit batching + seal-and-split on PAUSE** (§3.5): deferred.
+- **64 MiB segment roll-over**: deferred.
+- **fdatasync per group-commit**: deferred alongside group-commit.
+- **crc32c real computation**: deferred (4 zero bytes, as before).
+
+
+
+# Roger WAL Review Fixes — Cycle 1 Decisions Log
+
+**Date:** 2026-06-07
+**Branch:** squad/crucible-wal-substrate-walkthrough-b
+**Author:** Roger Wilco (Platform Dev, Crucible)
+
+---
+
+## M4 — sessionId / factory export
+
+**Decision: DROP `sessionId` from `LedgerFactoryOptions`; EXPORT `createFileSystemWalBackend`.**
+
+Rationale:
+- `sessionId` was declared in `LedgerFactoryOptions` but never read in `createLedger()`.  No test references it.  Wiring it to a default file-system backend would require committing to a stable `~/.crucible` rootDir contract that isn't established yet — premature.  Cleanest fix: remove the unused field.
+- `createFileSystemWalBackend` IS the public durable entrypoint and was already a named export from `wal-backend-fs.ts` but not re-exported from `index.ts`.  Added alongside `WriteLockHeldError`, `ReadOnlyWalBackendError`, and `FileSystemWalBackendOptions`.
+
+---
+
+## New error types introduced
+
+| Name | Location | Thrown when |
+|------|----------|-------------|
+| `ReadOnlyWalBackendError` | `wal-backend-fs.ts` | `commitRow()` is called on a backend opened with `{ readOnly: true }` |
+
+`WriteLockHeldError` was already present; no change to its shape.
+
+---
+
+## I5 — encodeFlags extraction
+
+`encodeFlags` was duplicated in `codec.ts` (wire framing) and `hash-chain.ts` (hash pre-image).  Extracted to `wal/flags.ts`; both files now import from there.  Intentional: these two callers MUST stay identical.  Having a single source of truth prevents silent bit-mapping drift between the on-disk frame and the hash commitment.
+
+---
+
+## M3 — VERDICT_TO_WAL centralisation
+
+Moved to `wal/types.ts` (same file as the WAL-layer type definitions).  Both `wal-backend-fs.ts` and `wal-backend-in-memory.ts` import it from there.  The key type is `Record<'COMMIT' | 'OBSERVE' | 'PAUSE', number>` — equivalent to the old `Record<Exclude<HookVerdict, 'VETO'>, number>` but expressed without the ledger-layer `HookVerdict` import, keeping the `wal/` sub-package dependency-clean from the parent `ledger/` layer.
+
+---
+
+## Deferred (NOT touched in this wave)
+
+- **#56** (crash-durability): CAS fsync gap — acknowledged with a comment in `cas-fs.ts`; no behavior change.
+- **#57** (verdict no-match encoding): Not touched.
+
+
+---
+
+# WAL Substrate + Walkthrough B — 2-Cycle Persona Review
+
+**Author:** Scribe  
+**Date:** 2026-06-07T23:59:26.964-07:00  
+**Branch:** squad/crucible-wal-substrate-walkthrough-b  
+**Status:** REVIEW-COMPLETE — 75/75 tests green, 0 blocking sustained
+
+## Summary
+
+Two-cycle persona review of Crucible WAL substrate (Roger) + Walkthrough B prototype (Laura/Graham seam test).
+
+**Cycle 1 (Code Panel — 5 personas):** 13 findings (1 blocking / 8 important / 4 minor)
+- Blocking B1: lock empty-file race — FIXED (commit b5b03dc)
+- Important findings: 8 of 8 accepted and fixed
+- Minor findings: 4 deferred / accepted as-is
+- Result: 74/75 tests green
+
+**Cycle 2 (Re-review — 3 personas):** 2 important / 1 minor, 0 blocking
+- Contract suite hardened: now asserts verdict bytes + PAUSE-across-reopen
+- Lock PID write hardened against short-write
+- sessionId removal documented in release notes
+- Result: 75/75 tests green, lint clean, build clean
+
+## Dispositions
+
+| Item | Disposition |
+|------|-------------|
+| B1 (lock empty-file race) | FIXED (b5b03dc) |
+| I2 (crash-durability / CAS fsync) | DEFERRED → GitHub issue #56 |
+| I7 (verdict no-match vs continue encoding) | DEFERRED → GitHub issue #57 |
+| I1, I3, I4, I5, I6, M1, M2, M3, M4, M5 | FIXED (b5b03dc + 028cdee) |
+
+## Branch Commits
+
+- 6ef2a61: feat WAL + WalkthroughB
+- b432f8d: squad artifacts
+- b5b03dc: cycle-1 fixes
+- 028cdee: cycle-2 fixes
+
+## Follow-up
+
+- #56: CAS fsync gap (crash durability window)
+- #57: Verdict encoding clarification (no-match vs continue)
+---
+
+## 2026-06-06: Refined Scope Rule for Doc-Hygiene Inbox-Path Sweeps
+
+**Date:** 2026-06-06  
+**Author:** Graham Knight (Lead / Architect)  
+**Status:** FINAL  
+**Context:** PR #52 re-scope (issue #46), per Aaron's direction after persona-review panel findings
+
+### Acceptance Criterion (Relaxed, Aaron-approved 2026-06-06)
+
+Issue #46's original literal criterion was "zero `decisions/inbox/` hits in decisions.md AND decisions-archive.md."
+
+**Relaxed criterion:** Zero *broken followable pointers* — specific `inbox/{file}.md` citations that cannot be followed. The three policy-list bullets in `decisions-archive.md` that document the gitignore rule may (and should) retain the literal path.
+
+### 2026-06-05: Audit — Laura M8 Slice C (SqliteFactStore + FTS5 BM25 Search)
+
+**Author:** Laura (Tester)
+**Date:** 2026-06-05
+**Branch:** `eureka/m8-slice-c-factstore`
+**PR:** #48
+**Verdict:** ✅ ACCEPT-WITH-FOLLOWUPS
+
+---
+
+## Baseline Verified
+
+- Checked out `eureka/m8-slice-c-factstore`, pulled FF-only. Branch was already at `643f106` (Roger's drop).
+- `npm test` (packages/eureka): **109 tests, 8 files, all green**. Matches Roger's claimed count.
+- `npm run build` (packages/eureka): **clean** (tsc, no errors).
+
+---
+
+## Audit Areas & Findings
+
+### 2026-06-05: Audit — Laura M8 Slice C (SqliteFactStore + FTS5 BM25 Search)
+
+**Author:** Laura (Tester)
+**Date:** 2026-06-05
+**Branch:** `eureka/m8-slice-c-factstore`
+**PR:** #48
+**Verdict:** ✅ ACCEPT-WITH-FOLLOWUPS
+
+---
+
+## Baseline Verified
+
+- Checked out `eureka/m8-slice-c-factstore`, pulled FF-only. Branch was already at `643f106` (Roger's drop).
+- `npm test` (packages/eureka): **109 tests, 8 files, all green**. Matches Roger's claimed count.
+- `npm run build` (packages/eureka): **clean** (tsc, no errors).
+
+---
+
+## Audit Areas & Findings
+
+
+# PR #45 Copilot Review — Comment Accuracy Fixes
+
+**Date:** 2026-06-05
+**Agent:** Roger (Platform Dev, crucible-core owner)
+**PR:** #45 (squad/crucible-sprint-0-walkthrough-a)
+**Type:** Doc/comment-only — no logic changes
+
+## Fixes Applied
+
+### FIX 1 — `packages/crucible-core/src/session-manager.ts`
+- **What:** JSDoc for `forkSession` said "forkOffset must not exceed parent ledger size", implying `<=` is allowed.
+- **Fix:** Reworded to "forkOffset must be strictly less than parent ledger size (offsets are 0..ledgerSize-1)" to match the `>= throws` implementation.
+
+### FIX 2a — `packages/crucible-cli/src/__tests__/acceptance/session-fork.test.ts` (header)
+- **What:** File header said "RED PHASE — MUST FAIL" but the test is now GREEN with implementation present.
+- **Fix:** Rewrote header as "Acceptance test (GREEN) — Session Fork (A1)" while preserving traceability markers (US-A-NEW-1, US-E-2, §4.1, decision 2a).
+
+### FIX 2b — `packages/crucible-cli/src/__tests__/acceptance/session-fork.test.ts` (import comment)
+- **What:** Inline comment said `createSession`/`fork` "do not exist yet — import failure is the intended RED signal".
+- **Fix:** Removed the comment; the import is now legitimate and expected to resolve.
+
+### FIX 3 — `packages/crucible-core/src/__tests__/unit/session-manager.test.ts`
+- **What:** Header said "MUST BE RED until SessionManager lands"; import comment said "does not exist yet".
+- **Fix:** Updated header to "tests are GREEN — SessionManager is implemented and exported"; removed RED-signal import comment.
+
+### FIX 4 — `packages/crucible-cli/README.md`
+- **What:** Relative link to Crucible Technical Design used `../docs/` which resolves to `packages/docs/` (non-existent).
+- **Fix:** Changed to `../../docs/` which correctly resolves to `docs/crucible-technical-design/` at repo root. Verified the target directory exists.
+
+### FIX 5 — `.squad/agents/roger/history.md`
+- **What:** Multiple lines in the session entries around lines 1020–1065 contained embedded control characters (0x0D CR, 0x0C FF, 0x08 BS) that garbled markdown rendering and split words across lines. Additional control chars found at earlier lines (~726, ~820) were also cleaned.
+- **Fix:** Replaced all control characters in-place: `\r` → removed (rejoined split words), `\f` → removed, `\b` → removed. Restored: `roger-...`, `forkPointEventId`, `buildSession`, `baseOffset`, `root()`, `null.`, `beforeCommit`, `better-sqlite3`, `fsck`. Code fence delimiters restored to proper triple-backtick format.
+
+
+---
+
+
+# Roger Handoff: Refactor 3 GREEN
+
+**Author:** Roger (Platform Dev)
+**Date:** 2026-06-06
+**Phase:** §4.1 Refactor 3 — GREEN
+**Status:** ✅ GREEN — 8/8 tests passing, types clean, lint pre-existing baseline unchanged
+
+---
+
+## What Landed
+
+### 1. New file: `packages/crucible-core/src/sqlite-db.ts`
+
+Implements `export function createSQLiteDB(path: ':memory:' | string): InMemoryDB` backed by `better-sqlite3`. Applies Crucible's own two-table schema at construction time via `CREATE TABLE IF NOT EXISTS`. All 8 interface methods implemented with prepared statements:
+
+- **DB base (async):** `getSession` (ledgerSize = `forkPointEventId + 1 + ownCount` for children, `ownCount` for roots), `insertSession` (fork lineage), `queryEvents` (inclusive-inclusive `[a, b]` range, own events only)
+- **InMemoryDB extensions (sync):** `insertRootSession`, `pushEvent`, `getOwnEvents`, `getMetadata`, `clear`
+
+Zero Cairn imports. Zero coupling to `packages/cairn` schema. OQ-2 FEDERATE invariant held.
+
+### 2. Barrel export: `packages/crucible-core/src/index.ts`
+
+Added: `export { createSQLiteDB } from './sqlite-db.js';`
+
+### 3. devDependencies added to both packages
+
+`packages/crucible-core/package.json` and `packages/crucible-cli/package.json` now include:
+```json
+"better-sqlite3": "^12.8.0",
+"@types/better-sqlite3": "^7.6.13"
+```
+
+### 4. Workspace install
+
+`npm install` run at repo root. Native binary already present (hoisted from cairn/eureka). 24 new packages resolved.
+
+---
+
+## Test / Type / Lint Status
+
+| Check | Status | Detail |
+|-------|--------|--------|
+| `crucible-core` tests | ✅ 6/6 passing | session-manager.test.ts unchanged |
+| `crucible-cli` integration tests | ✅ 7/7 passing | All Laura's A1-1…A1-4, B1, B2, B3 green |
+| `crucible-cli` acceptance tests | ✅ 1/1 passing | session-fork.test.ts unchanged |
+| `tsc --build --force` (crucible-core) | ✅ clean | |
+| `tsc --build --force` (crucible-cli) | ✅ clean | |
+| `tsc --noEmit` (crucible-core) | ✅ clean | |
+| `tsc --noEmit` (crucible-cli) | ✅ clean | |
+| ESLint | ⚠️ 1 pre-existing error | `test-db.ts:73` `import/named` rule not found — predates Refactor 3, confirmed in baseline |
+
+---
+
+## Schema (for reference)
+
+```sql
+CREATE TABLE IF NOT EXISTS sessions (
+  id                  TEXT    PRIMARY KEY,
+  parent_session_id   TEXT,
+  fork_point_event_id INTEGER,
+  plugin_versions     TEXT,
+  created_at          INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS events (
+  session_id          TEXT    NOT NULL REFERENCES sessions(id),
+  "offset"            INTEGER NOT NULL,
+  primitive_kind      TEXT    NOT NULL,
+  primitive_payload   TEXT    NOT NULL,
+  causal_read_set     TEXT    NOT NULL,
+  PRIMARY KEY (session_id, "offset")
+);
+```
+
+Note: `"offset"` quoted because it is an SQLite reserved word.
+
+---
+
+## Deferred / Nothing Blocked
+
+- The `@ts-expect-error` directive in `test-db.ts` is now technically unnecessary (createSQLiteDB exists), but because `__tests__` is excluded from tsconfig and vitest uses esbuild, it causes no error. Laura can clean it up when convenient — not a blocker.
+- Pre-existing ESLint `import/named` issue in test-db.ts is not caused by Refactor 3 and not fixed here (out of scope).
+- WAL mode + foreign keys enabled on the SQLite handle; file-path DB creation works, but only `:memory:` is exercised by tests today.
+
+---
+
+## Next Phase Unblocked
+
+The SQLite adapter is the substrate for any future Refactor 4 / Phase 2 work (file-backed sessions, persistence across process restarts, WAL replay). The interface seam is identical to `createInMemoryDB` — consumer code in `session.ts` / `SessionManager` requires zero changes.
+
+
+---
+
+### Decision
+
+When sweeping committed prose to remove broken `.squad/decisions/inbox/` path references, apply a **three-way distinction**:
+
+#### 1. FIX — Specific inbox file-path pointers
+
+**Definition:** Prose that cites a concrete `inbox/{name}-{slug}.md` filename as if it were a stable, followable link.
+
+**Action:** Replace the path with a slug-preserving plain-text description. Per Skeptic panel suggestion, retaining the filename slug (without the directory path) preserves searchability — e.g., `decision drop: graham-ctd-phase4-synthesis (local-only, now incorporated in this archive)`.
+
+**Also fix:** Any malformed prose introduced by the replacement — dangling "— this file" self-references should become "— this decision entry".
+
+**Examples fixed in PR #52:**
+- `Merged from .squad/decisions/inbox/graham-ctd-phase4-synthesis.md` → `Merged from decision drop: graham-ctd-phase4-synthesis (local-only, now incorporated in this archive)`
+- `.squad/decisions/inbox/laura-crucible-first-red-test.md — this file` → `decision drop: laura-crucible-first-red-test (local-only) — this decision entry`
+
+#### 2. KEEP / RESTORE — Gitignore-policy documentation
+
+**Definition:** Bulleted "Explicitly prohibited (gitignored runtime state)" lists that name the inbox path as one of several gitignored directories.
+
+**Action:** Keep the literal `.squad/decisions/inbox/` path verbatim. These bullets document the gitignore policy — they are not broken pointers to any specific file. All sibling paths (`.squad/orchestration-log/`, `.squad/log/`, `.squad/sessions/`, `.squad/.scratch/`) are kept; stripping only the inbox path is over-reach.
+
+#### 3. KEEP — Generic directory narration
+
+**Definition:** Narrative sentences that describe where transient files were written, without citing a specific filename (e.g., "resolutions captured as directive files in `.squad/decisions/inbox/`").
+
+**Action:** Keep the path. This is accurate location description, not a broken pointer.
+
+#### 4. NEVER TOUCH — Forward writer-target paths
+
+**Definition:** Charters, templates, skills, routing files that tell future agents where to write files.
+
+**Action:** Leave entirely unchanged. These are instructions, not references.
+
+### Why
+
+The literal "zero hits" criterion over-interprets the spirit of the issue. Issue #46 is about links that are broken for contributors and CI — not about erasing every mention of the path. Policy documentation that *explains why the path is gitignored* is useful, accurate, and should be preserved. Removing it degrades the policy audit trail.
+
+### Append-Only History Rule
+
+**Separately and absolutely:** Agent `history.md` and `history-archive.md` files are append-only. Any hygiene sweep that edits previously committed history entries is a scope violation, regardless of whether the edit improves clarity. This mirrors the over-reach that caused PR #44 to be reverted.
+
+**Size-management policy (S2c update):** No size management via deletion is permitted. See the canonical rule entry above for the full S2c rationale and enforcement record.
+
+# D++ Keyset Pagination — Three Interlocked Decisions
+
+**Author:** Genesta (Cognitive Systems Lead — Eureka)  
+**Date:** 2026-06-10  
+**Status:** OPTIONS ANALYSIS — awaiting Aaron's decision gate  
+**Scope:** M8 Slice D++ keyset pagination, Slice C schema-gap migration, cross-page relevance normalization
+
+---
+
+## Decision 1 — Keyset Cursor (v:2) Design
+
+### Context
+
+Current state: v1 cursors encode `{v:1, offset, scope}`. SQL uses `OFFSET $offset`. The `v` dispatch in `cursor.ts` already reserves v≥2 (throws `CursorVersionUnsupportedError`). §3 of decisions.md explicitly deferred keyset to D++ and flagged BM25 float stability as a risk.
+
+The SQL sort expression is `(-bm25(facts_fts)) * f.trust DESC, f.id ASC`. A keyset cursor must encode the LAST row's sort-key value + the `f.id` tiebreaker, replacing `OFFSET` with:
+
+```sql
+WHERE ((-bm25_score) * f.trust < $lastSort)
+   OR ((-bm25_score) * f.trust = $lastSort AND f.id > $lastId)
+```
+
+### The BM25 Float Stability Question
+
+This is the load-bearing risk §3 flagged. BM25 scores are computed by SQLite's FTS5 engine at query time. Two concerns:
+
+1. **Across-call stability:** If the FTS5 index hasn't changed, will `bm25(facts_fts)` return bit-identical floats for the same row across separate queries? Answer: **yes, within a single connection and unchanged index.** FTS5 BM25 is deterministic given the same term statistics (total docs, avg doc length, term frequency). No stochastic component. The score for row R will be identical across calls as long as no INSERT/UPDATE/DELETE touches `facts_fts` between them.
+
+2. **Under concurrent writes:** If a new fact is inserted between pages, FTS5 global statistics (average document length, total doc count) shift, and BM25 scores for ALL rows change slightly. The keyset boundary `$lastSort` was computed from the OLD statistics — a row that was just above the boundary might now score just below it (or vice versa). This is the **keyset boundary drift** problem.
+
+   **Mitigation:** The composite sort key is `(-bm25) * trust`. Trust is stable (only mutated by explicit `applyFeedback`). BM25 drift under single-writer (our current model) only occurs if the writer inserts facts mid-pagination. This is the same class of instability that offset-based pagination already has (§3, FSE-2), and keyset is strictly BETTER than offset under this scenario: offset skips/dups when rows shift position; keyset at worst re-returns a boundary row or skips one, but never loses interior rows.
+
+   **Verdict:** BM25 float stability is sufficient for keyset. The risk is real but strictly less severe than the offset risk it replaces.
+
+### Options for v:2 Payload
+
+**Option A — Composite float + id:**
+```ts
+{ v: 2, lastSort: number, lastId: number, scope: string }
+```
+`lastSort` = the `(-bm25) * trust` value of the final row on the current page. `lastId` = that row's `f.id`. SQL becomes:
+```sql
+WHERE ((-bm25(facts_fts)) * f.trust < $lastSort
+   OR ((-bm25(facts_fts)) * f.trust = $lastSort AND f.id > $lastId))
+```
+**Pro:** Simple, minimal payload. Directly mirrors the SQL sort key.  
+**Con:** Float equality comparison (`= $lastSort`) in SQL. IEEE 754 doubles compared via `=` in SQLite are bit-exact, which is fine for values that came from the same FTS5 computation — but fragile if the composite expression changes (Decision 2 entanglement).
+
+**Option B — Separate BM25 + trust + id:**
+```ts
+{ v: 2, lastBm25: number, lastTrust: number, lastId: number, scope: string }
+```
+Store the components separately; reconstruct the composite in the WHERE clause.  
+**Pro:** If the composite formula changes (Decision 2), old cursors can be invalidated by scope fingerprint mismatch rather than silently producing wrong results.  
+**Con:** Larger payload. Reconstructing `(-lastBm25) * lastTrust` in SQL introduces a second float multiplication that must match the ORDER BY expression exactly — SQLite query planner may not recognize them as equivalent, breaking index usage.
+
+**Option C — Row-id only (no float):**
+```ts
+{ v: 2, lastId: number, scope: string }
+```
+Use `WHERE f.id > $lastId` as a crude keyset on the tiebreaker alone, but still ORDER BY the composite. Effectively: "give me rows with id > X, ordered by composite, LIMIT N."  
+**Pro:** No float stability concern at all. Dead simple.  
+**Con:** **Incorrect.** A row with `f.id = 50` and high composite score should appear on page 1, but would be excluded if `$lastId = 45`. This only works if the primary sort is by `f.id` — it isn't. **Rejected.**
+
+### Backward Compatibility
+
+- **v0/v1 cursors continue to decode** — `decodeCursor` already handles them via the `v` dispatch. No change needed.
+- **Mid-paginate version bump:** A caller holding a v1 cursor cannot use it as v2 (different semantics — offset vs keyset). The scope fingerprint would still match, but the fields are wrong. The v2 decoder should simply not look for `offset` — it looks for `lastSort`/`lastId`. A v1 cursor decoded as v2 would fail field validation → fall back to page 0 or throw. **Recommendation:** Throw `CursorVersionUnsupportedError` if a v1 cursor is presented to a v2-only store. Callers restart pagination from page 0. This is safe because cursor version is an internal implementation detail — callers treat cursors as opaque.
+- **Emission:** Once v2 is implemented, `encodeCursor` should emit v2. There is no reason to keep emitting v1 — the scope fingerprint already prevents cross-version reuse across different store instances.
+
+### Scope Fingerprint
+
+v2 cursors still carry `scope` (SHA-256 hex, first 16 chars). The fingerprint inputs (`query, sessionId, minTrust, limit`) remain the same. If Decision 2 adds new columns to the sort key, `scope` doesn't need to change — it guards against parameter drift, not sort-key drift. Sort-key changes are guarded by the `v` version field itself.
+
+### ★ RECOMMENDATION: Option A
+
+Composite float + id is the right design. It's minimal, directly mirrors the SQL, and BM25 float equality is safe within a connection. The scope fingerprint handles parameter-drift protection. The `v:2` version tag handles sort-key evolution. No need to over-engineer the payload.
+
+---
+
+## Decision 2 — Schema-Gap Migration: Do importance/lastAccessed Join the SQL Sort Key?
+
+### Context
+
+Migration 002 will add columns to `facts`:
+- `importance REAL DEFAULT 0` — [0,1] signal
+- `last_accessed INTEGER DEFAULT NULL` — Unix epoch ms
+- `attention_tier TEXT DEFAULT 'warm'` — hot/warm/cold
+
+The pivotal question: does the SQL `ORDER BY` change from `(-bm25)*trust` to the full FR-2 composite `0.50·relevance + 0.20·importance + 0.20·trust + 0.10·recency` (with tier multiplier)?
+
+### The Core Tension
+
+**Keyset pagination orders by the SQL sort key.** If the recall layer re-ranks each page by `compositeScore` AFTER fetching, then cross-page ordering by compositeScore is impossible — re-rank only shuffles within a page. So:
+
+- If importance/recency should affect GLOBAL ordering → they MUST be in the SQL sort key → they're in the keyset cursor.
+- If they stay in the recall-layer re-rank → ordering is page-local → composite ordering across pages is approximate at best.
+
+This is the fundamental entanglement between D1 and D2.
+
+### Option A — Full composite in SQL
+
+```sql
+ORDER BY (
+  0.50 * (-bm25(facts_fts))_normalized * ... 
+  + 0.20 * COALESCE(f.importance, 0)
+  + 0.20 * f.trust
+  + 0.10 * max(0.1, pow(1 + max(0, (julianday('now') - julianday(f.last_accessed, 'unixepoch')) ), -0.5))
+) * CASE f.attention_tier WHEN 'hot' THEN 1.2 WHEN 'cold' THEN 0.8 ELSE 1.0 END DESC,
+f.id ASC
+```
+
+**Pro:** Global ordering matches compositeScore exactly. Keyset works perfectly. No recall-layer re-rank needed (or it becomes a no-op).  
+**Con:** 
+1. **Recency is time-dependent.** `julianday('now')` changes between pages. A row's recency-based sort value at page-fetch-1 differs from page-fetch-2. The keyset boundary `$lastSort` was computed at time T₁ but the WHERE clause evaluates at time T₂. Rows near the boundary can shift across it. This is the **time-varying sort key** problem — fundamentally incompatible with stable keyset pagination.
+2. **BM25 normalization problem.** `compositeScore` expects relevance ∈ [0,1], but raw `-bm25` is unbounded. You'd need to normalize in SQL, which requires knowing min/max across the full result set — a separate query, or a window function that defeats the keyset WHERE optimization.
+3. **Expression complexity.** The SQL becomes a maintenance hazard. Any tweak to FR-2 weights requires a migration or at minimum a coordinated code+SQL change.
+4. **Edgar dependency.** The composite formula is a learning/ranking concern. Baking it into SQL couples storage to the ranker's evolution.
+
+**Verdict: Reject.** The time-varying recency term makes this fundamentally unstable for keyset pagination.
+
+### Option B — SQL keeps `(-bm25)*trust` only; recall re-rank stays page-local (status quo ordering)
+
+Migration 002 adds the columns but the SQL `ORDER BY` doesn't change. `compositeScore` in `recall.ts` continues to re-rank the fetched page using all four signals.
+
+**Pro:** Simplest migration. No SQL change. Keyset cursor (Decision 1) encodes `(-bm25)*trust` — stable, time-independent. Recall layer owns the ranking formula — easy to evolve without SQL coupling.  
+**Con:**
+1. **Cross-page compositeScore ordering is impossible.** If fact F₁ has high importance but low BM25, it might rank at the bottom of page 1 by SQL order but top of page 1 after re-rank. Meanwhile, fact F₂ on page 2 (lower BM25×trust) might have even higher compositeScore. The caller never sees F₂ ahead of F₁ because pagination already decided page membership.
+2. **Overfetch mitigates but doesn't solve.** `RANKER_OVERFETCH_FACTOR = 3` already pulls 3× candidates for re-ranking. This helps within the overfetch window but doesn't help if the best-by-compositeScore fact is on page 5 by BM25×trust.
+
+**Practical impact:** Today, `recall` calls `factStore.search({ limit: k * 3 })` — a SINGLE page, no pagination. The re-rank surface is already the full overfetch window. Cross-page compositeScore ordering only matters if a caller paginates AND expects globally-ordered compositeScore results. Currently, no caller paginates for composite ordering — pagination is for exhaustive traversal (e.g., a future "export all facts" or "batch re-score" use case). For exhaustive traversal, page-local re-rank order doesn't matter — the caller is consuming everything.
+
+**Verdict: Strong candidate.** The practical impact of the limitation is near-zero given current usage.
+
+### Option C — Time-independent subset in SQL, recency stays page-local
+
+```sql
+ORDER BY (-bm25(facts_fts)) * f.trust 
+         * (CASE f.attention_tier WHEN 'hot' THEN 1.2 WHEN 'cold' THEN 0.8 ELSE 1.0 END)
+         * (1.0 + COALESCE(f.importance, 0))
+         DESC, f.id ASC
+```
+
+Fold importance and tier into the SQL sort key (both are time-independent, stable between pages). Leave recency to the recall-layer re-rank.
+
+**Pro:** Gets ~80% of the composite signal into SQL. Keyset boundary is stable (no time-varying terms). Important facts bubble up globally, not just within-page.  
+**Con:**
+1. **Formula divergence.** The SQL sort formula and `compositeScore` in recall.ts now express DIFFERENT formulas. The SQL uses a multiplicative blend; compositeScore uses an additive weighted sum. These are not order-equivalent. Maintaining two formulas is a bug factory.
+2. **Keyset cursor grows.** The v:2 payload would need to encode the full composite value (which now includes importance and tier), or the individual components. Either way, the cursor is coupled to the formula.
+3. **Partial ordering improvement.** Importance and tier affect global order, but recency doesn't. A recently-accessed fact with mediocre BM25 still gets buried by SQL ordering — the recall re-rank can only rescue it if it's on the same page.
+
+**Verdict: Possible but complex.** The formula divergence risk is high. Only justified if importance/tier materially affect ordering AND callers need globally-ordered results.
+
+### Migration Mechanics (applies to all options)
+
+```sql
+ALTER TABLE facts ADD COLUMN importance REAL DEFAULT 0;
+ALTER TABLE facts ADD COLUMN last_accessed INTEGER DEFAULT NULL;
+ALTER TABLE facts ADD COLUMN attention_tier TEXT DEFAULT 'warm';
+```
+
+- `importance DEFAULT 0` → compositeScore uses 0 → preserves current behavior (0.20 × 0 = 0 contribution).
+- `last_accessed DEFAULT NULL` → compositeScore treats NULL as Infinity → recency floors to 0.1 → preserves current behavior.
+- `attention_tier DEFAULT 'warm'` → multiplier 1.0 → preserves current behavior.
+- **Backfill:** Not needed. Defaults match the hard-coded values in `SqliteFactStore.search()` today (lines 248–249). Existing rows behave identically.
+- **FTS5 triggers:** No change needed — new columns are not FTS-indexed.
+- **Column types:** Crispin should confirm `attention_tier TEXT` vs an integer enum. TEXT is simpler and matches the TypeScript union `'hot' | 'warm' | 'cold'` directly. A CHECK constraint (`CHECK(attention_tier IN ('hot', 'warm', 'cold'))`) is optional but recommended.
+
+### ★ RECOMMENDATION: Option B
+
+Keep SQL ordering at `(-bm25)*trust`, recall-layer re-rank stays page-local. Reasoning:
+
+1. No current caller paginates for globally-ordered compositeScore results. `recall` uses single-page overfetch.
+2. The time-varying recency term makes full-composite SQL ordering fundamentally incompatible with keyset stability (kills Option A).
+3. Option C's formula divergence risk outweighs its partial ordering benefit for a signal (importance) that doesn't even exist in the data yet.
+4. When a caller genuinely needs globally-ordered compositeScore, the right solution is a different API (e.g., a `reindex` or `materialize-scores` batch job), not baking a time-varying formula into the pagination sort key.
+5. The migration is trivial and non-breaking — just add columns with correct defaults.
+
+---
+
+## Decision 3 — Cross-Page Relevance Normalization
+
+### Context
+
+Today, `relevance` is per-page min-max normalized to [0,1]. FSE-4 / FS-SE-12 document that relevance is NOT comparable across pages. With keyset pagination, multi-page traversal becomes the norm, making this limitation more visible.
+
+`compositeScore` consumes relevance as a [0,1] term weighted at 0.50 — the largest single weight. Breaking the [0,1] bound would produce compositeScores outside their expected range.
+
+### Option A — Keep per-page min-max (status quo)
+
+**Pro:** No change. Simple. compositeScore stays bounded. Within-page relative ranking is meaningful.  
+**Con:** Cross-page relevance is incomparable. A sole result on the last page gets relevance=1.0 even if it's a weak match (FS-SE-12). Under multi-page traversal this becomes more visible.
+
+### Option B — Raw/absolute (-bm25) as relevance
+
+Emit `-bm25(facts_fts)` directly (positive, unbounded).
+
+**Pro:** Globally comparable across pages. Deterministic (same row, same query → same value).  
+**Con:** 
+1. **Breaks [0,1] bound.** compositeScore's `0.50 * relevance` term becomes `0.50 * (some unbounded positive float)`. The composite score is no longer in a predictable range. The tier multiplier and weight ratios become meaningless.
+2. **Scale varies by query.** A 1-token query might produce BM25 scores in [0.5, 3.0]; a 5-token query might produce [2.0, 15.0]. Raw scores are comparable within a query but not across queries — which is fine for pagination (same query) but surprising for callers expecting [0,1].
+
+### Option C — Page-1 min/max as fixed reference in cursor
+
+Carry `{ refMin, refMax }` from page 1 in the cursor. All subsequent pages normalize against the same reference.
+
+```ts
+{ v: 2, lastSort, lastId, scope, refMin: number, refMax: number }
+```
+
+**Pro:** Cross-page comparable. Still [0,1] bounded relative to page 1's range. Consistent compositeScore behavior.  
+**Con:**
+1. **First-page-dependent.** If page 1 has an outlier (very high or very low BM25), the reference range is skewed for all subsequent pages. A page-3 result could get relevance > 1.0 or < 0.0 if its raw BM25 exceeds page-1's range — requires clamping.
+2. **Statefulness.** The cursor grows. The reference is now part of the pagination contract — changing page size or re-starting from a different page produces different relevance values for the same fact.
+3. **Complicates cursor.** More fields = more validation, more surface for bugs.
+
+### Option D — Global min/max via a preflight query
+
+Before the first page, run `SELECT MIN(bm25(...)), MAX(bm25(...))` across the full matched result set. Use these as the normalization reference for all pages.
+
+**Pro:** Truly global normalization. Stable, not first-page-dependent.  
+**Con:**
+1. **Extra query.** The preflight scans the full FTS5 match set — could be expensive for broad queries. Negates some of keyset's performance benefit.
+2. **Stale reference.** If facts are inserted between the preflight and later pages, new rows may exceed the reference range. Same clamping issue as Option C.
+3. **Where to store?** The global min/max would need to go in the cursor (same statefulness as C) or be recomputed per page (defeating the purpose).
+
+### Option E — Normalize to query-specific [0,1] using a sigmoid/log transform
+
+Apply a monotonic transform like `relevance = 1 / (1 + exp(-k * rawBm25))` or `relevance = log(1 + rawBm25) / log(1 + maxExpectedBm25)` to squash raw BM25 into [0,1] without needing min/max.
+
+**Pro:** Globally comparable. No reference needed. No cursor growth. Always [0,1].  
+**Con:**
+1. **Parameter tuning.** The sigmoid's `k` or the log's `maxExpectedBm25` are magic numbers. Different corpora produce different BM25 ranges. Poor tuning compresses all scores into a narrow band.
+2. **Non-linear distortion.** The transform changes the RELATIVE spacing of scores. Two facts with raw BM25 of 2.0 and 4.0 (2× ratio) might get sigmoid relevances of 0.88 and 0.98 (1.1× ratio). compositeScore's linear weighting assumes linear relevance.
+3. **Edgar territory.** Choosing the right transform is a learning/tuning question.
+
+### Entanglement with Decision 2
+
+If Decision 2 = Option B (recommended), then `compositeScore` re-ranks page-local. Relevance is consumed page-locally too — so per-page normalization (Option A) is actually **coherent** with the design: the re-rank operates on a single page where per-page normalization is consistent.
+
+Cross-page relevance comparability only matters if a caller collects results across pages and then sorts/filters by relevance or compositeScore. With Option B's page-local re-rank, that's already an invalid use case.
+
+### ★ RECOMMENDATION: Option A (status quo) with documentation upgrade
+
+1. Per-page min-max is coherent with Decision 2's page-local re-rank design.
+2. compositeScore stays bounded and predictable.
+3. The limitation is already documented (FSE-4, FS-SE-12). Upgrade the docs to explicitly state that keyset pagination does NOT make relevance cross-page comparable.
+4. If a future use case genuinely needs global relevance comparability, Option E (sigmoid transform) is the most promising — but it requires Edgar's input on parameterization and should be its own slice.
+
+---
+
+## Entanglement Map
+
+```
+Decision 1 (cursor v:2)  ←──────→  Decision 2 (sort key)
+   │                                    │
+   │  The v:2 payload encodes the       │
+   │  LAST ROW's sort-key value.        │
+   │  If D2 changes the sort key,       │
+   │  D1's payload must match.          │
+   │                                    │
+   │  D2-A (full composite in SQL)      │
+   │  → D1 payload = full composite     │
+   │    float (time-varying → unstable  │
+   │    keyset boundary → REJECTED)     │
+   │                                    │
+   │  D2-B (SQL keeps bm25*trust)       │
+   │  → D1 payload = bm25*trust float   │
+   │    (stable → WORKS)                │
+   │                                    │
+   │  D2-C (partial composite in SQL)   │
+   │  → D1 payload = partial composite  │
+   │    float (stable but formula       │
+   │    divergence risk)                │
+   │                                    │
+   └──────────→  Decision 3 (relevance normalization)
+                     │
+   D2-B (page-local re-rank) makes      │
+   per-page normalization coherent.     │
+   D2-A (global ordering) would         │
+   demand global normalization.         │
+                                        │
+   D3-A (per-page) + D2-B = coherent   │
+   D3-C/D (global ref) + D2-B = over-  │
+   engineered (re-rank is page-local   │
+   anyway, global relevance unused)    │
+```
+
+**The three decisions form a consistent package only in specific combinations:**
+
+| D1 | D2 | D3 | Coherent? | Notes |
+|----|----|----|-----------|-------|
+| A (composite float+id) | B (bm25×trust SQL) | A (per-page) | ✅ **YES** | Recommended path |
+| A | A (full composite SQL) | C or D (global ref) | ❌ | D2-A killed by time-varying recency |
+| A | C (partial composite) | A or C | ⚠️ | Works but formula divergence risk |
+| B (separate components) | B | A | ⚠️ | Over-engineered cursor for no benefit |
+
+---
+
+## Combined Recommended Path
+
+| Decision | Choice | Key rationale |
+|----------|--------|---------------|
+| **D1** | Option A — `{v:2, lastSort, lastId, scope}` | Minimal, mirrors SQL, BM25 floats stable enough |
+| **D2** | Option B — SQL keeps `(-bm25)*trust`, recall re-rank page-local | Time-varying recency kills full-composite SQL; no current caller needs global composite ordering |
+| **D3** | Option A — Per-page min-max (status quo + doc upgrade) | Coherent with D2-B's page-local re-rank; compositeScore stays bounded |
+
+**Migration 002:** Add `importance REAL DEFAULT 0`, `last_accessed INTEGER DEFAULT NULL`, `attention_tier TEXT DEFAULT 'warm'` to `facts`. No backfill. No ORDER BY change. No FTS5 trigger changes.
+
+**Cursor v:2:** Encode `{v:2, lastSort: number, lastId: number, scope: string}`. SQL WHERE becomes keyset predicate. `decodeCursor` gains a v:2 branch. v0/v1 cursors throw `CursorVersionUnsupportedError` when presented to a v2 store (callers restart pagination). `encodeCursor` emits v2 only.
+
+**InMemoryFactStore:** Must implement v:2 keyset logic using its `score` (termCount × trust) as the equivalent of `(-bm25) * trust`, and `insertionOrder` as the equivalent of `f.id`.
+
+---
+
+## External Input Needed
+
+| Who | What | Why |
+|-----|------|-----|
+| **Crispin** | Migration 002 column types + CHECK constraint on `attention_tier` | Schema/representation is Crispin's domain. TEXT vs integer enum, constraint strictness. |
+| **Crispin** | Confirm `last_accessed INTEGER` (Unix epoch ms) vs `TEXT` (ISO 8601) | Convention alignment with `created_at`/`updated_at` (currently TEXT datetime). |
+| **Edgar** | Future: sigmoid/log relevance transform parameterization (if D3 evolves past Option A) | Learning algorithms concern — Genesta flags but doesn't own the transform design. |
+| **Edgar** | Future: whether compositeScore formula should evolve to be SQL-expressible (would reopen D2) | If Edgar wants the ranker formula in SQL, D2-C or a materialized-score approach becomes necessary. |
+
+---
+
+*Genesta — 2026-06-10. Activities are runtime verbs, not storage nouns.*
+ 
+
+ # Decision Drop — M8 Slice D++ Keyset Pagination: RED Test Surface
+
+**Author:** Laura (Tester)  
+**Date:** 2026-06-10T22:20:20-07:00  
+**Phase:** London-school TDD RED — tests written, implementation NOT changed  
+**Status:** 22 tests RED (expected), 107 tests GREEN (unchanged)
+
+---
+
+## Summary
+
+Wrote the RED test surface for the Slice D++ keyset pagination migration. All failing tests
+describe the NEW keyset contract and will flip to GREEN once Roger implements:
+1. `encodeCursor(lastSort, lastId, scope)` — 3-arg signature
+2. `decodeCursor` v1 branch → `{version:1, lastSort, lastId, scope}` (no `offset`)
+3. `decodeCursor` garbage/v0 → `{version:0}` restart sentinel (no `offset` field)
+4. `SqliteFactStore.search()` keyset WHERE clause
+5. `InMemoryFactStore.search()` keyset slice logic (Roger's task)
+
+---
+
+## Contract ID Changes
+
+| ID | Change | Reason |
+|----|--------|--------|
+| FS-10f | **DELETED** | v0 backward-compat removed; v-absent cursor now treated as garbage (restart) |
+| FS-11 | **NEW** | FSE-2 concurrent-insert safety (keyset prevents duplicate on page N+1 after insert between pages) |
+| FS-5b | **EXTENDED** | Added third `.each` case: v0 cursor with valid `offset:5` now must restart (not honor offset) |
+| FS-SE-4 | **REPLACED** | Tests now cover bad v1 keyset fields (`lastSort`/`lastId`) instead of bad v0 offset values |
+| FS-SE-15 | **UPDATED** | Assertion extended: requires `lastSort: any(Number), lastId: any(Number)` in decoded cursor |
+| CU-1a/b/c | **UPDATED** | v0 absent now → `{version:0}` restart sentinel (was `{version:0, offset:N}`) |
+| CU-2a/b | **UPDATED** | 3-arg `encodeCursor(lastSort, lastId, scope)` round-trip assertions |
+| CU-2c–g | **NEW** | Bad keyset field validation: NaN/Infinity lastSort, negative/float/missing lastId → restart |
+| CU-4a/b/c | **UPDATED** | Garbage → `{version:0}` (no `offset` field in restart sentinel) |
+
+---
+
+## RED Test List (22 failing)
+
+### cursor.test.ts (11 failing)
+- CU-1a, CU-1b, CU-1c — v0 absent → restart `{version:0}` not `{version:0, offset:N}`
+- CU-2a — `encodeCursor(42.5, 17, scope)` round-trip (3-arg signature)
+- CU-2c — bad lastSort NaN → restart
+- CU-2d — bad lastSort Infinity → restart
+- CU-2e — bad lastId negative → restart
+- CU-2f — bad lastId float → restart
+- CU-2g — missing lastId → restart
+- CU-4a, CU-4b, CU-4c — garbage → `{version:0}` (no extra `offset` field)
+
+### fact-store-contract.helper.ts — both InMemoryFactStore + SqliteFactStore (6 failing)
+- FS-5b ×2 (third case: v0-valid-offset-5 must restart, not advance)
+- FS-10a ×2 (cursor must have `lastSort`/`lastId` not `offset`)
+- FS-11 ×2 (**FSE-2**: insert between pages → no dup; offset impl produces dup)
+
+### fact-store-sqlite-edges.test.ts (4 failing)
+- FS-SE-4 ×3 (bad v1 keyset fields with `offset:1` → current impl honors offset → page 2 = empty ≠ baseline)
+- FS-SE-15 (cursor must have `lastSort`/`lastId` fields)
+
+---
+
+## Invariants UNCHANGED (still GREEN)
+
+CU-3 (a–f), CU-5, CU-6, CU-7 — version-rejection and fingerprint tests unchanged.  
+CU-2b — version:1 discriminant (passes with both current and new impl).  
+FS-1..4, FS-5 (original), FS-6, FS-7, FS-8, FS-9 — core search semantics unchanged.  
+FS-10b–e (scope mismatch), FS-10g (v:99), FS-10h (empty query) — unchanged.  
+FS-SE-1, SE-1b, SE-2, SE-3, SE-5..14 — unchanged.  
+FS-SE-12 (per-page normalization), FS-SE-14 (fingerprint determinism) — explicitly unchanged per plan.
+
+---
+
+## Restart Sentinel Shape Decision
+
+New `DecodedCursor` type for Roger to implement:
+
+```typescript
+export type DecodedCursor =
+  | { version: 0 }                                           // restart from page 1; no offset
+  | { version: 1; lastSort: number; lastId: number; scope: string };
+```
+
+Tests assert `toEqual({ version: 0 })` for garbage/v0 cases — the extra `offset:0` field in the
+current return value makes those assertions fail. This is the correct shape for keyset because:
+- `version:0` signals "no valid keyset anchor; start from page 1"
+- No `offset` field prevents accidental OFFSET fallback in any future code path
+
+---
+
+## FSE-2 Test Design (FS-11)
+
+Sequence:
+1. Seed A (`fse2safety` ×3, trust=0.8) and B (`fse2safety` ×1, trust=0.8)
+2. Page 1 (limit=1): returns A; cursor stores keyset anchor
+3. Seed C (`fse2safety` ×4, trust=0.8) — ranks ABOVE A
+4. Page 2 with cursor:
+   - **Offset impl:** sorted=[C,A,B], OFFSET 1 → returns A again (DUPLICATE → RED)
+   - **Keyset impl:** WHERE composite < composite(A) → returns B (correct → GREEN)
+
+Both InMemoryFactStore and SqliteFactStore covered via `runFactStoreContract` harness.
+
+---
+
+## What Roger Needs to Implement (GREEN phase)
+
+1. **cursor.ts** — `DecodedCursor` type update; `encodeCursor(lastSort, lastId, scope)` 3-arg; `decodeCursor` v1 branch reads `lastSort`/`lastId`; garbage/v0 returns `{version:0}` (no offset).
+2. **fact-store-sqlite.ts** — keyset WHERE: `AND ((-bm25_score)*f.trust < $lastSort OR ((-bm25_score)*f.trust = $lastSort AND f.id > $lastId))`. Replace `OFFSET $offset`. `nextCursor = encodeCursor(lastRow.composite, lastRow.id, scope)`.
+3. **InMemoryFactStore** (in `fact-store.contract.test.ts`) — keyset slice logic using `insertionOrder` as `lastId` analog and `score` as `lastSort` analog.
+ 
+
+ # Decision Drop: Migration 002 — Attention Tier Columns
+
+**Author:** Crispin (Knowledge Representation Specialist)
+**Date:** 2026-06-10T22:20:20-07:00
+**Context:** M8 Slice D++ — closes the Slice C schema gap
+
+---
+
+## What Was Delivered
+
+Migration 002 (`packages/eureka/src/db/migrations/002-facts-attention.ts`) adds
+three columns to the `facts` table and registers as version 2 in schema.ts. A
+dedicated migration test suite (`src/db/__tests__/migrations.test.ts`, 5 tests,
+all green) locks the column defaults, CHECK enforcement, and idempotency.
+
+---
+
+## Column Design Decisions
+
+### `importance REAL NOT NULL DEFAULT 0`
+
+**Type: REAL.** Importance is a normalized signal ∈ [0,1] consumed by
+`compositeScore` as a float. `REAL` (IEEE 754 double) is the correct SQLite
+type for a continuous fractional value.
+
+**NOT NULL with constant default 0.** SQLite's ADD COLUMN constraint: `NOT NULL`
+is permissible when the default is a constant non-NULL value. Default `0` exactly
+reproduces the SqliteFactStore Slice-C hard-code (`importance ?? 0` in
+`compositeScore`). No behavioral change for existing or new rows that omit the
+column.
+
+**Why not nullable?** Nullable importance would require every consumer to guard
+against NULL before arithmetic. `NOT NULL DEFAULT 0` eliminates the NULL case at
+the SQL layer: the storage contract is "0 means unscored" — SQL never emits NULL.
+
+---
+
+### `last_accessed INTEGER DEFAULT NULL`
+
+**Type: INTEGER.** Unix epoch milliseconds is a 64-bit integer; SQLite INTEGER
+stores up to 8 bytes, sufficient for epoch-ms well past year 9999. This is the
+standard convention for numeric timestamp fields (distinguish from `created_at`
+and `updated_at` in migration 001, which use `TEXT` + `datetime('now')` for
+human-readable wall-clock display — those are not arithmetic targets).
+
+**Nullable (no NOT NULL).** NULL is the load-bearing sentinel for
+"never accessed". The compositeScore F3 guard converts `lastAccessed = undefined`
+(JavaScript) / NULL (SQL) to `Infinity` tDays → `recency = Math.max(0.1, ...)
+= 0.1`. Forcing NOT NULL would require a magic sentinel integer (e.g., 0 =
+epoch, which would be "accessed in 1970" — wrong semantics). NULL is the
+correct representation of "no access has occurred."
+
+**No DEFAULT expression.** `DEFAULT NULL` (explicit) and omitting DEFAULT both
+yield NULL; explicit declaration is clearer in the schema for future readers.
+
+---
+
+### `attention_tier TEXT NOT NULL DEFAULT 'warm'`
+
+**Type: TEXT.** Enum-as-string is idiomatic SQLite for a small closed set of
+named values. The TypeScript type `'hot' | 'warm' | 'cold'` maps cleanly to
+three TEXT literals; no integer-to-name join table needed for a 3-value enum.
+
+**NOT NULL with constant default 'warm'.** Same rationale as `importance`:
+constant default satisfies the NOT NULL constraint for ADD COLUMN. Default
+'warm' reproduces the SqliteFactStore Slice-C hard-code (`attentionTier: 'warm'`
+with multiplier 1.0 — the identity value). Warm tier is the "do nothing" tier,
+making it the correct zero-disturbance default.
+
+**CHECK constraint on ADD COLUMN — verified.**
+SQLite DOES accept `CHECK (attention_tier IN ('hot', 'warm', 'cold'))` in an
+`ALTER TABLE ADD COLUMN` statement (verified at runtime against better-sqlite3
+which bundles a recent SQLite). The CHECK is enforced for all future
+INSERTs/UPDATEs. Existing rows at ALTER time are NOT validated — they receive
+the default 'warm', which passes the CHECK regardless. No table-rebuild pattern
+was needed.
+
+Test MIG-4 confirms: inserting with `attention_tier = 'lukewarm'` throws.
+Test MIG-5 confirms: 'hot' and 'cold' are accepted.
+
+---
+
+## Locked Decision: No ORDER BY Change (D2)
+
+The SQL `ORDER BY (-bm25_score) * f.trust DESC, f.id ASC` is **not modified**.
+The `importance`, `last_accessed`, and `attention_tier` columns are NOT part of
+the sort key. Rationale (locked by Aaron):
+
+The recall-layer `compositeScore` recency term is query-time-varying: it depends
+on `now()` at call time, not on a stored value. Folding a time-varying term into
+SQL ORDER BY would break keyset-cursor stability (last-rank + last-id cursors
+would be computed against one `now()` and validated against a different `now()`
+on the next page). The columns are stored for the application layer to consume;
+SQL ordering remains deterministic and cursor-stable.
+
+---
+
+## What Is NOT Wired
+
+`SqliteFactStore.search()` still hard-codes `attentionTier: 'warm'` and omits
+`importance`/`lastAccessed` from the SELECT. That wiring — reading the new
+columns from SQL into `RecallResult` — is the GREEN implementation phase,
+separately scoped. The hard-coded defaults remain behaviorally correct until
+that phase lands (they match the SQL defaults exactly).
+
+---
+
+## Test Coverage
+
+| ID    | Assertion |
+|-------|-----------|
+| MIG-1 | `MAX(version) = 2` after applying both migrations |
+| MIG-2/3 | Freshly-inserted row: `importance=0`, `last_accessed=NULL`, `attention_tier='warm'` |
+| MIG-4 | CHECK rejects `attention_tier = 'lukewarm'` |
+| MIG-5 | 'hot' and 'cold' accepted; values round-trip correctly |
+| MIG-6 | `applyMigrations` idempotent — second call does not throw |
+
+Also updated DB-CL-3 and DB-CL-6 in `fact-reader-sqlite-edges.test.ts` from
+`schema_version = 1` to `= 2` (schema_version row count now 2, max version 2).
+ 
+
+ # Decision Drop: Keyset Cursor — GREEN Phase (Slice D++)
+
+**Author:** Crispin (Knowledge Representation Specialist)
+**Date:** 2026-06-10T22:56:47-07:00
+**Context:** M8 Slice D++ GREEN — implements keyset pagination for `FactStore.search()`
+
+---
+
+## What Shipped
+
+Four files changed; 22 RED tests turned green; 177 pre-existing tests stay green (199 total).
+
+| File | Change |
+|------|--------|
+| `src/storage/cursor.ts` | v1 mutated in place to keyset; v0 compat deleted |
+| `src/storage/fact-store-sqlite.ts` | Two prepared statements; keyset SQL; logger seam |
+| `src/storage/__tests__/fact-store.contract.test.ts` | InMemoryFactStore keyset parity |
+| `src/activities/recall.ts` | FactStore interface JSDoc updated; FSE-2 closed note |
+
+---
+
+## v1 Mutated In Place (Not Bumped to v2)
+
+`DecodedCursor` v1 variant changes from `{ offset }` to `{ lastSort, lastId }`. The version
+number stays `1`. Rationale: the old v1 format never shipped to a stable public API (Slice D+
+was an internal cursor upgrade); no external cursors exist in the wild. Bumping to v2 would
+require recognizing and rejecting old `{ v:1, offset }` cursors — adding a case for a format
+that was never persisted externally. The cleaner cut is: v1 now means keyset; anything with
+`v` absent or `v !== 1` is either garbage (restart) or a contract violation (throw). No
+migration of existing cursor strings is needed.
+
+---
+
+## FSE-2 Guarantee — Corrected (Fix Wave #1)
+
+With keyset pagination, the WHERE predicate anchors on `(lastSort, lastId)` — the composite
+score and row id of the last returned row. Any fact **inserted** between page fetches with a
+higher composite score than `lastSort` is naturally excluded (it appears "before" the cursor
+anchor in sort order). **Concurrent inserts cannot cause duplicate rows** — FSE-2 is closed
+for INSERT-induced cross-page duplication. FS-11 verifies this directly.
+
+**Trust-mutation caveat (corrected from initial drop):** If a row already returned on page 1
+has its trust score mutated between page fetches, its recomputed composite can re-cross the
+`lastSort` anchor → the row may re-appear on a subsequent page. Callers needing strict
+stability under concurrent trust writes must restart pagination. This is an explicit
+out-of-scope case documented in the FS-11 contract test header.
+
+---
+
+## Two-Statement Design (Updated: CTE Refactor — Fix Wave #9)
+
+`SqliteFactStore` prepares two SQL statements at construction:
+
+- `stmtFirst` — no keyset predicate; used on first page (no cursor or restart sentinel)
+- `stmtKeyset` — two-level CTE: `base` selects and computes `bm25(facts_fts) AS bm25_score`
+  once; `ranked` derives `(-bm25_score)*trust AS composite`; outer query filters on `composite`
+
+**Why CTE?** The original stmtKeyset called `bm25(facts_fts)` twice in the WHERE predicate
+(once for `< $last_sort`, once for `= $last_sort`). The CTE computes bm25 once in `base`,
+derives composite once in `ranked`, and the outer SELECT filters on the pre-computed value.
+Single bm25 evaluation + cleaner boundary — the composite expression in the CTE MUST mirror
+the sort expression in stmtFirst's ORDER BY or the keyset boundary silently breaks.
+
+**Bit-exact boundary:** `lastSort` = `(-row.bm25_score) * (row.trust ?? NaN)` in JS.
+The CTE `ranked` derives `(-bm25_score)*trust AS composite`. Both are IEEE 754 double
+arithmetic on the same operand values — bit-exact match guaranteed.
+
+**Why two statements, not conditional SQL?** `better-sqlite3` `prepare()` compiles a fixed SQL
+string at construction time; bind params are typed to that string. Two statements is idiomatic.
+
+**Alias in ORDER BY:** SQLite can expand SELECT aliases in ORDER BY. stmtFirst uses
+`(-bm25_score) * f.trust DESC` in ORDER BY; stmtKeyset CTE uses `composite DESC`. Semantically
+identical.
+
+---
+
+## Bit-Exact Boundary
+
+`lastSort` stored in the cursor = `(-row.bm25_score) * (row.trust ?? NaN)` computed in
+JavaScript from the fetched row. The WHERE keyset predicate computes
+`(-bm25(facts_fts)) * f.trust`. Both use IEEE 754 double arithmetic on the same operand
+values. The comparison is bit-exact. If `trust` is somehow NULL (filtered by `IS NOT NULL`
+but guarded defensively), `NaN` propagates into the cursor and decodeCursor treats it as a
+restart sentinel (non-finite lastSort → RESTART) — safe degradation.
+
+---
+
+## InMemoryFactStore Keyset Parity
+
+Keyset filter in InMemoryFactStore:
+```typescript
+scored.filter(f =>
+  f.score < keysetLastSort ||
+  (f.score === keysetLastSort && f.insertionOrder > keysetLastId)
+)
+```
+This mirrors the SQL predicate exactly. `insertionOrder` starts at 1 (not 0) to match
+SQLite autoincrement semantics — `decodeCursor` rejects `lastId <= 0` as a restart sentinel.
+
+---
+
+## encodeCursor Object Param (Fix Wave #2)
+
+Original signature: `encodeCursor(lastSort: number, lastId: number, scope: string)` — three
+positional args, two of the same type. Swapping `lastSort` and `lastId` would type-check but
+silently corrupt all subsequent pages. Changed to single object param:
+`encodeCursor({ lastSort, lastId, scope })`. All call sites updated.
+
+---
+
+## Logger Seam (Updated: Full Threading — Fix Wave #3)
+
+`SqliteFactStore` constructor: `constructor(db, logger?: { warn(msg): void })`. Default: `console`.
+`deps.ts` `createSqliteRecallDeps(db, options?)` now accepts `{ logger? }` in options and
+threads it to `SqliteFactStore` and onto the returned `RecallDeps`. `recall.ts` `recallWithScores`
+uses `deps.logger ?? console` instead of `console.warn` directly. Same logger instance handles
+both FTS5 parse-error warnings and attention-tier warnings. Backward-compatible — no caller
+forced to provide a logger.
+
+---
+
+## Deviations from Spec
+
+None. All four implementation requirements (cursor.ts, fact-store-sqlite.ts, InMemoryFactStore,
+recall.ts JSDoc) delivered. All specified constraints honored (sort key unchanged, per-page
+normalization unchanged, FS-4 footgun lock intact, scope fingerprint check preserved for v1).
+ 
+
+---
+
+# Graham — Aperture UX Disposition
+
+**Author:** Graham (Lead / Architect)  
+**Date:** 2026-06-09T18:08:44-07:00  
+**Input:** Valanice's advisory UX review (merged into .squad/decisions.md — Aperture UX Disposition section)  
+**Scope:** Walkthrough C — Aperture push-notification projector (§4.3)  
+**Delegated by:** Aaron Kubly ("defer to the Lead")
+
+---
+
+## Architectural Framing
+
+The `NotificationService` interface is a **mocked seam** today — no real badge renderer exists.
+This is the primary lens for all dispositions: work that requires a real consumer to be meaningful
+should wait; work that is a genuine correctness bug or costs nearly nothing should be closed now.
+
+The seam design is already correct. Valanice confirmed: all UX complexity (coalescing, DND,
+escalation, snooze) can be adapter-decorated around `NotificationService` without touching the
+projector. Roger's seam placement is validated. The projection purity and `queryEvents()` stability
+are confirmed foundations.
+
+---
+
+## Per-Finding Rulings
+
+### B-1 — ℹ️ fallback icon for attention-tier events
+**Ruling: FOLD NOW**  
+**Issue: #64** (`squad:roger`, `priority:p1`)
+
+**Reasoning:** This is a genuine correctness defect in `NotificationPolicy.getIcon()`. The info
+emoji communicates "nothing to do" — the opposite of what `attention`/`urgent` tier events mean.
+It costs one line and a test update. Shipping a real renderer with this default guarantees a
+misleading badge from day one. No interface changes; purely internal to `NotificationPolicy`.
+
+**Trade-off named:** If we defer, every downstream demo and renderer prototype is seeded with
+incorrect icon semantics that will need retroactive correction. The cost of doing it now (~30 min)
+is lower than the cost of un-teaching the wrong default later.
+
+---
+
+### I-1 — unreadCount is a one-way ratchet with no dismiss/ack path
+**Ruling: FILE (follow-up)**  
+**Issue: #66** (`squad:roger`, `squad:valanice`, `priority:p2`, `release:backlog`)
+
+**Reasoning:** The `seenOffset` cursor and `markRead()` method are the right design, but they
+require a CLI-layer call site — something that invokes `markRead()` when the user views the badge.
+That call site does not exist because there is no real renderer. Implementing the ack cursor now
+means building machinery with no consumer, and the shape of `markRead()` will likely be constrained
+by real renderer UX. Defer until the first real badge renderer lands; `queryEvents()` is stable and
+the cursor is a purely additive ApertureProjector extension.
+
+**Trade-off named:** Doing it now risks over-designing the ack interface before real usage constrains
+the shape. The append-only projection model is already the right foundation — adding a cursor later
+requires no rework.
+
+---
+
+### I-2 — Burst coalescing absent
+**Ruling: DEFER**  
+**Unblocked by:** First real `NotificationService` implementation (CLI badge renderer)
+
+**Reasoning:** Coalescing is entirely a `NotificationService` adapter concern — Valanice confirmed
+the seam is already in the right place. A `DebouncedNotificationService` wrapper can be added
+without touching the projector. With a mock notifier, coalescing produces no observable difference
+in the test suite and has no user-visible effect. Filing an issue now would generate noise with no
+action path.
+
+**Trade-off named:** Not coalescing is not wrong at the projector layer — it is a rendering quality
+issue. The risk of deferring is that a future renderer implementer might be unaware of the concern;
+mitigated by this document and Valanice's review being on record.
+
+---
+
+### I-3 — getPriority() computed but never reaches the push payload
+**Ruling: FILE (follow-up)**  
+**Issue: #65** (`squad:roger`, `priority:p2`, `release:backlog`)
+
+**Reasoning:** `getPriority()` is currently dead code from a UX perspective — the renderer has no
+way to know whether the badge contains urgent or attention events. The fix is additive
+(`highestPriority: number` on the push payload). However, this touches the `NotificationService`
+interface boundary: any future adapter implementing the interface will see this field. Prefer to
+finalize the interface shape once — when the first real renderer is being built — so the payload
+contract is settled by real consumer needs rather than speculation.
+
+**Trade-off named:** Filing now vs. deferring: the dead-code reality is a correctness gap, but it
+is only observable through a renderer. The interface cost of adding a field now is low; the cost of
+getting the field name/type wrong and having to change it before the interface is frozen is higher.
+Target: implement alongside the first real `NotificationService` consumer.
+
+---
+
+### I-4 — Emoji-only signaling — accessibility exposure
+**Ruling: FILE (follow-up)**  
+**Issue: #66** (grouped with I-1, `squad:roger`, `squad:valanice`, `priority:p2`, `release:backlog`)
+
+**Reasoning:** Adding `label: string` to the push payload is the right fix but is a pure CLI
+rendering concern — the label value is only meaningful when rendered with ARIA or text fallback.
+The right label strings (`'quarantine'`, `'decision'`, `'alert'`) should be spec'd by Valanice
+alongside the first real renderer design, not guessed now. Grouped with I-1 because both are
+"pre-renderer readiness" items.
+
+**Trade-off named:** Adding the label field now is low-cost but the label vocabulary (what values
+to use) is a UX specification decision that should be driven by real rendering context. Getting the
+vocabulary wrong now means changing the interface before it is frozen.
+
+---
+
+### I-5 — ✓ for decision reads as "resolved"
+**Ruling: FOLD NOW**  
+**Issue: #64** (grouped with B-1, `squad:roger`, `priority:p1`)
+
+**Reasoning:** Same cost profile as B-1: one-line fix in `getIcon()`, no interface changes. The
+checkmark glyph actively misleads when `outcome: 'reject'` decisions land in the badge. This is
+observable today in the test suite (AP-2 uses a reject outcome). Correcting it costs nothing and
+removes a semantic trap for future renderer developers.
+
+**Trade-off named:** None meaningful — the cost of correct is a glyph swap; the cost of wrong is a
+category of user errors where actionable decisions are ignored.
+
+---
+
+### N-1 — Separate unread counts by tier
+**Ruling: DEFER**  
+**Unblocked by:** First real badge renderer
+
+**Reasoning:** Splitting the payload into `{ urgentCount, attentionCount }` requires a renderer
+capable of displaying a compound badge. Without that renderer, the split is invisible. This is also
+a meaningful interface change (not purely additive if urgentCount + attentionCount replaces
+unreadCount). Defer until renderer UX is specified; revisit alongside I-3 (highestPriority).
+
+---
+
+### N-2 — Do-not-disturb / mute mode
+**Ruling: DEFER**  
+**Unblocked by:** Real NotificationService consumer + evidence of DND user need
+
+**Reasoning:** Correctly identified by Valanice as a `BatchedNotificationService` adapter concern.
+The seam is already positioned for it. File only when there is a real workflow (batch plugin sweep)
+and a real renderer to suppress. No issue filed — track in Valanice's UX backlog.
+
+---
+
+### N-3 — Escalation from attention → urgent if unacknowledged
+**Ruling: DEFER**  
+**Blocked by:** I-1 (ack/seenOffset cursor) + real renderer
+
+**Reasoning:** Depends on the ack cursor from I-1. No path forward until I-1 is resolved and a
+renderer can display escalation signals. High effort, low priority.
+
+---
+
+### N-4 — Per-type snooze
+**Ruling: DEFER**  
+**Blocked by:** Real renderer + user evidence of snooze need
+
+**Reasoning:** Correct design (NotificationPolicy.shouldPush() + snoozeList context parameter) but
+requires real usage evidence to justify the policy complexity. Track in Valanice's UX backlog when
+the renderer ships and real workflows generate snooze requests.
+
+---
+
+## Summary Table
+
+| Finding | Ruling | Issue | Rationale |
+|---------|--------|-------|-----------|
+| B-1 | FOLD NOW | #64 | One-line correctness fix, no interface change |
+| I-1 | FILE | #66 | Needs CLI call site; defer to first real renderer |
+| I-2 | DEFER | — | Pure adapter concern; seam already correct |
+| I-3 | FILE | #65 | Interface additive but shape best finalized with real consumer |
+| I-4 | FILE | #66 | Label vocabulary is a UX spec + renderer concern |
+| I-5 | FOLD NOW | #64 | One-line correctness fix, no interface change |
+| N-1 | DEFER | — | Renderer + compound badge UX required |
+| N-2 | DEFER | — | Adapter concern; needs real workflow + renderer |
+| N-3 | DEFER | — | Blocked on I-1 + renderer |
+| N-4 | DEFER | — | Needs usage evidence from real renderer phase |
+
+---
+
+## Walkthrough C Scope Verdict
+
+Roger's implementation is **clean and correct**. The seam design is validated by Valanice's review.
+Issue #64 closes the only genuine correctness gap before we move on. Issues #65 and #66 are
+pre-renderer readiness items that should be picked up as a bundle when the first real
+`NotificationService` adapter is implemented in `crucible-cli`.
+
+The defer items (I-2, N-1 through N-4) are all adapter/renderer concerns that the seam already
+accommodates — no projector rework will be needed when they are eventually addressed.
+
+
+---
+
+# Roger — Aperture Projector (Walkthrough C) Decisions
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-06-09T18:08:44-07:00  
+**Branch:** (working on main checkout)  
+**Status:** COMPLETE — 114/114 crucible-core tests GREEN, 9/9 crucible-cli tests GREEN  
+
+---
+
+## D-AP-1: Commit-notification seam — additive `subscribe()` on Ledger interface
+
+**Situation:** The strategy doc (§4.3) referenced `ledger.subscribe(apertureProjector)` but the
+`Ledger` interface (Graham's locked seam) had no such method.
+
+**Choice:** Added `LedgerSubscriber` interface and `subscribe(subscriber: LedgerSubscriber): void`
+to the `Ledger` interface in `packages/crucible-core/src/ledger/ledger.ts` as an **additive-only**
+extension. `LedgerImpl.append()` fires all registered subscribers synchronously after
+`walBackend.commitRow()` resolves (step (e)), before `append()` returns to the caller.
+
+**Subscriber signature:**
+```typescript
+export interface LedgerSubscriber {
+  onCommit(offset: number, event: LedgerEvent): void;
+}
+```
+
+**Single-event callback** (not batch): matches the per-row commit model of `InMemoryWalBackend`.
+The `onCommit` is called once per row; if the FS backend needs batch delivery later, that can be
+added additively without changing the interface.
+
+**Seam impact on Graham's locked interface:** Additive only. Existing `append()`, `queryEvents()`,
+`registerHook()`, `unregisterHook()` signatures are UNCHANGED. `WalBackend` interface is UNCHANGED.
+Graham's seam contract is NOT violated.
+
+**Why NOT a WalBackend-level callback:** The WAL backend operates below the Ledger (it never sees
+`LedgerEvent` shapes or metadata). Subscriber notification belongs at the Ledger layer where the
+full `PrimitiveInput + offset` event is assembled.
+
+---
+
+## D-AP-2: `metadata` field on `PrimitiveInput` — optional, additive
+
+**Situation:** `PrimitiveInput` had no `metadata` field. The strategy doc showed
+`await ledger.append({ ..., metadata: { level: 'attention' } })` which TypeScript would reject.
+
+**Choice:** Added optional `metadata?: EventMetadata` to `PrimitiveInput` in `types.ts`, where
+`EventMetadata = { level?: string; [key: string]: unknown }`. All existing callers pass no
+`metadata` (omitted = undefined), so zero regressions. The field flows through `Primitive extends
+PrimitiveInput` → `LedgerEvent = Primitive` automatically.
+
+```typescript
+export interface EventMetadata {
+  level?: string;
+  [key: string]: unknown;
+}
+export interface PrimitiveInput {
+  ...
+  metadata?: EventMetadata;
+}
+```
+
+---
+
+## D-AP-3: Projection store — internal array (not SQLite DDL)
+
+**Situation:** The strategy doc showed `INSERT INTO aperture_events` (SQLite DDL). The test harness
+for Walkthrough C uses the `InMemoryWalBackend`; there is no need for a separate SQLite projection
+table in this slice.
+
+**Choice:** `ApertureProjector` maintains an internal `ApertureEvent[]` array. `queryEvents(opts?)`
+returns a filtered snapshot. No SQLite DDL, no schema migration, no `aperture_events` table.
+
+**Rationale:**
+- Simpler, zero friction for tests
+- The public `queryEvents()` interface is stable — a future adapter can replace the array with a
+  projected SQLite table without changing ApertureProjector's API or the acceptance test
+- Avoids coupling Aperture's projection to the `sessions`/`events` schema (OQ-2 FEDERATE)
+
+**Future migration path:** If durable projections are needed across process restarts, add an
+`aperture_events` table via a new schema migration and inject a `ProjectionStore` port into
+`ApertureProjector`. The `LedgerSubscriber` seam remains stable.
+
+---
+
+## D-AP-4: NotificationPolicy extracted at GREEN phase
+
+**Situation:** The strategy doc prescribes extracting `NotificationPolicy` in the REFACTOR phase.
+
+**Choice:** `NotificationPolicy` was created as a standalone file from the start (alongside
+`ApertureProjector`). The inline logic was always delegated to it. The "REFACTOR" beat adds the
+dedicated unit tests for `NotificationPolicy` and the projector purity contract test — the class
+itself was pre-extracted.
+
+**Rationale:** Extracting it inline avoids an unnecessary intermediate state where
+`ApertureProjector` contains raw string comparisons that then need to be moved. The TDD
+discipline still holds: unit tests for `NotificationPolicy` were written as REFACTOR beats.
+
+---
+
+## D-AP-5: Acceptance test in crucible-core (not crucible-cli)
+
+**Situation:** The strategy doc placed the acceptance test in `packages/crucible-cli/src/__tests__/`.
+But `createLedger` is exported from `crucible-core`, and the CLI (`crucible-cli`) only re-exports
+core symbols. There is no CLI-layer logic to exercise.
+
+**Choice:** Acceptance test lives in `packages/crucible-core/src/__tests__/acceptance/aperture-push.test.ts`,
+matching the pattern of the existing `hook-veto.test.ts` acceptance test.
+
+**No `setBadgeRenderer`:** The strategy doc's `cli.setBadgeRenderer(badgeRenderer)` was illustrative.
+The real acceptance test directly mocks `NotificationService: { push: vi.fn() }` and passes it to
+`new ApertureProjector(mockNotifier)`. This is cleaner and avoids coupling the test to a non-existent
+CLI API.
+
+---
+
+## Impact on Other Agents
+
+| Agent | Impact |
+|-------|--------|
+| **Graham** | `Ledger` interface gained `subscribe()` — additive only. All existing interface members unchanged. |
+| **Laura** | None — hook bus, veto logic, append signature unchanged. |
+| **Rosella** | Walkthrough C is now implemented. `ApertureProjector`, `NotificationService`, `ApertureEvent`, `NotificationPolicy`, `LedgerSubscriber`, `EventMetadata` are all exported from `@akubly/crucible-core`. |
+| **All** | `PrimitiveInput.metadata?: EventMetadata` is now available for callers who want to tag events with a tier level. Fully optional — existing callers unchanged. |
+
+---
+
+## Files Touched
+
+**New:**
+- `packages/crucible-core/src/projectors/notification-policy.ts`
+- `packages/crucible-core/src/projectors/aperture-projector.ts`
+- `packages/crucible-core/src/__tests__/acceptance/aperture-push.test.ts`
+- `packages/crucible-core/src/__tests__/unit/aperture-projector.test.ts`
+- `packages/crucible-core/src/__tests__/unit/aperture-projector-purity.test.ts`
+- `packages/crucible-core/src/__tests__/unit/notification-policy.test.ts`
+
+**Modified:**
+- `packages/crucible-core/src/types.ts` — `EventMetadata` + `metadata?` on `PrimitiveInput`
+- `packages/crucible-core/src/ledger/ledger.ts` — `LedgerSubscriber` + `subscribe()` on `Ledger`
+- `packages/crucible-core/src/ledger/ledger-impl.ts` — `subscribe()` impl + subscriber fire step
+- `packages/crucible-core/src/index.ts` — new exports
+
+
+---
+
+# Decision: WAL CAS fsync Ordering (Issue #59)
+
+**Author:** Roger Wilco  
+**Date:** 2026-06-09  
+**Status:** Implemented  
+**Related:** Issue #59, #56 (manifest replay gate — already fixed)
+
+---
+
+## Problem
+
+`FileSystemCas.put()` wrote CAS blobs via `fs.writeFileSync()` without fsync. Phase 3 of `executeFlush()` fsynced the WAL segment via `syncFn(segFd)`, making WAL records durable while CAS blobs were still only in the OS page cache. A crash between Phase 1 (CAS write) and Phase 3 (segment fdatasync) left a durable WAL record referencing a non-durable CAS blob. On reopen, `replayFromSegments()` would call `this.cas.get(hash)` → null → throw `CasMissError`.
+
+This is distinct from #56 (manifest gate preventing replay entirely). After #56 was fixed, reopen always runs `replayFromSegments()`, which makes the #59 window more likely to surface as a `CasMissError` on the next open.
+
+---
+
+## Options Considered
+
+### Option A: Per-put fsync
+Call `fs.fsyncSync()` on each CAS file inside `put()`, immediately after `writeFileSync()`.
+
+**Tradeoffs:**  
+✅ Simplest code; ordering is local  
+❌ O(rows) fsync calls per batch — every row pays a full disk barrier even if its CAS blob is the same as the previous row  
+❌ No dedup benefit: same payload written in the same batch fsyncs once per call (before existence check)  
+❌ Destroys group-commit batching benefit
+
+### Option B: Batch CAS fsync in Phase 2.5 (chosen)
+Track newly-written CAS file paths in `FileSystemCas.pendingSync: Set<string>`. After the hash chain is built (Phase 2) and before the segment file is opened (Phase 3), call `cas.syncAll(syncFn)` to fsync all pending CAS files in a batch. Uses the same injectable `syncFn` seam as the segment fdatasync.
+
+**Tradeoffs:**  
+✅ O(K) fsync calls per batch where K ≤ number of unique new CAS files  
+✅ Dedup: identical payloads across rows in the same batch → 1 CAS file → 1 CAS sync  
+✅ Already-durable CAS files (from prior batches) are never re-tracked  
+✅ Preserves group-commit batching: all I/O barrier costs amortised across batch  
+✅ Uses existing injectable `syncFn` seam (testable without disk, consistent spy)  
+❌ Slightly more complex CAS class (pendingSync field + syncAll method)
+
+### Option C: Reconcile on reopen
+On `replayFromSegments()`, if a CAS blob is missing, skip the WAL record and truncate the segment back to exclude it.
+
+**Tradeoffs:**  
+✅ No write-path cost  
+❌ Data loss by design: committed rows silently dropped  
+❌ Hash chain invalidated at truncation boundary  
+❌ Violates durability contract: a fsynced segment record must survive reopen
+
+---
+
+## Decision: Option B — Batch CAS fsync in Phase 2.5
+
+### Rationale
+Option B maintains the durability contract with no data loss, amortises I/O cost across the group-commit barrier, and reuses the existing injectable `syncFn` seam. The cost is O(K) per batch where K is typically much smaller than O(rows) due to payload dedup. For workloads with large payloads or high uniqueness, cost is O(rows) in the worst case — same as Option A but amortised over the batch.
+
+### Ordering invariant established
+CAS blobs durable → segment written → segment fsynced → WAL record durable  
+No durable WAL record can reference a non-durable CAS blob.
+
+---
+
+## Implementation
+
+### `packages/crucible-core/src/ledger/wal/cas-fs.ts`
+
+Added:
+- `private readonly pendingSync = new Set<string>()` field
+- In `put()`: `this.pendingSync.add(filePath)` when a new file is written (dedup: skipped when file already exists)
+- `syncAll(syncFn: (fd: number) => void): void`: iterates `pendingSync`, opens each with `'r+'` (write access needed for `FlushFileBuffers` on Windows), calls `syncFn(fd)`, closes, removes from set. Each file removed only on successful sync so failed syncs are retried on the next batch.
+
+### `packages/crucible-core/src/ledger/wal-backend-fs.ts` — `executeFlush()`
+
+Inserted Phase 2.5 between Phase 2 (hash chain) and Phase 3 (segment write):
+
+```
+// Phase 2.5: fsync all newly-written CAS files (§3.2 / issue #59)
+try {
+  this.cas.syncAll(this.syncFn);
+} catch (err) {
+  // Segment not yet opened — no truncation needed.
+  for (const { row: entry } of committed) entry.reject(err);
+  if (restaged.length > 0) { this.stagingQueue.unshift(...restaged.map(r => r.row)); }
+  throw err;
+}
+```
+
+Phase 3 (segment open+write+fsync) is unchanged.
+
+### Windows compatibility
+CAS files opened with `'r+'` in `syncAll()`. `fs.fsyncSync(fd)` on Windows uses `FlushFileBuffers`, which requires write access. Read-only `'r'` would fail with EBADF on Windows. `'r+'` opens existing files for read+write, which is valid since `put()` always creates the file before `syncAll()` is called.
+
+---
+
+## Throughput Analysis
+
+| Scenario | CAS syncs per batch | Segment syncs | Total |
+|---|---|---|---|
+| N rows, all unique payloads, empty readSets | N | 1 | N+1 |
+| N rows, same payload (dedup), empty readSets | 1 | 1 | 2 |
+| 1 row, non-empty causalReadSet | 2 | 1 | 3 |
+| Second batch, same payload as first | 0 | 1 | 1 |
+
+For typical append workloads with repeated observation payloads (e.g., telemetry dedup), the amortised CAS sync cost approaches 0 over time.
+
+---
+
+## Interaction with Issue #56
+
+#56 fixed: `replayFromSegments()` is now called unconditionally (removed manifest gate). This means the #59 crash window is always tested on reopen — no manifest `-1` guard to mask a `CasMissError`. After #59 is fixed, `CasMissError` on reopen indicates true hardware corruption (segment durable, CAS blob lost to hardware failure), not a crash-window ordering bug.
+
+---
+
+## Impact on Other Agents
+
+- **Graham (seam guard):** `CasFsStore` (the `WalBackend` port's CAS seam) is not directly visible in the WAL interface — `FileSystemCas` is a private implementation detail of `FileSystemWalBackend`. No interface contract change.
+- **WAL backend contract tests:** The injectable `syncFn` seam now receives additional calls (CAS syncs before segment sync). Tests counting exact `syncFn` invocations must account for CAS syncs. Three existing group-commit tests updated: `syncCount` expectations raised from 1→2 (first batch) and 2→3 (after second batch for restaged row).
+- **InMemoryWalBackend:** Not affected. Uses `InMemoryCas` (no filesystem), no sync path.
+
+
+---
+
+# Roger — WAL Crash-Durability Fix (Issue #56)
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-06-09T18:25:35-07:00  
+**Branch:** (main checkout)  
+**Status:** COMPLETE — 119/119 crucible-core tests GREEN, build clean, lint clean  
+**Issue:** #56
+
+---
+
+## D-CD-1: Root cause — manifest-gate drops first-batch durable rows
+
+**Bug:** `FileSystemWalBackend.open()` called `replayFromSegments()` only when
+`manifest.lastCommitOffset >= 0`. The manifest starts at `-1` (no rows committed).
+The first batch's `executeFlush()` updates it in **Phase 4** (after fdatasync).
+
+**Crash window:** Process dies between Phase 3 (segment `fdatasync`) and Phase 4
+(`manifest.json` `writeFileSync`). Result:
+- Segment file: contains durable (fdatasync'd) records ✅
+- `manifest.lastCommitOffset`: still `-1` ❌
+
+On the next open: `-1 >= 0` is false → `replayFromSegments()` is never called →
+`this.events` stays empty → `readRows()` returns `[]` → durable rows silently lost.
+
+**Scope:** Only the first batch of a session. Subsequent batches leave
+`lastCommitOffset >= 0`, so the gate passes and `scanSegmentFile()` reads all bytes
+(including crash-recovered rows from the segment tail). No data loss for second+ batches.
+
+---
+
+## D-CD-2: Fix — remove the `-1` gate; always replay from segment
+
+**Choice:** Remove `if (manifest.lastCommitOffset >= 0)` and call
+`this.replayFromSegments()` unconditionally in `open()`.
+
+**Rationale:**
+- `scanSegmentFile()` already handles missing/empty segment files (returns `[]`) — the
+  call is a safe no-op for genuinely fresh sessions.
+- The segment file IS the ground truth. `manifest.lastCommitOffset` is informational
+  metadata, not an authoritative durability gate.
+- Zero behavior change for the normal path (no crash): manifest is always updated in
+  Phase 4, so `-1` only persists if the process died before Phase 4.
+
+**Alternative considered — manifest fsync within the same barrier:**
+Write the manifest within Phase 3's fdatasync scope (open manifest fd, write, fsync,
+close, then close segment fd). Rejected because:
+1. It requires two synced files per batch (higher I/O cost).
+2. It doesn't fully close the window (crash between segment-close and manifest-sync
+   still possible with two-file approach unless both are in one barrier, which is
+   filesystem-dependent and complex).
+3. The segment-as-ground-truth approach is simpler and makes the invariant
+   immediately obvious: on open, always scan what's durably on disk.
+
+---
+
+## D-CD-3: Crash-injection test methodology
+
+**Simulation:** write rows → flush (segment is durable) → manually overwrite
+`manifest.json` to set `lastCommitOffset = -1` → `close()` (no staged entries, no
+manifest re-update) → reopen.
+
+This accurately models the on-disk state left by a crash between Phase 3 and Phase 4.
+No special fsync spying needed; the test confirms the EXACT recovery path.
+
+**Test file:** `packages/crucible-core/src/__tests__/unit/wal-crash-durability.test.ts`
+
+Tests (all 5 were RED before fix, 5 GREEN after):
+
+| ID | Invariant |
+|----|-----------|
+| CD-1 | First-batch crash: 3 durable rows recovered when manifest shows -1 |
+| CD-2 | Subsequent-batch crash: all rows recovered when manifest lags segment |
+| CD-3 | Hash-chain verifies across crash-recovered boundary |
+| CD-4 | Post-recovery write chains onto recovered tail (prevRoot seeded from tail) |
+| CD-5 | lastTimestampNs seeded from recovered rows; subsequent writes don't regress |
+
+CD-2 was already GREEN before the fix (because `lastCommitOffset = 1 >= 0` passes the
+old gate). It's retained as a regression guard and to document the invariant.
+
+---
+
+## D-CD-4: Manifest role after fix
+
+`manifest.lastCommitOffset` is still updated in Phase 4 after each successful flush.
+Its role is now:
+- **Informational only** — aids debugging, logging, and schema tracking
+- **Not a replay gate** — replay always reads from the segment bytes
+
+`manifest.segmentRange` is still the authoritative list of segment files to scan
+during replay (needed for the future 64 MiB segment roll-over).
+
+---
+
+## D-CD-5: #59 (CAS fsync) scope fence — noted but not touched
+
+The fix does NOT address the CAS write durability gap (#59). CAS `.cbor` files are
+written before the segment fdatasync but are NOT themselves fsynced. If the process
+crashes after CAS write but before segment fsync, the segment record may point to a
+CAS blob that exists in memory but not yet on disk.
+
+The fix ensures that crash-recovered segment records are correctly replayed. If a
+CAS blob is absent on disk after a crash, `replayFromSegments()` will throw
+`CasMissError` (correct behavior per §3.2.1 — fail fast rather than substitute a
+default). Issue #59 tracks a proper fix for CAS durability.
+
+---
+
+## Impact on Other Agents
+
+| Agent | Impact |
+|-------|--------|
+| **Graham** | `WalBackend` interface UNCHANGED. `Ledger` interface UNCHANGED. |
+| **All** | Crash-durability is now correct for the first batch. Existing tests unaffected. |
+| **Future** | When 64 MiB segment roll-over is implemented, the manifest `segmentRange` update must be treated with the same care as `lastCommitOffset` — if it's updated after fdatasync in Phase 4, a crash between them would leave the new segment unreplayable. Recommend including `segmentRange` update in the same atomic write as `lastCommitOffset`. |
+
+---
+
+## Files Touched
+
+**Modified:**
+- `packages/crucible-core/src/ledger/wal-backend-fs.ts` — removed `if (lastCommitOffset >= 0)` guard in `open()`, replaced with unconditional `replayFromSegments()` + explaining comment
+
+**New:**
+- `packages/crucible-core/src/__tests__/unit/wal-crash-durability.test.ts` — 5 crash-injection tests (CD-1 through CD-5)
+
+
+---
+
+# Valanice — Aperture Push-Notification UX Review
+
+**Author:** Valanice (UX / Human Factors)  
+**Date:** 2026-06-09T18:25:39-07:00  
+**Target:** Walkthrough C implementation (Roger, `roger-aperture-projector.md`)  
+**Status:** ADVISORY — Roger is NOT blocked. These are ranked recommendations.
+
+---
+
+## Context
+
+Roger implemented the Aperture push-notification projector per §4.3. The core machinery is sound:
+subscription seam is additive, `NotificationPolicy` is pure and extracted, projection purity is
+contract-tested. This review examines the *human-factors* layer — what the design does to the
+tired, distracted engineer watching the badge.
+
+Files reviewed:
+- `packages/crucible-core/src/projectors/aperture-projector.ts`
+- `packages/crucible-core/src/projectors/notification-policy.ts`
+- `packages/crucible-core/src/__tests__/acceptance/aperture-push.test.ts`
+- `packages/crucible-core/src/__tests__/unit/aperture-projector.test.ts`
+- `packages/crucible-core/src/__tests__/unit/aperture-projector-purity.test.ts`
+- `docs/crucible-tdd-strategy.md §4.3`
+- Aperture projector decision in `.squad/decisions.md`
+
+---
+
+## BLOCKING
+
+*No absolute ship-stoppers. The projection layer is technically correct. The findings below are
+framed as "blocking if any badge UI ships to real users without addressing them."*
+
+### B-1: ℹ️ fallback icon for attention-tier events is cognitively dissonant
+
+**Location:** `notification-policy.ts` line 36 — `return 'ℹ️'` as the else-branch for events
+that are not quarantine and not decision, but that are still `attention`- or `urgent`-tier.
+
+**Problem:** The ℹ️ glyph communicates "informational, no action needed." By contract,
+`attention`/`urgent` events are exactly the events where the human MUST look. Surfacing an info
+icon for an attention event teaches the human that ℹ️ sometimes matters and sometimes doesn't —
+destroying the icon's signal value. The tired engineer skips ℹ️ badges on instinct.
+
+**Recommendation:** Replace the default with a distinct action-required icon (e.g., `⚠️` or `🔔`)
+or, at minimum, differentiate by tier rather than by category alone. The icon decision tree should
+be: tier=urgent → one icon; tier=attention (non-quarantine, non-decision) → another; never ℹ️ for
+actionable tiers.
+
+---
+
+## IMPORTANT
+
+### I-1: `unreadCount` is a one-way ratchet with no dismiss/ack path
+
+**Location:** `aperture-projector.ts` line 103 — `unreadCount: this.events.length`
+
+**Problem:** Every qualifying `onCommit()` increments the badge count. There is no `markRead()`,
+no `dismiss()`, no reset. Within a session, a burst of 20 quarantine events fires 20 sequential
+`notifier.push()` calls with counts 1 through 20 (validated in AP-5). After a busy session, the
+badge number is meaningless. Users learn to ignore a permanently-elevated badge — the classic
+notification desensitization loop.
+
+**Recommendation:** The projection store (append-only `ApertureEvent[]`) should remain immutable
+for purity reasons. But `unreadCount` should be a *derived view*, not `events.length`. Add:
+- A `seenOffset: number` cursor (or a `Set<string>` of seen event IDs) that the CLI layer can
+  advance via `markRead(upToOffset: number)` or similar.
+- `unreadCount` = `events.length - seenOffset` (or equivalent).
+
+This does not require changing the projection contract — it's a rendering concern layered on top of
+the stable `queryEvents()` interface Roger already defined.
+
+### I-2: Burst coalescing is absent — rapid-fire events produce rapid-fire pushes
+
+**Location:** `aperture-projector.ts` lines 86–106 (synchronous `onCommit` loop)
+
+**Problem:** A plugin sweep that quarantines 20 plugins in sequence fires 20 `notifier.push()`
+calls synchronously, one per commit. The CLI renderer receives 20 state updates in rapid succession.
+Depending on the renderer implementation, this could cause visual thrashing or, worse, the 20th
+call overwrites context from the 1st before the human can read it.
+
+**Recommendation:** The `NotificationService` interface is the right abstraction boundary for
+coalescing. Consider either:
+- (a) A debounced `NotificationService` adapter (e.g., coalesce calls within a 50ms window, emit
+  one `push()` with the final `unreadCount`), or
+- (b) A batch variant on the subscriber interface: `onCommitBatch(events: LedgerEvent[]): void`
+  that the ledger could use to deliver all events from a single `append()` call (if batching is
+  ever added).
+
+Option (a) is purely a CLI-layer concern — the projector logic is unchanged, and this is already
+the right place in the seam design.
+
+### I-3: `getPriority()` is computed but never surfaced in the push payload
+
+**Location:** `notification-policy.ts` lines 43–51; `aperture-projector.ts` line 102–105
+
+**Problem:** `NotificationPolicy.getPriority()` returns urgent=3, attention=2, notice=1, info=0 but
+the `NotificationService.push()` payload only carries `{ unreadCount: number; icon: string }`. The
+renderer has no way to distinguish a badge that contains 1 urgent + 10 attention events from one
+that contains 11 attention events. The urgent signal is invisible in the badge.
+
+**Recommendation:** Add `highestPriority: number` (or `hasUrgent: boolean`) to the push payload.
+The projector already has all the information it needs to compute this:
+
+```typescript
+this.notifier.push({
+  unreadCount: this.events.length,
+  icon: this.policy.getIcon(category, event.primitivePayload),
+  highestPriority: Math.max(...this.events.map(e => this.policy.getPriority(e.level))),
+});
+```
+
+Without this, `getPriority()` is dead code from the UX perspective and the badge cannot escalate
+its urgency signal as more critical events accumulate.
+
+### I-4: Emoji-only signaling — accessibility exposure
+
+**Location:** `notification-policy.ts` lines 27–37 (getIcon return values)
+
+**Problem:** All badge signals are emoji: 🔒, ✓, ℹ️. Emoji rendering has real accessibility gaps:
+- Screen readers announce them as verbose prose ("lock emoji", "heavy check mark sign") — not
+  actionable descriptions.
+- Emoji fonts vary by OS/terminal; in some CLI environments, these render as `?` or empty boxes.
+- Users who rely on high-contrast modes or have visual processing differences may not reliably
+  distinguish 🔒 from ℹ️ at badge scale.
+
+**Recommendation:** The `NotificationService` push payload should include a `label: string`
+alongside the icon — a machine-readable category string (`'quarantine'`, `'decision'`, `'alert'`)
+that the renderer can use to supplement the emoji with text or ARIA labels. This doesn't require
+changing projection logic — it's an additive field.
+
+### I-5: ✓ for "decision" reads as "resolved" — may suppress action
+
+**Location:** `notification-policy.ts` line 34 — `if (category === 'decision') return '✓'`
+
+**Problem:** ✓ is a completion/success glyph. A decision notification is not necessarily good news
+(AP-2 test uses `outcome: 'reject'`). A user who sees ✓ badge may instinctively read it as
+"something finished OK" and defer reading it — even when the decision requires follow-up action.
+
+**Recommendation:** Use a neutral or attention-specific glyph for decision notifications: `📋`
+(clipboard/document) or `⚡` (action required). Reserve ✓ for explicitly successful outcomes if
+that category ever exists.
+
+---
+
+## NICE-TO-HAVE
+
+### N-1: Separate unread counts by tier (attention vs. urgent)
+
+The current badge is a single integer. Separating `{ urgentCount: number; attentionCount: number }`
+in the push payload would let the renderer show a compound badge (e.g., "3 urgent / 8 attention")
+without changing the projection model. The human can then triage at a glance rather than having to
+open the event list to understand severity distribution.
+
+### N-2: Do-not-disturb / mute mode
+
+For high-throughput analysis workflows (batch evaluation, mass plugin sweeps), there should be a
+way to suppress badge pushes for the duration of the operation and deliver a single summary push
+at completion. This is a `NotificationService` adapter concern, not a projector concern — the
+seam is already in the right place. Track as a future `BatchedNotificationService` wrapper.
+
+### N-3: Escalation from attention → urgent if unacknowledged
+
+If an `attention`-tier event is not acknowledged (seen/dismissed) within a configurable window, it
+should escalate to `urgent` visually. This requires the read/ack cursor from I-1 as a prerequisite.
+Low priority for now — track as future work once I-1 is addressed.
+
+### N-4: Snooze for known-noisy event types
+
+Some attention-tier events may be expected (e.g., a known plugin under active remediation). A
+per-event-type snooze (suppress badge pushes for `quarantine` events from plugin X for N minutes)
+would reduce fatigue for situations where the human is already aware of the issue. This is a
+policy-layer extension — `NotificationPolicy.shouldPush()` could accept a `snoozeList` context
+parameter.
+
+---
+
+## What the Design Gets Right
+
+Worth stating explicitly:
+
+- **Tier gating is correct.** Pushing on attention + urgent only, silencing notice + info, is
+  exactly the right attention hygiene. The two-tier gate preserves badge signal value.
+- **`NotificationService` is the right seam.** All UX complexity (coalescing, debounce, DND,
+  escalation) can be implemented as adapter decorators around this port without touching the
+  projector. Roger's seam design is clean.
+- **Projection purity is well-tested.** The purity contract (PC-1 through PC-4) ensures the
+  projector's materialization logic is deterministic. That's the right foundation before adding
+  rendering semantics on top.
+- **`queryEvents()` interface is stable.** Read/ack cursors, filtering by level, future persistence
+  — all can be added without changing the acceptance test contract.
+
+---
+
+## Summary Priority Order
+
+| # | Finding | Severity | Effort |
+|---|---------|----------|--------|
+| B-1 | ℹ️ fallback icon for attention-tier | Blocking (if rendering ships) | Low — one-line change |
+| I-1 | No dismiss/ack — badge grows forever | Important | Medium — needs seenOffset cursor |
+| I-2 | Burst coalescing absent | Important | Medium — adapter layer |
+| I-3 | Priority not surfaced in push payload | Important | Low — add field to payload |
+| I-4 | Emoji-only accessibility exposure | Important | Low — add label field |
+| I-5 | ✓ icon misleads on decision notifications | Important | Low — swap icon |
+| N-1 | Separate counts by tier | Nice | Low |
+| N-2 | Do-not-disturb mode | Nice | Medium |
+| N-3 | Escalation logic | Nice | High |
+| N-4 | Per-type snooze | Nice | High |
+
+
+
+
+
+
+# Decisions: Crucible WAL Correctness S1 — Cycle-2 Remediation
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-06-11  
+**Branch:** `squad/crucible-wal-correctness-s1`  
+**Commit:** d74242b  
+
+---
+
+## D-CBOR-2: RFC 8949 §4.2.1 as the Canonical CBOR Profile
+
+**Decision:** Pin `rfc8949EncodeOptions` from cborg as the explicit encoding options for all
+WAL CBOR serialization (payloadHash, readSetHash, envelopeCbor).
+
+**Profile:**
+- Map keys sorted by plain bytewise comparison of their CBOR-encoded byte representations
+  (RFC 8949 §4.2.1 deterministic encoding — NOT RFC 7049 length-first)
+- Integers use smallest-possible encoding
+- Floats encoded as 64-bit (float64 option) for cross-platform stability
+- No indefinite-length items (cborg fixed-length default)
+
+**Context:** The prior implementation used a manual `sortKeys` JS lexicographic pre-pass, which
+(a) used the wrong ordering rule for CBOR canonical form, and (b) relied on cborg's implicit
+defaults rather than explicit options. The two rules happened to agree for short string keys, but
+the manual pre-pass was redundant (cborg's own mapSorter re-sorts) and silently mangled non-plain
+objects (Date → `{}`, Map → `{}`).
+
+**Cross-language note:** For a non-JS implementation to reproduce the canonical form:
+- Compare map keys bytewise on their full CBOR encoding (first byte = `0x60 | len` for strings ≤23 chars)
+- Apply recursively to nested maps
+- Golden vectors: `{ aa: 1, z: 2 }` → `a2617a0262616101` (z before aa: 0x61 < 0x62 bytewise)
+
+**References:** `wal/cbor.ts`, `wal-cbor.test.ts` CBOR-4 through CBOR-7 golden vectors
+
+---
+
+## D-SCHEMA-1: WAL1/CBOR is the Inaugural Shipped Format — No Migration Owed
+
+**Decision:** schemaVersion 1 (WAL1/CBOR) is the first and only format ever shipped.
+JSON encoding was used in development but never reached durable on-disk storage in a
+released version. No migration code is owed for any prior data.
+
+**Format identity:** WAL1 = binary segment records with CBOR-encoded payloads, identified
+by the 4-byte magic `0x57414C31` ("WAL1") in every segment record header.
+
+**Backstop behavior:** On WAL open/replay, if `manifest.schemaVersion !== 1`, throw
+`UnsupportedSchemaVersionError` immediately. This refuses to attempt decode of an unrecognized
+format rather than producing confusing corruption errors. Implemented in `loadOrInitManifest()`.
+
+**Future changes:** If a WAL2 format is introduced, it must bump schemaVersion to 2 and supply
+explicit migration logic. The `CURRENT_SCHEMA_VERSION = 1` constant in `wal-backend-fs.ts` is the
+single place to update.
+
+**References:** `wal-backend-fs.ts` (UnsupportedSchemaVersionError, CURRENT_SCHEMA_VERSION),
+`wal-backend-file.test.ts` Group4-1/4-2
+
+---
+
+## D-CAS-2: Unique Temp Names + EEXIST-as-success for CAS Writes
+
+**Decision:** CAS temp files use `<hash>-<pid>-<counter>.cbor.tmp` (unique per `put()` call)
+rather than the shared `<hash>.cbor.tmp`. On rename, EEXIST is treated as success since
+content-addressed storage guarantees identical bytes from any concurrent writer.
+
+**Rationale:** The shared `.tmp` name created a clobber race when two sessions/processes wrote
+the same hash simultaneously. The unique name eliminates this race. EEXIST-as-success prevents
+an ENOENT error when the concurrent writer renamed first (the temp file is already gone).
+
+**References:** `wal/cas-fs.ts`, `wal-cas-fsync.test.ts` TORN-1
+
+---
+
+## D-CAS-3: Shard Directory fsync After Rename (Linux/ext4)
+
+**Decision:** After each `renameSync()` in `syncAll()`, open and fsync the parent shard directory
+to make the new directory entry durable on Linux ext4 (ordered mode). Skip on Windows (NTFS
+writes directory entries synchronously as part of rename; extra fsync is a no-op).
+
+**Rationale:** On Linux ext4, a crash between `renameSync()` and shard-dir fsync can lose the
+directory entry — the exact hole described in issue #68 applies at the directory level too.
+This closes the last crash window in the CAS-before-segment durability chain.
+
+**References:** `wal/cas-fs.ts` syncAll()
+
+---
+
+## D-VERDICT-1: VerdictByte Type Discriminant + Precondition Enforcement
+
+**Decision:** Define `type VerdictByte = 0xFF | 0x00 | 0x01 | 0x02` in `wal/types.ts`.
+`hookResultToVerdictByte` now throws `Error` if `hookId === null` and `verdict !== 'COMMIT'`.
+
+**Rationale:** `hookId === null` with OBSERVE/PAUSE is a programming error (no hook fired
+but a non-commit verdict was returned). Previously the code silently fell through to
+`VERDICT_TO_WAL[verdict]`, which could return 0x01/0x02 without the 0xFF guard. The explicit
+precondition throw ensures a future default-OBSERVE path can't silently corrupt verdict bytes.
+
+**Affected tests:** All existing tests using `commit('OBSERVE')` / `commit('PAUSE')` with
+`hookId: null` were corrected to use `commitFromHook('OBSERVE')` / `commitFromHook('PAUSE')`.
+
+**References:** `wal/types.ts`, `wal-backend-file.test.ts` Group5-I6 tests
+
+---
+
+## D-MAT-1: Shared materializeRow Helper to Prevent Backend Drift
+
+**Decision:** Extract `materializeRow()` to `wal/materialize.ts`. Both `FileSystemWalBackend`
+and `InMemoryWalBackend` call this helper to compute `payloadBytes/payloadHash/readSetBytes/
+readSetHash/envelopeCbor/verdictByte`. CAS storage remains backend-specific.
+
+**Rationale:** The CBOR encoding + hashing logic was duplicated in both backends. A future
+change to one backend (e.g. different CBOR options) would silently diverge the other. The shared
+helper + CL-9 contract tests catch this at CI time.
+
+**References:** `wal/materialize.ts`, `wal-backend.contract.test.ts` CL-9a/9b
+
+---
+
+## D-CBOR-3: Crucible Canonical CBOR Profile — Final Definition (Cycle-3)
+
+**Date:** 2026-06-11  
+**Decision:** The encoding used for all WAL CBOR blobs is the **Crucible canonical CBOR profile**,
+defined precisely as:
+
+> RFC 8949 §4.2.1 map-key ordering (keys sorted by plain bytewise comparison of their deterministic
+> CBOR encodings) + integers in shortest form + **ALL non-integer numbers encoded as IEEE-754 binary64**
+> (forced float64, deviating from §4.2.1's shortest-float rule for cross-language reproducibility) +
+> definite-length items only.
+
+**This profile is NOT identical to RFC 8949 §4.2.1** because §4.2.1 mandates shortest-float
+(float16 for 1.5, etc.) and we force float64. The profile retains §4.2.1 for everything else.
+
+**Rationale for keeping forced float64:** Shortest-float introduces float16/float32 round-trip
+ambiguity in non-JS runtimes. Forced float64 guarantees the same 8-byte representation on every
+platform and language without any special float16 codec. The bytes `fb3ff8000000000000` for `1.5`
+are pinned by golden vector test CBOR-9.
+
+**Implementation:** `cborg` `rfc8949EncodeOptions` with `typeEncoders` for inline type validation
+(replaces the separate `assertJsonLike` pre-pass — single tree traversal for both validation and
+encoding).
+
+**Documentation:** `wal/cbor.ts` file header, `encodeCbor` JSDoc, CTD §3.2 encoding profile block.
+
+**Golden vectors (CBOR bytes → BLAKE3, all canonical):**
+- `{ aa:1, z:2 }` → `a2617a0262616101` → blake3 `019d473cc09257855925ff98a82dac52898c7ded08fe0b35b14428b6d498a818`
+- `{ nested:{bb:2,a:1}, top:42 }` → `a263746f70182a666e6573746564a261610162626202` → `ca3a08eebcc2b8da9850edaf204d824b91300b7e2fedfaea6f7412b7f4978ad4`
+- `1` → `01` → `48fc721fbbc172e0925fa27af1671de225ba927134802998b10a1568a188652b`
+- `'hello'` → `6568656c6c6f` → `90eeb71f0d4b768a5d449e30035beb7ffccd75d228e5b38e8e9cbfaa01ddfae9`
+- `1.5` (float64) → `fb3ff8000000000000` → `02a6136608c9b30d4e355cf9cd9911808f3997eb4cc351c7e0d08f89a74f90c5`
+
+**References:** `wal/cbor.ts`, `wal-cbor.test.ts` CBOR-4..9, CTD §3.2 encoding profile block
+
+---
+
+## D-CAS-4: Single Encode + Hash Per Row (Cycle-3 A2)
+
+**Decision:** Eliminate double-hashing in the hot path. `materializeRow()` is the single source of
+truth for `payloadHash`/`readSetHash`. Both CAS implementations (`InMemoryCas`, `FileSystemCas`)
+accept an optional `precomputedHash` parameter in `put(bytes, precomputedHash?)`. When the hash is
+supplied by the caller, the internal `hashBytes()` call is skipped.
+
+**Rationale:** Before this change, `materializeRow()` called `hashBytes(payloadBytes)` to produce
+the WAL record field, and then `cas.put(payloadBytes)` re-called `hashBytes()` internally —
+computing the same hash twice per row. This change removes the second call on the hot path.
+
+**Type validation fold:** The separate `assertJsonLike` pre-pass (a full tree traversal) has been
+replaced with inline validation via cborg `typeEncoders`. The payload tree is now traversed exactly
+once — validation and encoding happen in the same pass.
+
+**Benchmark baseline (2026-06-11):** 15.50 µs/op for `encodeCbor + hashBytes` over a 4-key nested
+payload (×2000 iterations, warm). Pinned by test PERF-1 in `wal-cbor.test.ts`.
+
+**References:** `wal/cbor.ts` (crucibleEncodeOptions), `wal/cas.ts`, `wal/cas-fs.ts`,
+`wal-backend-fs.ts`, `wal-backend-in-memory.ts`, `wal-cbor.test.ts` PERF-1
+
+---
+
+## D-EXPORT-1: Re-export All WAL Error Classes from index.ts (Cycle-3 A5)
+
+**Decision:** Export `CorruptSegmentError`, `CasMissError`, `UnsupportedSchemaVersionError`,
+`UnsupportedCborTypeError`, `InvalidMagicError`, `InvalidRecordLengthError` from
+`packages/crucible-core/src/index.ts`. Package consumers can now `catch` these by type.
+
+**References:** `src/index.ts`
+
+
