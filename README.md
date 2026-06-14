@@ -109,7 +109,7 @@ Clone this repo and point your Copilot CLI at it. The manifests in `.github/plug
 
 Wire Cairn's session-start telemetry hook into your interactive bash sessions
 so the prescriber runs automatically each time you open a terminal. On a fresh
-install the prescriber won't surface hints until execution profiles exist — see
+install the prescriber won't show hints until an execution profile exists — see
 the [Forge Dogfooding Guide](docs/forge-dogfooding-guide.md) to bootstrap one
 with `npx forge-seed-profile`.
 
