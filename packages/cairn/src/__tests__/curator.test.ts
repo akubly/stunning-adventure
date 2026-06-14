@@ -14,6 +14,7 @@ import {
 } from '../db/insights.js';
 import { insertSignalSamples } from '../db/signalSamples.js';
 import { getExecutionProfile } from '../db/executionProfiles.js';
+import { insertOptimizationHint } from '../db/optimizationHints.js';
 import { curate, getCuratorStatus, TIME_BUDGET_MS } from '../agents/curator.js';
 
 let db: ReturnType<typeof getDb>;
@@ -713,6 +714,84 @@ describe('profile build inside curate()', () => {
     expect(profile).not.toBeNull();
     expect(result.profileBuild).toBeDefined();
     expect(result.profileBuild!.skillIds).toContain('skill-b');
+  });
+
+  it('buildProfiles runs BEFORE sweepChangeVectors — sweep observably consumes the freshly-built profile', async () => {
+    // ORDERING PROOF (Slice 3 nit, strengthened in Slice 5):
+    //
+    // Seed an applied optimization_hint for 'skill-order-proof' with a legacy
+    // metric_snapshot (no sessionCount).  With a legacy snapshot, the sweep's
+    // gate uses `profile.session_count` directly, so the change vector CAN be
+    // computed as soon as a per-skill profile exists with sessionCount >= 3.
+    //
+    // Also seed 3 distinct-session signal_samples so buildProfiles creates that
+    // profile in the same curate() call.
+    //
+    // If sweepChangeVectors ran BEFORE buildProfiles:
+    //   → no profile exists yet → skippedInsufficientSessions++ (computed = 0)
+    //
+    // If buildProfiles ran BEFORE sweepChangeVectors:
+    //   → profile exists with sessionCount = 3 ≥ DEFAULT_MIN_SESSIONS
+    //   → sweep computes the change vector → computed = 1 ✓
+    //
+    // changeVectorSweep.computed > 0 proves the profile was ready when the
+    // sweep ran — i.e. buildProfiles ran first.
+    const SKILL = 'skill-order-proof';
+
+    // 3 distinct session IDs → aggregateSignals counts 3 sessions
+    insertSignalSamples(db, [
+      { kind: 'drift', sessionId: 'ord-sess-1', skillId: SKILL, value: 0.3, collectedAt: '2026-06-11 00:00:00' },
+      { kind: 'drift', sessionId: 'ord-sess-2', skillId: SKILL, value: 0.4, collectedAt: '2026-06-11 00:01:00' },
+      { kind: 'drift', sessionId: 'ord-sess-3', skillId: SKILL, value: 0.2, collectedAt: '2026-06-11 00:02:00' },
+    ]);
+
+    // Applied hint with a legacy snapshot (no sessionCount field).
+    // The sweep will gate on profile.session_count = 3 ≥ DEFAULT_MIN_SESSIONS.
+    insertOptimizationHint(db, {
+      id: 'ordering-proof-hint-001',
+      source: 'prompt-optimizer',
+      skillId: SKILL,
+      category: 'convergence',
+      description: 'Ordering proof: sweep must see profile built in same curate() call',
+      recommendation: 'Add explicit completion criteria.',
+      impactScore: 0.8,
+      confidence: 0.8,
+      metricSnapshot: {
+        driftScore: 0.35,
+        tokenCostNanoAiu: 5_000_000,
+        successRate: 0.9,
+        convergenceTurns: 15,
+        cacheHitRate: 0.1,
+        // intentionally no sessionCount → legacy snapshot path in sweep
+      },
+      generatedAt: '2026-06-10T00:00:00.000Z',
+      status: 'applied',
+    });
+
+    const result = await curate();
+
+    // PRIMARY ORDERING ASSERTION:
+    // computed > 0 proves the sweep found the profile that buildProfiles just
+    // created earlier in the same curate() call.  If the order were reversed
+    // (sweep first), the profile would not yet exist and the hint would be
+    // counted under skippedInsufficientSessions instead.
+    expect(
+      result.changeVectorSweep.computed,
+      'change vector computed — proves profile existed when sweep ran (ordering confirmed)',
+    ).toBeGreaterThan(0);
+    expect(
+      result.changeVectorSweep.computedSkillIds,
+      'computed skill ID matches our seeded skill',
+    ).toContain(SKILL);
+    expect(
+      result.changeVectorSweep.skippedInsufficientSessions,
+      'zero hints skipped — profile was ready for the sweep',
+    ).toBe(0);
+
+    // Secondary: profile is actually in the DB (belt-and-suspenders)
+    const profile = getExecutionProfile(db, SKILL, 'per-skill', 'global');
+    expect(profile, 'per-skill profile exists after curate()').not.toBeNull();
+    expect(profile!.sessionCount, 'profile sessionCount = 3').toBe(3);
   });
 
   it('should complete curate() and run sweepChangeVectors even if buildProfiles throws', async () => {
