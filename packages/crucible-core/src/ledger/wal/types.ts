@@ -24,6 +24,17 @@ export interface EnvelopeMapV1 {
   m?: EventMetadata;
 }
 
+/**
+ * Returns true iff v is a non-null, non-array plain object — the only shape
+ * that is valid for an EventMetadata value in the WAL envelope.
+ *
+ * Used by BOTH the encode path (materialize.ts write guard) and the decode
+ * path (wal-backend-fs.ts replayFromSegments) so the two sites can never drift.
+ */
+export function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
 export type Blake3Hash = Uint8Array; // 32 bytes
 
 /** Bits for the 2-byte flags field in a segment record. */

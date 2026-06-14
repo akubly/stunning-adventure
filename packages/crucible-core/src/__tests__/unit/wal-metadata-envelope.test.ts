@@ -37,6 +37,7 @@ import { encodeRecord }               from '../../ledger/wal/codec.js';
 import { buildChain }                 from '../../ledger/wal/hash-chain.js';
 import { hashBytes }                  from '../../ledger/wal/hash.js';
 import type { SegmentRecordInput }    from '../../ledger/wal/types.js';
+import { materializeRow }             from '../../ledger/wal/materialize.js';
 
 // ─── Temp-dir helpers ─────────────────────────────────────────────────────────
 
@@ -301,8 +302,7 @@ describe('WAL metadata envelope round-trip (#67)', () => {
     ).rejects.toThrow(/non-object metadata "m"/);
   });
 
-  it('META-3b: full Ledger append+reopen+projector integration test', async () => {
-    const rootDir   = makeTmpDir();
+  it('META-3b: full Ledger append+reopen+projector integration test', async () => {    const rootDir   = makeTmpDir();
     const sessionId = `sess-${randomUUID().slice(0, 8)}`;
 
     // Append via the full Ledger stack
@@ -326,5 +326,52 @@ describe('WAL metadata envelope round-trip (#67)', () => {
     expect(projector.queryEvents({ level: 'attention' })).toHaveLength(1);
     expect(notifier.push).toHaveBeenCalledTimes(1);
     await reader.close();
+  });
+
+  // ── Write-side metadata guard (symmetric with F2 decode guard) ───────────────
+
+  it('META-8: materializeRow throws a plain Error (not CorruptSegmentError) when metadata is an array', () => {
+    expect(() =>
+      materializeRow(
+        {
+          primitiveKind:    'observation',
+          primitivePayload: { x: 1 },
+          causalReadSet:    [],
+          metadata:         ['not', 'an', 'object'] as unknown as Record<string, unknown>,
+        },
+        'COMMIT',
+        null,
+      ),
+    ).toThrow(/metadata must be a plain object \(got array\)/);
+  });
+
+  it('META-9: materializeRow throws a plain Error (not CorruptSegmentError) when metadata is a scalar', () => {
+    expect(() =>
+      materializeRow(
+        {
+          primitiveKind:    'request',
+          primitivePayload: { x: 2 },
+          causalReadSet:    [],
+          metadata:         42 as unknown as Record<string, unknown>,
+        },
+        'COMMIT',
+        null,
+      ),
+    ).toThrow(/metadata must be a plain object \(got number\)/);
+  });
+
+  it('META-10: materializeRow accepts a valid plain-object metadata without throwing', () => {
+    expect(() =>
+      materializeRow(
+        {
+          primitiveKind:    'observation',
+          primitivePayload: { x: 3 },
+          causalReadSet:    [],
+          metadata:         { level: 'info', source: 'test' },
+        },
+        'COMMIT',
+        null,
+      ),
+    ).not.toThrow();
   });
 });

@@ -28,7 +28,7 @@ import type { PrimitiveInput } from '../../types.js';
 import { encodeCbor } from './cbor.js';
 import { hashBytes } from './hash.js';
 import type { Blake3Hash, EnvelopeMapV1, VerdictByte } from './types.js';
-import { hookResultToVerdictByte } from './types.js';
+import { hookResultToVerdictByte, isPlainObject } from './types.js';
 
 const ZERO_HASH_32 = new Uint8Array(32);
 
@@ -85,6 +85,21 @@ export function materializeRow(
   // rfc8949EncodeOptions mapSorter.
   const envelopeObj: EnvelopeMapV1 = { k: input.primitiveKind };
   if (input.metadata !== undefined) {
+    // Write-side guard: mirror the decode-side validity condition in
+    // replayFromSegments (wal-backend-fs.ts) so the write path can never
+    // produce a segment that the replay path would reject.  This is a
+    // programmer/caller error at write time — throw a plain Error, NOT a
+    // CorruptSegmentError (which is a read-time segment-integrity signal).
+    if (!isPlainObject(input.metadata)) {
+      const tag = Array.isArray(input.metadata)
+        ? 'array'
+        : input.metadata === null
+          ? 'null'
+          : typeof input.metadata;
+      throw new Error(
+        `metadata must be a plain object (got ${tag}); received: ${String(input.metadata)}`,
+      );
+    }
     envelopeObj.m = input.metadata;
   }
   const envelopeCbor = encodeCbor(envelopeObj);

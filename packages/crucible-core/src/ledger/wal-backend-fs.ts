@@ -48,6 +48,7 @@ import { FileSystemCas }                     from './wal/cas-fs.js';
 import { sealAndSplit }                      from './wal/seal-and-split.js';
 import { materializeRow }                    from './wal/materialize.js';
 import type { SegmentRecord, SegmentRecordInput, EnvelopeMapV1 } from './wal/types.js';
+import { isPlainObject } from './wal/types.js';
 
 // ─── Write-lock error ─────────────────────────────────────────────────────────
 
@@ -432,12 +433,7 @@ export class FileSystemWalBackend implements WalBackend {
                 );
               }
               primitiveKindRaw = env.k;
-              if (
-                'm' in env &&
-                typeof env.m === 'object' &&
-                env.m !== null &&
-                !Array.isArray(env.m)
-              ) {
+              if ('m' in env && isPlainObject(env.m)) {
                 metadata = env.m as EventMetadata;
               } else if ('m' in env) {
                 throw new CorruptSegmentError(
