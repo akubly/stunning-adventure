@@ -449,3 +449,11 @@ Issue #46 originally required zero `decisions/inbox/` hits. Aaron approved relax
 ### Merge decisions-archive.md from a current main base
 
 When a branch is behind main and decisions-archive.md diverged significantly, reset to `origin/main` before applying pointer fixes — do not rely on auto-merge, which can produce duplicated sections.
+
+---
+
+## 2026-06-11: Crucible S1 WAL Correctness — S2 Impact (cross-agent note)
+
+Impact for S2: Roger's S1 fixes (#57 verdict encoding, #60 canonical CBOR hashing, #68 CAS atomic write) harden the WAL substrate. Phase 0.5 walking skeleton can now proceed with confidence in blob atomicity and CBOR determinism.
+
+**2026-06-12:** Crucible S1 WAL Correctness — 2-cycle persona review COMPLETE, ship-ready (Scribe).

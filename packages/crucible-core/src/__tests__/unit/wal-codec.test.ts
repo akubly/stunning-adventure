@@ -25,6 +25,7 @@ import {
   decodeRecord,
   InvalidMagicError,
   InvalidRecordLengthError,
+  InvalidVerdictByteError,
   MAGIC,
 } from '../../ledger/wal/codec.js';
 import type { SegmentRecord } from '../../ledger/wal/types.js';
@@ -168,5 +169,35 @@ describe('WAL codec — T3 recordLen validation (InvalidRecordLengthError)', () 
     // recordLen claims more bytes than the buffer holds
     buf.writeUInt32LE(buf.length + 100, 4);
     expect(() => decodeRecord(buf)).toThrow(InvalidRecordLengthError);
+  });
+});
+
+// ─── T6: hookVerdict validation ───────────────────────────────────────────────
+//
+// decodeRecord previously cast the on-disk byte to VerdictByte without validating
+// it, making the type unsound for corrupt segments. The fix validates the byte is
+// one of {0xFF, 0x00, 0x01, 0x02} and throws InvalidVerdictByteError otherwise.
+
+describe('WAL codec — T6 hookVerdict validation (InvalidVerdictByteError)', () => {
+  it('T6a: decodeRecord accepts all four valid verdict bytes without throwing', () => {
+    for (const verdict of [0xFF, 0x00, 0x01, 0x02] as const) {
+      const buf = encodeRecord(makeRecord({ hookVerdict: verdict }));
+      expect(() => decodeRecord(buf)).not.toThrow();
+      expect(decodeRecord(buf).hookVerdict).toBe(verdict);
+    }
+  });
+
+  it('T6b: decodeRecord throws InvalidVerdictByteError for an invalid verdict byte (e.g. 0x03)', () => {
+    const buf = encodeRecord(makeRecord({ hookVerdict: 0x00 }));
+    // Overwrite the hookVerdict byte at offset 25 with an invalid value
+    buf.writeUInt8(0x03, 25);
+    expect(() => decodeRecord(buf)).toThrow(InvalidVerdictByteError);
+    expect(() => decodeRecord(buf)).toThrow(/0x03/);
+  });
+
+  it('T6c: decodeRecord throws InvalidVerdictByteError for verdict byte 0xFE (close to 0xFF)', () => {
+    const buf = encodeRecord(makeRecord({ hookVerdict: 0x00 }));
+    buf.writeUInt8(0xFE, 25);
+    expect(() => decodeRecord(buf)).toThrow(InvalidVerdictByteError);
   });
 });

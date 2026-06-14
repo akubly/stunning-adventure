@@ -7,10 +7,10 @@
  * The helper definition (runFactStoreContract + FactStoreHarness) lives in:
  *   ./fact-store-contract.helper.ts
  *
- * Each call to runFactStoreContract adds 24 tests (FS-1..FS-10h; FS-5b×2, FS-8×3, FS-9×4, FS-10a–h×8 via it/it.each).
- * InMemoryFactStore wired below → 24 contract tests.
- * SqliteFactStore wired below   → 24 contract tests.
- * Total: 48 (32 pre-D+ + 16 new cursor-versioning tests)
+ * Each call to runFactStoreContract adds 29 tests (FS-1..FS-13 + FS-12c; FS-5b×3, FS-8×3, FS-9×4, FS-10a–h×7 via it/it.each).
+ * InMemoryFactStore wired below → 29 contract tests.
+ * SqliteFactStore wired below   → 29 contract tests.
+ * Total: 58 ((25 pre-attention + 4 attention-column) × 2 impls = 58)
  */
 
 import Database from 'better-sqlite3';
@@ -27,7 +27,7 @@ import { CursorScopeMismatchError } from '../errors.js';
 //
 // Simple keyword search: splits query into tokens, counts occurrences in
 // content (case-insensitive), multiplies by trust for composite score.
-// Pagination via base64-JSON offset cursor (mirrors SqliteFactStore's format).
+// Pagination via base64-JSON keyset cursor (mirrors SqliteFactStore's format).
 //
 // Satisfies all 11 contract invariants using pure in-memory computation —
 // no SQLite required. Serves as the substitutability reference for FS-1..FS-8.
@@ -39,6 +39,9 @@ interface StoredFact {
   trust: number;
   /** Monotonically-increasing insertion index — mirrors f.id (autoincrement) in SQLite. */
   insertionOrder: number;
+  importance: number;
+  lastAccessed: number | undefined;
+  attentionTier: 'hot' | 'warm' | 'cold';
 }
 
 /** Composite key — null-byte separator prevents accidental collisions. */
@@ -51,7 +54,7 @@ function storeKey(sessionId: SessionId, factId: string): string {
 
 function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['seed'] } {
   const store = new Map<string, StoredFact>();
-  let insertionCounter = 0;
+  let insertionCounter = 1; // 1-based to match SQLite autoincrement (decodeCursor requires lastId > 0)
 
   const impl: FactStore = {
     async search(args) {
@@ -70,7 +73,8 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
       // Fix J: scopeFingerprint is computed lazily — only when needed (v1 scope
       // check or emitting nextCursor).  Cursor decode still precedes empty-query
       // short-circuit (Fix E ordering preserved).
-      let offset = 0;
+      let keysetLastSort: number | undefined;
+      let keysetLastId: number | undefined;
       let computedScope: string | undefined;
       if (cursor !== undefined) {
         const decoded = decodeCursor(cursor); // may throw CursorVersionUnsupportedError
@@ -79,10 +83,10 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
           if (decoded.scope !== computedScope) {
             throw new CursorScopeMismatchError(decoded.scope, computedScope);
           }
-          offset = decoded.offset;
-        } else {
-          offset = decoded.offset;
+          keysetLastSort = decoded.lastSort;
+          keysetLastId = decoded.lastId;
         }
+        // version 0 (restart sentinel) → no keyset → first page
       }
 
       if (!query.trim()) return { results: [] };
@@ -105,8 +109,17 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
         })
         .sort((a, b) => b.score - a.score || a.insertionOrder - b.insertionOrder);
 
-      const page = scored.slice(offset, offset + limit);
-      const hasMore = scored.length > offset + limit;
+      // Apply keyset filter: only rows strictly after (keysetLastSort, keysetLastId).
+      // Mirrors the SQL predicate: score < lastSort OR (score = lastSort AND id > lastId).
+      const afterCursor = (keysetLastSort !== undefined && keysetLastId !== undefined)
+        ? scored.filter(f =>
+            f.score < keysetLastSort! ||
+            (f.score === keysetLastSort! && f.insertionOrder > keysetLastId!)
+          )
+        : scored;
+
+      const page = afterCursor.slice(0, limit);
+      const hasMore = afterCursor.length > limit;
 
       const termCounts = page.map(f => f.termCount);
       const minTC = Math.min(...termCounts);
@@ -115,20 +128,36 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
       const results: RecallResult[] = page.map((f) => ({
         content: f.content,
         trust: f.trust,
-        attentionTier: 'warm',
+        attentionTier: f.attentionTier,
+        importance: f.importance,
+        lastAccessed: f.lastAccessed,
         relevance:
           termCounts.length <= 1 || maxTC === minTC
             ? 1.0
             : (f.termCount - minTC) / (maxTC - minTC),
       }));
 
-      const nextCursor = hasMore ? encodeCursor(offset + limit, computedScope ?? scopeFingerprint(query, sessionId as string, minTrust, limit)) : undefined;
+      let nextCursor: string | undefined;
+      if (hasMore) {
+        const lastRow = page[page.length - 1];
+        const scope = computedScope ?? scopeFingerprint(query, sessionId as string, minTrust, limit);
+        nextCursor = encodeCursor({ lastSort: lastRow.score, lastId: lastRow.insertionOrder, scope });
+      }
       return { results, nextCursor };
     },
   };
 
-  const seed: FactStoreHarness['seed'] = async (factId, sessionId, content, trust) => {
-    store.set(storeKey(sessionId, factId), { factId, sessionId: sessionId as string, content, trust, insertionOrder: insertionCounter++ });
+  const seed: FactStoreHarness['seed'] = async (factId, sessionId, content, trust, attention) => {
+    store.set(storeKey(sessionId, factId), {
+      factId,
+      sessionId: sessionId as string,
+      content,
+      trust,
+      insertionOrder: insertionCounter++,
+      importance: attention?.importance ?? 0,
+      lastAccessed: attention?.lastAccessed ?? undefined,
+      attentionTier: attention?.attentionTier ?? 'warm',
+    });
   };
 
   return { impl, seed };
@@ -153,16 +182,27 @@ runFactStoreContract('SqliteFactStore', () => {
 
   // Seed via direct INSERT into the facts table. The facts_ai trigger
   // (migration 001) automatically updates facts_fts, so FTS search works.
+  // attention opts (migration 002 columns) are honoured when provided.
   const insertStmt = db.prepare(
-    'INSERT OR REPLACE INTO facts (fact_id, session_id, content, trust) VALUES (?, ?, ?, ?)',
+    `INSERT OR REPLACE INTO facts
+       (fact_id, session_id, content, trust, importance, last_accessed, attention_tier)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   );
 
   const impl = new SqliteFactStore(db);
 
   const harness: FactStoreHarness = {
     impl,
-    seed: async (factId: string, sessionId: SessionId, content: string, trust: number) => {
-      insertStmt.run(factId, sessionId as string, content, trust);
+    seed: async (factId: string, sessionId: SessionId, content: string, trust: number, attention?) => {
+      insertStmt.run(
+        factId,
+        sessionId as string,
+        content,
+        trust,
+        attention?.importance ?? 0,
+        attention?.lastAccessed ?? null,
+        attention?.attentionTier ?? 'warm',
+      );
     },
     cleanup: () => db.close(),
   };

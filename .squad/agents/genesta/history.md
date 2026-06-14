@@ -77,3 +77,57 @@ Two infrastructure changes approved in PRs #50 and #52:
 
 **Action for you:** No immediate action required. Lint workspace changes take effect after merge and 
 pm install restart. Doc-hygiene scope established for future improvements.
+
+---
+
+## 2026-06-10: M8 Slice D++ Shipped to Branch
+
+**Session:** M8 Slice D++ keyset pagination (quad spawn)  
+**Branch:** eureka/m8-slice-dpp-keyset  
+**Status:** ✅ SHIPPED
+
+Slice D++ completed with four-agent parallel execution. Genesta's architecture memo locked three interlocked decisions on cursor design, schema migration, and normalization strategy. Laura wrote 22 RED keyset tests. Crispin implemented migration 002, keyset GREEN phase, and persona fixes (cycle 2 clean). Roger completed doc sweep (N1-N4 stale comment fixes).
+
+**Decisions locked:** D1=mutate cursor v1 in place to keyset; D2=importance/lastAccessed NOT in SQL sort key (time-varying recency breaks stability); D3=per-page normalization status quo. FSE-2 guarantee corrected: INSERT-safe only (not trust-mutation-safe).
+
+Ready to merge.
+
+---
+
+## 2026-06-13: M8 Slice D++ Follow-up — Attention Columns Wired into FactStore Reads
+
+**Agent spawn:** Laura (RED) + Crispin (GREEN)  
+**Task:** Wire migration-002 columns into compositeScore input path  
+**Status:** ✅ COMPLETE
+
+Five new edge tests (FS-SE-16a–e) in `fact-store-sqlite-edges.test.ts` confirm `FactStore.search()` now hydrates `importance`, `last_accessed`, `attention_tier` from the SQL layer into `RecallResult` for every page.
+
+**Wiring:** `SqliteFactStore.search()` extended: `SearchRow` interface + stmtFirst/stmtKeyset SELECTs + row mapper (importance, lastAccessed, attentionTier fields). Composite sort key (`-bm25*trust DESC, id ASC`) unchanged; attention columns are passenger data flowing into `compositeScore` calculation (FR-2 in recall.ts).
+
+**Schema defaults preserved:** New facts get `importance=0`, `attention_tier='warm'`, `last_accessed=NULL` — identical output to pre-wire-up behavior (FS-SE-16e verified).
+
+**Test result:** 205/205 passing, tsc clean.
+
+Ready for Eureka activity layer to consume via compositeScore. Milestone M8 read-wiring complete.
+
+---
+
+## 2026-06-12: Attention-Column Read-Through Contract Enforcement
+
+**Agents:** Laura (contract promotion), Crispin (wiring complete)  
+**Task:** Promote attention-column hydration from SQLite-edges to shared FactStore contract  
+**Status:** ✅ COMPLETE
+
+Aaron directed: **attention-column read-through MUST be enforced at the contract level** so every FactStore implementation (including InMemoryFactStore) is held to the same invariant.
+
+**Changes:**
+- Extended `SeedFact` type with optional `attention` opts (5th parameter)
+- Updated `InMemoryFactStore` to model `importance`, `lastAccessed`, `attentionTier` (no longer hardcoded defaults)
+- Added contract assertions FS-12, FS-12b, FS-13 to `runFactStoreContract` — run for ALL implementations
+- Removed FS-SE-16a–e from sqlite-edges (consolidated into contract suite)
+
+**Pattern captured:** Optional seed opts for new columns across all impls. When storage schema gains observable columns, extend SeedFact → update all impls → add contract assertions for defaults AND non-defaults.
+
+**Test result:** 206/206 passing (205 pre-existing + 1 net new). tsc clean. Both InMemoryFactStore and SqliteFactStore now enforce attention-column contract uniformly.
+
+**Impact on Genesta/Cairn integration:** Attention columns now surfaced consistently at the FactStore contract level. Any future Cairn consumer of FactStore reads gets predictable attention metadata (not just SQLite-specific values). Extraction-ready design confirmed.

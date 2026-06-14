@@ -14,8 +14,8 @@
  *   FS-SE-1  BM25 normalization — top result gets relevance=1.0; all results ∈ [0,1]
  *   FS-SE-1b Heterogeneous trust — high-trust/low-BM25 sorts before low-trust/high-BM25 (relevance ≠ order by design)
  *   FS-SE-2  BM25 normalization — single matching result always gets relevance=1.0
- *   FS-SE-3  Garbage cursor → safe fallback to offset=0 (no crash, no reject)
- *   FS-SE-4  Structurally-valid cursor with bad offset (negative/Infinity/float) → fallback to offset=0
+ *   FS-SE-3  Garbage cursor → restart to page 1 (no crash, no reject)
+ *   FS-SE-4  v1 cursor with bad keyset field values (bad lastSort/lastId) → restart to page 1
  *   FS-SE-5  minTrust exact floor boundary — trust=floor is INCLUDED (>= not >)
  *   FS-SE-6  minTrust just-below floor — fact with trust < floor is excluded
  *   FS-SE-7  NULL trust never surfaces even at minTrust=0
@@ -25,6 +25,11 @@
  *   FS-SE-11 FTS5 unclosed quote → graceful empty results (FSE-1 fix applied)
  *   FS-SE-12 Per-page normalization distortion: sole result on sparse page gets relevance=1.0
  *   FS-SE-13 Non-FTS SQLITE_ERROR (e.g. missing table) propagates as rejected Promise
+ *   FS-SE-15 Cursor stays under 256 bytes; keyset fields (lastSort/lastId) present (Slice D++)
+ *
+ * Note: FS-SE-16a–e (attention-column read-through) are now covered at the contract level
+ * (FS-12 / FS-13 in fact-store-contract.helper.ts) for both SqliteFactStore and
+ * InMemoryFactStore; removed here to avoid duplicate coverage.
  *
  * All tests use :memory: databases (no disk I/O needed — disk/WAL edges are
  * already covered by fact-reader-sqlite-edges.test.ts).
@@ -35,6 +40,7 @@ import Database from 'better-sqlite3';
 import type { SessionId } from '@akubly/types';
 import { applyMigrations } from '../../db/schema.js';
 import { SqliteFactStore } from '../fact-store-sqlite.js';
+import { scopeFingerprint } from '../cursor.js';
 
 // ---------------------------------------------------------------------------
 // Session IDs
@@ -160,16 +166,16 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // FS-SE-3: Garbage cursor → safe fallback to offset=0 (no crash)
+  // FS-SE-3: Garbage cursor → restart to page 1 (no crash)
   //
-  // decodeCursor() catches JSON.parse() failures and returns 0.
-  // An invalid base64/JSON cursor MUST NOT crash search() — it must behave
-  // as if no cursor was provided (i.e., start from offset 0).
+  // decodeCursor() catches JSON.parse() failures and returns the restart
+  // sentinel { version: 0 }.  An invalid base64/JSON cursor MUST NOT crash
+  // search() — it must behave as if no cursor was provided (restart = page 1).
   //
   // Verified by asserting: results with garbage cursor == results with no cursor.
   // ─────────────────────────────────────────────────────────────────────────
 
-  it('FS-SE-3: garbage cursor (invalid base64/JSON) → safe fallback to offset=0, no crash', async () => {
+  it('FS-SE-3: garbage cursor (invalid base64/JSON) → restart to page 1, no crash', async () => {
     seed('se3-a', 'resilient distributed consensus algorithm', 0.8);
     seed('se3-b', 'resilient fault tolerance recovery protocol', 0.7);
 
@@ -183,36 +189,53 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
       cursor: '!!!not-valid-base64-at-all!!!',
     });
 
-    // Garbage cursor must fall back to offset=0 → identical results to no-cursor baseline.
+    // Garbage cursor must restart (page 1) → identical results to no-cursor baseline.
     expect(withGarbage.results.map(r => r.content)).toEqual(
       baseline.results.map(r => r.content),
     );
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // FS-SE-4: Structurally-valid cursor with bad offset → fallback to offset=0
+  // FS-SE-4: v1 cursor with bad keyset field values → restart to page 1
   //
-  // decodeCursor() validates: non-negative finite integer. Any structurally
-  // valid JSON cursor whose `offset` is negative, non-finite (Infinity), or
-  // non-integer (1.5) must NOT be honored — falls back to 0.
-  // Mirrors the identical validation in decodeCursorInMemory (T2/T6 fix).
+  // Slice D++ keyset contract: decodeCursor validates lastSort (must be a
+  // finite number) and lastId (must be a positive integer).  Bad values in
+  // an otherwise well-formed v1 cursor with correct scope must NOT crash or
+  // skip rows — they fall back to the restart sentinel (page 1).
+  //
+  // Each bad cursor also carries `offset:1` so the current offset-based impl
+  // honors that offset and returns page 2 (empty, 1 fact seeded).  This makes
+  // all three cases RED against the current impl:
+  //   current: honors offset=1 → page 2 → empty → ≠ baseline (RED)
+  //   keyset:  bad lastSort/lastId → restart → page 1 = baseline (GREEN)
+  //
+  // Replaced: the old FS-SE-4 tested bad offset in v0 cursors (negative,
+  // Infinity, float).  Those cases still behave correctly in Slice D++
+  // (v0 absent = garbage = restart) but the primary test surface is now the
+  // v1 keyset field validation path.
   // ─────────────────────────────────────────────────────────────────────────
 
   it.each([
-    ['negative',  Buffer.from(JSON.stringify({ offset: -5 })).toString('base64')],
-    // JSON.stringify(Infinity) → null, so construct the raw JSON string directly:
-    // JSON.parse('{"offset":1e309}') → { offset: Infinity }, exercising the isFinite guard.
-    ['Infinity',  Buffer.from('{"offset":1e309}').toString('base64')],
-    ['float',     Buffer.from(JSON.stringify({ offset: 1.5 })).toString('base64')],
+    ['NaN lastSort (null in JSON)',   { lastSort: NaN,  lastId: 5,   offset: 1 }],
+    ['negative lastId',               { lastSort: 1.0,  lastId: -1,  offset: 1 }],
+    ['non-integer lastId (float)',    { lastSort: 1.0,  lastId: 1.5, offset: 1 }],
   ])(
-    'FS-SE-4: cursor with %s offset → fallback to offset=0, no crash',
-    async (_label, badCursor) => {
+    'FS-SE-4: v1 cursor with %s → restart to page 1 (no crash)',
+    async (_label, fields) => {
       seed('se4-fact', 'topology graph traversal breadth first', 0.8);
 
       const baseline      = await impl.search({ query: 'topology', sessionId: SESSION, limit: 10 });
+
+      // Compute the matching scope so decodeCursor sees a valid string scope field.
+      // Bad lastSort/lastId are caught by decodeCursor's keyset-field validation and
+      // return the restart sentinel — the scope fingerprint check in search() is never reached.
+      const scope = scopeFingerprint('topology', SESSION as string, 0.15, 10);
+      const payload = { v: 1, scope, ...fields };
+      const badCursor = Buffer.from(JSON.stringify(payload)).toString('base64');
+
       const withBadCursor = await impl.search({ query: 'topology', sessionId: SESSION, limit: 10, cursor: badCursor });
 
-      // Bad offset clamps to 0 → same results as no-cursor call.
+      // Bad keyset fields → restart → same results as no-cursor baseline.
       expect(withBadCursor.results.map(r => r.content)).toEqual(
         baseline.results.map(r => r.content),
       );
@@ -401,7 +424,7 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
   // incomparability. Callers that need cross-page comparison must not rely on
   // the absolute relevance value.
   //
-  // Roger acknowledged this in his decision drop §2: "The downside is that
+  // The accepted design (see decision log §2) acknowledges that "the downside is that
   // relevance scores are not comparable across pages." This test makes that
   // statement machine-verifiable.
   // ─────────────────────────────────────────────────────────────────────────
@@ -517,6 +540,30 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
     expect(result.nextCursor!.length).toBeLessThan(256);
 
     const decoded = JSON.parse(Buffer.from(result.nextCursor!, 'base64').toString('utf8')) as Record<string, unknown>;
-    expect(decoded).toMatchObject({ v: 1 });
+    // Keyset format guarantee: cursor encodes the sort anchor (v:1, lastSort, lastId), not an offset.
+    expect(decoded).toMatchObject({
+      v: 1,
+      lastSort: expect.any(Number),
+      lastId: expect.any(Number),
+    });
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // FS-SE-16 — Attention-column coverage (MOVED TO CONTRACT SUITE)
+  //
+  // Attention-column read-through (attentionTier, importance, lastAccessed)
+  // is now enforced at the shared contract level (FS-12 / FS-13 in
+  // fact-store-contract.helper.ts), running for BOTH SqliteFactStore and
+  // InMemoryFactStore on every contract-suite execution.
+  //
+  // Placement rationale update: FS-SE-16a–e were originally placed here
+  // because SeedFact had no attention-column params and InMemoryFactStore
+  // did not model these columns — making this a SQLite-specific concern.
+  // That constraint was intentionally reversed: SeedFact now accepts an
+  // optional `attention` opts argument and InMemoryFactStore stores and
+  // returns all three migration-002 columns. The invariant is now contract-
+  // level; the sqlite-edges file no longer carries these tests to avoid
+  // duplicate coverage.
+  // ─────────────────────────────────────────────────────────────────────────
 });
+

@@ -45,7 +45,7 @@ Surface 2 semantics (commit-window verdicts against the in-flight group commit):
 
 | Verdict    | Effect on the staged batch                                                       | WAL recording                                       | Subscriber routing |
 |------------|----------------------------------------------------------------------------------|-----------------------------------------------------|--------------------|
-| `continue` | Row joins `committed` unchanged. Default verdict when no predicate matches.       | `hookVerdict = continue`; `hookVerdictWitness = null`. Zero-cost per P5. | None |
+| `continue` | Row joins `committed` unchanged when a hook is registered and its verdict is continue. | `hookVerdict = continue` (wire byte `0x00`); `hookVerdictWitness = null`. Zero-cost per P5. | None |
 | `observe`  | Row joins `committed`; an attention-tier signal is emitted. Does not stall.        | `hookVerdict = observe`; `hookVerdictWitness = blake3(witnessBody)` in CAS. | Bus dispatches to `observe`-subscribed sinks (Aperture, Curator on opt-in). |
 | `pause`    | Row joins `committed` with the pause verdict durable; subsequent rows in the batch are restaged via §3.5 seal-and-split. | `hookVerdict = pause`; `hookVerdictWitness` durable. | Bus broadcasts to the Router (§5) via L1Subscriber on the paused row. |
 
@@ -55,21 +55,23 @@ Surface 1 semantics (Ledger-layer pre-stage gate — Aaron ruling 2026-06-06):
 |---------|--------|---------------|--------------------|
 | `veto`  | `Ledger.append` throws `Error('Append vetoed by hook: <id>')` immediately. Row never staged. | **None — no WAL row created.** WAL remains purely append-only. | None |
 
-`continue` is the default when no registered predicate matches the row's
-primitive kind; the WAL row stores `hookVerdict = null` in that case to
-distinguish "no predicate fired" from "a predicate fired and said continue."
-Both are zero-witness; only the bookkeeping distinguishes them.
-
-> **Deferred (#57):** The null-vs-continue encoding described above is planned
-> but not yet implemented by the current code. Today the implementation does not
-> distinguish "no predicate matched" from an explicit COMMIT verdict in the WAL
-> row. Tracked in issue #57.
+When no hooks are registered (`hooks.size === 0`), the WAL row stores
+`hookVerdict = null` with wire byte `0xFF` to represent "no hook fired" —
+distinct from `0x00` ("a hook fired and said continue"). Both are zero-witness;
+only the bookkeeping distinguishes them. Note: in the current implementation
+`PreCommitHookBus` evaluates ALL registered hooks on every row (there is no
+kind-indexed predicate dispatch yet). The `0xFF` / "no predicate matched"
+state therefore only arises when no hooks are registered at all. Kind-indexed
+dispatch (routing each row only to hooks that declared interest in its
+`primitiveKind`) is a planned future slice; it is NOT implemented in this slice.
 
 ## 4.2 Predicate Registration and Kind-Indexed Dispatch
 
-Predicates are pre-registered, compiled at registration time, and indexed by
-`primitiveKind` (§6.1). The bus never invokes a predicate against a kind it
-does not declare interest in. Up to ~50 compiled predicates per kind stay
+Predicates are pre-registered and compiled at registration time. In the current
+slice, the bus evaluates ALL registered hooks against every row (no kind-indexed
+routing yet). The `primitiveKind` field on registrations is reserved for the
+planned kind-indexed dispatch slice, which will route each row only to hooks that
+declared interest in its kind. Up to ~50 compiled predicates per kind stay
 inside the 80 µs row-stage budget.
 
 ```ts

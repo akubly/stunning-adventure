@@ -45,10 +45,17 @@ export interface ScoredResult {
 /**
  * FactStore seam — injected, never instantiated here (§55 §2.1 London form).
  *
- * @remarks Offset-based cursor pagination (v1) can skip or duplicate rows if facts
- * are inserted or trust values mutate between page fetches. This is an acceptable
- * limitation for single-writer v1. True keyset pagination (last composite rank + last
- * fact id as cursor) will resist concurrent mutations and is deferred to Slice D++.
+ * @remarks Keyset cursor pagination (Slice D++): cursors encode the composite
+ * score and row id of the last returned row. This eliminates the OFFSET-shift
+ * duplication/skip mechanism (FSE-2): a higher-ranked insert between pages can
+ * no longer shift rows so that a previously-returned row re-appears or a row is
+ * silently skipped. This is NOT a blanket concurrent-insert safety guarantee —
+ * the SQLite implementation has a documented IDF-drift caveat (see SqliteFactStore)
+ * for a residual second-order insert-boundary effect where bm25() IDF recomputation
+ * can perturb the composite boundary. Trust mutations of already-returned rows can
+ * still cause re-appearance — callers needing strict stability under concurrent
+ * trust writes should restart pagination. Per-page relevance normalization (D3) is
+ * unchanged — relevance is not comparable across pages.
  */
 export interface FactStore {
   search(args: {
@@ -80,7 +87,7 @@ export interface FactStore {
      * @throws {CursorVersionUnsupportedError} Throws if the cursor carries a `v` field
      * with an unsupported version value — any present `v` that is not exactly 1,
      * including v:0, floats, strings, and any future version the implementation does
-     * not recognise. Completely unparseable cursors fall back to offset 0 (no throw).
+     * not recognise. Completely unparseable cursors fall back to a page-1 restart (no throw).
      * Exported from `@akubly/eureka/sqlite`.
      */
     cursor?: string;
@@ -139,6 +146,8 @@ export interface RecallDeps {
   clock: ClockProvider;
   /** Optional custom ranker — when provided, replaces inline compositeScore. */
   ranker?: Ranker;
+  /** Optional logger for attention-tier warnings; defaults to console. */
+  logger?: { warn(msg: string): void };
 }
 
 // TODO(M5+): per-call trustFloor override via RecallOptions — needs §-decision;
@@ -220,6 +229,7 @@ export async function recallWithScores(
 ): Promise<ScoredResult[]> {
   const { query, sessionId, k } = options;
   const { factStore, clock, ranker } = deps;
+  const logger = deps.logger ?? console;
 
   // C4: Validate k at the entry point.
   // k === 0: valid — return [] without touching factStore (avoids SQLite limit:0 edge cases).
@@ -255,7 +265,7 @@ export async function recallWithScores(
 
   // C1: Emit ONE warn per recallWithScores call for all unrecognised tier values found.
   if (unknownTiers.size > 0) {
-    console.warn(
+    logger.warn(
       `[eureka.recall] Unknown attention_tier values encountered: ${[...unknownTiers].join(', ')}. Defaulted to 1.0 multiplier. Validate at FactStore boundary.`,
     );
   }

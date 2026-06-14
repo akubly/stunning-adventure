@@ -21,19 +21,30 @@
  * FS-3  minTrust floor           — below-threshold facts excluded
  * FS-4  Composite sort lock      — equal-trust higher-freq fact ranks first (BM25 footgun lock)
  * FS-5  Cursor pagination        — nextCursor returned when more rows exist; round-trip yields next page
- * FS-5b Bad-offset cursor        — structurally-valid cursor with bad offset clamps to page 0
+ * FS-5b Bad cursor (garbage/restart)  — structurally-invalid cursor restarts from page 1
  * FS-6  Cross-session isolation  — search in sessionA MUST NOT return sessionB facts
  * FS-7  Tie-breaker pagination   — equal composite scores paginate without skip or dup
  * FS-8  Invalid limit            — limit ≤ 0 / NaN throws TypeError
  * FS-9  Invalid minTrust         — NaN / Infinity / out-of-range throws TypeError
- * FS-10a v1 cursor correct scope  — pagination advances and nextCursor is v1 format
+ * FS-10a v1 cursor correct scope  — pagination advances; nextCursor is keyset v1 format (lastSort/lastId)
  * FS-10b v1 cursor wrong query    — throws CursorScopeMismatchError
  * FS-10c v1 cursor wrong session  — throws CursorScopeMismatchError
  * FS-10d v1 cursor wrong minTrust — throws CursorScopeMismatchError
  * FS-10e v1 cursor wrong limit    — throws CursorScopeMismatchError
- * FS-10f v0 cursor backward compat — unversioned cursor accepted, offset honored, no throw
+ * FS-10f DELETED                  — v0 backward-compat removed (Slice D++); v-absent = garbage = restart
  * FS-10g unknown version v:99     — throws CursorVersionUnsupportedError
- * FS-10h empty query + bad cursor version — cursor decoded before empty-query short-circuit; CursorVersionUnsupportedError always thrown
+ * FS-10h empty query + bad cursor version — cursor decoded before empty-query short-circuit
+ * FS-11  FSE-2 closure (insert-safe)  — concurrent insert between pages does NOT cause dup (keyset safety).
+ *                                        Trust mutations of already-returned rows are an explicit out-of-scope
+ *                                        case: callers needing strict stability under concurrent trust writes
+ *                                        should restart pagination.
+ * FS-12  Attention-column read-through — non-default attentionTier/importance/lastAccessed seeded
+ *                                         via SeedFact opts surface unchanged from search() for ALL impls.
+ * FS-12b Attention-column read-through (cold) — cold-tier fact surfaces attentionTier 'cold' via search().
+ * FS-12c Attention-column cursor keyset path  — attention fields (attentionTier/importance/lastAccessed)
+ *                                               surface correctly on page-2 (keyset SELECT path; all impls).
+ * FS-13  Attention-column defaults     — a fact seeded without attention opts returns attentionTier 'warm',
+ *                                         importance 0, lastAccessed absent (undefined).
  *
  * ## Export visibility
  *
@@ -57,6 +68,10 @@ import { CursorScopeMismatchError, CursorVersionUnsupportedError } from '../erro
  * `sessionId` — session scope
  * `content`   — searchable text content
  * `trust`     — trust score ∈ [0,1]
+ * `attention` — optional attention-column overrides (migration 002 columns).
+ *   When omitted, defaults apply: importance=0, lastAccessed=null→undefined, attentionTier='warm'.
+ *   `lastAccessed: null` explicitly stores SQL NULL (→ undefined in results); omitting the key
+ *   is equivalent. Both impls must honour these values in their seed logic.
  *
  * Always async so both in-memory and I/O-backed harnesses share the same signature.
  *
@@ -67,6 +82,11 @@ export type SeedFact = (
   sessionId: SessionId,
   content: string,
   trust: number,
+  attention?: {
+    importance?: number;
+    lastAccessed?: number | null;
+    attentionTier?: 'hot' | 'warm' | 'cold';
+  },
 ) => Promise<void>;
 
 /**
@@ -94,8 +114,11 @@ const SESSION_B = 'fs-contract-session-B' as SessionId;
 /**
  * Run the full FactStore contract suite against a given implementation factory.
  *
- * Each call to `runFactStoreContract` adds 24 tests (FS-1..FS-10h; FS-5b×2, FS-8×3,
- * FS-9×4, FS-10a–h×8 via it/it.each).
+ * Slice D++ update: FS-10f deleted (v0 backward-compat removed); FS-11 added (FSE-2
+ * concurrent-insert safety). FS-5b gains a third RED case (v0-with-valid-offset).
+ * Attention-column contract (FS-12/FS-12b/FS-12c/FS-13) added: SeedFact extended with optional
+ * `attention` opts; both InMemoryFactStore and SqliteFactStore seeds honour them.
+ * Each call adds 29 tests (FS-1..FS-13 + FS-12c; FS-5b×3, FS-8×3, FS-9×4, FS-10a–h×7 via it/it.each).
  *
  * @param implName    Human-readable label shown in test output (e.g. 'SqliteFactStore').
  * @param makeHarness Factory called once per test (via beforeEach) to produce a fresh,
@@ -264,26 +287,34 @@ export function runFactStoreContract(
     });
 
     // -----------------------------------------------------------------------
-    // FS-5b — Structurally-valid cursor with bad offset falls back to page 0
+    // FS-5b — Structurally-valid cursor falls back to page 1 (restart)
     //
-    // A cursor whose JSON is valid but whose `offset` field is negative, NaN,
-    // or non-integer must NOT crash or produce an invalid query. Both impls
-    // must clamp to offset=0 — i.e. behave as if no cursor was supplied.
-    // (T2/T6: mirrors decodeCursor validation in SqliteFactStore.)
+    // Slice D++ semantics:
+    //   - A v0 cursor (absent `v` key) with any offset value must NOT have
+    //     its offset honored — it is now treated as garbage → restart page 1.
+    //   - The existing negative/NaN cases still restart (they were garbage
+    //     before too), but a v0 cursor with a VALID positive offset (e.g.
+    //     offset:5) previously advanced the page — it must now restart.
+    //
+    // RED (third case only): current impl honors `{ offset: 5 }` in v0 cursors
+    // and returns page 2. New contract: v0 absent → restart → page 1.
     // -----------------------------------------------------------------------
 
     it.each([
-      ['negative', Buffer.from(JSON.stringify({ offset: -5 })).toString('base64')],
-      ['NaN',      Buffer.from(JSON.stringify({ offset: null })).toString('base64')],
+      ['negative offset',          Buffer.from(JSON.stringify({ offset: -5 })).toString('base64')],
+      ['NaN offset (serialised null)', Buffer.from(JSON.stringify({ offset: null })).toString('base64')],
+      // ↓ RED: current impl honors this v0 offset and skips to page 2 (empty with 1 fact);
+      //   keyset contract: v0 absent = garbage → restart = same as no cursor.
+      ['v0 valid-offset-5 (now garbage)', Buffer.from(JSON.stringify({ offset: 5 })).toString('base64')],
     ])(
-      'FS-5b: cursor with %s offset falls back to page-0 results (no crash)',
+      'FS-5b: cursor with %s falls back to page-1 results (restart, no crash)',
       async (_label, badCursor) => {
         await seed('fs5b-a', SESSION_A, 'fallback cursor alpha content', 0.8);
 
         const withoutCursor = await impl.search({ query: 'fallback', sessionId: SESSION_A, limit: 10 });
         const withBadCursor = await impl.search({ query: 'fallback', sessionId: SESSION_A, limit: 10, cursor: badCursor });
 
-        // Bad cursor falls back to offset=0 → identical content and order as no-cursor baseline.
+        // Bad/v0 cursor falls back to page 1 → identical content and order as no-cursor baseline.
         expect(withBadCursor.results.map(r => r.content)).toEqual(withoutCursor.results.map(r => r.content));
       },
     );
@@ -373,7 +404,7 @@ export function runFactStoreContract(
     // =======================================================================
     // FS-10 — Cursor versioning + scope fingerprint (Slice D+, GREEN)
     //
-    // Implemented: encodeCursor emits { v:1, offset, scope }; decodeCursor
+    // Implemented: encodeCursor emits { v:1, lastSort, lastId, scope }; decodeCursor
     // throws CursorVersionUnsupportedError for any present v ≠ 1; search()
     // checks scope fingerprint on v1 cursors and throws CursorScopeMismatchError
     // on mismatch. InMemoryFactStore reference impl lives in
@@ -402,8 +433,16 @@ export function runFactStoreContract(
       expect(p1.results).toHaveLength(1);
       expect(p1.nextCursor).toBeDefined();
 
+      // Slice D++ keyset format: v:1, lastSort (composite score), lastId (row id), scope.
+      // No `offset` field — keyset cursor carries sort anchor, not a positional offset.
       const decoded = JSON.parse(Buffer.from(p1.nextCursor!, 'base64').toString('utf8')) as Record<string, unknown>;
-      expect(decoded).toMatchObject({ v: 1, offset: expect.any(Number), scope: expect.any(String) });
+      expect(decoded).toMatchObject({
+        v: 1,
+        lastSort: expect.any(Number),
+        lastId: expect.any(Number),
+        scope: expect.any(String),
+      });
+      expect(decoded).not.toHaveProperty('offset');
 
       // Pass the cursor back with identical params → must advance to page 2.
       const p2 = await impl.search({ query: 'versioning', sessionId: SESSION_A, limit: 1, cursor: p1.nextCursor });
@@ -501,45 +540,12 @@ export function runFactStoreContract(
     });
 
     // -----------------------------------------------------------------------
-    // FS-10f — Unversioned (v0) cursor accepted without scope check
+    // FS-10f — DELETED (Slice D++)
     //
-    // Backward compatibility: a cursor from before Slice D+ (no `v` field,
-    // only `{ offset }`) must be accepted as-is. No scope check performed.
-    // Offset must be honored (page 2 content differs from page 1).
-    //
-    // NOTE: this test validates EXISTING behavior and is expected to start
-    // GREEN. It is a non-regression lock — Roger must not break v0 support.
+    // v0 backward-compat is removed: a cursor with no `v` field is now treated
+    // as garbage (restart), not as a legacy offset cursor.  The FS-10f test
+    // that validated v0-cursor offset-honoring is intentionally absent.
     // -----------------------------------------------------------------------
-
-    it('FS-10f: unversioned (v0) cursor accepted without scope check — backward compat', async () => {
-      await seed('fs10f-1', SESSION_A, 'versioning compat v0 cursor alpha', 0.8);
-      await seed('fs10f-2', SESSION_A, 'versioning compat v0 cursor beta',  0.8);
-      await seed('fs10f-3', SESSION_A, 'versioning compat v0 cursor gamma', 0.7);
-
-      // Page 1 — no cursor, limit 1.  Establishes which fact lands on page 1.
-      const p1 = await impl.search({ query: 'versioning', sessionId: SESSION_A, limit: 1 });
-      expect(p1.results).toHaveLength(1);
-
-      // Manually construct a v0 cursor (pre-Slice-D+ format — no `v` field).
-      const v0Cursor = Buffer.from(JSON.stringify({ offset: 1 })).toString('base64');
-
-      // Page 2 — v0 cursor must be accepted (no throw) and offset honored.
-      const p2 = await impl.search({
-        query: 'versioning',
-        sessionId: SESSION_A,
-        limit: 1,
-        cursor: v0Cursor,
-      });
-
-      // Must not throw CursorScopeMismatchError or any other error.
-      expect(p2.results).toBeDefined();
-
-      // Offset must be applied: page-2 content must differ from page-1 content.
-      // An impl that ignores the v0 offset and always returns page 1 would fail here.
-      const page1Contents = new Set(p1.results.map(r => r.content));
-      expect(p2.results).toHaveLength(1);
-      expect(page1Contents.has(p2.results[0].content)).toBe(false);
-    });
 
     // -----------------------------------------------------------------------
     // FS-10g — Cursor with `v: 99` (unknown future version) → throws
@@ -579,6 +585,172 @@ export function runFactStoreContract(
       await expect(
         impl.search({ query: '', sessionId: SESSION_A, limit: 10, cursor: futureCursor }),
       ).rejects.toThrow(CursorVersionUnsupportedError);
+    });
+
+    // =======================================================================
+    // FS-11 — FSE-2 closure: concurrent insert between pages does NOT cause
+    //         a duplicate row in subsequent pages (keyset safety guarantee)
+    //
+    // This is the core safety property that keyset pagination provides over
+    // offset pagination.  With offset, inserting a higher-ranked row between
+    // page fetches shifts all subsequent rows down by 1 — the next OFFSET call
+    // returns the row that was already returned on page 1 (duplicate).  With
+    // keyset, the WHERE clause anchors on (lastSort, lastId), so previously
+    // returned rows can never re-appear regardless of concurrent inserts.
+    //
+    // Setup:
+    //   A: 'fse2-safety alpha'  × 3 occurrences  trust=0.8  (score ≈ 2.4)
+    //   B: 'fse2-safety beta'   × 1 occurrence   trust=0.8  (score ≈ 0.8)
+    //
+    // Sequence:
+    //   1. Page 1 (limit=1): returns [A]; cursor encodes lastSort=composite(A), lastId=A.id
+    //   2. Seed C:  'fse2-safety gamma'  × 4 occurrences  trust=0.8  (score ≈ 3.2 > A)
+    //   3. Page 2 with cursor:
+    //      - Offset impl: new sort order [C, A, B]; OFFSET 1 → returns A (DUPLICATE!)
+    //      - Keyset impl: WHERE composite < composite(A) → returns B (correct, no dup)
+    //
+    // FSE-2 insert-safe guarantee: the keyset WHERE clause anchors on (lastSort, lastId),
+    // so rows scored above the cursor anchor (C) are excluded and no previously-seen row
+    // (A) can re-appear regardless of concurrent inserts — page 2 returns B, no skip or dup.
+    // =======================================================================
+
+    it('FS-11: FSE-2 — inserting a higher-ranked fact between page fetches does NOT produce a duplicate', async () => {
+      // Seed A (moderate score) and B (low score).
+      await seed('fse2-a', SESSION_A, 'fse2safety fse2safety fse2safety alpha', 0.8);
+      await seed('fse2-b', SESSION_A, 'fse2safety beta', 0.8);
+
+      // Page 1: must return A (highest score before insert).
+      const page1 = await impl.search({ query: 'fse2safety', sessionId: SESSION_A, limit: 1 });
+      expect(page1.results).toHaveLength(1);
+      expect(page1.results[0].content).toContain('alpha');
+      expect(page1.nextCursor).toBeDefined();
+
+      // Insert C with a HIGHER score than A between page 1 and page 2.
+      // With offset impl: this shifts A to index 1, causing OFFSET-1 to re-return A (dup).
+      // With keyset impl:  C is above the cursor anchor → excluded; B is below → returned.
+      await seed('fse2-c', SESSION_A, 'fse2safety fse2safety fse2safety fse2safety gamma', 0.8);
+
+      // Page 2: must contain B (lower score), NOT A (already seen) or C (newly inserted above anchor).
+      const page2 = await impl.search({ query: 'fse2safety', sessionId: SESSION_A, limit: 1, cursor: page1.nextCursor });
+      expect(page2.results).toHaveLength(1);
+
+      // FSE-2 keyset guarantee: page 2 must return B, not A.
+      // Failure here means the offset impl shifted A into page 2 (duplicate).
+      expect(page2.results[0].content).toContain('beta');
+      expect(page2.results[0].content).not.toContain('alpha');
+
+      // Complete coverage: verify the three facts together cover A and B (no skip of B either).
+      const allContents = [page1.results[0].content, page2.results[0].content];
+      expect(new Set(allContents).size).toBe(2);
+    });
+
+    // =======================================================================
+    // FS-12 — Attention-column read-through (migration 002 columns)
+    //
+    // A fact seeded with non-default attention values (attentionTier 'hot'/'cold',
+    // importance > 0, non-null lastAccessed) MUST surface those exact values from
+    // search() in ALL FactStore implementations.
+    //
+    // Previously FS-SE-16a–d lived in fact-store-sqlite-edges.test.ts because
+    // SeedFact had no attention params and InMemoryFactStore did not model them.
+    // SeedFact is now extended with an optional `attention` opts argument and
+    // InMemoryFactStore stores/returns all three columns — so this invariant is
+    // promoted to the shared contract and enforced for every implementation.
+    //
+    // Placement rationale: attention-column read-through is now a contract-level
+    // concern, not a SQLite-specific SELECT-mapping concern. Both impls must
+    // honour the full RecallResult shape when these columns are populated.
+    // =======================================================================
+
+    it('FS-12: hot-tier fact seeded with importance and lastAccessed surfaces those values via search()', async () => {
+      const epochMs = 1_749_600_000_000; // 2025-06-11T00:00:00.000Z — fixed, not Date.now()
+      await seed('fs12-hot', SESSION_A, 'attention contract hot tier signal beacon', 0.8, {
+        attentionTier: 'hot',
+        importance: 0.9,
+        lastAccessed: epochMs,
+      });
+
+      const { results } = await impl.search({ query: 'attention', sessionId: SESSION_A, limit: 10 });
+
+      const found = results.find(r => r.content.includes('hot tier signal beacon'));
+      expect(found).toBeDefined();
+      expect(found!.attentionTier).toBe('hot');
+      expect(found!.importance).toBeCloseTo(0.9, 5);
+      expect(found!.lastAccessed).toBe(epochMs);
+    });
+
+    it('FS-12b: cold-tier fact surfaces attentionTier cold via search()', async () => {
+      await seed('fs12-cold', SESSION_A, 'attention contract cold tier archive signal', 0.8, {
+        attentionTier: 'cold',
+      });
+
+      const { results } = await impl.search({ query: 'attention', sessionId: SESSION_A, limit: 10 });
+
+      const found = results.find(r => r.content.includes('cold tier archive signal'));
+      expect(found).toBeDefined();
+      expect(found!.attentionTier).toBe('cold');
+    });
+
+    // =======================================================================
+    // FS-12c — Attention-column cursor keyset path
+    //
+    // FS-12 and FS-12b only exercise first-page reads (no cursor). This test
+    // verifies that the keyset continuation path (stmtKeyset SELECT in
+    // SqliteFactStore; afterCursor filter in InMemoryFactStore) also returns
+    // attentionTier, importance, and lastAccessed correctly on PAGE-2 rows.
+    //
+    // Strategy: seed two facts for the same query. The page-1 anchor has a
+    // higher composite score (higher trust, same term count) so it reliably
+    // lands on page 1. The page-2 attention fact carries hot-tier data and
+    // must surface those values intact after cursor continuation.
+    // =======================================================================
+
+    it('FS-12c: attention columns surface correctly on page-2 row (keyset continuation path)', async () => {
+      const epochMs = 1_749_600_000_000; // 2025-06-11T00:00:00.000Z — fixed, not Date.now()
+      // Page-1 anchor: higher composite score via higher trust (1 term × 0.9 > 1 term × 0.8).
+      await seed('fs12c-p1', SESSION_A, 'cursorattn alpha page1 anchor', 0.9);
+      // Page-2 attention fact: lower composite score, carries hot-tier data.
+      await seed('fs12c-p2', SESSION_A, 'cursorattn beta page2 signal', 0.8, {
+        attentionTier: 'hot',
+        importance: 0.75,
+        lastAccessed: epochMs,
+      });
+
+      // Fetch page 1 — exercises stmtFirst / first-page path.
+      const page1 = await impl.search({ query: 'cursorattn', sessionId: SESSION_A, limit: 1 });
+      expect(page1.results).toHaveLength(1);
+      expect(page1.nextCursor).toBeDefined();
+      expect(page1.results[0].content).toContain('alpha page1 anchor');
+
+      // Fetch page 2 via cursor — exercises the stmtKeyset / afterCursor path.
+      const page2 = await impl.search({ query: 'cursorattn', sessionId: SESSION_A, limit: 1, cursor: page1.nextCursor });
+      expect(page2.results).toHaveLength(1);
+      const found = page2.results[0];
+      expect(found.content).toContain('beta page2 signal');
+      expect(found.attentionTier).toBe('hot');
+      expect(found.importance).toBeCloseTo(0.75, 5);
+      expect(found.lastAccessed).toBe(epochMs);
+    });
+
+    // =======================================================================
+    // FS-13 — Attention-column defaults
+    //
+    // A fact seeded without any attention opts (the common case) must return
+    // attentionTier 'warm', importance 0, and lastAccessed absent (undefined).
+    // Previously locked in FS-SE-16e (SQLite-edges). Now enforced here for all
+    // impls to prevent regressions in the default-tier path.
+    // =======================================================================
+
+    it('FS-13: default-seeded fact (no attention opts) returns attentionTier warm, importance 0, lastAccessed absent', async () => {
+      await seed('fs13-default', SESSION_A, 'attention default warm baseline tier fact', 0.8);
+
+      const { results } = await impl.search({ query: 'attention', sessionId: SESSION_A, limit: 10 });
+
+      const found = results.find(r => r.content.includes('warm baseline tier fact'));
+      expect(found).toBeDefined();
+      expect(found!.attentionTier).toBe('warm');
+      expect(found!.importance).toBe(0);
+      expect(found!.lastAccessed).toBeUndefined();
     });
   });
 }

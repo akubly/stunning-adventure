@@ -32,6 +32,73 @@ File size: 17270 bytes. See history-archive.md for earlier entries.
 
 ## Learnings
 
+### 2026-06-12: M8 Slice D++ — Attention-Column Coverage Promoted to Contract Suite
+
+**Context:** Crispin wired SqliteFactStore GREEN for the FS-SE-16a–e RED tests (all 205 tests passing). Aaron then decided attention-column read-through should be enforced at the CONTRACT level so InMemoryFactStore is also held to it. This reversed the earlier placement decision (see entry below).
+
+**Changes made:**
+
+1. **`SeedFact` extended with optional `attention` opts (5th arg):**
+   ```typescript
+   export type SeedFact = (
+     factId: string, sessionId: SessionId, content: string, trust: number,
+     attention?: { importance?: number; lastAccessed?: number | null; attentionTier?: 'hot'|'warm'|'cold' }
+   ) => Promise<void>;
+   ```
+   All existing call sites omit the 5th arg — no breaking change. The optional trailing-options pattern keeps backward compat trivially.
+
+2. **InMemoryFactStore now models attention columns:**
+   - `StoredFact` interface gained `importance: number`, `lastAccessed: number | undefined`, `attentionTier: 'hot'|'warm'|'cold'`.
+   - `search()` returns these fields from stored state (no hardcoded 'warm').
+   - `seed()` stores them from `attention` opts (defaults: importance=0, lastAccessed=undefined, attentionTier='warm').
+   - `lastAccessed: null` (explicit SQL NULL) maps to `undefined` in results — `null` is never stored in the in-memory record.
+
+3. **SqliteFactStore contract harness seed updated:**
+   Full INSERT with all 7 columns (including attention opts). `attention?.lastAccessed ?? null` passes JS null → SQL NULL correctly.
+
+4. **New contract assertions FS-12/FS-12b/FS-13 added to `runFactStoreContract`:**
+   - **FS-12**: hot-tier + importance=0.9 + non-null lastAccessed → surfaces unchanged
+   - **FS-12b**: cold-tier → surfaces attentionTier:'cold'
+   - **FS-13**: default-seeded (no opts) → attentionTier:'warm', importance:0, lastAccessed:undefined
+   These now run for BOTH impls automatically (×2).
+
+5. **FS-SE-16a–e removed from sqlite-edges file** (replaced by placement-rationale comment explaining the reversal). The `seedWithAttention` helper was deleted as no longer needed.
+
+**Test count:** 205 → 206 (−5 FS-SE-16a–e + 6 new contract tests × 2 impls / 2 = +6, net +1).
+Wait: −5 + 6 = +1. 205 → 206. ✓
+
+**Key pattern learned:** When a new impl column needs contract coverage, the right move is to extend `SeedFact` with an optional trailing opts arg (never a positional break) and make the reference impl model the column. The "impl doesn't know about this column yet" is a temporary constraint — once the decision is made to enforce it at contract level, the reference impl must catch up.
+
+---
+
+### 2026-06-12: M8 Slice D++ — Attention-Column Hydration RED Tests (FS-SE-16a..e)
+
+**Context:** Migration 002 (`002-facts-attention.ts`) added three columns to `facts`: `importance REAL NOT NULL DEFAULT 0`, `last_accessed INTEGER DEFAULT NULL`, `attention_tier TEXT NOT NULL DEFAULT 'warm' CHECK(...)`. The `SqliteFactStore` mapper hardcodes `attentionTier: 'warm'` and omits the other two columns from SELECT. These RED tests lock the hydration contract before Crispin's GREEN wiring.
+
+**Where the gap lives:**
+- `packages/eureka/src/storage/fact-store-sqlite.ts` ~line 313: mapper hardcodes `attentionTier: 'warm'` with an explicit comment "not yet wired into SELECT".
+- Both `stmtFirst` (~line 186) and `stmtKeyset` (~line 206) SELECT only `f.id, f.content, f.trust, bm25_score` — no attention columns.
+- `RecallResult` interface (recall.ts ~lines 18-37) already declares all three fields (`attentionTier`, `importance?`, `lastAccessed?`).
+
+**How the test harness applies migrations:**
+- Both `fact-store-sqlite-edges.test.ts` and the SQLite wiring in `fact-store.contract.test.ts` call `applyMigrations(db)` in `beforeEach`.
+- `applyMigrations` in `packages/eureka/src/db/schema.ts` iterates the `migrations` array which includes both `migration001` and `migration002` — so all three attention columns exist in every test-DB instance from the start. No harness change needed for the RED tests to be able to INSERT attention-column values.
+
+**Placement decision:** Added to `fact-store-sqlite-edges.test.ts` (not the shared contract suite). The `SeedFact` contract signature `(factId, sessionId, content, trust)` has no attention-column params; extending it would require changing `InMemoryFactStore` (which intentionally doesn't model these columns). Attention-column hydration is a SQLite SELECT→RecallResult mapping concern, making the SQLite-edges file the correct home.
+
+**RED assertions added (FS-SE-16a..e):**
+- **16a**: `attentionTier: 'hot'` → `expected 'warm' to be 'hot'` (mapper hardcodes 'warm')
+- **16b**: `attentionTier: 'cold'` → `expected 'warm' to be 'cold'` (mapper hardcodes 'warm')
+- **16c**: `importance: 0.9` → `expected undefined to be close to 0.9` (column not selected)
+- **16d**: `lastAccessed: 1749600000000` → `expected undefined to be 1749600000000` (column not selected)
+- **16e**: default-column fact → `expected undefined to be +0` (importance=0 not returned, lastAccessed correctly absent — this test is partially RED on `importance`)
+
+**New helper added:** `seedWithAttention(factId, content, trust, opts, sessionId?)` inside the `describe` block — direct `db.prepare().run()` INSERT that accepts `importance`, `lastAccessed`, `attentionTier` without touching the `SeedFact` contract type.
+
+**Test count delta:** 200 → 205 (+5 tests: FS-SE-16a..e). All existing 200 tests remain green; 5 new tests fail for assertion-mismatch reasons only.
+
+---
+
 ### 2026-06-06: M8 Slice D — recall() Integration Smoke Test
 
 **Context:** Wrote the Slice D integration smoke test (`recall-sqlite-smoke.test.ts`) as specified in decisions.md §"Slice D". Roger's production factory (`createSqliteRecallDeps` / `createDefaultDeps`) was not yet available (no inbox drop), so wired `SqliteFactStore` + `recall()` directly with a TODO to switch once merged.
@@ -1726,3 +1793,86 @@ Construct manually: Buffer.from(JSON.stringify({ v: 99, offset: 0, scope: 'deadb
 
 - 2026-06-08 📌 FTS5 AND-to-OR: Don't change production search semantics to satisfy test data. Semantic changes need explicit design approval, not test-driven improvisation.
 
+
+---
+
+## 2026-06-11: Crucible S1 WAL Correctness — Landing Notification (from Roger)
+
+**Event:** S1 WAL correctness batch landed on squad/crucible-wal-correctness-s1. Circulating for S2 planning:
+- **#57**: Verdict encoding (null vs continue) -> 0xFF/0x00 encoding now stable
+- **#60**: Canonical CBOR hashing via wal/cbor.ts (deterministic serialization locked)
+- **#68**: CAS torn-blob mitigation (temp-file + atomic rename replaces existsSync-skip dedup)
+
+**Metrics:** 136/136 tests green (+8 new), tsc --build clean. Skills extracted: atomic-cas-write, canonical-cbor-hashing.
+Impact for S2: WAL substrate hardened; Phase 0.5 walking skeleton can proceed with confidence in blob atomicity and CBOR determinism.
+
+**2026-06-12:** Crucible S1 WAL Correctness — 2-cycle persona review COMPLETE, ship-ready (Scribe).
+## 2026-06-10: M8 Slice D++ Shipped to Branch
+
+**Session:** M8 Slice D++ keyset pagination (quad spawn)  
+**Branch:** eureka/m8-slice-dpp-keyset  
+**Status:** ✅ SHIPPED
+
+Slice D++ completed with four-agent parallel execution. Genesta's architecture memo locked three interlocked decisions on cursor design, schema migration, and normalization strategy. Laura wrote 22 RED keyset tests. Crispin implemented migration 002, keyset GREEN phase, and persona fixes (cycle 2 clean). Roger completed doc sweep (N1-N4 stale comment fixes).
+
+**Decisions locked:** D1=mutate cursor v1 in place to keyset; D2=importance/lastAccessed NOT in SQL sort key (time-varying recency breaks stability); D3=per-page normalization status quo. FSE-2 guarantee corrected: INSERT-safe only (not trust-mutation-safe).
+
+Ready to merge.
+
+---
+
+## HISTORY SUMMARIZATION — 2026-06-11
+
+**File size at session close:** 
+- laura/history.md: 157,469 bytes (→ exceeds 15,360 threshold; summary appended)
+- crispin/history.md: 24,816 bytes (→ exceeds 15,360 threshold; summary appended)
+- roger/history.md: 168,012 bytes (→ exceeds 15,360 threshold; summary appended)
+
+### High-Level Summary (All Recent Work)
+
+**Laura (Tester):**
+- M8 Slice C audit (SqliteFactStore + FTS5 BM25): ✅ ACCEPT-WITH-FOLLOWUPS (121 tests)
+- Crucible WAL Walkthrough B acceptance testing: ✅ COMPLETE (hook-veto RED→GREEN)
+- M8 Slice D++ keyset pagination RED tests: ✅ 22 tests written (cursor v1 mutation, FSE-2 closure)
+- Key learnings: FTS5 sign convention, per-page normalization, cursor pagination with concurrent inserts
+
+**Crispin (KR Specialist):**
+- Design Ceremony R1–R8: Advocated Path A initially, adopted Path D post-source-reading, locked v4-final schema
+- M7-A review cycle: Observed (Edgar lead); M7-C next (Real FactReader contract)
+- M8 Slice D++ implementation: Migration 002 + keyset GREEN + persona fixes (cycle 2 clean)
+  - Migration 002: importance/lastAccessed/attentionTier columns (NOT in SQL sort key)
+  - Keyset: v1 mutated in place, encodeCursor object param, logger seam threaded
+  - FSE-2 corrected: INSERT-safe (no dupes), NOT trust-mutation-safe
+
+**Roger (Platform Dev / Doc):**
+- PR #58 Copilot review cycle-6: hook-veto.test.ts comment polish, HookBus docs
+- PR #58 cycle-4: timestampNs monotonicity (clock seam), replay validation, CAS header doc
+- PR #58 cycle-3: session-scoped manifest (isolation fix), short-write guard, codec recordLen validation
+- PR #58 cycle-2: Node engine bump to 20.19.0, ESM compatibility docs
+- PR #58 final: gitignore polish, inbox path citations swept
+- Crucible WAL Walkthrough B: hash-chain + CAS + codec + ledger seam (28/28 green)
+- M8 Slice A cycle-2 fixes: busy_timeout, WAL pragma, BEGIN IMMEDIATE, subpath export (75 tests)
+- M8 Slice D++ doc sweep: N1-N4 stale comment fixes (keyset, migration, cursor versioning)
+
+**Append-Only Rule Applied:** All prior entries remain unchanged. This summary provides high-level context only.
+
+---
+
+### 2026-06-10: M8 Slice D++ — Keyset Pagination RED Tests
+
+**Context:** Wrote the RED test surface for the keyset pagination migration (FSE-2 closure, cursor v1 payload change from `{offset}` to `{lastSort, lastId}`). London-school TDD RED phase — no implementation changes, tests written against the new contract and confirmed failing for the right reasons.
+
+**Files modified:**
+- `packages/eureka/src/storage/__tests__/cursor.test.ts`
+- `packages/eureka/src/storage/__tests__/fact-store-contract.helper.ts`
+- `packages/eureka/src/storage/__tests__/fact-store-sqlite-edges.test.ts`
+
+**Test count delta:** 129 -> 150 (22 new/updated tests RED, 107 existing unchanged GREEN).
+
+**RED tests written:** CU-1a/b/c (v0 absent -> restart sentinel), CU-2a (3-arg round-trip), CU-2c-g (bad lastSort/lastId -> restart), CU-4a/b/c (garbage -> {version:0}), FS-5b (v0 offset -> restart), FS-10a (cursor format), FS-10f DELETED, FS-11 (FSE-2 concurrent-insert), FS-SE-4 (bad keyset fields), FS-SE-15 (lastSort/lastId required).
+
+**FSE-2 test design:** Term-frequency-based scoring makes ranks deterministic across InMemory (term count x trust) and Sqlite (BM25 x trust). Seeded C with 4x term frequency after page 1 (ranks above A 3x); offset impl returns A on page 2 (dup), keyset returns B correctly.
+
+**Note:** This entry was relocated to the file end during PR #72 cloud review to honor the Append-Only History Rule (it had been inserted mid-file during the RED phase).
+
+— Laura
