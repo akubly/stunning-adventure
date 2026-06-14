@@ -27,6 +27,10 @@
  *   FS-SE-13 Non-FTS SQLITE_ERROR (e.g. missing table) propagates as rejected Promise
  *   FS-SE-15 Cursor stays under 256 bytes; keyset fields (lastSort/lastId) present (Slice D++)
  *
+ * Note: FS-SE-16a–e (attention-column read-through) are now covered at the contract level
+ * (FS-12 / FS-13 in fact-store-contract.helper.ts) for both SqliteFactStore and
+ * InMemoryFactStore; removed here to avoid duplicate coverage.
+ *
  * All tests use :memory: databases (no disk I/O needed — disk/WAL edges are
  * already covered by fact-reader-sqlite-edges.test.ts).
  */
@@ -420,7 +424,7 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
   // incomparability. Callers that need cross-page comparison must not rely on
   // the absolute relevance value.
   //
-  // Roger acknowledged this in his decision drop §2: "The downside is that
+  // The accepted design (see decision log §2) acknowledges that "the downside is that
   // relevance scores are not comparable across pages." This test makes that
   // statement machine-verifiable.
   // ─────────────────────────────────────────────────────────────────────────
@@ -543,4 +547,23 @@ describe('SqliteFactStore — SQLite-specific edge cases', () => {
       lastId: expect.any(Number),
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // FS-SE-16 — Attention-column coverage (MOVED TO CONTRACT SUITE)
+  //
+  // Attention-column read-through (attentionTier, importance, lastAccessed)
+  // is now enforced at the shared contract level (FS-12 / FS-13 in
+  // fact-store-contract.helper.ts), running for BOTH SqliteFactStore and
+  // InMemoryFactStore on every contract-suite execution.
+  //
+  // Placement rationale update: FS-SE-16a–e were originally placed here
+  // because SeedFact had no attention-column params and InMemoryFactStore
+  // did not model these columns — making this a SQLite-specific concern.
+  // That constraint was intentionally reversed: SeedFact now accepts an
+  // optional `attention` opts argument and InMemoryFactStore stores and
+  // returns all three migration-002 columns. The invariant is now contract-
+  // level; the sqlite-edges file no longer carries these tests to avoid
+  // duplicate coverage.
+  // ─────────────────────────────────────────────────────────────────────────
 });
+

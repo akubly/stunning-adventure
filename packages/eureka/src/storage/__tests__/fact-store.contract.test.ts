@@ -7,10 +7,10 @@
  * The helper definition (runFactStoreContract + FactStoreHarness) lives in:
  *   ./fact-store-contract.helper.ts
  *
- * Each call to runFactStoreContract adds 24 tests (FS-1..FS-10h; FS-5b×2, FS-8×3, FS-9×4, FS-10a–h×8 via it/it.each).
- * InMemoryFactStore wired below → 24 contract tests.
- * SqliteFactStore wired below   → 24 contract tests.
- * Total: 48 (32 pre-D+ + 16 new cursor-versioning tests)
+ * Each call to runFactStoreContract adds 29 tests (FS-1..FS-13 + FS-12c; FS-5b×3, FS-8×3, FS-9×4, FS-10a–h×7 via it/it.each).
+ * InMemoryFactStore wired below → 29 contract tests.
+ * SqliteFactStore wired below   → 29 contract tests.
+ * Total: 58 ((25 pre-attention + 4 attention-column) × 2 impls = 58)
  */
 
 import Database from 'better-sqlite3';
@@ -39,6 +39,9 @@ interface StoredFact {
   trust: number;
   /** Monotonically-increasing insertion index — mirrors f.id (autoincrement) in SQLite. */
   insertionOrder: number;
+  importance: number;
+  lastAccessed: number | undefined;
+  attentionTier: 'hot' | 'warm' | 'cold';
 }
 
 /** Composite key — null-byte separator prevents accidental collisions. */
@@ -125,7 +128,9 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
       const results: RecallResult[] = page.map((f) => ({
         content: f.content,
         trust: f.trust,
-        attentionTier: 'warm',
+        attentionTier: f.attentionTier,
+        importance: f.importance,
+        lastAccessed: f.lastAccessed,
         relevance:
           termCounts.length <= 1 || maxTC === minTC
             ? 1.0
@@ -142,8 +147,17 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
     },
   };
 
-  const seed: FactStoreHarness['seed'] = async (factId, sessionId, content, trust) => {
-    store.set(storeKey(sessionId, factId), { factId, sessionId: sessionId as string, content, trust, insertionOrder: insertionCounter++ });
+  const seed: FactStoreHarness['seed'] = async (factId, sessionId, content, trust, attention) => {
+    store.set(storeKey(sessionId, factId), {
+      factId,
+      sessionId: sessionId as string,
+      content,
+      trust,
+      insertionOrder: insertionCounter++,
+      importance: attention?.importance ?? 0,
+      lastAccessed: attention?.lastAccessed ?? undefined,
+      attentionTier: attention?.attentionTier ?? 'warm',
+    });
   };
 
   return { impl, seed };
@@ -168,16 +182,27 @@ runFactStoreContract('SqliteFactStore', () => {
 
   // Seed via direct INSERT into the facts table. The facts_ai trigger
   // (migration 001) automatically updates facts_fts, so FTS search works.
+  // attention opts (migration 002 columns) are honoured when provided.
   const insertStmt = db.prepare(
-    'INSERT OR REPLACE INTO facts (fact_id, session_id, content, trust) VALUES (?, ?, ?, ?)',
+    `INSERT OR REPLACE INTO facts
+       (fact_id, session_id, content, trust, importance, last_accessed, attention_tier)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   );
 
   const impl = new SqliteFactStore(db);
 
   const harness: FactStoreHarness = {
     impl,
-    seed: async (factId: string, sessionId: SessionId, content: string, trust: number) => {
-      insertStmt.run(factId, sessionId as string, content, trust);
+    seed: async (factId: string, sessionId: SessionId, content: string, trust: number, attention?) => {
+      insertStmt.run(
+        factId,
+        sessionId as string,
+        content,
+        trust,
+        attention?.importance ?? 0,
+        attention?.lastAccessed ?? null,
+        attention?.attentionTier ?? 'warm',
+      );
     },
     cleanup: () => db.close(),
   };
