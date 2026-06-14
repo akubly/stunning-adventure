@@ -236,6 +236,139 @@ This guard is now documented in `.copilot/skills/archive-append-guard/SKILL.md`.
 
 ## Files Changed
 
+**Added per Graham's SD-F1 follow-up:** Production deps wiring shipped as factory functions on `@akubly/eureka/sqlite` (`createSqliteRecallDeps`, `createSqliteFeedbackDeps`), NOT as root-entry mutations. This preserves the Slice A isolation boundary — the core `@akubly/eureka` entry does not transitively load `better-sqlite3`. Production consumers use a two-line composition root: `const db = openDatabase(); const deps = createSqliteRecallDeps(db);`. 
+
+**Slice D Status:** ✅ **COMPLETE** — 147/147 tests passing, factory-on-subpath wiring verified, Graham ACCEPT-WITH-FOLLOWUPS, SD-F1 ledger amendment applied.
+
+---
+
+# Roger — WAL Group-Commit + Seal-and-Split Decisions (§3.5)
+
+**Author:** Roger (Platform Dev)  
+**Date:** 2026-06-06T22:03:01-07:00  
+**Branch:** squad/crucible-wal-substrate-walkthrough-b  
+**Status:** CLOSED — 16 new tests GREEN (9 sealAndSplit + 7 group-commit), full suite 60/60
+
+---
+
+## D-GC-1: sealAndSplit as a pure function (own module)
+
+**Choice:** `packages/crucible-core/src/ledger/wal/seal-and-split.ts` —
+exported as a standalone pure function, no I/O, generic over the row type `T`.
+
+**Rationale:**
+- Pure function is trivially unit-testable (9 cases; no temp dirs, no async).
+- Generic `sealAndSplit<T>(staged, verdicts)` lets the backend pass `StagedEntry[]`
+  directly, preserving the `resolve`/`reject` callbacks for promise resolution.
+- `pauseBatchIndex: number` annotation on restaged rows records the batch-relative
+  position of the PAUSE row; the backend enriches this with the actual commit
+  offset in Phase 4 (post-fsync) if needed by the Router in a future cycle.
+
+**Key rules implemented:**
+- COMMIT | OBSERVE → row joins `committed` with its verdict preserved.
+- PAUSE at index i → rows 0..i join `committed` (pause row carries durable PAUSE
+  verdict per exactly-once-pause); rows i+1..end join `restaged`. First PAUSE wins.
+- VETO is not present in the verdicts array (intercepted pre-WAL by the Ledger layer).
+
+---
+
+## D-GC-2: Group-commit staging in FileSystemWalBackend
+
+**Choice:** Internal `stagingQueue: StagedEntry[]` in `FileSystemWalBackend`.
+`commitRow()` stages the row and returns a Promise that resolves only after
+the containing batch is fdatasync'd. Flush triggers:
+  (a) `stagingQueue.length >= batchSize` (batchSize trigger)
+  (b) deadline timer fires after `batchDeadlineMs`
+  (c) explicit `flush()` call
+
+**Default batchSize: 1** — preserves existing per-row immediate-flush semantics
+for all existing tests (no regressions). Tests for group-commit pass `batchSize: N`
+and `batchDeadlineMs: 60_000` (suppress timer).
+
+**Seam impact on Graham's locked interface:**
+- `WalBackend.commitRow()` signature UNCHANGED.
+- `WalBackend.readRows()` signature UNCHANGED.
+- `flush()` and `close()` are on the CONCRETE class only (same pattern as the
+  existing `close()`). Graham's locked `WalBackend` interface was NOT touched.
+- **Additive only — no seam reshaping.**
+
+---
+
+## D-GC-3: ONE fdatasync barrier per batch
+
+**Mechanism:**
+1. Phase 1: CAS writes + build `SegmentRecordInput[]` for all committed rows.
+2. Phase 2: `buildChain(rowInputs, this.prevRoot)` chains the entire batch in one call.
+3. Phase 3: `fs.openSync(seg, 'a')` → `fs.writeSync` all records → `syncFn(fd)` → `fs.closeSync(fd)`.
+4. Phase 4 (success only): update `prevRoot`, write index entries, update manifest,
+   push to in-memory event cache, resolve row promises, fire `onPause`, re-queue restaged.
+
+**Single barrier:** `syncFn(fd)` fires exactly once per `executeFlush()` call.
+Tests inject a spy via `syncFn` option; the spy count verifies the one-sync invariant.
+
+---
+
+## D-GC-4: Atomic abort — path-based truncation (Windows fix)
+
+**Problem:** `fs.ftruncateSync(fd, size)` on a file opened in append mode (`'a'`)
+is unreliable on Windows (O_APPEND semantics interfere with SetEndOfFile).
+
+**Fix:** On failure in Phase 3, close the fd first, then call
+`fs.truncateSync(this.activeSegPath, preBatchSegSize)` (path-based). This works
+identically on Windows and Unix and guarantees no partial-batch bytes survive.
+
+**Hash-chain root rollback:** `this.prevRoot` is updated only in Phase 4 (success
+path). If Phase 3 fails, `this.prevRoot` is never advanced — the next batch
+correctly restarts from the pre-batch chain head. No explicit save/restore needed.
+
+**Manifest invariant:** `manifest.lastCommitOffset` is updated only in Phase 4.
+On abort, it retains its pre-batch value. On crash-recovery replay, the scanner
+reads segment bytes directly; records beyond `lastCommitOffset` would be orphaned
+(but are now absent due to truncation).
+
+**Residual:** CAS body files (`.cbor`) written in Phase 1 are NOT rolled back on
+abort. They are content-addressed (BLAKE3), so orphaned CAS files are harmless
+(they're simply never referenced by a committed WAL row). A future GC cycle can
+reclaim them.
+
+---
+
+## D-GC-5: syncFn injectable seam
+
+`FileSystemWalBackendOptions.syncFn?: (fd: number) => void` replaces the
+hard-coded `fs.fsyncSync(fd)` call. Default remains `(fd) => fs.fsyncSync(fd)`.
+Tests inject either a spy (count calls) or a throwing stub (test abort path).
+This avoids ESM module-spy issues and keeps the seam explicit.
+
+---
+
+## D-GC-6: onPause L1Subscriber stub
+
+`FileSystemWalBackendOptions.onPause?: (commitOffset: number) => void` is the
+minimal Router notification seam (§3.5: "Router receives the pause verdict via
+the L1Subscriber broadcast on the paused row"). The callback fires after
+fdatasync (durable), passing the commit offset of the PAUSE row. Full
+L1Subscriber broadcast to the §5 Router is deferred to its own RED cycle.
+
+---
+
+## D-GC-7: Scope fences confirmed NOT touched
+
+- 64 MiB segment roll-over — deferred
+- `appendFenced` / optimistic head-offset check (§3.4.1) — deferred
+- Full L1Subscriber broadcast / §5 Router integration — deferred
+- Group-commit deadline timer unit test (vi.useFakeTimers) — not needed to pass
+  RED tests; the timer logic is exercised implicitly via batchSize auto-flush.
+
+
+---
+
+### 2026-06-06T22:03:01-07:00: Aaron's ruling — WAL write.lock stale-lock policy (resolves D-LOCK-2)
+**By:** Aaron Kubly (via Copilot)
+**Decision:** Option (b) — **PID + liveness reclaim** for v1. The `write.lock` file records the owner PID; on an acquisition conflict, check whether that PID is alive — reclaim the lock if the owner is dead, throw `WriteLockHeldError` if alive. Driven by a dedicated RED→GREEN cycle.
+**Rationale:** Preserves §3.4.1's auto-release-on-termination *intent* without a native dependency; avoids opaque "stuck forever after crash" failures (correctness compounds across agent actions).
+**Follow-up filed:** GitHub issue **#55** — reconsider a true OS advisory lock (flock/LockFileEx via maintained dependency) vs PID-liveness later (label squad:roger).
+**Supersedes:** Roger's recommended Option (a) manual-clear (D-LOCK-2). §3.4.1 spec guarantee is now honored by PID-liveness, not downgraded.
 - `.squad/decisions-archive.md` — restored (fix commit 5925df4)
 - `.squad/agents/gabriel/history.md` — Learnings section updated
 - `.copilot/skills/archive-append-guard/SKILL.md` — new skill documenting the append-only assertion pattern

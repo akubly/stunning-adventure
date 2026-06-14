@@ -28,6 +28,7 @@ export {
   type ExecutePrescriberRunOptions,
   type ExecutedPrescriberRun,
 } from './runtime.js';
+export { createCairnTelemetrySink } from './telemetry.js';
 import {
   loadExecutionProfile,
   executePrescriberRun,

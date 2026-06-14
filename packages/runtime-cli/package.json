@@ -6,7 +6,8 @@
   "types": "dist/index.d.ts",
   "bin": {
     "forge-prescribe": "dist/cli.js",
-    "forge-metrics": "dist/forge-metrics.js"
+    "forge-metrics": "dist/forge-metrics.js",
+    "forge-seed-profile": "dist/forge-seed-profile.js"
   },
   "files": [
     "dist/"

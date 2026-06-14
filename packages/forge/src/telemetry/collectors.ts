@@ -87,7 +87,7 @@ export interface DriftCollector extends TelemetryCollector {
  * The earlier in the session the marker fires relative to the total turn
  * count, the lower the convergence drift contribution.
  */
-export function createDriftCollector(): DriftCollector {
+export function createDriftCollector(skillId?: string): DriftCollector {
   const toolCounts = new Map<string, number>();
   const promptHashes = new Set<string>();
   let turnCount = 0;
@@ -192,6 +192,7 @@ export function createDriftCollector(): DriftCollector {
       return {
         kind: "drift",
         sessionId,
+        skillId,
         value: currentScore.score,
         metadata: {
           signals: currentScore.signals,
@@ -221,7 +222,7 @@ export interface TokenCollector extends TelemetryCollector {
  * `totalNanoAiu` or the legacy `costNanoAiu` field for compatibility with
  * pre-bridge fixtures.
  */
-export function createTokenCollector(): TokenCollector {
+export function createTokenCollector(skillId?: string): TokenCollector {
   let totalInput = 0;
   let totalOutput = 0;
   let totalCacheRead = 0;
@@ -260,6 +261,7 @@ export function createTokenCollector(): TokenCollector {
       return {
         kind: "token",
         sessionId,
+        skillId,
         value: totalCostNanoAiu,
         metadata: {
           totalInput,
@@ -290,7 +292,7 @@ export interface OutcomeCollector extends TelemetryCollector {
  * SDK `session.shutdown`). Tool failures are derived from `tool_result`
  * events whose extracted payload has `success === false`.
  */
-export function createOutcomeCollector(): OutcomeCollector {
+export function createOutcomeCollector(skillId?: string): OutcomeCollector {
   let toolCalls = 0;
   let toolErrors = 0;
   let turnCount = 0;
@@ -317,6 +319,7 @@ export function createOutcomeCollector(): OutcomeCollector {
       return {
         kind: "outcome",
         sessionId,
+        skillId,
         value: succeeded ? 1 : 0,
         metadata: {
           succeeded,
