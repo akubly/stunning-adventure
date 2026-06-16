@@ -55,3 +55,18 @@ Two infrastructure changes approved in PRs #50 and #52:
 
 **Action for you:** No immediate action required. Lint workspace changes take effect after merge and 
 pm install restart. Doc-hygiene scope established for future improvements.
+
+### 2026-06-16T06:03:57Z: Rule Reinterpretation — Append-Only Clarified (Supersedes Issue #71 Decision B)
+
+**Task:** Merge Aaron's reinterpretation of Append-Only History Rule from inbox directive, verify archive integrity after squad nap condensation, prepare commit.
+
+**Decision:** Append-only refers to HOW entries are added (never rewritten in place), not a prohibition on condensation. Scribe and squad nap may relocate old history.md entries verbatim into history-archive.md (lossless). Issue #71 Decision B Option A (no size management) is superseded; the former Option C (recency-based archival with lossless archive) is now sanctioned.
+
+**Changes:**
+- ✅ Merged directive into .squad/decisions.md (new decision entry with clear supersession note)
+- ✅ Verified all archives grew: decisions-archive.md +29 lines, history-archives +100/+68/+250/+1237/+1940 lines across agents
+- ✅ Deleted inbox file (copilot-directive-2026-06-16T055852Z.md)
+- ✅ Staged 12 durable files individually; verified no logs staged
+- ✅ Committed: 7df2e04 "chore(squad): condense agent history + record Append-Only Rule supersession"
+
+**Outcome:** Squad nap output is legal and committed; rule clarification recorded for team memory; ready to push.
