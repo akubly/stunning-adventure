@@ -1642,52 +1642,6 @@ No `Ledger` class, no `WAL` interface, no Cairn integration in this turn. This i
 
 ---
 
-### 2026-06-08: FSE-2 and FSE-3 JSDoc Documentation Complete (Roger)
-
-**Author:** Roger Wilco (Platform Dev)  
-**Date:** 2026-06-08  
-**Status:** ✅ COMPLETE
-
-FSE-2 and FSE-3 LOW-priority documentation follow-ups are now complete. Both items have been documented as interface-level JSDoc on the `FactStore` contract in `packages/eureka/src/activities/recall.ts`.
-
-#### FSE-2: Offset Cursor Pagination Gaps/Dupes
-
-**Location:** `FactStore` interface @remarks (line 48–51)  
-**Content:** Documented that offset-based cursor pagination (v1) can skip or duplicate rows if facts are inserted or trust values mutate between page fetches. Noted this is acceptable for single-writer v1, and true keyset pagination (deferred to Slice D++) will resist concurrent mutations.
-
-#### FSE-3: Limit Parameter Contract
-
-**Location:** `search()` method parameter `limit` JSDoc (line 57–63)  
-**Content:** Documented that `limit` must be a positive integer. Degenerate values (≤ 0, NaN, non-integer) throw `TypeError` at the call boundary and are treated as contract violations, not as empty-result requests.
-
-#### Verification
-
-- ✅ TypeScript build: clean (`tsc --build`)
-- ✅ Test suite: 164/164 green (eureka)
-- ✅ No behavior changes (doc-only)
-
----
-
-### 2026-06-05: Audit — Laura M8 Slice C (SqliteFactStore + FTS5 BM25 Search)
-
-**Author:** Laura (Tester)
-**Date:** 2026-06-05
-**Branch:** `eureka/m8-slice-c-factstore`
-**PR:** #48
-**Verdict:** ✅ ACCEPT-WITH-FOLLOWUPS
-
----
-
-## Baseline Verified
-
-- Checked out `eureka/m8-slice-c-factstore`, pulled FF-only. Branch was already at `643f106` (Roger's drop).
-- `npm test` (packages/eureka): **109 tests, 8 files, all green**. Matches Roger's claimed count.
-- `npm run build` (packages/eureka): **clean** (tsc, no errors).
-
----
-
-## Audit Areas & Findings
-
 ### 1. BM25 Ordering — Critical Regression Lock
 
 **Status: PASS.** Roger's `ORDER BY (-bm25(facts_fts)) * f.trust DESC` is correct.
@@ -3433,6 +3387,67 @@ normalization unchanged, FS-4 footgun lock intact, scope fingerprint check prese
 ---
 
 
+
+# Decision — Append-Only History Rule Reinterpreted (Supersedes Issue #71 Decision B)
+
+**By:** Aaron Kubly (akubly)  
+**Date:** 2026-06-16  
+**Type:** Governance / Rules Clarification  
+**Status:** ACCEPTED — establishes correct interpretation going forward
+
+---
+
+## What Was Corrected
+
+The Append-Only History Rule, originally stated as a blanket prohibition on any modification to
+`history.md` and `history-archive.md`, was overstated. The correct interpretation:
+
+**Append-only refers to HOW new content is added to these files**, not a prohibition on
+condensation:
+
+- New entries are always **appended to the end of the file**, never interleaved or rewritten in
+  place. This property is what makes these files safe to merge via the `.gitattributes
+  merge=union` driver.
+- **Condensation is sanctioned and lossless:** Scribe (and the `squad nap` tool) are intended to
+  periodically condense old `history.md` entries by relocating them verbatim into
+  `history-archive.md`, keeping the most recent N entries live in `history.md`.
+- Archive files (`history-archive.md`, `decisions-archive.md`) are append-only targets — they
+  only grow, never shrink or have existing content overwritten.
+
+## Supersession
+
+**Decision: Issue #71 Decision B, Option A** ("Drop size management, no deletions ever") is
+**SUPERSEDED** by this reinterpretation.
+
+The prior "Option C" (recency-based archival: move old entries to archive, delete from
+history.md) is now the **sanctioned strategy**, provided:
+1. Archived entries are preserved **verbatim** in `history-archive.md`
+2. Archive files are **append-only** — they never lose pre-existing content
+3. The `history.md` tail is truncated AFTER entries are appended to the archive (history is
+   lossless overall)
+
+## Rationale
+
+Scribe's spawn template included a "HISTORY SUMMARIZATION" gate that was flagged as a violation
+because it edited previously-committed history entries. This was correctly identified as a scope
+violation — but the underlying policy was mischaracterized as "no size management ever." The
+team intended size management all along; the error was HOW it was attempted (dropping data vs.
+moving it).
+
+The `squad nap` condensation output (appending old entries to history-archive.md verbatim,
+then truncating history.md tail) is now **legal and correct** provided the archive grows and
+nothing is lost.
+
+## Action Items
+
+- ✅ `squad nap` history-condensation diffs in the working tree (moving entries to
+  history-archive.md, truncating history.md tail) are safe to commit and push.
+- ✅ Future Scribe spawns and automated naps may condense history.md per the Option-C strategy.
+
+---
+
+
+
 # Graham — Aperture UX Disposition
 
 **Author:** Graham (Lead / Architect)  
@@ -4512,4 +4527,5 @@ The panel re-reviewed the dispositions and Cycle 1 fix implementations on the de
 **Next Steps:** Merge branch squad/crucible-s2 to main per standard gate. F3 work (envelope versioning boundary definition) tracked separately as issue #76 for ship-gate gate consideration.
 
 ---
+
 

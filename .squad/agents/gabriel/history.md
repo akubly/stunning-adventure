@@ -4,98 +4,6 @@ File size: 19482 bytes. See history-archive.md for earlier entries.
 
 ---
 
-## Learnings
-
-**Union-only merges auto-resolve cleanly.** When the only overlapping files between branches are `.squad/` append-only files covered by `merge=union` in `.gitattributes`, `git merge` completes without stopping and leaves no conflict markers. Always verify with a full build + test pass that newly merged code compiles and all workspace tests remain green — even when no source files conflicted.
-
----
-
-## 2026-05-29: Crucible CTD Phase 4 — L3.5 Scheduler Tier Promotion
-
-**Task:** Author the L3.5 Scheduler tier promoted from `B-revisit-deferred` to
-v1 (Aaron lock; Erasmus US-E-13 + rubber-duck convergence on the OoO-execution
-/ dispatch-unit analog). Owner of §5 + §17; Roger owns §3 WAL acceptance of
-the new `scheduler_*` sub-kinds; Graham owns §1 layer-stack diagram update.
-
-**Deliverables:**
-1. `docs/crucible-technical-design/05-router-design.md` — new §5.A subsection
-   (~1.3pp, under the 1.5pp ceiling) covering responsibility, the four v1
-   sub-kinds (`scheduler_dispatched` / `_deferred` / `_cancelled` /
-   `_quanta_exhausted`), round-robin-with-quanta budget policy, back-pressure
-   threshold protocol, Hook Bus L1Subscriber interaction, replay determinism
-   (dispatch stream recorded, not recomputed), and three acceptance signals.
-   §5.2 state machine amended with `dispatched_pending` precursor state and a
-   paragraph documenting L3 → L3.5 → L4 flow.
-2. `docs/crucible-technical-design/17-observability-telemetry.md` — four new
-   catalog rows; `scheduler_dispatched` on builtin tier is silent (same
-   posture as `router.decision` apply); read-path perf-counter table for
-   quanta consumed, queue depth, dispatch latency, defer rate.
-3. `.squad/decisions/inbox/gabriel-ctd-phase4-scheduler.md` — decision drop.
-
-**Learning — boundary articulation as load-bearing.** The single sentence
-"Scheduler decides WHICH and IN WHAT ORDER; Router decides WHETHER" did more
-work than any other paragraph in the spec. Once that line existed, every
-sub-decision (does the Scheduler re-evaluate on replay? does it interact with
-hook verdicts? what sub-kinds does it emit?) collapsed to "if it's a
-which/order question, it's mine; if it's a whether question, it's the
-Router's." Boundary articulation pays for itself — the cost is one sentence,
-the benefit is the rest of the section writing itself.
-
-**Learning — replay-determinism discipline generalises.** §5.5 ("no live
-policy reload") and §5.A.6 ("dispatch order recorded, not recomputed") are
-the same doctrine applied to two different control-plane surfaces. Both
-flow from §6.5 Hook Verdict Consistency: any decision whose re-derivation
-would depend on wall-clock or non-deterministic ordering MUST be captured
-as an L1 Decision and replayed verbatim. This is a reusable test for any
-new control-plane tier — apply it before specifying any "scheduler /
-arbiter / coordinator" component in future revisions.
-
-**Learning — additive-sub-kind contract keeps cross-section work cheap.**
-The four `scheduler_*` sub-kinds slot into Roger's existing §3.3.1
-`(primitiveKind, subKind)` index without a new primitive kind. The whole
-tier ships as Decision sub-kind extensions plus a read-path projection
-(perf counters). This is the same pattern §17 itself uses — "harvest, don't
-define." When a new tier reuses the existing primitive/sub-kind contract,
-the cross-section coordination cost is one row in Roger's append validator
-and one diagram update in Graham's §1.
-
-**Files:** `docs/crucible-technical-design/05-router-design.md`,
-`docs/crucible-technical-design/17-observability-telemetry.md`. Decision drop:
-`.squad/decisions/inbox/gabriel-ctd-phase4-scheduler.md`.
-
-## 2026-05-28: Crucible CTD Rev. 3 — R2 Locks for Gabriel
-
-**Locked decisions** impact your execution model and bisect infra. Your tasks:
-1. **R2-3 (Queue Mechanics):** Aperture↔Router ack/resume handshake event shapes (Gabriel ↔ Valanice cross-section sync pair during Phase 2 authoring)
-2. **R2-5 (Env Snapshot):** Coordinate on nonDominatedReason field usage across layers (Rosella generates, Valanice renders)
-3. **R2-4 & R2-6:** Bisect env-snapshot stamping and transitive-dep pinning may inform CI policy.
-
-Phase 2 fan-out now unblocked. Full R2 locks in `.squad/decisions.md`.
-📌 Team update (2026-05-30T073638Z): **Pass A Execution DONE** — Gabriel (PA-B6 fence-violation retry counter + staleness detection + threat-model stubs). Concrete params: max 5 retries, jittered backoff 2^N, 100-event staleness threshold, 50ms catch-up budget. All Pass A agents complete. — Scribe
-
-# Gabriel — History
-
-📌 **Role:** Infrastructure  
-📌 **Joined:** 2026-03-28T06:21:47.381Z  
-
-## Recent Summary (Last 30 Days)
-
-**Crucible CTD Phase 4 (2026-05-29):** L3.5 Scheduler Tier promotion, §5+§17+§18 authoring, Aperture↔Router ack/resume handshake event shapes locked.
-
-**Crucible CTD Rev. 3 (2026-05-28):** R2 locks finalized (Queue Mechanics, Env Snapshot coordination). Phase 2 fan-out unblocked.
-
-**Pass A Execution (2026-05-30):** Fence-violation retry counter + staleness detection + threat-model stubs (PA-B6). All Pass A agents complete.
-
-**M2: forge-mcp Bash Shell Init Hooks (2026-06-01):** Shipped PR #44 — .github/hooks/cairn/ scripts (init/install/uninstall), README M2 section, skill extraction. Design: idempotent marker-block strategy, co-location with PowerShell hooks. All tests passing (49/49). Ready for review.
-
-**M2 Cycle-1 Fixes (2026-06-01):** Addressed 3 review findings on PR #44 (commit e7ef8f3): (1) BLOCKING — replaced broken two-pass sed in uninstall.sh with a bash state-machine loop; byte-identical roundtrip verified on Git Bash. (2) IMPORTANT — moved npm resolution into background subshell so nothing blocks shell startup. (3) MEDIUM — fixed pkg_json dirname depth (2→3) so forge_mcp_check prints correct version 0.1.0. Build clean, 49/49 tests passing.
-
-**M2 Cycle-3 Fixes (2026-06-02):** Addressed 8 active Copilot threads on PR #44. Bucket A `b16a485`: bash resolver now matches `curate.ps1` fallbacks and Git Bash smoke reports package version. Bucket B `c831e64`: README now documents Node >=20, exact resolver order, and bash/Git Bash support boundary. Bucket C `19f35e9`: removed Graham history ESC artifact. Bucket D `a5f1e17`: consolidated date-stamped squad archives into canonical archive files. Persona-review follow-up `3245fc1`: refreshed shell-install skill parity, README troubleshooting/fallback notes, smoke-check fallback warning, and archive cleanup details. Verification: `npm run build`, `npm test`, and Git Bash `forge_mcp_check` all clean.
-
-**M2 Cycle-4 Fix (2026-06-02):** Addressed blocking process-leak thread `PRRT_kwDORy1V9M6GqI4o` in commit `ac524c3`. Root cause: interactive bash launched `node "$script"` with stdin inherited from the terminal, so `runSessionStartHook()` waited forever for EOF. Fix: pipe finite `{"toolName":"shellInit","cwd":"..."}` JSON into Node, with Git Bash cwd converted through `cygpath -w`, so stdin reaches EOF and repo/workdir attribution remains deterministic. Verification: `npm run build`, `npm test`, Git Bash `forge_mcp_check`, and process-leak smoke clean; transient Node PID exited before the 5-second recheck.
-
-**M2 Cycle-5 Fixes (2026-06-02):** Addressed 4 Copilot threads. Shell commit `94a66fb`: `shell-init.sh` now fails clearly when executed instead of sourced, and `uninstall.sh` uses adjacent `mktemp` plus cleanup trap. Doc hygiene commit `05bc54e`: removed tracked `.squad` markdown references to gitignored decision inbox paths. Review follow-ups `591843a`/`7c9433e`/`e5d929a`: hardened trap scope and removed remaining broken/ambiguous inbox wording. Verification: `npm run build`, `npm test`, direct-exec source-only error, source smoke with `forge_mcp_check`, install/uninstall byte-identical roundtrip with no `.forge-mcp-bak*` leftovers, and tracked grep clean.
-
 ## Core Context
 
 - **Project:** A Copilot plugin marketplace for iterating on personal agentic engineering infrastructure
@@ -222,6 +130,7 @@ Phase 2 fan-out now unblocked. Full R2 locks in `.squad/decisions.md`.
 All three files existed on origin/main-relative tracking only because the Scribe meta-commit staged them before the gitignore cleanup was applied.
 
 **Commit:** `f2606f3` — topic-branch SKILL typo fix (stray space in `.squad/ decision archives` → `.squad/decision archives`).
+
 ## Current Workload
 
 - Crucible CTD Phase 3: §17 (observability/telemetry) + §18 (diagnostics/recovery) unblocked
@@ -249,6 +158,7 @@ Two infrastructure changes approved in PRs #50 and #52:
 
 **Action for you:** No immediate action required. Lint workspace changes take effect after merge and 
 pm install restart. Doc-hygiene scope established for future improvements.
+
 ## Learnings
 
 ### `--if-present` silent-skip guard pattern (2026-06-06, PR #50 follow-up)

@@ -18618,4 +18618,49 @@ This is the same bug that caused the real scratch-file problem during Sprint 0 r
 
 ---
 
-
+### 2026-06-08: FSE-2 and FSE-3 JSDoc Documentation Complete (Roger)
+
+**Author:** Roger Wilco (Platform Dev)  
+**Date:** 2026-06-08  
+**Status:** ✅ COMPLETE
+
+FSE-2 and FSE-3 LOW-priority documentation follow-ups are now complete. Both items have been documented as interface-level JSDoc on the `FactStore` contract in `packages/eureka/src/activities/recall.ts`.
+
+#### FSE-2: Offset Cursor Pagination Gaps/Dupes
+
+**Location:** `FactStore` interface @remarks (line 48–51)  
+**Content:** Documented that offset-based cursor pagination (v1) can skip or duplicate rows if facts are inserted or trust values mutate between page fetches. Noted this is acceptable for single-writer v1, and true keyset pagination (deferred to Slice D++) will resist concurrent mutations.
+
+#### FSE-3: Limit Parameter Contract
+
+**Location:** `search()` method parameter `limit` JSDoc (line 57–63)  
+**Content:** Documented that `limit` must be a positive integer. Degenerate values (≤ 0, NaN, non-integer) throw `TypeError` at the call boundary and are treated as contract violations, not as empty-result requests.
+
+#### Verification
+
+- ✅ TypeScript build: clean (`tsc --build`)
+- ✅ Test suite: 164/164 green (eureka)
+- ✅ No behavior changes (doc-only)
+
+---
+
+### 2026-06-05: Audit — Laura M8 Slice C (SqliteFactStore + FTS5 BM25 Search)
+
+**Author:** Laura (Tester)
+**Date:** 2026-06-05
+**Branch:** `eureka/m8-slice-c-factstore`
+**PR:** #48
+**Verdict:** ✅ ACCEPT-WITH-FOLLOWUPS
+
+---
+
+## Baseline Verified
+
+- Checked out `eureka/m8-slice-c-factstore`, pulled FF-only. Branch was already at `643f106` (Roger's drop).
+- `npm test` (packages/eureka): **109 tests, 8 files, all green**. Matches Roger's claimed count.
+- `npm run build` (packages/eureka): **clean** (tsc, no errors).
+
+---
+
+## Audit Areas & Findings
+
