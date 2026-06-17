@@ -21,6 +21,35 @@ import type {
   LedgerSubscriber,
   WalBackend,
 } from './ledger.js';
+
+/**
+ * Ledger extended with a one-shot bootstrap commit (SK-2, §3.8).
+ *
+ * bootstrap() must be called exactly once, before any append(), to commit the
+ * materialized BootstrapPayload rows as the session's offset-0 batch.
+ *
+ * Import by direct path — barrel is Graham's lane:
+ *   import { createLedger, type BootstrappableLedger }
+ *     from '../ledger/ledger-impl.js';
+ */
+export interface BootstrappableLedger extends Ledger {
+  /**
+   * Commit the materialized bootstrap batch as the session's first rows.
+   *
+   * Each row is committed with verdict=COMMIT / hookId=null — bootstrap rows
+   * are system-emitted context; the pre-commit hook bus is not consulted.
+   * The WAL hookVerdict byte written is 0xFF (no predicate matched).
+   *
+   * Returns the assigned commit offsets (one per input row, starting at 0).
+   *
+   * Atomicity note (skeleton scope): rows are committed sequentially via the
+   * existing commitRow path.  WAL-level group-commit atomicity for bootstrap
+   * (§3.8 "either every row durable or none") is a Phase 1 concern — the
+   * WalBackend interface does not yet expose a multi-row atomic-commit
+   * primitive.  Tracked for Phase 1 wiring.
+   */
+  bootstrap(rows: PrimitiveInput[]): Promise<number[]>;
+}
 import type {
   HookContext,
   HookPredicate,
@@ -41,7 +70,7 @@ function isNonVeto(
 
 type SubscriberErrorHook = NonNullable<LedgerFactoryOptions['onSubscriberError']>;
 
-class LedgerImpl implements Ledger {
+class LedgerImpl implements BootstrappableLedger {
   private readonly subscribers: LedgerSubscriber[] = [];
 
   constructor(
@@ -119,6 +148,45 @@ class LedgerImpl implements Ledger {
   async queryEvents(opts: LedgerQueryOpts): Promise<LedgerEvent[]> {
     return this.walBackend.readRows(opts);
   }
+
+  /**
+   * Commit the materialized bootstrap batch as the session's first rows (SK-2).
+   *
+   * Bypasses the hook bus — bootstrap rows are system-emitted context, not
+   * subject to pre-commit policy hooks.  Each row uses verdict=COMMIT/hookId=null
+   * which writes WAL hookVerdict byte 0xFF (no predicate matched, §3 seam §5).
+   *
+   * Subscriber notifications follow the same isolation contract as append():
+   * a throwing subscriber must never affect commit durability or skip peers.
+   */
+  async bootstrap(rows: PrimitiveInput[]): Promise<number[]> {
+    const offsets: number[] = [];
+
+    for (const row of rows) {
+      const offset = await this.walBackend.commitRow(row, {
+        verdict: 'COMMIT' as const,
+        hookId: null,
+      });
+      offsets.push(offset);
+
+      if (this.subscribers.length > 0) {
+        const event: LedgerEvent = { ...row, offset };
+        for (const sub of this.subscribers) {
+          try {
+            sub.onCommit(offset, event);
+          } catch (err) {
+            try {
+              this.onSubscriberError?.(offset, event, err, sub);
+            } catch {
+              // Swallow — observability must not propagate.
+            }
+          }
+        }
+      }
+    }
+
+    return offsets;
+  }
 }
 
 /**
@@ -127,8 +195,12 @@ class LedgerImpl implements Ledger {
  * No-arg call uses an in-memory WalBackend (suitable for tests).
  * Pass `opts.walBackend` to wire the durable §3 file-system substrate.
  * Pass `opts.onSubscriberError` to observe swallowed subscriber errors (#69).
+ *
+ * Returns BootstrappableLedger (extends Ledger) — all existing Ledger consumers
+ * are unaffected (covariant return type).  Graham's assembler can call
+ * `.bootstrap(rows)` to commit offset-0 rows before the first `.append()`.
  */
-export async function createLedger(opts?: LedgerFactoryOptions): Promise<Ledger> {
+export async function createLedger(opts?: LedgerFactoryOptions): Promise<BootstrappableLedger> {
   const walBackend = opts?.walBackend ?? new InMemoryWalBackend();
   const hookBus    = new PreCommitHookBus();
   return new LedgerImpl(hookBus, walBackend, opts?.onSubscriberError);
