@@ -198,3 +198,13 @@ git merge origin/main on main let git's merge=union driver auto-resolve .squad/d
 **Append-only line-count guard:** Before merging, captured origin/main's decisions-archive.md line count (5038). After merge it rose to 5268 — proving origin's entries were preserved and nothing was dropped. Always verify the merged file is >= the upstream baseline, never just assume the union driver worked.
 
 **Why nap compaction was deferred:** stash@{0} contained a squad nap compaction of histories/decisions alongside 2 unrelated pre-existing edits. Applying the compaction via stash pop would have entangled the unrelated edits and potentially silently overwritten verbose append-only content with condensed summaries. The correct sequencing is: push clean bookkeeping to main first, then run squad nap cleanly on top of main so the compaction is an explicit, reviewable, standalone commit.
+
+### 2026-06-16 — FifoScheduler Determinism Contract (Crucible S3 Skeleton, T3)
+
+**Implementation:** packages/crucible-core/src/skeleton/fifo-scheduler.ts — FifoScheduler implements SchedulerPort (§5.A).
+
+**A-Sched-1 mapping:** A-Sched-1 requires dispatch ordering to be preserved across replay: re-running the same proposal sequence must produce an identical scheduler_dispatched stream. FifoScheduler achieves this trivially — it has no internal state, no queue, no timers, and no randomness. Each submit(proposal) call returns a SchedulerDispatched event derived solely from the proposal's own fields (proposalId, generatorId, priority) plus the fixed constants quantaConsumed=1 and queueDepthAtDispatch=0. Because the output is a pure function of the input, the replay invariant is structurally guaranteed: same proposals in, same events out, every time.
+
+**Why no buffering matters for replay:** If the scheduler buffered proposals and drained them on a timer or depth threshold, the drain order could differ between original run and replay (different wall-clock timing, different OS scheduling). By dispatching synchronously on arrival with no side-effects, FifoScheduler makes the scheduler tier a no-op for replay correctness purposes — the WAL's scheduler_dispatched rows are already the complete dispatch log (§5.A.6).
+
+**Export discipline:** Exported only from ifo-scheduler.ts directly, not injected into index.ts (Graham owns the barrel; T2/T4 run in parallel). Consumers import via '../skeleton/fifo-scheduler.js'.
