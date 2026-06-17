@@ -11,8 +11,8 @@
 
 // ─── Library re-exports ───────────────────────────────────────────────────────
 export { createSession, fork } from '@akubly/crucible-core';
-export { createSkeletonSession, StubSdkProvider } from '@akubly/crucible-core/dist/skeleton/index.js';
-export type { SkeletonSession, SkeletonStatus, ReplayReport } from '@akubly/crucible-core/dist/skeleton/index.js';
+export { createSkeletonSession, StubSdkProvider } from '@akubly/crucible-core/skeleton';
+export type { SkeletonSession, SkeletonStatus, ReplayReport } from '@akubly/crucible-core/skeleton';
 
 // ─── Command handlers (programmatic shell) ────────────────────────────────────
 export { runStatusCommand, renderStatus } from './commands/status.js';
@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { createSkeletonSession: _css, StubSdkProvider: _ssp } = await import(
-    '@akubly/crucible-core/dist/skeleton/index.js'
+    '@akubly/crucible-core/skeleton'
   );
   const { runStatusCommand: _rsc } = await import('./commands/status.js');
   const { runReplayCommand: _rrc } = await import('./commands/replay.js');

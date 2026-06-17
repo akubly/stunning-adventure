@@ -14,7 +14,7 @@
  * pattern, same as status.ts) — tests call the function, not a subprocess.
  */
 
-import type { SkeletonSession, ReplayReport } from '@akubly/crucible-core/dist/skeleton/index.js';
+import type { SkeletonSession, ReplayReport } from '@akubly/crucible-core/skeleton';
 
 const DIVIDER = '─'.repeat(44);
 

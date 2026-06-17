@@ -12,7 +12,7 @@
  * directly without spawning a subprocess (programmatic-shell pattern).
  */
 
-import type { SkeletonSession, SkeletonStatus } from '@akubly/crucible-core/dist/skeleton/index.js';
+import type { SkeletonSession, SkeletonStatus } from '@akubly/crucible-core/skeleton';
 
 const DIVIDER = '─'.repeat(44);
 
