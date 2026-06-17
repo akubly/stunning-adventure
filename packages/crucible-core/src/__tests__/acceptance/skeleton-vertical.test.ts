@@ -151,7 +151,6 @@ export function assertA2ByteEquivalent(original: LedgerRow[], replayed: LedgerRo
 // Inline stub satisfies SK-1 without depending on T4 (Alexander).
 // The real createStubSdkProvider() import above is the preferred long-term form.
 
-const SYSTEM_PROMPT = 'You are a helpful assistant.';
 const SESSION_PROMPT = 'What is the current working directory?';
 
 // (No inline stub needed — StubSdkProvider from T4 is already on-branch.)

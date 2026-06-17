@@ -33,7 +33,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-import type { PrimitiveInput, Primitive } from '../types.js';
+import type { Primitive } from '../types.js';
 import type {
   SdkProvider,
   BootstrapMaterializer,

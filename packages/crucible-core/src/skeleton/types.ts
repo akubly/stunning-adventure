@@ -8,7 +8,7 @@
  * only what the skeleton needs to pass SK-1 through SK-6.
  */
 
-import type { PrimitiveKind, PrimitiveInput, Primitive } from '../types.js';
+import type { PrimitiveInput, Primitive } from '../types.js';
 
 // ─── Common skeleton types ───────────────────────────────────────────────────
 
