@@ -282,6 +282,16 @@ export interface SkeletonSession {
 
   /** Replay the session and assert byte-equivalence (SK-5). */
   replay(): Promise<ReplayReport>;
+
+  /**
+   * Query committed rows by offset range (AMBIG-2 resolved).
+   *
+   * Allows per-row kind assertions for SK-2 (bootstrap rows are observations)
+   * and SK-3 (turn rows include observation + decision).
+   *
+   * @param range — Inclusive [start, end] offset pair. Defaults to all rows.
+   */
+  queryRows(range?: [number, number]): Promise<Primitive[]>;
 }
 
 export interface SkeletonRunResult {
