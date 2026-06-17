@@ -34,3 +34,49 @@ Two infrastructure changes approved in PRs #50 and #52:
 
 **Action for you:** No immediate action required. Lint workspace changes take effect after merge and 
 pm install restart. Doc-hygiene scope established for future improvements.
+
+---
+
+## Learnings
+
+**2026-06-16 — S3 Phase 0.5 Skeleton T4: StubSdkProvider (SK-1)**
+
+**StubSdkProvider deterministic contract:**
+- File: `packages/crucible-core/src/skeleton/sdk-provider-stub.ts`
+- Exported class: `StubSdkProvider`
+- `id = 'stub-sdk@1'`, `sdkVersion = '0.0.0-stub'`, `schemaVersion = 1`
+- Determinism mechanism: djb2 hash of the prompt string → stable 8-character hex (`promptHash`). No timestamps, no randomness anywhere in the output. Same prompt → byte-for-byte identical `TurnResult`. SK-5 replay holds unconditionally.
+- `bootstrap(opts)` builds `BootstrapPayload` directly from opts fields; `memoryManifest` is always `[]` for the skeleton.
+- `shutdown(reason)` is an idempotent no-op resolve.
+
+**Exact PrimitiveInput shape used (from `packages/crucible-core/src/types.ts`):**
+```ts
+interface PrimitiveInput {
+  primitiveKind: PrimitiveKind;   // 'observation' | 'decision' | ...
+  primitivePayload: unknown;
+  causalReadSet: string[];
+  metadata?: EventMetadata;
+}
+```
+
+**Observation row (primitives[0]):**
+```ts
+{
+  primitiveKind: 'observation',
+  primitivePayload: { source: 'stub-sdk', content: `stub-response:${promptHash}`, promptHash },
+  causalReadSet: [],
+}
+```
+
+**Decision row (primitives[1]):**
+```ts
+{
+  primitiveKind: 'decision',
+  primitivePayload: { source: 'stub-sdk', action: 'passthrough', rationale: `stub decision for prompt hash ${promptHash}` },
+  causalReadSet: [promptHash],
+}
+```
+
+Laura and Roger: `causalReadSet` on the Observation is `[]` (nothing read yet); on the Decision it is `[promptHash]` — the hash string is the logical causal reference. Both rows have no `metadata` field (optional, omitted). `primitiveKind` discriminators are lowercase: `'observation'` and `'decision'`.
+
+Build result: `npx tsc --build` — clean (exit 0). `npx vitest run` — 192/192 tests green.
