@@ -573,6 +573,22 @@ export class FileSystemWalBackend implements WalBackend {
     return this.scanSegmentFile(this.segPath(segIdx ?? this.activeSeg));
   }
 
+  /**
+   * Return decoded SegmentRecords across ALL segments in segmentRange.
+   *
+   * readSegmentRecords() reads only the active segment; sessions that span
+   * multiple 64 MiB segments require iterating the full range.  Replay uses
+   * this method so the raw-record side covers the same row set as readRows().
+   */
+  readAllSegmentRecords(): SegmentRecord[] {
+    const [first, last] = this.manifest.segmentRange;
+    const all: SegmentRecord[] = [];
+    for (let s = first; s <= last; s++) {
+      all.push(...this.scanSegmentFile(this.segPath(s)));
+    }
+    return all;
+  }
+
   // ─── WalBackend interface ─────────────────────────────────────────────────
 
   /**

@@ -72,6 +72,8 @@ type SubscriberErrorHook = NonNullable<LedgerFactoryOptions['onSubscriberError']
 
 class LedgerImpl implements BootstrappableLedger {
   private readonly subscribers: LedgerSubscriber[] = [];
+  private hasBootstrapped = false;
+  private hasAppended     = false;
 
   constructor(
     private readonly hookBus: HookBusPort,
@@ -84,6 +86,7 @@ class LedgerImpl implements BootstrappableLedger {
   }
 
   async append(input: PrimitiveInput): Promise<number> {
+    this.hasAppended = true;
     // (a) Build hook context — no I/O, no WAL staging
     // metadata.source is intentionally not populated here (no RED test drives
     // extraction from primitivePayload in this slice; reserved for future use).
@@ -158,8 +161,23 @@ class LedgerImpl implements BootstrappableLedger {
    *
    * Subscriber notifications follow the same isolation contract as append():
    * a throwing subscriber must never affect commit durability or skip peers.
+   *
+   * INVARIANT: must be called exactly once, before any append().
+   * Throws if called a second time or after append() has been called.
    */
   async bootstrap(rows: PrimitiveInput[]): Promise<number[]> {
+    if (this.hasBootstrapped) {
+      throw new Error(
+        'LedgerImpl.bootstrap() called more than once — bootstrap-once invariant violated',
+      );
+    }
+    if (this.hasAppended) {
+      throw new Error(
+        'LedgerImpl.bootstrap() called after append() — bootstrap must precede all appends',
+      );
+    }
+    this.hasBootstrapped = true;
+
     const offsets: number[] = [];
 
     for (const row of rows) {

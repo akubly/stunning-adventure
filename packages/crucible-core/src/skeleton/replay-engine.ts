@@ -23,7 +23,7 @@
  */
 
 import type { ReplayEngine, ReplayOptions, ReplayReport, SessionId } from './types.js';
-import { FileSystemWalBackend }  from '../ledger/wal-backend-fs.js';
+import { createFileSystemWalBackend }  from '../ledger/wal-backend-fs.js';
 import { materializeRow }        from '../ledger/wal/materialize.js';
 
 // ─── Byte-equality helper ─────────────────────────────────────────────────────
@@ -46,14 +46,15 @@ class DefaultReplayEngine implements ReplayEngine {
     const startMs  = Date.now();
 
     // Open read-only — never acquires write lock; commitRow must not be called.
-    const backend = await FileSystemWalBackend.create(this.rootDir, sessionId, {
+    const backend = await createFileSystemWalBackend(this.rootDir, sessionId, {
       readOnly: true,
     });
 
     // Decoded event rows and raw segment records from the same WAL.
-    // Phase 0.5: single segment — readSegmentRecords() reads activeSeg (000000.seg).
+    // readAllSegmentRecords() covers the full segmentRange so multi-segment
+    // sessions (64 MiB roll-over) compare the same row set on both sides.
     const events    = await backend.readRows({ range: [0, Number.MAX_SAFE_INTEGER] });
-    const segRecs   = backend.readSegmentRecords();
+    const segRecs   = backend.readAllSegmentRecords();
 
     // Structural sanity: decoded event count must equal raw record count.
     if (events.length !== segRecs.length) {
@@ -67,6 +68,7 @@ class DefaultReplayEngine implements ReplayEngine {
     }
 
     let rowsReplayed = 0;
+    let firstDivergenceOffset: number | null = null;
 
     for (let i = 0; i < events.length; i++) {
       const event  = events[i]!;
@@ -92,7 +94,10 @@ class DefaultReplayEngine implements ReplayEngine {
             wallClockMs:         Date.now() - startMs,
           };
         }
-        // Non-strict: count this row as not replayed and continue scanning.
+        // Non-strict: record the offset of the FIRST divergence, then continue.
+        if (firstDivergenceOffset === null) {
+          firstDivergenceOffset = i;
+        }
         continue;
       }
 
@@ -102,7 +107,7 @@ class DefaultReplayEngine implements ReplayEngine {
     const allMatch = rowsReplayed === events.length;
     return {
       status:              allMatch ? 'pass' : 'fail',
-      divergenceAtOffset:  allMatch ? null   : rowsReplayed,
+      divergenceAtOffset:  allMatch ? null   : firstDivergenceOffset,
       divergenceKind:      allMatch ? null   : 'oracle',
       rowsReplayed,
       wallClockMs:         Date.now() - startMs,
