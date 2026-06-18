@@ -41,7 +41,7 @@ export type TrustTier = 'builtin' | 'adopted' | 'community' | 'external';
  * early §12.2 alignment to avoid pulling in Phase 1 boundary types prematurely).
  *
  * @see docs/crucible-technical-design/12-copilot-sdk-integration.md §12.2
- * @see .squad/decisions/inbox/graham-skeleton-provider-scope.md
+ * @see .squad/decisions/graham-skeleton-provider-scope.md
  */
 export interface SdkProvider {
   /** Stable provider identity (e.g. 'copilot-sdk@1'). */
