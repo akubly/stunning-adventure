@@ -149,3 +149,77 @@ The composite expression `(-bm25_score) * trust` in `ranked` CTE and the `ORDER 
 **Default-row behavior preserved:**
 
 The migration 002 defaults (`importance REAL NOT NULL DEFAULT 0`, `attention_tier TEXT NOT NULL DEFAULT 'warm'`, `last_accessed INTEGER` nullable) were chosen so that existing rows behave identically to before. `importance=0` has no effect on the composite sort (not in ORDER BY); `attention_tier='warm'` was already the hardcoded value; `last_accessed=NULL` maps to `undefined` which the compositeScore recency branch already handles as "no recency signal."
+
+---
+
+### 2026-06-16: `integrate` Design Memo — Representation Layer Input
+
+**Context:** Aaron split the write path into `imprint` (raw mechanical write) and `integrate` (cognitive orchestration verb). Genesta is specifying `imprint`; Crispin was asked to produce a representation/graph design memo for `integrate` in parallel.
+
+**Key design decisions proposed:**
+
+1. **Classification model:** BM25 recall provides candidate shortlists but CANNOT reliably distinguish duplicate from contradiction (lexical signal only). Proposed `dedupKey` (nullable TEXT column + index on `facts`) as an O(1) semantic identity primitive for structured kinds. Classification logic itself is Edgar's domain — I provide the graph signals, not the thresholds.
+
+2. **Edge schema (migration 003):** Proposed `relations` table matching PRD v5 spec: `(id, from_id, to_id, session_id, edge_type, weight, confidence, created_at)`. UNIQUE on `(from_id, to_id, edge_type, session_id)`. CHECK constrains to Tier 1 edge types. Indexes on `from_id`, `to_id`, `edge_type`. `from_id`/`to_id` reference `facts.fact_id` (semantic identity, not row ID) per PRD KR convention.
+
+3. **Reconciliation outcomes:** Novel → imprint + optional `derived_from` edge. Duplicate → no imprint, refresh `last_accessed`, optional trust increment (Edgar). Contradiction → imprint new + `contradicts` edge + trust decrement on existing (Edgar's magnitude).
+
+4. **Boundary clarity:** Representation owns edge schema/writes and dedup key definition. Edgar owns thresholds, trust algorithms, similarity scoring. Genesta owns the orchestration contract. The graph gives candidates and a place to store results — but duplicate-vs-contradiction discrimination requires either LLM judgment or structured dedup keys.
+
+**Open questions raised:** (Q1) Does migration 003 ship with `integrate` impl or earlier? (Q2) Is `dedupKey` in scope? (Q3-Q4) BM25 threshold + dup-vs-contradiction discrimination strategy. (Q5) `duplicate_of` as edge vs. audit log. (Q6) `derived_from` mandatory or optional. (Q7-Q8) Trust adjustment magnitudes for Edgar.
+
+**Decision drop:** `.squad/decisions/inbox/crispin-integrate-design.md` (PROPOSED).
+
+---
+
+### 2026-06-16: `imprint` GREEN Phase — Implementation Choices
+
+**Context:** Implemented the `imprint` activity (raw fact write path) per Genesta's DECIDED contract and Laura's 24 RED tests. All 256 tests green, `tsc --build` clean.
+
+**Key implementation decisions:**
+
+1. **ClockProvider reuse:** Imported `ClockProvider` from `./recall.js` and re-exported from `./imprint.js` (`export type { ClockProvider } from './recall.js'`). Structurally identical interfaces — single source of truth, no second incompatible clock type. Genesta's note in §2 explicitly blessed this.
+
+2. **Idempotency mechanism (SQLite):** `INSERT OR IGNORE` against `UNIQUE(fact_id, session_id)`. Simpler than `ON CONFLICT DO NOTHING` (equivalent for single-constraint case). Key property: SQLite triggers (`facts_ai` for FTS5 sync) do NOT fire on ignored rows, so FTS stays consistent without extra logic.
+
+3. **Idempotency mechanism (InMemory):** `Map.has(key)` check before `Map.set()`. Composite key is `${sessionId}\0${factId}` (null-byte separator, same pattern as the existing InMemoryFactStore in fact-store.contract.test.ts).
+
+4. **InMemoryFactWriter dual-interface:** Implements both `FactWriter` and `FactStore` in a single class per Laura's D2 decision. The harness assigns `factStore: writer` and `factWriter: writer` (same instance). Also exposes `readFact()` as a test-only method (not on FactWriter interface) per D3.
+
+5. **Timestamp format:** `createdAt` (epoch ms from ClockProvider) is converted to `'YYYY-MM-DD HH:MM:SS'` format (matching SQLite's `datetime('now')` output style) via `new Date(ms).toISOString().replace('T', ' ').replace('Z', '').slice(0, 19)`. Both `created_at` and `updated_at` are set to the same value (fresh fact, never updated).
+
+6. **Validation ordering:** All checks fire synchronously before any `await` (matching applyFeedback's pattern). Order: content → trust → importance → attentionTier. `idProvider.next()` and `clock.now()` are called AFTER validation passes (per contract §3 step ordering).
+
+7. **Content trimming:** `options.content.trim()` is applied both for validation (empty check) and for the value written to storage. The stored content is always trimmed.
+
+**Files created/modified:**
+- `src/activities/imprint.ts` — NEW: activity + types
+- `src/activities/errors.ts` — APPEND: `InvalidImprintError`
+- `src/storage/fact-writer.ts` — NEW: `InMemoryFactWriter`
+- `src/storage/fact-writer-sqlite.ts` — NEW: `SqliteFactWriter`
+- `src/sqlite/deps.ts` — APPEND: `createSqliteImprintDeps`
+- `src/sqlite/index.ts` — APPEND: re-exports
+- `src/storage/index.ts` — APPEND: re-export
+- `src/index.ts` — APPEND: re-exports
+
+**Test results:** 256/256 green (208 pre-existing + 48 new imprint contract tests).
+
+---
+
+## 2026-06-17: Eureka imprint Slice SHIPPED (M8 Follow-Up)
+
+**Result:** ✅ COMPLETE — 256/256 eureka tests GREEN, tsc clean
+
+**Deliverables:**
+- `imprint` GREEN implementation + 24 RED tests (all passing)
+- `integrate` design memo (PROPOSED, awaiting Aaron Q1/Q2 decisions)
+- 4 decisions merged to decisions.md (3 DECIDED, 1 PROPOSED)
+
+**Artifacts shipped:**
+- Genesta: FR-4 amendment, imprint contract, roadmap (3 DECIDED)
+- Crispin: imprint GREEN + integration design (1 PROPOSED pending Aaron)
+- Laura: RED tests (24 assertions, both runners green)
+
+**Scribe orchestration:** Decisions inbox merged → decisions.md, 3 orchestration logs per agent, session log, history appends, git commit staged/completed
+
+**What's next:** Aaron reviews integrate design (Q1/Q2). Once locked, Crispin proceeds with `integrate` cognitive orchestration slice.

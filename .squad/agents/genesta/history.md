@@ -131,3 +131,80 @@ Aaron directed: **attention-column read-through MUST be enforced at the contract
 **Test result:** 206/206 passing (205 pre-existing + 1 net new). tsc clean. Both InMemoryFactStore and SqliteFactStore now enforce attention-column contract uniformly.
 
 **Impact on Genesta/Cairn integration:** Attention columns now surfaced consistently at the FactStore contract level. Any future Cairn consumer of FactStore reads gets predictable attention metadata (not just SQLite-specific values). Extraction-ready design confirmed.
+
+---
+
+## 2026-06-16: Post-M8 Roadmap Assessment
+
+**Task:** Determine next Eureka slice after M8 completion.
+
+**Survey findings:** The Eureka package currently has exactly two activity verbs (`recall`/`recallWithScores` and `applyFeedback`/`applyFeedbackById`) — both in `src/activities/recall.ts`. Storage layer is mature: `FactStore` (read+search), `TrustUpdater` (atomic trust mutation), `FactReader` (single-fact read), all with SQLite + InMemory implementations and shared contract tests. Schema has 2 migrations (core facts + attention columns), FTS5 with BM25, keyset pagination, trust_history audit log.
+
+**Key gap identified:** No write-path activity for fact creation. The `FactStore` interface is read-only; facts can only be created via direct SQL (test seeding). This makes Eureka unusable as a standalone API — the minimal loop (create → retrieve → feedback) is broken at step 1.
+
+**Recommendation delivered:** `integrate` activity as next slice (Option A). Lowest risk, closes the MVP loop, unlocks downstream work (access promotion, retire/evict). Decision drop placed in `.squad/decisions/inbox/genesta-next-slice.md` as PROPOSED.
+
+**Reasoning:** Considered recall side-effects (Option B) and retire/evict (Option C) as alternatives. Both depend on facts existing in the store, making them sequentially downstream of `integrate`. The activity model in §10 §10.1 specifies `integrate` as the entry point for all knowledge — shipping it first aligns with the spec's data flow.
+
+### 2026-06-16: Verb Conflation Correction — `imprint` vs `integrate`
+
+**Trigger:** Aaron challenged the `integrate` naming: "I naively would have expected integration to be more of a maintenance operation than the outermost 'write path'? There's committing things to memory and then there's *processing* a piece of information *in the context* of other, previously encountered information."
+
+**Finding:** Aaron is correct. The PRD v5 §3 explicitly defines `integrate` as "Take in new material; **reconcile with existing facts**" and states "Integration is a system property, not a one-shot ingestion." The §10 spec conflates two distinct operations:
+
+1. **Imprinting** — raw mechanical write (what §10's implementation section actually describes)
+2. **Integration** — cognitive processing in context (what §3's conceptual model describes)
+
+The "activities are runtime verbs, not storage nouns" principle demands the split. A raw INSERT is a storage operation, not a cognitive activity. Calling it `integrate` hides the absence of reconciliation logic behind a prestigious name.
+
+**Corrected vocabulary:**
+- `imprint` — raw fact creation, no contextual processing
+- `integrate` — orchestration verb: recall existing → classify (novel/dup/contradiction) → branch to imprint/mutate/link
+
+**Revised recommendation:** Ship `imprint` as the next slice (mechanical write path). `integrate` (cognitive verb) becomes a separate, later slice with its own design cycle for dedup keys, similarity thresholds, and edge schema.
+
+**Key insight for future:** When the PRD bundles "take in new material" with "reconcile with existing facts" in one verb definition, that's two verbs wearing a trenchcoat. The open questions in §10.4 (dedup, conflict resolution) are symptoms of the conflation — they only arise because the spec tried to be both a write verb and a processing verb simultaneously.
+
+### 2026-06-16: `imprint` Contract Spec Delivered (Aaron DECIDED)
+
+**Decisions locked by Aaron (2026-06-16T23:03):**
+- writeVerbName = `imprint` (raw write path)
+- sequencing = parallel (Crispin drafts integrate orchestration design in parallel)
+- vocabAmendment = amend FR-4 (imprint added, integrate clarified as cognitive orchestration)
+
+**Deliverables produced:**
+- `imprint` activity contract + seam spec (plain-text output to Laura/Crispin)
+- FR-4 vocabulary amendment: `.squad/decisions/inbox/genesta-imprint-vocab-amendment.md` (DECIDED)
+- Next-slice decision drop updated to DECIDED status
+
+**Contract design choices:**
+- `FactWriter` seam interface with single `write()` method (mirrors TrustUpdater's `mutate()` pattern)
+- `ImprintOptions` / `ImprintDeps` named types (mirrors RecallOptions/RecallDeps)
+- Clock injection for `createdAt` determinism (established pattern from recall)
+- UUID generation via injectable `IdProvider` seam (testable, no randomness in tests)
+- Input validation fires before first await (established pattern from applyFeedback)
+- 14 contract assertions (IM-1 through IM-14) covering happy path, defaults, validation, isolation, round-trip with recall
+- Explicit scope-out of dedup/reconciliation/context-awareness (integrate's job)
+
+---
+
+## 2026-06-17: Eureka imprint Slice SHIPPED (M8 Follow-Up)
+
+**Result:** ✅ COMPLETE — 256/256 eureka tests GREEN, tsc clean
+
+**Decisions merged to decisions.md:**
+1. FR-4 Vocabulary Amendment (DECIDED)
+2. `imprint` Activity Contract (DECIDED)
+3. Post-M8 Roadmap — `imprint` as next slice (DECIDED)
+4. `integrate` Orchestration Design Memo (PROPOSED, pending Aaron review on Q1/Q2)
+
+**Artifacts shipped:**
+- Genesta: 3 DECIDED decisions + 1 PROPOSED orchestration design (integrate)
+- Crispin: GREEN implementation (activity + storage + tests) + integration design memo
+- Laura: RED tests (24 contract tests, IM-1..IM-14, 2 runners)
+
+**Orchestration logs written:** 3 logs per agent (UTC timestamps, `.squad/orchestration-log/`)
+**Session log:** `.squad/log/2026-06-17T064851Z-eureka-imprint-slice.md`
+**Scribe processing:** inbox merged (5 files → decisions.md), deleted inbox/, staged durable .squad files, committed
+
+**What's next:** Aaron decision on integrate design memo (Q1: integrate landing? Q2: dedupKey?). Once decisions locked, Crispin proceeds with `integrate` cognitive orchestration slice.
