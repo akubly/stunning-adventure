@@ -11,11 +11,11 @@
  */
 
 import type { SessionId } from '@akubly/types';
-import type { ClockProvider } from './recall.js';
+import type { ClockProvider } from './clock.js';
 import { InvalidImprintError } from './errors.js';
 
 // Re-export ClockProvider so consumers can import from this module.
-export type { ClockProvider } from './recall.js';
+export type { ClockProvider } from './clock.js';
 
 /** Opaque fact identifier. UUID v4 string branded for type safety. */
 export type FactId = string & { readonly __brand: 'FactId' };
@@ -102,9 +102,9 @@ export interface ImprintDeps {
 
 const VALID_TIERS: ReadonlySet<string> = new Set(['hot', 'warm', 'cold']);
 
-function validateOptions(options: ImprintOptions): void {
+function validateOptions(options: ImprintOptions, trimmed: string): void {
   // V1: content must be non-empty after trim
-  if (options.content.trim().length === 0) {
+  if (trimmed.length === 0) {
     throw new InvalidImprintError(
       'content',
       options.content,
@@ -163,10 +163,21 @@ export async function imprint(
   deps: ImprintDeps,
 ): Promise<FactId> {
   // Validation — synchronous, before any async work
-  validateOptions(options);
+  const trimmed = options.content.trim();
+  validateOptions(options, trimmed);
 
   // Generate ID and timestamp
   const factId = deps.idProvider.next();
+
+  // Guard: idProvider must return a non-empty id
+  if (!(factId as string) || (factId as string).trim().length === 0) {
+    throw new InvalidImprintError(
+      'factId',
+      factId,
+      'imprint: idProvider.next() returned an empty or blank FactId',
+    );
+  }
+
   const createdAt = deps.clock.now();
 
   // Apply defaults
@@ -178,7 +189,7 @@ export async function imprint(
   await deps.factWriter.write({
     factId,
     sessionId: options.sessionId,
-    content: options.content.trim(),
+    content: trimmed,
     trust,
     importance,
     attentionTier,

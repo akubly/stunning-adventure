@@ -15,8 +15,7 @@
 
 import type Database from 'better-sqlite3';
 import type { RecallDeps, ApplyFeedbackDeps } from '../activities/recall.js';
-import type { ImprintDeps } from '../activities/imprint.js';
-import type { FactId } from '../activities/imprint.js';
+import type { ImprintDeps, FactId } from '../activities/imprint.js';
 import { SqliteFactStore } from '../storage/fact-store-sqlite.js';
 import { SqliteTrustUpdater } from '../storage/trust-updater-sqlite.js';
 import { SqliteFactWriter } from '../storage/fact-writer-sqlite.js';

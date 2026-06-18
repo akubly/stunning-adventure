@@ -25,7 +25,7 @@
  * IM-7   Empty content            — throws InvalidImprintError(field:'content'), no write
  * IM-8   Whitespace content       — throws InvalidImprintError(field:'content'), no write
  * IM-9   Invalid trust ×5         — throws InvalidImprintError(field:'trust'), no write
- * IM-10  Invalid importance ×4    — throws InvalidImprintError(field:'importance'), no write
+ * IM-10  Invalid importance ×5    — throws InvalidImprintError(field:'importance'), no write
  * IM-11  Invalid attentionTier ×4 — throws InvalidImprintError(field:'attentionTier'), no write
  * IM-12  Session isolation        — sessionA fact invisible to sessionB, visible in sessionA
  * IM-13  Idempotent re-write      — same factId is a no-op; first-write-wins
@@ -33,10 +33,10 @@
  *
  * ## Test count
  *
- * Each wiring call adds 24 tests:
+ * Each wiring call adds 25 tests:
  *   IM-1..IM-8, IM-12..IM-14 = 11 singular tests
  *   IM-9 = 5 parameterized cases
- *   IM-10 = 4 parameterized cases
+ *   IM-10 = 5 parameterized cases
  *   IM-11 = 4 parameterized cases
  *
  * ## Export visibility
@@ -330,7 +330,7 @@ export function runFactWriterContract(
     // Each must throw before any write. Validated via factStore.search.
     // -----------------------------------------------------------------------
 
-    it.each([2.0, -0.5, NaN, Infinity])(
+    it.each([2.0, -0.5, NaN, Infinity, -Infinity])(
       'IM-10: importance=%s throws InvalidImprintError with field=importance',
       async (badImportance) => {
         await expect(

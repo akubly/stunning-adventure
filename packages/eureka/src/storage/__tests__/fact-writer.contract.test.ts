@@ -7,8 +7,8 @@
  * The helper definition (runFactWriterContract + FactWriterHarness) lives in:
  *   ./fact-writer-contract.helper.ts
  *
- * Each call to runFactWriterContract adds 24 tests (IM-1..IM-14 + parameterized cases).
- * InMemoryFactWriter wired below → 24 contract tests.
+ * Each call to runFactWriterContract adds 25 tests (IM-1..IM-14 + parameterized cases).
+ * InMemoryFactWriter wired below → 25 contract tests.
  *
  * ## InMemoryFactWriter requirements (for Crispin's GREEN phase)
  *

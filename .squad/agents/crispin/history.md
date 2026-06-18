@@ -223,3 +223,33 @@ The migration 002 defaults (`importance REAL NOT NULL DEFAULT 0`, `attention_tie
 **Scribe orchestration:** Decisions inbox merged → decisions.md, 3 orchestration logs per agent, session log, history appends, git commit staged/completed
 
 **What's next:** Aaron reviews integrate design (Q1/Q2). Once locked, Crispin proceeds with `integrate` cognitive orchestration slice.
+
+---
+
+### 2026-06-18: Imprint Slice — Persona Review Cycle 1 Fixes
+
+**Context:** Persona panel reviewed the imprint GREEN phase (branch `eureka/imprint-slice`, 0dd7c38). 0 blocking findings. 8 accepted, 2 rejected.
+
+**Key changes:**
+
+1. **`INSERT OR IGNORE` → `ON CONFLICT(fact_id, session_id) DO NOTHING`** — `OR IGNORE` is too broad; it silently swallows CHECK/NOT NULL violations, not just duplicate-key retries. The targeted `ON CONFLICT` ensures only UNIQUE constraint dupes are suppressed. This is a real correctness fix — the original was defense-in-depth fragile.
+
+2. **`ClockProvider` extracted to `src/activities/clock.ts`** — Neutral module breaks the write-path → read-path import coupling. Both `recall.ts` and `imprint.ts` import from `clock.ts`. `recall.ts` re-exports for backward compat. Pattern: shared seam types live in neutral modules, not in the first activity that happened to define them.
+
+3. **`epochMsToSqliteDateTime()` extracted to `src/storage/datetime.ts`** — Self-documents the SQLite TEXT-affinity contract. Both writer impls import from one source.
+
+4. **`InMemoryFactWriter.search()` validation aligned** — Investigation: the existing `InMemoryFactStore` is test-file-local and not importable. Keeping inline `search()` is lower duplication than creating a new shared class. Added `minTrust` finite/[0,1] validation and fixed empty-page `Math.min/max` sentinel issue.
+
+5. **`FactId` non-empty guard** — After `idProvider.next()`, empty/blank IDs now throw `InvalidImprintError('factId', ...)`. No UUID-format check (IM-2 uses `'test-uuid-001'` intentionally).
+
+6. **`content.trim()` single computation** — Trimmed once, used in both validation and write payload.
+
+7. **Merged duplicate `import type` in deps.ts** — Two identical import sources collapsed to one.
+
+8. **IM-10 + `-Infinity`** — Importance validation test now matches trust validation parity (5 cases each).
+
+**Rejected:** F9 (FactId branding propagation to read seams — out of scope, candidate for `integrate`). F10 (runtime null guard on content — inconsistent with existing activity patterns that trust TS structural types).
+
+**Test results:** 258/258 green (208 pre-existing + 50 imprint). `tsc --build` clean.
+
+**Decision drop:** `.squad/decisions/inbox/crispin-imprint-review-fixes.md`

@@ -7,6 +7,14 @@
  *
  * Idempotency: first-write-wins on (factId, sessionId). Re-writes are no-ops.
  * Session-scoped: search() only returns facts for the requested sessionId.
+ *
+ * ## search() alignment note
+ *
+ * The FactStore.search() implementation here mirrors the InMemoryFactStore
+ * reference in fact-store.contract.test.ts (same keyword-matching logic,
+ * cursor handling, and validation). That reference impl is test-file-local
+ * and cannot be imported, so this class maintains its own copy. Both MUST
+ * stay aligned on validation (limit, minTrust) and scoring behavior.
  */
 
 import type { SessionId } from '@akubly/types';
@@ -14,6 +22,7 @@ import type { FactWriter, FactId, AttentionTier } from '../activities/imprint.js
 import type { FactStore, RecallResult } from '../activities/recall.js';
 import { scopeFingerprint, encodeCursor, decodeCursor } from './cursor.js';
 import { CursorScopeMismatchError } from './errors.js';
+import { epochMsToSqliteDateTime } from './datetime.js';
 
 // ---------------------------------------------------------------------------
 // Internal stored fact shape
@@ -81,8 +90,7 @@ export class InMemoryFactWriter implements FactWriter, FactStore {
     // First-write-wins idempotency
     if (this.store.has(key)) return;
 
-    // Convert createdAt (epoch ms) to ISO 8601 string (matches SQLite datetime format)
-    const createdAtStr = new Date(args.createdAt).toISOString().replace('T', ' ').replace('Z', '').slice(0, 19);
+    const createdAtStr = epochMsToSqliteDateTime(args.createdAt);
 
     this.store.set(key, {
       factId: args.factId as string,
@@ -98,7 +106,10 @@ export class InMemoryFactWriter implements FactWriter, FactStore {
   }
 
   // -------------------------------------------------------------------------
-  // FactStore.search() — simple keyword matching (same pattern as test helper)
+  // FactStore.search() — simple keyword matching
+  //
+  // Mirrors the InMemoryFactStore reference in fact-store.contract.test.ts.
+  // Validation aligned with SqliteFactStore and the FS-9 contract.
   // -------------------------------------------------------------------------
 
   async search(args: {
@@ -110,8 +121,14 @@ export class InMemoryFactWriter implements FactWriter, FactStore {
   }): Promise<{ results: RecallResult[]; nextCursor?: string }> {
     const { query, sessionId, limit, minTrust = 0.15, cursor } = args;
 
+    // Validate limit — mirrors SqliteFactStore / FS-4
     if (!Number.isFinite(limit) || !Number.isInteger(limit) || limit <= 0) {
       throw new TypeError(`InMemoryFactWriter.search: limit must be a positive integer, got ${limit}`);
+    }
+
+    // Validate minTrust when explicitly provided — mirrors SqliteFactStore / FS-9
+    if (args.minTrust !== undefined && (!Number.isFinite(minTrust) || minTrust < 0 || minTrust > 1)) {
+      throw new TypeError(`InMemoryFactWriter.search: minTrust must be a finite number in [0, 1], got ${minTrust}`);
     }
 
     // Cursor handling
@@ -160,9 +177,10 @@ export class InMemoryFactWriter implements FactWriter, FactStore {
     const page = afterCursor.slice(0, limit);
     const hasMore = afterCursor.length > limit;
 
+    // Relevance normalization — guard against empty page (Math.min/max on empty → ±Infinity)
     const termCounts = page.map(f => f.termCount);
-    const minTC = Math.min(...termCounts);
-    const maxTC = Math.max(...termCounts);
+    const minTC = termCounts.length > 0 ? Math.min(...termCounts) : 0;
+    const maxTC = termCounts.length > 0 ? Math.max(...termCounts) : 0;
 
     const results: RecallResult[] = page.map(f => ({
       content: f.content,

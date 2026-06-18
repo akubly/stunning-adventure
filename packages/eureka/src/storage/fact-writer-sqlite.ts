@@ -2,21 +2,20 @@
  * SqliteFactWriter — SQLite-backed FactWriter implementation for `@akubly/eureka`.
  *
  * Writes facts to the `facts` table with explicit `created_at` / `updated_at`
- * (overriding schema DEFAULTs). Uses INSERT OR IGNORE on the UNIQUE(fact_id, session_id)
- * constraint to achieve first-write-wins idempotency.
+ * (overriding schema DEFAULTs). Uses `ON CONFLICT(fact_id, session_id) DO NOTHING`
+ * to achieve first-write-wins idempotency scoped to the UNIQUE constraint only.
  *
  * ## Idempotency mechanism
  *
- * `INSERT OR IGNORE` is used rather than `INSERT ... ON CONFLICT DO NOTHING`
- * because both are equivalent for a UNIQUE constraint violation and the former
- * is more concise. The result: if a row with the same (fact_id, session_id)
- * already exists, the INSERT is silently skipped — first write wins, no upsert.
+ * `ON CONFLICT(fact_id, session_id) DO NOTHING` targets only the UNIQUE constraint.
+ * Other constraint violations (CHECK on attention_tier, NOT NULL on content, etc.)
+ * still throw — unlike `INSERT OR IGNORE` which suppresses ALL constraint errors.
  *
  * ## FTS5 sync
  *
  * The `facts_ai` trigger (migration 001) fires on INSERT into `facts`, adding
- * the content to the `facts_fts` virtual table. Since INSERT OR IGNORE does not
- * fire triggers when the row is ignored, FTS stays consistent.
+ * the content to the `facts_fts` virtual table. ON CONFLICT DO NOTHING does not
+ * fire triggers when the row is skipped, so FTS stays consistent.
  *
  * ## last_accessed
  *
@@ -32,6 +31,7 @@
 import type Database from 'better-sqlite3';
 import type { SessionId } from '@akubly/types';
 import type { FactWriter, FactId, AttentionTier } from '../activities/imprint.js';
+import { epochMsToSqliteDateTime } from './datetime.js';
 
 export class SqliteFactWriter implements FactWriter {
   private readonly stmt: Database.Statement<{
@@ -47,10 +47,11 @@ export class SqliteFactWriter implements FactWriter {
 
   constructor(db: Database.Database) {
     this.stmt = db.prepare(`
-      INSERT OR IGNORE INTO facts
+      INSERT INTO facts
         (fact_id, session_id, content, trust, importance, attention_tier, last_accessed, created_at, updated_at)
       VALUES
         ($fact_id, $session_id, $content, $trust, $importance, $attention_tier, NULL, $created_at, $updated_at)
+      ON CONFLICT(fact_id, session_id) DO NOTHING
     `);
   }
 
@@ -63,8 +64,7 @@ export class SqliteFactWriter implements FactWriter {
     attentionTier: AttentionTier;
     createdAt: number;
   }): Promise<void> {
-    // Convert createdAt (epoch ms) to ISO 8601 datetime string for TEXT column
-    const dt = new Date(args.createdAt).toISOString().replace('T', ' ').replace('Z', '').slice(0, 19);
+    const dt = epochMsToSqliteDateTime(args.createdAt);
 
     this.stmt.run({
       fact_id: args.factId as string,
