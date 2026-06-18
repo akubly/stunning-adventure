@@ -24,14 +24,24 @@ export type TrustTier = 'builtin' | 'adopted' | 'community' | 'external';
 // ─── §12 SdkProvider ────────────────────────────────────────────────────────
 
 /**
- * L0 SDK Provider boundary (§12.2).
+ * ⚠️  SKELETON-INTERNAL CONTRACT — NOT the §12.2 SdkProvider.
  *
- * The skeleton requires only `bootstrap()` (SK-1, SK-2) and `completeTurn()`
- * (SK-1 one LLM call round-trip). Full `eventStream`, `submitOutboundPrompt`,
- * and `signal` are Phase 1 concerns — stubbed here as optional so impls can
- * add them incrementally.
+ * This interface is a walking-skeleton approximation used ONLY within
+ * `packages/crucible-core/src/skeleton/`. It exposes `completeTurn(prompt)`
+ * in place of the full §12.2 contract (`eventStream` / `submitOutboundPrompt`
+ * / `signal` / `capabilities`), which requires types from a not-yet-built
+ * `@akubly/crucible-boundary` package.
+ *
+ * Phase 1 introduces the AUTHORITATIVE `SdkProvider` from §12.2 in
+ * `@akubly/crucible-boundary`. At that point this skeleton interface is
+ * retired alongside the rest of `skeleton/`. Code outside `skeleton/` MUST
+ * NOT depend on this interface.
+ *
+ * Decision: graham-skeleton-provider-scope.md (opted for scope-isolation over
+ * early §12.2 alignment to avoid pulling in Phase 1 boundary types prematurely).
  *
  * @see docs/crucible-technical-design/12-copilot-sdk-integration.md §12.2
+ * @see .squad/decisions/inbox/graham-skeleton-provider-scope.md
  */
 export interface SdkProvider {
   /** Stable provider identity (e.g. 'copilot-sdk@1'). */

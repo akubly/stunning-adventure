@@ -80,9 +80,11 @@ class AssembledSkeletonSession implements SkeletonSession {
   private readonly provider: SdkProvider;
   private readonly materializer: BootstrapMaterializer;
   private readonly scheduler: SchedulerPort;
-  private replayEng!: ReplayEngine;
+  private replayEngine!: ReplayEngine;
   private readonly rootDir: string;
   private committed: number[] = [];
+  /** Single-shot guard — run() may only be called once per session. */
+  private hasRun = false;
 
   constructor(opts: SkeletonSessionOptions) {
     this.sessionId = randomUUID();
@@ -91,7 +93,7 @@ class AssembledSkeletonSession implements SkeletonSession {
     this.scheduler = opts.scheduler ?? new FifoScheduler();
     this.rootDir = opts.rootDir ?? join(tmpdir(), 'crucible-skeleton');
     if (opts.replayEngine) {
-      this.replayEng = opts.replayEngine;
+      this.replayEngine = opts.replayEngine;
     }
   }
 
@@ -106,7 +108,7 @@ class AssembledSkeletonSession implements SkeletonSession {
       this.sessionId,
     );
     this.ledger = await createLedger({ walBackend });
-    this.replayEng ??= createReplayEngine(this.rootDir);
+    this.replayEngine ??= createReplayEngine(this.rootDir);
   }
 
   /**
@@ -118,6 +120,12 @@ class AssembledSkeletonSession implements SkeletonSession {
    * SK-6: scheduler dispatches the turn's proposal.
    */
   async run(prompt: string): Promise<SkeletonRunResult> {
+    if (this.hasRun) {
+      throw new Error(
+        `[Crucible] SkeletonSession.run() is single-shot — session ${this.sessionId} has already been run.`,
+      );
+    }
+    this.hasRun = true;
     await this.init();
 
     // SK-2: Bootstrap — materialize BootstrapPayload into offset-0 rows.
@@ -140,14 +148,15 @@ class AssembledSkeletonSession implements SkeletonSession {
       this.committed.push(offset);
     }
 
-    // SK-6: Submit the first turn primitive as a proposal to the scheduler.
-    // The proposal represents the turn's decision passing through the L3.5 tier.
+    // SK-6: Submit the turn's decision row as a proposal to the scheduler.
+    // proposalId = offset of the Decision row; payload = the same Decision primitive.
+    // Both fields refer to the same primitive so the Proposal is semantically consistent.
     const lastTurnOffset = this.committed[this.committed.length - 1]!;
     const proposal: Proposal = {
       proposalId: lastTurnOffset,
       generatorId: this.provider.id,
       priority: 0,
-      payload: turnResult.primitives[0]!,
+      payload: turnResult.primitives[turnResult.primitives.length - 1]!,
     };
     const schedulerEvent = this.scheduler.submit(proposal);
 
@@ -175,12 +184,13 @@ class AssembledSkeletonSession implements SkeletonSession {
   /** SK-5: Delegate to the ReplayEngine for A2 byte-equivalence. */
   async replay(): Promise<ReplayReport> {
     await this.init();
-    return this.replayEng.replay(this.sessionId);
+    return this.replayEngine.replay(this.sessionId);
   }
 
   /** AMBIG-2 resolved: query committed rows by offset range. */
   async queryRows(range?: [number, number]): Promise<Primitive[]> {
     await this.init();
+    if (this.committed.length === 0) return [];
     const effectiveRange: [number, number] = range ?? [0, this.committed.length - 1];
     return this.ledger.queryEvents({ range: effectiveRange });
   }
