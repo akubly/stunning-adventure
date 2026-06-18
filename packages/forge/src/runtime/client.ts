@@ -9,7 +9,7 @@
  * @module
  */
 
-import type { SessionConfig, SessionEvent } from "@github/copilot-sdk";
+import { approveAll, type PermissionHandler, type SessionConfig, type SessionEvent } from "@github/copilot-sdk";
 import { HookComposer } from "../hooks/index.js";
 import { bridgeEvent } from "../bridge/index.js";
 import { ForgeSession, type ForgeSessionConfig, type SDKSession } from "./session.js";
@@ -26,7 +26,7 @@ import type { CairnBridgeEvent } from "@akubly/types";
  */
 export interface SDKClient {
   createSession(config: Partial<SessionConfig>): Promise<SDKSession>;
-  resumeSession(config: { sessionId: string; hooks?: unknown }): Promise<SDKSession>;
+  resumeSession(config: { sessionId: string; hooks?: unknown; onPermissionRequest?: PermissionHandler }): Promise<SDKSession>;
   stop(): Promise<void>;
 }
 
@@ -87,6 +87,7 @@ export class ForgeClient {
       workingDirectory: config.workingDirectory,
       hooks: hookComposer.compose(),
       clientName: this.clientName,
+      onPermissionRequest: config.onPermissionRequest ?? approveAll,
       onEvent,
     } as Partial<SessionConfig>);
 
@@ -127,6 +128,7 @@ export class ForgeClient {
     const sdkSession = await this.client.resumeSession({
       sessionId,
       hooks: hookComposer.compose(),
+      onPermissionRequest: config.onPermissionRequest ?? approveAll,
     });
 
     // Disconnect any existing session with the same ID before overwriting

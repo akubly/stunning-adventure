@@ -10,6 +10,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { SessionEvent, SessionConfig } from '@github/copilot-sdk';
+import type { SignalSample } from '@akubly/types';
 import {
   createMockClient,
   createMockSession,
@@ -28,6 +29,7 @@ import {
   ForgeClient,
   type ForgeClientOptions,
 } from '../runtime/index.js';
+import { createLocalDBOMSink } from '../telemetry/sink.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -45,6 +47,17 @@ function makeForgeClient(overrides: Partial<ForgeClientOptions> = {}): {
     ...overrides,
   });
   return { forgeClient, mockClient, mockSession };
+}
+
+let localEventCounter = 0;
+function sessionShutdownEvent(): SessionEvent {
+  return {
+    id: `runtime-local-${++localEventCounter}`,
+    timestamp: new Date().toISOString(),
+    parentId: null,
+    type: 'session.shutdown',
+    data: {},
+  };
 }
 
 // ===========================================================================
@@ -88,6 +101,27 @@ describe('ForgeClient — session lifecycle', () => {
     expect(typeof sdkConfig.hooks.onPreToolUse).toBe('function');
   });
 
+  it('createSession supplies a default approve-all permission handler', async () => {
+    const { forgeClient, mockClient } = makeForgeClient();
+
+    await forgeClient.createSession();
+
+    const sdkConfig = mockClient.createSession.mock.calls[0][0];
+    expect(typeof sdkConfig.onPermissionRequest).toBe('function');
+    expect(await sdkConfig.onPermissionRequest({ kind: 'read' }, { sessionId: 's' }))
+      .toEqual({ kind: 'approved' });
+  });
+
+  it('createSession passes an explicit permission handler through to the SDK', async () => {
+    const onPermissionRequest = () => ({ kind: 'no-result' as const });
+    const { forgeClient, mockClient } = makeForgeClient();
+
+    await forgeClient.createSession({ onPermissionRequest });
+
+    const sdkConfig = mockClient.createSession.mock.calls[0][0];
+    expect(sdkConfig.onPermissionRequest).toBe(onPermissionRequest);
+  });
+
   it('tracks created sessions by ID', async () => {
     const { forgeClient } = makeForgeClient();
 
@@ -113,6 +147,15 @@ describe('ForgeClient — session lifecycle', () => {
 
     const resumeConfig = mockClient.resumeSession.mock.calls[0][0];
     expect(resumeConfig.sessionId).toBe('sess-abc-123');
+  });
+
+  it('resumeSession supplies a permission handler to the SDK', async () => {
+    const { forgeClient, mockClient } = makeForgeClient();
+
+    await forgeClient.resumeSession('sess-permission');
+
+    const resumeConfig = mockClient.resumeSession.mock.calls[0][0];
+    expect(typeof resumeConfig.onPermissionRequest).toBe('function');
   });
 
   it('stop disconnects all sessions and stops client', async () => {
@@ -408,6 +451,36 @@ describe('ForgeSession — disconnect', () => {
     // (The mock's unsubscribe is a stub, so we verify the _disconnected flag
     //  gates the behavior in the real implementation.)
     expect(session.isDisconnected).toBe(true);
+  });
+
+  it('observes session_end emitted during SDK disconnect before flushing telemetry', async () => {
+    const captured: SignalSample[] = [];
+    const timings: string[] = [];
+    const sink = createLocalDBOMSink({ persistSample: (s) => captured.push(s) });
+    const { forgeClient, mockSession } = makeForgeClient();
+    mockSession.disconnect.mockImplementationOnce(async () => {
+      mockSession._emit(sessionShutdownEvent());
+    });
+
+    const session = await forgeClient.createSession({
+      skillId: 'late-shutdown-skill',
+      telemetrySink: sink,
+      onTelemetryTiming: (event) => timings.push(event.phase),
+    });
+
+    await session.disconnect();
+
+    const outcome = captured.find((sample) => sample.kind === 'outcome');
+    expect(outcome).toBeDefined();
+    expect((outcome!.metadata as Record<string, unknown>).succeeded).toBe(true);
+    expect(timings.indexOf('session_end_observed')).toBeGreaterThan(-1);
+    expect(timings.indexOf('session_end_observed')).toBeLessThan(
+      timings.indexOf('telemetry_flush_start'),
+    );
+    const storedTimings = session.getTelemetryTimings().map((event) => event.phase);
+    expect(storedTimings.indexOf('sdk_disconnect_end')).toBeLessThan(
+      storedTimings.indexOf('telemetry_flush_start'),
+    );
   });
 });
 

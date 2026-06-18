@@ -102,3 +102,11 @@ history.md requires deleting committed entries, which is permanently prohibited.
 ✓ Decisions merged into decisions.md  
 ✓ Branch: squad/crucible-s2, commit 49a0371
 📌 2026-06-13: **Crucible S2 persona-review-cycle COMPLETE** — 2-cycle Code Panel review completed on squad/crucible-s2. Cycle 1: Architect findings (design consistency, API contracts) reviewed and triaged by Aaron. Cycle 2: Design decisions re-verified correct across all fixes. F3 envelope versioning deferred to ship-gate (GitHub issue #76). S2 architecture APPROVED and ready to merge. — Scribe (session 2026-06-14T06:51:39Z)
+
+## Learnings — 2026-06-16: Cairn/Forge Near-Term Roadmap Read
+
+Cairn is currently the durable local nervous system: SQLite event/profile/hint/DBOM storage, Curator, MCP tools, skill parsing/linting/testing, and GitHub artifact discovery are shipped in `@akubly/cairn` 0.3.0. The package CLI remains a placeholder, while the MCP server is the real interface.
+
+Forge is the deterministic runtime/optimizer package: bridge, hooks, decision gates, DBOM/export, telemetry, prescribers, applier, and feedback-loop plumbing are implemented in `@akubly/forge` 0.1.0. The explicit dogfood gap is that no production session runner yet drives live Copilot sessions through `ForgeClient`/`ForgeSession`, so profiles require seeding until that integration lands.
+
+Near-term roadmap split: Cairn's active external-facing path is the GitHub Automations epic (#8) with brainstorm/design still open (#5/#6); Forge's highest-leverage path is dogfood hardening and runner integration before Phase 5 cloud PGO/GP work.

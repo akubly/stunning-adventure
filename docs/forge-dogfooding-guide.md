@@ -43,7 +43,7 @@ Both are auto-configured when you clone the repo and point Copilot CLI at it (th
 Signal builds slowly — this is normal. Here is the expected timeline:
 
 1. **Right now:** `forge_mcp_check` passes. Both MCP servers respond. The hook fires on every new bash session but emits nothing yet (no profile data).
-2. **Seed a profile to bootstrap (current gap):** The forge prescriber requires an execution profile in `~/.cairn/knowledge.db` to generate hints. The telemetry → execution_profiles pipeline is wired end-to-end as of PR #75, but no production session runner drives live agent sessions through `ForgeClient` yet — so on a stock Copilot CLI install, profiles don't auto-populate from real usage. Use `forge-seed-profile` to bootstrap:
+2. **Seed a profile to bootstrap (current gap):** The forge prescriber requires an execution profile in `~/.cairn/knowledge.db` to generate hints. The telemetry → execution_profiles pipeline is wired end-to-end as of PR #75, and `forge-run-session` now provides an opt-in one-session runner for real SDK dogfood signal. Stock interactive Copilot CLI sessions still do not auto-populate profiles unless they are launched through that runner. Use `forge-seed-profile` to bootstrap when live SDK auth is unavailable:
 
    ```bash
    npx forge-seed-profile --skill <your-skill-id> --session-count 5
@@ -54,7 +54,7 @@ Signal builds slowly — this is normal. Here is the expected timeline:
 4. **Hints appear:** `list_optimization_hints` returns pending hints. You act on them.
 5. **On the next prescriber run:** Your dismissals suppress that category; your resolutions boost its confidence.
 
-> **Silence ≠ broken.** If you see no hints yet, check your session count with `npx forge-metrics --skill <id> --format table`. The Profile section shows how many sessions have been recorded. If it is below 3, re-run `npx forge-seed-profile --skill <id> --session-count <n>` to raise the count — the command is re-runnable and will add sessions. Sessions will also accumulate automatically once a production runner drives agent sessions through ForgeClient, but that consumer is not present on a stock Copilot CLI install today.
+> **Silence ≠ broken.** If you see no hints yet, check your session count with `npx forge-metrics --skill <id> --format table`. The Profile section shows how many sessions have been recorded. If it is below 3, run `npx forge-run-session --skill <id> --prompt "Say hello"` to collect one live SDK session, or re-run `npx forge-seed-profile --skill <id> --session-count <n>` to raise the count synthetically. Stock interactive Copilot CLI sessions still need platform runner wiring before they accumulate automatically.
 
 ---
 
@@ -194,6 +194,17 @@ Hints generated: 3
   Errored:   0
 Total persisted: 3
 ```
+
+### Collect one live session via `forge-run-session`
+
+When SDK auth is available, run one opt-in instrumented session:
+
+```bash
+npx forge-run-session --skill <id> --prompt "Say hello"
+npx forge-metrics --skill <id> --format table
+```
+
+The runner creates a real Copilot SDK session through `ForgeClient`, writes local `signal_samples`, runs profile building, and prints disconnect/flush timing observations. DBOM generation is not part of this first slice.
 
 ---
 
@@ -335,7 +346,7 @@ This atomically expires all existing active hints for the skill and inserts fres
 
 The following are explicitly deferred, per the [dogfood-first decision](../.squad/decisions-archive.md#2026-05-30-forge-roadmap-priority--dogfood-first-aaron-directive):
 
-- **No production session runner yet:** The telemetry → execution_profiles → prescriber pipeline is built and tested (PR #75). The remaining gap is narrower: no production runner currently drives real agent sessions through `ForgeClient`/`ForgeSession`, so live sessions don't auto-populate profiles on a stock Copilot CLI install. Use `npx forge-seed-profile --skill <id> --session-count <n>` to bootstrap a real profile today. When a production runner lands (or when telemetry is wired into whatever drives sessions), profiles will populate automatically with no further changes required.
+- **Stock Copilot CLI sessions are not always-on yet:** The telemetry → execution_profiles → prescriber pipeline is built and tested (PR #75), and `forge-run-session` can collect one opt-in real SDK session through `ForgeClient`/`ForgeSession`. Normal interactive Copilot CLI sessions still need platform runner wiring before they auto-populate profiles. Use `npx forge-run-session --skill <id> --prompt "..."` for live dogfood signal, or `npx forge-seed-profile --skill <id> --session-count <n>` when live SDK auth is unavailable.
 - **GP-tournament selection** (Phase 5 §2.4) — multi-armed bandit prescriber selection based on real signal. Deferred until dogfood signal is collected.
 - **Meta-optimization** (DBOM on prescriber decisions) — self-optimizing prescriber weights. Same gate.
 - **Eureka FactStore adapter + recall wiring** — episodic context (trust-scored facts) feeding the prescriber. Deferred until Eureka v1 stabilizes and the SQLite FactStore adapter is built.

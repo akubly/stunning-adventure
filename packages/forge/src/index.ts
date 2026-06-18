@@ -73,6 +73,8 @@ export {
   type ForgeSessionConfig,
   type SDKClient,
   type SDKSession,
+  type TelemetryTimingEvent,
+  type TelemetryTimingPhase,
 } from "./runtime/index.js";
 
 // --- Export ---

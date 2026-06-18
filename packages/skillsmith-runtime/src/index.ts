@@ -29,6 +29,11 @@ export {
   type ExecutedPrescriberRun,
 } from './runtime.js';
 export { createCairnTelemetrySink } from './telemetry.js';
+export {
+  runForgeInstrumentedSession,
+  type RunForgeInstrumentedSessionOptions,
+  type RunForgeInstrumentedSessionResult,
+} from './forgeSessionRunner.js';
 import {
   loadExecutionProfile,
   executePrescriberRun,
