@@ -44,3 +44,5 @@ pm install restart. Doc-hygiene scope established for future improvements.
 - 2026-06-18T06:44:55Z — Forge slice 1 implementation verified: graceful shutdown tested with SDK double, session telemetry flush sequenced after disconnect, Cairn DB lifecycle managed with getDb/closeDb patterns. Roger's platform/lifecycle guidance documented in decisions.md. All tests passing (Forge 689, skillsmith-runtime 60, runtime-cli 43). Ready for integration testing phase.
 
 - 2026-06-16T23:41:33-07:00 — Roger confirmed Forge runner shutdown contract: keep SDK subscriptions live through disconnect, flush telemetry after sdkSession.disconnect(), then stop client, then close Cairn DB last; tests now assert sdk_disconnect_end precedes telemetry_flush_start.
+
+- 2026-06-16T22:51:06-07:00 — Persona Cycle 1 follow-up: ForgeClient no longer owns approveAll; runner composition root owns dogfood approveAll, ForgeSession drains late terminal events after disconnect before telemetry flush, and injected SDK clients are not stopped unless explicitly requested.

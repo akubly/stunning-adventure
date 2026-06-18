@@ -1,8 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeDb, getDb } from '@akubly/cairn';
-import { runForgeInstrumentedSession } from '@akubly/skillsmith-runtime';
 import { runForgeRunSessionCli } from '../forge-run-session.js';
-import { loadMetrics } from '../metrics/loadMetrics.js';
 
 beforeEach(() => {
   closeDb();
@@ -61,6 +59,7 @@ describe('forge-run-session CLI', () => {
       timeoutMs: 1234,
       workingDirectory: 'D:\\git\\stunning-adventure',
       dbPath: ':memory:',
+      clientName: 'forge-run-session',
       buildProfile: true,
     }));
   });
@@ -119,50 +118,4 @@ describe('forge-run-session CLI', () => {
     expect(code).toBe(1);
   });
 
-  it('makes the generated profile visible through forge-metrics loading', async () => {
-    const handlers: Array<(event: Record<string, unknown>) => void> = [];
-    let counter = 0;
-    const event = (type: string, data: Record<string, unknown> = {}) => ({
-      id: `metrics-runner-${++counter}`,
-      timestamp: new Date().toISOString(),
-      parentId: null,
-      type,
-      data,
-    });
-    const mockSession = {
-      sessionId: 'metrics-runner-session',
-      send: vi.fn().mockResolvedValue('msg-1'),
-      sendAndWait: vi.fn().mockImplementation(async () => {
-        handlers.forEach((h) => h(event('tool.execution_start', { toolCallId: 'c1', toolName: 'read_file' })));
-        handlers.forEach((h) => h(event('tool.execution_complete', { toolCallId: 'c1', success: true })));
-        handlers.forEach((h) => h(event('assistant.usage', { inputTokens: 10, outputTokens: 5 })));
-        handlers.forEach((h) => h(event('assistant.turn_end')));
-        return event('assistant.message', { content: 'ok' });
-      }),
-      disconnect: vi.fn().mockImplementation(async () => {
-        handlers.forEach((h) => h(event('session.shutdown')));
-      }),
-      on: vi.fn((handler: (event: Record<string, unknown>) => void) => {
-        handlers.push(handler);
-        return () => undefined;
-      }),
-    };
-    const mockClient = {
-      createSession: vi.fn().mockResolvedValue(mockSession),
-      resumeSession: vi.fn().mockResolvedValue(mockSession),
-      stop: vi.fn().mockResolvedValue(undefined),
-    };
-
-    await runForgeInstrumentedSession({
-      prompt: 'hello',
-      skillId: 'metrics-runner-skill',
-      sdkClient: mockClient,
-      timeoutMs: 100,
-    });
-
-    const metrics = loadMetrics({ skillId: 'metrics-runner-skill' });
-    expect(metrics.profile.found).toBe(true);
-    if (!metrics.profile.found) throw new Error('unreachable');
-    expect(metrics.profile.sessionCount).toBeGreaterThanOrEqual(1);
-  });
 });

@@ -101,7 +101,7 @@ describe('ForgeClient — session lifecycle', () => {
     expect(typeof sdkConfig.hooks.onPreToolUse).toBe('function');
   });
 
-  it('createSession supplies a default approve-all permission handler', async () => {
+  it('createSession supplies a safe deny permission handler when policy is omitted', async () => {
     const { forgeClient, mockClient } = makeForgeClient();
 
     await forgeClient.createSession();
@@ -109,7 +109,10 @@ describe('ForgeClient — session lifecycle', () => {
     const sdkConfig = mockClient.createSession.mock.calls[0][0];
     expect(typeof sdkConfig.onPermissionRequest).toBe('function');
     expect(await sdkConfig.onPermissionRequest({ kind: 'read' }, { sessionId: 's' }))
-      .toEqual({ kind: 'approved' });
+      .toEqual({
+        kind: 'denied-by-permission-request-hook',
+        message: 'ForgeClient requires an explicit onPermissionRequest handler.',
+      });
   });
 
   it('createSession passes an explicit permission handler through to the SDK', async () => {
@@ -480,6 +483,35 @@ describe('ForgeSession — disconnect', () => {
     const storedTimings = session.getTelemetryTimings().map((event) => event.phase);
     expect(storedTimings.indexOf('sdk_disconnect_end')).toBeLessThan(
       storedTimings.indexOf('telemetry_flush_start'),
+    );
+  });
+
+  it('drains async session_end emitted after SDK disconnect resolves before flushing telemetry', async () => {
+    const captured: SignalSample[] = [];
+    const timings: string[] = [];
+    const sink = createLocalDBOMSink({ persistSample: (s) => captured.push(s) });
+    const { forgeClient, mockSession } = makeForgeClient();
+    mockSession.disconnect.mockImplementationOnce(async () => {
+      setTimeout(() => mockSession._emit(sessionShutdownEvent()), 0);
+    });
+
+    const session = await forgeClient.createSession({
+      skillId: 'async-late-shutdown-skill',
+      telemetrySink: sink,
+      terminalEventDrainMs: 20,
+      onTelemetryTiming: (event) => timings.push(event.phase),
+    });
+
+    await session.disconnect();
+
+    const outcome = captured.find((sample) => sample.kind === 'outcome');
+    expect(outcome).toBeDefined();
+    expect((outcome!.metadata as Record<string, unknown>).succeeded).toBe(true);
+    expect(timings.indexOf('sdk_disconnect_end')).toBeLessThan(
+      timings.indexOf('session_end_observed'),
+    );
+    expect(timings.indexOf('session_end_observed')).toBeLessThan(
+      timings.indexOf('telemetry_flush_start'),
     );
   });
 });

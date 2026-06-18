@@ -36,8 +36,10 @@ export interface ForgeSessionConfig {
   skillId?: string;
   /** Sink that receives flushed SignalSamples at session disconnect. */
   telemetrySink?: SignalSampleSink;
-  /** SDK permission handler. Defaults to approve-all in ForgeClient. */
+  /** SDK permission handler. Runner composition roots decide policy defaults. */
   onPermissionRequest?: PermissionHandler;
+  /** Bounded post-disconnect drain for terminal SDK events emitted on a later tick. */
+  terminalEventDrainMs?: number;
   /** Optional observer for disconnect/flush ordering verification. */
   onTelemetryTiming?: (event: TelemetryTimingEvent) => void;
 }
@@ -50,7 +52,10 @@ export type TelemetryTimingPhase =
   | "sdk_disconnect_end"
   | "sdk_disconnect_error"
   | "telemetry_flush_start"
-  | "telemetry_flush_end";
+  | "telemetry_flush_end"
+  | "telemetry_flush_error";
+
+const DEFAULT_TERMINAL_EVENT_DRAIN_MS = 25;
 
 export interface TelemetryTimingEvent {
   sessionId: string;
@@ -102,6 +107,7 @@ export class ForgeSession {
   private _telemetryTimings: TelemetryTimingEvent[] = [];
   private _onTelemetryTiming?: (event: TelemetryTimingEvent) => void;
   private _disconnectPromise: Promise<void> | null = null;
+  private readonly terminalEventDrainMs: number;
 
   constructor(
     sdkSession: SDKSession,
@@ -114,6 +120,7 @@ export class ForgeSession {
     this.hookComposer = hookComposer;
     this._onDisconnect = options?.onDisconnect;
     this._onTelemetryTiming = config.onTelemetryTiming;
+    this.terminalEventDrainMs = config.terminalEventDrainMs ?? DEFAULT_TERMINAL_EVENT_DRAIN_MS;
 
     // Wire telemetry collectors if a sink was provided.
     if (config.telemetrySink) {
@@ -195,7 +202,7 @@ export class ForgeSession {
     return this.sdkSession.sendAndWait({ prompt }, timeoutMs);
   }
 
-  /** Clean disconnect: unsubscribe bridge, then SDK disconnect. Idempotent. */
+  /** Clean disconnect: SDK disconnect, bounded terminal-event drain, then telemetry flush. Idempotent. */
   async disconnect(): Promise<void> {
     if (this._disconnectPromise) return this._disconnectPromise;
     this._disconnectPromise = this.disconnectOnce();
@@ -217,6 +224,8 @@ export class ForgeSession {
     } finally {
       this.recordTelemetryTiming("sdk_disconnect_end");
     }
+
+    await this.drainTerminalEvents();
 
     for (const unsub of this.eventSubscriptions) {
       try {
@@ -243,16 +252,21 @@ export class ForgeSession {
         await this._telemetrySink.flush?.();
         this.recordTelemetryTiming("telemetry_flush_end");
       } catch (err) {
+        this.recordTelemetryTiming("telemetry_flush_error");
         console.warn('[ForgeSession] sink flush error', err);
       }
     }
 
-    this._disconnected = true;
-    this._onDisconnect?.();
     if (disconnectError) {
       this._disconnectPromise = null;
       throw disconnectError;
     }
+
+    // Mark disconnected only after SDK disconnect succeeds. A failed SDK
+    // disconnect leaves the session tracked so callers can retry or stop() can
+    // perform best-effort cleanup without losing ownership of the SDK resource.
+    this._disconnected = true;
+    this._onDisconnect?.();
   }
 
   /** Whether this session has been disconnected. */
@@ -288,6 +302,11 @@ export class ForgeSession {
   /** Remove an observer from the live HookComposer. */
   removeObserver(observer: HookObserver): void {
     this.hookComposer.remove(observer);
+  }
+
+  private async drainTerminalEvents(): Promise<void> {
+    if (this.terminalEventDrainMs <= 0) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, this.terminalEventDrainMs));
   }
 
   private recordTelemetryTiming(phase: TelemetryTimingPhase): void {

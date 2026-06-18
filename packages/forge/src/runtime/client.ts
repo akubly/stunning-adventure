@@ -9,7 +9,7 @@
  * @module
  */
 
-import { approveAll, type PermissionHandler, type SessionConfig, type SessionEvent } from "@github/copilot-sdk";
+import type { PermissionHandler, SessionConfig, SessionEvent } from "@github/copilot-sdk";
 import { HookComposer } from "../hooks/index.js";
 import { bridgeEvent } from "../bridge/index.js";
 import { ForgeSession, type ForgeSessionConfig, type SDKSession } from "./session.js";
@@ -29,6 +29,12 @@ export interface SDKClient {
   resumeSession(config: { sessionId: string; hooks?: unknown; onPermissionRequest?: PermissionHandler }): Promise<SDKSession>;
   stop(): Promise<void>;
 }
+
+
+const denyMissingPermissionHandler: PermissionHandler = async () => ({
+  kind: "denied-by-permission-request-hook",
+  message: "ForgeClient requires an explicit onPermissionRequest handler.",
+});
 
 // ---------------------------------------------------------------------------
 // ForgeClientOptions
@@ -87,7 +93,7 @@ export class ForgeClient {
       workingDirectory: config.workingDirectory,
       hooks: hookComposer.compose(),
       clientName: this.clientName,
-      onPermissionRequest: config.onPermissionRequest ?? approveAll,
+      onPermissionRequest: config.onPermissionRequest ?? denyMissingPermissionHandler,
       onEvent,
     } as Partial<SessionConfig>);
 
@@ -128,7 +134,7 @@ export class ForgeClient {
     const sdkSession = await this.client.resumeSession({
       sessionId,
       hooks: hookComposer.compose(),
-      onPermissionRequest: config.onPermissionRequest ?? approveAll,
+      onPermissionRequest: config.onPermissionRequest ?? denyMissingPermissionHandler,
     });
 
     // Disconnect any existing session with the same ID before overwriting

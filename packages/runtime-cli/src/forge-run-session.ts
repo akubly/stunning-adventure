@@ -18,7 +18,7 @@ function printUsage(): void {
 
 Flags:
   --skill <id>        Required. Skill ID used for the execution profile.
-  --prompt <text>     Required. Prompt to send to one real Copilot SDK session.
+  --prompt <text>     Required. Prompt to send to one real Copilot SDK session (max ${MAX_PROMPT_LENGTH} chars).
   --model <id>        Optional model override.
   --reasoning <level> Optional reasoning effort.
   --cwd <path>        Working directory for the session.
@@ -104,6 +104,7 @@ export async function runForgeRunSessionCli(
       reasoningEffort,
       workingDirectory: parsed.values.cwd,
       timeoutMs,
+      clientName: 'forge-run-session',
       buildProfile: !parsed.values['no-curate'],
       closeDbOnFinish: false,
     });

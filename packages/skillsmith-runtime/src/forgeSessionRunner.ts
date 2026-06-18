@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import {
+  approveAll,
   CopilotClient,
   type CopilotClientOptions,
   type PermissionHandler,
@@ -36,7 +37,16 @@ export interface RunForgeInstrumentedSessionOptions {
   onPermissionRequest?: PermissionHandler;
   onTelemetryTiming?: (event: TelemetryTimingEvent) => void;
   sdkClient?: SDKClient;
+  /**
+   * Developer-only Copilot SDK construction options.
+   *
+   * Do not pass tokens, credentials, or user-provided auth material here; the
+   * runner intentionally relies on the SDK's ambient auth flow and sanitizes
+   * construction errors before they reach CLI output.
+   */
   copilotClientOptions?: CopilotClientOptions;
+  /** Stop an injected SDK client when the run finishes. Defaults to false. */
+  stopClientOnFinish?: boolean;
   buildProfile?: boolean;
   closeDbOnFinish?: boolean;
 }
@@ -52,7 +62,12 @@ export interface RunForgeInstrumentedSessionResult {
 }
 
 function createRealSdkClientAdapter(options: CopilotClientOptions = {}): SDKClient {
-  const client = new CopilotClient(options);
+  let client: CopilotClient;
+  try {
+    client = new CopilotClient(options);
+  } catch {
+    throw new Error('Copilot SDK client could not be constructed. Check Copilot CLI authentication and SDK availability.');
+  }
   return {
     createSession: (config: Partial<SessionConfig>): Promise<SDKSession> =>
       client.createSession(config as SessionConfig) as Promise<SDKSession>,
@@ -64,6 +79,15 @@ function createRealSdkClientAdapter(options: CopilotClientOptions = {}): SDKClie
         throw new AggregateError(errors, 'CopilotClient.stop() reported errors');
       }
     },
+  };
+}
+
+function wrapSdkClientStop(sdkClient: SDKClient, stopClientOnFinish: boolean): SDKClient {
+  if (stopClientOnFinish) return sdkClient;
+  return {
+    createSession: (config) => sdkClient.createSession(config),
+    resumeSession: (config) => sdkClient.resumeSession(config),
+    stop: async () => undefined,
   };
 }
 
@@ -89,17 +113,23 @@ export async function runForgeInstrumentedSession(
   const db = resolveDb(options);
   const ownsDb = ownsResolvedDb(options);
   const telemetrySink = createCairnTelemetrySink(db);
+  const sdkClientWasInjected = options.sdkClient !== undefined;
   const sdkClient = options.sdkClient ?? createRealSdkClientAdapter({
     cwd: options.workingDirectory,
     ...options.copilotClientOptions,
   });
+  const forgeSdkClient = wrapSdkClientStop(
+    sdkClient,
+    options.stopClientOnFinish ?? !sdkClientWasInjected,
+  );
   const telemetryTimings: TelemetryTimingEvent[] = [];
   const forgeClient = new ForgeClient({
-    sdkClient,
-    clientName: options.clientName ?? 'forge-run-session',
+    sdkClient: forgeSdkClient,
+    clientName: options.clientName ?? 'forge-session-runner',
   });
 
   let session: Awaited<ReturnType<ForgeClient['createSession']>> | null = null;
+  let disconnectAttempted = false;
   try {
     session = await forgeClient.createSession({
       skillId: options.skillId,
@@ -107,7 +137,7 @@ export async function runForgeInstrumentedSession(
       model: options.model,
       reasoningEffort: options.reasoningEffort,
       workingDirectory: options.workingDirectory,
-      onPermissionRequest: options.onPermissionRequest,
+      onPermissionRequest: options.onPermissionRequest ?? approveAll,
       onTelemetryTiming: (event) => {
         telemetryTimings.push(event);
         options.onTelemetryTiming?.(event);
@@ -124,7 +154,12 @@ export async function runForgeInstrumentedSession(
         { cause: error },
       );
     }
-    await session.disconnect();
+    disconnectAttempted = true;
+    try {
+      await session.disconnect();
+    } catch (error) {
+      console.warn('[skillsmith-runtime] Forge session disconnect failed after telemetry flush', error);
+    }
 
     if (options.buildProfile ?? true) {
       buildProfiles(db);
@@ -143,8 +178,12 @@ export async function runForgeInstrumentedSession(
     };
   } finally {
     try {
-      if (session && !session.isDisconnected) {
-        await session.disconnect();
+      if (session && !session.isDisconnected && !disconnectAttempted) {
+        try {
+          await session.disconnect();
+        } catch (err) {
+          console.warn('[skillsmith-runtime] Forge session cleanup disconnect failed', err);
+        }
       }
     } finally {
       await forgeClient.stop().catch((err) => {
