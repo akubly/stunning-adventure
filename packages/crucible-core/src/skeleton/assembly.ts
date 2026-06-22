@@ -13,9 +13,11 @@
  *   2 rows (system_prompt + tool_definitions). Add 1 per injected memory fragment.
  *
  * GAP-1 (bootstrap flag bit): Deferred — PrimitiveInput has no bootstrap flag;
- *   the WAL codec flags.ts bootstrap bit is set at the WalBackend layer when
- *   offset === 0. For the skeleton this is fine: bootstrap rows ARE the first
- *   rows committed (offset 0..N-1). Phase 1 may formalize a flag on PrimitiveInput.
+ *   both WalBackends currently hardcode flags.bootstrap=false for every
+ *   committed row, so the bootstrap bit is NOT being set when offset === 0.
+ *   For the skeleton this is fine: bootstrap rows ARE the first rows committed
+ *   (offset 0..N-1). Phase 1 may formalize a flag on PrimitiveInput to set the
+ *   bootstrap bit when offset === 0.
  *
  * GAP-2 (non-atomic sequential bootstrap): Deferred — commitRow is called once
  *   per bootstrap row (sequential, not atomic batch). This does NOT break SK-2
