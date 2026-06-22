@@ -15,9 +15,9 @@
  * SK-5 pass condition:
  *   status === 'pass'  AND  rowsReplayed === <total rows in source session>
  *
- * Scope note (Phase 0.5): single-segment sessions only.  Multi-segment replay
- * (64 MiB roll-over) is Phase 1 and requires exposing manifest.segmentRange
- * on FileSystemWalBackend or iterating via a separate helper.
+ * Scope note (Phase 0.5): supports multi-segment sessions via
+ * readAllSegmentRecords(), which iterates the full manifest.segmentRange so
+ * 64 MiB roll-over sessions are covered on both the event and record sides.
  *
  * @see docs/crucible-technical-design/11-hermetic-replay.md §11.4
  */
@@ -50,68 +50,72 @@ class DefaultReplayEngine implements ReplayEngine {
       readOnly: true,
     });
 
-    // Decoded event rows and raw segment records from the same WAL.
-    // readAllSegmentRecords() covers the full segmentRange so multi-segment
-    // sessions (64 MiB roll-over) compare the same row set on both sides.
-    const events    = await backend.readRows({ range: [0, Number.MAX_SAFE_INTEGER] });
-    const segRecs   = backend.readAllSegmentRecords();
+    try {
+      // Decoded event rows and raw segment records from the same WAL.
+      // readAllSegmentRecords() covers the full segmentRange so multi-segment
+      // sessions (64 MiB roll-over) compare the same row set on both sides.
+      const events    = await backend.readRows({ range: [0, Number.MAX_SAFE_INTEGER] });
+      const segRecs   = backend.readAllSegmentRecords();
 
-    // Structural sanity: decoded event count must equal raw record count.
-    if (events.length !== segRecs.length) {
-      return {
-        status:              'fail',
-        divergenceAtOffset:  0,
-        divergenceKind:      'commitment',
-        rowsReplayed:        0,
-        wallClockMs:         Date.now() - startMs,
-      };
-    }
-
-    let rowsReplayed = 0;
-    let firstDivergenceOffset: number | null = null;
-
-    for (let i = 0; i < events.length; i++) {
-      const event  = events[i]!;
-      const rec    = segRecs[i]!;
-
-      // Re-materialize using COMMIT/null verdict.  The verdict byte is stored
-      // separately in the segment record header and does NOT affect the three
-      // CBOR-derived fields we compare (payloadHash, readSetHash, envelopeCbor).
-      // Re-using the shared helper guarantees encoding parity with the write path.
-      const mat = materializeRow(event, 'COMMIT', null);
-
-      const payloadMatch  = bufEqual(mat.payloadHash,  rec.payloadHash);
-      const readSetMatch  = bufEqual(mat.readSetHash,  rec.readSetHash);
-      const envelopeMatch = bufEqual(mat.envelopeCbor, rec.envelopeCbor);
-
-      if (!payloadMatch || !readSetMatch || !envelopeMatch) {
-        if (strict) {
-          return {
-            status:              'fail',
-            divergenceAtOffset:  i,
-            divergenceKind:      'oracle',
-            rowsReplayed,
-            wallClockMs:         Date.now() - startMs,
-          };
-        }
-        // Non-strict: record the offset of the FIRST divergence, then continue.
-        if (firstDivergenceOffset === null) {
-          firstDivergenceOffset = i;
-        }
-        continue;
+      // Structural sanity: decoded event count must equal raw record count.
+      if (events.length !== segRecs.length) {
+        return {
+          status:              'fail',
+          divergenceAtOffset:  0,
+          divergenceKind:      'commitment',
+          rowsReplayed:        0,
+          wallClockMs:         Date.now() - startMs,
+        };
       }
 
-      rowsReplayed++;
-    }
+      let rowsReplayed = 0;
+      let firstDivergenceOffset: number | null = null;
 
-    const allMatch = rowsReplayed === events.length;
-    return {
-      status:              allMatch ? 'pass' : 'fail',
-      divergenceAtOffset:  allMatch ? null   : firstDivergenceOffset,
-      divergenceKind:      allMatch ? null   : 'oracle',
-      rowsReplayed,
-      wallClockMs:         Date.now() - startMs,
-    };
+      for (let i = 0; i < events.length; i++) {
+        const event  = events[i]!;
+        const rec    = segRecs[i]!;
+
+        // Re-materialize using COMMIT/null verdict.  The verdict byte is stored
+        // separately in the segment record header and does NOT affect the three
+        // CBOR-derived fields we compare (payloadHash, readSetHash, envelopeCbor).
+        // Re-using the shared helper guarantees encoding parity with the write path.
+        const mat = materializeRow(event, 'COMMIT', null);
+
+        const payloadMatch  = bufEqual(mat.payloadHash,  rec.payloadHash);
+        const readSetMatch  = bufEqual(mat.readSetHash,  rec.readSetHash);
+        const envelopeMatch = bufEqual(mat.envelopeCbor, rec.envelopeCbor);
+
+        if (!payloadMatch || !readSetMatch || !envelopeMatch) {
+          if (strict) {
+            return {
+              status:              'fail',
+              divergenceAtOffset:  i,
+              divergenceKind:      'oracle',
+              rowsReplayed,
+              wallClockMs:         Date.now() - startMs,
+            };
+          }
+          // Non-strict: record the offset of the FIRST divergence, then continue.
+          if (firstDivergenceOffset === null) {
+            firstDivergenceOffset = i;
+          }
+          continue;
+        }
+
+        rowsReplayed++;
+      }
+
+      const allMatch = rowsReplayed === events.length;
+      return {
+        status:              allMatch ? 'pass' : 'fail',
+        divergenceAtOffset:  allMatch ? null   : firstDivergenceOffset,
+        divergenceKind:      allMatch ? null   : 'oracle',
+        rowsReplayed,
+        wallClockMs:         Date.now() - startMs,
+      };
+    } finally {
+      await backend.close();
+    }
   }
 }
 
