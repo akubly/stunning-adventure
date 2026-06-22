@@ -33,7 +33,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-import type { Primitive } from '../types.js';
+import type { Primitive, PrimitiveInput } from '../types.js';
 import type {
   SdkProvider,
   BootstrapMaterializer,
@@ -143,20 +143,33 @@ class AssembledSkeletonSession implements SkeletonSession {
     const turnResult = await this.provider.completeTurn(prompt);
 
     // SK-3: Commit turn primitives (≥1 Observation + ≥1 Decision).
+    // Track each primitive paired with its committed offset so we can locate
+    // the Decision by kind — TurnResult.primitives ordering is not contractual.
+    const turnEntries: Array<{ prim: PrimitiveInput; offset: number }> = [];
     for (const prim of turnResult.primitives) {
       const offset = await this.ledger.append(prim);
       this.committed.push(offset);
+      turnEntries.push({ prim, offset });
     }
 
     // SK-6: Submit the turn's decision row as a proposal to the scheduler.
-    // proposalId = offset of the Decision row; payload = the same Decision primitive.
-    // Both fields refer to the same primitive so the Proposal is semantically consistent.
-    const lastTurnOffset = this.committed[this.committed.length - 1]!;
+    // Find the Decision primitive by its kind discriminator — do NOT assume positional
+    // ordering.  Multiple decisions: use the first (deterministic, commit-order stable).
+    const decisionEntry = turnEntries.find(
+      ({ prim }) => prim.primitiveKind === 'decision',
+    );
+    if (!decisionEntry) {
+      throw new Error(
+        `[Crucible] TurnResult contained no 'decision' primitive — ` +
+          `SK-3 requires ≥1 Decision row per turn. ` +
+          `Got kinds: [${turnEntries.map(({ prim }) => prim.primitiveKind).join(', ')}]`,
+      );
+    }
     const proposal: Proposal = {
-      proposalId: lastTurnOffset,
+      proposalId: decisionEntry.offset,
       generatorId: this.provider.id,
       priority: 0,
-      payload: turnResult.primitives[turnResult.primitives.length - 1]!,
+      payload: decisionEntry.prim,
     };
     const schedulerEvent = this.scheduler.submit(proposal);
 
