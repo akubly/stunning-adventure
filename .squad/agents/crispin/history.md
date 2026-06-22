@@ -48,6 +48,20 @@ pm install restart. Doc-hygiene scope established for future improvements.
 
 **InMemoryFactStore insertionCounter starts at 1:** `decodeCursor` validates `lastId > 0` (SQLite autoincrement starts at 1, so 0 is never a valid row id). InMemoryFactStore previously started its counter at 0 — if the first row's insertionOrder=0 was the last row on page 1, the encoded cursor would carry `lastId=0` which decodeCursor would treat as a restart sentinel (bad lastId → RESTART). Fixed by starting at 1. Future in-memory stores must also start at 1.
 
+---
+
+### 2026-06-21: Imprint Slice — Persona Review 2-Cycle Complete (Ready to Ship)
+
+**Event:** Persona review completed on eureka/imprint-slice (commits 0dd7c38 → c64092b → a9067a8).
+
+**Cycle 1 dispositions:** 8 findings accepted+fixed (F1–F8), 2 rejected with documented reasoning (F9–F10, out-of-scope/inconsistent). Fixes committed c64092b.
+
+**Cycle 2 re-review:** All cycle-1 fixes verified resolved; 1 residual minor (clock.ts double doc block) applied directly a9067a8.
+
+**Final outcome:** 0 blocking, 0 important, 1 minor (corrected). All personas UNANIMOUS: correct, well-scoped, maintainable, architecturally sound. Ready to merge.
+
+**Tests:** 258/258 eureka tests green, tsc clean.
+
 **v0 backward-compat deleted:** Any cursor without a `v` key now returns `{ version: 0 }` (restart sentinel, no offset field). `decodeCursor` return type changed from `{ version: 0, offset: number }` to `{ version: 0 }`. All callers that previously did `decoded.offset` now check `decoded.version === 1` for keyset fields. The `v=0` explicit version still throws `CursorVersionUnsupportedError` (v=0 is a present-but-invalid version, not a v-absent legacy cursor).
 
 **FS-SE-4 bad-keyset-fields detection order:** decodeCursor returns RESTART for bad `lastSort`/`lastId` in a v1 cursor (bad fields detected in decodeCursor, before SqliteFactStore scope check). The FS-SE-4 test uses correctly-scoped cursors, so scope check vs. keyset validation order doesn't affect the test outcome. Restart is the correct and safe behavior for any corrupt v1 cursor regardless of scope.
