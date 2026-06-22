@@ -203,9 +203,38 @@ describe('Phase 0.5 Walking Skeleton — SK-1 through SK-6', () => {
       expect(runResult.committedOffsets).toContain(0);
     });
 
-    it('SK-2: offset-0 rows are present — status().rowCount ≥ 2 (system_prompt + tool_definitions)', () => {
-      // ⚠️ AMBIG-3: exact count depends on T2 bootstrap implementation.
-      // Minimum: 1 system_prompt row + 1 tool_definitions row = 2 bootstrap rows.
+    it('SK-2: offset-0 rows are present — status().rowCount ≥ 2 (system_prompt + tool_definitions)', async () => {
+      // AMBIG-3 resolved: StubSdkProvider passes injectedMemoryFragments: [] (0 fragments).
+      // DefaultBootstrapMaterializer produces 2 rows: system_prompt + tool_definitions.
+      // Formula: 2 + number-of-memory-fragments = 2 + 0 = 2.
+      const EXPECTED_BOOTSTRAP_COUNT = 2;
+
+      // status().rowCount must account for all committed rows (bootstrap + turn).
+      const status = await session.status();
+      expect(status.rowCount).toBeGreaterThanOrEqual(EXPECTED_BOOTSTRAP_COUNT);
+
+      // committedOffsets must begin at 0 (bootstrap batch is the first commit).
+      expect(runResult.committedOffsets[0]).toBe(0);
+      expect(runResult.committedOffsets[1]).toBe(1);
+
+      // Query bootstrap rows directly via the AMBIG-2-resolved queryRows() seam.
+      const bootstrapRows = await session.queryRows([0, EXPECTED_BOOTSTRAP_COUNT - 1]);
+      expect(bootstrapRows).toHaveLength(EXPECTED_BOOTSTRAP_COUNT);
+
+      // Bootstrap rows must live at offsets 0 and 1 — order is invariant.
+      expect(bootstrapRows[0]!.offset).toBe(0);
+      expect(bootstrapRows[1]!.offset).toBe(1);
+
+      // All bootstrap rows are Observations (primitiveKind).
+      for (const row of bootstrapRows) {
+        expect(row.primitiveKind).toBe('observation');
+      }
+
+      // Sub-kinds must match the materializer contract: system_prompt first, tool_definitions second.
+      const subKind0 = (bootstrapRows[0]!.primitivePayload as { subKind: string }).subKind;
+      const subKind1 = (bootstrapRows[1]!.primitivePayload as { subKind: string }).subKind;
+      expect(subKind0).toBe('system_prompt');
+      expect(subKind1).toBe('tool_definitions');
     });
 
     it('SK-2: committedOffsets are monotonically increasing (hash-chain order)', () => {
