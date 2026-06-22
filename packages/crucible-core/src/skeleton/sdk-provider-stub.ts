@@ -40,9 +40,9 @@ function djb2Hex(s: string): string {
  * Observation PrimitiveInput and one Decision PrimitiveInput (satisfying the
  * SK-3 commitment requirement of ≥1 Observation + ≥1 Decision).
  *
- * Consumers import by direct path: '../skeleton/sdk-provider-stub.js'
- * Do NOT re-export from skeleton/index.ts (Graham owns that barrel — T2/T3
- * run in parallel and a 3-way edit would collide).
+ * This is a Phase-0.5 walking-skeleton stub, not the real §12 provider.
+ * Consumers import via the skeleton barrel: `@akubly/crucible-core/skeleton`
+ * or relative path `../skeleton/index.js`.
  */
 export class StubSdkProvider implements SdkProvider {
   readonly id = 'stub-sdk@1';
