@@ -6,9 +6,8 @@
  * TDD strategy   : §3.5 SchedulerDispatcher collaborator; A-Sched-1 acceptance signal
  * Contract owner : Gabriel (T3 — skeleton/fifo-scheduler.ts)
  *
- * This file is TDD-RED: the FifoScheduler implementation does not yet exist.
- * Expected initial failure: "Cannot find module '../../skeleton/fifo-scheduler.js'"
- * Once T3 (Gabriel) lands, this file must pass with zero implementation changes.
+ * This file is TDD-GREEN: the FifoScheduler implementation is present and all tests pass.
+ * Validates SK-6 / A-Sched-1 FIFO dispatch contract as implemented.
  *
  * Invariants exercised (A-Sched-1):
  *   1. submit() returns a SchedulerDispatched event synchronously and immediately.
