@@ -38,8 +38,6 @@ export interface ForgeSessionConfig {
   telemetrySink?: SignalSampleSink;
   /** SDK permission handler. Runner composition roots decide policy defaults. */
   onPermissionRequest?: PermissionHandler;
-  /** Bounded post-disconnect drain for terminal SDK events emitted on a later tick. */
-  terminalEventDrainMs?: number;
   /** Optional observer for disconnect/flush ordering verification. */
   onTelemetryTiming?: (event: TelemetryTimingEvent) => void;
 }
@@ -56,6 +54,12 @@ export type TelemetryTimingPhase =
   | "telemetry_flush_error";
 
 const DEFAULT_TERMINAL_EVENT_DRAIN_MS = 25;
+let terminalEventDrainMsOverrideForTests: number | undefined;
+
+/** @internal Test-only seam; not re-exported from the public runtime barrel. */
+export function __setTerminalEventDrainMsForTesting(value: number | undefined): void {
+  terminalEventDrainMsOverrideForTests = value;
+}
 
 export interface TelemetryTimingEvent {
   sessionId: string;
@@ -107,20 +111,28 @@ export class ForgeSession {
   private _telemetryTimings: TelemetryTimingEvent[] = [];
   private _onTelemetryTiming?: (event: TelemetryTimingEvent) => void;
   private _disconnectPromise: Promise<void> | null = null;
+  private _telemetryFlushed = false;
   private readonly terminalEventDrainMs: number;
+  private _terminalEventObserved = false;
+  /** Pending terminal-event drain waiters resolved when session.shutdown bridges to session_end. */
+  private _terminalEventResolvers = new Set<() => void>();
 
   constructor(
     sdkSession: SDKSession,
     hookComposer: HookComposer,
     config: ForgeSessionConfig,
-    options?: { onDisconnect?: () => void; preSessionEvents?: CairnBridgeEvent[] },
+    options?: {
+      onDisconnect?: () => void;
+      preSessionEvents?: CairnBridgeEvent[];
+    },
   ) {
     this.sdkSession = sdkSession;
     this.sessionId = sdkSession.sessionId;
     this.hookComposer = hookComposer;
     this._onDisconnect = options?.onDisconnect;
     this._onTelemetryTiming = config.onTelemetryTiming;
-    this.terminalEventDrainMs = config.terminalEventDrainMs ?? DEFAULT_TERMINAL_EVENT_DRAIN_MS;
+    this.terminalEventDrainMs =
+      terminalEventDrainMsOverrideForTests ?? DEFAULT_TERMINAL_EVENT_DRAIN_MS;
 
     // Wire telemetry collectors if a sink was provided.
     if (config.telemetrySink) {
@@ -137,6 +149,12 @@ export class ForgeSession {
       this.bridgeEvents.push(...options.preSessionEvents);
       // Replay through collectors so early events (e.g. session_end emitted
       // before on() was wired) are not lost from the telemetry pipeline.
+      for (const event of options.preSessionEvents) {
+        if (event.eventType === "session_end") {
+          this.recordTelemetryTiming("session_end_observed");
+          this.signalTerminalEventObserved();
+        }
+      }
       if (this._collectors) {
         for (const event of options.preSessionEvents) {
           for (const c of this._collectors) {
@@ -159,6 +177,7 @@ export class ForgeSession {
           this.bridgeEvents.push(bridged);
           if (bridged.eventType === "session_end") {
             this.recordTelemetryTiming("session_end_observed");
+            this.signalTerminalEventObserved();
           }
           if (this._collectors) {
             for (const c of this._collectors) {
@@ -227,18 +246,11 @@ export class ForgeSession {
 
     await this.drainTerminalEvents();
 
-    for (const unsub of this.eventSubscriptions) {
-      try {
-        unsub();
-      } catch (err) {
-        console.warn('[ForgeSession] unsubscribe error', err);
-      }
-    }
-    this.eventSubscriptions = [];
-
     // Flush after SDK disconnect so terminal events emitted during disconnect
     // are observed before outcome samples are computed.
-    if (this._collectors && this._telemetrySink) {
+    if (!this._telemetryFlushed && this._collectors && this._telemetrySink) {
+      // Collectors are non-replayable, so retrying disconnect must not flush them twice.
+      this._telemetryFlushed = true;
       try {
         this.recordTelemetryTiming("telemetry_flush_start");
         for (const c of this._collectors) {
@@ -261,6 +273,15 @@ export class ForgeSession {
       this._disconnectPromise = null;
       throw disconnectError;
     }
+
+    for (const unsub of this.eventSubscriptions) {
+      try {
+        unsub();
+      } catch (err) {
+        console.warn('[ForgeSession] unsubscribe error', err);
+      }
+    }
+    this.eventSubscriptions = [];
 
     // Mark disconnected only after SDK disconnect succeeds. A failed SDK
     // disconnect leaves the session tracked so callers can retry or stop() can
@@ -306,7 +327,48 @@ export class ForgeSession {
 
   private async drainTerminalEvents(): Promise<void> {
     if (this.terminalEventDrainMs <= 0) return;
-    await new Promise<void>((resolve) => setTimeout(resolve, this.terminalEventDrainMs));
+    if (this._terminalEventObserved) return;
+
+    const terminalEvent = this.waitForTerminalEvent();
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        terminalEvent.promise,
+        new Promise<void>((resolve) => {
+          timeout = setTimeout(resolve, this.terminalEventDrainMs);
+        }),
+      ]);
+    } finally {
+      terminalEvent.cancel();
+      if (timeout) clearTimeout(timeout);
+    }
+  }
+
+  private waitForTerminalEvent(): { promise: Promise<void>; cancel: () => void } {
+    if (this._terminalEventObserved) {
+      return { promise: Promise.resolve(), cancel: () => undefined };
+    }
+
+    let resolvePromise: () => void = () => undefined;
+    const promise = new Promise<void>((resolve) => {
+      resolvePromise = resolve;
+      this._terminalEventResolvers.add(resolvePromise);
+    });
+    return {
+      promise,
+      cancel: () => {
+        this._terminalEventResolvers.delete(resolvePromise);
+        resolvePromise();
+      },
+    };
+  }
+
+  private signalTerminalEventObserved(): void {
+    this._terminalEventObserved = true;
+    for (const resolve of this._terminalEventResolvers) {
+      resolve();
+    }
+    this._terminalEventResolvers.clear();
   }
 
   private recordTelemetryTiming(phase: TelemetryTimingPhase): void {

@@ -38,6 +38,7 @@ describe('forge-run-session CLI', () => {
       profileFound: true,
       profileSessionCount: 1,
       telemetryTimings: [],
+      disconnect: { ok: true },
     });
 
     const code = await runForgeRunSessionCli([
@@ -73,6 +74,7 @@ describe('forge-run-session CLI', () => {
       profileFound: true,
       profileSessionCount: 1,
       telemetryTimings: [],
+      disconnect: { ok: true },
     });
 
     const code = await runForgeRunSessionCli([
@@ -108,6 +110,7 @@ describe('forge-run-session CLI', () => {
       profileFound: false,
       profileSessionCount: null,
       telemetryTimings: [],
+      disconnect: { ok: true },
     });
 
     const code = await runForgeRunSessionCli([

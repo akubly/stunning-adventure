@@ -46,6 +46,8 @@ export interface ForgeClientOptions {
   sdkClient: SDKClient;
   /** Optional client name for identification. */
   clientName?: string;
+  /** Whether this ForgeClient owns and should stop the SDK client. Defaults to true. */
+  ownsSdkClient?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -62,11 +64,13 @@ export interface ForgeClientOptions {
 export class ForgeClient {
   private client: SDKClient;
   private clientName: string;
+  private ownsSdkClient: boolean;
   private sessions = new Map<string, ForgeSession>();
 
   constructor(opts: ForgeClientOptions) {
     this.client = opts.sdkClient;
     this.clientName = opts.clientName ?? "forge";
+    this.ownsSdkClient = opts.ownsSdkClient ?? true;
   }
 
   /** Create a new instrumented session. */
@@ -171,7 +175,9 @@ export class ForgeClient {
       }
     }
     this.sessions.clear();
-    await this.client.stop();
+    if (this.ownsSdkClient) {
+      await this.client.stop();
+    }
     if (errors.length > 0) {
       console.warn(`[ForgeClient] ${errors.length} session(s) failed to disconnect:`, errors);
     }

@@ -84,6 +84,7 @@ describe('runForgeInstrumentedSession', () => {
     expect(result.signalSamplesWritten).toBeGreaterThanOrEqual(3);
     expect(result.profileFound).toBe(true);
     expect(result.profileSessionCount).toBe(1);
+    expect(result.disconnect).toEqual({ ok: true });
     expect(result.telemetryTimings.map((t) => t.phase)).toContain('session_end_observed');
 
     const db = cairn.getDb();
@@ -226,6 +227,10 @@ describe('runForgeInstrumentedSession', () => {
     });
 
     expect(result.signalSamplesWritten).toBeGreaterThan(0);
+    expect(result.disconnect).toEqual({
+      ok: false,
+      error: 'disconnect failed after shutdown',
+    });
     expect(result.telemetryTimings.map((t) => t.phase)).toContain('telemetry_flush_end');
     expect(mockSdk.disconnect).toHaveBeenCalledTimes(2);
     expect(mockClient.stop).toHaveBeenCalledOnce();

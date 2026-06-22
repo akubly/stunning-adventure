@@ -115,6 +115,7 @@ export async function runForgeRunSessionCli(
       profileFound: result.profileFound,
       profileSessionCount: result.profileSessionCount,
       bridgeEventCount: result.bridgeEventCount,
+      disconnect: result.disconnect,
       telemetryTimings: result.telemetryTimings,
     }, null, 2));
     return result.signalSamplesWritten > 0 ? 0 : 1;

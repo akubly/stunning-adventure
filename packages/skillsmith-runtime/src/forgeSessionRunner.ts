@@ -59,6 +59,11 @@ export interface RunForgeInstrumentedSessionResult {
   profileFound: boolean;
   profileSessionCount: number | null;
   telemetryTimings: TelemetryTimingEvent[];
+  /**
+   * Best-effort disconnect cleanup status. A failed disconnect remains observable
+   * here but does not change the sample-written success contract.
+   */
+  disconnect: { ok: true } | { ok: false; error: string };
 }
 
 function createRealSdkClientAdapter(options: CopilotClientOptions = {}): SDKClient {
@@ -79,15 +84,6 @@ function createRealSdkClientAdapter(options: CopilotClientOptions = {}): SDKClie
         throw new AggregateError(errors, 'CopilotClient.stop() reported errors');
       }
     },
-  };
-}
-
-function wrapSdkClientStop(sdkClient: SDKClient, stopClientOnFinish: boolean): SDKClient {
-  if (stopClientOnFinish) return sdkClient;
-  return {
-    createSession: (config) => sdkClient.createSession(config),
-    resumeSession: (config) => sdkClient.resumeSession(config),
-    stop: async () => undefined,
   };
 }
 
@@ -118,18 +114,17 @@ export async function runForgeInstrumentedSession(
     cwd: options.workingDirectory,
     ...options.copilotClientOptions,
   });
-  const forgeSdkClient = wrapSdkClientStop(
-    sdkClient,
-    options.stopClientOnFinish ?? !sdkClientWasInjected,
-  );
+  const ownsSdkClient = options.stopClientOnFinish ?? !sdkClientWasInjected;
   const telemetryTimings: TelemetryTimingEvent[] = [];
   const forgeClient = new ForgeClient({
-    sdkClient: forgeSdkClient,
+    sdkClient,
     clientName: options.clientName ?? 'forge-session-runner',
+    ownsSdkClient,
   });
 
   let session: Awaited<ReturnType<ForgeClient['createSession']>> | null = null;
   let disconnectAttempted = false;
+  let disconnect: RunForgeInstrumentedSessionResult['disconnect'] = { ok: true };
   try {
     session = await forgeClient.createSession({
       skillId: options.skillId,
@@ -158,6 +153,7 @@ export async function runForgeInstrumentedSession(
     try {
       await session.disconnect();
     } catch (error) {
+      disconnect = { ok: false, error: error instanceof Error ? error.message : String(error) };
       console.warn('[skillsmith-runtime] Forge session disconnect failed after telemetry flush', error);
     }
 
@@ -175,6 +171,7 @@ export async function runForgeInstrumentedSession(
       profileFound: profile !== null,
       profileSessionCount: profile?.sessionCount ?? null,
       telemetryTimings: [...telemetryTimings],
+      disconnect,
     };
   } finally {
     try {
