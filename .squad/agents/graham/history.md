@@ -142,3 +142,10 @@ Produced the S3 spawn manifest (6 tasks, 5 agents). Key architectural decisions:
 - Two parallel tracks after T1: Roger (T2 bootstrap+WAL) and Gabriel (T3 scheduler) + Alexander (T4 SDK provider)
 - Valanice (T5 CLI verbs) needs T2 to read from WAL
 - Laura (T6 acceptance) needs T2+T3+T4+T5 but writes RED tests from spec immediately
+## Learnings — 2026-06-16: Cairn/Forge Near-Term Roadmap Read
+
+Cairn is currently the durable local nervous system: SQLite event/profile/hint/DBOM storage, Curator, MCP tools, skill parsing/linting/testing, and GitHub artifact discovery are shipped in `@akubly/cairn` 0.3.0. The package CLI remains a placeholder, while the MCP server is the real interface.
+
+Forge is the deterministic runtime/optimizer package: bridge, hooks, decision gates, DBOM/export, telemetry, prescribers, applier, and feedback-loop plumbing are implemented in `@akubly/forge` 0.1.0. The explicit dogfood gap is that no production session runner yet drives live Copilot sessions through `ForgeClient`/`ForgeSession`, so profiles require seeding until that integration lands.
+
+Near-term roadmap split: Cairn's active external-facing path is the GitHub Automations epic (#8) with brainstorm/design still open (#5/#6); Forge's highest-leverage path is dogfood hardening and runner integration before Phase 5 cloud PGO/GP work.

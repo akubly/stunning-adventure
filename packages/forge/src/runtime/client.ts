@@ -9,7 +9,7 @@
  * @module
  */
 
-import type { SessionConfig, SessionEvent } from "@github/copilot-sdk";
+import type { PermissionHandler, SessionConfig, SessionEvent } from "@github/copilot-sdk";
 import { HookComposer } from "../hooks/index.js";
 import { bridgeEvent } from "../bridge/index.js";
 import { ForgeSession, type ForgeSessionConfig, type SDKSession } from "./session.js";
@@ -26,9 +26,15 @@ import type { CairnBridgeEvent } from "@akubly/types";
  */
 export interface SDKClient {
   createSession(config: Partial<SessionConfig>): Promise<SDKSession>;
-  resumeSession(config: { sessionId: string; hooks?: unknown }): Promise<SDKSession>;
+  resumeSession(config: { sessionId: string; hooks?: unknown; onPermissionRequest?: PermissionHandler }): Promise<SDKSession>;
   stop(): Promise<void>;
 }
+
+
+const denyMissingPermissionHandler: PermissionHandler = async () => ({
+  kind: "denied-by-permission-request-hook",
+  message: "ForgeClient requires an explicit onPermissionRequest handler.",
+});
 
 // ---------------------------------------------------------------------------
 // ForgeClientOptions
@@ -40,6 +46,8 @@ export interface ForgeClientOptions {
   sdkClient: SDKClient;
   /** Optional client name for identification. */
   clientName?: string;
+  /** Whether this ForgeClient owns and should stop the SDK client. Defaults to true. */
+  ownsSdkClient?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -56,11 +64,13 @@ export interface ForgeClientOptions {
 export class ForgeClient {
   private client: SDKClient;
   private clientName: string;
+  private ownsSdkClient: boolean;
   private sessions = new Map<string, ForgeSession>();
 
   constructor(opts: ForgeClientOptions) {
     this.client = opts.sdkClient;
     this.clientName = opts.clientName ?? "forge";
+    this.ownsSdkClient = opts.ownsSdkClient ?? true;
   }
 
   /** Create a new instrumented session. */
@@ -87,6 +97,7 @@ export class ForgeClient {
       workingDirectory: config.workingDirectory,
       hooks: hookComposer.compose(),
       clientName: this.clientName,
+      onPermissionRequest: config.onPermissionRequest ?? denyMissingPermissionHandler,
       onEvent,
     } as Partial<SessionConfig>);
 
@@ -127,6 +138,7 @@ export class ForgeClient {
     const sdkSession = await this.client.resumeSession({
       sessionId,
       hooks: hookComposer.compose(),
+      onPermissionRequest: config.onPermissionRequest ?? denyMissingPermissionHandler,
     });
 
     // Disconnect any existing session with the same ID before overwriting
@@ -163,7 +175,9 @@ export class ForgeClient {
       }
     }
     this.sessions.clear();
-    await this.client.stop();
+    if (this.ownsSdkClient) {
+      await this.client.stop();
+    }
     if (errors.length > 0) {
       console.warn(`[ForgeClient] ${errors.length} session(s) failed to disconnect:`, errors);
     }

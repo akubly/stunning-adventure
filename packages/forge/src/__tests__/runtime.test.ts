@@ -8,8 +8,9 @@
  * @module
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { SessionEvent, SessionConfig } from '@github/copilot-sdk';
+import type { SignalSample } from '@akubly/types';
 import {
   createMockClient,
   createMockSession,
@@ -26,8 +27,11 @@ import { HookComposer } from '../hooks/index.js';
 import type { HookObserver } from '../hooks/index.js';
 import {
   ForgeClient,
+  ForgeSession,
   type ForgeClientOptions,
 } from '../runtime/index.js';
+import { __setTerminalEventDrainMsForTesting } from '../runtime/session.js';
+import { createLocalDBOMSink } from '../telemetry/sink.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -45,6 +49,17 @@ function makeForgeClient(overrides: Partial<ForgeClientOptions> = {}): {
     ...overrides,
   });
   return { forgeClient, mockClient, mockSession };
+}
+
+let localEventCounter = 0;
+function sessionShutdownEvent(): SessionEvent {
+  return {
+    id: `runtime-local-${++localEventCounter}`,
+    timestamp: new Date().toISOString(),
+    parentId: null,
+    type: 'session.shutdown',
+    data: {},
+  };
 }
 
 // ===========================================================================
@@ -88,6 +103,30 @@ describe('ForgeClient — session lifecycle', () => {
     expect(typeof sdkConfig.hooks.onPreToolUse).toBe('function');
   });
 
+  it('createSession supplies a safe deny permission handler when policy is omitted', async () => {
+    const { forgeClient, mockClient } = makeForgeClient();
+
+    await forgeClient.createSession();
+
+    const sdkConfig = mockClient.createSession.mock.calls[0][0];
+    expect(typeof sdkConfig.onPermissionRequest).toBe('function');
+    expect(await sdkConfig.onPermissionRequest({ kind: 'read' }, { sessionId: 's' }))
+      .toEqual({
+        kind: 'denied-by-permission-request-hook',
+        message: 'ForgeClient requires an explicit onPermissionRequest handler.',
+      });
+  });
+
+  it('createSession passes an explicit permission handler through to the SDK', async () => {
+    const onPermissionRequest = () => ({ kind: 'no-result' as const });
+    const { forgeClient, mockClient } = makeForgeClient();
+
+    await forgeClient.createSession({ onPermissionRequest });
+
+    const sdkConfig = mockClient.createSession.mock.calls[0][0];
+    expect(sdkConfig.onPermissionRequest).toBe(onPermissionRequest);
+  });
+
   it('tracks created sessions by ID', async () => {
     const { forgeClient } = makeForgeClient();
 
@@ -115,6 +154,15 @@ describe('ForgeClient — session lifecycle', () => {
     expect(resumeConfig.sessionId).toBe('sess-abc-123');
   });
 
+  it('resumeSession supplies a permission handler to the SDK', async () => {
+    const { forgeClient, mockClient } = makeForgeClient();
+
+    await forgeClient.resumeSession('sess-permission');
+
+    const resumeConfig = mockClient.resumeSession.mock.calls[0][0];
+    expect(typeof resumeConfig.onPermissionRequest).toBe('function');
+  });
+
   it('stop disconnects all sessions and stops client', async () => {
     const { forgeClient, mockClient, mockSession } = makeForgeClient();
 
@@ -124,6 +172,25 @@ describe('ForgeClient — session lifecycle', () => {
     expect(mockSession.disconnect).toHaveBeenCalledOnce();
     expect(mockClient.stop).toHaveBeenCalledOnce();
     expect(forgeClient.sessionCount).toBe(0);
+  });
+
+  it('stop skips SDK client stop when ForgeClient does not own the client', async () => {
+    const { forgeClient, mockClient, mockSession } = makeForgeClient({ ownsSdkClient: false });
+
+    await forgeClient.createSession();
+    await forgeClient.stop();
+
+    expect(mockSession.disconnect).toHaveBeenCalledOnce();
+    expect(mockClient.stop).not.toHaveBeenCalled();
+    expect(forgeClient.sessionCount).toBe(0);
+  });
+
+  it('stop defaults to owning and stopping the SDK client', async () => {
+    const { forgeClient, mockClient } = makeForgeClient();
+
+    await forgeClient.stop();
+
+    expect(mockClient.stop).toHaveBeenCalledOnce();
   });
 
   it('stop is idempotent — calling twice does not error', async () => {
@@ -408,6 +475,130 @@ describe('ForgeSession — disconnect', () => {
     // (The mock's unsubscribe is a stub, so we verify the _disconnected flag
     //  gates the behavior in the real implementation.)
     expect(session.isDisconnected).toBe(true);
+  });
+
+  it('observes session_end emitted during SDK disconnect before flushing telemetry', async () => {
+    const captured: SignalSample[] = [];
+    const timings: string[] = [];
+    const sink = createLocalDBOMSink({ persistSample: (s) => captured.push(s) });
+    const { forgeClient, mockSession } = makeForgeClient();
+    mockSession.disconnect.mockImplementationOnce(async () => {
+      mockSession._emit(sessionShutdownEvent());
+    });
+
+    const session = await forgeClient.createSession({
+      skillId: 'late-shutdown-skill',
+      telemetrySink: sink,
+      onTelemetryTiming: (event) => timings.push(event.phase),
+    });
+
+    await session.disconnect();
+
+    const outcome = captured.find((sample) => sample.kind === 'outcome');
+    expect(outcome).toBeDefined();
+    expect((outcome!.metadata as Record<string, unknown>).succeeded).toBe(true);
+    expect(timings.indexOf('session_end_observed')).toBeGreaterThan(-1);
+    expect(timings.indexOf('session_end_observed')).toBeLessThan(
+      timings.indexOf('telemetry_flush_start'),
+    );
+    const storedTimings = session.getTelemetryTimings().map((event) => event.phase);
+    expect(storedTimings.indexOf('sdk_disconnect_end')).toBeLessThan(
+      storedTimings.indexOf('telemetry_flush_start'),
+    );
+  });
+
+  it('drains async session_end emitted after SDK disconnect resolves before flushing telemetry', async () => {
+    const captured: SignalSample[] = [];
+    const timings: string[] = [];
+    const sink = createLocalDBOMSink({ persistSample: (s) => captured.push(s) });
+    const { forgeClient, mockSession } = makeForgeClient();
+    mockSession.disconnect.mockImplementationOnce(async () => {
+      setTimeout(() => mockSession._emit(sessionShutdownEvent()), 0);
+    });
+
+    const session = await forgeClient.createSession({
+      skillId: 'async-late-shutdown-skill',
+      telemetrySink: sink,
+      onTelemetryTiming: (event) => timings.push(event.phase),
+    });
+
+    await session.disconnect();
+
+    const outcome = captured.find((sample) => sample.kind === 'outcome');
+    expect(outcome).toBeDefined();
+    expect((outcome!.metadata as Record<string, unknown>).succeeded).toBe(true);
+    expect(timings.indexOf('sdk_disconnect_end')).toBeLessThan(
+      timings.indexOf('session_end_observed'),
+    );
+    expect(timings.indexOf('session_end_observed')).toBeLessThan(
+      timings.indexOf('telemetry_flush_start'),
+    );
+  });
+
+  it('resolves the terminal drain promptly when a late session_end arrives before the ceiling', async () => {
+    vi.useFakeTimers();
+    __setTerminalEventDrainMsForTesting(100);
+    try {
+      const captured: SignalSample[] = [];
+      const timings: string[] = [];
+      const sink = createLocalDBOMSink({ persistSample: (s) => captured.push(s) });
+      const mockSession = createMockSession();
+      mockSession.disconnect.mockImplementationOnce(async () => {
+        setTimeout(() => mockSession._emit(sessionShutdownEvent()), 10);
+      });
+      const session = new ForgeSession(
+        mockSession,
+        new HookComposer(),
+        {
+          skillId: 'delayed-shutdown-skill',
+          telemetrySink: sink,
+          onTelemetryTiming: (event) => timings.push(event.phase),
+        },
+      );
+
+      const disconnectPromise = session.disconnect();
+      await vi.advanceTimersByTimeAsync(9);
+      expect(timings).not.toContain('telemetry_flush_start');
+
+      await vi.advanceTimersByTimeAsync(1);
+      await disconnectPromise;
+
+      const outcome = captured.find((sample) => sample.kind === 'outcome');
+      expect(outcome).toBeDefined();
+      expect((outcome!.metadata as Record<string, unknown>).succeeded).toBe(true);
+      expect(timings.indexOf('sdk_disconnect_end')).toBeLessThan(
+        timings.indexOf('session_end_observed'),
+      );
+      expect(timings.indexOf('session_end_observed')).toBeLessThan(
+        timings.indexOf('telemetry_flush_start'),
+      );
+    } finally {
+      __setTerminalEventDrainMsForTesting(undefined);
+      vi.useRealTimers();
+    }
+  });
+
+  it('flushes telemetry at most once when disconnect is retried after an SDK error', async () => {
+    const captured: SignalSample[] = [];
+    const sink = createLocalDBOMSink({ persistSample: (s) => captured.push(s) });
+    const { forgeClient, mockSession } = makeForgeClient();
+    mockSession.disconnect
+      .mockImplementationOnce(async () => {
+        mockSession._emit(sessionShutdownEvent());
+        throw new Error('disconnect failed after shutdown');
+      })
+      .mockResolvedValueOnce(undefined);
+
+    const session = await forgeClient.createSession({
+      skillId: 'retry-flush-guard-skill',
+      telemetrySink: sink,
+    });
+
+    await expect(session.disconnect()).rejects.toThrow('disconnect failed after shutdown');
+    await expect(session.disconnect()).resolves.not.toThrow();
+
+    expect(captured.filter((sample) => sample.kind === 'outcome')).toHaveLength(1);
+    expect(mockSession.disconnect).toHaveBeenCalledTimes(2);
   });
 });
 

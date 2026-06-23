@@ -48,6 +48,20 @@ pm install restart. Doc-hygiene scope established for future improvements.
 
 **InMemoryFactStore insertionCounter starts at 1:** `decodeCursor` validates `lastId > 0` (SQLite autoincrement starts at 1, so 0 is never a valid row id). InMemoryFactStore previously started its counter at 0 — if the first row's insertionOrder=0 was the last row on page 1, the encoded cursor would carry `lastId=0` which decodeCursor would treat as a restart sentinel (bad lastId → RESTART). Fixed by starting at 1. Future in-memory stores must also start at 1.
 
+---
+
+### 2026-06-21: Imprint Slice — Persona Review 2-Cycle Complete (Ready to Ship)
+
+**Event:** Persona review completed on eureka/imprint-slice (commits 0dd7c38 → c64092b → a9067a8).
+
+**Cycle 1 dispositions:** 8 findings accepted+fixed (F1–F8), 2 rejected with documented reasoning (F9–F10, out-of-scope/inconsistent). Fixes committed c64092b.
+
+**Cycle 2 re-review:** All cycle-1 fixes verified resolved; 1 residual minor (clock.ts double doc block) applied directly a9067a8.
+
+**Final outcome:** 0 blocking, 0 important, 1 minor (corrected). All personas UNANIMOUS: correct, well-scoped, maintainable, architecturally sound. Ready to merge.
+
+**Tests:** 258/258 eureka tests green, tsc clean.
+
 **v0 backward-compat deleted:** Any cursor without a `v` key now returns `{ version: 0 }` (restart sentinel, no offset field). `decodeCursor` return type changed from `{ version: 0, offset: number }` to `{ version: 0 }`. All callers that previously did `decoded.offset` now check `decoded.version === 1` for keyset fields. The `v=0` explicit version still throws `CursorVersionUnsupportedError` (v=0 is a present-but-invalid version, not a v-absent legacy cursor).
 
 **FS-SE-4 bad-keyset-fields detection order:** decodeCursor returns RESTART for bad `lastSort`/`lastId` in a v1 cursor (bad fields detected in decodeCursor, before SqliteFactStore scope check). The FS-SE-4 test uses correctly-scoped cursors, so scope check vs. keyset validation order doesn't affect the test outcome. Restart is the correct and safe behavior for any corrupt v1 cursor regardless of scope.
@@ -149,3 +163,107 @@ The composite expression `(-bm25_score) * trust` in `ranked` CTE and the `ORDER 
 **Default-row behavior preserved:**
 
 The migration 002 defaults (`importance REAL NOT NULL DEFAULT 0`, `attention_tier TEXT NOT NULL DEFAULT 'warm'`, `last_accessed INTEGER` nullable) were chosen so that existing rows behave identically to before. `importance=0` has no effect on the composite sort (not in ORDER BY); `attention_tier='warm'` was already the hardcoded value; `last_accessed=NULL` maps to `undefined` which the compositeScore recency branch already handles as "no recency signal."
+
+---
+
+### 2026-06-16: `integrate` Design Memo — Representation Layer Input
+
+**Context:** Aaron split the write path into `imprint` (raw mechanical write) and `integrate` (cognitive orchestration verb). Genesta is specifying `imprint`; Crispin was asked to produce a representation/graph design memo for `integrate` in parallel.
+
+**Key design decisions proposed:**
+
+1. **Classification model:** BM25 recall provides candidate shortlists but CANNOT reliably distinguish duplicate from contradiction (lexical signal only). Proposed `dedupKey` (nullable TEXT column + index on `facts`) as an O(1) semantic identity primitive for structured kinds. Classification logic itself is Edgar's domain — I provide the graph signals, not the thresholds.
+
+2. **Edge schema (migration 003):** Proposed `relations` table matching PRD v5 spec: `(id, from_id, to_id, session_id, edge_type, weight, confidence, created_at)`. UNIQUE on `(from_id, to_id, edge_type, session_id)`. CHECK constrains to Tier 1 edge types. Indexes on `from_id`, `to_id`, `edge_type`. `from_id`/`to_id` reference `facts.fact_id` (semantic identity, not row ID) per PRD KR convention.
+
+3. **Reconciliation outcomes:** Novel → imprint + optional `derived_from` edge. Duplicate → no imprint, refresh `last_accessed`, optional trust increment (Edgar). Contradiction → imprint new + `contradicts` edge + trust decrement on existing (Edgar's magnitude).
+
+4. **Boundary clarity:** Representation owns edge schema/writes and dedup key definition. Edgar owns thresholds, trust algorithms, similarity scoring. Genesta owns the orchestration contract. The graph gives candidates and a place to store results — but duplicate-vs-contradiction discrimination requires either LLM judgment or structured dedup keys.
+
+**Open questions raised:** (Q1) Does migration 003 ship with `integrate` impl or earlier? (Q2) Is `dedupKey` in scope? (Q3-Q4) BM25 threshold + dup-vs-contradiction discrimination strategy. (Q5) `duplicate_of` as edge vs. audit log. (Q6) `derived_from` mandatory or optional. (Q7-Q8) Trust adjustment magnitudes for Edgar.
+
+**Decision drop:** `.squad/decisions/inbox/crispin-integrate-design.md` (PROPOSED).
+
+---
+
+### 2026-06-16: `imprint` GREEN Phase — Implementation Choices
+
+**Context:** Implemented the `imprint` activity (raw fact write path) per Genesta's DECIDED contract and Laura's 24 RED tests. All 256 tests green, `tsc --build` clean.
+
+**Key implementation decisions:**
+
+1. **ClockProvider reuse:** Imported `ClockProvider` from `./recall.js` and re-exported from `./imprint.js` (`export type { ClockProvider } from './recall.js'`). Structurally identical interfaces — single source of truth, no second incompatible clock type. Genesta's note in §2 explicitly blessed this.
+
+2. **Idempotency mechanism (SQLite):** `INSERT OR IGNORE` against `UNIQUE(fact_id, session_id)`. Simpler than `ON CONFLICT DO NOTHING` (equivalent for single-constraint case). Key property: SQLite triggers (`facts_ai` for FTS5 sync) do NOT fire on ignored rows, so FTS stays consistent without extra logic.
+
+3. **Idempotency mechanism (InMemory):** `Map.has(key)` check before `Map.set()`. Composite key is `${sessionId}\0${factId}` (null-byte separator, same pattern as the existing InMemoryFactStore in fact-store.contract.test.ts).
+
+4. **InMemoryFactWriter dual-interface:** Implements both `FactWriter` and `FactStore` in a single class per Laura's D2 decision. The harness assigns `factStore: writer` and `factWriter: writer` (same instance). Also exposes `readFact()` as a test-only method (not on FactWriter interface) per D3.
+
+5. **Timestamp format:** `createdAt` (epoch ms from ClockProvider) is converted to `'YYYY-MM-DD HH:MM:SS'` format (matching SQLite's `datetime('now')` output style) via `new Date(ms).toISOString().replace('T', ' ').replace('Z', '').slice(0, 19)`. Both `created_at` and `updated_at` are set to the same value (fresh fact, never updated).
+
+6. **Validation ordering:** All checks fire synchronously before any `await` (matching applyFeedback's pattern). Order: content → trust → importance → attentionTier. `idProvider.next()` and `clock.now()` are called AFTER validation passes (per contract §3 step ordering).
+
+7. **Content trimming:** `options.content.trim()` is applied both for validation (empty check) and for the value written to storage. The stored content is always trimmed.
+
+**Files created/modified:**
+- `src/activities/imprint.ts` — NEW: activity + types
+- `src/activities/errors.ts` — APPEND: `InvalidImprintError`
+- `src/storage/fact-writer.ts` — NEW: `InMemoryFactWriter`
+- `src/storage/fact-writer-sqlite.ts` — NEW: `SqliteFactWriter`
+- `src/sqlite/deps.ts` — APPEND: `createSqliteImprintDeps`
+- `src/sqlite/index.ts` — APPEND: re-exports
+- `src/storage/index.ts` — APPEND: re-export
+- `src/index.ts` — APPEND: re-exports
+
+**Test results:** 256/256 green (208 pre-existing + 48 new imprint contract tests).
+
+---
+
+## 2026-06-17: Eureka imprint Slice SHIPPED (M8 Follow-Up)
+
+**Result:** ✅ COMPLETE — 256/256 eureka tests GREEN, tsc clean
+
+**Deliverables:**
+- `imprint` GREEN implementation + 24 RED tests (all passing)
+- `integrate` design memo (PROPOSED, awaiting Aaron Q1/Q2 decisions)
+- 4 decisions merged to decisions.md (3 DECIDED, 1 PROPOSED)
+
+**Artifacts shipped:**
+- Genesta: FR-4 amendment, imprint contract, roadmap (3 DECIDED)
+- Crispin: imprint GREEN + integration design (1 PROPOSED pending Aaron)
+- Laura: RED tests (24 assertions, both runners green)
+
+**Scribe orchestration:** Decisions inbox merged → decisions.md, 3 orchestration logs per agent, session log, history appends, git commit staged/completed
+
+**What's next:** Aaron reviews integrate design (Q1/Q2). Once locked, Crispin proceeds with `integrate` cognitive orchestration slice.
+
+---
+
+### 2026-06-18: Imprint Slice — Persona Review Cycle 1 Fixes
+
+**Context:** Persona panel reviewed the imprint GREEN phase (branch `eureka/imprint-slice`, 0dd7c38). 0 blocking findings. 8 accepted, 2 rejected.
+
+**Key changes:**
+
+1. **`INSERT OR IGNORE` → `ON CONFLICT(fact_id, session_id) DO NOTHING`** — `OR IGNORE` is too broad; it silently swallows CHECK/NOT NULL violations, not just duplicate-key retries. The targeted `ON CONFLICT` ensures only UNIQUE constraint dupes are suppressed. This is a real correctness fix — the original was defense-in-depth fragile.
+
+2. **`ClockProvider` extracted to `src/activities/clock.ts`** — Neutral module breaks the write-path → read-path import coupling. Both `recall.ts` and `imprint.ts` import from `clock.ts`. `recall.ts` re-exports for backward compat. Pattern: shared seam types live in neutral modules, not in the first activity that happened to define them.
+
+3. **`epochMsToSqliteDateTime()` extracted to `src/storage/datetime.ts`** — Self-documents the SQLite TEXT-affinity contract. Both writer impls import from one source.
+
+4. **`InMemoryFactWriter.search()` validation aligned** — Investigation: the existing `InMemoryFactStore` is test-file-local and not importable. Keeping inline `search()` is lower duplication than creating a new shared class. Added `minTrust` finite/[0,1] validation and fixed empty-page `Math.min/max` sentinel issue.
+
+5. **`FactId` non-empty guard** — After `idProvider.next()`, empty/blank IDs now throw `InvalidImprintError('factId', ...)`. No UUID-format check (IM-2 uses `'test-uuid-001'` intentionally).
+
+6. **`content.trim()` single computation** — Trimmed once, used in both validation and write payload.
+
+7. **Merged duplicate `import type` in deps.ts** — Two identical import sources collapsed to one.
+
+8. **IM-10 + `-Infinity`** — Importance validation test now matches trust validation parity (5 cases each).
+
+**Rejected:** F9 (FactId branding propagation to read seams — out of scope, candidate for `integrate`). F10 (runtime null guard on content — inconsistent with existing activity patterns that trust TS structural types).
+
+**Test results:** 258/258 green (208 pre-existing + 50 imprint). `tsc --build` clean.
+
+**Decision drop:** `.squad/decisions/inbox/crispin-imprint-review-fixes.md`

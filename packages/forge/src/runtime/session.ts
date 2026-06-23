@@ -8,7 +8,7 @@
  * @module
  */
 
-import type { SessionEvent } from "@github/copilot-sdk";
+import type { PermissionHandler, SessionEvent } from "@github/copilot-sdk";
 import type { CairnBridgeEvent, SignalSampleSink } from "@akubly/types";
 
 import { bridgeEvent } from "../bridge/index.js";
@@ -36,6 +36,35 @@ export interface ForgeSessionConfig {
   skillId?: string;
   /** Sink that receives flushed SignalSamples at session disconnect. */
   telemetrySink?: SignalSampleSink;
+  /** SDK permission handler. Runner composition roots decide policy defaults. */
+  onPermissionRequest?: PermissionHandler;
+  /** Optional observer for disconnect/flush ordering verification. */
+  onTelemetryTiming?: (event: TelemetryTimingEvent) => void;
+}
+
+export type TelemetryTimingPhase =
+  // Event-stream observation: recorded when SDK events bridge to Cairn events.
+  | "session_end_observed"
+  // Disconnect lifecycle observations: recorded inside ForgeSession.disconnect().
+  | "sdk_disconnect_start"
+  | "sdk_disconnect_end"
+  | "sdk_disconnect_error"
+  | "telemetry_flush_start"
+  | "telemetry_flush_end"
+  | "telemetry_flush_error";
+
+const DEFAULT_TERMINAL_EVENT_DRAIN_MS = 25;
+let terminalEventDrainMsOverrideForTests: number | undefined;
+
+/** @internal Test-only seam; not re-exported from the public runtime barrel. */
+export function __setTerminalEventDrainMsForTesting(value: number | undefined): void {
+  terminalEventDrainMsOverrideForTests = value;
+}
+
+export interface TelemetryTimingEvent {
+  sessionId: string;
+  phase: TelemetryTimingPhase;
+  timestamp: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,17 +108,31 @@ export class ForgeSession {
   private _onDisconnect?: () => void;
   private _collectors: TelemetryCollector[] | null = null;
   private _telemetrySink: SignalSampleSink | null = null;
+  private _telemetryTimings: TelemetryTimingEvent[] = [];
+  private _onTelemetryTiming?: (event: TelemetryTimingEvent) => void;
+  private _disconnectPromise: Promise<void> | null = null;
+  private _telemetryFlushed = false;
+  private readonly terminalEventDrainMs: number;
+  private _terminalEventObserved = false;
+  /** Pending terminal-event drain waiters resolved when session.shutdown bridges to session_end. */
+  private _terminalEventResolvers = new Set<() => void>();
 
   constructor(
     sdkSession: SDKSession,
     hookComposer: HookComposer,
     config: ForgeSessionConfig,
-    options?: { onDisconnect?: () => void; preSessionEvents?: CairnBridgeEvent[] },
+    options?: {
+      onDisconnect?: () => void;
+      preSessionEvents?: CairnBridgeEvent[];
+    },
   ) {
     this.sdkSession = sdkSession;
     this.sessionId = sdkSession.sessionId;
     this.hookComposer = hookComposer;
     this._onDisconnect = options?.onDisconnect;
+    this._onTelemetryTiming = config.onTelemetryTiming;
+    this.terminalEventDrainMs =
+      terminalEventDrainMsOverrideForTests ?? DEFAULT_TERMINAL_EVENT_DRAIN_MS;
 
     // Wire telemetry collectors if a sink was provided.
     if (config.telemetrySink) {
@@ -106,6 +149,12 @@ export class ForgeSession {
       this.bridgeEvents.push(...options.preSessionEvents);
       // Replay through collectors so early events (e.g. session_end emitted
       // before on() was wired) are not lost from the telemetry pipeline.
+      for (const event of options.preSessionEvents) {
+        if (event.eventType === "session_end") {
+          this.recordTelemetryTiming("session_end_observed");
+          this.signalTerminalEventObserved();
+        }
+      }
       if (this._collectors) {
         for (const event of options.preSessionEvents) {
           for (const c of this._collectors) {
@@ -126,6 +175,10 @@ export class ForgeSession {
         const bridged = bridgeEvent(this.sessionId, event);
         if (bridged) {
           this.bridgeEvents.push(bridged);
+          if (bridged.eventType === "session_end") {
+            this.recordTelemetryTiming("session_end_observed");
+            this.signalTerminalEventObserved();
+          }
           if (this._collectors) {
             for (const c of this._collectors) {
               try {
@@ -168,32 +221,38 @@ export class ForgeSession {
     return this.sdkSession.sendAndWait({ prompt }, timeoutMs);
   }
 
-  /** Clean disconnect: unsubscribe bridge, then SDK disconnect. Idempotent. */
+  /** Clean disconnect: SDK disconnect, bounded terminal-event drain, then telemetry flush. Idempotent. */
   async disconnect(): Promise<void> {
-    if (this._disconnected) return;
-    this._disconnected = true;
-    for (const unsub of this.eventSubscriptions) {
-      try {
-        unsub();
-      } catch (err) {
-        console.warn('[ForgeSession] unsubscribe error', err);
-      }
-    }
-    this.eventSubscriptions = [];
+    if (this._disconnectPromise) return this._disconnectPromise;
+    this._disconnectPromise = this.disconnectOnce();
+    return this._disconnectPromise;
+  }
 
-    // Flush telemetry collectors into sink before closing the session.
-    //
-    // ASSUMPTION: terminal events (session.shutdown → session_end) arrive via
-    // the SDK event stream BEFORE disconnect() is called, so collectors observe
-    // them prior to flush. This is true for the current CLI-driven flow where
-    // the session runner calls disconnect() only after the event loop drains.
-    //
-    // TODO(forge-telemetry): verify against live SDK event ordering when a
-    // production session runner adopts ForgeClient; if session_end is emitted
-    // DURING sdkSession.disconnect(), outcome.succeeded would be a false-negative
-    // and flush must move after terminal events.
-    if (this._collectors && this._telemetrySink) {
+  private async disconnectOnce(): Promise<void> {
+    if (this._disconnected) return;
+    let disconnectError: Error | null = null;
+
+    // Keep the SDK event subscription live while disconnecting. This preserves
+    // terminal events if an SDK runner emits them during sdkSession.disconnect().
+    this.recordTelemetryTiming("sdk_disconnect_start");
+    try {
+      await this.sdkSession.disconnect();
+    } catch (err) {
+      disconnectError = err instanceof Error ? err : new Error(String(err));
+      this.recordTelemetryTiming("sdk_disconnect_error");
+    } finally {
+      this.recordTelemetryTiming("sdk_disconnect_end");
+    }
+
+    await this.drainTerminalEvents();
+
+    // Flush after SDK disconnect so terminal events emitted during disconnect
+    // are observed before outcome samples are computed.
+    if (!this._telemetryFlushed && this._collectors && this._telemetrySink) {
+      // Collectors are non-replayable, so retrying disconnect must not flush them twice.
+      this._telemetryFlushed = true;
       try {
+        this.recordTelemetryTiming("telemetry_flush_start");
         for (const c of this._collectors) {
           try {
             const sample = c.flush(this.sessionId);
@@ -203,12 +262,31 @@ export class ForgeSession {
           }
         }
         await this._telemetrySink.flush?.();
+        this.recordTelemetryTiming("telemetry_flush_end");
       } catch (err) {
+        this.recordTelemetryTiming("telemetry_flush_error");
         console.warn('[ForgeSession] sink flush error', err);
       }
     }
 
-    await this.sdkSession.disconnect();
+    if (disconnectError) {
+      this._disconnectPromise = null;
+      throw disconnectError;
+    }
+
+    for (const unsub of this.eventSubscriptions) {
+      try {
+        unsub();
+      } catch (err) {
+        console.warn('[ForgeSession] unsubscribe error', err);
+      }
+    }
+    this.eventSubscriptions = [];
+
+    // Mark disconnected only after SDK disconnect succeeds. A failed SDK
+    // disconnect leaves the session tracked so callers can retry or stop() can
+    // perform best-effort cleanup without losing ownership of the SDK resource.
+    this._disconnected = true;
     this._onDisconnect?.();
   }
 
@@ -220,6 +298,11 @@ export class ForgeSession {
   /** Return a snapshot copy of all bridge events captured so far. */
   getBridgeEvents(): readonly CairnBridgeEvent[] {
     return [...this.bridgeEvents];
+  }
+
+  /** Return disconnect/flush ordering observations captured for this session. */
+  getTelemetryTimings(): readonly TelemetryTimingEvent[] {
+    return [...this._telemetryTimings];
   }
 
   /** Return a snapshot copy of all model change records. */
@@ -240,5 +323,65 @@ export class ForgeSession {
   /** Remove an observer from the live HookComposer. */
   removeObserver(observer: HookObserver): void {
     this.hookComposer.remove(observer);
+  }
+
+  private async drainTerminalEvents(): Promise<void> {
+    if (this.terminalEventDrainMs <= 0) return;
+    if (this._terminalEventObserved) return;
+
+    const terminalEvent = this.waitForTerminalEvent();
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        terminalEvent.promise,
+        new Promise<void>((resolve) => {
+          timeout = setTimeout(resolve, this.terminalEventDrainMs);
+        }),
+      ]);
+    } finally {
+      terminalEvent.cancel();
+      if (timeout) clearTimeout(timeout);
+    }
+  }
+
+  private waitForTerminalEvent(): { promise: Promise<void>; cancel: () => void } {
+    if (this._terminalEventObserved) {
+      return { promise: Promise.resolve(), cancel: () => undefined };
+    }
+
+    let resolvePromise: () => void = () => undefined;
+    const promise = new Promise<void>((resolve) => {
+      resolvePromise = resolve;
+      this._terminalEventResolvers.add(resolvePromise);
+    });
+    return {
+      promise,
+      cancel: () => {
+        this._terminalEventResolvers.delete(resolvePromise);
+        resolvePromise();
+      },
+    };
+  }
+
+  private signalTerminalEventObserved(): void {
+    this._terminalEventObserved = true;
+    for (const resolve of this._terminalEventResolvers) {
+      resolve();
+    }
+    this._terminalEventResolvers.clear();
+  }
+
+  private recordTelemetryTiming(phase: TelemetryTimingPhase): void {
+    const event: TelemetryTimingEvent = {
+      sessionId: this.sessionId,
+      phase,
+      timestamp: new Date().toISOString(),
+    };
+    this._telemetryTimings.push(event);
+    try {
+      this._onTelemetryTiming?.(event);
+    } catch (err) {
+      console.warn('[ForgeSession] telemetry timing observer error', err);
+    }
   }
 }
