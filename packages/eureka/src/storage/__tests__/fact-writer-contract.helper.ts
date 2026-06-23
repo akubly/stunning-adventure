@@ -326,7 +326,7 @@ export function runFactWriterContract(
     // -----------------------------------------------------------------------
     // IM-10 — Out-of-range importance throws InvalidImprintError
     //
-    // Parameterized: 2.0, -0.5, NaN, Infinity
+    // Parameterized: 2.0, -0.5, NaN, Infinity, -Infinity
     // Each must throw before any write. Validated via factStore.search.
     // -----------------------------------------------------------------------
 
