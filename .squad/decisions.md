@@ -333,3 +333,119 @@ Not pushed — Roger has follow-up fixes to land on top; coordinator will push a
 
 **Review:** 3 local persona-review cycles (11 → 5 advisory → 0); Copilot cloud review clean (only flagged a decisions-ledger archive that was removed from the PR).
 
+---
+
+
+
+
+# Forge Runner — Slice 2 Decision (A+D)
+
+**Date:** 2026-06-22  
+**By:** Graham (Lead), Aaron approved; implemented by Alexander (SDK/Runtime, 2A) and Roger (Platform, 2D)  
+**Status:** APPROVED and SHIPPED
+
+---
+
+## Approved Scope: Slice 2 = **(A) DBOM in runner** + **(D) SQLITE_BUSY policy**
+
+Graham's proposal recommended A+D as the next increment. Aaron approved on 2026-06-22.
+
+---
+
+## Slice 2A — DBOM Generation in Runner
+
+**Implementer:** Alexander (SDK/Runtime)  
+**Status:** ✅ Shipped (tests green)
+
+### What Was Wired
+
+**File:** `packages/skillsmith-runtime/src/forgeSessionRunner.ts`
+
+After `buildProfiles(db)` and before `closeDb()`, the runner now executes:
+
+```
+dbomArtifact = generateDBOM(session.sessionId, [...session.getBridgeEvents()])
+if (dbomArtifact.stats.totalDecisions > 0):
+    upsertDBOM(db, dbomArtifact)
+    dbomRootHash = dbomArtifact.rootHash
+else:
+    dbomRootHash = null
+```
+
+- `generateDBOM` imported from `@akubly/forge` (already in deps).
+- `upsertDBOM` and `loadDBOMArtifact` imported from `@akubly/cairn`.
+- `getBridgeEvents()` is the existing snapshot accessor on `ForgeSession`.
+
+### Result Field
+
+`dbomRootHash: string | null` added to `RunForgeInstrumentedSessionResult`:
+- Non-null (64-char SHA-256 hex) when ≥1 certification-tier event captured.
+- Null when session produced only internal-tier events or no DBOM written.
+
+### Tests
+
+`packages/skillsmith-runtime/src/__tests__/forgeSessionRunner.test.ts`:
+1. **`persists a DBOM artifact and surfaces dbomRootHash when certification events exist`** — emits `permission.requested` + `permission.completed` SDK events, asserts `result.dbomRootHash` matches SHA-256 pattern and `loadDBOMArtifact(db, sessionId)` returns artifact.
+2. **`dbomRootHash is null and run succeeds when no certification events exist`** — emits only internal-tier events, asserts `result.dbomRootHash === null` and normal signal samples written.
+
+Result: 2 new tests passing; 68 skillsmith-runtime + 694 forge tests pass. TypeScript compiles cleanly.
+
+---
+
+## Slice 2D — SQLITE_BUSY Policy in Cairn
+
+**Implementer:** Roger (Platform)  
+**Status:** ✅ Shipped (5 new tests pass)
+
+### What Was Changed
+
+**File:** `packages/cairn/src/db/index.ts` — `getDb()` function
+
+Added `db.pragma('busy_timeout = 5000')` after WAL, before `foreign_keys`:
+
+```typescript
+db = new Database(resolvedPath);
+db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 5000');   // ← Slice 2D addition
+db.pragma('foreign_keys = ON');
+```
+
+WAL was already set. Not modified.
+
+### Concurrent-Access Contract
+
+Every connection opened through `getDb()` (sole Cairn DB-open path) inherits:
+
+| Pragma | Value | Effect |
+|--------|-------|--------|
+| `journal_mode` | `WAL` | Multiple readers never block writers; only one writer holds WAL write lock at a time. |
+| `busy_timeout` | `5000` (ms) | When a second writer contends for WAL write lock, SQLite retries internally for up to 5 seconds before throwing `SQLITE_BUSY`. |
+| `foreign_keys` | `ON` | Referential integrity enforced. |
+
+**Implication:** `forge-run-session` (writer) + interactive Copilot session (reader/occasional writer) sharing `knowledge.db` resolves write contention within 5 s safety margin. Sustained concurrent write load still possible to hit limit; typical CLI+runner usage is not expected to.
+
+### Test Coverage
+
+`packages/cairn/src/__tests__/busyTimeout.test.ts` (5 tests):
+- `getDb(filePath)` sets `busy_timeout = 5000`
+- `getDb(':memory:')` sets `busy_timeout = 5000`
+- WAL mode set (no regression)
+- Concurrent writer succeeds when locker releases within 300 ms (worker-thread integration)
+- Concurrent writer with `busy_timeout = 0` fails immediately with `SQLITE_BUSY` (negative control)
+
+### Docs Updated
+
+`docs/forge-dogfooding-guide.md` → "Known Limitations":
+- Removed SQLITE_BUSY deferral note.
+- Added policy description: WAL + 5 s busy_timeout, what it guarantees, caveat re: sustained load.
+
+---
+
+## Acceptance Criteria (Both Slices)
+
+- ✅ `forge-run-session` run produces DBOM artifact retrievable via `loadDBOMArtifact(db, sessionId)`.
+- ✅ `RunForgeInstrumentedSessionResult.dbomRootHash` non-null when certification-tier events exist.
+- ✅ Concurrent `forge-run-session` + interactive session vs. same `knowledge.db` does not produce `SQLITE_BUSY` within 5 s busy_timeout.
+- ✅ `npm test` passes (full suite).
+- ✅ No Phase 4.6/5 cloud scope pulled in.
+
