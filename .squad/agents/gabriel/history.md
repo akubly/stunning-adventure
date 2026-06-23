@@ -207,4 +207,4 @@ git merge origin/main on main let git's merge=union driver auto-resolve .squad/d
 
 **Why no buffering matters for replay:** If the scheduler buffered proposals and drained them on a timer or depth threshold, the drain order could differ between original run and replay (different wall-clock timing, different OS scheduling). By dispatching synchronously on arrival with no side-effects, FifoScheduler makes the scheduler tier a no-op for replay correctness purposes — the WAL's scheduler_dispatched rows are already the complete dispatch log (§5.A.6).
 
-**Export discipline:** Exported only from ifo-scheduler.ts directly, not injected into index.ts (Graham owns the barrel; T2/T4 run in parallel). Consumers import via '../skeleton/fifo-scheduler.js'.
+**Export discipline:** Exported only from fifo-scheduler.ts directly, not injected into index.ts (Graham owns the barrel; T2/T4 run in parallel). Consumers import via '../skeleton/fifo-scheduler.js'.

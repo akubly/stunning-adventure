@@ -167,7 +167,7 @@ Ready to merge.
 ### A2 byte-equivalence oracle (§11.6 + §11.8)
 
 stripWallClockDerived() + 
-ormalizeTimestamps() + ssertA2ByteEquivalent() are exported from the acceptance test file. The conformance runner (ci:conformance replay) should import from there rather than re-derive.
+normalizeTimestamps() + assertA2ByteEquivalent() are exported from the acceptance test file. The conformance runner (ci:conformance replay) should import from there rather than re-derive.
 
 ### Spec ambiguities flagged for impl agents
 

@@ -33,7 +33,7 @@ Two infrastructure changes approved in PRs #50 and #52:
 2. **PR #52 — Doc-hygiene back-reference sweep (Issue #46, Gabriel):** Gitignored-path back-references removed from committed prose across decisions.md, decisions-archive.md, and agent history files. Forward writer-targets (charters, templates, skills) preserved. Classification heuristic documented for future hygiene sweeps.
 
 **Action for you:** No immediate action required. Lint workspace changes take effect after merge and 
-pm install restart. Doc-hygiene scope established for future improvements.
+npm install restart. Doc-hygiene scope established for future improvements.
 
 ---
 
