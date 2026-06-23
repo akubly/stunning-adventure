@@ -162,8 +162,16 @@ class LedgerImpl implements BootstrappableLedger {
    * Subscriber notifications follow the same isolation contract as append():
    * a throwing subscriber must never affect commit durability or skip peers.
    *
-   * INVARIANT: must be called exactly once, before any append().
-   * Throws if called a second time or after append() has been called.
+   * INVARIANT: must be called exactly once, before any append(), against an
+   * empty ledger (offset-0 contract), with at least one row.
+   * Throws if called a second time, after append(), with empty input, or
+   * against a non-empty WAL.
+   *
+   * Retry-safety: hasBootstrapped is only set to true after the FIRST row is
+   * durably committed.  A failure before any row is written allows a full retry.
+   * Once any row is durable, further bootstrap() calls are locked out because
+   * they would produce non-zero starting offsets and violate the offset-0
+   * contract.
    */
   async bootstrap(rows: PrimitiveInput[]): Promise<number[]> {
     if (this.hasBootstrapped) {
@@ -176,7 +184,27 @@ class LedgerImpl implements BootstrappableLedger {
         'LedgerImpl.bootstrap() called after append() — bootstrap must precede all appends',
       );
     }
-    this.hasBootstrapped = true;
+    // Empty bootstrap is always a caller bug: bootstrap rows are the session's
+    // offset-0 batch. An empty call produces no rows, cannot satisfy the
+    // offset-0 contract, and leaves hasBootstrapped=false — a confusing no-op
+    // that would allow a second call with unpredictable offsets.
+    if (rows.length === 0) {
+      throw new Error(
+        'LedgerImpl.bootstrap() called with an empty row array — at least one bootstrap row is required',
+      );
+    }
+
+    // Verify the WAL is empty so offsets are guaranteed to start at 0.
+    // "Session reopen" (bootstrapping against an existing WAL) is a Phase-1
+    // feature; we refuse here to prevent silent offset corruption rather than
+    // building reopen support now.
+    const probe = await this.walBackend.readRows({ range: [0, 0] });
+    if (probe.length > 0) {
+      throw new Error(
+        'LedgerImpl.bootstrap() called against a non-empty WAL — bootstrap requires an ' +
+        'empty ledger to guarantee offset-0. Session-reopen support is deferred to Phase 1.',
+      );
+    }
 
     const offsets: number[] = [];
 
@@ -185,6 +213,13 @@ class LedgerImpl implements BootstrappableLedger {
         verdict: 'COMMIT' as const,
         hookId: null,
       });
+      // Flip the guard only after the FIRST successful commit.  If the very
+      // first commitRow throws, hasBootstrapped stays false and the caller may
+      // legitimately retry bootstrap() from scratch (no rows are durable yet).
+      // After the first commit succeeds, any subsequent commitRow failure leaves
+      // hasBootstrapped=true, correctly locking out a retry that would produce
+      // non-zero starting offsets.
+      this.hasBootstrapped = true;
       offsets.push(offset);
 
       if (this.subscribers.length > 0) {
