@@ -45,7 +45,7 @@ import {
 // SqliteFactWriter harness factory
 // ---------------------------------------------------------------------------
 //
-// SqliteFactWriter writes to the `facts` table via `INSERT OR IGNORE`.
+// SqliteFactWriter writes to the `facts` table via `ON CONFLICT(fact_id, session_id) DO NOTHING`.
 // SqliteFactStore reads from the same table via FTS5 search.
 // Both share the same `db` handle, guaranteeing they see the same data.
 //

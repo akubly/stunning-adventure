@@ -125,7 +125,7 @@ const FIXED_CLOCK: ClockProvider = { now: () => 1_000_000 };
 /**
  * Run the full FactWriter contract suite against a given implementation factory.
  *
- * Each call adds 24 tests (IM-1..IM-14 with IM-9×5, IM-10×4, IM-11×4 via it.each).
+ * Each call adds 25 tests (IM-1..IM-14 with IM-9×5, IM-10×5, IM-11×4 via it.each).
  *
  * @param implName    Human-readable label shown in test output (e.g. 'SqliteFactWriter').
  * @param makeHarness Factory called once per test (via beforeEach) to produce a fresh,
