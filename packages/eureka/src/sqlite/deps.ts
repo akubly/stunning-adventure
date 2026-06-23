@@ -15,8 +15,11 @@
 
 import type Database from 'better-sqlite3';
 import type { RecallDeps, ApplyFeedbackDeps } from '../activities/recall.js';
+import type { ImprintDeps, FactId } from '../activities/imprint.js';
 import { SqliteFactStore } from '../storage/fact-store-sqlite.js';
 import { SqliteTrustUpdater } from '../storage/trust-updater-sqlite.js';
+import { SqliteFactWriter } from '../storage/fact-writer-sqlite.js';
+import { randomUUID } from 'node:crypto';
 
 /** System wall-clock — delegates to Date.now() (milliseconds). */
 const systemClock = { now: (): number => Date.now() };
@@ -59,5 +62,21 @@ export function createSqliteRecallDeps(
 export function createSqliteFeedbackDeps(db: Database.Database): ApplyFeedbackDeps {
   return {
     trustUpdater: new SqliteTrustUpdater(db),
+  };
+}
+
+/** Production IdProvider — crypto.randomUUID() branded as FactId. */
+const cryptoIdProvider = { next: (): FactId => randomUUID() as FactId };
+
+/**
+ * Assemble production SQLite `ImprintDeps`.
+ *
+ * @param db  An already-opened, migration-applied Database handle from openDatabase().
+ */
+export function createSqliteImprintDeps(db: Database.Database): ImprintDeps {
+  return {
+    factWriter: new SqliteFactWriter(db),
+    clock: systemClock,
+    idProvider: cryptoIdProvider,
   };
 }

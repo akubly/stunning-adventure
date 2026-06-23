@@ -15,12 +15,14 @@ export {
   applyFeedback,
   applyFeedbackById,
 } from './activities/recall.js';
+export { imprint } from './activities/imprint.js';
 export {
   FactNotFoundError,
   InvalidFeedbackOptionsError,
   InvalidTrustValueError,
   FactReaderContractError,
   UnhandledFeedbackEventError,
+  InvalidImprintError,
 } from './activities/errors.js';
 export type {
   RecallOptions,
@@ -38,3 +40,11 @@ export type {
   ApplyFeedbackByIdOptions,
   ApplyFeedbackByIdDeps,
 } from './activities/recall.js';
+export type {
+  ImprintOptions,
+  ImprintDeps,
+  FactWriter,
+  IdProvider,
+  FactId,
+  AttentionTier,
+} from './activities/imprint.js';

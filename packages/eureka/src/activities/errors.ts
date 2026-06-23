@@ -147,3 +147,31 @@ export class UnhandledFeedbackEventError extends TypeError {
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+
+// ---------------------------------------------------------------------------
+// InvalidImprintError
+// ---------------------------------------------------------------------------
+
+/**
+ * Thrown when imprint input validation fails (empty content, out-of-range
+ * trust/importance, invalid attentionTier).
+ *
+ * Follows the M7-A error pattern: code discriminator + field + value.
+ * Does NOT extend RangeError/TypeError — these are domain validation errors,
+ * not JS-type errors. Extends base Error (same as InvalidFeedbackOptionsError).
+ */
+export class InvalidImprintError extends Error {
+  readonly code = 'INVALID_IMPRINT' as const;
+  /** Name of the failing input field. */
+  readonly field: string;
+  /** The invalid value that was provided. */
+  readonly value: unknown;
+
+  constructor(field: string, value: unknown, message: string) {
+    super(message);
+    this.name = 'InvalidImprintError';
+    this.field = field;
+    this.value = value;
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
