@@ -34,3 +34,16 @@ Two infrastructure changes approved in PRs #50 and #52:
 
 **Action for you:** No immediate action required. Lint workspace changes take effect after merge and 
 pm install restart. Doc-hygiene scope established for future improvements.
+
+## Learnings
+
+- 2026-06-16T22:51:06-07:00 — Forge production-runner gap scoped: `ForgeClient`/`ForgeSession` already bridge SDK events to collectors and `skillsmith-runtime` binds samples to Cairn, but live Copilot CLI sessions still do not instantiate `ForgeClient`; profiles are currently mock-driven or seeded via `forge-seed-profile`.
+
+- 2026-06-16T23:25:32-07:00 — Implemented Forge slice 1: permission seam defaults to SDK approveAll, reusable run-session composition root lives in skillsmith-runtime, runtime-cli is a thin opt-in operator, and telemetry flush now occurs after SDK disconnect to capture terminal events emitted during disconnect.
+
+- 2026-06-18T06:44:55Z — Forge slice 1 implementation verified: graceful shutdown tested with SDK double, session telemetry flush sequenced after disconnect, Cairn DB lifecycle managed with getDb/closeDb patterns. Roger's platform/lifecycle guidance documented in decisions.md. All tests passing (Forge 689, skillsmith-runtime 60, runtime-cli 43). Ready for integration testing phase.
+
+- 2026-06-16T23:41:33-07:00 — Roger confirmed Forge runner shutdown contract: keep SDK subscriptions live through disconnect, flush telemetry after sdkSession.disconnect(), then stop client, then close Cairn DB last; tests now assert sdk_disconnect_end precedes telemetry_flush_start.
+
+- 2026-06-16T22:51:06-07:00 — Persona Cycle 1 follow-up: ForgeClient no longer owns approveAll; runner composition root owns dogfood approveAll, ForgeSession drains late terminal events after disconnect before telemetry flush, and injected SDK clients are not stopped unless explicitly requested.
+- 2026-06-21T22:25:59-07:00 — Forge disconnect drain hardened from a fixed post-disconnect sleep into an event-driven wait on bridged `session.shutdown` / `session_end`, with the timeout kept as an internal ceiling and test seam; runner results now surface disconnect cleanup status without changing success exit-code behavior.

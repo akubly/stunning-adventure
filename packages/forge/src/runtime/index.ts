@@ -8,4 +8,10 @@
  */
 
 export { ForgeClient, type ForgeClientOptions, type SDKClient } from "./client.js";
-export { ForgeSession, type ForgeSessionConfig, type SDKSession } from "./session.js";
+export {
+  ForgeSession,
+  type ForgeSessionConfig,
+  type SDKSession,
+  type TelemetryTimingEvent,
+  type TelemetryTimingPhase,
+} from "./session.js";

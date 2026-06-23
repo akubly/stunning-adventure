@@ -7,7 +7,8 @@
   "bin": {
     "forge-prescribe": "dist/cli.js",
     "forge-metrics": "dist/forge-metrics.js",
-    "forge-seed-profile": "dist/forge-seed-profile.js"
+    "forge-seed-profile": "dist/forge-seed-profile.js",
+    "forge-run-session": "dist/forge-run-session.js"
   },
   "files": [
     "dist/"
