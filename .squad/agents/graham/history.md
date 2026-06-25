@@ -103,6 +103,45 @@ history.md requires deleting committed entries, which is permanently prohibited.
 ✓ Branch: squad/crucible-s2, commit 49a0371
 📌 2026-06-13: **Crucible S2 persona-review-cycle COMPLETE** — 2-cycle Code Panel review completed on squad/crucible-s2. Cycle 1: Architect findings (design consistency, API contracts) reviewed and triaged by Aaron. Cycle 2: Design decisions re-verified correct across all fixes. F3 envelope versioning deferred to ship-gate (GitHub issue #76). S2 architecture APPROVED and ready to merge. — Scribe (session 2026-06-14T06:51:39Z)
 
+## Learnings — 2026-06-16: Crucible S3 Next-Slice Scoping
+
+### Current Implementation State (192 tests green, crucible-core)
+
+| CTD Lane | Status | Key Files |
+|----------|--------|-----------|
+| §3 WAL Substrate (L1) | ✅ DONE | wal-backend-fs.ts, wal-backend-in-memory.ts, wal/cas-fs.ts, wal/cbor.ts, wal/codec.ts, wal/hash-chain.ts, wal/seal-and-split.ts, wal/materialize.ts, wal/types.ts, wal/flags.ts, wal/hash.ts |
+| §4 Hook Bus | ✅ DONE | hook-bus.ts, hook-bus-impl.ts (pre-commit verdicts COMMIT/OBSERVE/PAUSE/VETO, predicate dispatch) |
+| §5 Router (L4) | ❌ NOT STARTED | No router/scheduler code exists in src/ |
+| §7 Generators (L3) | ❌ NOT STARTED | No generator/proposal code |
+| §8 Applier / DecisionGate | ❌ NOT STARTED | No applier code |
+| §9 Aperture | 🟡 PARTIAL | projectors/aperture-projector.ts, notification-policy.ts (L2 projection done; no StructuralApprovalQueue, no Router integration) |
+| §10 Session / Branching | 🟡 PARTIAL | session.ts, session-manager.ts, fork-lineage.ts, sqlite-db.ts, in-memory-db.ts, schema.ts (createSession/fork done; no bootstrap protocol, no COW snapshots) |
+| §11 Hermetic Replay | ❌ NOT STARTED | WAL has replayFromSegments internally but no hermetic replay engine, no A2 conformance |
+| §12 SDK Integration | ❌ NOT STARTED | No SdkProvider, no BootstrapPayload runtime |
+| §13 CLI Shell | ❌ NOT STARTED | crucible-cli/src/index.ts is a bare re-export; no status/replay verbs |
+| Phase 0.5 Walking Skeleton | ❌ NOT STARTED | No end-to-end vertical: L0→L1→replay chain, FifoScheduler, crucible status/replay |
+
+### Key Observation
+CTD design docs (§1–§19) are ALL written. Implementation has WAL+HookBus+Aperture(L2)+Session(basic). The walking skeleton (Phase 0.5) is the gate for Phase 1 fan-out. S1/S2 hardened the substrate — the skeleton can now proceed safely.
+
+### Slice Options Identified (S3)
+- Option A: Walking Skeleton (Phase 0.5) — vertical through L0→L1→replay
+- Option B: Router/FifoScheduler stub — L3.5 tier boundary
+- Option C: SDK Provider (§12) + bootstrap — L0 boundary
+- Option D: Aperture features (#65/#66) — unreadCount ack, getPriority
+
+Recommended: Option A (Walking Skeleton) — it's the defined gate. See decisions/inbox/graham-crucible-next-slice.md.
+
+## 2026-06-16: S3 Walking Skeleton — Spawn Manifest Produced
+
+Produced the S3 spawn manifest (6 tasks, 5 agents). Key architectural decisions:
+- Single shared branch squad/crucible-s3-skeleton (no worktrees, shared checkout)
+- File-collision risk mitigated: tasks touch non-overlapping paths
+- Laura starts TDD in parallel (test files don't collide with impl files)
+- Graham owns interfaces/types task (T1) that gates all implementation tasks
+- Two parallel tracks after T1: Roger (T2 bootstrap+WAL) and Gabriel (T3 scheduler) + Alexander (T4 SDK provider)
+- Valanice (T5 CLI verbs) needs T2 to read from WAL
+- Laura (T6 acceptance) needs T2+T3+T4+T5 but writes RED tests from spec immediately
 ## Learnings — 2026-06-16: Cairn/Forge Near-Term Roadmap Read
 
 Cairn is currently the durable local nervous system: SQLite event/profile/hint/DBOM storage, Curator, MCP tools, skill parsing/linting/testing, and GitHub artifact discovery are shipped in `@akubly/cairn` 0.3.0. The package CLI remains a placeholder, while the MCP server is the real interface.
