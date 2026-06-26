@@ -78,9 +78,12 @@ export interface RunForgeInstrumentedSessionResult {
    */
   dbomRootHash: string | null;
   /**
-   * Non-null when DBOM generation or persistence failed; the run result is still
-   * valid (best-effort provenance). Null when DBOM was generated and `dbomRootHash`
-   * was successfully assigned (whether or not any certification events existed).
+   * Non-null when DBOM generation OR persistence (`upsertDBOM`) failed; the run
+   * result is still valid (best-effort provenance).
+   * Null on the full success path — generation succeeded and, when certification
+   * events existed, persistence also succeeded.
+   * Note: on a persistence failure `dbomRootHash` is still set (it is computed
+   * before the write), so a non-null `dbomRootHash` does NOT imply this is null.
    */
   dbomPersistError: string | null;
 }
