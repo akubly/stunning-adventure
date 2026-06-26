@@ -137,6 +137,16 @@ Ready to merge.
 ✓ Branch: squad/crucible-s2, commit 49a0371
 📌 2026-06-13: **Crucible S2 persona-review-cycle COMPLETE** — 2-cycle Code Panel review completed on squad/crucible-s2. Compliance findings (contract-suite, metadata durability) reviewed and fixed. All 186 unit tests + contract suite validation passing. No regressions. Metadata round-trip durability (CL-11/CL-12 shared suite + CL-13 FS reopen + META-1/META-2) verified correct. READY TO MERGE. — Scribe (session 2026-06-14T06:51:39Z)
 
+## 2026-06-23T00:15:09Z — Forge Slice 2 Completion Notification
+
+**Context:** Forge production-runner integration Slice 2 completed (2A: DBOM in runner; 2D: SQLITE_BUSY policy).
+
+**For Laura's concurrent-writer integration test:**
+- Alexander (Slice 2A): DBOM generation + persistence in forgeSessionRunner now complete. `dbomRootHash: string | null` added to `RunForgeInstrumentedSessionResult`. Can use as pipeline completion signal.
+- Roger (Slice 2D): `PRAGMA busy_timeout = 5000` now set in Cairn's `getDb()`. Concurrent `forge-run-session` + interactive session on same `knowledge.db` will not throw `SQLITE_BUSY` within 5 s margin.
+- Full pipeline (2A + 2D) safe for real concurrent-access testing. New Cairn tests in `busyTimeout.test.ts` (5 tests) already passing.
+
+**Handoff:** The concurrent-writer integration test (`packages/cairn/src/__tests__/busyTimeout.test.ts`) is ready. If extending to multi-session batch runner (future candidate C), both DBOM and busy_timeout policies are now in place.
 
 ## 2026-06-16: Crucible S3 Phase 0.5 Walking Skeleton — T6-RED Tests
 

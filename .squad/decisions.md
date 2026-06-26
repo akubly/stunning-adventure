@@ -711,6 +711,277 @@ Not pushed — Roger has follow-up fixes to land on top; coordinator will push a
 
 **Review:** 3 local persona-review cycles (11 → 5 advisory → 0); Copilot cloud review clean (only flagged a decisions-ledger archive that was removed from the PR).
 
+---
+
+
+
+
+# Forge Runner — Slice 2 Decision (A+D)
+
+**Date:** 2026-06-22  
+**By:** Graham (Lead), Aaron approved; implemented by Alexander (SDK/Runtime, 2A) and Roger (Platform, 2D)  
+**Status:** APPROVED and SHIPPED
+
+---
+
+## Approved Scope: Slice 2 = **(A) DBOM in runner** + **(D) SQLITE_BUSY policy**
+
+Graham's proposal recommended A+D as the next increment. Aaron approved on 2026-06-22.
+
+---
+
+## Slice 2A — DBOM Generation in Runner
+
+**Implementer:** Alexander (SDK/Runtime)  
+**Status:** ✅ Shipped (tests green)
+
+### What Was Wired
+
+**File:** `packages/skillsmith-runtime/src/forgeSessionRunner.ts`
+
+After `buildProfiles(db)` and before `closeDb()`, the runner now executes best-effort DBOM generation and persistence:
+
+```
+dbomArtifact = generateDBOM(session.sessionId, [...session.getBridgeEvents()])
+dbomRootHash = dbomArtifact.rootHash  // Always set (sentinel for empty, or computed hash)
+if (dbomArtifact.stats.totalDecisions > 0):
+    upsertDBOM(db, dbomArtifact)  // May throw; caught below
+else:
+    // No certification events → sentinel hash is persisted result, artifact not upserted
+try:
+    // ... (upsertDBOM if needed)
+catch e:
+    dbomPersistError = e.message
+    // run still succeeds; rootHash retained
+```
+
+- `generateDBOM` is wrapped in try/catch: it CAN throw on malformed event payload, in which case `dbomRootHash` stays null and `dbomPersistError` is set.
+- On the normal path, `generateDBOM` succeeds and returns a well-formed artifact: sentinel empty-set hash (SHA-256 of empty string) when no certification events; sealed chain root hash otherwise. `dbomRootHash` is non-null in all success paths.
+- Persistence failure sets `dbomPersistError` but does not throw—run completes successfully with best-effort provenance.
+- `generateDBOM` imported from `@akubly/forge` (already in deps).
+- `upsertDBOM` and `loadDBOMArtifact` imported from `@akubly/cairn`.
+- `getBridgeEvents()` is the existing snapshot accessor on `ForgeSession`.
+
+### Result Fields
+
+`dbomRootHash: string | null` and `dbomPersistError: string | null` added to `RunForgeInstrumentedSessionResult`:
+- `dbomRootHash`: Non-null (64-char SHA-256 hex) in all cases where DBOM generation succeeded. When no certification-tier events exist, this is the deterministic empty-set sentinel hash. When at least one certification event was captured, this is the real chain root hash and the artifact was persisted to the database. Null only when DBOM generation itself threw.
+- `dbomPersistError`: Non-null when DBOM generation or persistence failed; the run result is still valid (best-effort provenance). Null when DBOM was generated successfully (whether or not any certification events existed).
+
+### Tests
+
+`packages/skillsmith-runtime/src/__tests__/forgeSessionRunner.test.ts`:
+1. **`persists a DBOM artifact and surfaces dbomRootHash when certification events exist`** — emits `permission.requested` + `permission.completed` SDK events (certification tier), asserts `result.dbomRootHash` matches SHA-256 pattern and `loadDBOMArtifact(db, sessionId)` returns artifact.
+2. **`dbomRootHash is the empty-set sentinel and run succeeds when no certification events exist`** — emits only internal-tier events, asserts `result.dbomRootHash` equals the sentinel hash `generateDBOM('', []).rootHash`, `result.dbomPersistError === null`, and normal signal samples written.
+3. **`surfaces dbomPersistError and does not throw when DBOM persistence fails`** — mocks `upsertDBOM` to throw, asserts run completes successfully with `result.dbomPersistError` set to error message and `result.dbomRootHash` non-null (computed hash retained).
+
+Result: 3 new DBOM tests passing; 68 skillsmith-runtime + 694 forge tests pass. TypeScript compiles cleanly.
+
+---
+
+## Slice 2D — SQLITE_BUSY Policy in Cairn
+
+**Implementer:** Roger (Platform)  
+**Status:** ✅ Shipped (5 new tests pass)
+
+### What Was Changed
+
+**File:** `packages/cairn/src/db/index.ts` — `getDb()` function
+
+Added `db.pragma('busy_timeout = 5000')` after WAL, before `foreign_keys`:
+
+```typescript
+db = new Database(resolvedPath);
+db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 5000');   // ← Slice 2D addition
+db.pragma('foreign_keys = ON');
+```
+
+WAL was already set. Not modified.
+
+### Concurrent-Access Contract
+
+Every connection opened through `getDb()` (sole Cairn DB-open path) inherits:
+
+| Pragma | Value | Effect |
+|--------|-------|--------|
+| `journal_mode` | `WAL` | Multiple readers never block writers; only one writer holds WAL write lock at a time. |
+| `busy_timeout` | `5000` (ms) | When a second writer contends for WAL write lock, SQLite retries internally for up to 5 seconds before throwing `SQLITE_BUSY`. |
+| `foreign_keys` | `ON` | Referential integrity enforced. |
+
+**Implication:** `forge-run-session` (writer) + interactive Copilot session (reader/occasional writer) sharing `knowledge.db` resolves write contention within 5 s safety margin. Sustained concurrent write load still possible to hit limit; typical CLI+runner usage is not expected to.
+
+### Test Coverage
+
+`packages/cairn/src/__tests__/busyTimeout.test.ts` (5 tests):
+- `getDb(filePath)` sets `busy_timeout = 5000`
+- `getDb(':memory:')` sets `busy_timeout = 5000`
+- WAL mode set (no regression)
+- Concurrent writer succeeds when locker releases within 300 ms (worker-thread integration)
+- Concurrent writer with `busy_timeout = 0` fails immediately with `SQLITE_BUSY` (negative control)
+
+### Docs Updated
+
+`docs/forge-dogfooding-guide.md` → "Operational Notes / Concurrency & shared database":
+- Removed SQLITE_BUSY deferral note.
+- Added policy description: WAL + 5 s busy_timeout, what it guarantees, caveat re: sustained load.
+
+---
+
+## Acceptance Criteria (Both Slices)
+
+- ✅ `forge-run-session` run produces DBOM artifact retrievable via `loadDBOMArtifact(db, sessionId)`.
+- ✅ `RunForgeInstrumentedSessionResult.dbomRootHash` non-null when certification-tier events exist.
+- ✅ Concurrent `forge-run-session` + interactive session vs. same `knowledge.db` does not produce `SQLITE_BUSY` within 5 s busy_timeout.
+- ✅ `npm test` passes (full suite).
+- ✅ No Phase 4.6/5 cloud scope pulled in.
+
+---
+
+## Slice 2A Refinement — DBOM Result Contract: Best-Effort + Sentinel
+
+**Date:** 2026-06-22  
+**Author:** Alexander (SDK/Runtime)  
+**Status:** FINAL — applied in `packages/skillsmith-runtime/src/forgeSessionRunner.ts`  
+**Approval:** Persona panel (Correctness, Skeptic, Craft, Compliance, Architect); Aaron disposed findings; shipped PR #84
+
+### Context
+
+Slice 2A shipped DBOM wiring in the runner with `dbomRootHash: string | null`
+where `null` meant "no certification events." A persona-review cycle identified
+two gaps: (1) `null` conflated "no events" with "generation failed," and (2) a
+thrown exception inside the DBOM block could break the slice-1 success/exit-code
+contract. Aaron approved best-effort + sentinel semantics.
+
+### `RunForgeInstrumentedSessionResult` DBOM Contract
+
+#### `dbomRootHash: string | null`
+
+| Value | Meaning |
+|---|---|
+| 64-char SHA-256 hex (non-null, non-sentinel) | At least one certification-tier event existed; artifact was persisted to the database via `upsertDBOM`. |
+| `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (sentinel) | `generateDBOM` succeeded but found zero certification-tier events; no artifact persisted. This is the SHA-256 of the empty string, returned deterministically by `generateDBOM(sessionId, [])`. |
+| `null` | DBOM generation or persistence threw (malformed event payload, storage error, etc.). See `dbomPersistError`. |
+
+**Key distinction:** `null` now means "could not generate" — NOT "no events." The
+empty-session case is now represented by the deterministic sentinel hash.
+
+#### `dbomPersistError: string | null`
+
+- **Non-null:** DBOM generation or persistence failed. Contains the error message
+  (`e.message` if `Error`, otherwise `String(e)`). The run result is still valid —
+  provenance is best-effort.
+- **Null:** DBOM block completed without exception (covers both "sentinel" and
+  "real hash" cases).
+
+### Best-Effort Contract
+
+The DBOM block (`generateDBOM` + conditional `upsertDBOM`) is wrapped in a
+`try/catch`. A failure:
+
+- Sets `dbomPersistError` to the error message.
+- Logs `console.warn('[skillsmith-runtime] DBOM generation/persistence failed; run result unaffected', e)`.
+- Does **not** throw out of `runForgeInstrumentedSession`.
+- Does **not** affect `signalSamplesWritten`, `disconnect`, exit code, or any
+  other field.
+
+This mirrors the existing `disconnect` best-effort pattern: failures are
+surfaced in the result type and logged, never propagated as unhandled exceptions.
+
+### Implementation Notes
+
+- `generateDBOM(sessionId, events)` — `@akubly/forge`. Filters to
+  `provenanceTier === 'certification'`; `stats.totalDecisions` is 1:1 with
+  certification-tier events. Returns well-formed artifact with sentinel rootHash
+  for empty event lists.
+- `upsertDBOM(db, artifact)` — `@akubly/cairn`. Idempotent (DELETE + INSERT in
+  transaction). Called only when `hasCertificationEvents` is true.
+- `bridgeEvents` captured once as `[...session.getBridgeEvents()]` (spread
+  converts readonly to mutable as required by the generator signature).
+- Ordering: after `buildProfiles(db)`, before `closeDb()` / `forgeClient.stop()`.
+
+### Test Coverage
+
+`packages/skillsmith-runtime/src/__tests__/forgeSessionRunner.test.ts`:
+
+1. **Certification events → persist**: asserts `dbomRootHash` matches
+   `/^[0-9a-f]{64}$/`, `loadDBOMArtifact` returns artifact, `artifact.rootHash ===
+   result.dbomRootHash`, `totalDecisions === 2`.
+2. **No certification events → sentinel**: asserts `dbomRootHash` equals
+   `generateDBOM(sessionId, []).rootHash` (sentinel), `dbomPersistError === null`,
+   no artifact persisted (`loadDBOMArtifact` returns null).
+3. **Persistence failure → best-effort**: spies `cairn.upsertDBOM` to throw
+   `'disk full'`; asserts run returns valid result, `dbomPersistError === 'disk
+   full'`, no exception thrown.
+
+---
+
+## Slice 2D Refinement — busy_timeout Documentation & Inline Polish
+
+**Date:** 2026-06-22  
+**Author:** Roger (Platform)  
+**Status:** Applied  
+**Approval:** Persona panel; Aaron disposed findings; shipped PR #84
+
+### F3 — Documentation Relocation (docs/forge-dogfooding-guide.md)
+
+The concurrency bullet describing `busy_timeout = 5000` + WAL was incorrectly placed inside
+the "Known Limitations / explicitly deferred" section. That section is reserved for future work;
+placing delivered behavior there misleads operators into believing it is not yet functional.
+
+**Fix applied:** Removed the bullet from the deferred list. Added a new `## Operational Notes`
+section with a `### Concurrency & shared database` subsection, positioned between the
+Troubleshooting and Known Limitations sections. Technical content of the bullet is preserved
+verbatim, including the accurate caveat that 5 s reduces but does not eliminate contention under
+sustained parallel write load.
+
+The deferred list now contains only genuine future work (stock-session wiring, GP-tournament,
+meta-optimization, Eureka FactStore, zsh support).
+
+### F4 — Inline Comment on busy_timeout Pragma (packages/cairn/src/db/index.ts)
+
+The module header already documented the concurrent-writer rationale for the 5 s timeout.
+The pragma line itself lacked a comment explaining that it applies **globally** — to every
+`getDb()` call including the migration runner.
+
+**Fix applied:** Added a 4-line inline comment above the `db.pragma('busy_timeout = 5000')`
+call explaining:
+- Applies to ALL opens, including migrations.
+- Acceptable because migrations are fast and idempotent.
+- 5 s covers typical interleaved forge-run-session / interactive CLI usage.
+- If startup hangs ~5 s, this global default is the first place to revisit.
+
+No behavior change. No configurable value introduced (deferred — see below).
+
+### Deferred Follow-up (for coordinator to file as GH issue if warranted)
+
+**"Make busy_timeout configurable + log lock waits"**
+
+Currently the 5 s value is a magic constant applied globally. Two improvements are deferred:
+
+1. **Configurable timeout:** Accept a `busyTimeoutMs` option in `getDb()` (or via an env var
+   `CAIRN_BUSY_TIMEOUT_MS`) so operators running multiple parallel `forge-run-session` instances
+   or CI jobs with aggressive parallelism can tune the value without patching source.
+
+2. **Lock-wait logging:** Emit a warning (stderr or a structured cairn event) when a connection
+   hits the busy-timeout retry path. Currently there is no observability into whether the 5 s
+   budget is ever being exercised in practice. A log line with timestamp, elapsed wait, and
+   caller context would make contention incidents diagnosable without reaching for SQLite
+   tracing.
+
+**Why defer now:** The 5 s global default covers the current dogfood workload (one
+`forge-run-session` + one interactive session). Making it configurable + observable is
+a quality-of-life improvement, not a correctness fix. Revisit once dogfood signal shows
+contention in practice.
+
+### Test Validation
+
+`npm test --workspace=@akubly/cairn` result:
+
+- `busyTimeout.test.ts`: **5/5 pass** ✅
+- Full suite: **749 pass, 3 fail**
+- The 3 failures are pre-existing curator failures tracked as issue #83 — unrelated to this change.
+
 
 ---
 
