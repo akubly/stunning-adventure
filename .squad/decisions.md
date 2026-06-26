@@ -849,3 +849,200 @@ pm test 349 passing / 1 cosmetic (Laura's IT-S1 SQL column name mismatch — rec
 
 ---
 
+# 2026-06-25 — Crispin Fix Wave Cycle 1 Outcome (integrate-slice)
+
+**Date:** 2026-06-25T00:17:47-07:00  
+**Branch:** `eureka/integrate-slice`  
+**Status:** GREEN on build + test + lint; three known Laura-side reconciliations remain in typecheck  
+**Author:** Crispin (Knowledge Representation Specialist)
+
+## Fixes Applied (D-R1..F6)
+
+| Code | Fix |
+|------|-----|
+| D-R1 split | `SessionFactLister` extracted from `FactReader`; both implemented by concrete impls; integrate depends on `SessionFactLister`. Dropped duplicate `FactReaderListSession` alias. |
+| D-R1 layer | `FactId` moved to `@akubly/types`; `activities/imprint` re-exports for back-compat. |
+| D-R2 guard | `MAX_SESSION_FACTS = 10_000` + `IntegrateScopeError` (`INTEGRATE_SCOPE_EXCEEDED`); thrown pre-sort; v1.5 GROUP BY note in header. |
+| A4 clock | `deps.clock` was unused — REMOVED from `IntegrateDeps` and `createSqliteIntegrateDeps`. |
+| C1 precision | Header documents sqlite seconds-precision vs in-memory ms-precision createdAt; factId tie-breaks. |
+| F2 complexity | Corrected to `O(n log n)` sort-dominated, `O(n)` bucketing. |
+| F3 DRY | Single `edgeToRelation` helper in `representation/relation.ts`. |
+| F5/S6 shim | Collapsed re-export indirection; `InMemoryFactReader` now lives in `fact-reader-inmemory.ts`; `fact-reader.ts` deleted. |
+| F6 seed guard | `InMemoryFactReader.seed()` throws in shared-store mode. |
+
+## Final Shapes for Laura
+
+**IntegrateDeps** — clock removed:
+```ts
+interface IntegrateDeps {
+  factReader: SessionFactLister;
+  relationWriter: RelationWriterBatch;
+}
+```
+
+**SessionFactLister** — split out of FactReader; same signature:
+```ts
+interface SessionFactLister {
+  listBySession(args: { sessionId: SessionId }): Promise<ReadonlyArray<{
+    factId: FactId;
+    content: string;
+    createdAt: number;
+  }>>;
+}
+```
+
+Back-compat aliases on `activities/integrate.ts` for Laura's helper imports:
+- `export type { SessionFactLister as FactReader } from './recall.js'`
+- `export type { RelationWriterBatch as RelationWriter }`
+- `export type { RelationEdge } from '../representation/relation.js'`
+
+## Build / Test / Lint Outcome
+
+- `npm run build --workspace @akubly/eureka` — **GREEN**.
+- `npm test --workspace @akubly/eureka` — **350 / 350** passing.
+- `npm run lint --workspace @akubly/eureka` — **GREEN** (3 pre-existing `no-explicit-any` warnings in `recall.test.ts`, unrelated).
+
+## Remaining for Laura (typecheck-only — runtime tests pass)
+
+When Laura runs `npm run typecheck` the following surface; runtime `npm test` is unaffected because vitest's transformer is permissive on excess-property checks:
+
+1. `src/activities/__tests__/integrate.contract.test.ts:81` — drop `clock` from the `IntegrateDeps` literal.
+2. `src/activities/__tests__/integrate-sqlite.contract.test.ts:98` — drop `clock` from the `IntegrateDeps` literal.
+3. `src/activities/__tests__/integrate-sqlite.contract.test.ts:156` — drop `clock` from the `IntegrateDeps` literal.
+4. `src/activities/__tests__/integrate-sqlite.contract.test.ts:111` — `cleanup: () => db.close()` returns `Database`; should be `cleanup: () => { db.close(); }`. (Same shape as pre-existing `fact-store.contract.test.ts:209` / `fact-writer-sqlite.contract.test.ts:105` / `relation-writer-sqlite.contract.test.ts:73` / `trust-updater.contract.test.ts:90` problems — not introduced by this wave.)
+
+---
+
+# 2026-06-25 — Gabriel Decision: Test Type-Check Gate
+
+**Author:** Gabriel (Infrastructure)  
+**Date:** 2026-06-25  
+**Branch:** eureka/integrate-slice  
+**Status:** APPLIED & VERIFIED
+
+## Problem
+
+A test helper (`packages/eureka/src/activities/__tests__/integrate-contract.helper.ts`) shipped with broken type-only imports — names that don't exist on the imported module (`FactReader`, `RelationWriter`, `RelationEdge` from `../integrate.js`). **Nothing in CI caught it.**
+
+Root cause: every package `tsconfig.json` excludes `src/**/__tests__` and `src/**/*.test.ts`, so:
+- `tsc --build` never sees test files.
+- vitest uses esbuild, which strips types without type-checking.
+- eslint catches lint issues but not missing-export errors.
+
+**Result:** The entire test tree had **zero type coverage** in CI.
+
+## Decision
+
+Add a dedicated **test-inclusive type-check gate** to eureka and wire it into CI, scoped narrowly for now:
+
+1. **`packages/eureka/tsconfig.typecheck.json`** — extends the base tsconfig but:
+   - Includes `src`, `src/**/__tests__/**/*`, and `src/**/*.test.ts` (no test exclusion).
+   - `noEmit: true`, `composite: false`, `declaration: false`, `rootDir: "."` — so it never emits, never pollutes `dist/`, and never participates in project references.
+   - `references: []` — type-check is self-contained; no project-reference build semantics here.
+
+2. **`packages/eureka/package.json`** — `typecheck` script now points at the new config: `tsc --noEmit -p tsconfig.typecheck.json` (was bare `tsc --noEmit`, which silently used the base config that excludes tests).
+
+3. **Root** — `typecheck` script already existed (`npm run typecheck --workspaces --if-present`), follows the existing `--workspaces --if-present` convention used by `lint`/`test`/`clean`. No shell globs, Windows-safe.
+
+4. **`.github/workflows/ci.yml`** — added `npm run typecheck` step between `lint` and `build`.
+
+## Proof the Gate Works
+
+`npm run typecheck -w @akubly/eureka` now fails with exactly the target errors plus other previously-invisible test type bugs:
+
+```
+src/activities/__tests__/integrate-contract.helper.ts(83,8): error TS2305: Module '"../integrate.js"' has no exported member 'FactReader'.
+src/activities/__tests__/integrate-contract.helper.ts(84,8): error TS2305: Module '"../integrate.js"' has no exported member 'RelationWriter'.
+src/activities/__tests__/integrate-contract.helper.ts(85,8): error TS2459: Module '"../integrate.js"' declares 'RelationEdge' locally, but it is not exported.
+src/activities/__tests__/integrate-sqlite.contract.test.ts(111,5): error TS2322: Type '() => BetterSqlite3.Database' is not assignable to type '() => void | Promise<void>'.
+```
+
+The gate's job is to make these failures **visible**, not to fix them.
+
+## Team Convention: Test Files MUST Be Type-Checked
+
+Durable team decision: **All test files must pass a dedicated type-check gate in CI.** This is a permanent gate — adds 5–10 seconds to CI, catches a class of errors that silently ship when type-checking is confined to production code only.
+
+## Expected Red (Temporary)
+
+This branch will stay red on typecheck until:
+- **Laura** fixes the broken test imports (`FactReader`, `RelationWriter`, `RelationEdge`).
+- **Crispin**'s seam rename lands (the `cleanup: () => Database` vs `() => void | Promise<void>` mismatches surfaced by the gate are also pre-existing test type bugs the rename will resolve).
+
+That's the intended behaviour.
+
+## Out of Scope / Follow-Up
+
+Six other packages share the same test-exclusion gap:
+- `cairn`, `crucible-cli`, `crucible-core`, `forge`, `runtime-cli`, `skillsmith-runtime`
+
+Generalising the gate to all packages is mechanical (same recipe: `tsconfig.typecheck.json` + `typecheck` script) but **deliberately deferred** — eureka is the package with a known concrete bug. Rolling it out to the rest of the monorepo deserves its own decision, partly because some packages don't yet have a `typecheck` script and adding one will likely surface a backlog of pre-existing test type errors that need triage owners.
+
+## Files Changed
+
+- `packages/eureka/tsconfig.typecheck.json` (new)
+- `packages/eureka/package.json` (typecheck script updated)
+- `.github/workflows/ci.yml` (added `npm run typecheck` step)
+
+## Verification
+
+- `npm run lint` — passes.
+- `npm run typecheck -w @akubly/eureka` — **fails as designed**, catches the target imports.
+- `npm run build`, `npm test` — pre-existing failures (`cborg` module missing in `packages/crucible-core/src/ledger/wal/cbor.ts`) unrelated to this change.
+
+---
+
+# 2026-06-26 — Persona Review Cycle Integration Summary (eureka/integrate-slice)
+
+**Date:** 2026-06-26T12:29:13-07:00  
+**Branch:** eureka/integrate-slice  
+**Status:** REVIEW COMPLETE — 2 cycles, all findings addressed  
+**Reviewed:** Cycle 1 source fixes + Cycle 2 nits; test-typecheck-gate added post-review
+
+## Cycle 1: Source Fixes (Crispin, Gabriel, Laura)
+
+**Findings:** 0 blocking / 8 important / 9 minor  
+**Disposition:** All accepted & addressed  
+
+- **Crispin** (Knowledge Representation): SessionFactLister seam split, FactId moved to @akubly/types, MAX_SESSION_FACTS scope guard + IntegrateScopeError, removed clock dep, edgeToRelation DRY helper, shim collapse, seed() guard. Commit f9af698.
+- **Gabriel** (Infrastructure): Added test type-check CI gate (tsconfig.typecheck.json + typecheck script + ci.yml step), closing the gap that let phantom test imports ship. Commit baa4cb2.
+- **Laura** (Tester): Aligned test files to locked seams, fixed phantom imports, made typecheck gate green. Commit 89988f9.
+- **Genesta** (Cognitive Systems Lead): Doc reconciliation §10 (edfff56) and §20 (7848d76) to migration 003.
+- **Coordinator**: Removed dead back-compat aliases (19693fd).
+
+**Outcome:** 
+- 350/350 tests passing
+- `npm run build` — GREEN
+- `npm run lint` — GREEN
+- `npm run typecheck` — GREEN
+
+## Cycle 2: Nits (Coordinator)
+
+**Findings:** 0 blocking / 1 important / 3 minor  
+**Disposition:** All addressed  
+
+- Commit babe717: Cycle-2 nits
+
+## Key Decision: Test Type-Check Gate
+
+**Durable team convention established:** Test files MUST be type-checked via the dedicated gate in CI. This prevents phantom imports and invisible type errors in test helpers from shipping. The gate is permanent — it adds 5–10 seconds to CI and catches a class of errors that no other tool catches.
+
+## Test Results
+
+- **Cycle 1 baseline:** 256 tests
+- **After wave 1 (substrate):** 319 tests
+- **After wave 2 (integrate activity + Genesta/Laura coordination):** 349/350 tests (1 cosmetic Laura IT-S1 mismatch)
+- **After cycle 2 reconciliation:** 350/350 tests — **SUSTAINED CLEAN**
+
+## Commits
+
+- f9af698: Crispin — Cycle-1 source fixes
+- baa4cb2: Gabriel — Test type-check gate
+- 89988f9: Laura — Aligned test files + fixed phantom imports
+- edfff56: Genesta — Doc reconciliation §10
+- 7848d76: Genesta — Doc reconciliation §20
+- 19693fd: Coordinator — Removed dead back-compat aliases
+- babe717: Coordinator — Cycle-2 nits
+
+---
+

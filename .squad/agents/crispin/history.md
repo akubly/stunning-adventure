@@ -492,3 +492,5 @@ Aaron triaged the persona review and routed nine source-side fixes to me on
 - `npm run typecheck` — still red on three Laura-owned references to `clock` in her integrate
   test files (excess-property check against the slimmed-down `IntegrateDeps`) plus pre-existing
   `cleanup()` signature errors in several legacy sqlite contract tests. Reported to Laura.
+
+📌 **Team update (2026-06-26T19:29:13Z):** eureka/integrate-slice — Persona Review Cycle 1 & 2 COMPLETE (0 blocking across both cycles). Crispin fix-wave cycle 1 shipped (commit f9af698): SessionFactLister seam split, FactId → @akubly/types, MAX_SESSION_FACTS scope guard, removed clock dep, edgeToRelation DRY, shim collapse, seed() guard. Build+lint GREEN, 350/350 tests passing. Cycle-2 nits cleared (commit babe717). Durable team convention: Test files MUST be type-checked via dedicated CI gate. Next: Seam rename resolves cleanup() return-type typecheck mismatches (pre-existing, now visible via Gabriel's gate). — Scribe
