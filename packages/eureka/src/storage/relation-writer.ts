@@ -28,7 +28,7 @@ export interface StoredRelation {
   sessionId: string;
   weight: number;
   confidence: number;
-  /** ISO 8601 datetime string ('YYYY-MM-DD HH:MM:SS') for parity with sqlite. */
+  /** SQLite datetime TEXT ('YYYY-MM-DD HH:MM:SS', UTC; not ISO-8601 — no 'T'/offset) for parity with sqlite. */
   createdAt: string;
 }
 

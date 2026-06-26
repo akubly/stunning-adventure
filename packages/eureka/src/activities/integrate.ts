@@ -193,14 +193,14 @@ export async function integrate(
   // bucket of size ≥ 2, the FIRST element is the canonical (oldest by the
   // sort above) and every later element emits one duplicate_of edge back
   // to it — STAR-TO-CANONICAL topology, NOT a chain.
-  const buckets = new Map<string, Array<{ factId: FactId; createdAt: number }>>();
+  const buckets = new Map<string, FactId[]>();
   for (const f of sorted) {
     const key = f.content.trim();
     const bucket = buckets.get(key);
     if (bucket === undefined) {
-      buckets.set(key, [{ factId: f.factId, createdAt: f.createdAt }]);
+      buckets.set(key, [f.factId]);
     } else {
-      bucket.push({ factId: f.factId, createdAt: f.createdAt });
+      bucket.push(f.factId);
     }
   }
 
@@ -209,10 +209,10 @@ export async function integrate(
     const canonical = bucket[0];
     for (let i = 1; i < bucket.length; i++) {
       const dup = bucket[i];
-      pairs.push({ keptFactId: canonical.factId, duplicateFactId: dup.factId });
+      pairs.push({ keptFactId: canonical, duplicateFactId: dup });
       edges.push({
-        from: dup.factId,        // newer dup → from
-        to: canonical.factId,    // older canonical → to
+        from: dup,        // newer dup → from
+        to: canonical,    // older canonical → to
         edgeType: 'duplicate_of',
         sessionId,
       });
