@@ -3,6 +3,9 @@
  *
  * Uses better-sqlite3 for synchronous, high-performance SQLite access.
  * WAL mode is enabled for concurrent read support.
+ * busy_timeout is set to 5 s so a second writer (e.g. forge-run-session running
+ * concurrently with an interactive Copilot session) retries rather than throwing
+ * SQLITE_BUSY immediately.
  */
 
 import Database from 'better-sqlite3';
@@ -27,6 +30,11 @@ export function getDb(dbPath?: string): Database.Database {
 
     db = new Database(resolvedPath);
     db.pragma('journal_mode = WAL');
+    // Applied globally — affects ALL opens including the migration runner. That is
+    // acceptable because migrations are fast and idempotent; 5 s covers typical
+    // interleaved forge-run-session/interactive usage without hanging indefinitely.
+    // If startup hangs ~5 s, revisit this global default (configurability deferred).
+    db.pragma('busy_timeout = 5000');
     db.pragma('foreign_keys = ON');
 
     // T1 threat mitigation — restrict file permissions on Unix
