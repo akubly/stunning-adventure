@@ -36,6 +36,36 @@ Earlier entries (831 lines) archived to history-archive.md on 2026-06-05.
 
 ---
 
+## Learnings — Crucible S3 Phase 0.5 Skeleton CLI (2026-06-16)
+
+**Role:** T5 CLI shell lane — `status` and `replay` verbs  
+**Branch:** `squad/crucible-s3-skeleton`  
+**Outcome:** SK-4 + SK-5 GREEN — 6 new tests pass; all 15 CLI tests pass.
+
+### CLI Verb Structure
+
+- `packages/crucible-cli/src/commands/status.ts` — `runStatusCommand(session)` calls `session.status()` and renders via `renderStatus()`. Returns raw `SkeletonStatus` for programmatic callers (tests assert on values, not stdout).
+- `packages/crucible-cli/src/commands/replay.ts` — `runReplayCommand(session)` calls `session.replay()` and renders via `renderReplay()`. Same programmatic-shell pattern.
+- `packages/crucible-cli/src/index.ts` — added skeleton re-exports + argv dispatcher guarded by `import.meta.url` check (safe to import from tests). Hand-rolled `switch` on `process.argv[2]`; no new dependencies.
+- `packages/crucible-cli/src/__tests__/acceptance/skeleton-cli.test.ts` — 6 acceptance tests: rowCount/offset assertions (SK-4), replay pass + null divergence (SK-5), plus two pure renderer unit tests that run without filesystem I/O.
+
+### Output-Format Rationale
+
+Status: labeled fixed-column fields (`Session ID`, `Row count`, `Last offset`) with a divider. Scans top-to-bottom for the tired engineer; Last offset is the "freshness number" — one glance tells you how much work happened.
+
+Replay: verdict (`✓ REPLAY PASS` / `✗ REPLAY FAIL`) is the first line — hardcoded top-left, colour-independent glyph, pipe-safe. On fail, divergence offset + kind are promoted inside the same block so a scan never misses them. Duration is last (informational). Line-oriented per §13.2 (no spinners, no animations).
+
+### Session-Reopen Gap (Phase 1 Blocker)
+
+`createSkeletonSession()` always constructs a FRESH session. There is **no API to open an existing session by ID + rootDir** in Phase 0.5. This means `crucible status <sid>` and `crucible replay <sid>` as cross-process invocations are not yet possible. The acceptance tests work around this by running create → run → status/replay within a single process. Flagged for Roger/Graham: Phase 1 needs a `openSkeletonSession(sessionId, rootDir)` factory (or equivalent session-catalog lookup) to unlock the full CLI UX.
+
+### Import Path Note (Flag for Graham/Roger)
+
+`@akubly/crucible-core` has no `exports` field in `package.json`. The skeleton submodule is not exposed as a named subpath export (`@akubly/crucible-core/skeleton` does not resolve). Worked around by importing from the compiled path `@akubly/crucible-core/dist/skeleton/index.js`. This is functional but brittle. Phase 1 should add an `exports` map to `crucible-core/package.json`.
+
+
+---
+
 # SUMMARY (as of 2026-06-01)
 
 File size: 81281 bytes. See history-archive.md for earlier entries.

@@ -8,6 +8,7 @@
  */
 
 import type { SessionId } from '@akubly/types';
+import type { ClockProvider } from './clock.js';
 import {
   InvalidFeedbackOptionsError,
   InvalidTrustValueError,
@@ -112,17 +113,9 @@ export interface RecallOptions {
   k: number;
 }
 
-/**
- * Clock seam for deterministic recency tests (§55 §1.2 + §30 §2.4).
- * Timestamps are non-deterministic inputs → must be injectable per §55 §1.2.
- *
- * Unit: milliseconds (consistent with existing impl; §30 §2.4 spec uses seconds —
- * §-tension flagged in laura-m4-clock-red decision drop).
- */
-export interface ClockProvider {
-  /** Returns current Unix timestamp in milliseconds. */
-  now(): number;
-}
+// ClockProvider lives in clock.ts (neutral location); re-exported here
+// for backward compatibility — existing consumers import from recall.ts.
+export type { ClockProvider } from './clock.js';
 
 /**
  * Optional custom ranker seam — replaces inline compositeScore when provided.

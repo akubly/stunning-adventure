@@ -147,3 +147,122 @@ Ready to merge.
 - Full pipeline (2A + 2D) safe for real concurrent-access testing. New Cairn tests in `busyTimeout.test.ts` (5 tests) already passing.
 
 **Handoff:** The concurrent-writer integration test (`packages/cairn/src/__tests__/busyTimeout.test.ts`) is ready. If extending to multi-session batch runner (future candidate C), both DBOM and busy_timeout policies are now in place.
+
+## 2026-06-16: Crucible S3 Phase 0.5 Walking Skeleton — T6-RED Tests
+
+**Task:** T6-RED — Write failing acceptance tests for the Phase 0.5 walking skeleton gate.
+**Branch:** squad/crucible-s3-skeleton
+**Status:** ✅ RED tests written; skeleton-vertical fails for correct reason (assembly.js not yet created).
+
+### Files written
+
+- packages/crucible-core/src/__tests__/unit/fifo-scheduler.test.ts — A-Sched-1 (SK-6): 12 unit tests exercising FifoScheduler stub. FifoScheduler (T3/Gabriel) already landed → tests are GREEN immediately.
+- packages/crucible-core/src/__tests__/acceptance/skeleton-vertical.test.ts — SK-1 through SK-6 + A2 oracle: 26 acceptance checks. RED because skeleton/assembly.js (T5, orchestration) does not exist yet.
+
+### Test surface built
+
+| Check | File | Status |
+|-------|------|--------|
+| A-Sched-1: FIFO dispatch order | fifo-scheduler.test.ts | ✅ GREEN (FifoScheduler on-branch) |
+| A-Sched-1: immediate dispatch (no buffering) | fifo-scheduler.test.ts | ✅ GREEN |
+| A-Sched-1: quantaConsumed=1, queueDepthAtDispatch=0 | fifo-scheduler.test.ts | ✅ GREEN |
+| SK-1: SdkProvider completeTurn round-trip | skeleton-vertical.test.ts | 🔴 RED (assembly.js) |
+| SK-2: offset-0 Observation rows in WAL | skeleton-vertical.test.ts | 🔴 RED (assembly.js) |
+| SK-3: ≥1 Observation + ≥1 Decision committed | skeleton-vertical.test.ts | 🔴 RED (assembly.js) |
+| SK-4: status() reports sessionId, rowCount, lastCommitOffset | skeleton-vertical.test.ts | 🔴 RED (assembly.js) |
+| SK-5: A2 replay status=pass, rowsReplayed=rowCount | skeleton-vertical.test.ts | 🔴 RED (assembly.js) |
+| SK-5: A2 oracle self-test (normalizeTimestamps, assertA2ByteEquivalent) | skeleton-vertical.test.ts | 🔴 RED (assembly.js) |
+| SK-6: schedulerEvent.subKind === scheduler_dispatched | skeleton-vertical.test.ts | 🔴 RED (assembly.js) |
+
+### A2 byte-equivalence oracle (§11.6 + §11.8)
+
+stripWallClockDerived() + 
+normalizeTimestamps() + assertA2ByteEquivalent() are exported from the acceptance test file. The conformance runner (ci:conformance replay) should import from there rather than re-derive.
+
+### Spec ambiguities flagged for impl agents
+
+1. **AMBIG-1** createSkeletonSession() factory signature — assumed shape { provider, materializer?, scheduler?, replayEngine? }. T5 (orchestration) must match or update the test.
+2. **AMBIG-2** SkeletonSession has no queryRows() method. SK-2/SK-3 are asserted via TurnResult.primitives array kinds + status().rowCount. If T2 (Roger) exposes a row-reader seam, tighten these checks to filter by primitiveKind.
+3. **AMBIG-3** Bootstrap row count depends on BootstrapPayload shape. StubSdkProvider sends 1 tool def + 0 memory fragments → 2 bootstrap rows expected. Test uses ≥1 until T2 confirms exact count.
+4. **AMBIG-4** A2 wallClockMs ratio check (< 10% of original) is deferred — stub sessions have near-zero original duration; ratio would trivially pass or be undefined.
+
+### Branch status observed
+
+- T1 (Graham, skeleton/types.ts + index.ts): ✅ on-branch
+- T3 (Gabriel, skeleton/fifo-scheduler.ts): ✅ on-branch — FifoScheduler unit tests GREEN
+- T4 (Alexander, skeleton/sdk-provider-stub.ts): ✅ on-branch — StubSdkProvider class exported
+- T2 (Roger, bootstrap + replay): 🔴 pending (no assembly.js yet)
+- T5 (orchestration, skeleton/assembly.ts): 🔴 pending — blocks all acceptance checks
+
+— Laura (2026-06-16T23:00:15-07:00)
+## 2026-06-16: imprint Activity — RED Test Phase
+
+**Task:** Write RED (failing) contract tests for the new `imprint` activity (raw fact-creation write path). Genesta's `genesta-imprint-contract.md` was the authoritative spec.
+
+**Status:** ✅ RED COMPLETE — 2 test files fail with correct ERR_MODULE_NOT_FOUND; 208 existing tests stay GREEN.
+
+**Files created:**
+- `packages/eureka/src/storage/__tests__/fact-writer-contract.helper.ts` — shared suite exporting `runFactWriterContract(implName, makeHarness)` covering IM-1 through IM-14 (24 tests per wiring call)
+- `packages/eureka/src/storage/__tests__/fact-writer.contract.test.ts` — thin runner wiring InMemoryFactWriter
+- `packages/eureka/src/storage/__tests__/fact-writer-sqlite.contract.test.ts` — thin runner wiring SqliteFactWriter
+
+**Test count:** 24 tests per implementation wiring (48 total when GREEN):
+- IM-1..IM-8, IM-12..IM-14 = 11 singular tests
+- IM-9 = 5 parameterized (trust: 1.5, -0.1, NaN, Infinity, -Infinity)
+- IM-10 = 4 parameterized (importance: 2.0, -0.5, NaN, Infinity)
+- IM-11 = 4 parameterized (attentionTier: 'lukewarm', 'HOT', '', 'freeze')
+
+**Contract ambiguities / design decisions logged in `.squad/decisions/inbox/laura-imprint-red.md`.**
+
+**Key learnings:**
+- **FactWriterHarness extension:** The contract §10 harness lacked `factWriter: FactWriter` — needed to expose the seam directly so IM-2 (custom idProvider) and IM-13 (fixed-id idempotency) could call `imprintActivity(options, customDeps)` without going around the harness abstraction. Filed as a decision for Crispin to honor when implementing InMemoryFactWriter.
+- **InMemoryFactWriter dual-interface design:** The InMemory runner's harness wires `factStore: writer` and `factWriter: writer` to the same instance. This requires InMemoryFactWriter to implement BOTH `FactWriter` and `FactStore` interfaces. Crispin must design accordingly.
+- **readFact pattern:** readFact is a test-only side-channel. For InMemory, it's a method on InMemoryFactWriter. For SQLite, it's a direct prepared SELECT in the harness factory — does NOT go through the activity layer.
+- **"no fact written" assertion via factStore.search:** When validation throws, verifying `readFact` is impossible (no factId was generated). Used `factStore.search({ query: '<unique keyword in content>', ... })` → `toHaveLength(0)` instead. Unique per-test keywords (`im9validcontent`, `im10validcontent`, `im11validcontent`) prevent cross-test interference.
+- **IM-13 idempotency verification:** Used `factStore.search({ query: 'im13firstcontentwins', limit: 100 }).toHaveLength(1)` to prove no duplication plus `readFact` to prove first-write-wins. Both checks needed; readFact alone can't detect duplication.
+- **Import paths:** From `src/storage/__tests__/`, activity imports are `../../activities/imprint.js` (not `../activities/imprint.js` as Genesta's spec said in prose — spec used relative-to-spec-root phrasing).
+
+— Laura
+
+---
+
+## 2026-06-17: Eureka imprint Slice SHIPPED (M8 Follow-Up)
+
+**Result:** ✅ COMPLETE — 256/256 eureka tests GREEN, tsc clean
+
+**RED tests outcome:**
+- 24 contract assertions (IM-1..IM-14) per implementation
+- 2 runner files (InMemory + SQLite harnesses)
+- All tests passing post-Crispin GREEN implementation
+- Test count: 208 pre-existing + 48 imprint tests = 256 total ✅
+
+**Design decisions produced (D1..D6):**
+1. D1 — FactWriterHarness extended with `factWriter` seam exposure
+2. D2 — InMemoryFactWriter implements both `FactWriter` and `FactStore`
+3. D3 — `readFact` is test-only side-channel (not on FactWriter interface)
+4. D4 — "No fact written" assertions use `factStore.search()` (not `readFact`)
+5. D5 — IM-13 idempotency: dual-check with `readFact` + `factStore.search()`
+6. D6 — Import paths: `../../activities/imprint.js` from `src/storage/__tests__/`
+
+**Deliverables:**
+- Genesta: 3 DECIDED decisions + 1 proposed orchestration memo
+- Crispin: imprint GREEN + integration design (1 PROPOSED)
+- Laura: RED tests (24 contract tests, both runners, all GREEN)
+
+**Scribe orchestration:** Decisions inbox merged → decisions.md, orchestration logs per agent, session log, cross-agent history appends, git commit
+
+**What's next:** Aaron decision on integrate Q1/Q2. Once locked, proceed with cognitive orchestration slice.
+
+---
+
+### 2026-06-21: Imprint Slice — Persona Review 2-Cycle Complete (Ready to Ship)
+
+**Event:** Persona review completed on eureka/imprint-slice. Laura participated in the review panel as Tester, validating contract compliance and edge-case coverage.
+
+**Cycle 1 dispositions:** 8 findings accepted+fixed, 2 rejected with documented reasoning. All contract assertions verified passing after fixes (commit c64092b).
+
+**Cycle 2 re-review:** All cycle-1 fixes validated. 1 residual minor (clock.ts doc block) applied. No test regressions.
+
+**Final outcome:** All personas UNANIMOUS. Imprint slice approved: correct, well-scoped, maintainable, architecturally sound. Ready to merge.
+
+**Tests:** 258/258 eureka tests green, tsc clean.
