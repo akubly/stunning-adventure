@@ -196,9 +196,9 @@ export async function runForgeInstrumentedSession(
       const hasCertificationEvents = dbomArtifact.stats.totalDecisions > 0;
       if (hasCertificationEvents) {
         upsertDBOM(db, dbomArtifact);
-        console.debug('[skillsmith-runtime] DBOM persisted: ' + dbomRootHash.slice(0, 8) + '… (' + dbomArtifact.stats.totalDecisions + ' decisions)');
+        console.error('[skillsmith-runtime] DBOM persisted: ' + dbomRootHash.slice(0, 8) + '… (' + dbomArtifact.stats.totalDecisions + ' decisions)');
       } else {
-        console.debug('[skillsmith-runtime] DBOM empty (no certification events) for session ' + session.sessionId + '; sentinel hash, not persisted');
+        console.error('[skillsmith-runtime] DBOM empty (no certification events) for session ' + session.sessionId + '; sentinel hash, not persisted');
       }
     } catch (e) {
       dbomPersistError = e instanceof Error ? e.message : String(e);
