@@ -46,7 +46,8 @@ parentPort.once('message', () => {
 
 /**
  * Attempts a single INSERT against the given DB file.
- * If busyTimeout > 0, sets PRAGMA busy_timeout before writing.
+ * Sets PRAGMA busy_timeout unconditionally (0 disables retry; any positive value
+ * enables SQLite's internal busy-retry loop for that many milliseconds).
  *   ← sends { event: 'started' }                          before the write
  *   ← sends { event: 'done', success, code?, message? }   after success or error
  */
@@ -75,20 +76,28 @@ type WorkerMsg = Record<string, unknown>;
 
 function waitForEvent(worker: Worker, event: string): Promise<WorkerMsg> {
   return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      worker.off('message', onMsg);
+      worker.off('error', onError);
+      worker.off('exit', onExit);
+    };
     const onMsg = (msg: WorkerMsg) => {
       if (msg.event === event) {
-        worker.off('message', onMsg);
-        worker.off('error', onError);
+        cleanup();
         resolve(msg);
       }
     };
     const onError = (err: Error) => {
-      worker.off('message', onMsg);
-      worker.off('error', onError);
+      cleanup();
       reject(err);
+    };
+    const onExit = (code: number) => {
+      cleanup();
+      reject(new Error('worker exited (code ' + code + ') before emitting expected event'));
     };
     worker.on('message', onMsg);
     worker.on('error', onError);
+    worker.once('exit', onExit);
   });
 }
 

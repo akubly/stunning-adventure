@@ -377,8 +377,8 @@ catch e:
     // run still succeeds; rootHash retained
 ```
 
-- `generateDBOM` always succeeds and returns a non-null hash (sentinel SHA-256 of empty string when no events).
-- `dbomRootHash` is non-null in all success paths; null only if `generateDBOM` itself throws (malformed payload).
+- `generateDBOM` is wrapped in try/catch: it CAN throw on malformed event payload, in which case `dbomRootHash` stays null and `dbomPersistError` is set.
+- On the normal path, `generateDBOM` succeeds and returns a well-formed artifact: sentinel empty-set hash (SHA-256 of empty string) when no certification events; sealed chain root hash otherwise. `dbomRootHash` is non-null in all success paths.
 - Persistence failure sets `dbomPersistError` but does not throw—run completes successfully with best-effort provenance.
 - `generateDBOM` imported from `@akubly/forge` (already in deps).
 - `upsertDBOM` and `loadDBOMArtifact` imported from `@akubly/cairn`.

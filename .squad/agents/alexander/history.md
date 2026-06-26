@@ -66,6 +66,8 @@ pm install restart. Doc-hygiene scope established for future improvements.
   - **Shared helper move**: `permissionRequestedEvent()` and `permissionCompletedEvent()` with their `as SessionEventType` casts moved from inline in the test file to `packages/skillsmith-runtime/src/__tests__/helpers/mockSession.ts`, alongside the existing event factories. Cast isolated in one place.
   - **Test 3 (new)**: best-effort failure path — spies on `cairn.upsertDBOM` to throw `'disk full'` for a session with certification events; asserts run returns valid result (`signalSamplesWritten > 0`, `disconnect.ok === true`), `dbomPersistError === 'disk full'`, no exception propagated.
 
+- 2026-06-26T12:31:20-07:00 📌 Correction: the earlier dbomRootHash note at line 56 above predates the persona-review refinement. Shipped contract: dbomRootHash is the deterministic empty-set SENTINEL hash (non-null, `e3b0c44...`) when there are zero certification-tier events; null ONLY when generateDBOM itself throws; dbomPersistError carries best-effort persistence failures. See decisions.md.
+
 ---
 
 ## 2026-06-23T06:34:41Z — Slice 2A Persona-Review Merge & Ship

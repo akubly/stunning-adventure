@@ -168,3 +168,6 @@ the "deferred" list after shipping a feature to ensure newly-delivered items are
 
 
 📌 2026-06-26: **PR #84 busyTimeout.test.ts — listener-leak fix + header comment rewrite** — Named onError handler now added alongside onMsg in waitForEvent; both are removed via worker.off on resolve AND reject, eliminating the anonymous-listener leak that caused MaxListeners warnings under concurrent waits. Also rewrote the file-header comment to drop the 'RED phase' framing (misleading once the pragma is set in the same PR) and replaced the inline 'RED:' section comment with an accurate description of what the tests assert. All 5 busyTimeout tests ✅. — Roger
+
+## Learnings
+2026-06-26 — PR #84 busyTimeout: always attach a worker 'exit' handler in waitForEvent so the promise rejects (instead of hanging) if the worker exits before emitting the expected event; use a shared cleanup() that removes all three listeners (message, error, exit) on every settle path to prevent leaks.
