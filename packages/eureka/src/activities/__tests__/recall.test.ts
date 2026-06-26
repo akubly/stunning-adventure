@@ -30,7 +30,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { recall, compositeScore } from '../recall.js';
 import type { RecallResult } from '../recall.js';
-import type { FactId } from '../imprint.js';
+import type { FactId } from '@akubly/types';
 import type { SessionId } from '@akubly/types';
 
 /**

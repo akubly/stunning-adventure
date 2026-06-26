@@ -21,9 +21,9 @@
  * ```ts
  * interface IntegrateOptions { sessionId: SessionId; }
  * interface RelationEdge     { from: FactId; to: FactId; edgeType: 'duplicate_of'; sessionId: SessionId; }
- * interface RelationWriter   { writeEdges(edges: RelationEdge[]): Promise<number>; } // count actually written
- * interface FactReader       { listBySession(args: { sessionId }): Promise<ReadonlyArray<{ factId; content; createdAt }>>; }
- * interface IntegrateDeps    { factReader; relationWriter; clock: ClockProvider; }
+ * interface RelationWriterBatch  { writeEdges(edges: RelationEdge[]): Promise<number>; } // count actually written
+ * interface SessionFactLister    { listBySession(args: { sessionId }): Promise<ReadonlyArray<{ factId; content; createdAt }>>; }
+ * interface IntegrateDeps        { factReader: SessionFactLister; relationWriter: RelationWriterBatch; }
  * interface DuplicatePair    { keptFactId: FactId; duplicateFactId: FactId; }
  * interface IntegrationReport {
  *   sessionId: SessionId; factsScanned: number; duplicatesFound: number;

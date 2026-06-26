@@ -15,7 +15,7 @@
 
 import Database from 'better-sqlite3';
 import type { FactStore, RecallResult } from '../../activities/recall.js';
-import type { FactId } from '../../activities/imprint.js';
+import type { FactId } from '@akubly/types';
 import type { SessionId } from '@akubly/types';
 import { SqliteFactStore, applyMigrations } from '../../sqlite/index.js';
 import { runFactStoreContract, type FactStoreHarness } from './fact-store-contract.helper.js';
