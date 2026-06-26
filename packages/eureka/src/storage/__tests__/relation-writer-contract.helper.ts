@@ -41,7 +41,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { SessionId } from '@akubly/types';
-import type { FactId } from '../../activities/imprint.js';
+import type { FactId } from '@akubly/types';
 import type { RelationWriter } from '../relation-writer.types.js';
 import type { Relation, RelationKind } from '../../representation/relation.js';
 import type { StoredRelation } from '../relation-writer.js';

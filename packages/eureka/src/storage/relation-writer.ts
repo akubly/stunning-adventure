@@ -103,32 +103,6 @@ export class InMemoryRelationWriter implements RelationWriter {
   }
 
   /**
-   * Test-only side-channel mirroring the SQL view of the relations table —
-   * used by the integrate-activity in-memory harness. Returns one row per
-   * stored edge with the activity-facing field names (`fromFactId`,
-   * `toFactId`, `edgeType`, `sessionId`). Ordered by (toFactId, fromFactId)
-   * to match the sqlite harness's deterministic ORDER BY.
-   */
-  async listEdges(
-    sessionId: SessionId,
-  ): Promise<ReadonlyArray<{ fromFactId: string; toFactId: string; sessionId: SessionId; edgeType: 'duplicate_of' }>> {
-    const sid = sessionId as string;
-    return [...this.store.values()]
-      .filter(r => r.sessionId === sid && r.relationKind === 'duplicate_of')
-      .sort((a, b) =>
-        a.toFactId === b.toFactId
-          ? a.fromFactId.localeCompare(b.fromFactId)
-          : a.toFactId.localeCompare(b.toFactId),
-      )
-      .map(r => ({
-        fromFactId: r.fromFactId,
-        toFactId: r.toFactId,
-        sessionId: r.sessionId as SessionId,
-        edgeType: 'duplicate_of' as const,
-      }));
-  }
-
-  /**
    * Batch-persist edges from the activity layer (integrate). Maps the
    * `RelationEdge` shape (from/to/edgeType) to the internal `Relation` shape
    * (fromFactId/toFactId/relationKind) via the shared `edgeToRelation` helper,
