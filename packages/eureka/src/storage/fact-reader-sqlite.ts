@@ -16,9 +16,8 @@
  */
 
 import type Database from 'better-sqlite3';
-import type { SessionId } from '@akubly/types';
-import type { FactReader } from '../activities/recall.js';
-import type { FactId } from '../activities/imprint.js';
+import type { SessionId, FactId } from '@akubly/types';
+import type { FactReader, SessionFactLister } from '../activities/recall.js';
 import { sqliteDateTimeToEpochMs } from './datetime.js';
 
 interface FactRow {
@@ -31,7 +30,7 @@ interface ListRow {
   created_at: string;
 }
 
-export class SqliteFactReader implements FactReader {
+export class SqliteFactReader implements FactReader, SessionFactLister {
   private readonly stmt: Database.Statement<{ fact_id: string; session_id: string }, FactRow>;
   private readonly stmtList: Database.Statement<{ session_id: string }, ListRow>;
 

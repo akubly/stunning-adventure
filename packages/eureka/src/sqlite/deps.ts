@@ -14,8 +14,9 @@
  */
 
 import type Database from 'better-sqlite3';
+import type { FactId } from '@akubly/types';
 import type { RecallDeps, ApplyFeedbackDeps } from '../activities/recall.js';
-import type { ImprintDeps, FactId } from '../activities/imprint.js';
+import type { ImprintDeps } from '../activities/imprint.js';
 import type { IntegrateDeps } from '../activities/integrate.js';
 import { SqliteFactStore } from '../storage/fact-store-sqlite.js';
 import { SqliteTrustUpdater } from '../storage/trust-updater-sqlite.js';
@@ -96,10 +97,13 @@ export function createSqliteRelationWriter(db: Database.Database): SqliteRelatio
 }
 
 /**
- * Assemble production SQLite `IntegrateDeps` — wires the FactReader (read
- * the session's facts) and RelationWriter (persist `duplicate_of` edges)
- * against a single shared Database handle. Uses the same `systemClock`
- * as the other factories.
+ * Assemble production SQLite `IntegrateDeps` — wires the session-fact lister
+ * (read the session's facts) and RelationWriter (persist `duplicate_of` edges)
+ * against a single shared Database handle.
+ *
+ * `clock` is intentionally absent: `integrate()`'s body does not read it
+ * (A4 fix-wave review). Storage-layer createdAt stamping is owned by the
+ * writer factories, not by integrate.
  *
  * @param db  An already-opened, migration-applied Database handle from openDatabase().
  */
@@ -107,6 +111,5 @@ export function createSqliteIntegrateDeps(db: Database.Database): IntegrateDeps 
   return {
     factReader: new SqliteFactReader(db),
     relationWriter: new SqliteRelationWriter(db),
-    clock: systemClock,
   };
 }

@@ -116,6 +116,17 @@ export interface DBOMArtifact {
  */
 export type SessionId = string & { readonly __brand: 'SessionId' };
 
+/**
+ * Branded FactId primitive — shared identity for facts persisted by Eureka.
+ *
+ * Originally defined in `@akubly/eureka/activities/imprint`; promoted to the
+ * neutral types package (D-R1 layering review) so representation- and
+ * storage-layer code can reference the identity type without taking a build
+ * dependency on the activities layer. `activities/imprint` re-exports for
+ * backward compatibility with existing consumers.
+ */
+export type FactId = string & { readonly __brand: 'FactId' };
+
 /** Minimal session identity for cross-package use. */
 export interface SessionIdentity {
   /** @todo Migrate to SessionId in M5+ coordinated pass. See .squad/decisions.md (F14). */

@@ -17,8 +17,8 @@
  * stay aligned on validation (limit, minTrust) and scoring behavior.
  */
 
-import type { SessionId } from '@akubly/types';
-import type { FactWriter, FactId, AttentionTier } from '../activities/imprint.js';
+import type { SessionId, FactId } from '@akubly/types';
+import type { FactWriter, AttentionTier } from '../activities/imprint.js';
 import type { FactStore, RecallResult } from '../activities/recall.js';
 import { scopeFingerprint, encodeCursor, decodeCursor } from './cursor.js';
 import { CursorScopeMismatchError } from './errors.js';

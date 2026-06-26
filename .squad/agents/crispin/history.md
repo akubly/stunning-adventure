@@ -433,3 +433,62 @@ IT-S1 direct SQL query (lines 159, 168) updated from `WHERE edge_type = 'duplica
 **Architecture outcome:** Eureka v1 now has a three-verb cognitive write stack: `imprint` (raw write), `integrate` (discover duplicates), `applyFeedback` (judge quality). Each verb is precisely scoped (imprint stays lossless; integrate marks relationships; feedback updates trust). The append-only facts representation is locked. The pair-scan algorithm composes naturally with v1.5 background machinery (sweep/meditate) without API change or schema rework. No architectural debt.
 
 
+
+
+---
+
+## 2026-06-26 — Fix Wave (persona review cycle 1, integrate-slice)
+
+Aaron triaged the persona review and routed nine source-side fixes to me on
+`eureka/integrate-slice`. Worked at CURRENT_DATETIME 2026-06-25T00:17:47-07:00
+(brief value) on real-time 2026-06-26.
+
+### Fixes applied
+1. **D-R1 split seam** — extracted `SessionFactLister` (the `listBySession` capability)
+   out of the publicly-exported `FactReader` interface in `activities/recall.ts`.
+   Concrete impls (`InMemoryFactReader`, `SqliteFactReader`) now `implements FactReader, SessionFactLister`.
+   Dropped the duplicate `FactReaderListSession` alias in integrate; `IntegrateDeps.factReader: SessionFactLister`
+   is the single canonical name. Exported from the package entrypoint.
+2. **D-R1 layering** — moved `FactId` from `activities/imprint` into the neutral
+   `@akubly/types` package. All representation/storage/integrate imports now read FactId
+   from `@akubly/types`. `activities/imprint` re-exports for back-compat so existing
+   imprint consumers (including Laura's integrate test files) keep working.
+3. **D-R2 guard** — added `MAX_SESSION_FACTS = 10_000` constant in `activities/integrate.ts`
+   plus new `IntegrateScopeError` (`code: 'INTEGRATE_SCOPE_EXCEEDED'`, carries `factsScanned` and `cap`).
+   Thrown BEFORE the sort. Documented the bound in the integrate header; `// v1.5+` note pointing
+   at the DB-side GROUP BY consolidation path.
+4. **A4 clock removal** — verified `integrate()` never reads `deps.clock`; removed
+   `clock` from `IntegrateDeps` and from `createSqliteIntegrateDeps`. Storage-layer
+   `created_at` stamping is owned by the writer factories. Laura's tests will need
+   to drop `clock: clock` from their `IntegrateDeps` literals.
+5. **C1 precision note** — header documents the sqlite second-precision `created_at`
+   round-trip vs in-memory ms precision; sub-second duplicates fall through to the
+   `factId` tie-breaker (deterministic per backend, may differ across backends).
+6. **F2 complexity** — rewrote the contradictory `O(n²)`/`O(n)` prose. Honest statement:
+   `O(n log n)` sort-dominated, `O(n)` bucketing pass.
+7. **F3 DRY** — extracted `edgeToRelation` helper in `representation/relation.ts`;
+   both `relation-writer.ts` and `relation-writer-sqlite.ts` import it (single
+   translation point for the activity↔storage field-name rename).
+8. **F5/S6 shim** — collapsed the `fact-reader.ts` + `fact-reader-inmemory.ts`
+   re-export indirection. `InMemoryFactReader` now lives in `fact-reader-inmemory.ts`
+   (name matches content). Deleted `fact-reader.ts`. Updated `storage/index.ts` and
+   `storage/__tests__/fact-reader.contract.test.ts` to import from the new path.
+9. **F6 seed guard** — `InMemoryFactReader.seed()` now throws when constructed with a
+   shared `InMemoryFactWriter`: in shared-store mode the writer is the single source
+   of truth and seeding the reader's private store would silently diverge.
+
+### Final shapes (for Laura's reconciliation)
+- `FactId`: `import type { FactId } from '@akubly/types';`
+- `SessionFactLister`: `activities/recall.ts`, signature unchanged
+  `listBySession(args: { sessionId: SessionId }): Promise<ReadonlyArray<{ factId: FactId; content: string; createdAt: number }>>`
+- `IntegrateDeps`: `{ factReader: SessionFactLister; relationWriter: RelationWriterBatch }` (no `clock`)
+- Back-compat re-exports on `activities/integrate.ts`: `FactReader` (alias of `SessionFactLister`)
+  and `RelationWriter` (alias of `RelationWriterBatch`) so Laura's helper imports stay valid.
+
+### Build/test/lint outcome
+- `npm run build --workspace @akubly/eureka` — GREEN (tsc clean).
+- `npm test --workspace @akubly/eureka` — **350 / 350** passing.
+- `npm run lint --workspace @akubly/eureka` — GREEN (3 pre-existing `no-explicit-any` warnings in `recall.test.ts`, no errors, untouched by this wave).
+- `npm run typecheck` — still red on three Laura-owned references to `clock` in her integrate
+  test files (excess-property check against the slimmed-down `IntegrateDeps`) plus pre-existing
+  `cleanup()` signature errors in several legacy sqlite contract tests. Reported to Laura.

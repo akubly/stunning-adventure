@@ -33,7 +33,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import type { FactReader } from '../../activities/recall.js';
+import type { FactReader, SessionFactLister } from '../../activities/recall.js';
 import type { SessionId } from '@akubly/types';
 
 // ---------------------------------------------------------------------------
@@ -59,7 +59,7 @@ type SeedFact = (
  * @internal
  */
 export interface FactReaderHarness {
-  reader: FactReader;
+  reader: FactReader & SessionFactLister;
   seed: SeedFact;
   cleanup?: () => void | Promise<void>;
 }
@@ -84,7 +84,7 @@ export function runFactReaderContract(
   makeHarness: () => FactReaderHarness | Promise<FactReaderHarness>,
 ): void {
   describe(`FactReader contract — ${implName}`, () => {
-    let reader: FactReader;
+    let reader: FactReader & SessionFactLister;
     let seed: SeedFact;
     let harness: FactReaderHarness;
 
@@ -224,7 +224,7 @@ export function runFactReaderContract(
       const rows = await reader.listBySession({ sessionId });
 
       expect(rows).toHaveLength(2);
-      const byId = new Map(rows.map(r => [r.factId, r]));
+      const byId = new Map(rows.map(r => [r.factId as string, r]));
       expect(byId.get('fact-cl7-a')).toEqual({ factId: 'fact-cl7-a', content: 'alpha content', createdAt: t1 });
       expect(byId.get('fact-cl7-b')).toEqual({ factId: 'fact-cl7-b', content: 'beta content', createdAt: t2 });
     });

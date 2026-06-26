@@ -20,7 +20,7 @@
 import type Database from 'better-sqlite3';
 import type { RelationWriter } from './relation-writer.types.js';
 import type { Relation, RelationEdge } from '../representation/relation.js';
-import { validateRelation } from '../representation/relation.js';
+import { validateRelation, edgeToRelation } from '../representation/relation.js';
 
 export class SqliteRelationWriter implements RelationWriter {
   private readonly db: Database.Database;
@@ -66,13 +66,9 @@ export class SqliteRelationWriter implements RelationWriter {
    */
   async writeEdges(edges: ReadonlyArray<RelationEdge>): Promise<number> {
     // Validate every edge BEFORE running any statement — same pre-await
-    // posture as InMemoryRelationWriter.writeEdges.
-    const relations: Relation[] = edges.map(e => ({
-      fromFactId: e.from,
-      toFactId: e.to,
-      relationKind: e.edgeType,
-      sessionId: e.sessionId,
-    }));
+    // posture as InMemoryRelationWriter.writeEdges. Uses the shared
+    // `edgeToRelation` helper so both writer impls translate identically.
+    const relations: Relation[] = edges.map(edgeToRelation);
     for (const rel of relations) validateRelation(rel);
 
     const stmt = this.stmt;

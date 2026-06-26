@@ -15,7 +15,7 @@
 
 import Database from 'better-sqlite3';
 import type { SessionId } from '@akubly/types';
-import { InMemoryFactReader } from '../fact-reader.js';
+import { InMemoryFactReader } from '../fact-reader-inmemory.js';
 import { SqliteFactReader, applyMigrations } from '../../sqlite/index.js';
 import { runFactReaderContract } from './fact-reader-contract.helper.js';
 import { epochMsToSqliteDateTime } from '../datetime.js';

@@ -13,7 +13,7 @@
 import type { SessionId } from '@akubly/types';
 import type { RelationWriter } from './relation-writer.types.js';
 import type { Relation, RelationKind, RelationEdge } from '../representation/relation.js';
-import { validateRelation } from '../representation/relation.js';
+import { validateRelation, edgeToRelation } from '../representation/relation.js';
 import { epochMsToSqliteDateTime } from './datetime.js';
 
 /**
@@ -131,19 +131,15 @@ export class InMemoryRelationWriter implements RelationWriter {
   /**
    * Batch-persist edges from the activity layer (integrate). Maps the
    * `RelationEdge` shape (from/to/edgeType) to the internal `Relation` shape
-   * (fromFactId/toFactId/relationKind), validates each edge, and inserts.
+   * (fromFactId/toFactId/relationKind) via the shared `edgeToRelation` helper,
+   * validates each edge, and inserts.
    * Returns the COUNT of edges actually inserted (post-idempotency).
    */
   async writeEdges(edges: ReadonlyArray<RelationEdge>): Promise<number> {
     // Validate every edge BEFORE persisting any — mirrors the imprint F1
     // pre-await validation posture so an invalid edge in position N does not
     // leave 0..N-1 persisted.
-    const relations: Relation[] = edges.map(e => ({
-      fromFactId: e.from,
-      toFactId: e.to,
-      relationKind: e.edgeType,
-      sessionId: e.sessionId,
-    }));
+    const relations: Relation[] = edges.map(edgeToRelation);
     for (const rel of relations) validateRelation(rel);
 
     let inserted = 0;

@@ -198,3 +198,40 @@ export class InvalidIntegrateError extends Error {
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+
+// ---------------------------------------------------------------------------
+// IntegrateScopeError
+// ---------------------------------------------------------------------------
+
+/**
+ * Thrown by `integrate()` when the session contains more facts than the
+ * documented O(n²) pair-scan bound (`MAX_SESSION_FACTS`).
+ *
+ * Separate from `InvalidIntegrateError` because this is NOT a caller-input
+ * error — the caller's `sessionId` is well-formed, but the data scope exceeds
+ * what the v1 algorithm is willing to consolidate in a single pass.
+ *
+ * Carries `factsScanned` (the count that triggered the guard) and `cap` (the
+ * configured bound) so operators can size their cap or partition the session.
+ * A DB-side `GROUP BY` consolidation path is reserved for v1.5+ and will
+ * obsolete this guard.
+ */
+export class IntegrateScopeError extends Error {
+  readonly code = 'INTEGRATE_SCOPE_EXCEEDED' as const;
+  readonly factsScanned: number;
+  readonly cap: number;
+  readonly sessionId: string;
+
+  constructor(sessionId: string, factsScanned: number, cap: number) {
+    super(
+      `integrate: session "${sessionId}" has ${factsScanned} facts which exceeds the v1 ` +
+        `pair-scan bound (MAX_SESSION_FACTS=${cap}). The O(n²) algorithm refuses to scan ` +
+        `unbounded sessions; a DB-side GROUP BY consolidation path is planned for v1.5+.`,
+    );
+    this.name = 'IntegrateScopeError';
+    this.sessionId = sessionId;
+    this.factsScanned = factsScanned;
+    this.cap = cap;
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}

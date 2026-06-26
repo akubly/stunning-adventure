@@ -7,9 +7,8 @@
  * AC-FR-2:  Composite-ranker ordering (§30 §1.2)
  */
 
-import type { SessionId } from '@akubly/types';
+import type { SessionId, FactId } from '@akubly/types';
 import type { ClockProvider } from './clock.js';
-import type { FactId } from './imprint.js';
 import {
   InvalidFeedbackOptionsError,
   InvalidTrustValueError,
@@ -332,33 +331,41 @@ export interface TrustUpdater {
  * Separates the read responsibility from the write responsibility per London-school
  * single-responsibility: applyFeedback owns delta computation; FactReader owns the read.
  *
- * ## Session listing (integrate-substrate addition, wave-2 contract)
- *
- * `listBySession({ sessionId })` enumerates the facts visible in a session for
- * integrate's pair-scan. The returned shape is `{factId, content, createdAt}`;
- * trust and attention-column data are deliberately omitted — those belong to
- * ranking, not pair-scanning. `createdAt` is Unix epoch ms so the activity
- * layer can sort canonically (oldest wins) without re-parsing timestamps.
+ * The session-listing capability (used by `integrate`'s pair-scan) used to
+ * live on this interface but was extracted to `SessionFactLister` during the
+ * D-R1 split-seam review so consumers that only need single-fact reads
+ * (e.g. `applyFeedbackById`) do not have to know about session enumeration.
+ * Concrete implementations (`InMemoryFactReader`, `SqliteFactReader`) implement
+ * BOTH interfaces; integrate depends only on `SessionFactLister`.
  */
 export interface FactReader {
   read(args: { factId: string; sessionId: SessionId }): Promise<{ trust: number } | null>;
-  /**
-   * Enumerate facts in a session — substrate seam for integrate's pair-scan.
-   *
-   * Returns the minimal shape integrate's consolidation pass needs:
-   *   - `factId`    — stable identifier (FactId brand) for naming edges.
-   *   - `content`   — the searchable text, for `.trim()`-equal comparison.
-   *   - `createdAt` — Unix epoch milliseconds, for canonical-ordering (oldest wins).
-   *
-   * Ordering is implementation-defined; callers that need deterministic
-   * ordering must sort themselves. Integrate sorts by `createdAt` ascending.
-   *
-   * Implementations MUST:
-   *   - return rows scoped strictly to the given sessionId (no cross-session leak),
-   *   - return an empty array when the session has no facts (never null),
-   *   - skip facts whose stored `trust` is NaN/NULL (corrupt) — same posture as
-   *     FactStore.search (`WHERE trust IS NOT NULL` in sqlite).
-   */
+}
+
+/**
+ * Session enumeration seam (D-R1: split out of `FactReader` in the integrate
+ * fix wave). Used by `integrate()`'s pair-scan to load the candidate set.
+ *
+ * The returned shape is `{factId, content, createdAt}`; trust and attention-column
+ * data are deliberately omitted — those belong to ranking, not pair-scanning.
+ * `createdAt` is Unix epoch ms so the activity layer can sort canonically
+ * (oldest wins) without re-parsing timestamps.
+ *
+ * Returns the minimal shape integrate's consolidation pass needs:
+ *   - `factId`    — stable identifier (FactId brand) for naming edges.
+ *   - `content`   — the searchable text, for `.trim()`-equal comparison.
+ *   - `createdAt` — Unix epoch milliseconds, for canonical-ordering (oldest wins).
+ *
+ * Ordering is implementation-defined; callers that need deterministic
+ * ordering must sort themselves. Integrate sorts by `createdAt` ascending.
+ *
+ * Implementations MUST:
+ *   - return rows scoped strictly to the given sessionId (no cross-session leak),
+ *   - return an empty array when the session has no facts (never null),
+ *   - skip facts whose stored `trust` is NaN/NULL (corrupt) — same posture as
+ *     FactStore.search (`WHERE trust IS NOT NULL` in sqlite).
+ */
+export interface SessionFactLister {
   listBySession(args: { sessionId: SessionId }): Promise<ReadonlyArray<{
     factId: FactId;
     content: string;

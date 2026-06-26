@@ -20,8 +20,7 @@
  * `errors.ts` rather than a generic Error so callers can narrow on `.code`.
  */
 
-import type { SessionId } from '@akubly/types';
-import type { FactId } from '../activities/imprint.js';
+import type { SessionId, FactId } from '@akubly/types';
 import { InvalidRelationError } from './errors.js';
 
 /** Relation kind literal union (matches migration 003 CHECK constraint). */
@@ -75,6 +74,23 @@ export interface Relation {
   weight?: number;
   /** Assertion confidence ∈ [0,1]. Schema default 1.0. */
   confidence?: number;
+}
+
+/**
+ * Map an activity-facing `RelationEdge` to the canonical internal `Relation`
+ * shape. Centralises the field-name renaming (`from`/`to`/`edgeType` →
+ * `fromFactId`/`toFactId`/`relationKind`) so both writer implementations
+ * (sqlite + in-memory) share a single translation point — F3 DRY fix from
+ * the integrate fix wave. `weight` and `confidence` are intentionally left
+ * unset so the storage default (1.0, per migration 003) applies.
+ */
+export function edgeToRelation(e: RelationEdge): Relation {
+  return {
+    fromFactId: e.from,
+    toFactId: e.to,
+    relationKind: e.edgeType,
+    sessionId: e.sessionId,
+  };
 }
 
 /**

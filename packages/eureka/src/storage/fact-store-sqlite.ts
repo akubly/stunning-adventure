@@ -93,9 +93,8 @@
  */
 
 import type Database from 'better-sqlite3';
-import type { SessionId } from '@akubly/types';
+import type { SessionId, FactId } from '@akubly/types';
 import type { FactStore, RecallResult } from '../activities/recall.js';
-import type { FactId } from '../activities/imprint.js';
 import { scopeFingerprint, encodeCursor, decodeCursor } from './cursor.js';
 import { CursorScopeMismatchError } from './errors.js';
 

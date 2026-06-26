@@ -1,4 +1,4 @@
-export { InMemoryFactReader } from './fact-reader.js';
+export { InMemoryFactReader } from './fact-reader-inmemory.js';
 export { InMemoryFactWriter } from './fact-writer.js';
 export { InMemoryRelationWriter } from './relation-writer.js';
 export type { RelationWriter } from './relation-writer.types.js';
