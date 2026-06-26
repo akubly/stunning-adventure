@@ -54,20 +54,6 @@ import type { RelationEdge } from '../representation/relation.js';
 import { InvalidIntegrateError, IntegrateScopeError } from './errors.js';
 
 // ---------------------------------------------------------------------------
-// Back-compat aliases for the integrate activity contract suite
-// ---------------------------------------------------------------------------
-//
-// The activity contract helper imports `FactReader` / `RelationWriter` /
-// `RelationEdge` from this module under the *narrow* meaning used inside
-// integrate (just the slice integrate needs). To keep that test file
-// frozen during the fix wave we re-export the canonical seam types under
-// those names. The broader `FactReader` (single-fact read) lives in
-// `./recall.js`; the broader `RelationWriter` (single-edge `link`) lives
-// in `../storage/relation-writer.types.js`.
-export type { SessionFactLister as FactReader } from './recall.js';
-export type { RelationEdge } from '../representation/relation.js';
-
-// ---------------------------------------------------------------------------
 // Scope bound (D-R2 review guard)
 // ---------------------------------------------------------------------------
 
@@ -104,8 +90,6 @@ export const MAX_SESSION_FACTS = 10_000;
 export interface RelationWriterBatch {
   writeEdges(edges: ReadonlyArray<RelationEdge>): Promise<number>;
 }
-
-export type { RelationWriterBatch as RelationWriter };
 
 // ---------------------------------------------------------------------------
 // Public contract types
