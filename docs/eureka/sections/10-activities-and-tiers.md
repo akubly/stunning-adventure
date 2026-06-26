@@ -21,33 +21,79 @@ This section specifies Eureka's **activity model** (what verbs the system suppor
 
 ## §10.1. Activity Model
 
-Eureka exports **7 v1 activities** plus **2 reserved v1.5 activities**. This is the locked vocabulary per FR-4.
+Eureka exports **8 v1 activities** plus **2 reserved v1.5 activities**. This is the locked vocabulary per FR-4 (as amended 2026-06-17 for `imprint` and 2026-06-24 for `integrate`-as-consolidation).
+
+> **Vocabulary amendment history:**
+> - **2026-06-17:** Split raw write path (`imprint`) from cognitive orchestration (`integrate`). FR-4 expanded from 7 to 8 v1 verbs.
+> - **2026-06-24:** Resolved internal inconsistency between the §10/§30 `integrate(fact) → FactId` row-insert signature and the PRD §3 "reconcile with existing facts" prose. `integrate` is now formally a **post-imprint consolidation pass** that operates on already-imprinted facts and produces cross-reference edges. `imprint` is the public synchronous write API. v1 integrate produces only `duplicate_of` edges (exact-content match — the only relation lexical-only v1 can honestly produce); other edge types (`supersedes`, `contradicts`, `supports`, etc.) are reserved in the schema CHECK constraint but writable only by `sweep`/`meditate` in v1.5.
 
 ### v1 Activities (Exported API Surface)
 
-#### `integrate(fact: Fact) → FactId`
+#### `imprint(options: ImprintOptions) → FactId`
 
-**Verb:** Ingest a new fact into the knowledge graph.
+**Verb:** Commit a new fact to durable memory. Raw mechanical write.
 
-**Trigger:** Called by orchestration code when a new fact emerges during session execution (e.g., skill result, memory extraction, decision outcome).
+**Trigger:** Called by orchestration code when new material arrives (skill result, observation, decision outcome) and must be persisted. Lossless: imprint **always writes**, including content-duplicate facts. Duplicates are discovered later by `integrate`, not prevented here.
 
 **Inputs:**
-- `fact: Fact` — Structured fact object with required fields (`kind`, `verb`, `content`) and optional metadata (`sessionId`, `importance`, `trust`, `attention`)
+- `options: ImprintOptions` — `{ content: string, sessionId: SessionId, trust?: number, importance?: number, attentionTier?: AttentionTier }`. v1 schema does not carry `kind` or `verb` columns; those PRD-§10 fields are reserved for a future taxonomy slice (`InvalidImprintError` on validation failure).
 
 **Outputs:**
-- `FactId` — UUID v4 identifier for the newly integrated fact
+- `FactId` — UUID v4 (branded) for the newly imprinted fact.
 
 **Side Effects:**
-- Writes row to `facts` table in appropriate tier DB (v1: agent tier only)
-- Sets `createdAt`, `lastAccessedAt`, and `accessCount=1`
-- If `sessionId` present, writes association to `fact_sessions` table
-- Initializes attention state (default: `warm`)
+- Writes row to `facts` table in agent tier DB (v1: agent tier only).
+- Sets `created_at` from injected `ClockProvider`.
+- Sets `last_accessed = NULL` (load-bearing — F3 semantics in `recall.compositeScore`: never-accessed → recency floor 0.1).
+- Applies defaults: `trust=0.5`, `importance=0`, `attention_tier='warm'`.
 
-**Sync/Async:** Synchronous write with immediate durability
+**Sync/Async:** Synchronous write with immediate durability.
 
-**Open Questions for Implementation:**
-- Does `integrate` run deduplication checks before inserting? (FR-2 mentions dedup strategy but doesn't specify when it fires)
-- How are malformed facts handled (e.g., missing required fields)? Throw? Coerce? Log + skip?
+**Idempotency:** First write wins on `(factId, sessionId)`. The activity does NOT probe for content-duplicates — that is `integrate`'s job.
+
+**Status:** ✅ Shipped (PR #81, 2026-06-17). Persona-reviewed (2026-06-21).
+
+---
+
+#### `integrate(options: IntegrateOptions) → IntegrationReport`
+
+**Verb:** Post-imprint consolidation pass. Reconciles already-imprinted facts within a session by discovering relationships between them and writing cross-reference edges.
+
+**Trigger:** Called by orchestration code at natural pause points (end-of-task, end-of-session, manual reflection). Same verb that v1.5 `sweep`/`meditate` will eventually invoke automatically against broader scopes.
+
+**Inputs:**
+- `options: IntegrateOptions` — `{ sessionId: SessionId }`. v1 scope is a single session's facts; cross-session/cross-tier consolidation is `sweep`/`meditate` (v1.5).
+
+**Outputs:**
+- `IntegrationReport` — `{ sessionId, factsScanned, duplicatesFound, edgesWritten, pairs: Array<{ keptFactId, duplicateFactId }> }`.
+
+**Side Effects:**
+- Writes `duplicate_of` edges to the `relations` table (migration 003). v1 writes **only** `duplicate_of`; other edge types are reserved in the schema CHECK vocabulary but produced by `sweep`/`meditate` in v1.5.
+- Does NOT mutate `facts` rows: trust, importance, attention, and `last_accessed` are unchanged.
+- Does NOT call `imprint` (integrate does not produce new content facts; it only links existing ones).
+- Idempotent: the `relations` UNIQUE constraint (`from_id, to_id, edge_type, session_id`) prevents duplicate edges; re-running integrate is safe.
+
+**v1 Edge Semantics (`duplicate_of`):**
+- Detected via exact-content match (after `.trim()`) within `sessionId`.
+- Orientation: newer fact → older fact (`from = newer.factId`, `to = older.factId`, ordered by `created_at`).
+- Lexical-only honest behaviour: same content string, same session = duplicate. Near-duplicates (case, punctuation, paraphrase) are NOT detected in v1.
+
+**Sync/Async:** Synchronous, caller-invoked. Pair-scan is O(n²) at session scale (acceptable — sessions are small in v1).
+
+**Boundary vs. `applyFeedback('corroboration')`:**
+- `applyFeedback('corroboration', factId)` — bumps **trust** on an existing fact, recorded in `trust_history`. Caller asserts independent evidence supporting the fact's truth. **(Shipped.)**
+- `integrate` `duplicate_of` edge — records that two facts have the same content within a session. Caller asserts nothing; integrate observes the lexical match. No trust change.
+- Future v1.5 `supports` edge (reserved in schema CHECK vocab; NOT written by v1 integrate) — semantic "this fact corroborates that fact" relationship between two facts. Distinct from `applyFeedback('corroboration')` which is a property mutation on a single fact, not a relationship between two.
+
+**Open Questions (deferred to v1.5):**
+- When `sweep`/`meditate` lands, does it invoke `integrate({sessionId})` per recent session, or operate over a broader scope (`integrate({})`)? Defer to sweep design.
+- Should `integrate` accept an optional `factIds` filter to consolidate a specific subset rather than the whole session? Defer until a caller needs it.
+
+---
+
+#### Original `integrate(fact: Fact) → FactId` signature (DEPRECATED 2026-06-24)
+
+The original §10 signature `integrate(fact: Fact) → FactId` is **deprecated**. Its row-insert responsibility is now owned by `imprint(options) → FactId` above. Its cognitive-orchestration responsibility (reconciliation, cross-referencing) is now owned by `integrate(options) → IntegrationReport` above. See vocabulary amendment note at the top of this section.
 
 ---
 
@@ -411,6 +457,7 @@ def recall(query: str, k: int) -> list[Fact]:
 
 | Activity      | Agent Tier | User Tier | Project Tier | Org Tier |
 |---------------|------------|-----------|--------------|----------|
+| `imprint`     | ✅ v1      | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |
 | `integrate`   | ✅ v1      | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |
 | `recall`      | ✅ v1      | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |
 | `rerank`      | ✅ v1      | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |

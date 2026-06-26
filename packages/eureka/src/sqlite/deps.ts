@@ -16,9 +16,12 @@
 import type Database from 'better-sqlite3';
 import type { RecallDeps, ApplyFeedbackDeps } from '../activities/recall.js';
 import type { ImprintDeps, FactId } from '../activities/imprint.js';
+import type { IntegrateDeps } from '../activities/integrate.js';
 import { SqliteFactStore } from '../storage/fact-store-sqlite.js';
 import { SqliteTrustUpdater } from '../storage/trust-updater-sqlite.js';
 import { SqliteFactWriter } from '../storage/fact-writer-sqlite.js';
+import { SqliteRelationWriter } from '../storage/relation-writer-sqlite.js';
+import { SqliteFactReader } from '../storage/fact-reader-sqlite.js';
 import { randomUUID } from 'node:crypto';
 
 /** System wall-clock — delegates to Date.now() (milliseconds). */
@@ -78,5 +81,32 @@ export function createSqliteImprintDeps(db: Database.Database): ImprintDeps {
     factWriter: new SqliteFactWriter(db),
     clock: systemClock,
     idProvider: cryptoIdProvider,
+  };
+}
+
+/**
+ * Assemble a production SQLite `RelationWriter` — substrate for the integrate
+ * activity's consolidation pass (writes `duplicate_of` edges in v1; vocabulary
+ * is future-ready for `supersedes | contradicts | supports`).
+ *
+ * @param db  An already-opened, migration-applied Database handle from openDatabase().
+ */
+export function createSqliteRelationWriter(db: Database.Database): SqliteRelationWriter {
+  return new SqliteRelationWriter(db);
+}
+
+/**
+ * Assemble production SQLite `IntegrateDeps` — wires the FactReader (read
+ * the session's facts) and RelationWriter (persist `duplicate_of` edges)
+ * against a single shared Database handle. Uses the same `systemClock`
+ * as the other factories.
+ *
+ * @param db  An already-opened, migration-applied Database handle from openDatabase().
+ */
+export function createSqliteIntegrateDeps(db: Database.Database): IntegrateDeps {
+  return {
+    factReader: new SqliteFactReader(db),
+    relationWriter: new SqliteRelationWriter(db),
+    clock: systemClock,
   };
 }

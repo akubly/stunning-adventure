@@ -40,7 +40,13 @@ import type { SessionId } from '@akubly/types';
 // Shared contract harness type
 // ---------------------------------------------------------------------------
 
-type SeedFact = (factId: string, sessionId: SessionId, trust: number) => Promise<void>;
+type SeedFact = (
+  factId: string,
+  sessionId: SessionId,
+  trust: number,
+  content?: string,
+  createdAt?: number,
+) => Promise<void>;
 
 /**
  * Test harness for FactReader contract tests.
@@ -181,6 +187,66 @@ export function runFactReaderContract(
 
       expect(result).not.toBeNull();
       expect(typeof result!.trust).toBe('number');
+    });
+
+    // -----------------------------------------------------------------------
+    // CL-6 — listBySession on an unseeded session returns []
+    //
+    // An empty session must yield an empty array, never null/undefined. This
+    // is the substrate guarantee integrate's pair-scan relies on to skip the
+    // consolidation pass cleanly when there are no candidates.
+    // -----------------------------------------------------------------------
+
+    it('CL-6: listBySession returns [] for an unseeded session', async () => {
+      const sessionId = 'session-contract-empty' as SessionId;
+
+      const rows = await reader.listBySession({ sessionId });
+
+      expect(rows).toEqual([]);
+    });
+
+    // -----------------------------------------------------------------------
+    // CL-7 — listBySession returns seeded facts with {factId, content, createdAt}
+    //
+    // Substrate shape lock (wave-2): integrate needs factId + content + createdAt
+    // per row. trust / attentionTier / importance / lastAccessed are deliberately
+    // NOT surfaced — those belong to ranking, not pair-scanning. createdAt is
+    // Unix epoch ms so the activity layer can sort canonically (oldest wins).
+    // -----------------------------------------------------------------------
+
+    it('CL-7: listBySession returns seeded facts with {factId, content, createdAt} shape', async () => {
+      const sessionId = 'session-contract-A' as SessionId;
+      const t1 = 1_700_000_000_000; // 2023-11-14T22:13:20Z
+      const t2 = 1_700_000_060_000; // 60s later
+      await seed('fact-cl7-a', sessionId, 0.6, 'alpha content', t1);
+      await seed('fact-cl7-b', sessionId, 0.8, 'beta content', t2);
+
+      const rows = await reader.listBySession({ sessionId });
+
+      expect(rows).toHaveLength(2);
+      const byId = new Map(rows.map(r => [r.factId, r]));
+      expect(byId.get('fact-cl7-a')).toEqual({ factId: 'fact-cl7-a', content: 'alpha content', createdAt: t1 });
+      expect(byId.get('fact-cl7-b')).toEqual({ factId: 'fact-cl7-b', content: 'beta content', createdAt: t2 });
+    });
+
+    // -----------------------------------------------------------------------
+    // CL-8 — listBySession is session-isolated
+    //
+    // Facts from session A must not surface in a listBySession call for
+    // session B. Mirrors the per-session isolation invariant from CL-3.
+    // -----------------------------------------------------------------------
+
+    it('CL-8: listBySession does not leak facts across sessions', async () => {
+      const sessionA = 'session-contract-A' as SessionId;
+      const sessionB = 'session-contract-B' as SessionId;
+      await seed('fact-cl8-a', sessionA, 0.5, 'only A');
+      await seed('fact-cl8-b', sessionB, 0.5, 'only B');
+
+      const rowsA = await reader.listBySession({ sessionId: sessionA });
+      const rowsB = await reader.listBySession({ sessionId: sessionB });
+
+      expect(rowsA.map(r => r.factId)).toEqual(['fact-cl8-a']);
+      expect(rowsB.map(r => r.factId)).toEqual(['fact-cl8-b']);
     });
   });
 }

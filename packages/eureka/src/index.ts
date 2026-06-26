@@ -16,6 +16,15 @@ export {
   applyFeedbackById,
 } from './activities/recall.js';
 export { imprint } from './activities/imprint.js';
+export { integrate } from './activities/integrate.js';
+export type {
+  IntegrateOptions,
+  IntegrateDeps,
+  IntegrationReport,
+  DuplicatePair,
+  FactReaderListSession,
+  RelationWriterBatch,
+} from './activities/integrate.js';
 export {
   FactNotFoundError,
   InvalidFeedbackOptionsError,
@@ -23,7 +32,11 @@ export {
   FactReaderContractError,
   UnhandledFeedbackEventError,
   InvalidImprintError,
+  InvalidIntegrateError,
 } from './activities/errors.js';
+export { InvalidRelationError } from './representation/errors.js';
+export { validateRelation, RELATION_KINDS } from './representation/relation.js';
+export type { Relation, RelationKind, RelationEdge } from './representation/relation.js';
 export type {
   RecallOptions,
   RecallDeps,

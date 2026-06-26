@@ -12,60 +12,101 @@ This section documents Eureka's learning systems: the nine memory activities, pr
 
 ## 1. Memory Activities
 
-Eureka defines nine memory activities. Seven ship in v1 (FR-4); two are deferred to v1.5 but vocabulary is reserved.
+Eureka defines ten memory activities. Eight ship in v1 (FR-4 as amended 2026-06-17 and 2026-06-24); two are deferred to v1.5 but vocabulary is reserved.
 
-### 1.1 integrate
+> **Vocabulary amendment history:**
+> - **2026-06-17:** Split raw write (`imprint`) from cognitive orchestration (`integrate`). Activity count expanded from 7 to 8 v1.
+> - **2026-06-24:** `integrate` reframed from row-insert to **post-imprint consolidation pass** (resolves §10/§30 vs PRD §3 inconsistency). `imprint` is now the public synchronous write API; `integrate` operates on already-imprinted facts and produces cross-reference edges. v1 integrate writes only `duplicate_of` edges; other edge types reserved in schema CHECK vocab for `sweep`/`meditate` (v1.5).
 
-**Purpose:** Ingest new facts into memory with initial property values.
+### 1.0 imprint (v1)
+
+**Purpose:** Commit a new fact to durable memory. Raw mechanical write — lossless, no contextual processing, no dedup, no reconciliation. Duplicates ARE written; they are discovered later by `integrate`.
 
 **Inputs:**
-- `payload: FactPayload` — content, category, source, importance (optional)
-- `session_id: SessionId` — originating session
-- `trust_hint?: number` — optional override for trust assignment
+- `options: ImprintOptions` — `{ content, sessionId, trust?, importance?, attentionTier? }`
 
 **Algorithm:**
 ```
-function integrate(payload, session_id, trust_hint):
-  fact = new Fact()
-  fact.id = generateUuid()
-  fact.content = payload.content
-  fact.category = payload.category
-  fact.source = payload.source
-  fact.session_id = session_id
-  fact.created_at = now()
-  fact.last_accessed = now()
-  fact.importance = payload.importance ?? inferImportance(payload)
-  fact.tier = determineTier(fact.importance)  // hot >= 0.7, warm >= 0.4, else cold
-  
-  // Trust assignment (FR-3) — see §2.1 for canonical source-type values
-  if trust_hint is provided:
-    fact.trust = clamp(trust_hint, 0.0, 1.0)
-  else if payload.source == "user_confirmed":
-    fact.trust = 0.9
-  else if payload.source == "user_provided":
-    fact.trust = 0.6
-  else if payload.source == "agent_inferred":
-    fact.trust = 0.5
-  else if payload.source == "path2_low":
-    fact.trust = 0.4
-  else if payload.source == "external_api":
-    fact.trust = 0.7
-  else:
-    fact.trust = 0.5  // default (agent-inferred)
-
-  insert fact into database
-  emit IntegrationEvent(fact.id, fact.tier, fact.trust)
-  return fact.id
+function imprint(options):
+  validateOptions(options)            // throws InvalidImprintError on bad input
+  factId = idProvider.next()          // injected UUID seam
+  createdAt = clock.now()             // injected ClockProvider
+  trust         = options.trust         ?? 0.5
+  importance    = options.importance    ?? 0
+  attentionTier = options.attentionTier ?? 'warm'
+  factWriter.write({
+    factId, sessionId: options.sessionId, content: options.content.trim(),
+    trust, importance, attentionTier, createdAt
+  })
+  // last_accessed is set to NULL by storage — load-bearing F3 semantic
+  // (never-accessed → recency floor 0.1 in compositeScore).
+  return factId
 ```
 
 **Measurable Outcomes:**
-- Facts are retrievable via `recall()` within same session
-- Trust values match FR-3 source-based assignment rules
-- Facts land in correct tier based on importance threshold
+- Facts are retrievable via `recall()` within same session.
+- First-write-wins idempotency on `(factId, sessionId)`.
+- Same content imprinted twice produces two distinct facts (relationship discovered later via `integrate`).
+
+**Status:** ✅ Shipped PR #81 (2026-06-17), persona-reviewed (2026-06-21).
+
+---
+
+### 1.1 integrate (v1)
+
+**Purpose:** Post-imprint consolidation pass. Reconciles already-imprinted facts within a session by discovering relationships and writing cross-reference edges. **Does NOT write new content facts** — that is `imprint`'s job.
+
+**Inputs:**
+- `options: IntegrateOptions` — `{ sessionId }`
+
+**Algorithm:**
+```
+function integrate(options):
+  facts = factReader.listBySession({ sessionId: options.sessionId })
+  edges = []
+  pairs = []
+  // Exact-content pair scan, ordered by created_at (oldest first):
+  for i in 0..facts.length:
+    for j in i+1..facts.length:
+      if facts[i].content.trim() == facts[j].content.trim():
+        // Newer → older orientation
+        edges.push({
+          from: facts[j].factId, to: facts[i].factId,
+          edge_type: 'duplicate_of',
+          session_id: options.sessionId,
+        })
+        pairs.push({ keptFactId: facts[i].factId, duplicateFactId: facts[j].factId })
+  written = relationWriter.writeEdges(edges)  // UNIQUE constraint dedupes re-runs
+  return {
+    sessionId: options.sessionId,
+    factsScanned: facts.length,
+    duplicatesFound: pairs.length,
+    edgesWritten: written,
+    pairs,
+  }
+```
+
+**v1 Edge Semantics — only `duplicate_of`:**
+
+| Edge type | v1 integrate writes? | Owner | Notes |
+|---|---|---|---|
+| `duplicate_of` | ✅ YES | integrate | Exact-content match (after `.trim()`), within `sessionId`. Orientation: newer→older by `created_at`. |
+| `supersedes`, `contradicts`, `supports`, `derived_from`, `references`, `part_of`, `instance_of`, etc. | ❌ NO | reserved in CHECK vocab; written by `sweep`/`meditate` (v1.5) | Lexical-only v1 cannot honestly produce these. |
+
+**Boundary vs. `applyFeedback('corroboration')`:**
+- `applyFeedback('corroboration', factId)` (shipped) — bumps **trust** on an existing fact; recorded in `trust_history`. Property mutation. Caller asserts independent evidence.
+- v1.5 `supports` edge — semantic relationship "fact A corroborates fact B" between two facts.
+- These are intentionally distinct concepts; v1 ships only the property-mutation form.
+
+**Measurable Outcomes:**
+- Re-running `integrate({sessionId})` is idempotent (UNIQUE constraint on `(from_id, to_id, edge_type, session_id)`).
+- No `facts` row mutation (trust, importance, attention, last_accessed unchanged).
+- O(n²) pair-scan is acceptable at session scale (sessions are small in v1).
 
 **v1 Limitations:**
-- No semantic embedding; lexical BM25 indexing only
-- No automatic session-fact promotion from Cairn; requires manual `remember()` calls
+- Lexical-only: no near-duplicate (case/punctuation/paraphrase) detection.
+- Single-session scope only: cross-session consolidation deferred to v1.5 `sweep`/`meditate`.
+- Synchronous: no background invocation in v1; caller-driven at natural pause points.
 
 ---
 
@@ -356,7 +397,9 @@ function meditate():
   for cluster in clusters:
     // Synthesize emergent pattern
     pattern = synthesizePattern(cluster.facts)
-    integrate(pattern, session_id="meditate", trust=0.5)
+    imprint(pattern, session_id="meditate", trust=0.5)  // synthesized pattern → raw write
+    // (a subsequent integrate({sessionId='meditate'}) pass would discover
+    // duplicate_of edges between newly-imprinted patterns and existing ones)
   
   emit MeditateEvent(clusters.length)
 ```
@@ -708,11 +751,11 @@ Eureka's learning operates through two complementary loops:
 2. Agent uses facts in reasoning
 3. `rerank()` adjusts based on immediate feedback
 4. `decide()` selects action
-5. `integrate()` captures new facts from decision outcomes
+5. `imprint()` captures new facts from decision outcomes (consolidation via `integrate()` runs at pause points, not per-decision)
 
 **Feedback Signal:** Implicit (BM25 relevance, recency decay, tier multipliers)
 
-**Measurable Cycle Time:** < 1 second per recall-decide-integrate loop
+**Measurable Cycle Time:** < 1 second per recall-decide-imprint loop
 
 ---
 
@@ -759,7 +802,8 @@ Activities trigger on different cadences:
 
 ### 4.1 Synchronous (Request-Driven)
 
-- **integrate:** On-demand during `remember()` calls or Path 2 ingest
+- **imprint:** On-demand during `remember()` calls or Path 2 ingest (raw write — always succeeds)
+- **integrate:** On-demand at natural pause points (end-of-task, end-of-session); consolidation pass over already-imprinted facts in a session
 - **recall:** On-demand during agent reasoning
 - **rerank:** On-demand after initial recall
 - **decide:** On-demand after candidate generation
@@ -773,7 +817,8 @@ Activities trigger on different cadences:
 
 These are development targets, not shipped guarantees. They guide implementation but are not customer-facing SLOs:
 
-- integrate: < 10ms (single fact insert)
+- imprint: < 10ms (single fact insert)
+- integrate: < 50ms per session (O(n²) pair scan; sessions are small in v1)
 - recall: < 100ms (BM25 query + scoring for 10 results) *(see §55 §2.1 or future perf-test cycle)*
 - rerank: < 50ms (rescore 10 facts)
 - decide: < 10ms (single-pass selection)

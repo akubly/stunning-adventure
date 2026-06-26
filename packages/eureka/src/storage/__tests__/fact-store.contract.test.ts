@@ -15,6 +15,7 @@
 
 import Database from 'better-sqlite3';
 import type { FactStore, RecallResult } from '../../activities/recall.js';
+import type { FactId } from '../../activities/imprint.js';
 import type { SessionId } from '@akubly/types';
 import { SqliteFactStore, applyMigrations } from '../../sqlite/index.js';
 import { runFactStoreContract, type FactStoreHarness } from './fact-store-contract.helper.js';
@@ -126,6 +127,7 @@ function makeInMemoryFactStore(): { impl: FactStore; seed: FactStoreHarness['see
       const maxTC = Math.max(...termCounts);
 
       const results: RecallResult[] = page.map((f) => ({
+        factId: f.factId as FactId,
         content: f.content,
         trust: f.trust,
         attentionTier: f.attentionTier,

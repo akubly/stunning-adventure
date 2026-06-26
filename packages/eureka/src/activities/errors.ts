@@ -175,3 +175,26 @@ export class InvalidImprintError extends Error {
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+
+// ---------------------------------------------------------------------------
+// InvalidIntegrateError
+// ---------------------------------------------------------------------------
+
+/**
+ * Thrown when integrate input validation fails (e.g. missing or blank
+ * sessionId). Mirrors `InvalidImprintError`: code discriminator + field +
+ * value, base Error (not RangeError/TypeError — these are domain errors).
+ */
+export class InvalidIntegrateError extends Error {
+  readonly code = 'INVALID_INTEGRATE' as const;
+  readonly field: string;
+  readonly value: unknown;
+
+  constructor(field: string, value: unknown, message: string) {
+    super(message);
+    this.name = 'InvalidIntegrateError';
+    this.field = field;
+    this.value = value;
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}

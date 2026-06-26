@@ -9,6 +9,7 @@
 
 import type { SessionId } from '@akubly/types';
 import type { ClockProvider } from './clock.js';
+import type { FactId } from './imprint.js';
 import {
   InvalidFeedbackOptionsError,
   InvalidTrustValueError,
@@ -17,6 +18,14 @@ import {
 
 /** Minimal fact shape returned from FactStore.search() at the storage seam. */
 export interface RecallResult {
+  /**
+   * Stable identifier of the underlying fact. Surfaces the `fact_id` column
+   * (sqlite) / the in-memory composite key. Added in the integrate-substrate
+   * slice (F9 carry-over from the imprint review) so callers can round-trip:
+   * imprint returns a FactId → recall hits surface the same FactId → consumers
+   * (integrate, decide, applyFeedbackById) can name what they found.
+   */
+  factId: FactId;
   content: string;
   trust: number;
   attentionTier: 'hot' | 'warm' | 'cold';
@@ -322,9 +331,39 @@ export interface TrustUpdater {
  * Read-seam for current fact trust (M6-B — higher-level orchestrator seam).
  * Separates the read responsibility from the write responsibility per London-school
  * single-responsibility: applyFeedback owns delta computation; FactReader owns the read.
+ *
+ * ## Session listing (integrate-substrate addition, wave-2 contract)
+ *
+ * `listBySession({ sessionId })` enumerates the facts visible in a session for
+ * integrate's pair-scan. The returned shape is `{factId, content, createdAt}`;
+ * trust and attention-column data are deliberately omitted — those belong to
+ * ranking, not pair-scanning. `createdAt` is Unix epoch ms so the activity
+ * layer can sort canonically (oldest wins) without re-parsing timestamps.
  */
 export interface FactReader {
   read(args: { factId: string; sessionId: SessionId }): Promise<{ trust: number } | null>;
+  /**
+   * Enumerate facts in a session — substrate seam for integrate's pair-scan.
+   *
+   * Returns the minimal shape integrate's consolidation pass needs:
+   *   - `factId`    — stable identifier (FactId brand) for naming edges.
+   *   - `content`   — the searchable text, for `.trim()`-equal comparison.
+   *   - `createdAt` — Unix epoch milliseconds, for canonical-ordering (oldest wins).
+   *
+   * Ordering is implementation-defined; callers that need deterministic
+   * ordering must sort themselves. Integrate sorts by `createdAt` ascending.
+   *
+   * Implementations MUST:
+   *   - return rows scoped strictly to the given sessionId (no cross-session leak),
+   *   - return an empty array when the session has no facts (never null),
+   *   - skip facts whose stored `trust` is NaN/NULL (corrupt) — same posture as
+   *     FactStore.search (`WHERE trust IS NOT NULL` in sqlite).
+   */
+  listBySession(args: { sessionId: SessionId }): Promise<ReadonlyArray<{
+    factId: FactId;
+    content: string;
+    createdAt: number;
+  }>>;
 }
 
 /**

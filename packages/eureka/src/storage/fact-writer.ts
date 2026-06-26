@@ -37,6 +37,8 @@ interface InternalFact {
   attentionTier: AttentionTier;
   lastAccessed: number | null;
   createdAt: string;
+  /** Original epoch ms for the integrate substrate (listBySession). */
+  createdAtMs: number;
   insertionOrder: number;
 }
 
@@ -101,6 +103,7 @@ export class InMemoryFactWriter implements FactWriter, FactStore {
       attentionTier: args.attentionTier,
       lastAccessed: null,
       createdAt: createdAtStr,
+      createdAtMs: args.createdAt,
       insertionOrder: this.insertionCounter++,
     });
   }
@@ -183,6 +186,7 @@ export class InMemoryFactWriter implements FactWriter, FactStore {
     const maxTC = termCounts.length > 0 ? Math.max(...termCounts) : 0;
 
     const results: RecallResult[] = page.map(f => ({
+      factId: f.factId as FactId,
       content: f.content,
       trust: f.trust,
       attentionTier: f.attentionTier,
@@ -221,5 +225,29 @@ export class InMemoryFactWriter implements FactWriter, FactStore {
       lastAccessed: f.lastAccessed,
       createdAt: f.createdAt,
     };
+  }
+
+  // -------------------------------------------------------------------------
+  // listBySession — integrate substrate (wave-2)
+  //
+  // Returns the minimal shape `FactReader.listBySession` exposes: factId,
+  // content, and createdAt as Unix epoch ms. Skips facts whose stored trust
+  // is NaN to mirror SqliteFactStore.search's `trust IS NOT NULL` posture.
+  // Used by the activity layer (integrate) via the FactReader seam — when
+  // the InMemoryFactReader is constructed with a shared writer it delegates
+  // here so both sides see the same store.
+  // -------------------------------------------------------------------------
+
+  async listBySession(
+    sessionId: SessionId,
+  ): Promise<ReadonlyArray<{ factId: FactId; content: string; createdAt: number }>> {
+    const sid = sessionId as string;
+    const out: Array<{ factId: FactId; content: string; createdAt: number }> = [];
+    for (const f of this.store.values()) {
+      if (f.sessionId !== sid) continue;
+      if (Number.isNaN(f.trust)) continue;
+      out.push({ factId: f.factId as FactId, content: f.content, createdAt: f.createdAtMs });
+    }
+    return out;
   }
 }
