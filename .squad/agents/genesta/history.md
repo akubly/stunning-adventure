@@ -367,3 +367,15 @@ Aaron triaged 5 doc fixes against the Option B integrate slice. Applied doc-only
 **Learning:** When pseudocode drifts from the shipped schema, fix the schema identifiers and the algorithmic complexity in the same pass — they're usually wrong together (both reflect an earlier mental model). Also, "activity-count consistency" is a load-bearing invariant: every doc that asserts a count must agree, or persona reviewers (rightly) flag it.
 
 Source name change to remember: the integrate read seam is **SessionFactLister** (was FactReaderListSession). Use that name in any future references or test scaffolding.
+
+## Learnings — 2026-06-25 §20 Reconciliation (persona review cycle 2)
+
+Skeptic found §20.2 ("Cross-Reference Model") still presented the full 13-kind EdgeType = | string taxonomy as if available, contradicting migration 003's locked 4-kind CHECK vocabulary. Reconciled §20 with shipped reality on branch `eureka/integrate-slice`:
+
+- **§2 intro / §2.2 / §5.1 / §6.1 / §10:** Renamed `relations` → `fact_relations`; `from_id`/`to_id`/`edge_type` → `from_fact_id`/`to_fact_id`/`relation_kind`; `EdgeType` → `RelationKind` (the v1 4-kind union: `duplicate_of` | `supersedes` | `contradicts` | `supports`).
+- **§2.2 rewrite:** Clean "Shipped v1 (migration 003)" section followed by "Reserved for v1.5+ (NOT shipped)" — the broader 12-kind `FutureRelationKind` taxonomy is preserved as a design sketch with an explicit non-shipped marker. Added D-R3 first-write-wins note and S4 write-only note here too (mirrors §10/§30).
+- **§5.1:** Example edges marked ✅ v1 for `duplicate_of` only; `contradicts`/`supersedes`/`supports` marked ⚠️ v1.5; `originated_in`/`cites` flagged as NOT in v1 CHECK vocabulary at all. Distinguished `supports` edge from `applyFeedback('corroboration')` — same distinction as §10/§30.
+- **§7.2 Graph Traversal:** Marked as v1.5+ NOT shipped; reflects S4 (write-only table → no traversal yet).
+- **§10 Checklist:** Schema migration item checked off (migration 003 shipped); graph traversal demoted to v1.5+.
+
+**Learning:** When reconciling docs that pre-date the shipped schema, search for **all three identifier sets** in lockstep — the table name (`relations` vs `fact_relations`), the column names (`from_id`/`to_id`/`edge_type` vs `from_fact_id`/`to_fact_id`/`relation_kind`), and the type name (`EdgeType` vs `RelationKind`). Missing any one of them leaves the doc internally inconsistent. Also: when the design vision is broader than v1, frame it as **"Shipped v1 vs Reserved v1.5+"** rather than deleting the vision — readers need the future intent visible to plan against, but the section header must make ship-vs-reserve unambiguous.

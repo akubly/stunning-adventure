@@ -24,7 +24,7 @@ This section defines the formal knowledge representation model for Eureka — th
 
 ## 2. Graph Schema
 
-Eureka uses a **two-table graph model**: `facts` (nodes) and `relations` (edges).
+Eureka uses a **two-table graph model**: `facts` (nodes) and `fact_relations` (edges, migration 003).
 
 ### 2.1 Facts Table
 
@@ -92,58 +92,85 @@ export interface Fact {
 
 This supports learning, decay, retirement, and access tracking on committed facts while preserving content integrity.
 
-### 2.2 Relations Table
+### 2.2 Cross-Reference Model (`fact_relations`)
+
+> **Amendment 2026-06-25:** This section was reconciled with migration 003 and the §10/§30 `integrate` v1 contract. Earlier drafts presented the full 13-kind taxonomy (`EdgeType = | string`) as if available now; the shipped schema actually locks a 4-kind CHECK vocabulary and v1 `integrate` writes only one of those kinds. The taxonomy below distinguishes **shipped v1** from **reserved v1.5+**.
+
+#### Shipped in v1 (migration 003)
+
+Migration 003 creates table **`fact_relations`** with columns `from_fact_id`, `to_fact_id`, `relation_kind`, `session_id`, `weight`, `confidence`, `created_at`, and UNIQUE `(session_id, from_fact_id, to_fact_id, relation_kind)`. The CHECK constraint on `relation_kind` enumerates **exactly four kinds**:
 
 ```typescript
-// packages/eureka/src/schemas/relation.ts (type sketch)
+// packages/eureka/src/schemas/relation.ts (shipped — matches migration 003 CHECK)
+export type RelationKind =
+  | 'duplicate_of'   // fact → older fact (exact-content match within a session) — v1 integrate writes this
+  | 'supersedes'     // fact → fact (version succession) — RESERVED, not written in v1
+  | 'contradicts'    // fact → fact (logical conflict) — RESERVED, not written in v1
+  | 'supports';      // fact → fact (evidential support) — RESERVED, not written in v1
 
-/** Edge types organized into three tiers (FR-9) */
-export type EdgeType = 
-  // Tier 1: Eager (event-driven, ingestion-time)
+/**
+ * Directed edge between facts within a session.
+ * Persistence shape mirrors migration 003 exactly.
+ */
+export interface Relation {
+  from_fact_id: string;     // source fact ID
+  to_fact_id:   string;     // target fact ID
+  relation_kind: RelationKind;
+  session_id:   string;     // edges are session-scoped in v1
+
+  weight:     number;       // REAL DEFAULT 1.0; relationship strength
+  confidence: number;       // REAL DEFAULT 1.0; assertion confidence
+
+  created_at: string;       // SQLite datetime('now'), ISO-8601
+}
+```
+
+**v1 write authority:**
+- `integrate(scope) → IntegrationReport` writes **only** `duplicate_of` edges (exact-content match within `sessionId`; orientation newer→older by `created_at`). See §10.1 and §30.1.1.
+- `supersedes`, `contradicts`, `supports` are present in the CHECK vocabulary so future activities (`sweep`/`meditate` in v1.5) can write them without a follow-up migration, but **no v1 code path writes them**. Any attempt to insert another `relation_kind` value is rejected by SQLite's CHECK.
+- **First-write-wins (D-R3):** `RelationWriter` uses `ON CONFLICT DO NOTHING` against the UNIQUE key. Once an edge exists, its `weight` and `confidence` cannot be strengthened by a subsequent `integrate` call in v1; refinement is deferred (see "v1.5+ reserved" below).
+- **Write-only in v1 (S4):** `fact_relations` has no runtime consumer yet — no recall-side traversal, no UI surfacing. A read consumer (e.g., folding duplicates at recall time) lands in a later slice. Intentional incremental delivery.
+
+**Storage:** Same SQLite database as `facts`. The UNIQUE index doubles as the lookup path; richer traversal indexes are a v1.5 concern (deferred until a read consumer exists).
+
+#### Reserved for v1.5+ (NOT shipped)
+
+The broader cross-reference vision below describes **design intent**, not currently available behaviour. None of these edge types are valid in the shipped CHECK vocabulary; introducing any of them requires a follow-up migration and an activity that knows how to write them honestly.
+
+```typescript
+// FUTURE — NOT in migration 003. Sketch for v1.5+ planning only.
+export type FutureRelationKind =
+  // Provenance (sweep / meditate candidates)
   | 'originated_in'      // fact → session (creation provenance)
   | 'modified_in'        // fact → session (mutation provenance)
-  | 'contradicts'        // fact → fact (logical conflict)
-  | 'supports'           // fact → fact (evidential support)
+  | 'recalled_in'        // fact → session (retrieval history)
+  // Semantic links (require non-lexical signals)
   | 'refines'            // fact → fact (elaboration)
   | 'depends_on'         // fact → fact (dependency)
   | 'blocks'             // fact → fact (task blockers)
   | 'part_of'            // fact → fact (containment)
   | 'relates_to'         // fact → fact (untyped association)
-  | 'tagged_with'        // fact → tag (folksonomy)
-  | 'supersedes'         // fact → fact (version succession)
   | 'references'         // fact → external resource
   | 'cites'              // fact → fact (citation)
-  
-  // Tier 2: Sweep (batch-populated during maintenance)
-  | 'similar_to'         // fact → fact (embedding similarity, v1.5)
-  | 'co_accessed_with'   // fact → fact (co-recall patterns)
-  | 'recalled_in'        // fact → session (retrieval history)
-  
-  // Tier 3: Deferred (parking lot, not in v1)
-  | string;              // Extensible for custom edge types
-
-/**
- * Directed edge between facts.
- * Supports weighted, confidence-scored relationships.
- */
-export interface Relation {
-  from_id: string;       // Source fact ID
-  to_id: string;         // Target fact ID (or SessionId for session edges)
-  edge_type: EdgeType;   // Relationship semantics
-  
-  weight: number;        // [0, 1]; relationship strength
-  confidence: number;    // [0, 1]; assertion confidence
-  
-  created_at: number;    // Unix epoch ms
-}
+  // Statistical / embedding-derived
+  | 'similar_to'         // fact → fact (embedding similarity)
+  | 'co_accessed_with';  // fact → fact (co-recall patterns)
 ```
 
-**Storage**: Same SQLite database, indexed on `(from_id, edge_type)` and `(to_id, edge_type)` for traversal.
+**Also reserved for v1.5+:**
+- **Cross-session / cross-tier edges.** v1 `fact_relations.session_id` is non-null and edges are single-session-scoped. Cross-session consolidation belongs to `sweep`/`meditate`.
+- **Widening `RelationKind` to `| string`.** The locked 4-kind CHECK is deliberate — it prevents accidental vocabulary drift. Any extension is a schema change, not a type-level one.
+- **Weight / confidence refinement.** `ON CONFLICT DO NOTHING` (D-R3) means existing edges' `weight`/`confidence` are frozen at first write. Strengthening will arrive via one of: upsert with a merge rule, a separate evidence/observation table, or a sweep-side reconciliation pass — chosen in v1.5.
+- **Traversal API.** Recall-side and graph-walk consumers (folding duplicates, surfacing contradictions, following `supersedes` chains) are out of scope until at least one read consumer ships.
 
-**Edge lifecycle**:
-- **Tier 1 edges**: Created synchronously during fact ingestion (e.g., `originated_in` when fact is committed).
-- **Tier 2 edges**: Populated by sweep operations (e.g., `co_accessed_with` from recall logs).
-- **Tier 3 edges**: Not implemented in v1; reserved for future expansion.
+**Edge lifecycle (current vs. intended):**
+
+| Lifecycle phase | v1 (shipped) | v1.5+ (reserved) |
+|---|---|---|
+| Synchronous, caller-invoked | `integrate` writes `duplicate_of` after imprint | — |
+| Event-driven at imprint time | _none_ | provenance edges (`originated_in`, `modified_in`) |
+| Batch / background (REM-like) | _none_ | `sweep` / `meditate` write `supersedes`, `contradicts`, `supports`, similarity edges |
+| Read-side traversal | _none_ (write-only table) | recall-side folding, graph walks |
 
 ---
 
@@ -245,12 +272,14 @@ Facts reference other entities via **three mechanisms**:
 
 ### 5.1 Explicit Relations
 
-Typed edges in `relations` table (§2.2). Examples:
-- `fact_A --[contradicts]--> fact_B`
-- `fact_C --[originated_in]--> session_123`
-- `fact_D --[cites]--> fact_E`
+Typed edges in the `fact_relations` table (§2.2). v1 ships a 4-kind CHECK vocabulary; `integrate` writes only `duplicate_of`. The examples below illustrate **intended** semantics; only `duplicate_of` is observable in v1:
+- `fact_A --[duplicate_of]--> fact_B` (✅ v1, written by integrate)
+- `fact_A --[contradicts]--> fact_B` (⚠️ v1.5 — reserved in CHECK, not yet written)
+- `fact_C --[supersedes]--> fact_D` (⚠️ v1.5 — reserved in CHECK, not yet written)
+- `fact_E --[supports]--> fact_F` (⚠️ v1.5 — reserved in CHECK, not yet written; distinct from `applyFeedback('corroboration')`, which mutates trust on a single fact)
+- Provenance/citation edges (`originated_in`, `cites`, etc.) are **not** in the v1 CHECK vocabulary — see §2.2 "Reserved for v1.5+".
 
-**Query interface**: Graph traversal via recursive CTEs (SQLite) or application-layer graph traversal.
+**Query interface**: Graph traversal is deferred to v1.5+ (§7.2); `fact_relations` is write-only in v1.
 
 ### 5.2 Sources Array
 
@@ -279,7 +308,7 @@ Eureka uses **three SQLite databases**, each with identical schema but different
 | User | `~/.copilot/eureka/user.db` | Per-user | Persists across repos; user-specific |
 | Project | `<repo>/.eureka/project.db` | Per-repo | Checked into git; team-shared |
 
-**Schema replication**: All three databases use identical `facts` and `relations` tables. Tier determines **access scope**, not schema shape.
+**Schema replication**: All three databases use identical `facts` and `fact_relations` tables. Tier determines **access scope**, not schema shape. (v1 ships migration 003 only at the agent tier; the user/project tier rollouts arrive with the cross-tier consolidation activities.)
 
 **Query federation**: Application layer queries all three tiers and merges results. No database-level federation (avoids `ATTACH` complexity).
 
@@ -374,22 +403,22 @@ const results = recall({
 });
 ```
 
-### 7.2 Graph Traversal
+### 7.2 Graph Traversal (v1.5+ — NOT shipped)
 
-**Use case**: Follow relationships from a known fact
+**Use case**: Follow relationships from a known fact. **Not implemented in v1** — `fact_relations` is write-only until at least one read consumer ships (S4 in §2.2). Sketch retained for v1.5+ planning:
 
 ```typescript
 interface TraversalQuery {
-  start_id: string;           // Root fact ID
-  edge_types?: EdgeType[];    // Follow only these edge types
-  max_depth?: number;         // Traversal depth limit (default: 3)
+  start_id: string;                // root fact ID
+  relation_kinds?: RelationKind[]; // follow only these kinds (v1: only `duplicate_of` exists)
+  max_depth?: number;              // traversal depth limit (default: 3)
   direction?: 'outgoing' | 'incoming' | 'both';
 }
 
 export function traverse(query: TraversalQuery): Fact[];
 ```
 
-**Implementation**: Recursive CTE in SQLite for depth-limited BFS.
+**Intended implementation**: Recursive CTE in SQLite for depth-limited BFS.
 
 ### 7.3 Structured Filter
 
@@ -547,11 +576,11 @@ export type SessionId = string & { readonly __brand: 'SessionId' };
 
 ## 10. Implementation Checklist
 
-- [ ] **Schema migration**: Create initial `facts` and `relations` tables in all three tiers
+- [x] **Schema migration**: `facts` (migration 001/002) and `fact_relations` (migration 003) — v1 shipped
 - [ ] **FTS5 setup**: Configure BM25 virtual table with content tokenization
-- [ ] **Type definitions**: Export `Fact`, `Relation`, `FactKind`, `EdgeType` from `@akubly/eureka`
+- [ ] **Type definitions**: Export `Fact`, `Relation`, `FactKind`, `RelationKind` from `@akubly/eureka` (v1 ships the 4-kind `RelationKind` matching migration 003 CHECK; `FutureRelationKind` is documentation-only)
 - [ ] **Recall interface**: Implement hybrid BM25 + recency scoring (§7.1)
-- [ ] **Graph traversal**: Implement recursive CTE for edge traversal (§7.2)
+- [ ] **Graph traversal**: Deferred to v1.5+ (§7.2); requires a read consumer first
 - [ ] **Sweep operations**: PageRank for importance, tier reassignment (§3.2, §3.4)
 - [ ] **SessionId integration**: Wire Cairn session lifecycle to Eureka fact ingestion
 - [ ] **ESLint guardrails**: Implement `@akubly/no-crucible-decision-in-eureka` rule (§8.1)
