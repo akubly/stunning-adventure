@@ -361,34 +361,43 @@ Graham's proposal recommended A+D as the next increment. Aaron approved on 2026-
 
 **File:** `packages/skillsmith-runtime/src/forgeSessionRunner.ts`
 
-After `buildProfiles(db)` and before `closeDb()`, the runner now executes:
+After `buildProfiles(db)` and before `closeDb()`, the runner now executes best-effort DBOM generation and persistence:
 
 ```
 dbomArtifact = generateDBOM(session.sessionId, [...session.getBridgeEvents()])
+dbomRootHash = dbomArtifact.rootHash  // Always set (sentinel for empty, or computed hash)
 if (dbomArtifact.stats.totalDecisions > 0):
-    upsertDBOM(db, dbomArtifact)
-    dbomRootHash = dbomArtifact.rootHash
+    upsertDBOM(db, dbomArtifact)  // May throw; caught below
 else:
-    dbomRootHash = null
+    // No certification events → sentinel hash is persisted result, artifact not upserted
+try:
+    // ... (upsertDBOM if needed)
+catch e:
+    dbomPersistError = e.message
+    // run still succeeds; rootHash retained
 ```
 
+- `generateDBOM` always succeeds and returns a non-null hash (sentinel SHA-256 of empty string when no events).
+- `dbomRootHash` is non-null in all success paths; null only if `generateDBOM` itself throws (malformed payload).
+- Persistence failure sets `dbomPersistError` but does not throw—run completes successfully with best-effort provenance.
 - `generateDBOM` imported from `@akubly/forge` (already in deps).
 - `upsertDBOM` and `loadDBOMArtifact` imported from `@akubly/cairn`.
 - `getBridgeEvents()` is the existing snapshot accessor on `ForgeSession`.
 
-### Result Field
+### Result Fields
 
-`dbomRootHash: string | null` added to `RunForgeInstrumentedSessionResult`:
-- Non-null (64-char SHA-256 hex) when ≥1 certification-tier event captured.
-- Null when session produced only internal-tier events or no DBOM written.
+`dbomRootHash: string | null` and `dbomPersistError: string | null` added to `RunForgeInstrumentedSessionResult`:
+- `dbomRootHash`: Non-null (64-char SHA-256 hex) in all cases where DBOM generation succeeded. When no certification-tier events exist, this is the deterministic empty-set sentinel hash. When at least one certification event was captured, this is the real chain root hash and the artifact was persisted to the database. Null only when DBOM generation itself threw.
+- `dbomPersistError`: Non-null when DBOM generation or persistence failed; the run result is still valid (best-effort provenance). Null when DBOM was generated successfully (whether or not any certification events existed).
 
 ### Tests
 
 `packages/skillsmith-runtime/src/__tests__/forgeSessionRunner.test.ts`:
-1. **`persists a DBOM artifact and surfaces dbomRootHash when certification events exist`** — emits `permission.requested` + `permission.completed` SDK events, asserts `result.dbomRootHash` matches SHA-256 pattern and `loadDBOMArtifact(db, sessionId)` returns artifact.
-2. **`dbomRootHash is null and run succeeds when no certification events exist`** — emits only internal-tier events, asserts `result.dbomRootHash === null` and normal signal samples written.
+1. **`persists a DBOM artifact and surfaces dbomRootHash when certification events exist`** — emits `permission.requested` + `permission.completed` SDK events (certification tier), asserts `result.dbomRootHash` matches SHA-256 pattern and `loadDBOMArtifact(db, sessionId)` returns artifact.
+2. **`dbomRootHash is the empty-set sentinel and run succeeds when no certification events exist`** — emits only internal-tier events, asserts `result.dbomRootHash` equals the sentinel hash `generateDBOM('', []).rootHash`, `result.dbomPersistError === null`, and normal signal samples written.
+3. **`surfaces dbomPersistError and does not throw when DBOM persistence fails`** — mocks `upsertDBOM` to throw, asserts run completes successfully with `result.dbomPersistError` set to error message and `result.dbomRootHash` non-null (computed hash retained).
 
-Result: 2 new tests passing; 68 skillsmith-runtime + 694 forge tests pass. TypeScript compiles cleanly.
+Result: 3 new DBOM tests passing; 68 skillsmith-runtime + 694 forge tests pass. TypeScript compiles cleanly.
 
 ---
 
@@ -435,7 +444,7 @@ Every connection opened through `getDb()` (sole Cairn DB-open path) inherits:
 
 ### Docs Updated
 
-`docs/forge-dogfooding-guide.md` → "Known Limitations":
+`docs/forge-dogfooding-guide.md` → "Operational Notes / Concurrency & shared database":
 - Removed SQLITE_BUSY deferral note.
 - Added policy description: WAL + 5 s busy_timeout, what it guarantees, caveat re: sustained load.
 

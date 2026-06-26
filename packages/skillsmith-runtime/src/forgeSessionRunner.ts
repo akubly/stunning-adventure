@@ -13,7 +13,6 @@ import {
   closeDb,
   getDb,
   getExecutionProfile,
-  loadDBOMArtifact,
   querySignalSamples,
   upsertDBOM,
 } from '@akubly/cairn';
@@ -68,21 +67,20 @@ export interface RunForgeInstrumentedSessionResult {
    */
   disconnect: { ok: true } | { ok: false; error: string };
   /**
-   * Root hash of the DBOM artifact for this session.
+   * Computed DBOM chain root for this session.
    *
-   * - Non-null (64-char SHA-256 hex) in all cases where DBOM generation succeeded.
-   *   When no certification-tier events exist, this is the deterministic empty-set
-   *   sentinel hash (SHA-256 of the empty string). When at least one certification
-   *   event was captured, this is the real chain root hash and the artifact was
-   *   persisted to the database.
-   * - Null only when DBOM generation or persistence itself threw (malformed payload
-   *   or a storage failure). See `dbomPersistError` for the error message.
+   * - The deterministic empty-set sentinel hash when no certification-tier events
+   *   exist; the sealed chain root otherwise.
+   * - Retained even if persistence (`upsertDBOM`) fails — in that case
+   *   `dbomPersistError` is set and the run still succeeds.
+   * - Null ONLY when DBOM generation itself throws before a hash could be computed
+   *   (see `dbomPersistError`).
    */
   dbomRootHash: string | null;
   /**
    * Non-null when DBOM generation or persistence failed; the run result is still
-   * valid (best-effort provenance). Null when DBOM was generated successfully
-   * (whether or not any certification events existed).
+   * valid (best-effort provenance). Null when DBOM was generated and `dbomRootHash`
+   * was successfully assigned (whether or not any certification events existed).
    */
   dbomPersistError: string | null;
 }

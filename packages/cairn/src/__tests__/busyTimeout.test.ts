@@ -1,10 +1,10 @@
 /**
- * TDD: Slice 2D — SQLITE_BUSY concurrency policy
+ * Slice 2D — SQLITE_BUSY concurrency policy
  *
- * RED phase: both pragma-assertion tests fail because getDb() does not yet set
- * busy_timeout. The concurrent-writer integration tests validate that
- * busy_timeout = 5000 prevents SQLITE_BUSY when a competing writer releases the
- * lock within the window, and that omitting it causes an immediate failure.
+ * Asserts that getDb() applies both `busy_timeout = 5000` and WAL journal mode,
+ * and verifies the resulting concurrent-writer behaviour: a writer with a 5-second
+ * busy timeout succeeds when a competing writer releases the lock within the window,
+ * while a writer with no timeout fails immediately with SQLITE_BUSY.
  */
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
@@ -78,14 +78,17 @@ function waitForEvent(worker: Worker, event: string): Promise<WorkerMsg> {
     const onMsg = (msg: WorkerMsg) => {
       if (msg.event === event) {
         worker.off('message', onMsg);
+        worker.off('error', onError);
         resolve(msg);
       }
     };
-    worker.on('message', onMsg);
-    worker.on('error', (err) => {
+    const onError = (err: Error) => {
       worker.off('message', onMsg);
+      worker.off('error', onError);
       reject(err);
-    });
+    };
+    worker.on('message', onMsg);
+    worker.on('error', onError);
   });
 }
 
@@ -120,7 +123,6 @@ afterAll(() => {
 
 // ---------------------------------------------------------------------------
 // Unit assertions: getDb() must set busy_timeout = 5000
-// RED: both fail because getDb() does not yet call PRAGMA busy_timeout
 // ---------------------------------------------------------------------------
 
 describe('getDb() pragma policy', () => {

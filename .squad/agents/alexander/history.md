@@ -88,3 +88,5 @@ Forge Slice 2A shipped in PR #84 (commit 58a072e). Persona panel review cycle co
 The DBOM try/catch mirrors disconnect try/catch, establishing a precedent for all
 session-runner error handling going forward.
 
+- 2026-06-26T12:34:00-07:00 — PR #84 cloud-review fixes: removed unused `loadDBOMArtifact` import (test file imports it directly from `@akubly/cairn`; runtime never needed it), and corrected `dbomRootHash` JSDoc to accurately reflect that the hash is assigned *before* `upsertDBOM`, so it is retained on persistence failure — null only when `generateDBOM` itself throws.
+

@@ -166,3 +166,5 @@ Forge Slice 2D shipped in PR #84 (commit 58a072e). Persona panel review cycle co
 in "deferred" sections actively confuses operators. This requires vigilance — always scan
 the "deferred" list after shipping a feature to ensure newly-delivered items are promoted.
 
+
+📌 2026-06-26: **PR #84 busyTimeout.test.ts — listener-leak fix + header comment rewrite** — Named onError handler now added alongside onMsg in waitForEvent; both are removed via worker.off on resolve AND reject, eliminating the anonymous-listener leak that caused MaxListeners warnings under concurrent waits. Also rewrote the file-header comment to drop the 'RED phase' framing (misleading once the pragma is set in the same PR) and replaced the inline 'RED:' section comment with an accurate description of what the tests assert. All 5 busyTimeout tests ✅. — Roger
