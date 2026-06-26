@@ -137,6 +137,64 @@ Ready to merge.
 ✓ Branch: squad/crucible-s2, commit 49a0371
 📌 2026-06-13: **Crucible S2 persona-review-cycle COMPLETE** — 2-cycle Code Panel review completed on squad/crucible-s2. Compliance findings (contract-suite, metadata durability) reviewed and fixed. All 186 unit tests + contract suite validation passing. No regressions. Metadata round-trip durability (CL-11/CL-12 shared suite + CL-13 FS reopen + META-1/META-2) verified correct. READY TO MERGE. — Scribe (session 2026-06-14T06:51:39Z)
 
+## 2026-06-23T00:15:09Z — Forge Slice 2 Completion Notification
+
+**Context:** Forge production-runner integration Slice 2 completed (2A: DBOM in runner; 2D: SQLITE_BUSY policy).
+
+**For Laura's concurrent-writer integration test:**
+- Alexander (Slice 2A): DBOM generation + persistence in forgeSessionRunner now complete. `dbomRootHash: string | null` added to `RunForgeInstrumentedSessionResult`. Can use as pipeline completion signal.
+- Roger (Slice 2D): `PRAGMA busy_timeout = 5000` now set in Cairn's `getDb()`. Concurrent `forge-run-session` + interactive session on same `knowledge.db` will not throw `SQLITE_BUSY` within 5 s margin.
+- Full pipeline (2A + 2D) safe for real concurrent-access testing. New Cairn tests in `busyTimeout.test.ts` (5 tests) already passing.
+
+**Handoff:** The concurrent-writer integration test (`packages/cairn/src/__tests__/busyTimeout.test.ts`) is ready. If extending to multi-session batch runner (future candidate C), both DBOM and busy_timeout policies are now in place.
+
+## 2026-06-16: Crucible S3 Phase 0.5 Walking Skeleton — T6-RED Tests
+
+**Task:** T6-RED — Write failing acceptance tests for the Phase 0.5 walking skeleton gate.
+**Branch:** squad/crucible-s3-skeleton
+**Status:** ✅ RED tests written; skeleton-vertical fails for correct reason (assembly.js not yet created).
+
+### Files written
+
+- packages/crucible-core/src/__tests__/unit/fifo-scheduler.test.ts — A-Sched-1 (SK-6): 12 unit tests exercising FifoScheduler stub. FifoScheduler (T3/Gabriel) already landed → tests are GREEN immediately.
+- packages/crucible-core/src/__tests__/acceptance/skeleton-vertical.test.ts — SK-1 through SK-6 + A2 oracle: 26 acceptance checks. RED because skeleton/assembly.js (T5, orchestration) does not exist yet.
+
+### Test surface built
+
+| Check | File | Status |
+|-------|------|--------|
+| A-Sched-1: FIFO dispatch order | fifo-scheduler.test.ts | ✅ GREEN (FifoScheduler on-branch) |
+| A-Sched-1: immediate dispatch (no buffering) | fifo-scheduler.test.ts | ✅ GREEN |
+| A-Sched-1: quantaConsumed=1, queueDepthAtDispatch=0 | fifo-scheduler.test.ts | ✅ GREEN |
+| SK-1: SdkProvider completeTurn round-trip | skeleton-vertical.test.ts | 🔴 RED (assembly.js) |
+| SK-2: offset-0 Observation rows in WAL | skeleton-vertical.test.ts | 🔴 RED (assembly.js) |
+| SK-3: ≥1 Observation + ≥1 Decision committed | skeleton-vertical.test.ts | 🔴 RED (assembly.js) |
+| SK-4: status() reports sessionId, rowCount, lastCommitOffset | skeleton-vertical.test.ts | 🔴 RED (assembly.js) |
+| SK-5: A2 replay status=pass, rowsReplayed=rowCount | skeleton-vertical.test.ts | 🔴 RED (assembly.js) |
+| SK-5: A2 oracle self-test (normalizeTimestamps, assertA2ByteEquivalent) | skeleton-vertical.test.ts | 🔴 RED (assembly.js) |
+| SK-6: schedulerEvent.subKind === scheduler_dispatched | skeleton-vertical.test.ts | 🔴 RED (assembly.js) |
+
+### A2 byte-equivalence oracle (§11.6 + §11.8)
+
+stripWallClockDerived() + 
+normalizeTimestamps() + assertA2ByteEquivalent() are exported from the acceptance test file. The conformance runner (ci:conformance replay) should import from there rather than re-derive.
+
+### Spec ambiguities flagged for impl agents
+
+1. **AMBIG-1** createSkeletonSession() factory signature — assumed shape { provider, materializer?, scheduler?, replayEngine? }. T5 (orchestration) must match or update the test.
+2. **AMBIG-2** SkeletonSession has no queryRows() method. SK-2/SK-3 are asserted via TurnResult.primitives array kinds + status().rowCount. If T2 (Roger) exposes a row-reader seam, tighten these checks to filter by primitiveKind.
+3. **AMBIG-3** Bootstrap row count depends on BootstrapPayload shape. StubSdkProvider sends 1 tool def + 0 memory fragments → 2 bootstrap rows expected. Test uses ≥1 until T2 confirms exact count.
+4. **AMBIG-4** A2 wallClockMs ratio check (< 10% of original) is deferred — stub sessions have near-zero original duration; ratio would trivially pass or be undefined.
+
+### Branch status observed
+
+- T1 (Graham, skeleton/types.ts + index.ts): ✅ on-branch
+- T3 (Gabriel, skeleton/fifo-scheduler.ts): ✅ on-branch — FifoScheduler unit tests GREEN
+- T4 (Alexander, skeleton/sdk-provider-stub.ts): ✅ on-branch — StubSdkProvider class exported
+- T2 (Roger, bootstrap + replay): 🔴 pending (no assembly.js yet)
+- T5 (orchestration, skeleton/assembly.ts): 🔴 pending — blocks all acceptance checks
+
+— Laura (2026-06-16T23:00:15-07:00)
 ## 2026-06-16: imprint Activity — RED Test Phase
 
 **Task:** Write RED (failing) contract tests for the new `imprint` activity (raw fact-creation write path). Genesta's `genesta-imprint-contract.md` was the authoritative spec.

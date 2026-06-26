@@ -103,8 +103,96 @@ immediately and use it at the encode path too. The two sites drift if the predic
 📌 2026-06-14: **PR #77 Copilot review polish pass (squad/crucible-s2) — #1/#2/#3 all fixed.** #1 (materialize.ts ~L94): replaced `String(input.metadata)` with a safe truncated `JSON.stringify` (try/catch fallback to typeof, max 80 chars) so the reject error now reads `metadata must be a plain object (got array: ["not","an","object"])` rather than `[object Object]`. Updated META-8/META-9 test regexes from `\(got array\)` → `\(got array:` / `\(got number:` to match the richer format. #2 (ledger-impl.ts ~L93): expanded the single-line durability-critical nested try/catch around `onSubscriberError` to a clear multi-line block with an explanatory comment: "A throwing observability hook must never break append durability or skip subsequent subscribers." Behavior identical. #3 (wal-backend-fs.ts ~L415): no test or fixture depends on the empty-envelopeCbor→'observation' silent fallback (confirmed by grep); changed the empty-envelope branch to throw `CorruptSegmentError` with offset + message. Decision: throw (not keep-with-comment) because the write path always produces a non-empty envelope — empty can only mean corruption or an unsupported format, silent misclassification would be worse. Build ✅ (tsc --build exit 0), vitest ✅ (192/192), lint ✅ (0 warnings). No golden-vector/CBOR byte changes. — Roger
 
 
+## Learnings (2026-06-16 — Crucible S3 Phase 0.5 Walking Skeleton T2: bootstrap + replay)
+
+**Branch:** `squad/crucible-s3-skeleton`. **Files created:** `bootstrap.ts`, `replay-engine.ts`. **Files modified:** `ledger-impl.ts`. **Tests:** 204/204 existing pass. `tsc --build` ✅.
+
+### Bootstrap-batch seam (SK-2, §3.8)
+
+`BootstrapMaterializer.materialize()` returns plain `PrimitiveInput[]` — three sub-kind flavours: `system_prompt` (1 row), `tool_definitions` (1 row, carries tool registry + memoryManifest), `injected_memory` (N rows, one per fragment). All rows use `primitiveKind='observation'` and empty `causalReadSet` (bootstrap context references no prior ledger state). `LedgerImpl.bootstrap(rows)` commits each row via `walBackend.commitRow(row, { verdict: 'COMMIT', hookId: null })` — bypasses the hook bus (bootstrap rows are system-emitted; WAL hookVerdict byte 0xFF). Subscriber notification follows the same isolation contract as `append()`.
+
+### Replay-engine seam (SK-5, §11.4 A2 byte-equivalence)
+
+`DefaultReplayEngine.replay(sessionId, opts)` opens `FileSystemWalBackend` read-only, reads decoded events via `readRows()` and raw segment records via `readSegmentRecords()`, then for each row re-materializes via the shared `materializeRow(event, 'COMMIT', null)` helper and byte-compares `payloadHash`, `readSetHash`, and `envelopeCbor` against the stored segment record. Because Crucible canonical CBOR is deterministic, any divergence is a real fault. The verdict byte is NOT compared — it's a separate segment-header field and doesn't affect the CBOR hashes. `status='pass'` iff all rows match; `rowsReplayed === events.length` on full pass.
+
+### Contract gaps found in types.ts (T1 / Graham, please review)
+
+**GAP-1 — No `flags.bootstrap` path from materializer.** `PrimitiveInput` has no `flags` field, so `BootstrapMaterializer.materialize()` cannot signal `flags.bootstrap=true`. The WAL `SegmentRecordInput` has this bit but `WalBackend.commitRow()` doesn't accept it. Bootstrap rows today land with `flags.bootstrap=false` in segment records. Fix options: (a) add optional `walFlags?: Partial<SegmentRecordFlags>` to `PrimitiveInput`, or (b) add a separate `commitBootstrapRow()` variant to `WalBackend`. Phase 1 concern — Aperture projection depends on this bit for session-origin panel.
+
+**GAP-2 — No group-commit atomicity for bootstrap batch.** §3.8 requires "either every offset-0 Observation durable or none." Current `WalBackend` interface exposes only single-row `commitRow()`; there's no `commitBatch()` or exposed `flush()` on the interface. `LedgerImpl.bootstrap()` commits rows sequentially — partially committed bootstrap IS observable on crash between rows. Fix: expose `flush()` on `WalBackend` interface (or a new `commitBootstrapBatch()`) so we can set `batchSize=N` and call `flush()` after all N rows are staged. Phase 1 concern.
+
+**GAP-3 — ReplayEngine interface carries no rootDir.** `ReplayEngine.replay(sessionId, opts?)` doesn't encode where the WAL lives. The factory `createReplayEngine(rootDir)` fills this gap for the skeleton, but Valanice (T5 CLI) must use the factory — not construct a ReplayEngine directly. Flag for T1: add `rootDir` to an options bag on the interface, or keep the factory pattern as the canonical seam.
+
+**GAP-4 — `readSegmentRecords()` reads single active segment.** `FileSystemWalBackend.readSegmentRecords(segIdx?)` defaults to the active segment only. The replay engine works correctly for Phase 0.5 (single segment), but multi-segment sessions (64 MiB roll-over, Phase 1) will silently under-count rows. Fix when roll-over lands: expose `readAllSegmentRecords()` or iterate `manifest.segmentRange`.
+
+### `BootstrappableLedger` return type from `createLedger`
+
+Changed `createLedger()` return type from `Promise<Ledger>` to `Promise<BootstrappableLedger>` (covariant — all existing `Ledger`-typed consumers unaffected). Graham's assembler imports `BootstrappableLedger` and `createLedger` from `../ledger/ledger-impl.js` by direct path. The `CreateLedger` type alias in `ledger.ts` still matches because `BootstrappableLedger extends Ledger`.
 ## Learnings
 
 📌 2026-06-16: **Forge #1 runner lifecycle guidance** — Current `ForgeSession.disconnect()` calls `sdkSession.disconnect()` while subscriptions remain live, then flushes telemetry, so terminal `session.shutdown`/`session_end` is observed before `outcome.succeeded` is computed. `forge-run-session` should stay thin in `packages/runtime-cli` and call `@akubly/skillsmith-runtime`; that package owns direct `@akubly/forge` + SDK wiring. `knowledge.db` comes from Cairn `getDb()`/`getKnowledgeDbPath()` and uses SQLite WAL, not Crucible issue #55 `write.lock`; use isolated `--db` for CI/dev and decide serialize-vs-runner identity for dogfood. `forge-run-session` exit classes: 0 samples written, 1 ran but no samples, 2 usage/auth/SDK errors. Decision captured in `.squad/decisions/inbox/roger-forge-runner-lifecycle.md`. — Roger
 
 📌 2026-06-22T06:00:54Z: **Forge #1 slice 1 production runner integration — persona-review 3-cycle complete** — Branch squad/forge-runner-slice1 passed final gate. Cycle 1 (11 findings: 1 blocking, 5 important, 5 minor) → Alexander fixed (commit 9341bc1). Cycle 2 re-review (5 advisory) → Aaron approved hardening. Cycle 3 (commit 717cd20: event-driven terminal-event drain, terminalEventDrainMs removed from public ForgeSessionConfig, disconnect status on RunForgeInstrumentedSessionResult, explicit ownsSdkClient, flush idempotency guard). Disconnect lifecycle guidance locked: stop prompts → disconnect (keep SDK live) → flush telemetry → ForgeClient.stop() → closeDb(). Test suite green: forge 694 / skillsmith-runtime 66 / runtime-cli 42. tsc clean. Ready to merge to main.
+
+## Learnings
+
+📌 2026-06-23: **Slice 2D — SQLITE_BUSY concurrency policy (busy_timeout + WAL)** —
+
+**Where the DB-open path lives:** `packages/cairn/src/db/index.ts`, function `getDb()`. Single-file singleton; all Cairn consumers (MCP server, session-start hook, CLI, migration runner, test harnesses) go through this one call site.
+
+**Pragma policy chosen:**
+- `PRAGMA journal_mode = WAL` — already present before this slice; kept and documented explicitly.
+- `PRAGMA busy_timeout = 5000` — added this slice. Causes SQLite to retry internally for up to 5 s before throwing `SQLITE_BUSY`. This covers the `forge-run-session` + interactive Copilot session concurrent-write window without hanging indefinitely.
+- `better-sqlite3` v12.8.0 actually defaults `busy_timeout` to 5000 ms (discovered during RED phase — all pragma assertions passed even before the explicit pragma was written). We still write it explicitly so the policy is documented in code, version-upgrade-proof, and visible to grep.
+
+**WAL decision:** WAL was already set. No duplication — left as-is. WAL mode means readers never block writers and writers never block readers; the only contention is writer–writer. `busy_timeout` handles that window.
+
+**Concurrent-writer test approach (`packages/cairn/src/__tests__/busyTimeout.test.ts`):**
+- TDD RED: pragma-assertion tests happened to pass immediately (b-s3 v12 default) — RED failure moved to the concurrent worker tests (data: URL issue before the fix, then the wrong-timeout-on-worker issue).
+- CJS `eval: true` workers (not ESM `data:` URLs): bare specifier `require('better-sqlite3')` resolves correctly from an eval worker in this monorepo; ESM `data:` URLs cannot resolve bare specifiers because they have no base directory for module resolution.
+— Roger
+
+## Learnings
+
+📌 2026-06-22: **Slice 2D persona-review polish (F3 doc-placement + F4 migration comment)**
+
+### F3 — Doc placement: implemented behavior must not appear in the deferred list
+
+The concurrency bullet (busy_timeout=5000 + WAL) was sitting inside the "Known Limitations / explicitly deferred" section. Delivered behavior living under "deferred" misleads operators into thinking it isn't working. Fix: removed the bullet from the deferred list and relocated it to a new `## Operational Notes` / `### Concurrency & shared database` section, placed between Troubleshooting and Known Limitations. The deferred list now contains only future work. General rule: scan the "deferred" or "known limitations" section after every slice and move any item that has since been delivered.
+
+### F4 — busy_timeout comment: migration blast-radius must be documented inline
+
+The module header already described the concurrent-writer rationale for the 5 s timeout. What was missing was an inline comment specifically calling out that `busy_timeout` applies to **all** opens of the db — including the migration runner — not just the CLI/session pair. The inline comment now explains: (a) applies globally including migrations, (b) acceptable because migrations are fast and idempotent, (c) 5 s covers typical interleaved usage, (d) if startup hangs ~5 s this global default is the first place to revisit. No behavior change — comment only. Deferred: making the value configurable + adding lock-wait logging.
+— Roger (2026-06-22)
+
+---
+
+## 2026-06-23T06:34:41Z — Slice 2D Persona-Review Merge & Ship
+
+Forge Slice 2D shipped in PR #84 (commit 58a072e). Persona panel review cycle completed:
+
+- **Finding 3 (Skeptic):** Documentation placement error caught. Concurrency bullet was in
+  "Known Limitations / explicitly deferred" section, misleading operators into thinking the
+  feature isn't ready. Fixed by relocating to new "Operational Notes" section between
+  Troubleshooting and Known Limitations. Content preserved verbatim including caveat.
+
+- **Finding 4 (Craft):** Inline comment added to `db.pragma('busy_timeout = 5000')` explaining
+  that the pragma applies globally (all opens including migrations) with rationale and
+  troubleshooting notes.
+
+- **Deferred improvements:** Configurable timeout + lock-wait logging documented for future
+  issue. Current 5 s global default sufficient for dogfood workload.
+
+- **Tests:** All 5 busy_timeout tests passing (cargo-cult default investigation yielded
+  interesting b-s3 v12 discovery: the library already defaults to 5000 ms). Full suite
+  749/752 ✅ (3 pre-existing curator failures unrelated).
+
+**Key contribution:** Documentation placement is architecture. Misplacing "delivered" behavior
+in "deferred" sections actively confuses operators. This requires vigilance — always scan
+the "deferred" list after shipping a feature to ensure newly-delivered items are promoted.
+
+
+📌 2026-06-26: **PR #84 busyTimeout.test.ts — listener-leak fix + header comment rewrite** — Named onError handler now added alongside onMsg in waitForEvent; both are removed via worker.off on resolve AND reject, eliminating the anonymous-listener leak that caused MaxListeners warnings under concurrent waits. Also rewrote the file-header comment to drop the 'RED phase' framing (misleading once the pragma is set in the same PR) and replaced the inline 'RED:' section comment with an accurate description of what the tests assert. All 5 busyTimeout tests ✅. — Roger
+
+## Learnings
+2026-06-26 — PR #84 busyTimeout: always attach a worker 'exit' handler in waitForEvent so the promise rejects (instead of hanging) if the worker exits before emitting the expected event; use a shared cleanup() that removes all three listeners (message, error, exit) on every settle path to prevent leaks.

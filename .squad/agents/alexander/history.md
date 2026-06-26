@@ -33,6 +33,53 @@ Two infrastructure changes approved in PRs #50 and #52:
 2. **PR #52 — Doc-hygiene back-reference sweep (Issue #46, Gabriel):** Gitignored-path back-references removed from committed prose across decisions.md, decisions-archive.md, and agent history files. Forward writer-targets (charters, templates, skills) preserved. Classification heuristic documented for future hygiene sweeps.
 
 **Action for you:** No immediate action required. Lint workspace changes take effect after merge and 
+npm install restart. Doc-hygiene scope established for future improvements.
+
+---
+
+## Learnings
+
+**2026-06-16 — S3 Phase 0.5 Skeleton T4: StubSdkProvider (SK-1)**
+
+**StubSdkProvider deterministic contract:**
+- File: `packages/crucible-core/src/skeleton/sdk-provider-stub.ts`
+- Exported class: `StubSdkProvider`
+- `id = 'stub-sdk@1'`, `sdkVersion = '0.0.0-stub'`, `schemaVersion = 1`
+- Determinism mechanism: djb2 hash of the prompt string → stable 8-character hex (`promptHash`). No timestamps, no randomness anywhere in the output. Same prompt → byte-for-byte identical `TurnResult`. SK-5 replay holds unconditionally.
+- `bootstrap(opts)` builds `BootstrapPayload` directly from opts fields; `memoryManifest` is always `[]` for the skeleton.
+- `shutdown(reason)` is an idempotent no-op resolve.
+
+**Exact PrimitiveInput shape used (from `packages/crucible-core/src/types.ts`):**
+```ts
+interface PrimitiveInput {
+  primitiveKind: PrimitiveKind;   // 'observation' | 'decision' | ...
+  primitivePayload: unknown;
+  causalReadSet: string[];
+  metadata?: EventMetadata;
+}
+```
+
+**Observation row (primitives[0]):**
+```ts
+{
+  primitiveKind: 'observation',
+  primitivePayload: { source: 'stub-sdk', content: `stub-response:${promptHash}`, promptHash },
+  causalReadSet: [],
+}
+```
+
+**Decision row (primitives[1]):**
+```ts
+{
+  primitiveKind: 'decision',
+  primitivePayload: { source: 'stub-sdk', action: 'passthrough', rationale: `stub decision for prompt hash ${promptHash}` },
+  causalReadSet: [promptHash],
+}
+```
+
+Laura and Roger: `causalReadSet` on the Observation is `[]` (nothing read yet); on the Decision it is `[promptHash]` — the hash string is the logical causal reference. Both rows have no `metadata` field (optional, omitted). `primitiveKind` discriminators are lowercase: `'observation'` and `'decision'`.
+
+Build result: `npx tsc --build` — clean (exit 0). `npx vitest run` — 192/192 tests green.
 pm install restart. Doc-hygiene scope established for future improvements.
 
 ## Learnings
@@ -47,3 +94,48 @@ pm install restart. Doc-hygiene scope established for future improvements.
 
 - 2026-06-16T22:51:06-07:00 — Persona Cycle 1 follow-up: ForgeClient no longer owns approveAll; runner composition root owns dogfood approveAll, ForgeSession drains late terminal events after disconnect before telemetry flush, and injected SDK clients are not stopped unless explicitly requested.
 - 2026-06-21T22:25:59-07:00 — Forge disconnect drain hardened from a fixed post-disconnect sleep into an event-driven wait on bridged `session.shutdown` / `session_end`, with the timeout kept as an internal ceiling and test seam; runner results now surface disconnect cleanup status without changing success exit-code behavior.
+
+- 2026-06-22T23:59:51-07:00 — Slice 2A: DBOM wiring in forgeSessionRunner. Real API signatures discovered:
+  - **Generator**: `generateDBOM(sessionId: string, events: CairnBridgeEvent[]): DBOMArtifact` — `packages/forge/src/dbom/index.ts`. Filters to `provenanceTier === 'certification'` events, builds SHA-256 Merkle-like hash chain, returns full artifact with `rootHash`, `stats`, `decisions`.
+  - **Persist**: `upsertDBOM(db: Database.Database, artifact: DBOMArtifactInsert): number` — `packages/cairn/src/db/dbomArtifacts.ts`. `DBOMArtifact` is structurally compatible with `DBOMArtifactInsert` (literal `'0.1.0'` assignable to `string`; `DBOMStats` matches inline stats type exactly). Transaction-based: deletes existing DBOM for session then re-inserts.
+  - **Load**: `loadDBOMArtifact(db: Database.Database, sessionId: string): DBOMArtifact | null` — same file. Reconstructs full artifact from `dbom_artifacts` + `dbom_decisions` tables (migration 010).
+  - **Bridge events**: `session.getBridgeEvents(): readonly CairnBridgeEvent[]` on `ForgeSession`. Certification-tier SDK events mapped by bridge: `permission.requested`, `permission.completed`, `subagent.started`, `subagent.completed`, `subagent.failed`, `session.plan_changed`, `skill.invoked`, `session.snapshot_rewind`, `session.error`.
+  - **Result field**: `dbomRootHash: string | null` added to `RunForgeInstrumentedSessionResult`. Non-null (64-char SHA-256 hex) when `artifact.stats.totalDecisions > 0`; null otherwise. Empty-DBOM path skips `upsertDBOM` entirely — graceful, no DB write.
+  - **Ordering**: DBOM generation/persist happens after `buildProfiles(db)`, before `closeDb()` — Cairn DB open throughout.
+
+## Learnings
+
+- 2026-06-22T23:34:41-07:00 — Forge slice 2A persona-review follow-on: sentinel hash + best-effort contract.
+  - **Sentinel hash**: `generateDBOM` always returns a well-formed artifact; for zero certification-tier events the rootHash is the SHA-256 of the empty string (`e3b0c44...`). `dbomRootHash` should therefore always be non-null when generation succeeds, using the sentinel as a valid DBOM signature for empty-certification sessions. null is reserved exclusively for the pathological case where generation itself throws.
+  - **dbomPersistError field**: added to `RunForgeInstrumentedSessionResult` (non-null when DBOM generation or persistence threw; null on success). The run result is always valid — provenance is best-effort, never a blocking gate. This mirrors the existing `disconnect` observability pattern: failures surface in the result, never propagate as thrown exceptions.
+  - **Best-effort try/catch wraps both generation and upsertDBOM**: either can throw (malformed event payload, storage error); both are caught; `console.warn` used to match the existing disconnect-failure logging idiom in this file.
+  - **F6 1:1 confirmation**: `stats.totalDecisions` is 1:1 with certification-tier events — exactly 2 for a `permission.requested` + `permission.completed` pair. Test tightened from `toBeGreaterThanOrEqual(2)` to `toBe(2)`.
+  - **Shared helper move**: `permissionRequestedEvent()` and `permissionCompletedEvent()` with their `as SessionEventType` casts moved from inline in the test file to `packages/skillsmith-runtime/src/__tests__/helpers/mockSession.ts`, alongside the existing event factories. Cast isolated in one place.
+  - **Test 3 (new)**: best-effort failure path — spies on `cairn.upsertDBOM` to throw `'disk full'` for a session with certification events; asserts run returns valid result (`signalSamplesWritten > 0`, `disconnect.ok === true`), `dbomPersistError === 'disk full'`, no exception propagated.
+
+- 2026-06-26T12:31:20-07:00 📌 Correction: the earlier dbomRootHash note at line 56 above predates the persona-review refinement. Shipped contract: dbomRootHash is the deterministic empty-set SENTINEL hash (non-null, `e3b0c44...`) when there are zero certification-tier events; null ONLY when generateDBOM itself throws; dbomPersistError carries best-effort persistence failures. See decisions.md.
+
+---
+
+## 2026-06-23T06:34:41Z — Slice 2A Persona-Review Merge & Ship
+
+Forge Slice 2A shipped in PR #84 (commit 58a072e). Persona panel review cycle completed:
+
+- **Critical finding 1 (Correctness):** dbomRootHash null semantics clarified. Sentinel
+  design (empty-string SHA-256 hash `e3b0c44...` for empty-event DBOM) replaces null
+  for no-events case. Null reserved exclusively for generation/persistence errors.
+
+- **Critical finding 2 (Correctness):** DBOM block wrapped in try/catch (best-effort).
+  Failures set `dbomPersistError` field and log warning; never throw. Maintains
+  slice-1 success/exit-code contract (mirrors existing disconnect pattern).
+
+- **Result:** All tests passing (3 new + existing). 68 skillsmith-runtime + 694 forge
+  tests green. Slice 2A fully integrated and production-ready. Decision merged to
+  canonical `.squad/decisions.md`.
+
+**Key contribution:** Discovered that best-effort patterns require consistent propagation.
+The DBOM try/catch mirrors disconnect try/catch, establishing a precedent for all
+session-runner error handling going forward.
+
+- 2026-06-26T12:34:00-07:00 — PR #84 cloud-review fixes: removed unused `loadDBOMArtifact` import (test file imports it directly from `@akubly/cairn`; runtime never needed it), and corrected `dbomRootHash` JSDoc to accurately reflect that the hash is assigned *before* `upsertDBOM`, so it is retained on persistence failure — null only when `generateDBOM` itself throws.
+

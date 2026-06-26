@@ -97,12 +97,82 @@ history.md requires deleting committed entries, which is permanently prohibited.
 ## 2026-06-14T06:10:36Z — Crucible S2 Shipped
 
 ✓ Issue #62: Verdict table TypeScript-name column in CTD §4.1  
-✓ Issue #71: Append-Only History Rule governance (dropped size management)  
+✓ Issue #71: Append-Only History Rule governance (dropped size management)
+
+---
+
+## 2026-06-23T06:34:41Z — Forge Slice 2 Persona-Review Disposition
+
+**Panel verdict:** Persona panel (Correctness, Skeptic, Craft, Compliance, Architect)
+reviewed Slice 2A (DBOM) and Slice 2D (busy_timeout). Two critical findings arose:
+
+1. **dbomRootHash null ambiguity:** Graham's original DBOM contract used `null` for both
+   "no certification events" and "generation failed." This conflation created risk of
+   silent data loss on error.
+
+2. **Fail-fast vs. best-effort:** Graham's initial recommendation was fail-fast semantics
+   (throw on DBOM generation error, fail the session runner). Persona panel recommended
+   overriding this in favor of best-effort (try/catch, surface error in result type,
+   never throw).
+
+**Disposition (Aaron approved):** Sentinel + best-effort design. Empty-session returns
+deterministic `e3b0c44…` (SHA-256 of empty string); generation/persistence errors set
+`dbomPersistError` field and log warning, never throw. Mirrors existing disconnect
+best-effort pattern. This keeps DBOM failures from breaking slice-1's exit-code contract
+and makes the success/failure distinction explicit.
+
+**Outcome:** PR #84 shipped with best-effort semantics. Graham's fail-fast call was
+overridden by the panel's architectural judgment and Aaron's approval.
+
+**Learning:** Best-effort patterns require discipline to propagate consistently.
+The DBOM block's try/catch mirrors the disconnect try/catch pattern, establishing
+a consistency precedent for session-runner error handling.
+
+---
 ✓ squad.agent.md Scribe template updated (HISTORY APPEND-ONLY GUARD)  
 ✓ Decisions merged into decisions.md  
 ✓ Branch: squad/crucible-s2, commit 49a0371
 📌 2026-06-13: **Crucible S2 persona-review-cycle COMPLETE** — 2-cycle Code Panel review completed on squad/crucible-s2. Cycle 1: Architect findings (design consistency, API contracts) reviewed and triaged by Aaron. Cycle 2: Design decisions re-verified correct across all fixes. F3 envelope versioning deferred to ship-gate (GitHub issue #76). S2 architecture APPROVED and ready to merge. — Scribe (session 2026-06-14T06:51:39Z)
 
+## Learnings — 2026-06-16: Crucible S3 Next-Slice Scoping
+
+### Current Implementation State (192 tests green, crucible-core)
+
+| CTD Lane | Status | Key Files |
+|----------|--------|-----------|
+| §3 WAL Substrate (L1) | ✅ DONE | wal-backend-fs.ts, wal-backend-in-memory.ts, wal/cas-fs.ts, wal/cbor.ts, wal/codec.ts, wal/hash-chain.ts, wal/seal-and-split.ts, wal/materialize.ts, wal/types.ts, wal/flags.ts, wal/hash.ts |
+| §4 Hook Bus | ✅ DONE | hook-bus.ts, hook-bus-impl.ts (pre-commit verdicts COMMIT/OBSERVE/PAUSE/VETO, predicate dispatch) |
+| §5 Router (L4) | ❌ NOT STARTED | No router/scheduler code exists in src/ |
+| §7 Generators (L3) | ❌ NOT STARTED | No generator/proposal code |
+| §8 Applier / DecisionGate | ❌ NOT STARTED | No applier code |
+| §9 Aperture | 🟡 PARTIAL | projectors/aperture-projector.ts, notification-policy.ts (L2 projection done; no StructuralApprovalQueue, no Router integration) |
+| §10 Session / Branching | 🟡 PARTIAL | session.ts, session-manager.ts, fork-lineage.ts, sqlite-db.ts, in-memory-db.ts, schema.ts (createSession/fork done; no bootstrap protocol, no COW snapshots) |
+| §11 Hermetic Replay | ❌ NOT STARTED | WAL has replayFromSegments internally but no hermetic replay engine, no A2 conformance |
+| §12 SDK Integration | ❌ NOT STARTED | No SdkProvider, no BootstrapPayload runtime |
+| §13 CLI Shell | ❌ NOT STARTED | crucible-cli/src/index.ts is a bare re-export; no status/replay verbs |
+| Phase 0.5 Walking Skeleton | ❌ NOT STARTED | No end-to-end vertical: L0→L1→replay chain, FifoScheduler, crucible status/replay |
+
+### Key Observation
+CTD design docs (§1–§19) are ALL written. Implementation has WAL+HookBus+Aperture(L2)+Session(basic). The walking skeleton (Phase 0.5) is the gate for Phase 1 fan-out. S1/S2 hardened the substrate — the skeleton can now proceed safely.
+
+### Slice Options Identified (S3)
+- Option A: Walking Skeleton (Phase 0.5) — vertical through L0→L1→replay
+- Option B: Router/FifoScheduler stub — L3.5 tier boundary
+- Option C: SDK Provider (§12) + bootstrap — L0 boundary
+- Option D: Aperture features (#65/#66) — unreadCount ack, getPriority
+
+Recommended: Option A (Walking Skeleton) — it's the defined gate. See decisions/inbox/graham-crucible-next-slice.md.
+
+## 2026-06-16: S3 Walking Skeleton — Spawn Manifest Produced
+
+Produced the S3 spawn manifest (6 tasks, 5 agents). Key architectural decisions:
+- Single shared branch squad/crucible-s3-skeleton (no worktrees, shared checkout)
+- File-collision risk mitigated: tasks touch non-overlapping paths
+- Laura starts TDD in parallel (test files don't collide with impl files)
+- Graham owns interfaces/types task (T1) that gates all implementation tasks
+- Two parallel tracks after T1: Roger (T2 bootstrap+WAL) and Gabriel (T3 scheduler) + Alexander (T4 SDK provider)
+- Valanice (T5 CLI verbs) needs T2 to read from WAL
+- Laura (T6 acceptance) needs T2+T3+T4+T5 but writes RED tests from spec immediately
 ## Learnings — 2026-06-16: Cairn/Forge Near-Term Roadmap Read
 
 Cairn is currently the durable local nervous system: SQLite event/profile/hint/DBOM storage, Curator, MCP tools, skill parsing/linting/testing, and GitHub artifact discovery are shipped in `@akubly/cairn` 0.3.0. The package CLI remains a placeholder, while the MCP server is the real interface.
@@ -110,3 +180,34 @@ Cairn is currently the durable local nervous system: SQLite event/profile/hint/D
 Forge is the deterministic runtime/optimizer package: bridge, hooks, decision gates, DBOM/export, telemetry, prescribers, applier, and feedback-loop plumbing are implemented in `@akubly/forge` 0.1.0. The explicit dogfood gap is that no production session runner yet drives live Copilot sessions through `ForgeClient`/`ForgeSession`, so profiles require seeding until that integration lands.
 
 Near-term roadmap split: Cairn's active external-facing path is the GitHub Automations epic (#8) with brainstorm/design still open (#5/#6); Forge's highest-leverage path is dogfood hardening and runner integration before Phase 5 cloud PGO/GP work.
+
+---
+
+## Learnings — 2026-06-22: Forge Slice 2 Scoping
+
+**Key files for Forge runner integration:**
+- Composition root: `packages/skillsmith-runtime/src/forgeSessionRunner.ts`
+- CLI: `packages/runtime-cli/src/forge-run-session.ts`
+- DBOM generator (pure fn): `packages/forge/src/dbom/index.ts` — `generateDBOM()`
+- DBOM persistence: `packages/cairn/src/db/dbomArtifacts.ts` — `upsertDBOM()`/`loadDBOMArtifact()`
+- DB open: `packages/cairn/src/db/` (getDb)
+- Session start hook: `packages/skillsmith-runtime/src/hooks/sessionStart.ts`
+
+**Slice decision:** Recommended A (DBOM in runner) + D (SQLITE_BUSY policy) as slice 2. Trade-off: chose contained provenance completion over always-on platform wiring (higher risk, needs own ADR) or batch runner (quality-of-life, not unblocking). Always-on (B) is the clear slice 3 but requires permission-model design and the busy_timeout from D.
+
+**No open issues track Forge runner follow-ups** — the backlog lives in decisions.md deferred notes and the dogfooding guide Known Limitations section.
+
+---
+
+## Learnings — 2026-06-23: Forge Slice 2 Review
+
+**Review Verdict:** APPROVE
+
+**Key Findings:**
+1. **DBOM Wiring (2A):** Correctly implemented in `forgeSessionRunner.ts`. `generateDBOM` and `upsertDBOM` execute with the DB open and accurately handle the null-DBOM path based on `totalDecisions > 0`. Persistence errors bubble up appropriately, which is the correct fail-fast behavior.
+2. **busy_timeout (2D):** The SQLITE_BUSY policy is correctly applied in the `getDb()` singleton (`PRAGMA busy_timeout = 5000`). The WAL pragma remains intact (no regressions). The concurrent-worker tests in `busyTimeout.test.ts` explicitly validate the lock-retry mechanism using a real file-backed DB and proper thread isolation.
+3. **Scope:** Clean execution. Changes strictly bounded to Slice 2A and 2D. No cloud scope drift or extraneous refactoring.
+4. **Pre-existing Failures:** Confirmed Roger's report regarding the 3 `curator.test.ts` failures. The current diff does not touch curator logic, confirming these are baseline regressions. A tracking issue should be filed for the failing `curator` tests.
+5. **Acceptance Criteria:** Met. DBOM is generated and persisted for certification-tier events, the `dbomRootHash` surfaces correctly, and the 5-second SQLITE_BUSY retry prevents immediate lock contention failures. All targeted test suites are green.
+
+- 2026-06-26T12:31:20-07:00 📌 Correction/supersession: the fail-fast recommendation in finding 1 above (line 168: "Persistence errors bubble up appropriately, which is the correct fail-fast behavior") was OVERRIDDEN during persona review — shipped behavior is best-effort (DBOM errors caught + surfaced via RunForgeInstrumentedSessionResult.dbomPersistError; the run still succeeds). See decisions.md slice-2 entry.

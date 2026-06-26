@@ -342,6 +342,14 @@ This atomically expires all existing active hints for the skill and inserts fres
 
 ---
 
+## Operational Notes
+
+### Concurrency & shared database
+
+`forge-run-session` and an interactive Copilot session can safely share `~/.cairn/knowledge.db` at the same time. Cairn's `getDb()` sets `PRAGMA busy_timeout = 5000` (5 s) and `PRAGMA journal_mode = WAL` on every connection. WAL allows one writer to proceed while readers continue unblocked; the 5 s busy-timeout means a second concurrent writer retries rather than throwing `SQLITE_BUSY` immediately. Under sustained concurrent write load (multiple parallel runners all flushing at once) contention is reduced but not eliminated — 5 s covers typical interleaved CLI/runner usage without hanging indefinitely.
+
+---
+
 ## Known Limitations
 
 The following are explicitly deferred, per the [dogfood-first decision](../.squad/decisions-archive.md#2026-05-30-forge-roadmap-priority--dogfood-first-aaron-directive):
