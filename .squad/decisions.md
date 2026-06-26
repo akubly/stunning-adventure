@@ -714,3 +714,138 @@ Not pushed — Roger has follow-up fixes to land on top; coordinator will push a
 1. **Aaron decision pending:** Q1 & Q2 above (integrate landing, dedupKey in schema)
 2. **Genesta & Crispin review:** Integration design memo — verify representation coverage
 3. **Follow-up slice:** `integrate` cognitive orchestration (after `imprint` ships)
+
+---
+
+# 2026-06-25 — Eureka integrate v1 Slice (Option B) — COMPLETED
+
+**Status:** DECIDED & SHIPPED (Option B: integrate as post-imprint consolidation pass)  
+**Date:** 2026-06-25T00:17:47-07:00 (Wave 2 GREEN complete)  
+**Authors:** Genesta (Cognitive Systems Lead), Crispin (Knowledge Representation), Laura (Tester)  
+**Approved by:** Aaron (akubly) — 2026-06-24T22:33 (Option B reframe approved)
+
+---
+
+## Decision: Integrate as Consolidation Pass (Option B, not write-wrapper)
+
+Aaron's reframe (2026-06-24T22:33): Integrate is a **post-imprint consolidation pass**, not a wrapper. It reconciles already-imprinted facts within a session by discovering relationships and writing cross-reference edges. Does NOT call imprint; does NOT mutate facts rows.
+
+### Locked Contract (Genesta)
+
+**File:** packages/eureka/src/activities/integrate.ts
+
+**Signature:**
+`	s
+export async function integrate(
+  options: IntegrateOptions,
+  deps: IntegrateDeps,
+): Promise<IntegrationReport>;
+`
+
+**Key types:**
+- IntegrateOptions: { sessionId: SessionId }
+- IntegrateDeps: { factReader, relationWriter, clock }
+- IntegrationReport: { sessionId, factsScanned, duplicatesFound, edgesWritten, pairs }
+- DuplicatePair: { keptFactId, duplicateFactId } (orientation: keptFactId = older)
+- RelationEdge: { from, to, edgeType: 'duplicate_of', sessionId } (v1 union has exactly one member)
+
+**Algorithm (normative):**
+1. Validate options.sessionId (non-empty string after trim) — throw InvalidIntegrateError if bad (sync, before first await).
+2. Fetch facts via deps.factReader.listBySession({ sessionId }) (oldest→newest, returns {factId, content, createdAt}).
+3. Pair-scan O(n²): For each i,j where i < j, if acts[i].content.trim() === facts[j].content.trim(), record the pair with orientation newer→older.
+4. **Topology: STAR-TO-CANONICAL** — all newer duplicates point to the single oldest (not a chain). Idempotent under late arrivals.
+5. Write edges via deps.relationWriter.writeEdges(edges) → returns count of newly inserted edges.
+6. Return report with dgesWritten = 0 on idempotent re-run (UNIQUE constraint dedupe).
+
+**Error contract:**
+- InvalidIntegrateError (new, in ctivities/errors.ts): code: 'INVALID_INTEGRATE', ield: 'sessionId'. Mirrors InvalidImprintError shape.
+- FactReader / RelationWriter errors propagate unwrapped.
+
+### Representation Layer (Crispin — Wave 1 substrate shipped)
+
+**Migration 003 — act_relations table:**
+- Columns: (from_fact_id, to_fact_id, relation_kind, session_id, weight, confidence, created_at).
+- CHECK constraint: elation_kind IN ('duplicate_of', 'supersedes', 'contradicts', 'supports') (v1 writes ONLY duplicate_of; others reserved).
+- UNIQUE on (session_id, from_fact_id, to_fact_id, relation_kind) → idempotent ON CONFLICT DO NOTHING.
+- Two predicate indices: (session_id, from_fact_id, relation_kind) and (session_id, to_fact_id, relation_kind).
+
+**RelationWriter seam (in-memory + sqlite):**
+- RelationWriter interface: writeEdges(edges: RelationEdge[]): Promise<number>.
+- Both SqliteRelationWriter and InMemoryRelationWriter implement it with idempotency via the UNIQUE constraint.
+- Validation runs synchronously per-edge BEFORE persistence — mirrors imprint F1 pre-await posture.
+
+**FactReader extension:**
+- New listBySession({ sessionId }): Promise<Array<{factId, content, createdAt}>> method.
+- Returns facts ordered by createdAt ascending (oldest first); timestamp is Unix epoch ms for canonical ordering.
+- Both sqlite and in-memory implementations provided.
+
+**Vocabulary clash flagged:**
+- Existing FeedbackEvent='corroboration' (single-fact trust delta) vs new edge type supports (inter-fact link).
+- Recommendation: Keep both; mark distinction in code comments. No rename needed.
+
+### Test Contract (Laura — RED phase committed, GREEN shipped)
+
+**15 tests × 2 wirings = 30 RED/GREEN test runs:**
+- IT-1..IT-15: Core integrate contract suite (empty session, single fact, distinct content, duplicates, orientation, idempotency, session isolation, trim equality, error cases).
+- IT-S1: Direct SQL query on relations table (reconciled to schema naming: WHERE relation_kind = 'duplicate_of').
+- Test conventions match imprint slice 1:1 (shared contract helper + thin InMemory/SQLite wirings).
+
+**Key test decisions (Laura):**
+- TD-1: STAR-TO-CANONICAL topology for 3+ identical facts (two edges to oldest, never chain).
+- TD-2: Synchronous validation of sessionId before first await (no seam touched on error).
+- TD-3: Deterministic pair ordering by createdAt ASC, then actId ASC (byte-stable idempotency).
+- TD-4: Trim-only normalization ("hello" matches "  hello  "; no internal whitespace collapse).
+- TD-5: Imprint losslessness pinned by two independent tests (both dups still recallable; imprint yields 2 distinct FactIds).
+
+### Implementation Status
+
+**Wave 1 (Crispin — Substrate):** ✅ SHIPPED 2026-06-24T22:39  
+- Migration 003 + 7 new migration tests (MIG-7..MIG-13).
+- epresentation/ directory with Relation, RelationKind, alidateRelation, InvalidRelationError.
+- RelationWriter interface + SqliteRelationWriter + InMemoryRelationWriter + 48 contract tests (RW-1..RW-14 × 2 wirings).
+- FactReader.listBySession extension + 3 new contract tests (CL-6..CL-8).
+- actId on RecallResult (F9 carry-over from imprint review: write→read symmetry).
+- Build: 
+pm run build ✓ • 
+pm test 319 passing (baseline 258 + 61 new).
+
+**Wave 2 (Crispin — Activity + Genesta/Laura coordination):** ✅ SHIPPED 2026-06-25T00:17  
+- ctivities/integrate.ts — the consolidation-pass algorithm (pair-scan, STAR-TO-CANONICAL edges, report).
+- IntegrateDeps injection + composition root createSqliteIntegrateDeps(db).
+- InvalidIntegrateError class (mirrors InvalidImprintError).
+- RelationWriter.writeEdges(batch) method added to support per-edge validation in txn.
+- All 30 IT-* tests green (15 tests × 2 wirings: InMemory + SQLite).
+- Public API exports: imprint, integrate, IntegrateOptions, IntegrateDeps, IntegrationReport, RelationEdge, InvalidIntegrateError.
+- Build: 
+pm run build ✓ • 
+pm test 349 passing / 1 cosmetic (Laura's IT-S1 SQL column name mismatch — reconciled to locked schema elation_kind).
+- **Full suite GREEN:** 350/350 after Laura's schema naming reconciliation on IT-S1.
+
+### Surviving Prior Decisions (Option B disposition)
+
+| Decision | Status |
+|---|---|
+| D1 — Dedup probe before write | ❌ MOOT — no probe; imprint always writes |
+| D2 — Dedup-hit behaviour | ❌ MOOT — duplicates marked by integrate via edges |
+| D3 — Touch seam location | ❌ MOOT — no touch; last_accessed stays NULL |
+| D4 — kind/verb schema fields | ✅ DEFERRED — imprint/integrate v1 operate without them |
+| D5 — decide() → integrate() coupling | ✅ CALLER-OWNED — most likely: imprint (write) + integrate (consolidate at pause) |
+| D6 — Error class | ✅ NEW — InvalidIntegrateError (code 'INVALID_INTEGRATE') |
+
+### v1 Explicit Non-Goals
+
+- ❌ Near-duplicate detection (case, punctuation, internal whitespace, paraphrase) — v1.5 sweep.
+- ❌ supersedes, contradicts, supports, derived_from, etc. edge writes — v1 writes ONLY duplicate_of; others reserved.
+- ❌ Cross-session consolidation — v1.5 sweep/meditate.
+- ❌ Cross-tier consolidation — v1.5 federation.
+- ❌ Fact mutation (content rewrite) — append-only preservation.
+- ❌ Background/scheduled invocation — v1.5 sweep cron.
+- ❌ Pagination of listBySession — v1.5+ if needed.
+
+### Documentation Amendments (Genesta — 2026-06-24)
+
+- docs/eureka/sections/10-activities-and-tiers.md §10.1: Replaced integrate(fact)→FactId with imprint(options)→FactId + integrate(options)→IntegrationReport. Tier-Activity Matrix gains imprint row.
+- docs/eureka/sections/30-learning-systems.md §1: Replaced old integrate row-insert with §1.0 imprint (algorithm) + §1.1 integrate (consolidation + duplicate_of edge semantics). Inline refs updated in §1.8 meditate, §3.1 short loop, §4.1 scheduling, §5.1 timing budget.
+
+---
+

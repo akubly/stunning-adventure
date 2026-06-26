@@ -222,3 +222,134 @@ The "activities are runtime verbs, not storage nouns" principle demands the spli
 **Architecture outcome:** Scope locked correctly (write path only, no read-seam coupling). Interfaces clean, integration-ready. No architectural debt introduced.
 
 **Tests:** 258/258 eureka tests green, tsc clean.
+
+---
+
+## 2026-06-23: `integrate` v1 Slice — Scope + Design Brief
+
+**Task:** Define scope, contract, decisions, and RED test plan for `integrate` v1 (public write API; first activity after `imprint` shipped in PR #81).
+
+**Deliverable:** `.squad/decisions/inbox/genesta-integrate-slice-scope.md` — full brief with 6 decisions flagged for Aaron sign-off and a 20-test RED list.
+
+**Contract proposed:** `integrate(IntegrateOptions, IntegrateDeps): Promise<IntegrateResult>` where `IntegrateResult = {outcome:'created'|'duplicate', factId, existingFactId?}`. `integrate` calls `imprint` (does not bypass to `FactWriter`) — preserves "one cognitive verb per physical write" rule.
+
+**Key scoping move:** v1 `integrate` does exactly ONE thing `imprint` cannot — consult existing knowledge before writing. Exact-content dedup probe via new `FactReader.findByContent` seam. Everything else from Crispin's classification memo (relations table, contradiction edges, supersedes, dedupKey column, near-dup BM25, LLM classification) explicitly deferred to v1.5. Principle: smallest cognitively-honest slice that earns the name.
+
+**Decisions needing Aaron:**
+- D1 dedup mechanism (rec: exact match, not BM25 threshold)
+- D2 dedup-hit behaviour (rec: return existing FactId + touch last_accessed)
+- D3 touch seam (rec: extend FactWriter)
+- D4 kind/verb columns (rec: defer; document deviation from spec §10.1)
+- D5 decide→integrate coupling (rec: caller-owned)
+- D6 error class (rec: new InvalidIntegrateError)
+
+**Schema cost:** Migration 003 = single index `facts(session_id, content)`. No new tables, no new columns. Surgical.
+
+**Seam ownership:** Genesta defines `IntegrateOptions/Result` + extends `FactReader`/`FactWriter` interfaces. Crispin implements (sqlite + in-memory) and ships migration 003. Laura writes IT-1..IT-20 in two wirings (~24-26 tests, similar size to imprint slice).
+
+**Insight:** The Spec §10.1 contract `integrate(fact: Fact) → FactId` understates the cognitive content. v1 needs a richer return type (discriminated union) so callers can distinguish "I created" from "you already knew this." Suppressing that distinction would re-create the same conflation Aaron caught between `imprint` and `integrate` six days ago.
+
+---
+
+## 2026-06-24: D2 Resolved — Touch lastAccessed, Do Not Bump Trust/Importance/accessCount
+
+**Aaron's question:** Was imprint's `last_accessed=NULL` an oversight or deliberate? Should integrate-dedup merge/bump?
+
+**Sourced finding:**
+- NULL is DELIBERATE. Locked by migration 002:12,22 + recall.ts:190-194 F3 logic + MIG-3 test + FS-13 + FS-writer contracts. compositeScore depends on NULL meaning "very stale, recency floor 0.1."
+- `access_count` column DOES NOT EXIST anywhere in eureka. Spec §10 nominally bumps it on recall but recall.ts:217 explicitly marks it as a deferred future beat. Not missing from imprint — never built.
+- No activity currently writes `last_accessed`. Integrate-dedup-touch would be the FIRST.
+
+**Decomposition of Aaron's "merge/bump":** Four sub-operations, four different verdicts:
+1. Touch lastAccessed = YES (cheap, semantically clean, surfaces re-encountered facts)
+2. Bump trust = NO (duplicates applyFeedback('corroboration') path which is audited via trust_history; dedup-in-session is rarely independent evidence)
+3. Add accessCount column = NO this slice (asymmetric attention model — must cover recall too)
+4. Bump importance = NO (no spec for delta; runaway growth risk)
+
+**D2 = B (touch only).** D3 = A (extend FactWriter with `touch()`). Migration 003 stays scoped to the single dedup index.
+
+**Boundary clarified:** integrate-dedup and applyFeedback('corroboration') are now formally complementary, not overlapping. Caller composes both explicitly when corroboration semantics are wanted.
+
+**Test additions:** IT-18 (no trust mutation), IT-19 (no importance/tier mutation), IT-20 (recency observable through recall after touch), IT-21 (touch.at == clock.now()). Total RED list ~27-30 tests.
+
+**Insight:** The "verbs not nouns" principle pays off again. Touching lastAccessed is a write-path observation ("this fact was encountered"). Bumping trust is a feedback-path judgment ("this evidence is independent"). Collapsing them into one auto-bump on dedup would re-create the same conflation Aaron caught between imprint and integrate — different verbs, different audit trails, different epistemic commitments.
+
+---
+
+## 2026-06-24: REFRAME — `integrate` is consolidation, NOT a write wrapper (Aaron challenge)
+
+**Aaron's reframe (verbatim):** "When I think of Jungian integration, I'm thinking about something that's done after-the-imprint. In humans, it's behind the scenes and subconscious, often during REM. It's the processing, reconciling, re-interpreting, linking and cross-referencing."
+
+**Spec audit revealed an internal inconsistency:**
+- §10/§30 signature: `integrate(fact) → FactId` — literal row-insert (§30 §1.1 algorithm: `insert + emit + return`).
+- PRD §3 prose: "Take in new material; **reconcile with existing facts**" — Aaron's reading.
+- `sweep` (§30 §4.2): 5 phases including Tier 2 edge population (`similar_to`, `co_accessed_with`) and edge weight reconciliation — this is the actual consolidation machinery.
+- `meditate` (v1.5, §30 §1.8): pseudocode literally calls `integrate(pattern, ...)` — so integrate is a PRIMITIVE of meditate, not a peer.
+
+We already caught this conflation on 2026-06-16 (split out `imprint`) but then re-collapsed integrate back into "imprint + dedup" — exactly what Aaron is flagging.
+
+**Three options presented:**
+- **A:** Ship status quo (integrate = write wrapper, name is a polite fiction).
+- **B (RECOMMENDED):** Promote `imprint` to public write API. `integrate({sessionId}) → IntegrationReport` becomes a NEW verb that operates on already-imprinted facts and produces edges/links. Requires §10/§30 vocabulary amendment. Imprint always writes — duplicates discovered later via integrate (matches REM semantics).
+- **C:** Hybrid — keep §10 signature; do write + localized reconciliation in one call (trenchcoat returns).
+
+**Key insight:** In Option B, imprint stays lossless. Duplicates are NOT prevented at write time; they're MARKED later. This is cognitively correct (you don't refuse to perceive something just because you already perceived it — you discover the resemblance later). It also removes the dedup-probe-before-write race risk and composes naturally with v1.5 background sweep/meditate (they just call integrate on a scope).
+
+**v1 walking skeleton (Option B):** `listBySession` → pair scan for exact-content matches → write `duplicate_of` edges to migration-003 `relations` table → return report. ~13 RED tests. Requires Crispin's parallel representation feasibility assessment to confirm migration 003 is v1-feasible.
+
+**Decisions invalidated by Option B:** D1, D2, D3 (no probe-before-write). D4, D5, D6 survive.
+
+**Naming impact:** Vocabulary amendment to §10/§30: amend `integrate(fact) → FactId` to `integrate({sessionId}) → IntegrationReport`; add `imprint(fact) → FactId` as public write verb (already shipped, just promote to first-class).
+
+**Status:** Brief updated; waiting on (a) Aaron's choice among A/B/C and (b) Crispin's parallel rep-feasibility finding.
+
+---
+
+## 2026-06-24T22:39: Option B LOCKED — contract published; docs amended
+
+**Aaron approved Option B.** Coordinator confirmed v1 writes ONLY `duplicate_of` edges; CHECK vocab reserves supersedes/contradicts/supports for v1.5; FeedbackEvent='corroboration' shipped form stays (distinct from future supports edge).
+
+**Deliverables completed:**
+1. **Contract locked** in `.squad/decisions/inbox/genesta-integrate-slice-scope.md` — TypeScript signature for `integrate(IntegrateOptions, IntegrateDeps): Promise<IntegrationReport>`, `RelationEdge` projection, `FactReaderListSession` + `RelationWriter` seam interfaces, `IntegrationReport` shape ({sessionId, factsScanned, duplicatesFound, edgesWritten, pairs[{keptFactId, duplicateFactId}]}), 13-test RED plan, error contract.
+2. **§10 amended** (docs/eureka/sections/10-activities-and-tiers.md): vocabulary amendment header; `integrate(fact)→FactId` replaced with `imprint(options)→FactId` + `integrate(options)→IntegrationReport`; deprecation note for old signature; tier matrix gains imprint row.
+3. **§30 amended** (docs/eureka/sections/30-learning-systems.md): full §1.0 imprint + §1.1 integrate sections; inline fixes to §1.8 meditate pseudocode (writes via imprint), §3.1 short-loop step 5, §4.1 scheduling split, §5.1 timing budget gains integrate target (<50ms per session, O(n²)).
+4. **Seam boundary CONFIRMED** with Crispin: Genesta owns activity contract/types/IntegrationReport/error class + interface declarations; Crispin owns migration 003 + Relation type + RelationWriter + FactReader.listBySession + composition root + imprint public re-export.
+
+**Status of prior decisions under Option B:** D1/D2/D3 MOOT (no probe-before-write); D4 (kind/verb defer), D5 (caller-owned), D6 (new InvalidIntegrateError) retained.
+
+**Insight crystallized:** "Imprint always writes, integrate discovers later" is the v1 cognitive model. Cleaner than any probe-based design because (a) imprint stays lossless and idempotent on its own terms, (b) the same `integrate({scope})` verb composes naturally with v1.5 background sweep/meditate without API change, (c) verb name finally matches behaviour — no more trenchcoat.
+
+**Next:** Crispin builds wave-2 GREEN (activity body, migration 003, storage adapters, composition root). Laura writes RED against the locked contract. I do NOT implement; charter is held.
+
+---
+
+## 2026-06-25T07:17:47Z: Eureka `integrate` v1 Slice SHIPPED (Option B Complete)
+
+**Status:** ✅ COMPLETE — 350/350 eureka tests GREEN (core + substrate + integrate contract), tsc clean
+
+**Wave 1 (Crispin substrate):** ✅ Landed 2026-06-24T22:39  
+Migration 003 (fact_relations table, 4-kind vocab CHECK, UNIQUE constraint, indices, MIG-7..MIG-13). RelationWriter seam + in-memory/sqlite impls. FactReader.listBySession extension. factId on RecallResult (F9). 319 tests passing.
+
+**Wave 2 (Crispin activity + Genesta/Laura coordination):** ✅ Landed 2026-06-25T00:17  
+`integrate.ts` activity body (pair-scan, STAR-TO-CANONICAL topology, IntegrationReport). InvalidIntegrateError. RelationWriter.writeEdges batch method. Composition root createSqliteIntegrateDeps. All 30 IT-* tests green (15 core × 2 wirings). 349 tests passing.
+
+**Laura reconciliation:** ✅ Completed 2026-06-25T07:17  
+IT-S1 direct SQL query: column name reconciliation to schema truth (relation_kind, not edge_type). Full suite: 350/350 GREEN.
+
+**Orchestration logs:** Written 3 logs (genesta/crispin/laura UTC timestamps, `.squad/orchestration-log/`)  
+**Session log:** `.squad/log/20260625T071747Z-integrate-slice.md`  
+**Decisions:** 3 inbox files merged to `.squad/decisions.md` (genesta-integrate-slice-scope.md + crispin-integrate-seam.md + laura-integrate-test-plan.md)  
+**Scribe processing:** Merged inbox, deleted inbox files, staged durable .squad files, committed  
+
+**Key decisions locked under Option B:**
+- Integrate is post-imprint consolidation (not write wrapper) — pair-scan detects duplicates, writes `duplicate_of` edges
+- STAR-TO-CANONICAL topology (all newer dups → oldest, never chain)
+- 4-kind relation vocabulary in CHECK: `duplicate_of | supersedes | contradicts | supports` (v1 writes ONLY duplicate_of)
+- Soft reconcile, append-only facts (no content mutation)
+- Synchronous validation before first await (matches imprint F1)
+
+**Architecture outcome:** Integrate v1 ready for integration into decide/commit/evict flow. v1.5+ work (sweep, meditate, cross-session, near-duplicate) deferred per scope. No architectural debt. Append-only fact representation preserved. Cognitive verb purity maintained (imprint writes, integrate discovers, feedback judges).
+
+**Test trajectory:** Baseline 258 → imprint +50 (308) → integr substrate +11 (319) → integr contract +30 (349) → IT-S1 cosmetic +1 (350).
+
+**Insight:** The reframe from "integrate as write wrapper" (Option A, pre-2026-06-24T22:33) to "integrate as consolidation pass" (Option B) resolved the semantic drift in both the spec prose and the cognitive model. "Imprint always writes, integrate discovers later" eliminates the race-window risk, composes naturally with v1.5 background machinery, and makes the verb name finally fit the behaviour.
