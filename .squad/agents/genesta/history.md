@@ -353,3 +353,17 @@ IT-S1 direct SQL query: column name reconciliation to schema truth (relation_kin
 **Test trajectory:** Baseline 258 → imprint +50 (308) → integr substrate +11 (319) → integr contract +30 (349) → IT-S1 cosmetic +1 (350).
 
 **Insight:** The reframe from "integrate as write wrapper" (Option A, pre-2026-06-24T22:33) to "integrate as consolidation pass" (Option B) resolved the semantic drift in both the spec prose and the cognitive model. "Imprint always writes, integrate discovers later" eliminates the race-window risk, composes naturally with v1.5 background machinery, and makes the verb name finally fit the behaviour.
+
+## Learnings — 2026-06-25 Fix Wave (persona review cycle 1)
+
+Aaron triaged 5 doc fixes against the Option B integrate slice. Applied doc-only edits to §10 and §30 on branch ureka/integrate-slice:
+
+1. **DOC/CODE DRIFT** — Aligned all prose to migration 003: table act_relations; columns rom_fact_id, 	o_fact_id, elation_kind; UNIQUE (session_id, from_fact_id, to_fact_id, relation_kind). Confirmed zero remaining elations/rom_id/	o_id/dge_type references via grep.
+2. **ACTIVITY-COUNT CONSISTENCY** — Normalized to one authoritative count across §10 and §30: **10 named (FR-4); 3 shipped v1 (imprint, ecall, integrate); 7 reserved v1.5+ (erank, decide, commit, etire, vict, meditate, contemplate)**. Demoted earlier "7/8 v1" prose; tier matrix updated to ⚠️ for v1.5 activities.
+3. **D-R3 first-write-wins** — Documented in both §10 (integrate Side Effects) and §30 (§1.1 Measurable Outcomes): ON CONFLICT DO NOTHING means weight/confidence on existing edges cannot strengthen in v1; refinement deferred to v1.5.
+4. **D-R2 perf bound** — Documented MAX_SESSION_FACTS in-memory cap; algorithm corrected to O(n log n) group-and-emit (was O(n²) pair-scan); §5.1 perf target stays at ~50ms; DB-side GROUP BY deferred to v1.5.
+5. **S4 write-only** — Documented act_relations has no runtime consumer in v1; recall-side consumer lands in a later slice (intentional incremental delivery).
+
+**Learning:** When pseudocode drifts from the shipped schema, fix the schema identifiers and the algorithmic complexity in the same pass — they're usually wrong together (both reflect an earlier mental model). Also, "activity-count consistency" is a load-bearing invariant: every doc that asserts a count must agree, or persona reviewers (rightly) flag it.
+
+Source name change to remember: the integrate read seam is **SessionFactLister** (was FactReaderListSession). Use that name in any future references or test scaffolding.

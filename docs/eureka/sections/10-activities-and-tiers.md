@@ -21,13 +21,14 @@ This section specifies Eureka's **activity model** (what verbs the system suppor
 
 ## §10.1. Activity Model
 
-Eureka exports **8 v1 activities** plus **2 reserved v1.5 activities**. This is the locked vocabulary per FR-4 (as amended 2026-06-17 for `imprint` and 2026-06-24 for `integrate`-as-consolidation).
+Eureka's locked vocabulary (FR-4 as amended 2026-06-17 and 2026-06-24) defines **10 named activities**. The v1 **shipped surface** is exactly three: `imprint`, `recall`, and `integrate`. The remaining seven — `rerank`, `decide`, `commit`, `retire`, `evict`, `meditate`, `contemplate` — are vocabulary-reserved but **deferred to v1.5+**; their sections below describe intended semantics, not shipped behaviour.
 
 > **Vocabulary amendment history:**
-> - **2026-06-17:** Split raw write path (`imprint`) from cognitive orchestration (`integrate`). FR-4 expanded from 7 to 8 v1 verbs.
-> - **2026-06-24:** Resolved internal inconsistency between the §10/§30 `integrate(fact) → FactId` row-insert signature and the PRD §3 "reconcile with existing facts" prose. `integrate` is now formally a **post-imprint consolidation pass** that operates on already-imprinted facts and produces cross-reference edges. `imprint` is the public synchronous write API. v1 integrate produces only `duplicate_of` edges (exact-content match — the only relation lexical-only v1 can honestly produce); other edge types (`supersedes`, `contradicts`, `supports`, etc.) are reserved in the schema CHECK constraint but writable only by `sweep`/`meditate` in v1.5.
+> - **2026-06-17:** Split raw write path (`imprint`) from cognitive orchestration (`integrate`).
+> - **2026-06-24:** Resolved internal inconsistency between the §10/§30 `integrate(fact) → FactId` row-insert signature and the PRD §3 "reconcile with existing facts" prose. `integrate` is now formally a **post-imprint consolidation pass** that operates on already-imprinted facts and produces cross-reference edges. `imprint` is the public synchronous write API. v1 integrate produces only `duplicate_of` edges (exact-content match — the only relation lexical-only v1 can honestly produce); the other three relation kinds (`supersedes`, `contradicts`, `supports`) are reserved in the schema CHECK constraint but writable only by `sweep`/`meditate` in v1.5.
+> - **2026-06-25:** Authoritative v1 shipped surface narrowed to `imprint` + `recall` + `integrate`. Earlier prose that counted `rerank`/`decide`/`commit`/`retire`/`evict` as "v1" reflected aspiration, not shipped code; those activities are now consistently marked v1.5+ across §10 and §30.
 
-### v1 Activities (Exported API Surface)
+### v1 Activities (Shipped — Exported API Surface)
 
 #### `imprint(options: ImprintOptions) → FactId`
 
@@ -68,17 +69,19 @@ Eureka exports **8 v1 activities** plus **2 reserved v1.5 activities**. This is 
 - `IntegrationReport` — `{ sessionId, factsScanned, duplicatesFound, edgesWritten, pairs: Array<{ keptFactId, duplicateFactId }> }`.
 
 **Side Effects:**
-- Writes `duplicate_of` edges to the `relations` table (migration 003). v1 writes **only** `duplicate_of`; other edge types are reserved in the schema CHECK vocabulary but produced by `sweep`/`meditate` in v1.5.
+- Writes `duplicate_of` edges to the `fact_relations` table (migration 003). v1 writes **only** `duplicate_of`; the other three reserved relation kinds (`supersedes`, `contradicts`, `supports`) are present in the schema CHECK vocabulary but produced by `sweep`/`meditate` in v1.5.
 - Does NOT mutate `facts` rows: trust, importance, attention, and `last_accessed` are unchanged.
 - Does NOT call `imprint` (integrate does not produce new content facts; it only links existing ones).
-- Idempotent: the `relations` UNIQUE constraint (`from_id, to_id, edge_type, session_id`) prevents duplicate edges; re-running integrate is safe.
+- Idempotent: the UNIQUE constraint `(session_id, from_fact_id, to_fact_id, relation_kind)` on `fact_relations` prevents duplicate edges; re-running integrate is safe.
+- **First-write-wins on edge metadata (D-R3):** `RelationWriter` uses `ON CONFLICT DO NOTHING`, so once an edge exists, its `weight` and `confidence` columns cannot be strengthened by a subsequent `integrate` call in v1. Weight/confidence refinement — whether via upsert, a separate evidence table, or a sweep-side reconciliation pass — is deferred to v1.5.
+- **`fact_relations` is write-only in v1 (S4):** integrate populates the table, but no runtime consumer reads from it yet. A recall-side consumer (e.g., downweighting or folding duplicate-edge facts) lands in a later slice; this is intentional incremental delivery.
 
 **v1 Edge Semantics (`duplicate_of`):**
 - Detected via exact-content match (after `.trim()`) within `sessionId`.
-- Orientation: newer fact → older fact (`from = newer.factId`, `to = older.factId`, ordered by `created_at`).
+- Orientation: newer fact → older fact (`from_fact_id = newer.factId`, `to_fact_id = older.factId`, ordered by `created_at`).
 - Lexical-only honest behaviour: same content string, same session = duplicate. Near-duplicates (case, punctuation, paraphrase) are NOT detected in v1.
 
-**Sync/Async:** Synchronous, caller-invoked. Pair-scan is O(n²) at session scale (acceptable — sessions are small in v1).
+**Sync/Async:** Synchronous, caller-invoked. Consolidation runs in memory by grouping facts by trimmed content (`O(n log n)` overall — sort/hash group + edge emit). A documented in-memory cap (`MAX_SESSION_FACTS`, enforced by the activity body) bounds the work per call; a DB-side `GROUP BY` strategy is deferred to v1.5. The §55 perf target is ~50ms per session.
 
 **Boundary vs. `applyFeedback('corroboration')`:**
 - `applyFeedback('corroboration', factId)` — bumps **trust** on an existing fact, recorded in `trust_history`. Caller asserts independent evidence supporting the fact's truth. **(Shipped.)**
@@ -354,7 +357,7 @@ org (v2+)
 
 **Read Access:** Only the agent that created the facts.
 
-**v1 Status:** ✅ Fully implemented. All 7 v1 activities work at this tier.
+**v1 Status:** ✅ Fully implemented for the shipped v1 surface (`imprint`, `recall`, `integrate`). The other seven FR-4 activities (`rerank`, `decide`, `commit`, `retire`, `evict`, `meditate`, `contemplate`) are vocabulary-reserved for v1.5+ and not exercised at this tier yet.
 
 **Use Cases:**
 - Session-local facts (conversation state, intermediate reasoning)
@@ -458,19 +461,19 @@ def recall(query: str, k: int) -> list[Fact]:
 | Activity      | Agent Tier | User Tier | Project Tier | Org Tier |
 |---------------|------------|-----------|--------------|----------|
 | `imprint`     | ✅ v1      | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |
-| `integrate`   | ✅ v1      | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |
 | `recall`      | ✅ v1      | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |
-| `rerank`      | ✅ v1      | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |
-| `decide`      | ✅ v1      | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |
-| `commit`      | ✅ v1      | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |
-| `retire`      | ✅ v1      | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |
-| `evict`       | ✅ v1      | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |
+| `integrate`   | ✅ v1      | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |
+| `rerank`      | ⚠️ v1.5    | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |
+| `decide`      | ⚠️ v1.5    | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |
+| `commit`      | ⚠️ v1.5    | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |
+| `retire`      | ⚠️ v1.5    | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |
+| `evict`       | ⚠️ v1.5    | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |
 | `meditate`    | ⚠️ v1.5    | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |
 | `contemplate` | ⚠️ v1.5    | ⚠️ v1.5   | ⚠️ v1.5      | ❌ v2+   |
 
 **Legend:**
-- ✅ **v1**: Fully implemented and tested
-- ⚠️ **v1.5**: Specified but not implemented (throws `NotImplementedError`)
+- ✅ **v1**: Shipped and tested (`imprint`, `recall`, `integrate`)
+- ⚠️ **v1.5**: Specified but not implemented (importing throws `NotImplementedError`)
 - ❌ **v2+**: Out of scope (not specified)
 
 ---
