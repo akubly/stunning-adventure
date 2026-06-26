@@ -101,7 +101,7 @@ This supports learning, decay, retirement, and access tracking on committed fact
 Migration 003 creates table **`fact_relations`** with columns `from_fact_id`, `to_fact_id`, `relation_kind`, `session_id`, `weight`, `confidence`, `created_at`, and UNIQUE `(session_id, from_fact_id, to_fact_id, relation_kind)`. The CHECK constraint on `relation_kind` enumerates **exactly four kinds**:
 
 ```typescript
-// packages/eureka/src/schemas/relation.ts (shipped — matches migration 003 CHECK)
+// packages/eureka/src/representation/relation.ts (shipped — matches migration 003 CHECK)
 export type RelationKind =
   | 'duplicate_of'   // fact → older fact (exact-content match within a session) — v1 integrate writes this
   | 'supersedes'     // fact → fact (version succession) — RESERVED, not written in v1
@@ -121,7 +121,7 @@ export interface Relation {
   weight:     number;       // REAL DEFAULT 1.0; relationship strength
   confidence: number;       // REAL DEFAULT 1.0; assertion confidence
 
-  created_at: string;       // SQLite datetime('now'), ISO-8601
+  created_at: string;       // SQLite datetime('now') TEXT: 'YYYY-MM-DD HH:MM:SS' (UTC; not ISO-8601 — no 'T'/offset)
 }
 ```
 

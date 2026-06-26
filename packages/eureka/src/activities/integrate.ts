@@ -12,8 +12,9 @@
  * 2. List the session's facts via `SessionFactLister`.
  * 3. Enforce the documented scope bound `MAX_SESSION_FACTS` BEFORE sorting:
  *    a session larger than the bound throws `IntegrateScopeError` rather than
- *    silently embarking on an O(n²) scan. A DB-side GROUP BY consolidation
- *    path is reserved for v1.5+ and will obsolete this guard.
+ *    silently sorting and bucketing an unbounded number of facts in memory. A
+ *    DB-side GROUP BY consolidation path is reserved for v1.5+ and will obsolete
+ *    this guard.
  * 4. Bucket facts by `.trim()`-equal content — semantically identical text
  *    is treated as a duplicate. Future v1.5+ widens this to embedding-distance
  *    or BM25-similarity; the activity boundary stays the same.
@@ -30,13 +31,12 @@
  * ## Complexity
  *
  * The algorithm is **O(n log n) sort-dominated**, with an O(n) hash-bucket
- * pass over the sorted facts. The pair-scan is *conceptually* O(n²) over
- * any single duplicate bucket, but the bucketing-by-content collapses it
- * to a single linear walk: bucket[0] is canonical and every later element
- * emits one edge. (Earlier review noted contradictory header/inline comments;
- * the bucketing approach is the actual implementation.) The `MAX_SESSION_FACTS`
- * guard exists because edge count is still O(n) in the worst case (all-dups
- * session) and the sort cost is unbounded without it.
+ * pass over the sorted facts. There is no pairwise (O(n²)) comparison:
+ * bucketing by `.trim()`-equal content groups duplicates in a single linear
+ * walk where bucket[0] is canonical and every later element emits exactly one
+ * edge. The `MAX_SESSION_FACTS` guard exists because both the edge count
+ * (worst case: an all-duplicates session) and the sort cost grow with session
+ * size and are unbounded without it.
  *
  * ## SQLite createdAt precision
  *
@@ -58,14 +58,14 @@ import { InvalidIntegrateError, IntegrateScopeError } from './errors.js';
 // ---------------------------------------------------------------------------
 
 /**
- * Maximum number of facts `integrate()` will pair-scan in a single pass.
+ * Maximum number of facts `integrate()` will scan in a single in-memory pass.
  *
  * Chosen at 10,000:
- *   - The pair-scan is O(n²) over each duplicate bucket; the algorithm itself
- *     is O(n log n) overall, but operators expect predictable wall time. At
- *     10k facts a hot V8 sort completes in low milliseconds; the bucket walk
- *     stays linear; total memory footprint of the in-flight arrays remains
- *     well under 100 MB.
+ *   - The algorithm is O(n log n) overall (sort-dominated) with a linear bucket
+ *     walk that emits one edge per non-canonical fact — there is no pairwise
+ *     comparison. Operators still expect predictable wall time: at 10k facts a
+ *     hot V8 sort completes in low milliseconds; the bucket walk stays linear;
+ *     total memory footprint of the in-flight arrays remains well under 100 MB.
  *   - Real Eureka sessions are typically agent conversations — single-digit-
  *     thousands of facts is already exceptional. Multi-session knowledge
  *     graphs are out of v1 scope (the relations table is session-local).

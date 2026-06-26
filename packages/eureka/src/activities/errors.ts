@@ -205,7 +205,7 @@ export class InvalidIntegrateError extends Error {
 
 /**
  * Thrown by `integrate()` when the session contains more facts than the
- * documented O(n²) pair-scan bound (`MAX_SESSION_FACTS`).
+ * documented scope bound (`MAX_SESSION_FACTS`).
  *
  * Separate from `InvalidIntegrateError` because this is NOT a caller-input
  * error — the caller's `sessionId` is well-formed, but the data scope exceeds
@@ -225,8 +225,8 @@ export class IntegrateScopeError extends Error {
   constructor(sessionId: string, factsScanned: number, cap: number) {
     super(
       `integrate: session "${sessionId}" has ${factsScanned} facts which exceeds the v1 ` +
-        `pair-scan bound (MAX_SESSION_FACTS=${cap}). The O(n²) algorithm refuses to scan ` +
-        `unbounded sessions; a DB-side GROUP BY consolidation path is planned for v1.5+.`,
+        `in-memory scan bound (MAX_SESSION_FACTS=${cap}). The v1 algorithm refuses to ` +
+        `consolidate unbounded sessions; a DB-side GROUP BY consolidation path is planned for v1.5+.`,
     );
     this.name = 'IntegrateScopeError';
     this.sessionId = sessionId;
