@@ -59,7 +59,7 @@ runFactReaderContract('SqliteFactReader', () => {
           : epochMsToSqliteDateTime(Date.now());
       insertStmt.run(factId, sessionId, stored, content ?? '', createdAtTxt);
     },
-    cleanup: () => db.close(),
+    cleanup: () => { db.close(); },
   };
 });
 

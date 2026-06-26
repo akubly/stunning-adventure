@@ -70,7 +70,7 @@ function makeSqliteRelationWriterHarness(): RelationWriterHarness {
     },
     listBySession: async (sessionId: SessionId) =>
       listStmt.all(sessionId as string).map(rowToStored),
-    cleanup: () => db.close(),
+    cleanup: () => { db.close(); },
   };
 }
 

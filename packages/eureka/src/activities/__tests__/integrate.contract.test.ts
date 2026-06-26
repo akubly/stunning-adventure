@@ -3,27 +3,17 @@
  *
  * Wires:
  *   - InMemoryFactWriter (FactWriter + FactStore, shipped in imprint slice)
- *   - InMemoryFactReader (NEW in wave-2 — implements `listBySession`)
- *   - InMemoryRelationWriter (NEW in wave-2 — implements `writeEdges → Promise<number>`)
+ *   - InMemoryFactReader — implements `SessionFactLister.listBySession`
+ *   - InMemoryRelationWriter — implements `writeEdges → Promise<number>`
  * into the shared integrate contract suite.
- *
- * ## RED status
- *
- * Fails at module load until Crispin's wave-2 GREEN delivers:
- *   - src/activities/integrate.ts             (activity + types + seam interfaces)
- *   - src/activities/errors.ts InvalidIntegrateError
- *   - src/storage/fact-reader-inmemory.ts     exporting InMemoryFactReader
- *   - src/storage/relation-writer.ts          exporting InMemoryRelationWriter
- *
- * That failure is the correct RED signal.
  *
  * @see ./integrate-contract.helper.ts for assertion-level documentation.
  */
 
-import type { FactId, IdProvider, ImprintOptions } from '../imprint.js';
+import type { FactId } from '@akubly/types';
+import type { IdProvider, ImprintOptions } from '../imprint.js';
 import { imprint as imprintActivity } from '../imprint.js';
 
-// RED: ../integrate.ts and its types do not exist until wave-2 GREEN.
 import {
   integrate as integrateActivity,
   type IntegrateOptions,
@@ -31,9 +21,7 @@ import {
   type IntegrateDeps,
 } from '../integrate.js';
 
-// Shipped (imprint slice).
 import { InMemoryFactWriter } from '../../storage/fact-writer.js';
-// RED: wave-2 — wiring locations subject to Crispin's GREEN.
 import { InMemoryRelationWriter } from '../../storage/relation-writer.js';
 import { InMemoryFactReader } from '../../storage/fact-reader-inmemory.js';
 
@@ -78,7 +66,6 @@ function makeInMemoryIntegrateHarness(): IntegrateHarness {
       const baseDeps: IntegrateDeps = {
         factReader,
         relationWriter,
-        clock,
       };
       return integrateActivity(options, { ...baseDeps, ...overrides });
     },
@@ -92,9 +79,5 @@ function makeInMemoryIntegrateHarness(): IntegrateHarness {
     },
   };
 }
-
-// ---------------------------------------------------------------------------
-// Wire contract suite to InMemory implementations (15 RED tests)
-// ---------------------------------------------------------------------------
 
 runIntegrateContract('InMemory (integrate)', makeInMemoryIntegrateHarness);

@@ -60,32 +60,23 @@
  * IT-15  Imprint NOT regressed                — imprint still creates distinct factIds
  *                                               for identical content (negative)
  *
- * ## RED status
- *
- * Imports symbols that do NOT exist yet — fails at module load until
- * Crispin's wave-2 GREEN delivers `src/activities/integrate.ts` (+ types +
- * seams + InvalidIntegrateError). That failure is the correct RED signal.
- *
  * @internal
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { SessionId } from '@akubly/types';
+import type { SessionId, FactId } from '@akubly/types';
 
-import type { FactId, ImprintOptions } from '../imprint.js';
-import type { FactStore } from '../recall.js';
+import type { ImprintOptions } from '../imprint.js';
+import type { FactStore, SessionFactLister } from '../recall.js';
 
-// RED: ../integrate.ts does not exist until Crispin's wave-2 GREEN phase.
 import {
   type IntegrateOptions,
   type IntegrationReport,
   type DuplicatePair,
-  type FactReader,
-  type RelationWriter,
-  type RelationEdge,
+  type RelationWriterBatch,
   type IntegrateDeps,
 } from '../integrate.js';
-// RED: InvalidIntegrateError does not exist in errors.ts until wave-2 GREEN.
+import type { RelationEdge } from '../../representation/relation.js';
 import { InvalidIntegrateError } from '../errors.js';
 
 // ---------------------------------------------------------------------------
@@ -118,8 +109,8 @@ export interface IntegrateHarness {
     overrides?: Partial<IntegrateDeps>,
   ) => Promise<IntegrationReport>;
   factStore: FactStore;
-  factReader: FactReader;
-  relationWriter: RelationWriter;
+  factReader: SessionFactLister;
+  relationWriter: RelationWriterBatch;
   advanceClock: (deltaMs: number) => void;
   cleanup?: () => void | Promise<void>;
 }

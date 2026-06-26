@@ -206,7 +206,7 @@ runFactStoreContract('SqliteFactStore', () => {
         attention?.attentionTier ?? 'warm',
       );
     },
-    cleanup: () => db.close(),
+    cleanup: () => { db.close(); },
   };
 
   return harness;

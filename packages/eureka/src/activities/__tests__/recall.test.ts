@@ -63,11 +63,11 @@ describe('recall', () => {
     // Inline structural mock — FactStore interface will be formalised in M2.
     const factStore = {
       search: vi.fn().mockResolvedValue({ results: [
-        { factId: 'rt-mock' as FactId, content: 'User authenticated with JWT token',         trust: 0.8, attentionTier: 'warm' },
-        { factId: 'rt-mock' as FactId, content: 'Login endpoint validates credentials',      trust: 0.9, attentionTier: 'hot'  },
-        { factId: 'rt-mock' as FactId, content: 'OAuth2 flow requires client ID',            trust: 0.7, attentionTier: 'warm' },
-        { factId: 'rt-mock' as FactId, content: 'Authentication middleware checks bearer',   trust: 0.8, attentionTier: 'warm' },
-        { factId: 'rt-mock' as FactId, content: 'Session expired after 1 hour of inactivity', trust: 0.6, attentionTier: 'cold' },
+        { factId: 'rt-001' as FactId, content: 'User authenticated with JWT token',         trust: 0.8, attentionTier: 'warm' },
+        { factId: 'rt-002' as FactId, content: 'Login endpoint validates credentials',      trust: 0.9, attentionTier: 'hot'  },
+        { factId: 'rt-003' as FactId, content: 'OAuth2 flow requires client ID',            trust: 0.7, attentionTier: 'warm' },
+        { factId: 'rt-004' as FactId, content: 'Authentication middleware checks bearer',   trust: 0.8, attentionTier: 'warm' },
+        { factId: 'rt-005' as FactId, content: 'Session expired after 1 hour of inactivity', trust: 0.6, attentionTier: 'cold' },
       ] }),
     };
 
@@ -118,7 +118,7 @@ describe('recall', () => {
         // rawScore = 0.50×0.2 + 0.20×0.2 + 0.20×0.3 + 0.10×0.1 = 0.21
         // finalScore = 0.21 × 0.80 (cold) = 0.168
         {
-          factId: 'rt-mock' as FactId, content:      'Cold low-relevance fact',
+          factId: 'rt-006' as FactId, content:      'Cold low-relevance fact',
           relevance:    0.2,
           importance:   0.2,
           trust:        0.3,
@@ -129,7 +129,7 @@ describe('recall', () => {
         // rawScore = 0.50×0.9 + 0.20×0.8 + 0.20×0.9 + 0.10×0.1 = 0.80
         // finalScore = 0.80 × 1.20 (hot) = 0.960
         {
-          factId: 'rt-mock' as FactId, content:      'Hot high-relevance fact',
+          factId: 'rt-007' as FactId, content:      'Hot high-relevance fact',
           relevance:    0.9,
           importance:   0.8,
           trust:        0.9,
@@ -140,7 +140,7 @@ describe('recall', () => {
         // rawScore = 0.50×0.7 + 0.20×0.6 + 0.20×0.7 + 0.10×0.1 = 0.62
         // finalScore = 0.62 × 1.00 (warm) = 0.620
         {
-          factId: 'rt-mock' as FactId, content:      'Warm medium-high-relevance fact',
+          factId: 'rt-008' as FactId, content:      'Warm medium-high-relevance fact',
           relevance:    0.7,
           importance:   0.6,
           trust:        0.7,
@@ -151,7 +151,7 @@ describe('recall', () => {
         // rawScore = 0.50×0.5 + 0.20×0.4 + 0.20×0.5 + 0.10×0.1 = 0.44
         // finalScore = 0.44 × 1.00 (warm) = 0.440
         {
-          factId: 'rt-mock' as FactId, content:      'Warm medium-relevance fact',
+          factId: 'rt-009' as FactId, content:      'Warm medium-relevance fact',
           relevance:    0.5,
           importance:   0.4,
           trust:        0.5,
@@ -223,7 +223,7 @@ describe('recall', () => {
         // raw   = 0.50×0.9 + 0.20×0.8 + 0.20×0.9 + 0.10×0.1 = 0.800
         // final = 0.800 × 1.20 (hot) = 0.960
         {
-          factId: 'rt-mock' as FactId, content:       'Stale accessed fact',
+          factId: 'rt-010' as FactId, content:       'Stale accessed fact',
           relevance:     0.9,
           importance:    0.8,
           trust:         0.9,
@@ -235,7 +235,7 @@ describe('recall', () => {
         // raw   = 0.50×0.9 + 0.20×0.8 + 0.20×0.9 + 0.10×1.0 = 0.890
         // final = 0.890 × 1.20 (hot) = 1.068
         {
-          factId: 'rt-mock' as FactId, content:       'Freshly accessed fact',
+          factId: 'rt-011' as FactId, content:       'Freshly accessed fact',
           relevance:     0.9,
           importance:    0.8,
           trust:         0.9,
@@ -274,7 +274,7 @@ describe('recall', () => {
     const FUTURE_MS = BASE_MS + 7 * 86_400_000; // 7 days ahead of nowMs
 
     const score = compositeScore(
-      { factId: 'rt-mock' as FactId, content: 'future fact', trust: 0.8, attentionTier: 'warm', lastAccessed: FUTURE_MS },
+      { factId: 'rt-012' as FactId, content: 'future fact', trust: 0.8, attentionTier: 'warm', lastAccessed: FUTURE_MS },
       BASE_MS, // clock is behind lastAccessed
     );
 
@@ -290,9 +290,9 @@ describe('recall', () => {
     const factStore = {
       search: vi.fn().mockResolvedValue({ results: [
         // Future fact: tDays clamped to 0 → recency=1.0, but lower trust → ranks second
-        { factId: 'rt-mock' as FactId, content: 'Future-dated fact',  trust: 0.3, attentionTier: 'warm' as const, lastAccessed: FUTURE_MS },
+        { factId: 'rt-013' as FactId, content: 'Future-dated fact',  trust: 0.3, attentionTier: 'warm' as const, lastAccessed: FUTURE_MS },
         // Present fact: tDays=0 → recency=1.0, higher trust → ranks first
-        { factId: 'rt-mock' as FactId, content: 'Present-dated fact', trust: 0.8, attentionTier: 'warm' as const, lastAccessed: BASE_MS  },
+        { factId: 'rt-014' as FactId, content: 'Present-dated fact', trust: 0.8, attentionTier: 'warm' as const, lastAccessed: BASE_MS  },
       ] }),
     };
 
@@ -323,7 +323,7 @@ describe('recall', () => {
 
     for (const tier of tiers) {
       const score = compositeScore(
-        { factId: 'rt-mock' as FactId, content: 'test', trust: 0.5, attentionTier: tier },
+        { factId: 'rt-015' as FactId, content: 'test', trust: 0.5, attentionTier: tier },
         nowMs,
       );
       expect(Number.isFinite(score)).toBe(true);
@@ -346,9 +346,9 @@ describe('recall', () => {
     const factStore = {
       search: vi.fn().mockResolvedValue({ results: [
         // Never-accessed: absent lastAccessed → tDays=Infinity → recency=0.1 (floor)
-        { factId: 'rt-mock' as FactId, content: 'Never-accessed fact',   trust: 0.8, attentionTier: 'warm' as const },
+        { factId: 'rt-016' as FactId, content: 'Never-accessed fact',   trust: 0.8, attentionTier: 'warm' as const },
         // Recently accessed: lastAccessed=BASE_MS → tDays=0 → recency=1.0
-        { factId: 'rt-mock' as FactId, content: 'Recently accessed fact', trust: 0.8, attentionTier: 'warm' as const, lastAccessed: BASE_MS },
+        { factId: 'rt-017' as FactId, content: 'Recently accessed fact', trust: 0.8, attentionTier: 'warm' as const, lastAccessed: BASE_MS },
       ] }),
     };
 
@@ -407,10 +407,10 @@ describe('recall', () => {
     const EPOCH_MS = 0;
 
     const fixture: RecallResult[] = [
-      { factId: 'rt-mock' as FactId, content: 'Cold low-relevance fact',        relevance: 0.2, importance: 0.2, trust: 0.3, attentionTier: 'cold', lastAccessed: EPOCH_MS },
-      { factId: 'rt-mock' as FactId, content: 'Hot high-relevance fact',         relevance: 0.9, importance: 0.8, trust: 0.9, attentionTier: 'hot',  lastAccessed: EPOCH_MS },
-      { factId: 'rt-mock' as FactId, content: 'Warm medium-high-relevance fact', relevance: 0.7, importance: 0.6, trust: 0.7, attentionTier: 'warm', lastAccessed: EPOCH_MS },
-      { factId: 'rt-mock' as FactId, content: 'Warm medium-relevance fact',      relevance: 0.5, importance: 0.4, trust: 0.5, attentionTier: 'warm', lastAccessed: EPOCH_MS },
+      { factId: 'rt-018' as FactId, content: 'Cold low-relevance fact',        relevance: 0.2, importance: 0.2, trust: 0.3, attentionTier: 'cold', lastAccessed: EPOCH_MS },
+      { factId: 'rt-019' as FactId, content: 'Hot high-relevance fact',         relevance: 0.9, importance: 0.8, trust: 0.9, attentionTier: 'hot',  lastAccessed: EPOCH_MS },
+      { factId: 'rt-020' as FactId, content: 'Warm medium-high-relevance fact', relevance: 0.7, importance: 0.6, trust: 0.7, attentionTier: 'warm', lastAccessed: EPOCH_MS },
+      { factId: 'rt-021' as FactId, content: 'Warm medium-relevance fact',      relevance: 0.5, importance: 0.4, trust: 0.5, attentionTier: 'warm', lastAccessed: EPOCH_MS },
     ];
 
     const makeStore = () => ({ search: vi.fn().mockResolvedValue({ results: [...fixture] }) });
@@ -443,10 +443,10 @@ describe('recall', () => {
     const EPOCH_MS = 0;
 
     const fixture: RecallResult[] = [
-      { factId: 'rt-mock' as FactId, content: 'Hot high-relevance fact',         relevance: 0.9, importance: 0.8, trust: 0.9, attentionTier: 'hot',  lastAccessed: EPOCH_MS },
-      { factId: 'rt-mock' as FactId, content: 'Warm medium-high-relevance fact', relevance: 0.7, importance: 0.6, trust: 0.7, attentionTier: 'warm', lastAccessed: EPOCH_MS },
-      { factId: 'rt-mock' as FactId, content: 'Warm medium-relevance fact',      relevance: 0.5, importance: 0.4, trust: 0.5, attentionTier: 'warm', lastAccessed: EPOCH_MS },
-      { factId: 'rt-mock' as FactId, content: 'Cold low-relevance fact',         relevance: 0.2, importance: 0.2, trust: 0.3, attentionTier: 'cold', lastAccessed: EPOCH_MS },
+      { factId: 'rt-022' as FactId, content: 'Hot high-relevance fact',         relevance: 0.9, importance: 0.8, trust: 0.9, attentionTier: 'hot',  lastAccessed: EPOCH_MS },
+      { factId: 'rt-023' as FactId, content: 'Warm medium-high-relevance fact', relevance: 0.7, importance: 0.6, trust: 0.7, attentionTier: 'warm', lastAccessed: EPOCH_MS },
+      { factId: 'rt-024' as FactId, content: 'Warm medium-relevance fact',      relevance: 0.5, importance: 0.4, trust: 0.5, attentionTier: 'warm', lastAccessed: EPOCH_MS },
+      { factId: 'rt-025' as FactId, content: 'Cold low-relevance fact',         relevance: 0.2, importance: 0.2, trust: 0.3, attentionTier: 'cold', lastAccessed: EPOCH_MS },
     ];
 
     // Reverse ranker: returns facts in ASCENDING composite-score order (lowest first).
@@ -499,7 +499,7 @@ describe('recall', () => {
       const score = compositeScore(
         // 'Hot' (title-case) is not in the union — cast via `as any` to simulate a
         // runtime row that bypasses TypeScript narrowing at the storage seam.
-        { factId: 'rt-mock' as FactId, content: 'legacy fact', trust: 0.7, attentionTier: 'Hot' as any },
+        { factId: 'rt-026' as FactId, content: 'legacy fact', trust: 0.7, attentionTier: 'Hot' as any },
         1_000_000_000_000,
       );
 
@@ -518,9 +518,9 @@ describe('recall', () => {
       const factStore = {
         search: vi.fn().mockResolvedValue({ results: [
           // Known tier — ranks normally
-          { factId: 'rt-mock' as FactId, content: 'Known-tier fact',   trust: 0.9, attentionTier: 'hot'  as any, lastAccessed: BASE_MS },
+          { factId: 'rt-027' as FactId, content: 'Known-tier fact',   trust: 0.9, attentionTier: 'hot'  as any, lastAccessed: BASE_MS },
           // Unknown tier 'Hot' (legacy casing) — must not NaN-corrupt the sort
-          { factId: 'rt-mock' as FactId, content: 'Unknown-tier fact', trust: 0.3, attentionTier: 'Hot'  as any, lastAccessed: BASE_MS },
+          { factId: 'rt-028' as FactId, content: 'Unknown-tier fact', trust: 0.3, attentionTier: 'Hot'  as any, lastAccessed: BASE_MS },
         ] }),
       };
 

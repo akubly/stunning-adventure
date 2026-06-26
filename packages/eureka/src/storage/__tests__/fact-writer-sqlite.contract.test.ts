@@ -102,7 +102,7 @@ function makeSqliteFactWriterHarness(): FactWriterHarness {
 
     factStore,
     factWriter: writer,
-    cleanup: () => db.close(),
+    cleanup: () => { db.close(); },
   };
 }
 
