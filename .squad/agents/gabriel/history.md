@@ -199,6 +199,7 @@ git merge origin/main on main let git's merge=union driver auto-resolve .squad/d
 
 **Why nap compaction was deferred:** stash@{0} contained a squad nap compaction of histories/decisions alongside 2 unrelated pre-existing edits. Applying the compaction via stash pop would have entangled the unrelated edits and potentially silently overwritten verbose append-only content with condensed summaries. The correct sequencing is: push clean bookkeeping to main first, then run squad nap cleanly on top of main so the compaction is an explicit, reviewable, standalone commit.
 
+📌 **Team update (2026-06-26T19:29:13Z):** eureka/integrate-slice — Test Type-Check Gate SHIPPED (commit baa4cb2). Gabriel infrastructure change: added dedicated test-inclusive type-check gate to eureka CI (tsconfig.typecheck.json + typecheck script + ci.yml step). Durable team convention established: **Test files MUST be type-checked via the dedicated gate in CI.** Gate is working as designed — intentionally red, catching phantom imports (FactReader, RelationWriter, RelationEdge) and pre-existing test type errors that no other CI tool catches. Next: Laura aligns test imports, Crispin seam rename resolves cleanup() mismatches. — Scribe
 ### 2026-06-16 — FifoScheduler Determinism Contract (Crucible S3 Skeleton, T3)
 
 **Implementation:** packages/crucible-core/src/skeleton/fifo-scheduler.ts — FifoScheduler implements SchedulerPort (§5.A).

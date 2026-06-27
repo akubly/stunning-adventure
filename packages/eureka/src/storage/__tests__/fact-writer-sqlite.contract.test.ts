@@ -29,7 +29,8 @@
 import Database from 'better-sqlite3';
 // RED: ../../activities/imprint.ts does not exist until Crispin's GREEN phase.
 // (Imported transitively via fact-writer-contract.helper.ts — listed here for clarity.)
-import type { FactId, IdProvider, ImprintOptions, AttentionTier } from '../../activities/imprint.js';
+import type { FactId } from '@akubly/types';
+import type { IdProvider, ImprintOptions, AttentionTier } from '../../activities/imprint.js';
 import { imprint as imprintActivity } from '../../activities/imprint.js';
 import type { SessionId } from '@akubly/types';
 // RED: ../fact-writer-sqlite.ts does not exist until Crispin's GREEN phase.
@@ -102,7 +103,7 @@ function makeSqliteFactWriterHarness(): FactWriterHarness {
 
     factStore,
     factWriter: writer,
-    cleanup: () => db.close(),
+    cleanup: () => { db.close(); },
   };
 }
 

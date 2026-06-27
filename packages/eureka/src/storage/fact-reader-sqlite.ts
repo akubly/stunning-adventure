@@ -16,19 +16,34 @@
  */
 
 import type Database from 'better-sqlite3';
-import type { SessionId } from '@akubly/types';
-import type { FactReader } from '../activities/recall.js';
+import type { SessionId, FactId } from '@akubly/types';
+import type { FactReader, SessionFactLister } from '../activities/recall.js';
+import { sqliteDateTimeToEpochMs } from './datetime.js';
 
 interface FactRow {
   trust: number | null;
 }
 
-export class SqliteFactReader implements FactReader {
+interface ListRow {
+  fact_id: string;
+  content: string;
+  created_at: string;
+}
+
+export class SqliteFactReader implements FactReader, SessionFactLister {
   private readonly stmt: Database.Statement<{ fact_id: string; session_id: string }, FactRow>;
+  private readonly stmtList: Database.Statement<{ session_id: string }, ListRow>;
 
   constructor(db: Database.Database) {
     this.stmt = db.prepare<{ fact_id: string; session_id: string }, FactRow>(
       'SELECT trust FROM facts WHERE fact_id = $fact_id AND session_id = $session_id',
+    );
+    // listBySession: skip rows with NULL trust (corrupt / NaN-stored) to mirror
+    // SqliteFactStore.search's `trust IS NOT NULL` posture — integrate's pair-scan
+    // should never see corrupt rows. created_at is the schema TEXT format
+    // (`YYYY-MM-DD HH:MM:SS`, UTC) — converted to epoch ms before surfacing.
+    this.stmtList = db.prepare<{ session_id: string }, ListRow>(
+      'SELECT fact_id, content, created_at FROM facts WHERE session_id = $session_id AND trust IS NOT NULL',
     );
   }
 
@@ -38,5 +53,16 @@ export class SqliteFactReader implements FactReader {
     // NULL in storage represents NaN (CL-4 round-trip).
     const trust = row.trust === null ? NaN : row.trust;
     return { trust };
+  }
+
+  async listBySession(
+    args: { sessionId: SessionId },
+  ): Promise<ReadonlyArray<{ factId: FactId; content: string; createdAt: number }>> {
+    const rows = this.stmtList.all({ session_id: args.sessionId as string });
+    return rows.map(r => ({
+      factId: r.fact_id as FactId,
+      content: r.content,
+      createdAt: sqliteDateTimeToEpochMs(r.created_at),
+    }));
   }
 }
