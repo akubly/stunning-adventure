@@ -266,3 +266,17 @@ normalizeTimestamps() + assertA2ByteEquivalent() are exported from the acceptanc
 **Final outcome:** All personas UNANIMOUS. Imprint slice approved: correct, well-scoped, maintainable, architecturally sound. Ready to merge.
 
 **Tests:** 258/258 eureka tests green, tsc clean.
+
+---
+
+### 2026-06-27: Time-Bomb Test Pattern Identified (Curator Test Rot)
+
+**Event:** Gabriel diagnosed 3 failing curator tests in issue #83 as stale test expectations, not production regressions.
+
+**Root cause:** Tests inserted `signal_samples` rows with hardcoded `collectedAt` dates (2026-06-11). By session time (2026-06-27), those dates were 16 days old — beyond the 7-day TTL sweep. `curate()` correctly swept the old rows before `buildProfiles()` ran, leaving an empty result set. Implementation was sound; test data aged out.
+
+**Pattern for future testing:** Any test inserting rows with fixed-date `collectedAt` values into a table with a TTL sweep will rot as calendar time advances. Solution: use relative dates `new Date(Date.now() - N).toISOString()` for samples intended to survive TTL. Reserve explicit far-past dates only when the test intent is for the sweep to remove them.
+
+**Reference:** Gabriel's decision in decisions.md, issue #83 session log.
+
+**Tests:** 49/49 curator tests + 752/752 full cairn suite green after fix.
