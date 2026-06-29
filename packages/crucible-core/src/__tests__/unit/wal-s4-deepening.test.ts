@@ -383,8 +383,9 @@ describe('Session-reopen: reopen existing WAL and continue appending', () => {
       expect(rows).toHaveLength(2);
       // Bootstrap row must have bootstrap flag set.
       expect(rows[0].walFlags?.bootstrap).toBe(true);
-      // Normal append row must NOT have bootstrap flag set.
-      expect(rows[1].walFlags?.bootstrap).toBe(false);
+      // Normal append row has no flags set — walFlags is omitted on replay
+      // (undefined), matching the in-session shape for rows committed without flags.
+      expect(rows[1].walFlags).toBeUndefined();
       await b.close();
     }
   });

@@ -122,7 +122,7 @@ class LedgerImpl implements BootstrappableLedger {
       ? {
           ...input,
           walFlags: {
-            ...input.walFlags,
+            ...(input.walFlags ?? {}),
             bootstrap:       false,
             declaredWindow:  false,
             syntheticOutput: false,

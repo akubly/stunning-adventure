@@ -525,11 +525,20 @@ export class FileSystemWalBackend implements WalBackend {
         // BLOCKING-4: include walFlags from rec.flags so readRows() returns
         // identical results pre- and post-reopen (e.g. flags.bootstrap=true on
         // bootstrap rows survives a session reopen).
+        // Only attach walFlags when ≥1 bit is true — rows with all-false flags
+        // were committed without walFlags (undefined), and replay must match
+        // that in-session shape to preserve object identity across reopen.
+        const hasAnyFlag =
+          rec.flags.bootstrap ||
+          rec.flags.declaredWindow ||
+          rec.flags.syntheticOutput ||
+          rec.flags.taskBoundary ||
+          rec.flags.manifestRoot;
         const replayedEvent: LedgerEvent = {
           primitiveKind,
           primitivePayload,
           causalReadSet,
-          walFlags: rec.flags,
+          ...(hasAnyFlag ? { walFlags: rec.flags } : {}),
           offset,
           ...(metadata !== undefined ? { metadata } : {}),
         };
