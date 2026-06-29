@@ -822,6 +822,7 @@ describe('profile build inside curate()', () => {
     const result = await curate();
 
     expect(result.profileBuild).toBeDefined();
+    expect(result.profileBuild!.profilesBuilt).toBeGreaterThan(0);
     expect(typeof result.profileBuild!.durationMs).toBe('number');
     expect(result.profileBuild!.durationMs).toBeGreaterThanOrEqual(0);
   });
