@@ -28,7 +28,10 @@ export class InMemoryRelationReader implements RelationReader {
       .filter(r => r.relationKind === 'duplicate_of')
       .map(r => ({ from: r.fromFactId as FactId, to: r.toFactId as FactId }));
 
-    if (args.candidateIds && args.candidateIds.length > 0) {
+    if (args.candidateIds !== undefined) {
+      // candidateIds provided (even if empty) → restrict to that set.
+      // Empty array → no edges possible (no candidates to be non-canonical). Return [].
+      if (args.candidateIds.length === 0) return [];
       const candidateSet = new Set<string>(args.candidateIds as unknown as string[]);
       return dupEdges.filter(e => candidateSet.has(e.from as string));
     }

@@ -185,6 +185,12 @@ const TRUST_FLOOR = 0.15;
 export const RANKER_OVERFETCH_FACTOR = 3;
 
 /**
+ * Maximum pages fetched by the backfill loop before emitting a warn and stopping.
+ * Guards against unbounded fetch spirals on pathologically dup-dense sessions.
+ */
+const MAX_BACKFILL_PAGES = 10;
+
+/**
  * Attention multipliers per §30 §1.2 (FR-2 canonical ranker formula).
  * Authoritative source: §30 §1.2.
  */
@@ -269,11 +275,13 @@ export async function recallWithScores(
   // Without a reader, a single fetch always suffices (no collapse, no undersupply).
   const collapsed: RecallResult[] = [];
   let cursor: string | undefined;
+  let pagesFetched = 0;
   do {
     const { results: page, nextCursor } = await factStore.search({
       query, sessionId, limit: overfetchLimit, minTrust: TRUST_FLOOR, cursor,
     });
     cursor = nextCursor;
+    pagesFetched++;
 
     // Belt-and-suspenders: FactStore.search() receives minTrust and filters at the data
     // layer per §20 §7.4 (F6). This post-filter remains as defense-in-depth.
@@ -283,6 +291,7 @@ export async function recallWithScores(
       // Duplicate collapse: pass candidateIds to avoid a full-session edge scan (D fix).
       // Suppresses any candidate whose factId is on the 'from' side of a duplicate_of edge.
       // Canonicals ('to' side) surface normally. Storage is never mutated — view-layer only.
+      // Assumes well-formed edges (V-R3 self-loop guard enforced at write time).
       const candidateIds = trusted.map(f => f.factId);
       if (candidateIds.length > 0) {
         const edges = await deps.relationReader.listDuplicateOf({ sessionId, candidateIds });
@@ -292,7 +301,18 @@ export async function recallWithScores(
     } else {
       collapsed.push(...trusted);
     }
-  } while (deps.relationReader !== undefined && collapsed.length < k && cursor !== undefined);
+  } while (
+    deps.relationReader !== undefined &&
+    collapsed.length < k &&
+    cursor !== undefined &&
+    pagesFetched < MAX_BACKFILL_PAGES
+  );
+
+  if (pagesFetched >= MAX_BACKFILL_PAGES && collapsed.length < k && cursor !== undefined) {
+    logger.warn(
+      `[eureka.recall] backfill page cap (${MAX_BACKFILL_PAGES}) reached; returning ${collapsed.length} of k=${k}. Session may have extreme duplicate density.`,
+    );
+  }
 
   const nowMs = clock.now();
 

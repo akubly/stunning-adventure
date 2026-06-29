@@ -478,4 +478,56 @@ describe('recall duplicate_of collapse via RelationReader seam (RC)', () => {
       expect.objectContaining({ sessionId: SESSION }),
     );
   });
+
+  // -------------------------------------------------------------------------
+  // RC-CIDS-1 — candidateIds contains the current page's factIds
+  // -------------------------------------------------------------------------
+  //
+  // Verifies that the `candidateIds` argument passed to `listDuplicateOf` is
+  // exactly the set of factIds from the trusted candidates on that page — so
+  // the implementation can narrow its query to only those rows.
+
+  it('RC-CIDS-1: listDuplicateOf is called with candidateIds matching the page fact IDs', async () => {
+    const factA = mkFact('cids-A', { trust: 0.9 });
+    const factB = mkFact('cids-B', { trust: 0.8 });
+
+    const reader    = makeReader([]);
+    const factStore = makeStore([factA, factB]);
+
+    await recall(
+      { query: 'cids-test', sessionId: SESSION, k: 2 },
+      { factStore, clock, relationReader: reader },
+    );
+
+    expect(reader.listDuplicateOf).toHaveBeenCalledOnce();
+    const callArg = reader.listDuplicateOf.mock.calls[0][0] as { sessionId: SessionId; candidateIds: FactId[] };
+    expect(callArg.sessionId).toBe(SESSION);
+    expect(callArg.candidateIds).toHaveLength(2);
+    expect(callArg.candidateIds).toContain(factA.factId);
+    expect(callArg.candidateIds).toContain(factB.factId);
+  });
+
+  // -------------------------------------------------------------------------
+  // RC-CIDS-2 — empty trusted page → listDuplicateOf NOT called
+  // -------------------------------------------------------------------------
+  //
+  // When all facts on the page sit below the trust floor, the trusted set is
+  // empty → candidateIds would be [] → the call is skipped entirely. This
+  // avoids a pointless edge query and also exercises the spec requirement that
+  // candidateIds=[] must not trigger a full-session scan.
+
+  it('RC-CIDS-2: empty trusted page (all below trust floor) → listDuplicateOf not called', async () => {
+    // trust=0.10 < TRUST_FLOOR (0.15) — filtered out before collapse
+    const lowFact = mkFact('below-floor', { trust: 0.10 });
+
+    const reader    = makeReader([]);
+    const factStore = makeStore([lowFact]);
+
+    await recall(
+      { query: 'cids-empty', sessionId: SESSION, k: 2 },
+      { factStore, clock, relationReader: reader },
+    );
+
+    expect(reader.listDuplicateOf).not.toHaveBeenCalled();
+  });
 });
