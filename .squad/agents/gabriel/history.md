@@ -222,6 +222,7 @@ git merge origin/main on main let git's merge=union driver auto-resolve .squad/d
 
 **Pattern to remember:** Any test that inserts rows with fixed-date `collectedAt` values into a table with a TTL sweep will rot as calendar time advances. Use `new Date(Date.now() - N).toISOString()` for "recent" samples; use explicit past dates (e.g. `'2020-01-01T00:00:00.000Z'`) only when you *want* the sweep to remove them.
 
+📌 **Team update (2026-06-26T19:29:13Z):** eureka/integrate-slice — Test Type-Check Gate SHIPPED (commit baa4cb2). Gabriel infrastructure change: added dedicated test-inclusive type-check gate to eureka CI (tsconfig.typecheck.json + typecheck script + ci.yml step). Durable team convention established: **Test files MUST be type-checked via the dedicated gate in CI.** Gate is working as designed — intentionally red, catching phantom imports (FactReader, RelationWriter, RelationEdge) and pre-existing test type errors that no other CI tool catches. Next: Laura aligns test imports, Crispin seam rename resolves cleanup() mismatches. — Scribe
 ### 2026-06-16 — FifoScheduler Determinism Contract (Crucible S3 Skeleton, T3)
 
 **Implementation:** packages/crucible-core/src/skeleton/fifo-scheduler.ts — FifoScheduler implements SchedulerPort (§5.A).

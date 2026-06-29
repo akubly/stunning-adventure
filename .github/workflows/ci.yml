@@ -20,5 +20,6 @@ jobs:
       - run: node scripts/check-workspace-lint.mjs
       - run: tsc --build
       - run: npm run lint
+      - run: npm run typecheck
       - run: npm run build
       - run: npm test

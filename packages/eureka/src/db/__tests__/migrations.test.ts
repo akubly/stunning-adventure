@@ -28,6 +28,7 @@ import Database from 'better-sqlite3';
 import { applyMigrations } from '../schema.js';
 import { migration001 } from '../migrations/001-facts.js';
 import { migration002 } from '../migrations/002-facts-attention.js';
+import { migration003 } from '../migrations/003-fact-relations.js';
 
 // ---------------------------------------------------------------------------
 // Suite
@@ -49,11 +50,11 @@ describe('Eureka schema migrations', () => {
   // MIG-1: schema_version reaches 2
   // ─────────────────────────────────────────────────────────────────────────
 
-  it('MIG-1: schema_version is 2 after applying both migrations', () => {
+  it('MIG-1: schema_version is 3 after applying all migrations', () => {
     const row = db
       .prepare('SELECT MAX(version) AS version FROM schema_version')
       .get() as { version: number };
-    expect(row.version).toBe(2);
+    expect(row.version).toBe(3);
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -148,7 +149,110 @@ describe('Eureka schema migrations', () => {
     const row = db
       .prepare('SELECT MAX(version) AS version FROM schema_version')
       .get() as { version: number };
-    expect(row.version).toBe(2);
+    expect(row.version).toBe(3);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // MIG-7..MIG-12 — Migration 003 (fact_relations) substrate
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // MIG-7: happy-path insert into fact_relations + DEFAULT columns surface
+  it('MIG-7: fact_relations row inserted with only required columns carries weight=1.0, confidence=1.0, created_at default', () => {
+    db.prepare(
+      `INSERT INTO fact_relations (from_fact_id, to_fact_id, relation_kind, session_id)
+       VALUES ('f-from', 'f-to', 'duplicate_of', 'session-mig7')`,
+    ).run();
+
+    const row = db
+      .prepare(
+        `SELECT weight, confidence, created_at
+         FROM fact_relations
+         WHERE from_fact_id = 'f-from' AND to_fact_id = 'f-to' AND relation_kind = 'duplicate_of' AND session_id = 'session-mig7'`,
+      )
+      .get() as { weight: number; confidence: number; created_at: string };
+
+    expect(row.weight).toBe(1.0);
+    expect(row.confidence).toBe(1.0);
+    expect(typeof row.created_at).toBe('string');
+    expect(row.created_at.length).toBeGreaterThan(0);
+  });
+
+  // MIG-8: CHECK constraint rejects unknown relation_kind
+  it('MIG-8: CHECK rejects unknown relation_kind values', () => {
+    expect(() => {
+      db.prepare(
+        `INSERT INTO fact_relations (from_fact_id, to_fact_id, relation_kind, session_id)
+         VALUES ('a', 'b', 'related_to', 'session-mig8')`,
+      ).run();
+    }).toThrow();
+  });
+
+  // MIG-9: all four locked relation_kind values are accepted
+  it('MIG-9: all four locked relation_kind values (duplicate_of, supersedes, contradicts, supports) are accepted', () => {
+    const kinds: ReadonlyArray<string> = ['duplicate_of', 'supersedes', 'contradicts', 'supports'];
+    for (const k of kinds) {
+      expect(() => {
+        db.prepare(
+          `INSERT INTO fact_relations (from_fact_id, to_fact_id, relation_kind, session_id)
+           VALUES (?, ?, ?, 'session-mig9')`,
+        ).run(`from-${k}`, `to-${k}`, k);
+      }).not.toThrow();
+    }
+
+    const count = db
+      .prepare(`SELECT COUNT(*) AS c FROM fact_relations WHERE session_id = 'session-mig9'`)
+      .get() as { c: number };
+    expect(count.c).toBe(4);
+  });
+
+  // MIG-10: UNIQUE(session_id, from_fact_id, to_fact_id, relation_kind) rejects duplicate raw INSERT
+  //         (idempotency at the writer layer is via ON CONFLICT … DO NOTHING; the
+  //          raw INSERT here intentionally bypasses that to verify the constraint).
+  it('MIG-10: UNIQUE constraint rejects duplicate (session, from, to, kind) on raw INSERT', () => {
+    db.prepare(
+      `INSERT INTO fact_relations (from_fact_id, to_fact_id, relation_kind, session_id)
+       VALUES ('a', 'b', 'duplicate_of', 'session-mig10')`,
+    ).run();
+
+    expect(() => {
+      db.prepare(
+        `INSERT INTO fact_relations (from_fact_id, to_fact_id, relation_kind, session_id)
+         VALUES ('a', 'b', 'duplicate_of', 'session-mig10')`,
+      ).run();
+    }).toThrow();
+  });
+
+  // MIG-11: same (from, to) with different relation_kind both persist (UNIQUE includes kind)
+  it('MIG-11: same (from, to) with different relation_kind both persist (UNIQUE includes kind)', () => {
+    db.prepare(
+      `INSERT INTO fact_relations (from_fact_id, to_fact_id, relation_kind, session_id)
+       VALUES ('a', 'b', 'duplicate_of', 'session-mig11')`,
+    ).run();
+    expect(() => {
+      db.prepare(
+        `INSERT INTO fact_relations (from_fact_id, to_fact_id, relation_kind, session_id)
+         VALUES ('a', 'b', 'supports', 'session-mig11')`,
+      ).run();
+    }).not.toThrow();
+
+    const count = db
+      .prepare(`SELECT COUNT(*) AS c FROM fact_relations WHERE session_id = 'session-mig11'`)
+      .get() as { c: number };
+    expect(count.c).toBe(2);
+  });
+
+  // MIG-12: predicate indices exist (cheap 1-hop traversal in either direction)
+  it('MIG-12: both predicate indices exist on fact_relations', () => {
+    const indices = db
+      .prepare(
+        `SELECT name FROM sqlite_master
+         WHERE type = 'index' AND tbl_name = 'fact_relations' AND name LIKE 'idx_%'`,
+      )
+      .all() as Array<{ name: string }>;
+
+    const names = indices.map(i => i.name);
+    expect(names).toContain('idx_fact_relations_from');
+    expect(names).toContain('idx_fact_relations_to');
   });
 });
 
@@ -159,6 +263,33 @@ describe('Eureka schema migrations', () => {
 // The beforeEach above applies both migrations before any insert, so this
 // guarantee requires a standalone test that drives migrations one at a time.
 // ---------------------------------------------------------------------------
+
+// MIG-13: migration 003 applies cleanly after 001 + 002 — standalone, mirrors MIG-2
+describe('MIG-13: migration 003 applies cleanly after 001 + 002 (stepwise)', () => {
+  it('MIG-13: applying 001, 002, 003 in sequence yields a usable fact_relations table', () => {
+    const testDb = new Database(':memory:');
+    try {
+      migration001.up(testDb);
+      migration002.up(testDb);
+      migration003.up(testDb);
+
+      // Smoke insert proves the table + CHECK + defaults all wired through stepwise.
+      testDb
+        .prepare(
+          `INSERT INTO fact_relations (from_fact_id, to_fact_id, relation_kind, session_id)
+           VALUES ('x', 'y', 'duplicate_of', 'session-mig13')`,
+        )
+        .run();
+
+      const row = testDb
+        .prepare(`SELECT relation_kind FROM fact_relations WHERE session_id = 'session-mig13'`)
+        .get() as { relation_kind: string };
+      expect(row.relation_kind).toBe('duplicate_of');
+    } finally {
+      testDb.close();
+    }
+  });
+});
 
 describe('MIG-2: existing-row default backfill when 002 is applied after an insert', () => {
   it('MIG-2: row inserted after 001 and before 002 receives non-breaking defaults', () => {

@@ -113,7 +113,7 @@ runTrustUpdaterContract('SqliteTrustUpdater', () => {
       // NULL re-hydrates as NaN (mirrors SqliteFactReader CL-4 convention).
       return row.trust === null ? NaN : row.trust;
     },
-    cleanup: () => db.close(),
+    cleanup: () => { db.close(); },
   };
 });
 
