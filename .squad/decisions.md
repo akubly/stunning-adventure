@@ -2384,3 +2384,248 @@ Line-oriented output, no animations or spinners, per §13.2.
 1. **Aaron decision pending:** Q1 & Q2 above (integrate landing, dedupKey in schema)
 2. **Genesta & Crispin review:** Integration design memo — verify representation coverage
 3. **Follow-up slice:** `integrate` cognitive orchestration (after `imprint` ships)
+# Crucible Slice 4 (S4) — Roger §3 WAL, Laura §11 Replay, Gabriel ADR-0024
+
+## Status
+- **Approved:** Aaron approved S4 Option A (roger-s4-next-slice.md)
+- **Lane Status:** 
+  - Roger §3 WAL deepening: 264/264 tests ✅, tsc --noEmit ✅
+  - Laura §11 Hermetic Replay: 270/270 tests ✅
+  - Gabriel ADR-0024: In progress (branch squad/s4-adr)
+- **Branch coordination:** Each lane in own worktree; work committed on lane branches
+
+---
+
+# Graham: Crucible S4 — Next Slice Recommendation
+
+**Date:** 2026-06-27T22:38:31-07:00
+**Author:** Graham (Lead / Architect)
+**Status:** PROPOSED (pending Aaron approval)
+**Prerequisite:** Phase 0.5 Walking Skeleton ✅ shipped (PR #80)
+
+## Context
+
+Phase 0.5 walking skeleton is merged. The L0→L1→replay vertical plus L3.5 Scheduler tier boundary is alive and green in CI. The CTD plan names "Phase 1 — Core Stack" as next: a 5-lane parallel fan-out (§3 WAL, §4 Hook Bus, §7 Generators, §12 SDK, §8 Applier, §5 Router, §11 Hermetic Replay). But a full Phase 1 fan-out is too wide for one slice — the team works best in 3–4 day shippable increments.
+
+**Key constraints:**
+
+1. **Gate 1.5 (ADR-Body Gate)** blocks Phase 1 _implementation code_. ADR-0002 ✅ accepted, ADR-0011 ✅ accepted, **ADR-0024 ❌ not written**. Gabriel's Router (§5) and Scheduler graduation are gated on ADR-0024.
+2. **Critical path:** §3 → §10 → §15 → §19 (Roger's chain is the longest serial dependency). Every day §3 slips, the entire project slips.
+3. **GAP flags from skeleton:**
+   - GAP-1: lags.bootstrap not set on bootstrap rows (Roger — needs Graham decision on Option A vs B)
+   - GAP-2: Bootstrap atomicity — commitRow() is sequential, not atomic (Roger — needs WalBackend interface change)
+   - Session-reopen capability (Roger/Graham)
+   - FifoScheduler → WeightedRoundRobinScheduler graduation (Gabriel — blocked on ADR-0024)
+   - xports map ✅ resolved in skeleton
+
+---
+
+## Recommendation: S4 — Critical Path + ADR Unblock
+
+**Pick:** Option A — Start the two critical-path lanes (Roger §3, Laura §11) plus Gabriel's ADR-0024 authoring to unblock the Scheduler/Router lane for S5. Fold in GAP-1 and GAP-2 resolution.
+
+### Scope
+
+| Work Item | Section | Owner | Reviewer | Notes |
+|-----------|---------|-------|----------|-------|
+| L1 WAL Substrate deepening | §3 | Roger | Graham | Critical path. Schema, append protocol, group-commit, seal-and-split. Resolve GAP-1 (flags.bootstrap) and GAP-2 (bootstrap atomicity) as part of §3 interface design. |
+| Hermetic Replay formalization | §11 | Laura | Graham | Parallel with §3. A1–A4 assertion specs, capture/replay interfaces, non-determinism doctrine. Builds on skeleton replay engine. |
+| ADR-0024 body authoring | ADR | Gabriel | Graham | Gate 1.5 prerequisite. Explicit L3.5 Scheduler Tier rationale. Unblocks Router (§5) and Scheduler graduation for S5. |
+| Session-reopen seam | §3 ext | Roger | Graham | GAP flag: openSession(sessionId) catalog lookup. Natural extension of §3 WAL work. |
+| GAP-1 resolution (flags.bootstrap) | §3 ext | Roger | Graham | Graham decides Option A (walFlags on PrimitiveInput) before Roger starts §3. |
+| GAP-2 resolution (bootstrap atomicity) | §3 ext | Roger | Graham | Graham decides Option A (expose flush()) or B (commitBootstrapBatch). Natural fit inside §3 WAL interface work. |
+
+### GAP Resolution Decisions (Graham, pre-slice)
+
+**GAP-1 (flags.bootstrap):** Recommend **Option A** — add walFlags?: Partial<SegmentRecordFlags> to PrimitiveInput. Lower friction than a separate method; keeps the single commit path with optional flag threading. Roger threads it through materializeRow() as part of §3.
+
+**GAP-2 (bootstrap atomicity):** Recommend **Option A** — expose lush() on WalBackend interface. Reuses existing group-commit machinery; ootstrap() stages N rows then calls lush(). Adding a purpose-built commitBootstrapBatch() (Option B) duplicates commit logic.
+
+### Why This Slice
+
+1. **Critical-path first.** Roger's §3 is the longest serial dependency (§3→§10→§15→§19). Starting it immediately is the single highest-leverage move. Every day §3 slips, the project end-date slips by at least one day.
+2. **Laura's §11 is embarrassingly parallel.** Hermetic Replay has no dependency on §3 internals — it builds on the replay engine seam already in the skeleton. Laura works in parallel, full utilization.
+3. **ADR-0024 unblocks the next fan-out.** Gabriel writes the ADR body (≤2 days) while Roger and Laura code. By S5, the Gate 1.5 is fully clear and Gabriel can start Router (§5) + Scheduler graduation.
+4. **GAP flags fold naturally.** GAP-1, GAP-2, and session-reopen are all §3 WAL interface concerns — they cost near-zero incremental effort inside Roger's §3 work vs. being separate tasks.
+5. **Team utilization:** 3 agents active (Roger, Laura, Gabriel) with Graham on review/architecture. Alexander, Rosella, Valanice are idle this slice but unblocked for S5 (§12 SDK, §7 Generators, §5 Router respectively).
+
+**Rough size:** 3–4 days elapsed.
+
+---
+
+## Alternatives Considered
+
+### Option B: Full Phase 1 Fan-Out (All 5 Lanes)
+
+**Scope:** Start all Phase 1 lanes simultaneously — §3 (Roger), §4 (Roger, sequential after §3), §7 (Rosella), §12→§8 (Alexander), §5 (Gabriel), §11 (Laura).
+
+**Gain:** Maximum parallelism, all agents utilized, fastest theoretical completion.
+
+**Trade-offs:**
+- ❌ **Gate 1.5 violation.** ADR-0024 isn't written. Gabriel can't start §5 Router or Scheduler graduation until it lands. Starting §5 anyway risks building on unargued foundations.
+- ❌ **Review bottleneck.** Graham reviews §3, §4, §5, §7, §8, §11 — 6 concurrent lanes funneling into one reviewer. Review latency becomes the new bottleneck.
+- ❌ **§4 can't start yet.** Hook Bus is sequential after §3 (same author, extension of WAL semantics). Adding it to S4 scope is misleading — it's S5 work regardless.
+- ❌ **Coordination overhead.** 6 parallel lanes with cross-seam dependencies (§12→§8 serial, §5↔§9 Q3 handshake) in one slice risks integration thrash.
+- 🟡 **Alexander and Rosella idle for 0 days** (they could start §12 and §7 immediately) — but see Option C for a middle ground.
+
+### Option C: Critical Path + SDK Lane (§3 + §11 + §12 + ADR-0024)
+
+**Scope:** Everything in Option A, plus Alexander starts §12 SDK Integration in parallel.
+
+**Gain:** Alexander's §12→§8 serial chain starts sooner. §8 Applier + DecisionGate (Phase 2 dependency for §13 CLI Shell) gets a head start.
+
+**Trade-offs:**
+- ✅ One more agent utilized (4 active vs. 3).
+- ✅ §12 has no dependency on §3 — genuinely parallel.
+- ⚠️ **Review load.** Graham now reviews 3 code lanes (§3, §11, §12) plus ADR-0024. Manageable but tighter than Option A.
+- ⚠️ **Alexander's §12 depends on SdkProvider interface shape.** The skeleton has a stub; §12 needs to define the real interface. If §3 WAL changes affect the SdkProvider boundary (unlikely but possible), Alexander may need to rework.
+- 🟡 Adds ~1 day review latency risk vs. Option A due to 4-way review fan-in.
+
+**Verdict:** Viable. If Aaron wants faster throughput and accepts the review-load trade-off, this is the upgrade path. Graham's recommendation is Option A for cleaner execution, but Option C is a reasonable call.
+
+### Option D: Scheduler Graduation + Router (§5 + Scheduler, skip §3)
+
+**Scope:** Gabriel writes ADR-0024 and immediately starts §5 Router + WeightedRoundRobinScheduler graduation. Roger starts §3 in parallel.
+
+**Gain:** Unblocks Phase 2 Aperture (§9, which depends on §5 Router) sooner.
+
+**Trade-offs:**
+- ❌ **Sequencing violation.** ADR-0024 authoring and §5 implementation can't truly parallelize — the ADR must be accepted before code starts (Gate 1.5 rule). Compression is illusory unless Aaron waives the gate.
+- ❌ **Aperture (§9) also depends on §4 Hook Bus**, which depends on §3. Unblocking §5 alone doesn't unblock §9. Half-unblock with no downstream benefit.
+- ⚠️ Laura idle if §11 not included.
+- 🟡 Trades critical-path progress for non-critical-path progress.
+
+---
+
+## Decision Rationale (Trade-Off Matrix)
+
+| Factor | A: Critical Path + ADR | B: Full Fan-Out | C: + SDK Lane | D: Router First |
+|--------|:---:|:---:|:---:|:---:|
+| Critical path (§3) starts immediately | ✅ | ✅ | ✅ | ✅ |
+| Gate 1.5 compliance | ✅ | ❌ ADR-0024 missing | ✅ | ⚠️ compressed |
+| Review load sustainable | ✅ 2 code + 1 ADR | ❌ 6 lanes | 🟡 3 code + 1 ADR | 🟡 2 code + 1 ADR |
+| GAP flags resolved | ✅ all 3 | 🟡 in passing | ✅ all 3 | 🟡 partial |
+| Team utilization | 🟡 3/7 agents | ✅ 6/7 agents | ✅ 4/7 agents | 🟡 3/7 agents |
+| Unblocks S5 fan-out | ✅ ADR-0024 done | 🟡 already started | ✅ ADR + SDK done | ⚠️ gate tension |
+| Risk of integration rework | ✅ low (2 lanes) | ❌ high (6 lanes) | 🟡 moderate (3 lanes) | ✅ low |
+| Slice coherence | ✅ tight, focused | ❌ diffuse | 🟡 still focused | 🟡 mixed priorities |
+
+**Recommendation: Option A.** It puts maximum energy on the critical path (Roger's §3), resolves all outstanding GAP flags, clears Gate 1.5 (ADR-0024), and keeps review load sustainable. Three idle agents (Alexander, Rosella, Valanice) is the cost — but they're unblocked in S5 with a clean foundation, not scrambling to catch up with a messy S4. Option C is the reasonable upgrade if Aaron prefers higher utilization.
+
+---
+
+## S5 Preview (unlocked by S4 completion)
+
+With §3 landed, ADR-0024 accepted, and §11 formalized, S5 becomes the full Phase 1 fan-out:
+
+- §4 Hook Bus (Roger, sequential after §3)
+- §5 Router Design (Gabriel, ADR-0024 cleared)
+- §7 Generators (Rosella)
+- §12 SDK Integration (Alexander)
+- §8 Applier + DecisionGate (Alexander, after §12 interface locks)
+- WeightedRoundRobinScheduler graduation (Gabriel, after §5)
+
+All 5 remaining lanes are unblocked. This is the payoff of a focused S4.
+
+---
+
+# Roger: Crucible S4 WAL — Substrate Deepening Decisions
+
+**Date:** 2026-06-27T22:38:31-07:00
+**Author:** Roger (Platform Dev)
+**Slice:** Crucible S4 Lane — §3 L1 WAL Substrate deepening (Phase 1)
+**Branch:** squad/s4-wal
+**Commit:** 25e976f
+**Status:** SHIPPED — 264/264 tests ✅, tsc --noEmit ✅
+
+---
+
+## Decision 1 — GAP-1 Resolution: Option A (walFlags on PrimitiveInput)
+
+**Situation:** §3.8 requires bootstrap rows to have lags.bootstrap = true in the WAL
+segment record header. PrimitiveInput had no lags field; materializeRow() always
+wrote lags.bootstrap = false. Graham's Phase 0.5 decision doc named Option A
+(add walFlags?: Partial<SegmentRecordFlags> to PrimitiveInput) as preferred.
+
+**Decision:** Option A adopted. Added WalRowFlags interface to 	ypes.ts (mirrors
+SegmentRecordFlags but lives in the root module) and walFlags?: WalRowFlags to
+PrimitiveInput. Both InMemoryWalBackend and FileSystemWalBackend merge
+input.walFlags into the segment record flags struct instead of hardcoding all-false.
+LedgerImpl.bootstrap() stamps walFlags.bootstrap = true on every row before
+calling commitRow() — callers never set it manually.
+
+**Why WalRowFlags not Partial<SegmentRecordFlags>:** SegmentRecordFlags lives in
+wal/types.ts which already imports from ../../types.ts. Importing SegmentRecordFlags
+into 	ypes.ts would create a circular dependency. Defining a parallel WalRowFlags
+interface avoids the cycle; the two types are structurally identical but module-isolated.
+
+---
+
+## Decision 2 — GAP-2 Resolution: Option A (flush() on WalBackend interface)
+
+**Situation:** §3.8 requires "either every offset-0 Observation durable or none" for the
+bootstrap batch. Phase 0.5 used sequential wait commitRow() per row — a crash between
+rows left a partially committed bootstrap. Graham's Phase 0.5 decision doc named Option A
+(expose lush() on the WalBackend interface, reuse group-commit machinery).
+
+**Decision:** Option A adopted.
+- lush(): Promise<void> added to WalBackend interface in ledger.ts.
+- InMemoryWalBackend.flush() is a documented no-op (commits immediately in commitRow).
+- FileSystemWalBackend.flush() was already public; it now satisfies the interface.
+- LedgerImpl.bootstrap() refactored: stages ALL rows via commitRow() without awaiting
+  individually (collects Promises), then calls walBackend.flush(), then
+  wait Promise.all(rowPromises). With atchSize >= N (caller configured), the entire
+  batch commits in one datasync barrier. With default atchSize=1 rows are
+  auto-flushed individually (sequential, functional, not atomically grouped).
+- hasBootstrapped is set only AFTER lush() + Promise.all() succeeds — a failed
+  flush leaves it false, permitting a clean retry (BI-7 invariant preserved).
+
+**Existing mock backends** (makeFlakyBackend, makeNonEmptyBackend in
+ledger-bootstrap-once.test.ts) updated to add sync flush(): Promise<void> {} to
+satisfy the WalBackend interface.
+
+---
+
+## Decision 3 — Session-Reopen: reopen?: boolean on LedgerFactoryOptions
+
+**Situation:** LedgerImpl.bootstrap() checked eadRows({range:[0,0]}) and threw if any
+rows existed — this prevented reopening an existing session WAL and continuing to append.
+The error message in Phase 0.5 said "Session-reopen support is deferred to Phase 1."
+
+**Decision:** Added eopen?: boolean to LedgerFactoryOptions. When 	rue, LedgerImpl
+initializes hasBootstrapped = true, so:
+- ootstrap() throws immediately (duplicate-bootstrap guard — correct: don't re-bootstrap
+  an existing session).
+- ppend() works normally at the next available offset (the FS backend already replayed
+  existing rows in eplayFromSegments() on create()).
+
+FileSystemWalBackend.create() needed zero changes — it already replays segments on open.
+The session-reopen is purely a Ledger-layer concern.
+
+**Usage:**
+\\\	s
+const backend = await createFileSystemWalBackend(rootDir, sessionId);
+// backend.readRows() already returns replayed rows
+const ledger = await createLedger({ walBackend: backend, reopen: true });
+const offset = await ledger.append(newRow); // continues at existing_row_count
+\\\
+
+---
+
+## Signal to Team
+
+- **Graham (Architect):** GAP-1 and GAP-2 are resolved per Option A in both cases.
+  The WalBackend interface now has lush(). The LedgerFactoryOptions.reopen field
+  is live. No ledger.ts locked decisions re-litigated.
+- **Laura (Tester):** New contract: WalBackend requires lush(). Any mock WalBackend
+  in acceptance or contract tests must add sync flush(): Promise<void> {}. The
+  bootstrap-once tests updated as a model.
+- **Gabriel (§5 Router/Scheduler):** No §5 scope touched. onPause callback seam
+  unchanged. lush() on WalBackend does not interact with the seal-and-split or
+  PAUSE verdict path.
+- **Phase 1 open scope** (not in this slice, per task boundary):
+  - 64 MiB segment roll-over
+  - ppendFenced / optimistic head-offset check (§3.4.1)
+  - Full L1Subscriber / Router integration (§5)
+  - ContextWindowResolver seam (§3.7)
+

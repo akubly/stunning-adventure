@@ -211,3 +211,20 @@ Near-term roadmap split: Cairn's active external-facing path is the GitHub Autom
 5. **Acceptance Criteria:** Met. DBOM is generated and persisted for certification-tier events, the `dbomRootHash` surfaces correctly, and the 5-second SQLITE_BUSY retry prevents immediate lock contention failures. All targeted test suites are green.
 
 - 2026-06-26T12:31:20-07:00 📌 Correction/supersession: the fail-fast recommendation in finding 1 above (line 168: "Persistence errors bubble up appropriately, which is the correct fail-fast behavior") was OVERRIDDEN during persona review — shipped behavior is best-effort (DBOM errors caught + surfaced via RunForgeInstrumentedSessionResult.dbomPersistError; the run still succeeds). See decisions.md slice-2 entry.
+## Learnings — 2026-06-27: Crucible S4 Next-Slice Planning
+
+### Gate 1.5 is a real constraint, not a formality
+
+ADR-0024 (Explicit L3.5 Scheduler Tier) was never written during skeleton work even though the FifoScheduler was implemented. Gate 1.5 explicitly blocks Phase 1 implementation code until all three gated ADRs land. Two of three (ADR-0002, ADR-0011) are accepted; ADR-0024 is the remaining blocker. This means Gabriel's Router (§5) and Scheduler graduation are genuinely gated — not by engineering readiness but by process compliance. Lesson: track gate prerequisites as first-class planning inputs, not assumptions.
+
+### GAP flags compound when deferred
+
+Three GAP flags from Phase 0.5 (flags.bootstrap, bootstrap atomicity, session-reopen) all touch the WalBackend interface. They're cheap to resolve inside §3 WAL deepening work but would be expensive as standalone tasks (each requiring interface changes, review cycles, and potential conflict with §3 work). This validates the "fold GAPs into the next natural home" strategy over dedicated GAP-cleanup slices.
+
+### Critical path reasoning dominates slice selection
+
+The §3→§10→§15→§19 chain is 4 links long and entirely Roger-owned. No amount of parallelism on non-critical lanes changes the project end date. The S4 recommendation prioritizes starting §3 over maximizing agent utilization — 3/7 agents active beats 6/7 agents active on non-critical work. This is the textbook scheduling insight: critical path first, utilization second.
+
+### Review bottleneck scales nonlinearly
+
+Graham reviews all Phase 1 lanes. Full fan-out (6 concurrent lanes) would create a 6:1 review funnel. Past experience (S3 skeleton with 5 parallel tasks) showed integration assembly taking longer than individual task completion. Limiting to 2 code lanes + 1 ADR keeps review sustainable and reduces integration thrash risk.
