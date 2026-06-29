@@ -18,7 +18,7 @@ Three tests in `packages/cairn/src/__tests__/curator.test.ts` (group "profile bu
 
 | Signal | Value |
 |--------|-------|
-| "BuildResult carries durationMs" test (also uses June 11 dates) | **Passes** — only asserts `durationMs >= 0` (true even when rows=0 produces durationMs=0) |
+| "BuildResult carries durationMs" test (also uses June 12 dates) | **Passes** — only asserts `durationMs >= 0` (true even when rows=0 produces durationMs=0) |
 | "sweep/cap runs BEFORE buildProfiles" test (uses `new Date().toISOString()`) | **Passes** — proves sweep + build both work correctly with live dates |
 | "should complete curate() and run sweepChangeVectors even if buildProfiles throws" | **Passes** — sweep/cap path is independent of build |
 
@@ -180,52 +180,6 @@ Not pushed — Roger has follow-up fixes to land on top; coordinator will push a
 **Why:** User ruling at Decision-Point Gate during WAL substrate + Walkthrough B build.
 
 ---
-
-
-
-
-```bash
-# 1. Syntax check
-bash -n .github/hooks/cairn/shell-init.sh
-bash -n .github/hooks/cairn/install.sh
-bash -n .github/hooks/cairn/uninstall.sh
-
- # 2. Install (idempotent — run twice to confirm second run is no-op)
-bash .github/hooks/cairn/install.sh
-bash .github/hooks/cairn/install.sh   # should print "already installed"
-
-
-
-
- # 3. Reload and smoke-check
-source ~/.bashrc
-forge_mcp_check
-
-
-
-
- # 4. Uninstall
-bash .github/hooks/cairn/uninstall.sh
-source ~/.bashrc
-
-
-
- # forge_mcp_check should no longer exist as a function
-
-
-
-
- # 5. Re-install (confirm idempotency survived uninstall cycle)
-bash .github/hooks/cairn/install.sh
-source ~/.bashrc
-forge_mcp_check
-```
-
-## Key design note
-
-The marker block strategy (`# forge-mcp: shell init — start`) is the safe pattern
-for managed rc-file entries. The install script will never double-append, and the
-uninstall script removes the exact block. No manual editing required.
 
 
 
