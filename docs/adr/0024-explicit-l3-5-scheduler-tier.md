@@ -39,7 +39,7 @@ Generators submit proposals directly to the Router. The Router handles ordering 
 
 Insert a dedicated Scheduler component between L3 and L4. Generators submit to the Scheduler; the Scheduler orders proposals and emits dispatch events. The Router then evaluates the ordered stream. The Scheduler is:
 - **Stateful** (may buffer proposals for fairness)
-- **Deterministic** (same input → same output, always)
+- **Replay-deterministic** (the recorded `scheduler_dispatched` stream governs replay verbatim per §5.A.6; live dispatch order under concurrent submits is serialized by the order of `append()` calls to L1 — the first committed row wins)
 - **Observable** (dispatch decisions are first-class events in the WAL)
 
 **Advantages:**
@@ -58,7 +58,7 @@ Promote scheduler from B-revisit-deferred (Phase 2) to v1 implementation. The Sc
 
 **v0.5 implementation:** `FifoScheduler` — immediate dispatch (no buffering), satisfies A-Sched-1 (replay-ordering determinism).
 
-**Phase 1 graduation:** `WeightedRoundRobinScheduler` — when A-Sched-2 (back-pressure) and A-Sched-3 (fair dispatch under load) are enabled.
+**Phase 1 graduation:** `WeightedRoundRobinScheduler` — when A-Sched-2 (back-pressure) and A-Sched-3 (quanta exhaustion per generator per window) are enabled.
 
 ---
 
@@ -84,7 +84,9 @@ When concurrent generators (e.g., Curator auto-detecting an issue, Forge prescri
 
 A Scheduler tier makes these dependencies visible (recorded in dispatch order and causal-readset evidence) and enforceable (Router and Applier can check consistency before committing).
 
-### 4. Hardware Dispatch Analogy (Erasmus US-E-13)
+### 4. Hardware Dispatch Analogy and Erasmus US-E-13 (L3-as-Junk-Drawer Risk)
+
+US-E-13 (Erasmus): collapsing Scheduler concerns into L3 Generators turns L3 into a junk drawer — each generator would need its own inline dispatch logic, defeating the uniform tier contract. The explicit L3.5 tier prevents this by giving dispatch ordering a single, auditable home (CTD §5.A).
 
 Modern CPUs employ out-of-order execution with dispatch units that maintain memory-ordering invariants despite concurrent execution. The Scheduler plays an analogous role:
 - **Generators** = execution pipes (concurrent, asynchronous)
@@ -112,12 +114,13 @@ The Scheduler can buffer proposals and signal back-pressure to generators indepe
 ### Modified Components
 - **L3 ProposalGenerator interface** (§7): Generators submit to Scheduler, not directly to Router
 - **L4 Router** (§5): Consumes ordered stream from Scheduler; removed concurrent-submission handling
-- **L1 WAL schema** (§3): New row kind `scheduler_dispatched` joins the 5-primitive set for logging dispatch decisions
+- **L1 WAL schema** (§3): `scheduler_dispatched` is a Decision sub-kind (one of four `scheduler_*` Decision `eventType` values, not a 6th primitive). All four v1 sub-kinds — `scheduler_dispatched`, `scheduler_deferred`, `scheduler_cancelled`, `scheduler_quanta_exhausted` — are registered per §6.3 Decision payload; only `scheduler_dispatched` is exercised in v0.5. The remaining three are reserved for Phase 1.
 
 ### Graduation Path
 - **Phase 1:** Implement `WeightedRoundRobinScheduler` with:
   - **A-Sched-2 (Back-Pressure):** Quanta-budgeted dispatch with configurable per-generator quotas; return `scheduler_deferred` when quota exhausted
-  - **A-Sched-3 (Fair Dispatch Under Load):** Round-robin or weighted-fair queuing to ensure no single generator starves others even under sustained overload
+  - **A-Sched-3 (Quanta Exhaustion):** Per-generator quanta exhaustion fires once per budget window; Scheduler emits `scheduler_quanta_exhausted` and defers that generator's proposals until the next window
+  - **A-Sched-4 (Fair Dispatch Under Load):** Round-robin or weighted-fair queuing ensures no single generator starves others even under sustained overload
 
 ---
 
@@ -131,7 +134,7 @@ The Scheduler can buffer proposals and signal back-pressure to generators indepe
 - **Extensibility:** Hardware dispatch analogy enables future extensions (e.g., priority-level scheduling, deadline-aware dispatch for time-critical tasks in v1.5+)
 
 ### Negative
-- **Latency overhead:** Each proposal traverses an additional tier (L3→L3.5→L4); latency budget grows by ~5–10% for the skeleton (FifoScheduler is zero-cost; WeightedRoundRobinScheduler adds dispatch-decision time)
+- **Latency overhead:** Each proposal traverses an additional tier (L3→L3.5→L4). v0.5 (FifoScheduler): ~0 ms additional latency — immediate dispatch, no queue, no computation. Phase 1 (WeightedRoundRobinScheduler): dispatch-decision time adds latency proportional to queue depth and weight computation; expected <1 ms under normal load, uncharacterized until benchmarked.
 - **WAL volume:** Every `scheduler_dispatched` event is a new row; WAL footprint increases by ~1 event per proposal (acceptable; bounded)
 - **Complexity:** One more state machine to verify (Scheduler lifecycle, replay of dispatch state)
 
@@ -153,13 +156,17 @@ The Scheduler can buffer proposals and signal back-pressure to generators indepe
 - Conformance test: Overloaded generator triggers `scheduler_deferred` after quanta exhaustion
 - Integration test: Router receives proposals in fairness-compliant order even under 10:1 generator load ratio
 
-**A-Sched-3 (Fair Dispatch Under Load) — Phase 1 Graduation Gate:**
+**A-Sched-3 (Quanta Exhaustion) — Phase 1 Graduation Gate:**
+- Drive one generator past its per-window quanta budget; assert exactly one `scheduler_quanta_exhausted` emitted per budget window per generator
+- Conformance test: WeightedRoundRobinScheduler emits `scheduler_quanta_exhausted` after budget is consumed; subsequent proposals from that generator emit `scheduler_deferred` until the next window opens
+
+**A-Sched-4 (Fair Dispatch Under Load) — Phase 1 Graduation Gate:**
 - WeightedRoundRobinScheduler ensures no single generator starves others
 - Conformance test: Starvation test verifies that all active generators make progress within a bounded number of turns (e.g., max 50:1 turn ratio between any two generators)
 - Leaderboard confirms that fast generators don't prevent slow ones from dispatching
 
 **Contract-Tier Signals:**
-- `SchedulerPort.submit()` always returns a `SchedulerEvent` synchronously (no async dispatch decisions that would require Router polling)
+- `SchedulerPort.submit()` appends the `scheduler_dispatched` Decision row to L1 (per §5.A.1) and returns the committed `SchedulerEvent` synchronously. The Scheduler is the WAL author for all `scheduler_*` rows; the composition root does not separately commit them. The returned event is available for synchronous Router consumption and test-harness inspection without a WAL poll.
 - `pending()` returns accurate queue depth even under concurrent proposal submission
 - Scheduler state is fully replayable from recorded `scheduler_dispatched` events
 
@@ -181,7 +188,7 @@ The Scheduler can buffer proposals and signal back-pressure to generators indepe
 - Proposal ordering is **not a trust-tier enforcement point** (the Router handles trust; the Scheduler handles order), so the Scheduler tier does not directly mitigate trust-tier bypass. However, it does provide forensic visibility (audit logs will show dispatch order, enabling post-incident analysis).
 
 **Denial-of-Service (Back-Pressure):**
-- FifoScheduler (v0.5) offers no back-pressure; a runaway generator filling the queue indefinitely could exhaust memory. This is acceptable in v0.5 (walking skeleton, single-user); v1 mandates A-Sched-2 back-pressure as a security gate.
+- FifoScheduler (v0.5) offers no back-pressure; a runaway generator filling the queue indefinitely could exhaust memory. A `MAX_PENDING` cap (default 256 proposals) MUST be enforced at the composition root before v0.5 ships — submissions beyond the cap are dropped with an error logged, not silently discarded. This mitigates OOM risk in the walking skeleton without implementing full quanta budgeting. v1 mandates A-Sched-2 back-pressure as the permanent security gate, replacing the cap.
 - WeightedRoundRobinScheduler (Phase 1) implements per-generator quanta budgets; generators that exceed their budget are deferred, mitigating resource exhaustion.
 
 ---
@@ -195,13 +202,13 @@ The Scheduler can buffer proposals and signal back-pressure to generators indepe
    **A:** No. FifoScheduler is the v0.5 skeleton that proves the L3.5 tier boundary exists and is observable. It satisfies A-Sched-1 (deterministic replay). Phase 1 graduates to WeightedRoundRobinScheduler (A-Sched-2/3), at which point the tier demonstrates its full value (back-pressure, fairness). The tier itself is load-bearing; the v0.5 implementation is minimal.
 
 3. **Q: What about A-Sched-2 and A-Sched-3? They're not in the skeleton.**
-   **A:** Correct. A-Sched-1 (replay determinism) is the v0.5 gate. A-Sched-2 (back-pressure) and A-Sched-3 (fair dispatch) are Phase 1 graduation criteria. This ADR documents all three so the graduation path is locked before implementation diverges.
+   **A:** Correct. A-Sched-1 (replay determinism) is the v0.5 gate. A-Sched-2 (back-pressure), A-Sched-3 (quanta exhaustion), and A-Sched-4 (fair dispatch) are Phase 1 graduation criteria. This ADR documents all four so the graduation path is locked before implementation diverges.
 
 4. **Q: If Scheduler events are recorded in the WAL, doesn't that double the WAL volume?**
    **A:** Scheduler events add ~1 row per proposal submitted. Proposal volume is O(generator count × turns), not exponential. WAL footprint grows acceptably (e.g., 3 proposals per turn × 100 turns = 300 `scheduler_dispatched` rows, each ~50 bytes = 15 KB). Acceptable for v0/v1.
 
 5. **Q: How does the Scheduler tier interact with the Hook Bus and Aperture?**
-   **A:** The Scheduler sits between Generators (L3) and Router (L4); it does not consume Hook Bus verdicts and does not emit to Aperture. Hook Bus integration is L4 (Router policy), not L3.5 (Scheduler ordering). This remains orthogonal.
+   **A:** CTD §5.A.5 specifies the Scheduler as an L1Subscriber on the Hook Bus verdict stream: a `pause` verdict increments a per-generator back-pressure counter, deferring that generator's proposals until the paused row is restaged (§3.5 seal-and-split). In v0.5, `FifoScheduler` does not implement Hook Bus subscription — it dispatches all arriving proposals immediately. The `SchedulerPort` interface accommodates the §5.A.5 interaction; it is wired in Phase 1 alongside `WeightedRoundRobinScheduler`. The Scheduler does not emit to Aperture; that path remains L4 (Router) → Aperture.
 
 6. **Q: Can the Scheduler be stateless (like FifoScheduler), or must it be stateful?**
    **A:** FifoScheduler is stateless (immediate dispatch, no queue). WeightedRoundRobinScheduler is stateful (maintains proposal queue + quanta ledger). Both are valid implementations of SchedulerPort. The tier is an abstraction; the implementation varies by version.
