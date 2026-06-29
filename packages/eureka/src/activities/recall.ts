@@ -9,7 +9,7 @@
 
 import type { SessionId, FactId } from '@akubly/types';
 import type { ClockProvider } from './clock.js';
-import type { RelationReader } from '../representation/relation.js';
+import type { RelationReader } from '../storage/relation-reader.types.js';
 import {
   InvalidFeedbackOptionsError,
   InvalidTrustValueError,
@@ -178,8 +178,11 @@ const TRUST_FLOOR = 0.15;
  * components of FR-2 are largely cosmetic relative to BM25. This resolves the
  * F6-class "ranker can only see what BM25 surfaced" concern (F6 arc closed; see
  * edgar-pr30-cycle3-c1-c4 decision drop).
+ *
+ * Exported so callers can derive expected limits in tests without hard-coding
+ * magic numbers (G fix, persona-review fix wave).
  */
-const RANKER_OVERFETCH_FACTOR = 3;
+export const RANKER_OVERFETCH_FACTOR = 3;
 
 /**
  * Attention multipliers per §30 §1.2 (FR-2 canonical ranker formula).
@@ -259,30 +262,43 @@ export async function recallWithScores(
   const overfetchLimit = deps.relationReader
     ? k * (RANKER_OVERFETCH_FACTOR + 1)
     : k * RANKER_OVERFETCH_FACTOR;
-  const { results: candidates } = await factStore.search({ query, sessionId, limit: overfetchLimit, minTrust: TRUST_FLOOR });
+
+  // Backfill loop: with a relationReader, keep fetching pages until we have ≥ k collapsed
+  // facts OR no more pages exist. Under high dup density, a single overfetch page may yield
+  // fewer than k survivors after collapse — subsequent pages fill the gap (C fix).
+  // Without a reader, a single fetch always suffices (no collapse, no undersupply).
+  const collapsed: RecallResult[] = [];
+  let cursor: string | undefined;
+  do {
+    const { results: page, nextCursor } = await factStore.search({
+      query, sessionId, limit: overfetchLimit, minTrust: TRUST_FLOOR, cursor,
+    });
+    cursor = nextCursor;
+
+    // Belt-and-suspenders: FactStore.search() receives minTrust and filters at the data
+    // layer per §20 §7.4 (F6). This post-filter remains as defense-in-depth.
+    const trusted = page.filter(f => f.trust >= TRUST_FLOOR);
+
+    if (deps.relationReader) {
+      // Duplicate collapse: pass candidateIds to avoid a full-session edge scan (D fix).
+      // Suppresses any candidate whose factId is on the 'from' side of a duplicate_of edge.
+      // Canonicals ('to' side) surface normally. Storage is never mutated — view-layer only.
+      const candidateIds = trusted.map(f => f.factId);
+      if (candidateIds.length > 0) {
+        const edges = await deps.relationReader.listDuplicateOf({ sessionId, candidateIds });
+        const dupSet = new Set<string>(edges.map(e => e.from as string));
+        collapsed.push(...trusted.filter(f => !dupSet.has(f.factId as string)));
+      }
+    } else {
+      collapsed.push(...trusted);
+    }
+  } while (deps.relationReader !== undefined && collapsed.length < k && cursor !== undefined);
+
   const nowMs = clock.now();
 
-  // Belt-and-suspenders: FactStore.search() now receives minTrust and filters at the data
-  // layer per §20 §7.4 (F6). This post-filter remains as defense-in-depth — if a FactStore
-  // mock or future implementation does not honor minTrust, no below-floor facts reach the ranker.
-  const trusted = candidates.filter(f => f.trust >= TRUST_FLOOR);
-
-  // Duplicate collapse: if a RelationReader is wired in, load duplicate_of edges and
-  // suppress any candidate whose factId is on the 'from' side (non-canonical dup).
-  // Canonicals ('to' side) surface normally. Deterministic: Set membership check.
-  // Storage is never mutated — collapse is purely a view-layer operation.
-  let deduped = trusted;
-  if (deps.relationReader) {
-    const edges = await deps.relationReader.listDuplicateOf({ sessionId });
-    if (edges.length > 0) {
-      const dupSet = new Set<string>(edges.map(e => e.from as string));
-      deduped = trusted.filter(f => !dupSet.has(f.factId as string));
-    }
-  }
-
-  // C1: Collect unknown tier values across all candidates for a single deduped warn.
+  // C1: Collect unknown tier values across all collapsed facts for a single deduped warn.
   const unknownTiers = new Set<string>();
-  for (const f of deduped) {
+  for (const f of collapsed) {
     if (ATTENTION_MULTIPLIERS[f.attentionTier] === undefined) {
       unknownTiers.add(String(f.attentionTier));
     }
@@ -291,9 +307,9 @@ export async function recallWithScores(
   // C2: Trust the Ranker's returned order — do NOT re-sort. The Ranker owns final ordering.
   // Inline path: sort descending by composite score as before.
   const scored = ranker
-    ? ranker(deduped, { nowMs })
-    : deduped.map(f => ({ fact: f, score: compositeScore(f, nowMs) }))
-             .sort((a, b) => b.score - a.score);
+    ? ranker(collapsed, { nowMs })
+    : collapsed.map(f => ({ fact: f, score: compositeScore(f, nowMs) }))
+               .sort((a, b) => b.score - a.score);
 
   // C1: Emit ONE warn per recallWithScores call for all unrecognised tier values found.
   if (unknownTiers.size > 0) {

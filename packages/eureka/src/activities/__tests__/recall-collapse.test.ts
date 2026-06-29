@@ -139,7 +139,9 @@ describe('recall duplicate_of collapse via RelationReader seam (RC)', () => {
 
     // Seam must be consulted exactly once with the session under query.
     expect(reader.listDuplicateOf).toHaveBeenCalledOnce();
-    expect(reader.listDuplicateOf).toHaveBeenCalledWith({ sessionId: SESSION });
+    expect(reader.listDuplicateOf).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: SESSION }),
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -179,7 +181,9 @@ describe('recall duplicate_of collapse via RelationReader seam (RC)', () => {
     expect(results).toHaveLength(1);
 
     expect(reader.listDuplicateOf).toHaveBeenCalledOnce();
-    expect(reader.listDuplicateOf).toHaveBeenCalledWith({ sessionId: SESSION });
+    expect(reader.listDuplicateOf).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: SESSION }),
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -214,7 +218,9 @@ describe('recall duplicate_of collapse via RelationReader seam (RC)', () => {
 
     // The seam must be consulted even when it returns no edges.
     expect(reader.listDuplicateOf).toHaveBeenCalledOnce();
-    expect(reader.listDuplicateOf).toHaveBeenCalledWith({ sessionId: SESSION });
+    expect(reader.listDuplicateOf).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: SESSION }),
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -296,7 +302,9 @@ describe('recall duplicate_of collapse via RelationReader seam (RC)', () => {
     expect(ids).not.toContain(dup3.factId);
 
     expect(reader.listDuplicateOf).toHaveBeenCalledOnce();
-    expect(reader.listDuplicateOf).toHaveBeenCalledWith({ sessionId: SESSION });
+    expect(reader.listDuplicateOf).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: SESSION }),
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -335,7 +343,9 @@ describe('recall duplicate_of collapse via RelationReader seam (RC)', () => {
 
     // Seam must be consulted even when trust-floor already cleared the dup.
     expect(reader.listDuplicateOf).toHaveBeenCalledOnce();
-    expect(reader.listDuplicateOf).toHaveBeenCalledWith({ sessionId: SESSION });
+    expect(reader.listDuplicateOf).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: SESSION }),
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -398,6 +408,74 @@ describe('recall duplicate_of collapse via RelationReader seam (RC)', () => {
     expect(results[1].factId).toBe(factC.factId);
 
     expect(reader.listDuplicateOf).toHaveBeenCalledOnce();
-    expect(reader.listDuplicateOf).toHaveBeenCalledWith({ sessionId: SESSION });
+    expect(reader.listDuplicateOf).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: SESSION }),
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // RC-HD — Backfill across pages under high duplicate density
+  // -------------------------------------------------------------------------
+  //
+  // k=2, overfetch=k×4=8. First page: all 8 candidates are duplicates →
+  // 0 collapse survivors. nextCursor present → backfill fires.
+  // Second page: 2 non-dup canonicals → 2 survivors. Total = k.
+  //
+  // Without the backfill loop, recall would return [] (only one page fetched).
+  // With the loop: factStore is called twice and both canonicals are returned.
+  //
+  // This test verifies:
+  //   a) factStore.search is called twice (initial + one backfill page)
+  //   b) the second call carries the cursor from the first response
+  //   c) both canonicals surface in the final result
+  //   d) listDuplicateOf is called twice — once per page's candidate set
+
+  it('RC-HD: backfill fetches next page when first overfetch page is exhausted by dup collapse', async () => {
+    const canonical1 = mkFact('hd-canonical-1', { trust: 0.9, relevance: 0.9 });
+    const canonical2 = mkFact('hd-canonical-2', { trust: 0.8, relevance: 0.8 });
+
+    // 8 dups on page 1 — all point to canonical1 (dense star topology)
+    const dups = Array.from({ length: 8 }, (_, i) =>
+      mkFact(`hd-dup-${i}`, { trust: 0.7, relevance: 0.6 }),
+    );
+    const dupEdges = dups.map(d => ({ from: d.factId, to: canonical1.factId }));
+
+    const reader = { listDuplicateOf: vi.fn() };
+    // Page 1 candidates: all 8 are dups → listDuplicateOf returns all 8 edges
+    // Page 2 candidates: canonical1 + canonical2 → no edges (canonicals are 'to', not 'from')
+    reader.listDuplicateOf
+      .mockResolvedValueOnce(dupEdges)   // page 1: all dups removed
+      .mockResolvedValueOnce([]);        // page 2: no dups, both canonicals survive
+
+    const factStore = {
+      search: vi.fn()
+        .mockResolvedValueOnce({ results: dups, nextCursor: 'cursor-page-2' })
+        .mockResolvedValueOnce({ results: [canonical1, canonical2] }),
+    };
+
+    const results = await recall(
+      { query: 'high-density', sessionId: SESSION, k: 2 },
+      { factStore, clock, relationReader: reader },
+    );
+
+    // Both canonicals returned — backfill filled the gap left by the collapsed first page.
+    expect(results).toHaveLength(2);
+    const ids = results.map(r => r.factId);
+    expect(ids).toContain(canonical1.factId);
+    expect(ids).toContain(canonical2.factId);
+    dups.forEach(d => expect(ids).not.toContain(d.factId));
+
+    // factStore called twice: initial fetch + one backfill page
+    expect(factStore.search).toHaveBeenCalledTimes(2);
+    // Second call must carry the cursor from the first response
+    expect(factStore.search).toHaveBeenNthCalledWith(2,
+      expect.objectContaining({ cursor: 'cursor-page-2' }),
+    );
+
+    // listDuplicateOf called once per page (per-page candidateIds optimization)
+    expect(reader.listDuplicateOf).toHaveBeenCalledTimes(2);
+    expect(reader.listDuplicateOf).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: SESSION }),
+    );
   });
 });

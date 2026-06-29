@@ -12,6 +12,7 @@ export {
   recall,
   recallWithScores,
   compositeScore,
+  RANKER_OVERFETCH_FACTOR,
   applyFeedback,
   applyFeedbackById,
 } from './activities/recall.js';

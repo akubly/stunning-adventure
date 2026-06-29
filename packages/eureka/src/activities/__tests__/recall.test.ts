@@ -28,7 +28,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { recall, compositeScore } from '../recall.js';
+import { recall, compositeScore, RANKER_OVERFETCH_FACTOR } from '../recall.js';
 import type { RecallResult } from '../recall.js';
 import type { FactId } from '@akubly/types';
 import type { SessionId } from '@akubly/types';
@@ -637,7 +637,7 @@ describe('recall', () => {
       expect(results.map(r => r.factId as string)).toContain('rc-only');
     });
 
-    it('RC-4: overfetch bumps to k × 4 when RelationReader is provided', async () => {
+    it('RC-4: overfetch bumps to k × (RANKER_OVERFETCH_FACTOR + 1) when RelationReader is provided', async () => {
       const factStore = {
         search: vi.fn().mockResolvedValue({ results: [] }),
       };
@@ -650,9 +650,9 @@ describe('recall', () => {
         { factStore, clock: fixedClock, relationReader },
       );
 
-      // RANKER_OVERFETCH_FACTOR(3) + 1 = 4; k=5 → limit=20
+      // k=5 × (RANKER_OVERFETCH_FACTOR + 1) = 5 × 4 = 20
       expect(factStore.search).toHaveBeenCalledWith(
-        expect.objectContaining({ limit: 20 }),
+        expect.objectContaining({ limit: 5 * (RANKER_OVERFETCH_FACTOR + 1) }),
       );
     });
 
@@ -684,9 +684,11 @@ describe('recall', () => {
       expect(ids).not.toContain('rc-dup-003');
     });
 
-    it('RC-6: relationReader is called with the correct sessionId', async () => {
+    it('RC-6: relationReader is called with the correct sessionId when candidates are present', async () => {
       const factStore = {
-        search: vi.fn().mockResolvedValue({ results: [] }),
+        search: vi.fn().mockResolvedValue({ results: [
+          { factId: 'rc-present' as FactId, content: 'Some fact', trust: 0.8, attentionTier: 'warm' as const },
+        ] }),
       };
       const relationReader = {
         listDuplicateOf: vi.fn().mockResolvedValue([]),
@@ -697,7 +699,48 @@ describe('recall', () => {
         { factStore, clock: fixedClock, relationReader },
       );
 
-      expect(relationReader.listDuplicateOf).toHaveBeenCalledWith({ sessionId });
+      expect(relationReader.listDuplicateOf).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId }),
+      );
     });
+  });
+
+  // ---------------------------------------------------------------------------
+  // C4 — k validation: boundary and invalid inputs
+  // ---------------------------------------------------------------------------
+  //
+  // The production guard in recallWithScores:
+  //   k === 0  → returns [] immediately (valid, avoids SQLite limit:0 edge cases)
+  //   k < 0, non-integer, non-finite → throws TypeError (programming error)
+  //
+  // These tests were removed during the collapse refactor and are restored here
+  // to keep the guard tested independently from the behavior tests (A fix,
+  // persona-review fix wave).
+
+  describe('k validation (C4)', () => {
+    it('k=0 returns an empty array without calling factStore', async () => {
+      const factStore = { search: vi.fn().mockResolvedValue({ results: [] }) };
+
+      const results = await recall(
+        { query: 'any', sessionId, k: 0 },
+        { factStore, clock: fixedClock },
+      );
+
+      expect(results).toEqual([]);
+      expect(factStore.search).not.toHaveBeenCalled();
+    });
+
+    it.each([-1, 1.5, NaN, Infinity])(
+      'k=%s throws TypeError (negative / non-integer / non-finite)',
+      async (badK) => {
+        const factStore = { search: vi.fn().mockResolvedValue({ results: [] }) };
+
+        await expect(
+          recall({ query: 'any', sessionId, k: badK }, { factStore, clock: fixedClock }),
+        ).rejects.toThrow(TypeError);
+
+        expect(factStore.search).not.toHaveBeenCalled();
+      },
+    );
   });
 });
