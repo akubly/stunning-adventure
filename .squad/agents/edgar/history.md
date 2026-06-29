@@ -2,8 +2,8 @@
 # Edgar — History
 
 **Role:** Learning Systems Specialist (Plasticity, trust, recency, recall algorithms)
-**Status:** M7-C complete. PR #41 merged (5 Copilot cycles). M8 storage kickoff in progress.
-**Last update:** 2026-06-02
+**Status:** M7-C complete. PR #41 merged (5 Copilot cycles). M8 storage kickoff in progress. integrate loop CLOSED (recall now consumes duplicate_of edges).
+**Last update:** 2026-06-28
 
 **Key milestones:**
 - R5-R6: Power-law recency + event-driven trust design
@@ -11,6 +11,7 @@
 - M2-M3: recall() + composite-ranker landed (§30 §1.2 FR-2 formula inline)
 - M7-A: Typed error hierarchy shipped (FactNotFoundError, InvalidTrustValueError, etc.)
 - M7-C: Atomicity contract + session-scoping + PR #41 cloud review complete (5 cycles, 74 tests green)
+- integrate loop: RelationReader seam added; recall now collapses duplicate_of non-canonicals at activity layer
 
 ## Archived learnings (summarized from 29780 bytes)
 
@@ -123,3 +124,40 @@ Two infrastructure changes approved in PRs #50 and #52:
 
 **Action for you:** No immediate action required. Lint workspace changes take effect after merge and 
 pm install restart. Doc-hygiene scope established for future improvements.
+
+---
+
+## 2026-06-28 — integrate loop closed: recall now consumes duplicate_of edges
+
+**Task:** Add `RelationReader` seam, implement SQLite + in-memory readers, collapse non-canonical dups in `recallWithScores`. Build ✓, 351 tests ✓ (6 new RC-* tests), typecheck ✓.
+
+### Learnings
+
+- **Read seams live in the representation layer, not the activity layer.** The `RelationReader` interface was placed in `representation/relation.ts` alongside `RelationWriter`'s types — not in `recall.ts`. This keeps the write and read contracts co-located with the domain shapes they operate on. Activity files (`recall.ts`) import the interface but do not define it.
+
+- **Optional deps → backward compat is a first-class constraint.** Making `relationReader?: RelationReader` optional in `RecallDeps` means zero breaking changes: existing callers without an integrate pipeline keep working unchanged. The absence is treated as "no edges" not "error". Always evaluate "can this be optional?" before adding required deps to existing seams.
+
+- **Overfetch adjustment must track optional dep availability.** When a collapsing filter is added post-fetch, the fetch limit must account for losses. Pattern: `limit = k * BASE_FACTOR + (collapsingDep ? k : 0)`. Avoid a static bump to all calls — only activate the extra fetch when the dep that causes losses is present.
+
+- **Collapse before score, not after.** The `deduped` array is built before calling `ranker` / `compositeScore`. This ensures the ranker never sees non-canonical dups, preventing phantom diversity inflation from seeing the same content twice with slightly different scores.
+
+- **Structural interfaces enable zero-cost stubs.** `RelationReader` is purely structural (`{ listDuplicateOf(...) }`), so test doubles are inline object literals with `vi.fn()` — no imports, no test-support classes. This is the same pattern as `FactStore`, `TrustUpdater`, etc. It is cheap and it works.
+
+- **In-memory reader shares writer store via constructor injection.** `InMemoryRelationReader` takes an `InMemoryRelationWriter` in its constructor and delegates `listBySession` to the writer's side-channel — exactly the same pattern as `InMemoryFactReader` sharing `InMemoryFactWriter`. Shared-store mode gives an imprint→integrate→recall pipeline a single source of truth without state copying.
+
+
+---
+
+**2026-06-28T22:00:12Z — Recall Collapse Feature (RelationReader Seam)**
+
+Completed integrate loop closure: duplicate_of edges now collapsed at recall activity layer.
+
+- ✅ D-RC-1 through D-RC-5 locked (RelationReader placement, optionality, overfetch heuristic, collapse sequencing, in-memory reader pattern)
+- ✅ SqliteRelationReader + InMemoryRelationReader implementations shipped
+- ✅ Integration with recall (collapse before ranker, preserve composite ordering)
+- ✅ 351 tests passing (6 new RC-* tests for collapse invariants)
+- ✅ typecheck clean
+
+**Learning:** Optional seams require zero-breaking-changes gate. elationReader absence gracefully falls back to pre-collapse behavior. Conditional overfetch bump (only when reader present) preserves caller contract for existing callers.
+
+**Cross-agent:** Laura's RC-5, RC-6, RC-7 tests added complementary coverage (outcome guarantee, trust+collapse interaction, ordering invariant). No seam mismatch; immediate GREEN.
