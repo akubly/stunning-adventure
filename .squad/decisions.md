@@ -1,3 +1,31 @@
+# eureka-recall-collapse — Persona Review Cycle Log (3-Cycle)
+
+**Branch:** `squad/eureka-recall-collapse`  
+**Focus:** Recall consumes `duplicate_of` edges  
+**Author:** Scribe (Session Logger)  
+**Date:** 2026-06-28T23:09:58-07:00  
+**Status:** SHIP-READY (all 3 cycles complete, 377 tests green)  
+**Contributor:** Edgar
+
+### Cycle Outcome
+- **Cycle 1:** 2 BLOCKING | 4 IMPORTANT | 3 MINOR
+- **Cycle 2:** 0 BLOCKING — all prior issues fixed
+- **Cycle 3:** 0 BLOCKING — ship-ready, open advisory on per-page candidateIds test assertions
+
+### Fixes Applied
+✓ Default-on collapse behavior explicit  
+✓ K-tests restored for candidateIds narrowing  
+✓ Backfill loop bounded with cap (MAX_BACKFILL_RETRIES = 5)  
+✓ CandidateIds query chunked (CHUNK_SIZE=1000)  
+✓ Seam→storage contract defined (ReaderStorageContract interface)  
+✓ Empty-array contract explicit with guards and tests  
+✓ Reader exports complete; all public functions in src/index.ts  
+✓ Error messages enhanced with context on candidateIds filtering
+
+**Advisory:** Add per-page candidateIds test assertions (future enhancement, does not block release)
+
+---
+
 # Imprint Slice — Persona Review Cycle 1 Fix Dispositions
 
 **Author:** Crispin (Knowledge Representation Specialist)  
