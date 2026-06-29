@@ -48,13 +48,11 @@ Any test that inserts rows with fixed-date `collectedAt` values into a table wit
 
 ---
 
+```bash
 # 1. Syntax check
 bash -n .github/hooks/cairn/shell-init.sh
 bash -n .github/hooks/cairn/install.sh
 bash -n .github/hooks/cairn/uninstall.sh
-
-
-
 
  # 2. Install (idempotent — run twice to confirm second run is no-op)
 bash .github/hooks/cairn/install.sh
@@ -186,13 +184,11 @@ Not pushed — Roger has follow-up fixes to land on top; coordinator will push a
 
 
 
- # 1. Syntax check
+```bash
+# 1. Syntax check
 bash -n .github/hooks/cairn/shell-init.sh
 bash -n .github/hooks/cairn/install.sh
 bash -n .github/hooks/cairn/uninstall.sh
-
-
-
 
  # 2. Install (idempotent — run twice to confirm second run is no-op)
 bash .github/hooks/cairn/install.sh
