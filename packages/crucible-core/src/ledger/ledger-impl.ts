@@ -112,11 +112,20 @@ class LedgerImpl implements BootstrappableLedger {
     }
 
     // (d) Non-VETO path — delegate to WAL backend.
-    // Hard-strip the bootstrap flag: only bootstrap() may set it.
-    // Callers must not be able to spoof structural WAL bits via PrimitiveInput.
+    // Strip ALL structural walFlags: callers must not spoof any structural bit
+    // (bootstrap, declaredWindow, syntheticOutput, taskBoundary, manifestRoot)
+    // via PrimitiveInput on the append path.  bootstrap() sets its own bits
+    // internally; append-path rows must carry no caller structural bits.
     const sanitizedInput: PrimitiveInput = {
       ...input,
-      walFlags: { ...(input.walFlags ?? {}), bootstrap: false },
+      walFlags: {
+        ...(input.walFlags ?? {}),
+        bootstrap:       false,
+        declaredWindow:  false,
+        syntheticOutput: false,
+        taskBoundary:    false,
+        manifestRoot:    false,
+      },
     };
     const offset = await this.walBackend.commitRow(sanitizedInput, result);
 
@@ -127,8 +136,10 @@ class LedgerImpl implements BootstrappableLedger {
     // that would produce duplicate committed rows.
     // onSubscriberError (if injected) is called so callers can observe the fault
     // without polluting test output or risking a rethrow (#69).
+    // Use sanitizedInput (not input) so the subscriber view agrees with the
+    // persisted/replayed row — both see zero structural bits on the append path.
     if (this.subscribers.length > 0) {
-      const event: LedgerEvent = { ...input, offset };
+      const event: LedgerEvent = { ...sanitizedInput, offset };
       for (const sub of this.subscribers) {
         try {
           sub.onCommit(offset, event);
