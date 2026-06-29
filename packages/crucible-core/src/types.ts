@@ -28,6 +28,26 @@ export interface EventMetadata {
   [key: string]: unknown;
 }
 
+/**
+ * Optional WAL-level flags that can be set on a primitive row at write time.
+ *
+ * These map 1:1 to the 2-byte flags bitfield in the segment record header
+ * (§3.2). They are write-time hints — the WAL substrate writes the
+ * corresponding bits when the row is committed. Normal callers leave this
+ * undefined (all bits false). LedgerImpl.bootstrap() sets `bootstrap: true`
+ * internally; callers should not set it directly.
+ *
+ * Mirrors SegmentRecordFlags from ledger/wal/types.ts but defined here to
+ * avoid a circular import (wal/types.ts already imports from types.ts).
+ */
+export interface WalRowFlags {
+  bootstrap?:        boolean; // bit 0 — row is part of the offset-0 bootstrap batch
+  declaredWindow?:   boolean; // bit 1 — decision row uses declared context window
+  syntheticOutput?:  boolean; // bit 2 — Artifact subKind === 'synthetic_output' (M3)
+  taskBoundary?:     boolean; // bit 3 — row carries a task boundary marker
+  manifestRoot?:     boolean; // bit 4 — Observation carries the bootstrap memoryManifest root
+}
+
 /** Input shape for appending a primitive to a session ledger. */
 export interface PrimitiveInput {
   primitiveKind: PrimitiveKind;
@@ -35,6 +55,15 @@ export interface PrimitiveInput {
   causalReadSet: string[];
   /** Optional event metadata — carries tier/level and caller-supplied fields. */
   metadata?: EventMetadata;
+  /**
+   * Optional WAL-level flags (§3.2 segment record header bitfield).
+   *
+   * Normal callers omit this field (all bits default to false). The substrate
+   * merges any provided flags into the segment record. LedgerImpl.bootstrap()
+   * sets `bootstrap: true` internally; do not set it on raw `commitRow` inputs
+   * unless you are writing a custom backend.
+   */
+  walFlags?: WalRowFlags;
 }
 
 /**

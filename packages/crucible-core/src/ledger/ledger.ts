@@ -126,6 +126,16 @@ export interface LedgerFactoryOptions {
     error: unknown,
     subscriber: LedgerSubscriber,
   ): void;
+  /**
+   * When true, the ledger is created in "already-bootstrapped" mode:
+   * the caller is reopening an existing session WAL and intends to call
+   * append() directly without calling bootstrap(). Calling bootstrap()
+   * on a reopened ledger throws immediately (duplicate-bootstrap guard).
+   *
+   * Use this when the walBackend was created against a session directory
+   * that already contains committed rows from a previous session open.
+   */
+  reopen?: boolean;
 }
 
 /**
@@ -260,4 +270,19 @@ export interface WalBackend {
    * Mirrors the Ledger.queryEvents({ range }) contract.
    */
   readRows(opts: LedgerQueryOpts): Promise<LedgerEvent[]>;
+
+  /**
+   * Flush all staged rows as one atomic group-commit batch (§3.5).
+   *
+   * Called explicitly when the caller needs to ensure all previously staged
+   * rows are durable before proceeding. LedgerImpl.bootstrap() calls this
+   * after staging all bootstrap rows so that — when the backend is configured
+   * with batchSize >= rows.length — the entire batch commits in one fsync
+   * barrier (§3.8 bootstrap-batch atomicity).
+   *
+   * On an in-memory backend this is a no-op (resolves immediately).
+   * On a file-system backend this triggers executeFlush() and resolves when
+   * the segment fdatasync has completed.
+   */
+  flush(): Promise<void>;
 }

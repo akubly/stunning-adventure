@@ -712,8 +712,11 @@ export class FileSystemWalBackend implements WalBackend {
         primitiveKind: 0x01,
         hookVerdict:   mat.verdictByte,
         flags: {
-          bootstrap: false, declaredWindow: false,
-          syntheticOutput: false, taskBoundary: false, manifestRoot: false,
+          bootstrap:       entry.input.walFlags?.bootstrap       ?? false,
+          declaredWindow:  entry.input.walFlags?.declaredWindow  ?? false,
+          syntheticOutput: entry.input.walFlags?.syntheticOutput ?? false,
+          taskBoundary:    entry.input.walFlags?.taskBoundary    ?? false,
+          manifestRoot:    entry.input.walFlags?.manifestRoot    ?? false,
         },
         payloadHash:  mat.payloadHash,
         readSetHash:  mat.readSetHash,

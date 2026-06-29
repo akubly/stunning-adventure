@@ -77,11 +77,11 @@ export class InMemoryWalBackend implements WalBackend {
       primitiveKind: 0x01, // placeholder until §6 enum is locked
       hookVerdict:   mat.verdictByte,
       flags: {
-        bootstrap:       false,
-        declaredWindow:  false,
-        syntheticOutput: false,
-        taskBoundary:    false,
-        manifestRoot:    false,
+        bootstrap:       input.walFlags?.bootstrap       ?? false,
+        declaredWindow:  input.walFlags?.declaredWindow  ?? false,
+        syntheticOutput: input.walFlags?.syntheticOutput ?? false,
+        taskBoundary:    input.walFlags?.taskBoundary    ?? false,
+        manifestRoot:    input.walFlags?.manifestRoot    ?? false,
       },
       payloadHash:  mat.payloadHash,
       readSetHash:  mat.readSetHash,
@@ -101,6 +101,16 @@ export class InMemoryWalBackend implements WalBackend {
   async readRows(opts: LedgerQueryOpts): Promise<LedgerEvent[]> {
     const [start, end] = opts.range;
     return this.events.filter(e => e.offset >= start && e.offset <= end);
+  }
+
+  /**
+   * No-op flush — in-memory backend commits rows immediately in commitRow().
+   * Exists to satisfy the WalBackend interface so callers (e.g. LedgerImpl.bootstrap())
+   * can call flush() uniformly across backends.
+   */
+  async flush(): Promise<void> {
+    // No staged queue in the in-memory backend — every commitRow() commits
+    // synchronously. This method is intentionally a no-op.
   }
 
   /**

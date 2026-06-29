@@ -72,14 +72,19 @@ type SubscriberErrorHook = NonNullable<LedgerFactoryOptions['onSubscriberError']
 
 class LedgerImpl implements BootstrappableLedger {
   private readonly subscribers: LedgerSubscriber[] = [];
-  private hasBootstrapped = false;
+  private hasBootstrapped: boolean;
   private hasAppended     = false;
 
   constructor(
     private readonly hookBus: HookBusPort,
     private readonly walBackend: WalBackend,
     private readonly onSubscriberError?: SubscriberErrorHook,
-  ) {}
+    reopen?: boolean,
+  ) {
+    // reopen=true means the session WAL already contains committed rows —
+    // the caller will call append() directly without calling bootstrap().
+    this.hasBootstrapped = reopen === true;
+  }
 
   subscribe(subscriber: LedgerSubscriber): void {
     this.subscribers.push(subscriber);
@@ -158,6 +163,14 @@ class LedgerImpl implements BootstrappableLedger {
    * Bypasses the hook bus — bootstrap rows are system-emitted context, not
    * subject to pre-commit policy hooks.  Each row uses verdict=COMMIT/hookId=null
    * which writes WAL hookVerdict byte 0xFF (no predicate matched, §3 seam §5).
+   * Each row is committed with walFlags.bootstrap=true (GAP-1 resolved, §3.8).
+   *
+   * Group-commit atomicity (GAP-2 resolved): all rows are staged via commitRow()
+   * without awaiting individually, then walBackend.flush() is called.  When the
+   * backend is configured with batchSize >= rows.length the entire batch commits
+   * in one fdatasync barrier ("either every offset-0 Observation durable or
+   * none" — §3.8).  With default batchSize=1 rows are auto-flushed individually
+   * (sequential, functional, not atomically grouped).
    *
    * Subscriber notifications follow the same isolation contract as append():
    * a throwing subscriber must never affect commit durability or skip peers.
@@ -165,13 +178,8 @@ class LedgerImpl implements BootstrappableLedger {
    * INVARIANT: must be called exactly once, before any append(), against an
    * empty ledger (offset-0 contract), with at least one row.
    * Throws if called a second time, after append(), with empty input, or
-   * against a non-empty WAL.
-   *
-   * Retry-safety: hasBootstrapped is only set to true after the FIRST row is
-   * durably committed.  A failure before any row is written allows a full retry.
-   * Once any row is durable, further bootstrap() calls are locked out because
-   * they would produce non-zero starting offsets and violate the offset-0
-   * contract.
+   * against a non-empty WAL.  When the ledger was created with reopen:true,
+   * this throws immediately (already-bootstrapped guard).
    */
   async bootstrap(rows: PrimitiveInput[]): Promise<number[]> {
     if (this.hasBootstrapped) {
@@ -184,10 +192,6 @@ class LedgerImpl implements BootstrappableLedger {
         'LedgerImpl.bootstrap() called after append() — bootstrap must precede all appends',
       );
     }
-    // Empty bootstrap is always a caller bug: bootstrap rows are the session's
-    // offset-0 batch. An empty call produces no rows, cannot satisfy the
-    // offset-0 contract, and leaves hasBootstrapped=false — a confusing no-op
-    // that would allow a second call with unpredictable offsets.
     if (rows.length === 0) {
       throw new Error(
         'LedgerImpl.bootstrap() called with an empty row array — at least one bootstrap row is required',
@@ -195,35 +199,46 @@ class LedgerImpl implements BootstrappableLedger {
     }
 
     // Verify the WAL is empty so offsets are guaranteed to start at 0.
-    // "Session reopen" (bootstrapping against an existing WAL) is a Phase-1
-    // feature; we refuse here to prevent silent offset corruption rather than
-    // building reopen support now.
     const probe = await this.walBackend.readRows({ range: [0, 0] });
     if (probe.length > 0) {
       throw new Error(
         'LedgerImpl.bootstrap() called against a non-empty WAL — bootstrap requires an ' +
-        'empty ledger to guarantee offset-0. Session-reopen support is deferred to Phase 1.',
+        'empty ledger to guarantee offset-0. Use createLedger({ reopen: true }) to ' +
+        'continue appending to an existing session.',
       );
     }
 
-    const offsets: number[] = [];
+    const bootstrapResult = { verdict: 'COMMIT' as const, hookId: null };
 
-    for (const row of rows) {
-      const offset = await this.walBackend.commitRow(row, {
-        verdict: 'COMMIT' as const,
-        hookId: null,
-      });
-      // Flip the guard only after the FIRST successful commit.  If the very
-      // first commitRow throws, hasBootstrapped stays false and the caller may
-      // legitimately retry bootstrap() from scratch (no rows are durable yet).
-      // After the first commit succeeds, any subsequent commitRow failure leaves
-      // hasBootstrapped=true, correctly locking out a retry that would produce
-      // non-zero starting offsets.
-      this.hasBootstrapped = true;
-      offsets.push(offset);
+    // Stage all rows with walFlags.bootstrap=true.  Do NOT await individually —
+    // this allows the group-commit batch to be flushed atomically in one call.
+    // Each row merges any caller-supplied walFlags with bootstrap:true (GAP-1).
+    const rowInputs = rows.map(row => ({
+      ...row,
+      walFlags: { ...(row.walFlags ?? {}), bootstrap: true },
+    }));
+    const rowPromises = rowInputs.map(input =>
+      this.walBackend.commitRow(input, bootstrapResult),
+    );
 
-      if (this.subscribers.length > 0) {
-        const event: LedgerEvent = { ...row, offset };
+    // Flush atomically (GAP-2): if batchSize >= rows.length, all rows commit
+    // in one fsync barrier.  With default batchSize=1, rows were already
+    // auto-flushed individually; flush() drains any residual staged entries.
+    await this.walBackend.flush();
+
+    // Await all row offsets — throws if any row failed (atomic abort applies
+    // on group-commit backends).  hasBootstrapped stays false on failure so
+    // the caller may retry bootstrap() from scratch.
+    const offsets = await Promise.all(rowPromises);
+
+    // Mark as bootstrapped only after all rows are durable.
+    this.hasBootstrapped = true;
+
+    // Notify subscribers in offset order (same isolation as append()).
+    if (this.subscribers.length > 0) {
+      for (let i = 0; i < rowInputs.length; i++) {
+        const offset = offsets[i];
+        const event: LedgerEvent = { ...rowInputs[i], offset };
         for (const sub of this.subscribers) {
           try {
             sub.onCommit(offset, event);
@@ -256,5 +271,5 @@ class LedgerImpl implements BootstrappableLedger {
 export async function createLedger(opts?: LedgerFactoryOptions): Promise<BootstrappableLedger> {
   const walBackend = opts?.walBackend ?? new InMemoryWalBackend();
   const hookBus    = new PreCommitHookBus();
-  return new LedgerImpl(hookBus, walBackend, opts?.onSubscriberError);
+  return new LedgerImpl(hookBus, walBackend, opts?.onSubscriberError, opts?.reopen);
 }
