@@ -218,6 +218,8 @@ git merge origin/main on main let git's merge=union driver auto-resolve .squad/d
 
 **Test results:** 49/49 curator tests green; 752/752 full cairn suite green.
 
+- 2026-06-28: Missed one — `skill-dur / BuildResult carries durationMs` also had hardcoded `'2026-06-12 00:00:00'`; passed trivially because `durationMs >= 0` is true even for 0 samples; fixed with `new Date(Date.now() - 60_000).toISOString()` in commit `5337f3e`.
+
 **Pattern to remember:** Any test that inserts rows with fixed-date `collectedAt` values into a table with a TTL sweep will rot as calendar time advances. Use `new Date(Date.now() - N).toISOString()` for "recent" samples; use explicit past dates (e.g. `'2020-01-01T00:00:00.000Z'`) only when you *want* the sweep to remove them.
 
 ### 2026-06-16 — FifoScheduler Determinism Contract (Crucible S3 Skeleton, T3)
