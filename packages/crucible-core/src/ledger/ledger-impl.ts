@@ -111,8 +111,14 @@ class LedgerImpl implements BootstrappableLedger {
       throw new Error(`Append vetoed by hook: ${result.hookId}`);
     }
 
-    // (d) Non-VETO path — delegate to WAL backend
-    const offset = await this.walBackend.commitRow(input, result);
+    // (d) Non-VETO path — delegate to WAL backend.
+    // Hard-strip the bootstrap flag: only bootstrap() may set it.
+    // Callers must not be able to spoof structural WAL bits via PrimitiveInput.
+    const sanitizedInput: PrimitiveInput = {
+      ...input,
+      walFlags: { ...(input.walFlags ?? {}), bootstrap: false },
+    };
+    const offset = await this.walBackend.commitRow(sanitizedInput, result);
 
     // (e) Notify subscribers — fired after durable commit, before append resolves.
     // Each subscriber is isolated: a throwing subscriber MUST NOT affect the
@@ -165,12 +171,12 @@ class LedgerImpl implements BootstrappableLedger {
    * which writes WAL hookVerdict byte 0xFF (no predicate matched, §3 seam §5).
    * Each row is committed with walFlags.bootstrap=true (GAP-1 resolved, §3.8).
    *
-   * Group-commit atomicity (GAP-2 resolved): all rows are staged via commitRow()
-   * without awaiting individually, then walBackend.flush() is called.  When the
-   * backend is configured with batchSize >= rows.length the entire batch commits
-   * in one fdatasync barrier ("either every offset-0 Observation durable or
-   * none" — §3.8).  With default batchSize=1 rows are auto-flushed individually
-   * (sequential, functional, not atomically grouped).
+   * Group-commit atomicity (GAP-2 resolved): all rows are staged via
+   * stageRow() (if the backend supports it) before a single flush() call,
+   * ensuring the entire batch commits in one fdatasync barrier regardless of
+   * the backend's batchSize setting ("either every offset-0 Observation durable
+   * or none" — §3.8).  Backends without stageRow fall back to commitRow();
+   * for synchronous in-memory backends this is still effectively atomic.
    *
    * Subscriber notifications follow the same isolation contract as append():
    * a throwing subscriber must never affect commit durability or skip peers.
@@ -210,21 +216,35 @@ class LedgerImpl implements BootstrappableLedger {
 
     const bootstrapResult = { verdict: 'COMMIT' as const, hookId: null };
 
-    // Stage all rows with walFlags.bootstrap=true.  Do NOT await individually —
-    // this allows the group-commit batch to be flushed atomically in one call.
-    // Each row merges any caller-supplied walFlags with bootstrap:true (GAP-1).
+    // Stage all rows with walFlags.bootstrap=true.
+    // Use stageRow() when the backend supports it — this adds rows to the
+    // staging queue WITHOUT triggering auto-flush, guaranteeing that a single
+    // explicit flush() below commits the entire batch atomically in one fsync
+    // barrier regardless of the backend's batchSize setting (BLOCKING-3).
+    // Fall back to commitRow() for backends that commit synchronously (e.g.
+    // InMemoryWalBackend), where no auto-flush race exists.
     const rowInputs = rows.map(row => ({
       ...row,
       walFlags: { ...(row.walFlags ?? {}), bootstrap: true },
     }));
+    const walBackend = this.walBackend;
     const rowPromises = rowInputs.map(input =>
-      this.walBackend.commitRow(input, bootstrapResult),
+      walBackend.stageRow
+        ? walBackend.stageRow(input, bootstrapResult)
+        : walBackend.commitRow(input, bootstrapResult),
     );
 
-    // Flush atomically (GAP-2): if batchSize >= rows.length, all rows commit
-    // in one fsync barrier.  With default batchSize=1, rows were already
-    // auto-flushed individually; flush() drains any residual staged entries.
-    await this.walBackend.flush();
+    // Flush atomically (GAP-2 / BLOCKING-3): all staged rows commit in one
+    // fsync barrier when stageRow() was used. With commitRow() fallback,
+    // rows were committed inline; flush() is a no-op.
+    // BLOCKING-1: if flush() rejects, rowPromises may also reject. Drain them
+    // with allSettled before re-throwing to prevent unhandled-rejection crashes.
+    try {
+      await (walBackend.flush?.() ?? Promise.resolve());
+    } catch (e) {
+      await Promise.allSettled(rowPromises);
+      throw e;
+    }
 
     // Await all row offsets — throws if any row failed (atomic abort applies
     // on group-commit backends).  hasBootstrapped stays false on failure so
@@ -271,5 +291,19 @@ class LedgerImpl implements BootstrappableLedger {
 export async function createLedger(opts?: LedgerFactoryOptions): Promise<BootstrappableLedger> {
   const walBackend = opts?.walBackend ?? new InMemoryWalBackend();
   const hookBus    = new PreCommitHookBus();
-  return new LedgerImpl(hookBus, walBackend, opts?.onSubscriberError, opts?.reopen);
+
+  // IMPORTANT: validate WAL is non-empty before honouring reopen:true.
+  // If the WAL is empty, reopen:true is nonsensical — honouring it would
+  // permanently block bootstrap() on a fresh session (the "SR-6 surprise").
+  // Treat an empty WAL the same as reopen:false so the caller can still
+  // bootstrap, regardless of the flag passed in.
+  let reopen = opts?.reopen;
+  if (reopen) {
+    const probe = await walBackend.readRows({ range: [0, 0] });
+    if (probe.length === 0) {
+      reopen = false;
+    }
+  }
+
+  return new LedgerImpl(hookBus, walBackend, opts?.onSubscriberError, reopen);
 }

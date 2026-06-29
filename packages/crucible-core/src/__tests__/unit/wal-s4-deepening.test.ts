@@ -179,16 +179,9 @@ describe('GAP-2: flush() on WalBackend interface', () => {
     // N rows committed: offsets 0, 1, 2
     expect(offsets).toEqual([0, 1, 2]);
 
-    // Only 1 segment fsync for N=3 rows (all rows → 1 unique CAS each → N CAS syncs + 1 segment sync).
-    // With N distinct payloads: N CAS fsyncs + 1 segment fsync = N+1 total.
-    // The assertion here is that the segment was only fsynced ONCE (group-commit).
-    const segFsyncs = syncs.filter((fd, i) => {
-      // The LAST sync call in each flush is the segment fd sync.
-      // All prior syncs in the same flush are CAS file syncs.
-      // Since all rows flush together in one call, we have exactly 1 segment sync.
-      return true; // all syncs counted; assert segment sync count separately via records
-    });
-    // Simpler check: exactly N+1 total syncs (N CAS + 1 segment) for 1 batch of N distinct payloads.
+    // Exactly N+1 total syncs (N CAS + 1 segment fsync) for 1 batch of N distinct payloads.
+    // stageRow() suppresses auto-flush so all N rows are staged before flush() runs,
+    // producing exactly one segment fdatasync (group-commit barrier).
     expect(syncs.length).toBe(N + 1);
 
     const records = backend.readSegmentRecords();
@@ -331,7 +324,7 @@ describe('Session-reopen: reopen existing WAL and continue appending', () => {
       await b.close();
     }
 
-    // Third session: reopen — must see all 3 rows (boot, post-reopen + new)
+    // Third session: reopen — must see both rows (boot-row at 0, post-reopen-row at 1)
     {
       const b = await createFileSystemWalBackend(rootDir, sessionId, { syncFn: () => {} });
       const events = await b.readRows({ range: [0, 99] });
@@ -342,8 +335,11 @@ describe('Session-reopen: reopen existing WAL and continue appending', () => {
   });
 
   it('SR-6: reopen without reopen:true flag — append() works normally (no bootstrap needed)', async () => {
-    // createLedger without reopen:true should work when walBackend is reopened,
-    // as long as caller goes straight to append() without calling bootstrap().
+    // createLedger without reopen:true works when walBackend is reopened,
+    // as long as the caller goes straight to append() without calling bootstrap().
+    // NOTE: hasBootstrapped=false means bootstrap() is technically allowed here,
+    // but the WAL non-empty guard inside bootstrap() will reject it (BI-6).
+    // To explicitly opt into reopen semantics use reopen:true.
     const rootDir   = makeTmpDir();
     const sessionId = `sess-${randomUUID().slice(0, 8)}`;
 
@@ -355,13 +351,39 @@ describe('Session-reopen: reopen existing WAL and continue appending', () => {
       await b.close();
     }
 
-    // Reopen WITHOUT reopen:true — append() should still work (hasBootstrapped=false
-    // but hasAppended check only blocks bootstrap() not append())
+    // Reopen WITHOUT reopen:true — append() still works (hasBootstrapped=false
+    // but append() does not gate on hasBootstrapped; only bootstrap() does).
     {
       const b = await createFileSystemWalBackend(rootDir, sessionId, { syncFn: () => {} });
       const l = await createLedger({ walBackend: b });
       const offset = await l.append(makeInput('appended'));
       expect(offset).toBe(1); // offset continues from 1 (after boot-row at 0)
+      await b.close();
+    }
+  });
+
+  it('SR-7: replayed events include walFlags from segment record flags (BLOCKING-4)', async () => {
+    const rootDir   = makeTmpDir();
+    const sessionId = `sess-${randomUUID().slice(0, 8)}`;
+
+    // Write a bootstrap row (flags.bootstrap=true) and a normal append row.
+    {
+      const b = await createFileSystemWalBackend(rootDir, sessionId, { syncFn: () => {} });
+      const l = await createLedger({ walBackend: b });
+      await l.bootstrap([makeInput('boot-row')]);
+      await l.append(makeInput('normal-row'));
+      await b.close();
+    }
+
+    // Reopen: replayed events must carry walFlags matching the written flags.
+    {
+      const b = await createFileSystemWalBackend(rootDir, sessionId, { syncFn: () => {} });
+      const rows = await b.readRows({ range: [0, 99] });
+      expect(rows).toHaveLength(2);
+      // Bootstrap row must have bootstrap flag set.
+      expect(rows[0].walFlags?.bootstrap).toBe(true);
+      // Normal append row must NOT have bootstrap flag set.
+      expect(rows[1].walFlags?.bootstrap).toBe(false);
       await b.close();
     }
   });

@@ -283,6 +283,33 @@ export interface WalBackend {
    * On an in-memory backend this is a no-op (resolves immediately).
    * On a file-system backend this triggers executeFlush() and resolves when
    * the segment fdatasync has completed.
+   *
+   * Optional: backends that commit rows immediately (e.g. simple in-memory
+   * stores with no staging queue) may omit this method. LedgerImpl falls back
+   * to a no-op Promise.resolve() when flush is absent.
    */
-  flush(): Promise<void>;
+  flush?(): Promise<void>;
+
+  /**
+   * Stage a row for group-commit without triggering auto-flush (optional).
+   *
+   * When implemented, LedgerImpl.bootstrap() calls this instead of commitRow()
+   * to stage all bootstrap rows before a single flush() — ensuring the entire
+   * batch commits in one fdatasync barrier regardless of batchSize.
+   *
+   * The returned Promise resolves with the commit offset when the batch that
+   * contains this row is flushed by an explicit flush() call.
+   * Callers MUST call flush() after staging all rows; staged rows remain
+   * pending until flush() is called.
+   *
+   * When absent, bootstrap() falls back to commitRow() per row.
+   * In-memory backends that commit synchronously in commitRow() can omit this.
+   */
+  stageRow?(
+    input: PrimitiveInput,
+    hookResult: HookResult & {
+      verdict: Exclude<HookVerdict, 'VETO'>;
+      hookId: string | null;
+    },
+  ): Promise<number>;
 }
