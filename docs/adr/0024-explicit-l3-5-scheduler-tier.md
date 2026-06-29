@@ -149,7 +149,7 @@ The Scheduler can buffer proposals and signal back-pressure to generators indepe
 **A-Sched-1 (Replay-Ordering Determinism):**
 - Conformance test: FifoScheduler unit tests verify that identical proposal sequences produce identical `scheduler_dispatched` streams across 100+ replay runs
 - Integration test: Replay of a recorded session reproduces the exact dispatch event stream (byte-for-byte)
-- No divergence in `scheduler_dispatched` row offsets, timestamps, or field values
+- No divergence in `scheduler_dispatched` row offsets or structural field values (wall-clock timestamps are excluded from the replay oracle per §11 and are not asserted here)
 
 **A-Sched-2 (Back-Pressure) — Phase 1 Graduation Gate:**
 - WeightedRoundRobinScheduler implements per-generator quanta budgets
@@ -165,14 +165,16 @@ The Scheduler can buffer proposals and signal back-pressure to generators indepe
 - Conformance test: Starvation test verifies that all active generators make progress within a bounded number of turns (e.g., max 50:1 turn ratio between any two generators)
 - Leaderboard confirms that fast generators don't prevent slow ones from dispatching
 
+> **Pending synthesis reconciliation (A-Sched-4):** The starvation bound (50:1) and fairness metric above are asserted here but not yet confirmed against locked CTD. Resolution deferred to design synthesis; do not treat as implementation-ready acceptance criteria until reconciled.
+
 **Contract-Tier Signals:**
-- `SchedulerPort.submit()` appends the `scheduler_dispatched` Decision row to L1 (per §5.A.1) and returns the committed `SchedulerEvent` synchronously. The Scheduler is the WAL author for all `scheduler_*` rows; the composition root does not separately commit them. The returned event is available for synchronous Router consumption and test-harness inspection without a WAL poll.
+- `SchedulerPort.submit()` appends the `scheduler_dispatched` Decision row to L1 (per §5.A.1) and returns the committed `SchedulerEvent` synchronously. The Scheduler is the WAL author for all `scheduler_*` rows; the composition root does not separately commit them. The returned event is available for synchronous Router consumption and test-harness inspection without a WAL poll. *(Pending synthesis reconciliation: CTD §1 overview may carry a "writes no rows" characterisation for this component path; WAL authorship attribution to be confirmed at synthesis before this signal is treated as locked.)*
 - `pending()` returns accurate queue depth even under concurrent proposal submission
 - Scheduler state is fully replayable from recorded `scheduler_dispatched` events
 
 **Invariant Signals:**
 - Dispatch-order invariant: proposals appear in the WAL in the order the Scheduler emitted them (Scheduler ordering ⇒ WAL ordering)
-- Determinism invariant: same proposal log replayed from offset 0 produces identical Scheduler output (tested via `ReplayEngine.replay()` with replay divergence classification `scheduler_dispatch`)
+- Determinism invariant: same proposal log replayed from offset 0 produces identical Scheduler output (tested via `ReplayEngine.replay()` with replay divergence classification `scheduler_dispatch`) *(Pending synthesis reconciliation: `scheduler_dispatch` divergenceKind is asserted here but not confirmed against the locked CTD §11 divergence registry; classification string and enum value to be reconciled at synthesis)*
 
 **Countersignals (What Breaks If Violated):**
 - If Scheduler is removed and L3→L4 direct submission is restored, replay diverges (order dependent on OS scheduling)
@@ -188,7 +190,7 @@ The Scheduler can buffer proposals and signal back-pressure to generators indepe
 - Proposal ordering is **not a trust-tier enforcement point** (the Router handles trust; the Scheduler handles order), so the Scheduler tier does not directly mitigate trust-tier bypass. However, it does provide forensic visibility (audit logs will show dispatch order, enabling post-incident analysis).
 
 **Denial-of-Service (Back-Pressure):**
-- FifoScheduler (v0.5) offers no back-pressure; a runaway generator filling the queue indefinitely could exhaust memory. A `MAX_PENDING` cap (default 256 proposals) MUST be enforced at the composition root before v0.5 ships — submissions beyond the cap are dropped with an error logged, not silently discarded. This mitigates OOM risk in the walking skeleton without implementing full quanta budgeting. v1 mandates A-Sched-2 back-pressure as the permanent security gate, replacing the cap.
+- FifoScheduler (v0.5) offers no back-pressure; a runaway generator flooding the composition root's inbound submission channel could exhaust memory. A `MAX_PENDING` cap (default 256 proposals) MUST be enforced on the **composition root's submission channel** (not inside FifoScheduler, which is stateless and holds no internal queue) before v0.5 ships. Submissions beyond the cap MUST be rejected synchronously — error returned to the caller AND an observable overflow signal emitted (a dedicated `scheduler_overflow` counter or equivalent metric); log-only is not acceptable. This mitigates OOM risk in the walking skeleton without implementing full quanta budgeting. v1 mandates A-Sched-2 back-pressure as the permanent security gate, replacing the cap.
 - WeightedRoundRobinScheduler (Phase 1) implements per-generator quanta budgets; generators that exceed their budget are deferred, mitigating resource exhaustion.
 
 ---
