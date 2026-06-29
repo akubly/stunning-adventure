@@ -272,7 +272,7 @@ session-reopen seam compatibility.
 - `packages/crucible-core/src/__tests__/unit/replay-conformance.test.ts`  
   — 23 new tests (1 skipped), covering A1–A4 + FIFO-ordering + reopen seam
 
-**Test delta:** 247 → 270 (23 new GREEN, 1 `it.skip` anchor for Phase-1 A1)
+**Test delta:** 247 → 270 (22 new GREEN, 1 skip = 23 total)
 
 ### Test surface
 

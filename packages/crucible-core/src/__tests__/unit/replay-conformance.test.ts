@@ -254,6 +254,7 @@ describe('A2 deep — hermetic replay over multi-row sessions', () => {
     // Identify and corrupt the CAS blob for row index 5.
     const inspector = await createFileSystemWalBackend(rootDir, sessionId, { readOnly: true });
     const recs = inspector.readAllSegmentRecords();
+    expect(recs).toHaveLength(10);
     const rec5Hash = recs[5]!.payloadHash;
     await inspector.close();
 
