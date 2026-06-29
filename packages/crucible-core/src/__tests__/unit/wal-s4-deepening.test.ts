@@ -148,12 +148,13 @@ describe('GAP-2: flush() on WalBackend interface', () => {
 
   it('FL-1: InMemoryWalBackend.flush() exists and resolves (no-op)', async () => {
     const backend = new InMemoryWalBackend();
-    // flush() must exist on the interface — TypeScript will enforce this
+    // flush() is optional on WalBackend; InMemoryWalBackend always provides it concretely.
     await expect(backend.flush()).resolves.toBeUndefined();
   });
 
-  it('FL-2: flush() exists on WalBackend interface (type-level assertion via assignment)', () => {
-    // If WalBackend.flush() is missing, this assignment fails to type-check.
+  it('FL-2: flush() present on InMemoryWalBackend at runtime (WalBackend.flush is optional — runtime assertion, not type guarantee)', () => {
+    // WalBackend.flush is optional (?); this runtime check confirms InMemoryWalBackend
+    // always provides flush(). The type assignment alone does not enforce its presence.
     const _: WalBackend = new InMemoryWalBackend();
     expect(typeof _.flush).toBe('function');
   });

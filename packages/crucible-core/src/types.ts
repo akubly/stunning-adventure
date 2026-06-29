@@ -62,6 +62,12 @@ export interface PrimitiveInput {
    * merges any provided flags into the segment record. LedgerImpl.bootstrap()
    * sets `bootstrap: true` internally; do not set it on raw `commitRow` inputs
    * unless you are writing a custom backend.
+   *
+   * On the Ledger.append() path all structural bits (bootstrap, declaredWindow,
+   * syntheticOutput, taskBoundary, manifestRoot) are cleared by LedgerImpl
+   * regardless of what the caller supplies — callers cannot spoof structural
+   * bits via append(). walFlags is honored as-is only when calling backend
+   * methods directly (commitRow / stageRow) or via bootstrap().
    */
   walFlags?: WalRowFlags;
 }

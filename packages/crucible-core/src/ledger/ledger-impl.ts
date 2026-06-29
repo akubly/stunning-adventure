@@ -112,21 +112,25 @@ class LedgerImpl implements BootstrappableLedger {
     }
 
     // (d) Non-VETO path — delegate to WAL backend.
-    // Strip ALL structural walFlags: callers must not spoof any structural bit
-    // (bootstrap, declaredWindow, syntheticOutput, taskBoundary, manifestRoot)
-    // via PrimitiveInput on the append path.  bootstrap() sets its own bits
-    // internally; append-path rows must carry no caller structural bits.
-    const sanitizedInput: PrimitiveInput = {
-      ...input,
-      walFlags: {
-        ...(input.walFlags ?? {}),
-        bootstrap:       false,
-        declaredWindow:  false,
-        syntheticOutput: false,
-        taskBoundary:    false,
-        manifestRoot:    false,
-      },
-    };
+    // Strip ALL structural walFlags when caller provided walFlags; omit
+    // walFlags entirely when caller omitted it (preserves undefined shape).
+    // Callers must not spoof any structural bit (bootstrap, declaredWindow,
+    // syntheticOutput, taskBoundary, manifestRoot) via PrimitiveInput on the
+    // append path.  bootstrap() sets its own bits internally; append-path rows
+    // must carry no caller structural bits.
+    const sanitizedInput: PrimitiveInput = input.walFlags !== undefined
+      ? {
+          ...input,
+          walFlags: {
+            ...input.walFlags,
+            bootstrap:       false,
+            declaredWindow:  false,
+            syntheticOutput: false,
+            taskBoundary:    false,
+            manifestRoot:    false,
+          },
+        }
+      : input;
     const offset = await this.walBackend.commitRow(sanitizedInput, result);
 
     // (e) Notify subscribers — fired after durable commit, before append resolves.
@@ -228,19 +232,20 @@ class LedgerImpl implements BootstrappableLedger {
     const bootstrapResult = { verdict: 'COMMIT' as const, hookId: null };
 
     // Stage all rows with walFlags.bootstrap=true.
-    // Use stageRow() when the backend supports it — this adds rows to the
-    // staging queue WITHOUT triggering auto-flush, guaranteeing that a single
-    // explicit flush() below commits the entire batch atomically in one fsync
-    // barrier regardless of the backend's batchSize setting (BLOCKING-3).
-    // Fall back to commitRow() for backends that commit synchronously (e.g.
-    // InMemoryWalBackend), where no auto-flush race exists.
+    // Use stageRow() only when BOTH stageRow() AND flush() are present — both
+    // are required for atomic group-commit: stageRow() queues rows without
+    // auto-flush, and flush() commits the entire batch in one fsync barrier
+    // (BLOCKING-3).  A backend that has stageRow but no flush would hang at
+    // Promise.all below because staged rows never resolve without a flush().
+    // Fall back to commitRow() for backends without both (e.g.
+    // InMemoryWalBackend), where rows commit synchronously.
     const rowInputs = rows.map(row => ({
       ...row,
       walFlags: { ...(row.walFlags ?? {}), bootstrap: true },
     }));
     const walBackend = this.walBackend;
     const rowPromises = rowInputs.map(input =>
-      walBackend.stageRow
+      walBackend.stageRow && walBackend.flush
         ? walBackend.stageRow(input, bootstrapResult)
         : walBackend.commitRow(input, bootstrapResult),
     );
