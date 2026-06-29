@@ -2622,3 +2622,63 @@ Edgar added 6 RC-* tests inside the `describe('recall')` block:
 Closing this inbox entry as informational. Tests are in and green.
 
 
+
+
+---
+
+# Recall duplicate_of Collapse — Persona-Review Fix Wave
+
+**Author:** Edgar (Learning Systems Specialist)
+**Date:** 2026-06-28T22:41-07:00
+**Branch:** squad/eureka-recall-collapse
+**Commit:** 0ec1bed
+**Status:** APPLIED
+
+## Findings Addressed
+
+### BLOCKING
+
+#### B — RelationReader default-on in createSqliteRecallDeps
+- **Was:** includeRelationReader (default false, opt-in) → collapse never fired in production.
+- **Fix:** Renamed to omitRelationReader (default false, opt-out). SqliteRelationReader is always wired. Callers that never run integrate may pass omitRelationReader: true.
+
+#### A — k-validation tests restored
+- **Was:** k=0, k=-1/1.5/NaN/Infinity tests deleted from recall.test.ts during collapse refactor; production guard untested.
+- **Fix:** Restored in describe('k validation (C4)') block. k=0→[], k∈{-1,1.5,NaN,Infinity}→TypeError (4 parameterized cases). +5 tests.
+
+### IMPORTANT
+
+#### C — Backfill loop for high dup density
+- **Was:** Single overfetch page; could undersupply k when all candidates collapse.
+- **Fix:** do...while loop: fetches additional pages with cursor until collapsed.length >= k or no nextCursor. Loop only fires when elationReader present. +1 test (RC-HD).
+
+#### D — listDuplicateOf scoped to candidateIds (avoid O(E) scan)
+- **Was:** listDuplicateOf({ sessionId }) loaded all session edges per recall.
+- **Fix:** Interface gains candidateIds?: ReadonlyArray<FactId>. SqliteRelationReader builds WHERE from_fact_id IN (...) dynamically. InMemoryRelationReader filters post-query. ecallWithScores passes per-page candidateIds. All 	oHaveBeenCalledWith assertions updated to objectContaining({ sessionId }).
+
+#### E — RelationReader moved to storage seam
+- **Was:** Port defined in epresentation/relation.ts; asymmetric with RelationWriter in storage/relation-writer.types.ts.
+- **Fix:** New file storage/relation-reader.types.ts holds the definition. epresentation/relation.ts re-exports for backward compat. storage/index.ts exports RelationReader.
+
+#### G — Export RANKER_OVERFETCH_FACTOR
+- **Was:** Magic number limit:20 in recall.test.ts RC-4.
+- **Fix:** RANKER_OVERFETCH_FACTOR exported from ecall.ts and index.ts. RC-4 computes 5 * (RANKER_OVERFETCH_FACTOR + 1).
+
+### MINOR (applied)
+
+- Renamed deduped → collapsed throughout ecallWithScores.
+- Dropped redundant if (edges.length > 0) empty-guard.
+- Fixed stale comment from "across all candidates" → "collapsed".
+
+## Rejected / Out of Scope
+
+- Zero-dep ArrayRelationReader test double: not added — existing makeReader(edges) helper in recall-collapse.test.ts is equivalent and already used across the suite.
+
+## Test Results
+
+- **Before:** 358 tests (19 files)
+- **After:** 364 tests (19 files) — +6 new (A:5 k-validation, C:1 RC-HD backfill)
+- **tsc --noEmit:** Clean
+
+---
+
