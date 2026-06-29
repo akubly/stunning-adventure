@@ -2682,3 +2682,53 @@ Closing this inbox entry as informational. Tests are in and green.
 
 ---
 
+
+
+---
+
+# Recall duplicate_of Collapse — Persona-Review Cycle 2 Fix Wave
+
+**Author:** Edgar (Learning Systems Specialist)
+**Date:** 2026-06-28T23:00-07:00
+**Branch:** squad/eureka-recall-collapse
+**Commit:** 773cfb8
+**Status:** APPLIED
+
+## Findings Addressed
+
+### IMPORTANT
+
+#### 1 — candidateIds=[] contract bug fixed
+- **Was:** if (args.candidateIds && args.candidateIds.length > 0) fell through to full-session scan for empty array.
+- **Spec:** "when provided, restrict" — empty array → no candidates → return [].
+- **Fix:** Both SqliteRelationReader and InMemoryRelationReader now check if (args.candidateIds !== undefined) first; length === 0 short-circuits to [].
+
+#### 2 — API symmetry: export SqliteRelationReader + createSqliteRelationReader
+- @akubly/eureka/sqlite now exports SqliteRelationReader (class) and createSqliteRelationReader (factory), symmetric with the already-exported writer equivalents.
+
+#### 3 — SQLite bind-variable safety: IN(...) chunking
+- SqliteRelationReader splits candidateIds into chunks of SQLITE_VARIABLE_CHUNK=900 before building IN(?) statements. Prevents SQLITE_ERROR: too many SQL variables for large k×4 candidate sets.
+
+#### 4 — Tests added
+- storage/__tests__/relation-reader.contract.test.ts — RR-CIDS-1..5 (candidateIds=undefined/[]/[match]/[no-match]/session-isolation) for both InMemory and SQLite backends (+10 tests).
+- ecall-collapse.test.ts RC-CIDS-1: listDuplicateOf receives page factIds as candidateIds (+1).
+- ecall-collapse.test.ts RC-CIDS-2: empty trusted page → listDuplicateOf not called (+1).
+- ecall-sqlite-smoke.test.ts SD-DEFAULT-ON: createSqliteRecallDeps() with no options suppresses dup via default-on reader (+1).
+
+### MINOR
+
+- MAX_BACKFILL_PAGES=10 safety cap in ecallWithScores; emits logger.warn when exhausted.
+- Comment in collapse path noting edges assumed well-formed (V-R3 self-loop guard enforced at write time).
+
+## Rejected
+
+- "default-on is a perf regression" — intent of task. Opt-out via omitRelationReader: true exists.
+
+## Test Results
+
+- **Before:** 364 tests (19 files)
+- **After:** 377 tests (20 files) — +13 new
+- **tsc --noEmit:** Clean
+
+---
+
