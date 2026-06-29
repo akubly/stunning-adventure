@@ -641,6 +641,10 @@ export class FileSystemWalBackend implements WalBackend {
     hookResult: HookResult & { verdict: Exclude<HookVerdict, 'VETO'>; hookId: string | null },
   ): Promise<number> {
     if (this.isReadOnly) throw new ReadOnlyWalBackendError();
+    // Cancel any deadline timer armed by a prior commitRow() call.  If left
+    // running it could fire during bootstrap staging and flush rows before the
+    // caller's explicit flush(), breaking the atomic-batch guarantee.
+    this.clearDeadlineTimer();
     return new Promise((resolve, reject) => {
       this.stagingQueue.push({ input, hookResult, resolve, reject });
       // No auto-flush or deadline timer — caller controls when to flush.

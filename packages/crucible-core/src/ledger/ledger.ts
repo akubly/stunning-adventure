@@ -276,9 +276,10 @@ export interface WalBackend {
    *
    * Called explicitly when the caller needs to ensure all previously staged
    * rows are durable before proceeding. LedgerImpl.bootstrap() calls this
-   * after staging all bootstrap rows so that — when the backend is configured
-   * with batchSize >= rows.length — the entire batch commits in one fsync
-   * barrier (§3.8 bootstrap-batch atomicity).
+   * after staging all bootstrap rows to guarantee the entire batch commits in
+   * one fsync barrier (§3.8 bootstrap-batch atomicity). stageRow() bypasses
+   * the batchSize auto-flush gate, so atomicity holds regardless of backend
+   * configuration.
    *
    * On an in-memory backend this is a no-op (resolves immediately).
    * On a file-system backend this triggers executeFlush() and resolves when

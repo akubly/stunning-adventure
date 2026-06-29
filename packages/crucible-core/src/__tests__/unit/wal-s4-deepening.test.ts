@@ -1,5 +1,5 @@
 /**
- * S4 WAL Substrate Deepening — RED tests (TDD).
+ * S4 WAL Substrate Deepening — tests (GREEN).
  *
  * Covers three deferred gaps from Phase 0.5:
  *   GAP-1  flags.bootstrap — bootstrap rows must have flags.bootstrap = true

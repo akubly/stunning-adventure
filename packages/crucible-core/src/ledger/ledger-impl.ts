@@ -258,8 +258,11 @@ class LedgerImpl implements BootstrappableLedger {
     }
 
     // Await all row offsets — throws if any row failed (atomic abort applies
-    // on group-commit backends).  hasBootstrapped stays false on failure so
-    // the caller may retry bootstrap() from scratch.
+    // on group-commit backends that used stageRow()).  hasBootstrapped stays
+    // false on failure so the caller may retry bootstrap() from scratch.
+    // NOTE: retry is only viable when stageRow() was used — if the commitRow()
+    // fallback path ran, a partial commit may have already written rows, making
+    // the WAL non-empty and causing the next bootstrap() call to be rejected.
     const offsets = await Promise.all(rowPromises);
 
     // Mark as bootstrapped only after all rows are durable.
