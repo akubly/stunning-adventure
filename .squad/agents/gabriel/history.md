@@ -232,4 +232,4 @@ git merge origin/main on main let git's merge=union driver auto-resolve .squad/d
 1. Hardware analogies clarify why a tier exists (dispatch units ↔ Scheduler), but ground them in the actual agentic problem first (determinism, fairness, trace visibility)
 2. Graduation criteria in the ADR prevent Phase 1 authors from making different assumptions about the tier's evolution
 3. Rejected Option 1 (direct L3→L4) must explain *why* it breaks determinism and fairness, not just why it's less elegant — consequences ground the decision
-4. "Accepted Questions" section for previously open questions (ADR-0024 resolves why Scheduler exists and why it's v1, not v1.5) is a reviewability win; readers don't have to chase decisions.md
+4. "Resolved Questions" section for previously open questions (ADR-0024 resolves why Scheduler exists and why it's v1, not v1.5) is a reviewability win; readers don't have to chase decisions.md

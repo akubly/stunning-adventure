@@ -168,8 +168,8 @@ The Scheduler can buffer proposals and signal back-pressure to generators indepe
 > **Pending synthesis reconciliation (A-Sched-4):** The starvation bound (50:1) and fairness metric above are asserted here but not yet confirmed against locked CTD. Resolution deferred to design synthesis; do not treat as implementation-ready acceptance criteria until reconciled.
 
 **Contract-Tier Signals:**
-- `SchedulerPort.submit()` appends the `scheduler_dispatched` Decision row to L1 (per §5.A.1) and returns the committed `SchedulerEvent` synchronously. The Scheduler is the WAL author for all `scheduler_*` rows; the composition root does not separately commit them. The returned event is available for synchronous Router consumption and test-harness inspection without a WAL poll. *(Pending synthesis reconciliation: CTD §1 overview may carry a "writes no rows" characterisation for this component path; WAL authorship attribution to be confirmed at synthesis before this signal is treated as locked.)*
-- `pending()` returns accurate queue depth even under concurrent proposal submission
+- `SchedulerPort.submit()` returns the committed `SchedulerEvent` synchronously (v0.5 skeleton behaviour). Direct WAL-append of `scheduler_*` rows is a **Phase 1 target**: the Scheduler will become the WAL author for all `scheduler_*` rows (per §5.A.1), with the composition root not separately committing them. Until that phase lands, the returned event is available for synchronous Router consumption and test-harness inspection without a WAL poll. *(Pending synthesis reconciliation: WAL authorship attribution to be confirmed at synthesis before this signal is treated as locked.)*
+- `pending()` returns the queue as a `readonly Proposal[]`; depth is `pending().length` under concurrent proposal submission
 - Scheduler state is fully replayable from recorded `scheduler_dispatched` events
 
 **Invariant Signals:**
