@@ -816,7 +816,7 @@ describe('profile build inside curate()', () => {
 
   it('BuildResult carries durationMs (non-negative number)', async () => {
     insertSignalSamples(db, [
-      { kind: 'drift', sessionId, skillId: 'skill-dur', value: 0.3, collectedAt: '2026-06-12 00:00:00' },
+      { kind: 'drift', sessionId, skillId: 'skill-dur', value: 0.3, collectedAt: new Date(Date.now() - 60_000).toISOString() },
     ]);
 
     const result = await curate();
