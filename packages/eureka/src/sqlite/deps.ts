@@ -22,6 +22,7 @@ import { SqliteFactStore } from '../storage/fact-store-sqlite.js';
 import { SqliteTrustUpdater } from '../storage/trust-updater-sqlite.js';
 import { SqliteFactWriter } from '../storage/fact-writer-sqlite.js';
 import { SqliteRelationWriter } from '../storage/relation-writer-sqlite.js';
+import { SqliteRelationReader } from '../storage/relation-reader-sqlite.js';
 import { SqliteFactReader } from '../storage/fact-reader-sqlite.js';
 import { randomUUID } from 'node:crypto';
 
@@ -39,17 +40,33 @@ const systemClock = { now: (): number => Date.now() };
  * @param options  Optional overrides; `logger` is forwarded to `SqliteFactStore`
  *                 and set on the returned `RecallDeps` so the same logger handles
  *                 both FTS parse-error warnings and attention-tier warnings.
+ *                 `includeRelationReader` (default false): when true, wires a
+ *                 `SqliteRelationReader` into the deps so duplicate_of edges
+ *                 written by `integrate` suppress non-canonical results at recall
+ *                 time. Pass `true` in production pipelines that run integrate.
  */
 export function createSqliteRecallDeps(
   db: Database.Database,
-  options?: { logger?: { warn(msg: string): void } },
+  options?: { logger?: { warn(msg: string): void }; includeRelationReader?: boolean },
 ): RecallDeps {
   const logger = options?.logger;
   return {
     factStore: new SqliteFactStore(db, logger),
     clock: systemClock,
     ...(logger ? { logger } : {}),
+    ...(options?.includeRelationReader ? { relationReader: new SqliteRelationReader(db) } : {}),
   };
+}
+
+/**
+ * Create a production SQLite `RelationReader` — the read-only counterpart to
+ * `createSqliteRelationWriter`. Returns `duplicate_of` edges for a session,
+ * consumed by `recallWithScores` to suppress non-canonical duplicates.
+ *
+ * @param db  An already-opened, migration-applied Database handle from openDatabase().
+ */
+export function createSqliteRelationReader(db: Database.Database): SqliteRelationReader {
+  return new SqliteRelationReader(db);
 }
 
 /**

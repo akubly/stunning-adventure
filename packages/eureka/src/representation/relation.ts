@@ -23,6 +23,27 @@
 import type { SessionId, FactId } from '@akubly/types';
 import { InvalidRelationError } from './errors.js';
 
+/**
+ * Read seam for duplicate_of edges — the narrow counterpart to
+ * `RelationWriter.writeEdges`. Structural so tests can stub it without
+ * importing storage implementations.
+ *
+ * v1 scope: only `duplicate_of` edges are readable here; other relation kinds
+ * are write-only until a recall consumer for them is defined.
+ *
+ * Used by `recallWithScores` (activity layer) to suppress non-canonical
+ * duplicates without touching FactStore.search SQL (D-INT-9 append-only
+ * invariant preserved — storage stays lossless).
+ */
+export interface RelationReader {
+  /**
+   * Return all `duplicate_of` edges for a session.
+   * Each edge: `from` is the non-canonical duplicate; `to` is the canonical.
+   * Returns an empty array when no edges exist (never null).
+   */
+  listDuplicateOf(args: { sessionId: SessionId }): Promise<ReadonlyArray<{ from: FactId; to: FactId }>>;
+}
+
 /** Relation kind literal union (matches migration 003 CHECK constraint). */
 export type RelationKind = 'duplicate_of' | 'supersedes' | 'contradicts' | 'supports';
 

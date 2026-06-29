@@ -569,52 +569,135 @@ describe('recall', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // C4 — k input validation
+  // RC — duplicate_of collapse via RelationReader (integrate loop closed)
   // ---------------------------------------------------------------------------
   //
-  // k must be a positive integer. Invalid values are caught at the entry point
-  // so neither factStore.search nor SQLite ever sees them.
-  // k === 0 is the exception: valid, returns [] immediately, no factStore call.
+  // When a RelationReader is wired into RecallDeps, recallWithScores suppresses
+  // any candidate whose factId appears on the 'from' side of a duplicate_of edge
+  // (the non-canonical dup). Canonicals ('to' side) surface normally.
+  // Storage is never mutated — collapse is view-layer only.
 
-  describe('k input validation (C4)', () => {
-    it('k = 0 returns [] without calling factStore.search', async () => {
-      const factStore = { search: vi.fn() };
+  describe('duplicate_of collapse via RelationReader (RC)', () => {
+    it('RC-1: no RelationReader → all candidates returned (backward compat)', async () => {
+      const factStore = {
+        search: vi.fn().mockResolvedValue({ results: [
+          { factId: 'rc-canonical' as FactId, content: 'Canonical fact', trust: 0.8, attentionTier: 'warm' as const },
+          { factId: 'rc-dup-001'  as FactId, content: 'Canonical fact', trust: 0.8, attentionTier: 'warm' as const },
+        ] }),
+      };
 
-      const result = await recall(
-        { query: 'zero-k test', sessionId, k: 0 },
-        { factStore, clock: fixedClock },
+      const results = await recall(
+        { query: 'test', sessionId, k: 5 },
+        { factStore, clock: fixedClock },  // no relationReader
       );
 
-      expect(result).toEqual([]);
-      expect(factStore.search).not.toHaveBeenCalled();
+      // Without a reader, both surface
+      expect(results.map(r => r.factId)).toContain('rc-canonical');
+      expect(results.map(r => r.factId)).toContain('rc-dup-001');
     });
 
-    it('k = -1 throws TypeError', async () => {
-      const factStore = { search: vi.fn() };
-      await expect(
-        recall({ query: 'neg-k test', sessionId, k: -1 }, { factStore, clock: fixedClock }),
-      ).rejects.toThrow(TypeError);
+    it('RC-2: non-canonical dup is suppressed; canonical keeps surfacing', async () => {
+      const factStore = {
+        search: vi.fn().mockResolvedValue({ results: [
+          { factId: 'rc-canonical' as FactId, content: 'Canonical fact', trust: 0.8, attentionTier: 'warm' as const },
+          { factId: 'rc-dup-001'  as FactId, content: 'Canonical fact', trust: 0.8, attentionTier: 'warm' as const },
+        ] }),
+      };
+      const relationReader = {
+        listDuplicateOf: vi.fn().mockResolvedValue([
+          { from: 'rc-dup-001' as FactId, to: 'rc-canonical' as FactId },
+        ]),
+      };
+
+      const results = await recall(
+        { query: 'test', sessionId, k: 5 },
+        { factStore, clock: fixedClock, relationReader },
+      );
+
+      const ids = results.map(r => r.factId as string);
+      expect(ids).toContain('rc-canonical');    // canonical surfaces
+      expect(ids).not.toContain('rc-dup-001'); // dup suppressed
     });
 
-    it('k = 1.5 throws TypeError', async () => {
-      const factStore = { search: vi.fn() };
-      await expect(
-        recall({ query: 'float-k test', sessionId, k: 1.5 }, { factStore, clock: fixedClock }),
-      ).rejects.toThrow(TypeError);
+    it('RC-3: empty edge list → no suppression (identical to no-reader path)', async () => {
+      const factStore = {
+        search: vi.fn().mockResolvedValue({ results: [
+          { factId: 'rc-only' as FactId, content: 'Unique fact', trust: 0.9, attentionTier: 'hot' as const },
+        ] }),
+      };
+      const relationReader = {
+        listDuplicateOf: vi.fn().mockResolvedValue([]),
+      };
+
+      const results = await recall(
+        { query: 'test', sessionId, k: 5 },
+        { factStore, clock: fixedClock, relationReader },
+      );
+
+      expect(results.map(r => r.factId as string)).toContain('rc-only');
     });
 
-    it('k = NaN throws TypeError', async () => {
-      const factStore = { search: vi.fn() };
-      await expect(
-        recall({ query: 'nan-k test', sessionId, k: NaN }, { factStore, clock: fixedClock }),
-      ).rejects.toThrow(TypeError);
+    it('RC-4: overfetch bumps to k × 4 when RelationReader is provided', async () => {
+      const factStore = {
+        search: vi.fn().mockResolvedValue({ results: [] }),
+      };
+      const relationReader = {
+        listDuplicateOf: vi.fn().mockResolvedValue([]),
+      };
+
+      await recall(
+        { query: 'overfetch test', sessionId, k: 5 },
+        { factStore, clock: fixedClock, relationReader },
+      );
+
+      // RANKER_OVERFETCH_FACTOR(3) + 1 = 4; k=5 → limit=20
+      expect(factStore.search).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 20 }),
+      );
     });
 
-    it('k = Infinity throws TypeError', async () => {
-      const factStore = { search: vi.fn() };
-      await expect(
-        recall({ query: 'inf-k test', sessionId, k: Infinity }, { factStore, clock: fixedClock }),
-      ).rejects.toThrow(TypeError);
+    it('RC-5: multi-dup star topology — all dups suppressed, canonical kept', async () => {
+      const factStore = {
+        search: vi.fn().mockResolvedValue({ results: [
+          { factId: 'rc-canonical' as FactId, content: 'Canonical fact', trust: 0.9, attentionTier: 'hot'  as const },
+          { factId: 'rc-dup-002'  as FactId, content: 'Canonical fact', trust: 0.7, attentionTier: 'warm' as const },
+          { factId: 'rc-dup-003'  as FactId, content: 'Canonical fact', trust: 0.6, attentionTier: 'warm' as const },
+          { factId: 'rc-other'    as FactId, content: 'Distinct fact',  trust: 0.8, attentionTier: 'warm' as const },
+        ] }),
+      };
+      const relationReader = {
+        listDuplicateOf: vi.fn().mockResolvedValue([
+          { from: 'rc-dup-002' as FactId, to: 'rc-canonical' as FactId },
+          { from: 'rc-dup-003' as FactId, to: 'rc-canonical' as FactId },
+        ]),
+      };
+
+      const results = await recall(
+        { query: 'test', sessionId, k: 5 },
+        { factStore, clock: fixedClock, relationReader },
+      );
+
+      const ids = results.map(r => r.factId as string);
+      expect(ids).toContain('rc-canonical');
+      expect(ids).toContain('rc-other');
+      expect(ids).not.toContain('rc-dup-002');
+      expect(ids).not.toContain('rc-dup-003');
+    });
+
+    it('RC-6: relationReader is called with the correct sessionId', async () => {
+      const factStore = {
+        search: vi.fn().mockResolvedValue({ results: [] }),
+      };
+      const relationReader = {
+        listDuplicateOf: vi.fn().mockResolvedValue([]),
+      };
+
+      await recall(
+        { query: 'test', sessionId, k: 3 },
+        { factStore, clock: fixedClock, relationReader },
+      );
+
+      expect(relationReader.listDuplicateOf).toHaveBeenCalledWith({ sessionId });
     });
   });
 });

@@ -9,6 +9,7 @@
 
 import type { SessionId, FactId } from '@akubly/types';
 import type { ClockProvider } from './clock.js';
+import type { RelationReader } from '../representation/relation.js';
 import {
   InvalidFeedbackOptionsError,
   InvalidTrustValueError,
@@ -149,6 +150,18 @@ export interface RecallDeps {
   ranker?: Ranker;
   /** Optional logger for attention-tier warnings; defaults to console. */
   logger?: { warn(msg: string): void };
+  /**
+   * Optional read seam for `duplicate_of` edges written by `integrate`.
+   * When provided, `recallWithScores` suppresses any candidate whose `factId`
+   * appears as a non-canonical duplicate (`from` side of an edge). The
+   * canonical fact (`to` side) is kept and surfaces normally.
+   *
+   * Callers that do not run `integrate` can omit this dep — the absence is
+   * treated as "no edges known" and recall behaves identically to before.
+   * Overfetch is increased when this dep is present to compensate for
+   * collapsed candidates.
+   */
+  relationReader?: RelationReader;
 }
 
 // TODO(M5+): per-call trustFloor override via RecallOptions — needs §-decision;
@@ -241,7 +254,12 @@ export async function recallWithScores(
   }
 
   // C3: Overfetch so the post-BM25 ranker has a meaningful candidate set to reorder.
-  const { results: candidates } = await factStore.search({ query, sessionId, limit: k * RANKER_OVERFETCH_FACTOR, minTrust: TRUST_FLOOR });
+  // When a relationReader is present, bump the overfetch by an extra k to compensate
+  // for candidates that will be collapsed (non-canonical duplicates suppressed).
+  const overfetchLimit = deps.relationReader
+    ? k * (RANKER_OVERFETCH_FACTOR + 1)
+    : k * RANKER_OVERFETCH_FACTOR;
+  const { results: candidates } = await factStore.search({ query, sessionId, limit: overfetchLimit, minTrust: TRUST_FLOOR });
   const nowMs = clock.now();
 
   // Belt-and-suspenders: FactStore.search() now receives minTrust and filters at the data
@@ -249,9 +267,22 @@ export async function recallWithScores(
   // mock or future implementation does not honor minTrust, no below-floor facts reach the ranker.
   const trusted = candidates.filter(f => f.trust >= TRUST_FLOOR);
 
-  // C1: Collect unknown tier values across all trusted candidates for a single deduped warn.
+  // Duplicate collapse: if a RelationReader is wired in, load duplicate_of edges and
+  // suppress any candidate whose factId is on the 'from' side (non-canonical dup).
+  // Canonicals ('to' side) surface normally. Deterministic: Set membership check.
+  // Storage is never mutated — collapse is purely a view-layer operation.
+  let deduped = trusted;
+  if (deps.relationReader) {
+    const edges = await deps.relationReader.listDuplicateOf({ sessionId });
+    if (edges.length > 0) {
+      const dupSet = new Set<string>(edges.map(e => e.from as string));
+      deduped = trusted.filter(f => !dupSet.has(f.factId as string));
+    }
+  }
+
+  // C1: Collect unknown tier values across all candidates for a single deduped warn.
   const unknownTiers = new Set<string>();
-  for (const f of trusted) {
+  for (const f of deduped) {
     if (ATTENTION_MULTIPLIERS[f.attentionTier] === undefined) {
       unknownTiers.add(String(f.attentionTier));
     }
@@ -260,8 +291,8 @@ export async function recallWithScores(
   // C2: Trust the Ranker's returned order — do NOT re-sort. The Ranker owns final ordering.
   // Inline path: sort descending by composite score as before.
   const scored = ranker
-    ? ranker(trusted, { nowMs })
-    : trusted.map(f => ({ fact: f, score: compositeScore(f, nowMs) }))
+    ? ranker(deduped, { nowMs })
+    : deduped.map(f => ({ fact: f, score: compositeScore(f, nowMs) }))
              .sort((a, b) => b.score - a.score);
 
   // C1: Emit ONE warn per recallWithScores call for all unrecognised tier values found.
