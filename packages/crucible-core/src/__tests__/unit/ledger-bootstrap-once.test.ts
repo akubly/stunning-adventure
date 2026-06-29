@@ -42,6 +42,7 @@ function makeNonEmptyBackend(): WalBackend {
     async readRows(_opts: LedgerQueryOpts): Promise<LedgerEvent[]> {
       return [existing];
     },
+    async flush(): Promise<void> {},
   };
 }
 
@@ -60,6 +61,7 @@ function makeFlakyBackend(): WalBackend {
     async readRows(_opts: LedgerQueryOpts): Promise<LedgerEvent[]> {
       return [];
     },
+    async flush(): Promise<void> {},
   };
 }
 

@@ -126,6 +126,16 @@ export interface LedgerFactoryOptions {
     error: unknown,
     subscriber: LedgerSubscriber,
   ): void;
+  /**
+   * When true, the ledger is created in "already-bootstrapped" mode:
+   * the caller is reopening an existing session WAL and intends to call
+   * append() directly without calling bootstrap(). Calling bootstrap()
+   * on a reopened ledger throws immediately (duplicate-bootstrap guard).
+   *
+   * Use this when the walBackend was created against a session directory
+   * that already contains committed rows from a previous session open.
+   */
+  reopen?: boolean;
 }
 
 /**
@@ -260,4 +270,47 @@ export interface WalBackend {
    * Mirrors the Ledger.queryEvents({ range }) contract.
    */
   readRows(opts: LedgerQueryOpts): Promise<LedgerEvent[]>;
+
+  /**
+   * Flush all staged rows as one atomic group-commit batch (§3.5).
+   *
+   * Called explicitly when the caller needs to ensure all previously staged
+   * rows are durable before proceeding. LedgerImpl.bootstrap() calls this
+   * after staging all bootstrap rows to guarantee the entire batch commits in
+   * one fsync barrier (§3.8 bootstrap-batch atomicity). stageRow() bypasses
+   * the batchSize auto-flush gate, so atomicity holds regardless of backend
+   * configuration.
+   *
+   * On an in-memory backend this is a no-op (resolves immediately).
+   * On a file-system backend this triggers executeFlush() and resolves when
+   * the segment fdatasync has completed.
+   *
+   * Optional: backends that commit rows immediately (e.g. simple in-memory
+   * stores with no staging queue) may omit this method. LedgerImpl falls back
+   * to a no-op Promise.resolve() when flush is absent.
+   */
+  flush?(): Promise<void>;
+
+  /**
+   * Stage a row for group-commit without triggering auto-flush (optional).
+   *
+   * When implemented, LedgerImpl.bootstrap() calls this instead of commitRow()
+   * to stage all bootstrap rows before a single flush() — ensuring the entire
+   * batch commits in one fdatasync barrier regardless of batchSize.
+   *
+   * The returned Promise resolves with the commit offset when the batch that
+   * contains this row is flushed by an explicit flush() call.
+   * Callers MUST call flush() after staging all rows; staged rows remain
+   * pending until flush() is called.
+   *
+   * When absent, bootstrap() falls back to commitRow() per row.
+   * In-memory backends that commit synchronously in commitRow() can omit this.
+   */
+  stageRow?(
+    input: PrimitiveInput,
+    hookResult: HookResult & {
+      verdict: Exclude<HookVerdict, 'VETO'>;
+      hookId: string | null;
+    },
+  ): Promise<number>;
 }
