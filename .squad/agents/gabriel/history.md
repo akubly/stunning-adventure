@@ -232,3 +232,28 @@ git merge origin/main on main let git's merge=union driver auto-resolve .squad/d
 **Why no buffering matters for replay:** If the scheduler buffered proposals and drained them on a timer or depth threshold, the drain order could differ between original run and replay (different wall-clock timing, different OS scheduling). By dispatching synchronously on arrival with no side-effects, FifoScheduler makes the scheduler tier a no-op for replay correctness purposes — the WAL's scheduler_dispatched rows are already the complete dispatch log (§5.A.6).
 
 **Export discipline:** Exported only from fifo-scheduler.ts directly, not injected into index.ts (Graham owns the barrel; T2/T4 run in parallel). Consumers import via '../skeleton/fifo-scheduler.js'.
+
+### 2026-06-28 — ADR-0024 Authoring: Explicit L3.5 Scheduler Tier
+
+**Gate 1.5 Completion:** Final unwritten gated ADR for Phase 0.5. Tier rationale locked before Router + Scheduler phase-1 implementation begins.
+
+**Key insight — Dispatch vs. Policy separation:** The Scheduler tier isolates dispatch ordering (L3.5 responsibility) from approval policy (L4 Router responsibility). This separation is load-bearing:
+- **Determinism:** FifoScheduler (stateless, immediate dispatch) ensures replay output is byte-identical (same proposals in → same scheduler_dispatched stream out).
+- **Fairness:** WeightedRoundRobinScheduler (Phase 1, A-Sched-2/3 gates) adds back-pressure + fair queuing without coupling to Router policy logic.
+- **Instruction-trace visibility:** Dispatch events become first-class WAL rows, making RAW/WAR/WAW hazards detectable (generator A's output → generator B's input becomes visible in dispatch order).
+
+**Hardware analogy grounding:** Out-of-order-execution dispatch units in CPUs inspired the tier concept (Erasmus US-E-13 + rubber-duck convergence under 3+ agent missing-concept threshold). Generators are execution pipes; Scheduler is the dispatch unit; Router is the pipeline; Applier is memory-system commit.
+
+**Graduation criteria clarity:** ADR documents all four A-Sched gates so Phase 1 knows the target before refactoring Router:
+- A-Sched-1 (v0.5): Replay determinism ✅ FifoScheduler
+- A-Sched-2 (Phase 1): Back-pressure via quanta budgeting → scheduler_deferred event
+- A-Sched-3 (Phase 1): Quanta exhaustion per generator per budget window
+- A-Sched-4 (Phase 1): Fair dispatch (no starvation) via weighted-fair queuing
+
+**Files created:** `docs/adr/0024-explicit-l3-5-scheduler-tier.md` (14 KB, 217 lines)
+
+**Learnings for future ADRs:**
+1. Hardware analogies clarify why a tier exists (dispatch units ↔ Scheduler), but ground them in the actual agentic problem first (determinism, fairness, trace visibility)
+2. Graduation criteria in the ADR prevent Phase 1 authors from making different assumptions about the tier's evolution
+3. Rejected Option 1 (direct L3→L4) must explain *why* it breaks determinism and fairness, not just why it's less elegant — consequences ground the decision
+4. "Resolved Questions" section for previously open questions (ADR-0024 resolves why Scheduler exists and why it's v1, not v1.5) is a reviewability win; readers don't have to chase decisions.md
