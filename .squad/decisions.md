@@ -1,3 +1,54 @@
+# Issue #83 — curator.test.ts: 3 Test Failures Root-Caused and Fixed
+
+**Author:** Gabriel  
+**Date:** 2026-06-27T22:38:17.318-07:00  
+**Status:** RESOLVED
+
+---
+
+## Root Cause
+
+**Stale test expectation (date rot) — NOT a regression in `curate()`.**
+
+Three tests in `packages/cairn/src/__tests__/curator.test.ts` (group "profile build inside curate()") inserted `signal_samples` rows with hardcoded `collectedAt: '2026-06-11 00:00:00'` dates. By 2026-06-27 those dates were 16 days old — beyond the 7-day TTL (`SIGNAL_SAMPLE_TTL_MS`).
+
+`curate()` runs `sweepSignalSamples()` **before** `buildProfiles()` (correct design: sweep the bounded set first, then build profiles from clean data). The sweep deleted all the 16-day-old rows, so `buildProfiles` found an empty table, returned `profilesBuilt: 0`, and nothing was written to `execution_profiles`. The implementation was correct throughout.
+
+## Evidence Distinguishing Regression vs Stale Test
+
+| Signal | Value |
+|--------|-------|
+| "BuildResult carries durationMs" test (also uses June 12 dates) | **Passes** — only asserts `durationMs >= 0` (true even when rows=0 produces durationMs=0) |
+| "sweep/cap runs BEFORE buildProfiles" test (uses `new Date().toISOString()`) | **Passes** — proves sweep + build both work correctly with live dates |
+| "should complete curate() and run sweepChangeVectors even if buildProfiles throws" | **Passes** — sweep/cap path is independent of build |
+
+All three passing tests work correctly. The 3 failures share exactly one trait: hardcoded old dates.
+
+## Resolution
+
+**File changed:** `packages/cairn/src/__tests__/curator.test.ts`
+
+Replaced the 3 hardcoded `'2026-06-11 ...'` date strings with dynamic expressions:
+
+- `new Date(Date.now() - 120_000).toISOString()` (2 min ago)
+- `new Date(Date.now() - 60_000).toISOString()` (1 min ago)
+- `new Date(now - 180_000).toISOString()`, `new Date(now - 120_000).toISOString()`, `new Date(now - 60_000).toISOString()` (ordering test)
+
+No changes to production code. `curate()`, `buildProfiles()`, `sweepSignalSamples()`, and `sweepChangeVectors()` are all unchanged.
+
+## Test Results
+
+- `npx vitest run src/__tests__/curator.test.ts`: **49/49 passed**
+- `npm test` (full cairn suite): **752/752 passed**
+
+## Pattern for Future Reference
+
+Any test that inserts rows with fixed-date `collectedAt` values into a table with a TTL sweep will rot as calendar time advances. Use `new Date(Date.now() - N).toISOString()` for "recent" samples intended to survive TTL. Only use explicit far-past dates (e.g. `'2020-01-01T00:00:00.000Z'`) when the intent is for the sweep to remove them.
+
+
+---
+
+```bash
 # Imprint Slice — Persona Review Cycle 1 Fix Dispositions
 
 **Author:** Crispin (Knowledge Representation Specialist)  
@@ -381,6 +432,7 @@ bash -n .github/hooks/cairn/shell-init.sh
 bash -n .github/hooks/cairn/install.sh
 bash -n .github/hooks/cairn/uninstall.sh
 
+ # 2. Install (idempotent — run twice to confirm second run is no-op)
 
 
 
@@ -1377,25 +1429,25 @@ bash .github/hooks/cairn/install.sh   # should print "already installed"
 
 
 
-# 3. Reload and smoke-check
+ # 3. Reload and smoke-check
 source ~/.bashrc
 forge_mcp_check
 
 
 
 
-# 4. Uninstall
+ # 4. Uninstall
 bash .github/hooks/cairn/uninstall.sh
 source ~/.bashrc
 
 
 
-# forge_mcp_check should no longer exist as a function
+ # forge_mcp_check should no longer exist as a function
 
 
 
 
-# 5. Re-install (confirm idempotency survived uninstall cycle)
+ # 5. Re-install (confirm idempotency survived uninstall cycle)
 bash .github/hooks/cairn/install.sh
 source ~/.bashrc
 forge_mcp_check
@@ -1410,7 +1462,7 @@ uninstall script removes the exact block. No manual editing required.
 
 
 
-# PR #45 — Second Merge from origin/main (2026-06-05)
+ # PR #45 — Second Merge from origin/main (2026-06-05)
 
 **Author:** Gabriel (Infrastructure)
 **Branch:** squad/crucible-sprint-0-walkthrough-a
@@ -1466,7 +1518,7 @@ Not pushed — Roger has follow-up fixes to land on top; coordinator will push a
 
 
 
-# 2026-06-06: Aaron's User Directive — Parallelization and TDD Discipline
+ # 2026-06-06: Aaron's User Directive — Parallelization and TDD Discipline
 
 **By:** Aaron Kubly (via Copilot)  
 **Directive:** When parallelizing work, do NOT go parallel if it requires deviating from RED→GREEN TDD execution. TDD discipline (RED test fails first, then minimal GREEN, then REFACTOR) takes priority over parallelism. Parallel work is only permitted at TDD-safe boundaries (e.g., independent RED tests, interface/seam contracts) — never GREEN-before-RED, never shared-impl-before-seam.  
@@ -1477,7 +1529,7 @@ Not pushed — Roger has follow-up fixes to land on top; coordinator will push a
 
 
 
-# 2026-06-06: Aaron's Ruling — HookVerdict VETO Semantics (resolves graham-ledger-seam-OPEN)
+ # 2026-06-06: Aaron's Ruling — HookVerdict VETO Semantics (resolves graham-ledger-seam-OPEN)
 
 **By:** Aaron Kubly (via Copilot)  
 **Decision:** Option A — Adopt **VETO** as a first-class **pre-WAL Ledger-layer gate**.
@@ -1500,116 +1552,7 @@ Not pushed — Roger has follow-up fixes to land on top; coordinator will push a
 
 
 
-# Decision — Append-Only History Rule Reinterpreted (Supersedes Issue #71 Decision B)
-
-**By:** Aaron Kubly (akubly)  
-**Date:** 2026-06-16  
-**Type:** Governance / Rules Clarification  
-**Status:** ACCEPTED — establishes correct interpretation going forward
-
----
-
-## What Was Corrected
-
-The Append-Only History Rule, originally stated as a blanket prohibition on any modification to
-`history.md` and `history-archive.md`, was overstated. The correct interpretation:
-
-**Append-only refers to HOW new content is added to these files**, not a prohibition on
-condensation:
-
-- New entries are always **appended to the end of the file**, never interleaved or rewritten in
-  place. This property is what makes these files safe to merge via the `.gitattributes
-  merge=union` driver.
-- **Condensation is sanctioned and lossless:** Scribe (and the `squad nap` tool) are intended to
-  periodically condense old `history.md` entries by relocating them verbatim into
-  `history-archive.md`, keeping the most recent N entries live in `history.md`.
-- Archive files (`history-archive.md`, `decisions-archive.md`) are append-only targets — they
-  only grow, never shrink or have existing content overwritten.
-
-## Supersession
-
-**Decision: Issue #71 Decision B, Option A** ("Drop size management, no deletions ever") is
-**SUPERSEDED** by this reinterpretation.
-
-The prior "Option C" (recency-based archival: move old entries to archive, delete from
-history.md) is now the **sanctioned strategy**, provided:
-1. Archived entries are preserved **verbatim** in `history-archive.md`
-2. Archive files are **append-only** — they never lose pre-existing content
-3. The `history.md` tail is truncated AFTER entries are appended to the archive (history is
-   lossless overall)
-
-## Rationale
-
-Scribe's spawn template included a "HISTORY SUMMARIZATION" gate that was flagged as a violation
-because it edited previously-committed history entries. This was correctly identified as a scope
-violation — but the underlying policy was mischaracterized as "no size management ever." The
-team intended size management all along; the error was HOW it was attempted (dropping data vs.
-moving it).
-
-The `squad nap` condensation output (appending old entries to history-archive.md verbatim,
-then truncating history.md tail) is now **legal and correct** provided the archive grows and
-nothing is lost.
-
-## Action Items
-
-- ✅ `squad nap` history-condensation diffs in the working tree (moving entries to
-  history-archive.md, truncating history.md tail) are safe to commit and push.
-- ✅ Future Scribe spawns and automated naps may condense history.md per the Option-C strategy.
-
----
-
-
-
-
-# 1. Syntax check
-bash -n .github/hooks/cairn/shell-init.sh
-bash -n .github/hooks/cairn/install.sh
-bash -n .github/hooks/cairn/uninstall.sh
-
-
-
-
-# 2. Install (idempotent — run twice to confirm second run is no-op)
-bash .github/hooks/cairn/install.sh
-bash .github/hooks/cairn/install.sh   # should print "already installed"
-
-
-
-
-# 3. Reload and smoke-check
-source ~/.bashrc
-forge_mcp_check
-
-
-
-
-# 4. Uninstall
-bash .github/hooks/cairn/uninstall.sh
-source ~/.bashrc
-
-
-
-# forge_mcp_check should no longer exist as a function
-
-
-
-
-# 5. Re-install (confirm idempotency survived uninstall cycle)
-bash .github/hooks/cairn/install.sh
-source ~/.bashrc
-forge_mcp_check
-```
-
-## Key design note
-
-The marker block strategy (`# forge-mcp: shell init — start`) is the safe pattern
-for managed rc-file entries. The install script will never double-append, and the
-uninstall script removes the exact block. No manual editing required.
-
-
-
-
-# PR #45 — Second Merge from origin/main (2026-06-05)
+ # PR #45 — Second Merge from origin/main (2026-06-05)
 
 **Author:** Gabriel (Infrastructure)
 **Branch:** squad/crucible-sprint-0-walkthrough-a
@@ -1665,7 +1608,7 @@ Not pushed — Roger has follow-up fixes to land on top; coordinator will push a
 
 
 
-# 2026-06-06: Aaron's User Directive — Parallelization and TDD Discipline
+ # 2026-06-06: Aaron's User Directive — Parallelization and TDD Discipline
 
 **By:** Aaron Kubly (via Copilot)  
 **Directive:** When parallelizing work, do NOT go parallel if it requires deviating from RED→GREEN TDD execution. TDD discipline (RED test fails first, then minimal GREEN, then REFACTOR) takes priority over parallelism. Parallel work is only permitted at TDD-safe boundaries (e.g., independent RED tests, interface/seam contracts) — never GREEN-before-RED, never shared-impl-before-seam.  
@@ -1677,7 +1620,7 @@ Not pushed — Roger has follow-up fixes to land on top; coordinator will push a
 
 
 
-# Forge production runner integration (slice 1)
+ # Forge production runner integration (slice 1)
 
 **Date:** 2026-06-22
 **By:** Alexander (SDK/Runtime), with Roger (Platform) lifecycle guidance; shipped in PR #82 (squash 9f24aa8).
@@ -1702,7 +1645,7 @@ Not pushed — Roger has follow-up fixes to land on top; coordinator will push a
 
 
 
-# Forge Runner — Slice 2 Decision (A+D)
+ # Forge Runner — Slice 2 Decision (A+D)
 
 **Date:** 2026-06-22  
 **By:** Graham (Lead), Aaron approved; implemented by Alexander (SDK/Runtime, 2A) and Roger (Platform, 2D)  

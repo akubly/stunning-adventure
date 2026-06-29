@@ -688,9 +688,10 @@ describe('profile build inside curate()', () => {
   });
 
   it('should surface profileBuild on CurateResult when signal_samples exist', async () => {
+    const now = Date.now();
     insertSignalSamples(db, [
-      { kind: 'drift', sessionId, skillId: 'skill-a', value: 0.5, collectedAt: '2026-06-11 00:00:00' },
-      { kind: 'drift', sessionId, skillId: 'skill-a', value: 0.6, collectedAt: '2026-06-11 00:01:00' },
+      { kind: 'drift', sessionId, skillId: 'skill-a', value: 0.5, collectedAt: new Date(now - 120_000).toISOString() },
+      { kind: 'drift', sessionId, skillId: 'skill-a', value: 0.6, collectedAt: new Date(now - 60_000).toISOString() },
     ]);
 
     const result = await curate();
@@ -704,7 +705,7 @@ describe('profile build inside curate()', () => {
 
   it('should build execution_profiles before sweepChangeVectors runs', async () => {
     insertSignalSamples(db, [
-      { kind: 'drift', sessionId, skillId: 'skill-b', value: 0.4, collectedAt: '2026-06-11 00:00:00' },
+      { kind: 'drift', sessionId, skillId: 'skill-b', value: 0.4, collectedAt: new Date(Date.now() - 60_000).toISOString() },
     ]);
 
     const result = await curate();
@@ -739,10 +740,11 @@ describe('profile build inside curate()', () => {
     const SKILL = 'skill-order-proof';
 
     // 3 distinct session IDs → aggregateSignals counts 3 sessions
+    const now = Date.now();
     insertSignalSamples(db, [
-      { kind: 'drift', sessionId: 'ord-sess-1', skillId: SKILL, value: 0.3, collectedAt: '2026-06-11 00:00:00' },
-      { kind: 'drift', sessionId: 'ord-sess-2', skillId: SKILL, value: 0.4, collectedAt: '2026-06-11 00:01:00' },
-      { kind: 'drift', sessionId: 'ord-sess-3', skillId: SKILL, value: 0.2, collectedAt: '2026-06-11 00:02:00' },
+      { kind: 'drift', sessionId: 'ord-sess-1', skillId: SKILL, value: 0.3, collectedAt: new Date(now - 180_000).toISOString() },
+      { kind: 'drift', sessionId: 'ord-sess-2', skillId: SKILL, value: 0.4, collectedAt: new Date(now - 120_000).toISOString() },
+      { kind: 'drift', sessionId: 'ord-sess-3', skillId: SKILL, value: 0.2, collectedAt: new Date(now - 60_000).toISOString() },
     ]);
 
     // Applied hint with a legacy snapshot (no sessionCount field).
@@ -814,12 +816,13 @@ describe('profile build inside curate()', () => {
 
   it('BuildResult carries durationMs (non-negative number)', async () => {
     insertSignalSamples(db, [
-      { kind: 'drift', sessionId, skillId: 'skill-dur', value: 0.3, collectedAt: '2026-06-12 00:00:00' },
+      { kind: 'drift', sessionId, skillId: 'skill-dur', value: 0.3, collectedAt: new Date(Date.now() - 60_000).toISOString() },
     ]);
 
     const result = await curate();
 
     expect(result.profileBuild).toBeDefined();
+    expect(result.profileBuild!.profilesBuilt).toBeGreaterThan(0);
     expect(typeof result.profileBuild!.durationMs).toBe('number');
     expect(result.profileBuild!.durationMs).toBeGreaterThanOrEqual(0);
   });

@@ -199,6 +199,29 @@ git merge origin/main on main let git's merge=union driver auto-resolve .squad/d
 
 **Why nap compaction was deferred:** stash@{0} contained a squad nap compaction of histories/decisions alongside 2 unrelated pre-existing edits. Applying the compaction via stash pop would have entangled the unrelated edits and potentially silently overwritten verbose append-only content with condensed summaries. The correct sequencing is: push clean bookkeeping to main first, then run squad nap cleanly on top of main so the compaction is an explicit, reviewable, standalone commit.
 
+### 2026-06-27 — Issue #83: Stale Hardcoded Dates in curator.test.ts (TTL Rot)
+
+**Root cause:** Stale test expectation — NOT a regression in `curate()`. Three tests in the "profile build inside curate()" group inserted `signal_samples` rows with hardcoded `collectedAt: '2026-06-11 00:00:00'` dates. By 2026-06-27 those dates were 16 days old — beyond the 7-day TTL. `curate()` calls `sweepSignalSamples()` *before* `buildProfiles()`, so the sweep deleted those rows. `buildProfiles` found an empty table, returned `profilesBuilt: 0`, and no execution_profiles were written. The implementation order was correct throughout.
+
+**Which side was wrong:** Tests. The dates were correct when written but aged past the TTL as calendar time advanced — a classic "date rot" pattern.
+
+**Key evidence distinguishing regression vs stale test:**
+- The passing test "BuildResult carries durationMs" also uses old dates but only asserts `durationMs >= 0` (still true when rows=0 → durationMs=0). This asymmetry proves the sweep is working correctly, not broken.
+- The passing test "sweep/cap runs BEFORE buildProfiles" uses `new Date().toISOString()` for retained rows and demonstrates that build works fine with live dates.
+
+**Fix:** Replaced all 3 hardcoded `'2026-06-11 ...'` date strings with `new Date(Date.now() - N).toISOString()` expressions (N = 60_000 to 180_000 ms) so samples are always within the 7-day TTL window regardless of when the test runs.
+
+**Key files:**
+- `packages/cairn/src/__tests__/curator.test.ts` — the fix (lines ~691–746)
+- `packages/cairn/src/agents/curator.ts` — `curate()` sweep-then-build order (correct, unchanged)
+- `packages/cairn/src/db/signalSamples.ts` — `sweepSignalSamples()` (correct, unchanged)
+
+**Test results:** 49/49 curator tests green; 752/752 full cairn suite green.
+
+- 2026-06-28: Missed one — `skill-dur / BuildResult carries durationMs` also had hardcoded `'2026-06-12 00:00:00'`; passed trivially because `durationMs >= 0` is true even for 0 samples; fixed with `new Date(Date.now() - 60_000).toISOString()` in commit `5337f3e`.
+
+**Pattern to remember:** Any test that inserts rows with fixed-date `collectedAt` values into a table with a TTL sweep will rot as calendar time advances. Use `new Date(Date.now() - N).toISOString()` for "recent" samples; use explicit past dates (e.g. `'2020-01-01T00:00:00.000Z'`) only when you *want* the sweep to remove them.
+
 📌 **Team update (2026-06-26T19:29:13Z):** eureka/integrate-slice — Test Type-Check Gate SHIPPED (commit baa4cb2). Gabriel infrastructure change: added dedicated test-inclusive type-check gate to eureka CI (tsconfig.typecheck.json + typecheck script + ci.yml step). Durable team convention established: **Test files MUST be type-checked via the dedicated gate in CI.** Gate is working as designed — intentionally red, catching phantom imports (FactReader, RelationWriter, RelationEdge) and pre-existing test type errors that no other CI tool catches. Next: Laura aligns test imports, Crispin seam rename resolves cleanup() mismatches. — Scribe
 ### 2026-06-16 — FifoScheduler Determinism Contract (Crucible S3 Skeleton, T3)
 
