@@ -80,10 +80,10 @@ DELETE FROM signal_samples WHERE collected_at < ?
 ```
 where `?` is an ISO 8601 string like `'2026-06-20T22:00:00.000Z'`.
 
-SQLite compares strings lexicographically. Both `'2026-06-11 00:00:00'` (space separator) and `'2026-06-20T22:00:00.000Z'` (T separator) sort correctly because the year-month-day prefix is identical in format. However, for precision and consistency, always use `new Date().toISOString()` format (with `T` and `Z`) for inserted rows in tests.
+SQLite compares strings lexicographically. The TTL sweep is only correct when `collected_at` and the cutoff string use the **same sortable ISO 8601 format**. A space separator (`'2026-06-11 00:00:00'`) sorts *before* `'T'` in ASCII, so a space-separated row and a `T`-separated cutoff of the same nominal timestamp will mis-order — the row may be swept unexpectedly or spared when it should be deleted. Always store `collected_at` using `new Date().toISOString()` (with `T` and `Z`) to match the format produced by `new Date(...).toISOString()` in the sweep's cutoff; or normalize both sides in SQL (e.g. `REPLACE(collected_at, ' ', 'T')`) if legacy data exists.
 
 ---
 
 ## Instances Fixed
 
-- **Issue #83** — `packages/cairn/src/__tests__/curator.test.ts`, 3 tests in "profile build inside curate()" group (2026-06-27).
+- **Issue #83** — `packages/cairn/src/__tests__/curator.test.ts`, 4 occurrences fixed: 3 failing tests in "profile build inside curate()" group (hardcoded June 11 dates, 2026-06-27) + 1 silently-passing sibling (`BuildResult carries durationMs`, hardcoded June 12 date, 2026-06-28). The sibling also received a structural `profilesBuilt > 0` assertion to prevent future empty-path false-passes.
