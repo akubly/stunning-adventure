@@ -331,6 +331,6 @@ session-reopen seam compatibility.
   monotonicity — this is what the replay engine relies on for causal order
   reconstruction. FIFO tests belong in the WAL layer, not the scheduler unit tests.
 
-**Decisions logged:** `.squad/decisions/inbox/laura-s4-replay.md`
+**Decisions logged:** (pending merge to `.squad/decisions.md`)
 
 — Laura (2026-06-27T22:38:31-07:00)
