@@ -220,12 +220,13 @@ git merge origin/main on main let git's merge=union driver auto-resolve .squad/d
 
 **Hardware analogy grounding:** Out-of-order-execution dispatch units in CPUs inspired the tier concept (Erasmus US-E-13 + rubber-duck convergence under 3+ agent missing-concept threshold). Generators are execution pipes; Scheduler is the dispatch unit; Router is the pipeline; Applier is memory-system commit.
 
-**Graduation criteria clarity:** ADR documents all three A-Sched gates so Phase 1 knows the target before refactoring Router:
+**Graduation criteria clarity:** ADR documents all four A-Sched gates so Phase 1 knows the target before refactoring Router:
 - A-Sched-1 (v0.5): Replay determinism ✅ FifoScheduler
 - A-Sched-2 (Phase 1): Back-pressure via quanta budgeting → scheduler_deferred event
-- A-Sched-3 (Phase 1): Fair dispatch (no starvation) via weighted-fair queuing
+- A-Sched-3 (Phase 1): Quanta exhaustion per generator per budget window
+- A-Sched-4 (Phase 1): Fair dispatch (no starvation) via weighted-fair queuing
 
-**Files created:** `docs/adr/0024-explicit-l3-5-scheduler-tier.md` (14 KB, 400+ lines)
+**Files created:** `docs/adr/0024-explicit-l3-5-scheduler-tier.md` (14 KB, 217 lines)
 
 **Learnings for future ADRs:**
 1. Hardware analogies clarify why a tier exists (dispatch units ↔ Scheduler), but ground them in the actual agentic problem first (determinism, fairness, trace visibility)
