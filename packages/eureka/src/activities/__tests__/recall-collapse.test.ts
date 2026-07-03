@@ -10,7 +10,9 @@
  * ## Contract
  *
  * When `deps.relationReader` is present, `recallWithScores` MUST:
- *   1. Call `listDuplicateOf({ sessionId })` exactly once per invocation.
+ *   1. Call `listDuplicateOf({ sessionId })` once per fetched page; during
+ *      multi-page backfill this means one call per page, not one call per
+ *      top-level `recall` invocation.
  *   2. Build the dup-id set from the returned `from` fields.
  *   3. Remove any scored candidate whose `factId` is in the dup-id set
  *      (non-canonical / duplicate suppression).
@@ -27,6 +29,7 @@
  *   RC-1  Canonical kept; its duplicate suppressed
  *   RC-2  N-way star collapse (3 dups all → canonical; all dropped)
  *   RC-3  RelationReader returns no edges → pass-through; seam IS called once
+ *         (one call per fetched page — single page in this scenario)
  *   RC-4  Absent relationReader dep → no collapse, full backward compat
  *   RC-5  k results returned after collapse via overfetch budget
  *   RC-6  Dup below trust floor: doubly excluded; canonical NOT suppressed
@@ -137,7 +140,7 @@ describe('recall duplicate_of collapse via RelationReader seam (RC)', () => {
     expect(ids).not.toContain(dup.factId);
     expect(results).toHaveLength(1);
 
-    // Seam must be consulted exactly once with the session under query.
+    // Seam must be consulted once per fetched page; single-page here so called exactly once.
     expect(reader.listDuplicateOf).toHaveBeenCalledOnce();
     expect(reader.listDuplicateOf).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: SESSION }),
@@ -192,12 +195,13 @@ describe('recall duplicate_of collapse via RelationReader seam (RC)', () => {
   //
   // When the RelationReader returns an empty edge list, the collapse step is a
   // no-op: all facts pass through unchanged. The seam MUST still be called once
-  // so the implementation cannot short-circuit by skipping the query entirely.
+  // per fetched page so the implementation cannot short-circuit by skipping the
+  // query entirely.
   //
   // Without the seam wired in, `listDuplicateOf` is never invoked. RED failure
   // on `toHaveBeenCalledOnce()`.
 
-  it('RC-3: when RelationReader returns no edges all facts pass through; listDuplicateOf is still called once', async () => {
+  it('RC-3: when RelationReader returns no edges all facts pass through; listDuplicateOf is still called once per fetched page', async () => {
     const factA = mkFact('no-edge-A', { trust: 0.9, relevance: 0.9, attentionTier: 'hot'  });
     const factB = mkFact('no-edge-B', { trust: 0.7, relevance: 0.7, attentionTier: 'warm' });
     const factC = mkFact('no-edge-C', { trust: 0.5, relevance: 0.5, attentionTier: 'cold' });
