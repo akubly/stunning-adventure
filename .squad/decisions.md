@@ -15,9 +15,9 @@
 ### Fixes Applied
 ✓ Default-on collapse behavior explicit  
 ✓ K-tests restored for candidateIds narrowing  
-✓ Backfill loop bounded with cap (MAX_BACKFILL_RETRIES = 5)  
-✓ CandidateIds query chunked (CHUNK_SIZE=1000)  
-✓ Seam→storage contract defined (ReaderStorageContract interface)  
+✓ Backfill loop bounded with cap (MAX_BACKFILL_PAGES = 10)  
+✓ CandidateIds query chunked (SQLITE_VARIABLE_CHUNK = 900)  
+✓ RelationReader port moved to src/storage/relation-reader.types.ts (symmetric with RelationWriter)  
 ✓ Empty-array contract explicit with guards and tests  
 ✓ Reader exports complete; all public functions in src/index.ts  
 ✓ Error messages enhanced with context on candidateIds filtering
@@ -763,7 +763,7 @@ Aaron's reframe (2026-06-24T22:33): Integrate is a **post-imprint consolidation 
 **File:** packages/eureka/src/activities/integrate.ts
 
 **Signature:**
-`	s
+`ts
 export async function integrate(
   options: IntegrateOptions,
   deps: IntegrateDeps,
@@ -780,20 +780,20 @@ export async function integrate(
 **Algorithm (normative):**
 1. Validate options.sessionId (non-empty string after trim) — throw InvalidIntegrateError if bad (sync, before first await).
 2. Fetch facts via deps.factReader.listBySession({ sessionId }) (oldest→newest, returns {factId, content, createdAt}).
-3. Pair-scan O(n²): For each i,j where i < j, if acts[i].content.trim() === facts[j].content.trim(), record the pair with orientation newer→older.
+3. Pair-scan O(n²): For each i,j where i < j, if facts[i].content.trim() === facts[j].content.trim(), record the pair with orientation newer→older.
 4. **Topology: STAR-TO-CANONICAL** — all newer duplicates point to the single oldest (not a chain). Idempotent under late arrivals.
 5. Write edges via deps.relationWriter.writeEdges(edges) → returns count of newly inserted edges.
-6. Return report with dgesWritten = 0 on idempotent re-run (UNIQUE constraint dedupe).
+6. Return report with edgesWritten = 0 on idempotent re-run (UNIQUE constraint dedupe).
 
 **Error contract:**
-- InvalidIntegrateError (new, in ctivities/errors.ts): code: 'INVALID_INTEGRATE', ield: 'sessionId'. Mirrors InvalidImprintError shape.
+- InvalidIntegrateError (new, in activities/errors.ts): code: 'INVALID_INTEGRATE', field: 'sessionId'. Mirrors InvalidImprintError shape.
 - FactReader / RelationWriter errors propagate unwrapped.
 
 ### Representation Layer (Crispin — Wave 1 substrate shipped)
 
-**Migration 003 — act_relations table:**
+**Migration 003 — fact_relations table:**
 - Columns: (from_fact_id, to_fact_id, relation_kind, session_id, weight, confidence, created_at).
-- CHECK constraint: elation_kind IN ('duplicate_of', 'supersedes', 'contradicts', 'supports') (v1 writes ONLY duplicate_of; others reserved).
+- CHECK constraint: relation_kind IN ('duplicate_of', 'supersedes', 'contradicts', 'supports') (v1 writes ONLY duplicate_of; others reserved).
 - UNIQUE on (session_id, from_fact_id, to_fact_id, relation_kind) → idempotent ON CONFLICT DO NOTHING.
 - Two predicate indices: (session_id, from_fact_id, relation_kind) and (session_id, to_fact_id, relation_kind).
 
@@ -821,7 +821,7 @@ export async function integrate(
 **Key test decisions (Laura):**
 - TD-1: STAR-TO-CANONICAL topology for 3+ identical facts (two edges to oldest, never chain).
 - TD-2: Synchronous validation of sessionId before first await (no seam touched on error).
-- TD-3: Deterministic pair ordering by createdAt ASC, then actId ASC (byte-stable idempotency).
+- TD-3: Deterministic pair ordering by createdAt ASC, then factId ASC (byte-stable idempotency).
 - TD-4: Trim-only normalization ("hello" matches "  hello  "; no internal whitespace collapse).
 - TD-5: Imprint losslessness pinned by two independent tests (both dups still recallable; imprint yields 2 distinct FactIds).
 
@@ -829,16 +829,16 @@ export async function integrate(
 
 **Wave 1 (Crispin — Substrate):** ✅ SHIPPED 2026-06-24T22:39  
 - Migration 003 + 7 new migration tests (MIG-7..MIG-13).
-- epresentation/ directory with Relation, RelationKind, alidateRelation, InvalidRelationError.
+- representation/ directory with Relation, RelationKind, validateRelation, InvalidRelationError.
 - RelationWriter interface + SqliteRelationWriter + InMemoryRelationWriter + 48 contract tests (RW-1..RW-14 × 2 wirings).
 - FactReader.listBySession extension + 3 new contract tests (CL-6..CL-8).
-- actId on RecallResult (F9 carry-over from imprint review: write→read symmetry).
+- factId on RecallResult (F9 carry-over from imprint review: write→read symmetry).
 - Build: 
 pm run build ✓ • 
 pm test 319 passing (baseline 258 + 61 new).
 
 **Wave 2 (Crispin — Activity + Genesta/Laura coordination):** ✅ SHIPPED 2026-06-25T00:17  
-- ctivities/integrate.ts — the consolidation-pass algorithm (pair-scan, STAR-TO-CANONICAL edges, report).
+- activities/integrate.ts — the consolidation-pass algorithm (pair-scan, STAR-TO-CANONICAL edges, report).
 - IntegrateDeps injection + composition root createSqliteIntegrateDeps(db).
 - InvalidIntegrateError class (mirrors InvalidImprintError).
 - RelationWriter.writeEdges(batch) method added to support per-edge validation in txn.
@@ -846,7 +846,7 @@ pm test 319 passing (baseline 258 + 61 new).
 - Public API exports: imprint, integrate, IntegrateOptions, IntegrateDeps, IntegrationReport, RelationEdge, InvalidIntegrateError.
 - Build: 
 pm run build ✓ • 
-pm test 349 passing / 1 cosmetic (Laura's IT-S1 SQL column name mismatch — reconciled to locked schema elation_kind).
+pm test 349 passing / 1 cosmetic (Laura's IT-S1 SQL column name mismatch — reconciled to locked schema relation_kind).
 - **Full suite GREEN:** 350/350 after Laura's schema naming reconciliation on IT-S1.
 
 ### Surviving Prior Decisions (Option B disposition)
@@ -2678,23 +2678,23 @@ Closing this inbox entry as informational. Tests are in and green.
 
 #### C — Backfill loop for high dup density
 - **Was:** Single overfetch page; could undersupply k when all candidates collapse.
-- **Fix:** do...while loop: fetches additional pages with cursor until collapsed.length >= k or no nextCursor. Loop only fires when elationReader present. +1 test (RC-HD).
+- **Fix:** do...while loop: fetches additional pages with cursor until collapsed.length >= k or no nextCursor. Loop only fires when relationReader present. +1 test (RC-HD).
 
 #### D — listDuplicateOf scoped to candidateIds (avoid O(E) scan)
 - **Was:** listDuplicateOf({ sessionId }) loaded all session edges per recall.
-- **Fix:** Interface gains candidateIds?: ReadonlyArray<FactId>. SqliteRelationReader builds WHERE from_fact_id IN (...) dynamically. InMemoryRelationReader filters post-query. ecallWithScores passes per-page candidateIds. All 	oHaveBeenCalledWith assertions updated to objectContaining({ sessionId }).
+- **Fix:** Interface gains candidateIds?: ReadonlyArray<FactId>. SqliteRelationReader builds WHERE from_fact_id IN (...) dynamically. InMemoryRelationReader filters post-query. recallWithScores passes per-page candidateIds. All toHaveBeenCalledWith assertions updated to objectContaining({ sessionId }).
 
 #### E — RelationReader moved to storage seam
-- **Was:** Port defined in epresentation/relation.ts; asymmetric with RelationWriter in storage/relation-writer.types.ts.
-- **Fix:** New file storage/relation-reader.types.ts holds the definition. epresentation/relation.ts re-exports for backward compat. storage/index.ts exports RelationReader.
+- **Was:** Port defined in representation/relation.ts; asymmetric with RelationWriter in storage/relation-writer.types.ts.
+- **Fix:** New file storage/relation-reader.types.ts holds the definition. representation/relation.ts re-exports for backward compat. storage/index.ts exports RelationReader.
 
 #### G — Export RANKER_OVERFETCH_FACTOR
 - **Was:** Magic number limit:20 in recall.test.ts RC-4.
-- **Fix:** RANKER_OVERFETCH_FACTOR exported from ecall.ts and index.ts. RC-4 computes 5 * (RANKER_OVERFETCH_FACTOR + 1).
+- **Fix:** RANKER_OVERFETCH_FACTOR exported from recall.ts and index.ts. RC-4 computes 5 * (RANKER_OVERFETCH_FACTOR + 1).
 
 ### MINOR (applied)
 
-- Renamed deduped → collapsed throughout ecallWithScores.
+- Renamed deduped → collapsed throughout recallWithScores.
 - Dropped redundant if (edges.length > 0) empty-guard.
 - Fixed stale comment from "across all candidates" → "collapsed".
 
@@ -2739,13 +2739,13 @@ Closing this inbox entry as informational. Tests are in and green.
 
 #### 4 — Tests added
 - storage/__tests__/relation-reader.contract.test.ts — RR-CIDS-1..5 (candidateIds=undefined/[]/[match]/[no-match]/session-isolation) for both InMemory and SQLite backends (+10 tests).
-- ecall-collapse.test.ts RC-CIDS-1: listDuplicateOf receives page factIds as candidateIds (+1).
-- ecall-collapse.test.ts RC-CIDS-2: empty trusted page → listDuplicateOf not called (+1).
-- ecall-sqlite-smoke.test.ts SD-DEFAULT-ON: createSqliteRecallDeps() with no options suppresses dup via default-on reader (+1).
+- recall-collapse.test.ts RC-CIDS-1: listDuplicateOf receives page factIds as candidateIds (+1).
+- recall-collapse.test.ts RC-CIDS-2: empty trusted page → listDuplicateOf not called (+1).
+- recall-sqlite-smoke.test.ts SD-DEFAULT-ON: createSqliteRecallDeps() with no options suppresses dup via default-on reader (+1).
 
 ### MINOR
 
-- MAX_BACKFILL_PAGES=10 safety cap in ecallWithScores; emits logger.warn when exhausted.
+- MAX_BACKFILL_PAGES=10 safety cap in recallWithScores; emits logger.warn when exhausted.
 - Comment in collapse path noting edges assumed well-formed (V-R3 self-loop guard enforced at write time).
 
 ## Rejected
