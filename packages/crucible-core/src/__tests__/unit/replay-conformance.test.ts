@@ -6,9 +6,10 @@
  *
  *   A1 — Fork lineage preserved through replay.
  *        Deferred: fork() requires Phase-1 session-reopen infrastructure.
- *        Stub documents the invariant; will turn RED when fork() lands.
+ *        Test is it.skip — manually unskip when fork() lands to activate.
  *
  *   A2 — Hermetic replay produces identical ledger (multi-row deepening).
+ *        RE-A2-0  0-row (empty) session: status='pass', rowsReplayed=0
  *        RE-A2-1  10-row session: status='pass', rowsReplayed=10
  *        RE-A2-2  20-row session with mixed observation/decision kinds
  *        RE-A2-3  Session with non-empty causalReadSet on every row
@@ -168,7 +169,7 @@ async function writeAndReadRecs(
 //
 // A1 requires fork() to create a child session from a parent session at a
 // specific offset. This is a Phase-1 feature (session-reopen seam + catalog
-// lookup). The test is documented here so it turns RED the moment fork() lands.
+// lookup). The test uses it.skip — manually unskip when fork() lands to activate.
 
 describe('A1 — Fork lineage preserved through replay [DEFERRED: Phase 1]', () => {
   it.skip(
@@ -484,6 +485,7 @@ describe('FIFO ordering — commit offset monotonicity at scheduler boundary', (
     const recs   = reader.readAllSegmentRecords();
     await reader.close();
 
+    expect(recs).toHaveLength(rows.length);
     for (let i = 0; i < recs.length; i++) {
       expect(Number(recs[i]!.commitOffset)).toBe(i);
     }
@@ -632,6 +634,7 @@ describe('Reopen seam — sealed WAL → continue write → replay covers all ro
     await p1.close();
 
     const rep1 = await createReplayEngine(rootDir).replay(sessionId);
+    expect(rep1.status).toBe('pass');
     expect(rep1.rowsReplayed).toBe(4);
 
     // Phase 2: 6 more rows.
@@ -640,6 +643,7 @@ describe('Reopen seam — sealed WAL → continue write → replay covers all ro
     await p2.close();
 
     const rep2 = await createReplayEngine(rootDir).replay(sessionId);
+    expect(rep2.status).toBe('pass');
     expect(rep2.rowsReplayed).toBe(10);  // 4 + 6
 
     // Phase 3: 2 more rows.
