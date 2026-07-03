@@ -175,3 +175,63 @@ export class InvalidImprintError extends Error {
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+
+// ---------------------------------------------------------------------------
+// InvalidIntegrateError
+// ---------------------------------------------------------------------------
+
+/**
+ * Thrown when integrate input validation fails (e.g. missing or blank
+ * sessionId). Mirrors `InvalidImprintError`: code discriminator + field +
+ * value, base Error (not RangeError/TypeError — these are domain errors).
+ */
+export class InvalidIntegrateError extends Error {
+  readonly code = 'INVALID_INTEGRATE' as const;
+  readonly field: string;
+  readonly value: unknown;
+
+  constructor(field: string, value: unknown, message: string) {
+    super(message);
+    this.name = 'InvalidIntegrateError';
+    this.field = field;
+    this.value = value;
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// IntegrateScopeError
+// ---------------------------------------------------------------------------
+
+/**
+ * Thrown by `integrate()` when the session contains more facts than the
+ * documented scope bound (`MAX_SESSION_FACTS`).
+ *
+ * Separate from `InvalidIntegrateError` because this is NOT a caller-input
+ * error — the caller's `sessionId` is well-formed, but the data scope exceeds
+ * what the v1 algorithm is willing to consolidate in a single pass.
+ *
+ * Carries `factsScanned` (the count that triggered the guard) and `cap` (the
+ * configured bound) so operators can size their cap or partition the session.
+ * A DB-side `GROUP BY` consolidation path is reserved for v1.5+ and will
+ * obsolete this guard.
+ */
+export class IntegrateScopeError extends Error {
+  readonly code = 'INTEGRATE_SCOPE_EXCEEDED' as const;
+  readonly factsScanned: number;
+  readonly cap: number;
+  readonly sessionId: string;
+
+  constructor(sessionId: string, factsScanned: number, cap: number) {
+    super(
+      `integrate: session "${sessionId}" has ${factsScanned} facts which exceeds the v1 ` +
+        `in-memory scan bound (MAX_SESSION_FACTS=${cap}). The v1 algorithm refuses to ` +
+        `consolidate unbounded sessions; a DB-side GROUP BY consolidation path is planned for v1.5+.`,
+    );
+    this.name = 'IntegrateScopeError';
+    this.sessionId = sessionId;
+    this.factsScanned = factsScanned;
+    this.cap = cap;
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}

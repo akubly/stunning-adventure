@@ -14,9 +14,11 @@ import {
   getDb,
   getExecutionProfile,
   querySignalSamples,
+  upsertDBOM,
 } from '@akubly/cairn';
 import {
   ForgeClient,
+  generateDBOM,
   type ForgeSessionConfig,
   type SDKClient,
   type SDKSession,
@@ -64,6 +66,26 @@ export interface RunForgeInstrumentedSessionResult {
    * here but does not change the sample-written success contract.
    */
   disconnect: { ok: true } | { ok: false; error: string };
+  /**
+   * Computed DBOM chain root for this session.
+   *
+   * - The deterministic empty-set sentinel hash when no certification-tier events
+   *   exist; the sealed chain root otherwise.
+   * - Retained even if persistence (`upsertDBOM`) fails — in that case
+   *   `dbomPersistError` is set and the run still succeeds.
+   * - Null ONLY when DBOM generation itself throws before a hash could be computed
+   *   (see `dbomPersistError`).
+   */
+  dbomRootHash: string | null;
+  /**
+   * Non-null when DBOM generation OR persistence (`upsertDBOM`) failed; the run
+   * result is still valid (best-effort provenance).
+   * Null on the full success path — generation succeeded and, when certification
+   * events existed, persistence also succeeded.
+   * Note: on a persistence failure `dbomRootHash` is still set (it is computed
+   * before the write), so a non-null `dbomRootHash` does NOT imply this is null.
+   */
+  dbomPersistError: string | null;
 }
 
 function createRealSdkClientAdapter(options: CopilotClientOptions = {}): SDKClient {
@@ -161,6 +183,28 @@ export async function runForgeInstrumentedSession(
       buildProfiles(db);
     }
 
+    // Generate DBOM from bridge events captured during this session.
+    // Best-effort: a failure here never throws out of the runner (consistent with
+    // the disconnect-failure contract). dbomRootHash is the sentinel empty-set hash
+    // when no certification-tier events exist; null only when generation threw.
+    let dbomRootHash: string | null = null;
+    let dbomPersistError: string | null = null;
+    try {
+      const bridgeEvents = [...session.getBridgeEvents()];
+      const dbomArtifact = generateDBOM(session.sessionId, bridgeEvents);
+      dbomRootHash = dbomArtifact.rootHash;
+      const hasCertificationEvents = dbomArtifact.stats.totalDecisions > 0;
+      if (hasCertificationEvents) {
+        upsertDBOM(db, dbomArtifact);
+        process.stderr.write('[skillsmith-runtime] DBOM persisted: ' + dbomRootHash.slice(0, 8) + '… (' + dbomArtifact.stats.totalDecisions + ' decisions)\n');
+      } else {
+        process.stderr.write('[skillsmith-runtime] DBOM empty (no certification events) for session ' + session.sessionId + '; sentinel hash, not persisted\n');
+      }
+    } catch (e) {
+      dbomPersistError = e instanceof Error ? e.message : String(e);
+      console.warn('[skillsmith-runtime] DBOM generation/persistence failed; run result unaffected', e);
+    }
+
     const samples = querySignalSamples(db, { sessionId: session.sessionId });
     const profile = getExecutionProfile(db, options.skillId, 'per-skill', 'global');
     return {
@@ -172,6 +216,8 @@ export async function runForgeInstrumentedSession(
       profileSessionCount: profile?.sessionCount ?? null,
       telemetryTimings: [...telemetryTimings],
       disconnect,
+      dbomRootHash,
+      dbomPersistError,
     };
   } finally {
     try {

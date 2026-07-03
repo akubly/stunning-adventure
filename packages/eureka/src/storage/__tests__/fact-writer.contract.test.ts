@@ -30,7 +30,8 @@
 
 // RED: ../../activities/imprint.ts does not exist until Crispin's GREEN phase.
 // (Imported transitively via fact-writer-contract.helper.ts — listed here for clarity.)
-import type { FactId, IdProvider, ImprintOptions } from '../../activities/imprint.js';
+import type { FactId } from '@akubly/types';
+import type { IdProvider, ImprintOptions } from '../../activities/imprint.js';
 import { imprint as imprintActivity } from '../../activities/imprint.js';
 import type { SessionId } from '@akubly/types';
 // RED: ../fact-writer.ts does not exist until Crispin's GREEN phase.

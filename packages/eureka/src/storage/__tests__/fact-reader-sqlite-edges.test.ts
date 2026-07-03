@@ -146,7 +146,7 @@ describe('SqliteFactReader — SQLite-specific edge cases', () => {
     const db = new Database(dbPath);
     db.pragma('journal_mode = WAL');
 
-    // First call: creates schema_version, runs migrations 001 + 002.
+    // First call: creates schema_version, runs migrations 001 + 002 + 003.
     expect(() => applyMigrations(db)).not.toThrow();
 
     // Second call: all migrations have version ≤ MAX(version), must be a no-op.
@@ -155,7 +155,7 @@ describe('SqliteFactReader — SQLite-specific edge cases', () => {
     const vRow = db.prepare('SELECT MAX(version) AS v FROM schema_version').get() as {
       v: number;
     };
-    expect(vRow.v).toBe(2);
+    expect(vRow.v).toBe(3);
 
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='facts'")
@@ -257,19 +257,20 @@ describe('SqliteFactReader — SQLite-specific edge cases', () => {
     db2.pragma('journal_mode = WAL');
 
     // First open: creates schema_version table and applies migrations 001 + 002.
+    // First open: creates schema_version table and applies migrations 001 + 002 + 003.
     expect(() => applyMigrations(db1)).not.toThrow();
 
-    // Second open (simulates the losing racer): reads version=2, no-ops.
+    // Second open (simulates the losing racer): reads version=3, no-ops.
     expect(() => applyMigrations(db2)).not.toThrow();
 
-    // schema_version must have exactly two rows — one per migration, never duplicated.
+    // schema_version must have exactly three rows — one per migration, never duplicated.
     const count = db1.prepare('SELECT COUNT(*) AS c FROM schema_version').get() as { c: number };
-    expect(count.c).toBe(2);
+    expect(count.c).toBe(3);
 
     const vRow = db1.prepare('SELECT MAX(version) AS v FROM schema_version').get() as {
       v: number;
     };
-    expect(vRow.v).toBe(2);
+    expect(vRow.v).toBe(3);
 
     db1.close();
     db2.close();

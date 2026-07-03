@@ -1,7 +1,8 @@
 ---
-updated_at: 2026-06-13T06:53:26Z
-focus_area: Crucible S1 (WAL/CAS correctness — Option A: harden substrate) SHIPPED ✅ — PR #73 squash-merged to main (30ee08f), closing #57/#60/#68. 2-cycle persona review (17 findings) + 4-cycle Copilot cloud review (18 threads) all resolved; 163/163 tests, clean CI (node 20 & 22). Canonical CBOR profile locked: RFC 8949 §4.2.1 map ordering + forced binary64. NEXT: S2 (substrate hardening #69/#67, veto edge test #61, doc/governance #62/#71), then Phase 0.5 walking skeleton.
-previous_focus: OQ-2 LOCKED (FEDERATE) + Refactor 3 shipped; Crucible CTD design review COMPLETE; ADR-0019 (childSid hybrid) landed
+updated_at: 2026-06-27T22:32:23-07:00
+focus_area: Eureka `integrate` consolidation activity SHIPPED ✅ — PR #85 squash-merged to main (f7e1c29). Reframed integrate from write-wrapper to POST-imprint consolidation pass (Option B, Aaron-approved): imprint=lossless public write API; integrate({sessionId})→IntegrationReport writes idempotent duplicate_of edges (star-to-canonical) into new fact_relations table. 2-cycle persona review + 3-round Copilot cloud review all resolved; 350/350 tests; new CI test-typecheck gate (tsconfig.typecheck.json). Eureka v1 activity surface now COMPLETE: imprint + recall + integrate.
+next_focus: "**Option A — Recall consumes duplicate_of edges**" (Aaron chose 2026-06-27). integrate currently writes a WRITE-ONLY fact_relations table (no runtime consumer — intentional incremental delivery). Next slice: recall-side consumer that reads duplicate_of edges to collapse/demote known duplicates in recall results, making consolidation user-visible. Same Eureka crew (Genesta/Crispin/Edgar/Laura). This is the honest completion of the integrate arc.
+previous_focus: Crucible S1 SHIPPED (PR #73); S2 substrate hardening; Phase 0.5 walking skeleton (#80) shipped
 parallel_track: Eureka M7 (B+C+D) SHIPPED on main; M1 runway clear; Phase 5 roadmap next
 active_issues:
   - "**Eureka M7 (B+C+D) COMPLETE & SHIPPED** ✅ (2026-06-02) — PR #41 cloud-review-cycle marathon: 5 cycles, 22 unique findings (44 threads), 74 tests green, tsc-clean, lint-clean, merged to main as ed6be2c; M7-A (error typing) + M7-B (error narrowing) + M7-C (atomicity contract) + M7-D (regression locks) all delivered"

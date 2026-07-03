@@ -10,15 +10,22 @@
  * contextual processing — that is integrate's job.
  */
 
-import type { SessionId } from '@akubly/types';
+import type { SessionId, FactId } from '@akubly/types';
 import type { ClockProvider } from './clock.js';
 import { InvalidImprintError } from './errors.js';
 
 // Re-export ClockProvider so consumers can import from this module.
 export type { ClockProvider } from './clock.js';
 
-/** Opaque fact identifier. UUID v4 string branded for type safety. */
-export type FactId = string & { readonly __brand: 'FactId' };
+/**
+ * Opaque fact identifier. UUID v4 string branded for type safety.
+ *
+ * Canonical home is `@akubly/types` (D-R1 layering review — keeps the
+ * identity type out of the activities layer so representation/storage
+ * consumers can import it without depending on activities). Re-exported
+ * here for backward compatibility with existing imprint consumers.
+ */
+export type { FactId };
 
 /** Attention tier literal union (matches migration 002 CHECK constraint). */
 export type AttentionTier = 'hot' | 'warm' | 'cold';

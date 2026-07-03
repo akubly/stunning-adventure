@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionEvent } from '@github/copilot-sdk';
 import * as cairn from '@akubly/cairn';
+import { generateDBOM } from '@akubly/forge';
 import { runForgeInstrumentedSession } from '../forgeSessionRunner.js';
 import {
   assistantUsageEvent,
   createMockClient,
   createMockSession,
+  permissionCompletedEvent,
+  permissionRequestedEvent,
   resetEventCounter,
   toolExecutionCompleteEvent,
   toolExecutionStartEvent,
@@ -234,6 +237,104 @@ describe('runForgeInstrumentedSession', () => {
     expect(result.telemetryTimings.map((t) => t.phase)).toContain('telemetry_flush_end');
     expect(mockSdk.disconnect).toHaveBeenCalledTimes(2);
     expect(mockClient.stop).toHaveBeenCalledOnce();
+    warn.mockRestore();
+  });
+
+  it('persists a DBOM artifact and surfaces dbomRootHash when certification events exist', async () => {
+    const mockSdk = createMockSession({ sessionId: 'runner-dbom-session' });
+    const mockClient = createMockClient({ session: mockSdk });
+    mockSdk.sendAndWait.mockImplementationOnce(async () => {
+      mockSdk._emit(permissionRequestedEvent());
+      mockSdk._emit(permissionCompletedEvent());
+      mockSdk._emit(toolExecutionStartEvent('bash', { toolCallId: 'call-dbom' }));
+      mockSdk._emit(toolExecutionCompleteEvent('call-dbom', 'ok', { success: true }));
+      mockSdk._emit(assistantUsageEvent({ inputTokens: 50, outputTokens: 20 }));
+      mockSdk._emit(turnEndEvent());
+      return assistantMessageEvent();
+    });
+    mockSdk.disconnect.mockImplementationOnce(async () => {
+      mockSdk._emit(shutdownEvent());
+    });
+
+    const result = await runForgeInstrumentedSession({
+      prompt: 'Run a shell command.',
+      skillId: 'runner-dbom-skill',
+      sdkClient: mockClient,
+      timeoutMs: 100,
+    });
+
+    expect(result.dbomRootHash).toMatch(/^[0-9a-f]{64}$/);
+    const db = cairn.getDb();
+    const artifact = cairn.loadDBOMArtifact(db, 'runner-dbom-session');
+    expect(artifact).not.toBeNull();
+    expect(artifact?.rootHash).toBe(result.dbomRootHash);
+    expect(artifact?.sessionId).toBe('runner-dbom-session');
+    expect(artifact?.stats.totalDecisions).toBe(2);
+  });
+
+  it('dbomRootHash is the empty-set sentinel and run succeeds when no certification events exist', async () => {
+    const mockSdk = createMockSession({ sessionId: 'runner-dbom-empty-session' });
+    const mockClient = createMockClient({ session: mockSdk });
+    mockSdk.sendAndWait.mockImplementationOnce(async () => {
+      mockSdk._emit(toolExecutionStartEvent('read_file', { toolCallId: 'call-empty' }));
+      mockSdk._emit(toolExecutionCompleteEvent('call-empty', 'ok', { success: true }));
+      mockSdk._emit(assistantUsageEvent({ inputTokens: 30, outputTokens: 10 }));
+      mockSdk._emit(turnEndEvent());
+      return assistantMessageEvent();
+    });
+    mockSdk.disconnect.mockImplementationOnce(async () => {
+      mockSdk._emit(shutdownEvent());
+    });
+
+    const result = await runForgeInstrumentedSession({
+      prompt: 'Read a file.',
+      skillId: 'runner-dbom-empty-skill',
+      sdkClient: mockClient,
+      timeoutMs: 100,
+    });
+
+    const expectedSentinel = generateDBOM('runner-dbom-empty-session', []).rootHash;
+    expect(result.dbomRootHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.dbomRootHash).toBe(expectedSentinel);
+    expect(result.dbomPersistError).toBeNull();
+    expect(result.signalSamplesWritten).toBeGreaterThan(0);
+
+    const db = cairn.getDb();
+    const artifact = cairn.loadDBOMArtifact(db, 'runner-dbom-empty-session');
+    expect(artifact).toBeNull();
+  });
+
+  it('surfaces dbomPersistError and does not throw when DBOM persistence fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const mockSdk = createMockSession({ sessionId: 'runner-dbom-persist-fail-session' });
+    const mockClient = createMockClient({ session: mockSdk });
+    mockSdk.sendAndWait.mockImplementationOnce(async () => {
+      mockSdk._emit(permissionRequestedEvent());
+      mockSdk._emit(permissionCompletedEvent());
+      mockSdk._emit(toolExecutionStartEvent('bash', { toolCallId: 'call-fail' }));
+      mockSdk._emit(toolExecutionCompleteEvent('call-fail', 'ok', { success: true }));
+      mockSdk._emit(assistantUsageEvent({ inputTokens: 20, outputTokens: 10 }));
+      mockSdk._emit(turnEndEvent());
+      return assistantMessageEvent();
+    });
+    mockSdk.disconnect.mockImplementationOnce(async () => {
+      mockSdk._emit(shutdownEvent());
+    });
+
+    vi.spyOn(cairn, 'upsertDBOM').mockImplementationOnce(() => {
+      throw new Error('disk full');
+    });
+
+    const result = await runForgeInstrumentedSession({
+      prompt: 'Run with failing persist.',
+      skillId: 'runner-dbom-fail-skill',
+      sdkClient: mockClient,
+      timeoutMs: 100,
+    });
+
+    expect(result.signalSamplesWritten).toBeGreaterThan(0);
+    expect(result.disconnect).toEqual({ ok: true });
+    expect(result.dbomPersistError).toBe('disk full');
     warn.mockRestore();
   });
 });

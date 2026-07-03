@@ -93,7 +93,7 @@
  */
 
 import type Database from 'better-sqlite3';
-import type { SessionId } from '@akubly/types';
+import type { SessionId, FactId } from '@akubly/types';
 import type { FactStore, RecallResult } from '../activities/recall.js';
 import { scopeFingerprint, encodeCursor, decodeCursor } from './cursor.js';
 import { CursorScopeMismatchError } from './errors.js';
@@ -104,6 +104,7 @@ import { CursorScopeMismatchError } from './errors.js';
 
 interface SearchRow {
   id: number;
+  fact_id: string;
   content: string;
   trust: number | null;
   bm25_score: number;
@@ -151,6 +152,7 @@ const SQL_CTE_BASE = `
   WITH base AS (
     SELECT
       f.id,
+      f.fact_id,
       f.content,
       f.trust,
       bm25(facts_fts) AS bm25_score,
@@ -168,7 +170,7 @@ const SQL_CTE_BASE = `
     -- ⚠️ INVARIANT: (-bm25_score) * trust MUST mirror the ORDER BY expression in stmtFirst.
     -- If importance or other signals are ever folded into the sort key, update both here
     -- and in stmtFirst's ORDER BY simultaneously, or the keyset boundary silently breaks.
-    SELECT id, content, trust, bm25_score,
+    SELECT id, fact_id, content, trust, bm25_score,
            (-bm25_score) * trust AS composite,
            importance, last_accessed, attention_tier
     FROM base
@@ -194,6 +196,7 @@ export class SqliteFactStore implements FactStore {
     this.stmtFirst = db.prepare<SearchBindFirst, SearchRow>(`
       SELECT
         f.id,
+        f.fact_id,
         f.content,
         f.trust,
         bm25(facts_fts) AS bm25_score,
@@ -214,7 +217,7 @@ export class SqliteFactStore implements FactStore {
     // The outer SELECT filters on pre-computed composite — no second bm25 call.
     this.stmtKeyset = db.prepare<SearchBindKeyset, SearchRow>(`
       ${SQL_CTE_BASE}
-      SELECT id, content, trust, bm25_score, importance, last_accessed, attention_tier
+      SELECT id, fact_id, content, trust, bm25_score, importance, last_accessed, attention_tier
       FROM ranked
       WHERE composite < $last_sort
          OR (composite = $last_sort AND id > $last_id)
@@ -316,6 +319,7 @@ export class SqliteFactStore implements FactStore {
     const relevances = normalizeRelevance(pageRows.map(r => r.bm25_score));
 
     const results: RecallResult[] = pageRows.map((row, i) => ({
+      factId: row.fact_id as FactId,
       content: row.content,
       // NULL trust is excluded by the WHERE clause but guard defensively.
       trust: row.trust === null ? NaN : row.trust,

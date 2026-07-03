@@ -16,6 +16,14 @@ export {
   applyFeedbackById,
 } from './activities/recall.js';
 export { imprint } from './activities/imprint.js';
+export { integrate, MAX_SESSION_FACTS } from './activities/integrate.js';
+export type {
+  IntegrateOptions,
+  IntegrateDeps,
+  IntegrationReport,
+  DuplicatePair,
+  RelationWriterBatch,
+} from './activities/integrate.js';
 export {
   FactNotFoundError,
   InvalidFeedbackOptionsError,
@@ -23,7 +31,12 @@ export {
   FactReaderContractError,
   UnhandledFeedbackEventError,
   InvalidImprintError,
+  InvalidIntegrateError,
+  IntegrateScopeError,
 } from './activities/errors.js';
+export { InvalidRelationError } from './representation/errors.js';
+export { validateRelation, RELATION_KINDS } from './representation/relation.js';
+export type { Relation, RelationKind, RelationEdge } from './representation/relation.js';
 export type {
   RecallOptions,
   RecallDeps,
@@ -35,6 +48,7 @@ export type {
   FeedbackEvent,
   TrustUpdater,
   FactReader,
+  SessionFactLister,
   ApplyFeedbackOptions,
   ApplyFeedbackDeps,
   ApplyFeedbackByIdOptions,
@@ -45,6 +59,6 @@ export type {
   ImprintDeps,
   FactWriter,
   IdProvider,
-  FactId,
   AttentionTier,
 } from './activities/imprint.js';
+export type { FactId } from '@akubly/types';

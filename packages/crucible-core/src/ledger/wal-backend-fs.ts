@@ -521,10 +521,24 @@ export class FileSystemWalBackend implements WalBackend {
         // same metadata as the original commit, enabling replay-based catchup
         // projectors (e.g. ApertureProjector) to filter by level after reopen.
         // Old segments (bare CBOR string envelope) decode with metadata=undefined.
+        //
+        // BLOCKING-4: include walFlags from rec.flags so readRows() returns
+        // identical results pre- and post-reopen (e.g. flags.bootstrap=true on
+        // bootstrap rows survives a session reopen).
+        // Only attach walFlags when ≥1 bit is true — rows with all-false flags
+        // were committed without walFlags (undefined), and replay must match
+        // that in-session shape to preserve object identity across reopen.
+        const hasAnyFlag =
+          rec.flags.bootstrap ||
+          rec.flags.declaredWindow ||
+          rec.flags.syntheticOutput ||
+          rec.flags.taskBoundary ||
+          rec.flags.manifestRoot;
         const replayedEvent: LedgerEvent = {
           primitiveKind,
           primitivePayload,
           causalReadSet,
+          ...(hasAnyFlag ? { walFlags: rec.flags } : {}),
           offset,
           ...(metadata !== undefined ? { metadata } : {}),
         };
@@ -621,6 +635,31 @@ export class FileSystemWalBackend implements WalBackend {
     });
   }
 
+  /**
+   * Stage a row for the next group-commit flush without triggering auto-flush.
+   *
+   * Called by LedgerImpl.bootstrap() to queue all bootstrap rows before a
+   * single explicit flush() — guaranteeing one atomic fsync barrier for the
+   * entire batch regardless of batchSize (BLOCKING-3 / GAP-2).
+   *
+   * The returned Promise resolves with the commit offset when flush() commits
+   * the batch containing this row. Callers MUST call flush() explicitly.
+   */
+  async stageRow(
+    input:      PrimitiveInput,
+    hookResult: HookResult & { verdict: Exclude<HookVerdict, 'VETO'>; hookId: string | null },
+  ): Promise<number> {
+    if (this.isReadOnly) throw new ReadOnlyWalBackendError();
+    // Cancel any deadline timer armed by a prior commitRow() call.  If left
+    // running it could fire during bootstrap staging and flush rows before the
+    // caller's explicit flush(), breaking the atomic-batch guarantee.
+    this.clearDeadlineTimer();
+    return new Promise((resolve, reject) => {
+      this.stagingQueue.push({ input, hookResult, resolve, reject });
+      // No auto-flush or deadline timer — caller controls when to flush.
+    });
+  }
+
   async readRows(opts: LedgerQueryOpts): Promise<LedgerEvent[]> {
     const [start, end] = opts.range;
     return this.events.filter(e => e.offset >= start && e.offset <= end);
@@ -712,8 +751,11 @@ export class FileSystemWalBackend implements WalBackend {
         primitiveKind: 0x01,
         hookVerdict:   mat.verdictByte,
         flags: {
-          bootstrap: false, declaredWindow: false,
-          syntheticOutput: false, taskBoundary: false, manifestRoot: false,
+          bootstrap:       entry.input.walFlags?.bootstrap       ?? false,
+          declaredWindow:  entry.input.walFlags?.declaredWindow  ?? false,
+          syntheticOutput: entry.input.walFlags?.syntheticOutput ?? false,
+          taskBoundary:    entry.input.walFlags?.taskBoundary    ?? false,
+          manifestRoot:    entry.input.walFlags?.manifestRoot    ?? false,
         },
         payloadHash:  mat.payloadHash,
         readSetHash:  mat.readSetHash,

@@ -16,7 +16,7 @@
     "build": "tsc",
     "test": "vitest run",
     "lint": "eslint src/",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "clean": "rimraf dist coverage"
   },
   "engines": {

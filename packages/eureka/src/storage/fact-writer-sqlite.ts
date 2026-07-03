@@ -29,8 +29,8 @@
  */
 
 import type Database from 'better-sqlite3';
-import type { SessionId } from '@akubly/types';
-import type { FactWriter, FactId, AttentionTier } from '../activities/imprint.js';
+import type { SessionId, FactId } from '@akubly/types';
+import type { FactWriter, AttentionTier } from '../activities/imprint.js';
 import { epochMsToSqliteDateTime } from './datetime.js';
 
 export class SqliteFactWriter implements FactWriter {

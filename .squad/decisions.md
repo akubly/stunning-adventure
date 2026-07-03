@@ -1,3 +1,54 @@
+# Issue #83 — curator.test.ts: 3 Test Failures Root-Caused and Fixed
+
+**Author:** Gabriel  
+**Date:** 2026-06-27T22:38:17.318-07:00  
+**Status:** RESOLVED
+
+---
+
+## Root Cause
+
+**Stale test expectation (date rot) — NOT a regression in `curate()`.**
+
+Three tests in `packages/cairn/src/__tests__/curator.test.ts` (group "profile build inside curate()") inserted `signal_samples` rows with hardcoded `collectedAt: '2026-06-11 00:00:00'` dates. By 2026-06-27 those dates were 16 days old — beyond the 7-day TTL (`SIGNAL_SAMPLE_TTL_MS`).
+
+`curate()` runs `sweepSignalSamples()` **before** `buildProfiles()` (correct design: sweep the bounded set first, then build profiles from clean data). The sweep deleted all the 16-day-old rows, so `buildProfiles` found an empty table, returned `profilesBuilt: 0`, and nothing was written to `execution_profiles`. The implementation was correct throughout.
+
+## Evidence Distinguishing Regression vs Stale Test
+
+| Signal | Value |
+|--------|-------|
+| "BuildResult carries durationMs" test (also uses June 12 dates) | **Passes** — only asserts `durationMs >= 0` (true even when rows=0 produces durationMs=0) |
+| "sweep/cap runs BEFORE buildProfiles" test (uses `new Date().toISOString()`) | **Passes** — proves sweep + build both work correctly with live dates |
+| "should complete curate() and run sweepChangeVectors even if buildProfiles throws" | **Passes** — sweep/cap path is independent of build |
+
+All three passing tests work correctly. The 3 failures share exactly one trait: hardcoded old dates.
+
+## Resolution
+
+**File changed:** `packages/cairn/src/__tests__/curator.test.ts`
+
+Replaced the 3 hardcoded `'2026-06-11 ...'` date strings with dynamic expressions:
+
+- `new Date(Date.now() - 120_000).toISOString()` (2 min ago)
+- `new Date(Date.now() - 60_000).toISOString()` (1 min ago)
+- `new Date(now - 180_000).toISOString()`, `new Date(now - 120_000).toISOString()`, `new Date(now - 60_000).toISOString()` (ordering test)
+
+No changes to production code. `curate()`, `buildProfiles()`, `sweepSignalSamples()`, and `sweepChangeVectors()` are all unchanged.
+
+## Test Results
+
+- `npx vitest run src/__tests__/curator.test.ts`: **49/49 passed**
+- `npm test` (full cairn suite): **752/752 passed**
+
+## Pattern for Future Reference
+
+Any test that inserts rows with fixed-date `collectedAt` values into a table with a TTL sweep will rot as calendar time advances. Use `new Date(Date.now() - N).toISOString()` for "recent" samples intended to survive TTL. Only use explicit far-past dates (e.g. `'2020-01-01T00:00:00.000Z'`) when the intent is for the sweep to remove them.
+
+
+---
+
+```bash
 # Imprint Slice — Persona Review Cycle 1 Fix Dispositions
 
 **Author:** Crispin (Knowledge Representation Specialist)  
@@ -381,6 +432,7 @@ bash -n .github/hooks/cairn/shell-init.sh
 bash -n .github/hooks/cairn/install.sh
 bash -n .github/hooks/cairn/uninstall.sh
 
+ # 2. Install (idempotent — run twice to confirm second run is no-op)
 
 
 
@@ -710,6 +762,1154 @@ Not pushed — Roger has follow-up fixes to land on top; coordinator will push a
 **Deferred:** dogfood `SQLITE_BUSY` policy when a runner and an interactive session share `~/.cairn/knowledge.db` (Cairn sets no `busy_timeout`). Use an isolated `--db` for CI/dev.
 
 **Review:** 3 local persona-review cycles (11 → 5 advisory → 0); Copilot cloud review clean (only flagged a decisions-ledger archive that was removed from the PR).
+
+1. **Aaron decision pending:** Q1 & Q2 above (integrate landing, dedupKey in schema)
+2. **Genesta & Crispin review:** Integration design memo — verify representation coverage
+3. **Follow-up slice:** `integrate` cognitive orchestration (after `imprint` ships)
+
+---
+
+# 2026-06-25 — Eureka integrate v1 Slice (Option B) — COMPLETED
+
+**Status:** DECIDED & SHIPPED (Option B: integrate as post-imprint consolidation pass)  
+**Date:** 2026-06-25T00:17:47-07:00 (Wave 2 GREEN complete)  
+**Authors:** Genesta (Cognitive Systems Lead), Crispin (Knowledge Representation), Laura (Tester)  
+**Approved by:** Aaron (akubly) — 2026-06-24T22:33 (Option B reframe approved)
+
+---
+
+## Decision: Integrate as Consolidation Pass (Option B, not write-wrapper)
+
+Aaron's reframe (2026-06-24T22:33): Integrate is a **post-imprint consolidation pass**, not a wrapper. It reconciles already-imprinted facts within a session by discovering relationships and writing cross-reference edges. Does NOT call imprint; does NOT mutate facts rows.
+
+### Locked Contract (Genesta)
+
+**File:** packages/eureka/src/activities/integrate.ts
+
+**Signature:**
+`	s
+export async function integrate(
+  options: IntegrateOptions,
+  deps: IntegrateDeps,
+): Promise<IntegrationReport>;
+`
+
+**Key types:**
+- IntegrateOptions: { sessionId: SessionId }
+- IntegrateDeps: { factReader, relationWriter, clock }
+- IntegrationReport: { sessionId, factsScanned, duplicatesFound, edgesWritten, pairs }
+- DuplicatePair: { keptFactId, duplicateFactId } (orientation: keptFactId = older)
+- RelationEdge: { from, to, edgeType: 'duplicate_of', sessionId } (v1 union has exactly one member)
+
+**Algorithm (normative):**
+1. Validate options.sessionId (non-empty string after trim) — throw InvalidIntegrateError if bad (sync, before first await).
+2. Fetch facts via deps.factReader.listBySession({ sessionId }) (oldest→newest, returns {factId, content, createdAt}).
+3. Pair-scan O(n²): For each i,j where i < j, if acts[i].content.trim() === facts[j].content.trim(), record the pair with orientation newer→older.
+4. **Topology: STAR-TO-CANONICAL** — all newer duplicates point to the single oldest (not a chain). Idempotent under late arrivals.
+5. Write edges via deps.relationWriter.writeEdges(edges) → returns count of newly inserted edges.
+6. Return report with dgesWritten = 0 on idempotent re-run (UNIQUE constraint dedupe).
+
+**Error contract:**
+- InvalidIntegrateError (new, in ctivities/errors.ts): code: 'INVALID_INTEGRATE', ield: 'sessionId'. Mirrors InvalidImprintError shape.
+- FactReader / RelationWriter errors propagate unwrapped.
+
+### Representation Layer (Crispin — Wave 1 substrate shipped)
+
+**Migration 003 — act_relations table:**
+- Columns: (from_fact_id, to_fact_id, relation_kind, session_id, weight, confidence, created_at).
+- CHECK constraint: elation_kind IN ('duplicate_of', 'supersedes', 'contradicts', 'supports') (v1 writes ONLY duplicate_of; others reserved).
+- UNIQUE on (session_id, from_fact_id, to_fact_id, relation_kind) → idempotent ON CONFLICT DO NOTHING.
+- Two predicate indices: (session_id, from_fact_id, relation_kind) and (session_id, to_fact_id, relation_kind).
+
+**RelationWriter seam (in-memory + sqlite):**
+- RelationWriter interface: writeEdges(edges: RelationEdge[]): Promise<number>.
+- Both SqliteRelationWriter and InMemoryRelationWriter implement it with idempotency via the UNIQUE constraint.
+- Validation runs synchronously per-edge BEFORE persistence — mirrors imprint F1 pre-await posture.
+
+**FactReader extension:**
+- New listBySession({ sessionId }): Promise<Array<{factId, content, createdAt}>> method.
+- Returns facts ordered by createdAt ascending (oldest first); timestamp is Unix epoch ms for canonical ordering.
+- Both sqlite and in-memory implementations provided.
+
+**Vocabulary clash flagged:**
+- Existing FeedbackEvent='corroboration' (single-fact trust delta) vs new edge type supports (inter-fact link).
+- Recommendation: Keep both; mark distinction in code comments. No rename needed.
+
+### Test Contract (Laura — RED phase committed, GREEN shipped)
+
+**15 tests × 2 wirings = 30 RED/GREEN test runs:**
+- IT-1..IT-15: Core integrate contract suite (empty session, single fact, distinct content, duplicates, orientation, idempotency, session isolation, trim equality, error cases).
+- IT-S1: Direct SQL query on relations table (reconciled to schema naming: WHERE relation_kind = 'duplicate_of').
+- Test conventions match imprint slice 1:1 (shared contract helper + thin InMemory/SQLite wirings).
+
+**Key test decisions (Laura):**
+- TD-1: STAR-TO-CANONICAL topology for 3+ identical facts (two edges to oldest, never chain).
+- TD-2: Synchronous validation of sessionId before first await (no seam touched on error).
+- TD-3: Deterministic pair ordering by createdAt ASC, then actId ASC (byte-stable idempotency).
+- TD-4: Trim-only normalization ("hello" matches "  hello  "; no internal whitespace collapse).
+- TD-5: Imprint losslessness pinned by two independent tests (both dups still recallable; imprint yields 2 distinct FactIds).
+
+### Implementation Status
+
+**Wave 1 (Crispin — Substrate):** ✅ SHIPPED 2026-06-24T22:39  
+- Migration 003 + 7 new migration tests (MIG-7..MIG-13).
+- epresentation/ directory with Relation, RelationKind, alidateRelation, InvalidRelationError.
+- RelationWriter interface + SqliteRelationWriter + InMemoryRelationWriter + 48 contract tests (RW-1..RW-14 × 2 wirings).
+- FactReader.listBySession extension + 3 new contract tests (CL-6..CL-8).
+- actId on RecallResult (F9 carry-over from imprint review: write→read symmetry).
+- Build: 
+pm run build ✓ • 
+pm test 319 passing (baseline 258 + 61 new).
+
+**Wave 2 (Crispin — Activity + Genesta/Laura coordination):** ✅ SHIPPED 2026-06-25T00:17  
+- ctivities/integrate.ts — the consolidation-pass algorithm (pair-scan, STAR-TO-CANONICAL edges, report).
+- IntegrateDeps injection + composition root createSqliteIntegrateDeps(db).
+- InvalidIntegrateError class (mirrors InvalidImprintError).
+- RelationWriter.writeEdges(batch) method added to support per-edge validation in txn.
+- All 30 IT-* tests green (15 tests × 2 wirings: InMemory + SQLite).
+- Public API exports: imprint, integrate, IntegrateOptions, IntegrateDeps, IntegrationReport, RelationEdge, InvalidIntegrateError.
+- Build: 
+pm run build ✓ • 
+pm test 349 passing / 1 cosmetic (Laura's IT-S1 SQL column name mismatch — reconciled to locked schema elation_kind).
+- **Full suite GREEN:** 350/350 after Laura's schema naming reconciliation on IT-S1.
+
+### Surviving Prior Decisions (Option B disposition)
+
+| Decision | Status |
+|---|---|
+| D1 — Dedup probe before write | ❌ MOOT — no probe; imprint always writes |
+| D2 — Dedup-hit behaviour | ❌ MOOT — duplicates marked by integrate via edges |
+| D3 — Touch seam location | ❌ MOOT — no touch; last_accessed stays NULL |
+| D4 — kind/verb schema fields | ✅ DEFERRED — imprint/integrate v1 operate without them |
+| D5 — decide() → integrate() coupling | ✅ CALLER-OWNED — most likely: imprint (write) + integrate (consolidate at pause) |
+| D6 — Error class | ✅ NEW — InvalidIntegrateError (code 'INVALID_INTEGRATE') |
+
+### v1 Explicit Non-Goals
+
+- ❌ Near-duplicate detection (case, punctuation, internal whitespace, paraphrase) — v1.5 sweep.
+- ❌ supersedes, contradicts, supports, derived_from, etc. edge writes — v1 writes ONLY duplicate_of; others reserved.
+- ❌ Cross-session consolidation — v1.5 sweep/meditate.
+- ❌ Cross-tier consolidation — v1.5 federation.
+- ❌ Fact mutation (content rewrite) — append-only preservation.
+- ❌ Background/scheduled invocation — v1.5 sweep cron.
+- ❌ Pagination of listBySession — v1.5+ if needed.
+
+### Documentation Amendments (Genesta — 2026-06-24)
+
+- docs/eureka/sections/10-activities-and-tiers.md §10.1: Replaced integrate(fact)→FactId with imprint(options)→FactId + integrate(options)→IntegrationReport. Tier-Activity Matrix gains imprint row.
+- docs/eureka/sections/30-learning-systems.md §1: Replaced old integrate row-insert with §1.0 imprint (algorithm) + §1.1 integrate (consolidation + duplicate_of edge semantics). Inline refs updated in §1.8 meditate, §3.1 short loop, §4.1 scheduling, §5.1 timing budget.
+
+---
+
+# 2026-06-25 — Crispin Fix Wave Cycle 1 Outcome (integrate-slice)
+
+**Date:** 2026-06-25T00:17:47-07:00  
+**Branch:** `eureka/integrate-slice`  
+**Status:** GREEN on build + test + lint; three known Laura-side reconciliations remain in typecheck  
+**Author:** Crispin (Knowledge Representation Specialist)
+
+## Fixes Applied (D-R1..F6)
+
+| Code | Fix |
+|------|-----|
+| D-R1 split | `SessionFactLister` extracted from `FactReader`; both implemented by concrete impls; integrate depends on `SessionFactLister`. Dropped duplicate `FactReaderListSession` alias. |
+| D-R1 layer | `FactId` moved to `@akubly/types`; `activities/imprint` re-exports for back-compat. |
+| D-R2 guard | `MAX_SESSION_FACTS = 10_000` + `IntegrateScopeError` (`INTEGRATE_SCOPE_EXCEEDED`); thrown pre-sort; v1.5 GROUP BY note in header. |
+| A4 clock | `deps.clock` was unused — REMOVED from `IntegrateDeps` and `createSqliteIntegrateDeps`. |
+| C1 precision | Header documents sqlite seconds-precision vs in-memory ms-precision createdAt; factId tie-breaks. |
+| F2 complexity | Corrected to `O(n log n)` sort-dominated, `O(n)` bucketing. |
+| F3 DRY | Single `edgeToRelation` helper in `representation/relation.ts`. |
+| F5/S6 shim | Collapsed re-export indirection; `InMemoryFactReader` now lives in `fact-reader-inmemory.ts`; `fact-reader.ts` deleted. |
+| F6 seed guard | `InMemoryFactReader.seed()` throws in shared-store mode. |
+
+## Final Shapes for Laura
+
+**IntegrateDeps** — clock removed:
+```ts
+interface IntegrateDeps {
+  factReader: SessionFactLister;
+  relationWriter: RelationWriterBatch;
+}
+```
+
+**SessionFactLister** — split out of FactReader; same signature:
+```ts
+interface SessionFactLister {
+  listBySession(args: { sessionId: SessionId }): Promise<ReadonlyArray<{
+    factId: FactId;
+    content: string;
+    createdAt: number;
+  }>>;
+}
+```
+
+Back-compat aliases on `activities/integrate.ts` for Laura's helper imports:
+- `export type { SessionFactLister as FactReader } from './recall.js'`
+- `export type { RelationWriterBatch as RelationWriter }`
+- `export type { RelationEdge } from '../representation/relation.js'`
+
+## Build / Test / Lint Outcome
+
+- `npm run build --workspace @akubly/eureka` — **GREEN**.
+- `npm test --workspace @akubly/eureka` — **350 / 350** passing.
+- `npm run lint --workspace @akubly/eureka` — **GREEN** (3 pre-existing `no-explicit-any` warnings in `recall.test.ts`, unrelated).
+
+## Remaining for Laura (typecheck-only — runtime tests pass)
+
+When Laura runs `npm run typecheck` the following surface; runtime `npm test` is unaffected because vitest's transformer is permissive on excess-property checks:
+
+1. `src/activities/__tests__/integrate.contract.test.ts:81` — drop `clock` from the `IntegrateDeps` literal.
+2. `src/activities/__tests__/integrate-sqlite.contract.test.ts:98` — drop `clock` from the `IntegrateDeps` literal.
+3. `src/activities/__tests__/integrate-sqlite.contract.test.ts:156` — drop `clock` from the `IntegrateDeps` literal.
+4. `src/activities/__tests__/integrate-sqlite.contract.test.ts:111` — `cleanup: () => db.close()` returns `Database`; should be `cleanup: () => { db.close(); }`. (Same shape as pre-existing `fact-store.contract.test.ts:209` / `fact-writer-sqlite.contract.test.ts:105` / `relation-writer-sqlite.contract.test.ts:73` / `trust-updater.contract.test.ts:90` problems — not introduced by this wave.)
+
+---
+
+# 2026-06-25 — Gabriel Decision: Test Type-Check Gate
+
+**Author:** Gabriel (Infrastructure)  
+**Date:** 2026-06-25  
+**Branch:** eureka/integrate-slice  
+**Status:** APPLIED & VERIFIED
+
+## Problem
+
+A test helper (`packages/eureka/src/activities/__tests__/integrate-contract.helper.ts`) shipped with broken type-only imports — names that don't exist on the imported module (`FactReader`, `RelationWriter`, `RelationEdge` from `../integrate.js`). **Nothing in CI caught it.**
+
+Root cause: every package `tsconfig.json` excludes `src/**/__tests__` and `src/**/*.test.ts`, so:
+- `tsc --build` never sees test files.
+- vitest uses esbuild, which strips types without type-checking.
+- eslint catches lint issues but not missing-export errors.
+
+**Result:** The entire test tree had **zero type coverage** in CI.
+
+## Decision
+
+Add a dedicated **test-inclusive type-check gate** to eureka and wire it into CI, scoped narrowly for now:
+
+1. **`packages/eureka/tsconfig.typecheck.json`** — extends the base tsconfig but:
+   - Includes `src`, `src/**/__tests__/**/*`, and `src/**/*.test.ts` (no test exclusion).
+   - `noEmit: true`, `composite: false`, `declaration: false`, `rootDir: "."` — so it never emits, never pollutes `dist/`, and never participates in project references.
+   - `references: []` — type-check is self-contained; no project-reference build semantics here.
+
+2. **`packages/eureka/package.json`** — `typecheck` script now points at the new config: `tsc --noEmit -p tsconfig.typecheck.json` (was bare `tsc --noEmit`, which silently used the base config that excludes tests).
+
+3. **Root** — `typecheck` script already existed (`npm run typecheck --workspaces --if-present`), follows the existing `--workspaces --if-present` convention used by `lint`/`test`/`clean`. No shell globs, Windows-safe.
+
+4. **`.github/workflows/ci.yml`** — added `npm run typecheck` step between `lint` and `build`.
+
+## Proof the Gate Works
+
+`npm run typecheck -w @akubly/eureka` now fails with exactly the target errors plus other previously-invisible test type bugs:
+
+```
+src/activities/__tests__/integrate-contract.helper.ts(83,8): error TS2305: Module '"../integrate.js"' has no exported member 'FactReader'.
+src/activities/__tests__/integrate-contract.helper.ts(84,8): error TS2305: Module '"../integrate.js"' has no exported member 'RelationWriter'.
+src/activities/__tests__/integrate-contract.helper.ts(85,8): error TS2459: Module '"../integrate.js"' declares 'RelationEdge' locally, but it is not exported.
+src/activities/__tests__/integrate-sqlite.contract.test.ts(111,5): error TS2322: Type '() => BetterSqlite3.Database' is not assignable to type '() => void | Promise<void>'.
+```
+
+The gate's job is to make these failures **visible**, not to fix them.
+
+## Team Convention: Test Files MUST Be Type-Checked
+
+Durable team decision: **All test files must pass a dedicated type-check gate in CI.** This is a permanent gate — adds 5–10 seconds to CI, catches a class of errors that silently ship when type-checking is confined to production code only.
+
+## Expected Red (Temporary)
+
+This branch will stay red on typecheck until:
+- **Laura** fixes the broken test imports (`FactReader`, `RelationWriter`, `RelationEdge`).
+- **Crispin**'s seam rename lands (the `cleanup: () => Database` vs `() => void | Promise<void>` mismatches surfaced by the gate are also pre-existing test type bugs the rename will resolve).
+
+That's the intended behaviour.
+
+## Out of Scope / Follow-Up
+
+Six other packages share the same test-exclusion gap:
+- `cairn`, `crucible-cli`, `crucible-core`, `forge`, `runtime-cli`, `skillsmith-runtime`
+
+Generalising the gate to all packages is mechanical (same recipe: `tsconfig.typecheck.json` + `typecheck` script) but **deliberately deferred** — eureka is the package with a known concrete bug. Rolling it out to the rest of the monorepo deserves its own decision, partly because some packages don't yet have a `typecheck` script and adding one will likely surface a backlog of pre-existing test type errors that need triage owners.
+
+## Files Changed
+
+- `packages/eureka/tsconfig.typecheck.json` (new)
+- `packages/eureka/package.json` (typecheck script updated)
+- `.github/workflows/ci.yml` (added `npm run typecheck` step)
+
+## Verification
+
+- `npm run lint` — passes.
+- `npm run typecheck -w @akubly/eureka` — **fails as designed**, catches the target imports.
+- `npm run build`, `npm test` — pre-existing failures (`cborg` module missing in `packages/crucible-core/src/ledger/wal/cbor.ts`) unrelated to this change.
+
+---
+
+# 2026-06-26 — Persona Review Cycle Integration Summary (eureka/integrate-slice)
+
+**Date:** 2026-06-26T12:29:13-07:00  
+**Branch:** eureka/integrate-slice  
+**Status:** REVIEW COMPLETE — 2 cycles, all findings addressed  
+**Reviewed:** Cycle 1 source fixes + Cycle 2 nits; test-typecheck-gate added post-review
+
+## Cycle 1: Source Fixes (Crispin, Gabriel, Laura)
+
+**Findings:** 0 blocking / 8 important / 9 minor  
+**Disposition:** All accepted & addressed  
+
+- **Crispin** (Knowledge Representation): SessionFactLister seam split, FactId moved to @akubly/types, MAX_SESSION_FACTS scope guard + IntegrateScopeError, removed clock dep, edgeToRelation DRY helper, shim collapse, seed() guard. Commit f9af698.
+- **Gabriel** (Infrastructure): Added test type-check CI gate (tsconfig.typecheck.json + typecheck script + ci.yml step), closing the gap that let phantom test imports ship. Commit baa4cb2.
+- **Laura** (Tester): Aligned test files to locked seams, fixed phantom imports, made typecheck gate green. Commit 89988f9.
+- **Genesta** (Cognitive Systems Lead): Doc reconciliation §10 (edfff56) and §20 (7848d76) to migration 003.
+- **Coordinator**: Removed dead back-compat aliases (19693fd).
+
+**Outcome:** 
+- 350/350 tests passing
+- `npm run build` — GREEN
+- `npm run lint` — GREEN
+- `npm run typecheck` — GREEN
+
+## Cycle 2: Nits (Coordinator)
+
+**Findings:** 0 blocking / 1 important / 3 minor  
+**Disposition:** All addressed  
+
+- Commit babe717: Cycle-2 nits
+
+## Key Decision: Test Type-Check Gate
+
+**Durable team convention established:** Test files MUST be type-checked via the dedicated gate in CI. This prevents phantom imports and invisible type errors in test helpers from shipping. The gate is permanent — it adds 5–10 seconds to CI and catches a class of errors that no other tool catches.
+
+## Test Results
+
+- **Cycle 1 baseline:** 256 tests
+- **After wave 1 (substrate):** 319 tests
+- **After wave 2 (integrate activity + Genesta/Laura coordination):** 349/350 tests (1 cosmetic Laura IT-S1 mismatch)
+- **After cycle 2 reconciliation:** 350/350 tests — **SUSTAINED CLEAN**
+
+## Commits
+
+- f9af698: Crispin — Cycle-1 source fixes
+- baa4cb2: Gabriel — Test type-check gate
+- 89988f9: Laura — Aligned test files + fixed phantom imports
+- edfff56: Genesta — Doc reconciliation §10
+- 7848d76: Genesta — Doc reconciliation §20
+- 19693fd: Coordinator — Removed dead back-compat aliases
+- babe717: Coordinator — Cycle-2 nits
+
+---
+
+## Rejected (with reasoning)
+
+### F9 — Propagate `FactId` branding to `FactReader`/`TrustUpdater` seams
+
+**Reason:** Out of scope for the imprint slice. Touching recall/feedback seams would expand the blast radius into tested, stable code. `FactId` is a branded type specific to the write path today. Propagating it to read seams (`FactReader.read()`, `TrustUpdater.mutate()`) is a candidate for the `integrate` cycle, where the full fact lifecycle (write → read → mutate) will be unified.
+
+### F10 — Runtime null/undefined guard on `content`
+
+**Reason:** Consistency with existing activity patterns. `recall.ts` and `applyFeedback()` trust TypeScript's structural types and do not add runtime `typeof` guards on their inputs. Adding one only in `imprint` would create an inconsistency — either all activities guard or none do. The TS-only contract is the current convention.
+
+---
+
+## Test Results
+
+- **Before:** 256 tests (208 pre-existing + 48 imprint)
+- **After:** 258 tests (208 pre-existing + 50 imprint — IM-10 gained 1 case × 2 wirings)
+- **tsc --build:** Clean
+
+---
+
+## 2026-06-16 — FR-4 Vocabulary Amendment
+
+**Status:** DECIDED  
+**Date:** 2026-06-16T23:03:18-07:00  
+**Author:** Genesta (Cognitive Systems Lead)  
+**Approved by:** Aaron (akubly)
+
+The FR-4 locked activity vocabulary is amended:
+
+**Before (v5-final):**
+> `integrate, recall, rerank, decide, commit, retire, evict` in v1.
+
+**After:**
+> `imprint, integrate, recall, rerank, decide, commit, retire, evict` in v1.
+
+### Definitions
+
+| Verb | Category | Semantics |
+|------|----------|-----------|
+| **`imprint`** | Storage (leaf write) | Raw fact creation. Mechanical write to durable storage with input validation and defaults. No contextual processing, no dedup, no reconciliation. Idempotent on `(factId, sessionId)`. |
+| **`integrate`** | Cognitive (orchestration) | Contextual processing. Queries existing knowledge via `recall`, classifies input (novel/duplicate/contradiction), reconciles (trust-averaging, edge creation, conflict resolution). Calls `imprint` internally for net-new facts. |
+
+**Rationale:** Aaron identified a verb conflation in the PRD v5 §10: `integrate` bundled two distinct responsibilities (raw fact creation + reconciliation-against-context) into one verb. The split corrects this by making `imprint` the mechanical write and `integrate` the cognitive orchestration. This aligns with the principle: "Activities are runtime verbs, not storage nouns."
+
+---
+
+## 2026-06-16 — `imprint` Activity Contract
+
+**Status:** DECIDED  
+**Date:** 2026-06-16T23:08:20-07:00  
+**Author:** Genesta (Cognitive Systems Lead)  
+**Approved by:** Aaron (akubly)
+
+### FactWriter Seam Interface
+
+Location: `src/activities/imprint.ts`
+
+```typescript
+export interface FactWriter {
+  write(args: {
+    factId: FactId;
+    sessionId: SessionId;
+    content: string;
+    trust: number;
+    importance: number;
+    attentionTier: AttentionTier;
+    createdAt: number;
+  }): Promise<void>;
+}
+```
+
+**Contract guarantees:**
+- `write()` MUST persist durably before resolving.
+- `write()` MUST be idempotent on `(factId, sessionId)`: re-writing with same content is no-op; re-writing with different content is no-op (first-write-wins).
+- `write()` MUST scope state by sessionId.
+- `write()` receives fully-validated, defaulted values; does NOT perform input validation.
+- `write()` sets `last_accessed` to NULL (never accessed yet).
+
+### ImprintOptions & ImprintDeps Types
+
+**ImprintOptions:**
+```typescript
+export interface ImprintOptions {
+  content: string;                    // Required: must be non-empty after trim
+  sessionId: SessionId;               // Required: session scope
+  trust?: number;                     // Optional, default 0.5; ∈ [0, 1]
+  importance?: number;                // Optional, default 0; ∈ [0, 1]
+  attentionTier?: AttentionTier;      // Optional, default 'warm'
+}
+```
+
+**ImprintDeps:**
+```typescript
+export interface ImprintDeps {
+  factWriter: FactWriter;
+  clock: ClockProvider;
+  idProvider: IdProvider;
+}
+```
+
+### Activity Function — `imprint()`
+
+```typescript
+export async function imprint(
+  options: ImprintOptions,
+  deps: ImprintDeps,
+): Promise<FactId>;
+```
+
+**Validation order (all checks fire synchronously before first `await`):**
+1. `content`: must be non-empty after `.trim()` → `InvalidImprintError(field:'content')`
+2. `trust`: must be finite AND ∈ [0, 1] → `InvalidImprintError(field:'trust')`
+3. `importance`: must be finite AND ∈ [0, 1] → `InvalidImprintError(field:'importance')`
+4. `attentionTier`: must be 'hot'|'warm'|'cold' → `InvalidImprintError(field:'attentionTier')`
+
+**After validation:**
+- Generate `factId` via `idProvider.next()`
+- Read timestamp via `clock.now()`
+- Apply defaults for omitted optional fields
+- Call `factWriter.write({ factId, sessionId, content: content.trim(), trust, importance, attentionTier, createdAt })`
+- Return `factId`
+
+**Defaults:**
+- `trust`: 0.5 (neutral)
+- `importance`: 0 (unscored)
+- `attentionTier`: 'warm'
+- `lastAccessed`: NULL (never accessed)
+
+### Contract Assertions (IM-1 through IM-14)
+
+Shared suite: `runFactWriterContract(implName, makeHarness)` in `src/storage/__tests__/fact-writer-contract.helper.ts`.
+
+1. **IM-1** — Happy path: imprint resolves with a FactId
+2. **IM-2** — Returned FactId matches IdProvider output
+3. **IM-3** — Default trust is 0.5
+4. **IM-4** — Default importance is 0
+5. **IM-5** — Default attentionTier is 'warm'
+6. **IM-6** — Custom values stored verbatim
+7. **IM-7** — Empty content throws InvalidImprintError
+8. **IM-8** — Whitespace-only content throws InvalidImprintError
+9. **IM-9** — Out-of-range trust throws InvalidImprintError (parameterized: 1.5, -0.1, NaN, Infinity, -Infinity)
+10. **IM-10** — Out-of-range importance throws InvalidImprintError (parameterized: 2.0, -0.5, NaN, Infinity)
+11. **IM-11** — Invalid attentionTier throws InvalidImprintError (parameterized: 'lukewarm', 'HOT', '', 'freeze')
+12. **IM-12** — Session isolation: fact in sessionA not visible to sessionB reads
+13. **IM-13** — Idempotent re-write (same factId + sessionId); first-write-wins
+14. **IM-14** — Round-trip with recall: imprinted fact appears in `FactStore.search()` with correct defaults
+
+### Error Type
+
+Appended to `src/activities/errors.ts`:
+
+```typescript
+export class InvalidImprintError extends Error {
+  readonly code = 'INVALID_IMPRINT' as const;
+  readonly field: string;
+  readonly value: unknown;
+
+  constructor(field: string, value: unknown, message: string) {
+    super(message);
+    this.name = 'InvalidImprintError';
+    this.field = field;
+    this.value = value;
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+```
+
+### Factory Function (SQLite Deps)
+
+Appended to `src/sqlite/deps.ts`:
+
+```typescript
+export function createSqliteImprintDeps(db: Database.Database): ImprintDeps {
+  return {
+    factWriter: new SqliteFactWriter(db),
+    clock: { now: (): number => Date.now() },
+    idProvider: { next: (): FactId => crypto.randomUUID() as FactId },
+  };
+}
+```
+
+### Scope-Out
+
+The following are NOT part of `imprint`:
+- Querying existing facts before write (recall-for-context) → `integrate`
+- Deduplication detection → `integrate`
+- Trust-averaging with existing facts → `integrate`
+- Edge/link creation → `integrate`
+- Importance inference → `integrate` or sweep-phase
+- Content transformation → may belong to `integrate`
+- `accessCount` / `lastAccessed` side-effects on recall → recall-promotion slice
+
+**`imprint` is a dumb pipe:** validate → generate ID → apply defaults → write → return ID.
+
+---
+
+## 2026-06-16 — `integrate` Orchestration Activity — Representation Design (PROPOSED)
+
+**Status:** PROPOSED  
+**Date:** 2026-06-16T22:37:35-07:00  
+**Author:** Crispin (Knowledge Representation Specialist)  
+**Feeds:** Genesta's `imprint` activity spec and vocabulary amendment  
+**Scope:** Classification model, edge schema, reconciliation outcomes — representation layer only  
+**Pending:** Genesta review + Aaron decision
+
+### Classification Model
+
+`integrate` must decide: is the incoming material **novel**, a **duplicate**, or a **contradiction** of existing knowledge?
+
+| Signal | Source | Current capability | Gap |
+|--------|--------|-------------------|-----|
+| **Identity match** (exact same fact) | `UNIQUE(fact_id, session_id)` constraint | ✅ Already enforced | None — `imprint` already rejects re-insert |
+| **Content similarity** (near-duplicate) | FTS5 BM25 via `facts_fts` | ⚠️ Partial — score but no threshold | Needs **similarity threshold** decision |
+| **Semantic contradiction** | None | ❌ Not representable | Requires LLM classification or structured dedup keys |
+
+### Proposed Classification Flow
+
+```
+integrate(content, sessionId, metadata)
+  │
+  ├─ 1. recall(content, sessionId, limit=K)
+  │     → top-K existing facts with composite scores
+  │
+  ├─ 2. FOR EACH recalled fact:
+  │       compute dedup_signal(input, existing)
+  │       → { similarity: number, relationship: 'novel' | 'duplicate' | 'contradiction' }
+  │
+  └─ 3. Aggregate: highest-similarity match determines classification
+```
+
+### Dedup Keys — Proposed Schema Enhancement
+
+A **dedup key** is an optional, caller-supplied canonical identifier for semantic content, independent of wording.
+
+Example:
+```
+factId: "f-abc-123"           ← identity (already exists)
+dedupKey: "repo:mem/lint:cmd" ← semantic identity (proposed)
+```
+
+**Schema cost:** One nullable TEXT column on `facts` + non-unique index. Lightweight, compatible with `imprint` contract.
+
+### Edge / Cross-Reference Schema
+
+**Proposed migration 003 — relations table:**
+
+```sql
+CREATE TABLE IF NOT EXISTS relations (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_id    TEXT    NOT NULL,   -- source fact's fact_id
+  to_id      TEXT    NOT NULL,   -- target fact's fact_id
+  session_id TEXT    NOT NULL,   -- session that created the edge
+  edge_type  TEXT    NOT NULL
+    CHECK (edge_type IN (
+      'derived_from', 'references', 'contradicts', 'supersedes',
+      'part_of', 'instance_of', 'precedes',
+      'defined_in', 'decided_by', 'committed_in',
+      'originated_in', 'modified_in', 'referenced_in'
+    )),
+  weight     REAL             DEFAULT NULL,
+  confidence REAL             DEFAULT NULL,
+  created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (from_id, to_id, edge_type, session_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_relations_from ON relations(from_id);
+CREATE INDEX IF NOT EXISTS idx_relations_to   ON relations(to_id);
+CREATE INDEX IF NOT EXISTS idx_relations_type ON relations(edge_type);
+```
+
+**Minimum viable edge set for `integrate`:**
+- `supersedes`: Contradiction resolved in favor of new
+- `contradicts`: Contradiction detected, not yet resolved
+- `derived_from`: Novel fact derived from existing context
+- (Audit log for duplicates outside this table)
+
+### Reconciliation Outcomes
+
+**3a. NOVEL** (no sufficiently similar existing fact)
+- Call `imprint(newFact)` → FactId
+- Optionally write `derived_from` edge if recall surfaced context
+- Return `{ outcome: 'created', factId }`
+
+**3b. DUPLICATE** (existing fact is semantically equivalent)
+- Do NOT call `imprint`
+- Update `last_accessed` on existing fact
+- Optionally increment trust (subject to T3b cap)
+- Log the dedup decision
+- Return `{ outcome: 'duplicate', existingFactId }`
+
+**3c. CONTRADICTION** (new input conflicts with existing fact)
+- Call `imprint(newFact)` → FactId
+- Write `contradicts` edge
+- Decrement trust on existing fact
+- Optionally write `supersedes` edge if confidence high enough
+- Return `{ outcome: 'contradiction', newFactId, conflictsWith }`
+
+### Open Questions for Aaron
+
+| # | Question | Impact | Recommendation |
+|---|----------|--------|---|
+| Q1 | **Does `integrate` land in this cycle or is it purely design?** | Determines whether migration 003 ships now or later | Design now, ship with `integrate` implementation (not with `imprint`) |
+| Q2 | **Should we add `dedupKey` to the `facts` table?** | One nullable column + index; enables O(1) semantic dedup for structured inputs | Yes — cheap schema cost, high value for structured kinds |
+
+### Summary
+
+Representation layer can support `integrate`'s classification with:
+1. Existing infrastructure (BM25 recall + uniqueness constraint)
+2. New schema (migration 003: `relations` table + optional `dedupKey` column)
+3. Clear boundary: representation owns schema/edges; Edgar owns similarity thresholds/trust algorithms; Genesta owns activity contract
+
+Cannot provide from representation alone: reliable duplicate-vs-contradiction discrimination. Requires either LLM judgment or structured dedup keys.
+
+---
+
+## Next Steps
+# 1. Syntax check
+bash -n .github/hooks/cairn/shell-init.sh
+bash -n .github/hooks/cairn/install.sh
+bash -n .github/hooks/cairn/uninstall.sh
+
+
+
+
+# 2. Install (idempotent — run twice to confirm second run is no-op)
+bash .github/hooks/cairn/install.sh
+bash .github/hooks/cairn/install.sh   # should print "already installed"
+
+
+
+
+ # 3. Reload and smoke-check
+source ~/.bashrc
+forge_mcp_check
+
+
+
+
+ # 4. Uninstall
+bash .github/hooks/cairn/uninstall.sh
+source ~/.bashrc
+
+
+
+ # forge_mcp_check should no longer exist as a function
+
+
+
+
+ # 5. Re-install (confirm idempotency survived uninstall cycle)
+bash .github/hooks/cairn/install.sh
+source ~/.bashrc
+forge_mcp_check
+```
+
+## Key design note
+
+The marker block strategy (`# forge-mcp: shell init — start`) is the safe pattern
+for managed rc-file entries. The install script will never double-append, and the
+uninstall script removes the exact block. No manual editing required.
+
+
+
+
+ # PR #45 — Second Merge from origin/main (2026-06-05)
+
+**Author:** Gabriel (Infrastructure)
+**Branch:** squad/crucible-sprint-0-walkthrough-a
+**Merge commit:** 9a26669
+
+---
+
+## What merged
+
+Two PRs landed on main since the last merge:
+- **#47** — M8 Slice B (eureka storage layer: `trust-updater-sqlite.ts`, contract test helpers, refactored `fact-reader-sqlite.ts`)
+- **#44** — forge-mcp hooks (`.github/hooks/cairn/` install/uninstall/shell-init scripts; `forge-mcp-shell-install` skill)
+
+Full diff summary: 35 files changed, 10641 insertions, 15048 deletions (large deletions from decisions-archive consolidation).
+
+---
+
+## Conflicts
+
+**None.** The only overlapping files were `.squad/` append-only files (history.md, history-archive.md, decisions.md, decisions-archive.md), all covered by `merge=union` in `.gitattributes`. Git auto-resolved all of them via the union driver. No source files, no package-lock.json, no tsconfig conflicts.
+
+---
+
+## Build result
+
+`npm install` — ✅ clean (no lockfile conflict; audit warnings pre-existing)
+`npm run build` (all workspaces, `tsc --build`) — ✅ exit 0
+
+---
+
+## Test results
+
+| Workspace | Tests | Result |
+|---|---|---|
+| `@akubly/crucible-core` | 6/6 | ✅ PASS |
+| `@akubly/crucible-cli` | 1/1 | ✅ PASS |
+
+---
+
+## New HEAD
+
+`9a26669` — Merge remote-tracking branch 'origin/main' into squad/crucible-sprint-0-walkthrough-a
+
+---
+
+## Status
+
+Not pushed — Roger has follow-up fixes to land on top; coordinator will push after.
+
+
+---
+
+
+
+
+ # 2026-06-06: Aaron's User Directive — Parallelization and TDD Discipline
+
+**By:** Aaron Kubly (via Copilot)  
+**Directive:** When parallelizing work, do NOT go parallel if it requires deviating from RED→GREEN TDD execution. TDD discipline (RED test fails first, then minimal GREEN, then REFACTOR) takes priority over parallelism. Parallel work is only permitted at TDD-safe boundaries (e.g., independent RED tests, interface/seam contracts) — never GREEN-before-RED, never shared-impl-before-seam.  
+**Why:** User direction — captured for team memory during WAL substrate + Walkthrough B kickoff (Option A seam-first).
+
+---
+
+
+
+
+ # 2026-06-06: Aaron's Ruling — HookVerdict VETO Semantics (resolves graham-ledger-seam-OPEN)
+
+**By:** Aaron Kubly (via Copilot)  
+**Decision:** Option A — Adopt **VETO** as a first-class **pre-WAL Ledger-layer gate**.
+
+- VETO fires at `Ledger.append` entry, BEFORE staging. Rejected input never enters the WAL → WAL stays purely append-only; §3's "all staged rows commit" invariant is intact.
+- §4's `continue | observe | pause` (on the staged batch, inside the group-commit window) are untouched. VETO is a distinct, earlier policy boundary.
+- Enforced by the type system: `Exclude<HookVerdict, 'VETO'>` at the WAL backend `commitRow` port so VETO can never cross the WAL boundary.
+- §4.2 Walkthrough B RED test passes as written — no test rework.
+
+**Required follow-on (documented amendments to FINAL specs):**
+
+1. §4.1 verdict table — add VETO row ("no row created; Ledger throws `Append vetoed by hook: <id>`"), flagged as Ledger-layer (not commit-window).
+2. §4.3 dispatch — add VETO case before the PAUSE check.
+3. §11 replay contract — note: VETO inputs are not in the WAL; replay need not handle them (Ledger-layer policy, not a WAL concept).
+
+**Why:** User ruling at Decision-Point Gate during WAL substrate + Walkthrough B build.
+
+---
+
+
+
+
+ # PR #45 — Second Merge from origin/main (2026-06-05)
+
+**Author:** Gabriel (Infrastructure)
+**Branch:** squad/crucible-sprint-0-walkthrough-a
+**Merge commit:** 9a26669
+
+---
+
+## What merged
+
+Two PRs landed on main since the last merge:
+- **#47** — M8 Slice B (eureka storage layer: `trust-updater-sqlite.ts`, contract test helpers, refactored `fact-reader-sqlite.ts`)
+- **#44** — forge-mcp hooks (`.github/hooks/cairn/` install/uninstall/shell-init scripts; `forge-mcp-shell-install` skill)
+
+Full diff summary: 35 files changed, 10641 insertions, 15048 deletions (large deletions from decisions-archive consolidation).
+
+---
+
+## Conflicts
+
+**None.** The only overlapping files were `.squad/` append-only files (history.md, history-archive.md, decisions.md, decisions-archive.md), all covered by `merge=union` in `.gitattributes`. Git auto-resolved all of them via the union driver. No source files, no package-lock.json, no tsconfig conflicts.
+
+---
+
+## Build result
+
+`npm install` — ✅ clean (no lockfile conflict; audit warnings pre-existing)
+`npm run build` (all workspaces, `tsc --build`) — ✅ exit 0
+
+---
+
+## Test results
+
+| Workspace | Tests | Result |
+|---|---|---|
+| `@akubly/crucible-core` | 6/6 | ✅ PASS |
+| `@akubly/crucible-cli` | 1/1 | ✅ PASS |
+
+---
+
+## New HEAD
+
+`9a26669` — Merge remote-tracking branch 'origin/main' into squad/crucible-sprint-0-walkthrough-a
+
+---
+
+## Status
+
+Not pushed — Roger has follow-up fixes to land on top; coordinator will push after.
+
+
+---
+
+
+
+
+ # 2026-06-06: Aaron's User Directive — Parallelization and TDD Discipline
+
+**By:** Aaron Kubly (via Copilot)  
+**Directive:** When parallelizing work, do NOT go parallel if it requires deviating from RED→GREEN TDD execution. TDD discipline (RED test fails first, then minimal GREEN, then REFACTOR) takes priority over parallelism. Parallel work is only permitted at TDD-safe boundaries (e.g., independent RED tests, interface/seam contracts) — never GREEN-before-RED, never shared-impl-before-seam.  
+**Why:** User direction — captured for team memory during WAL substrate + Walkthrough B kickoff (Option A seam-first).
+
+---
+
+
+
+
+
+ # Forge production runner integration (slice 1)
+
+**Date:** 2026-06-22
+**By:** Alexander (SDK/Runtime), with Roger (Platform) lifecycle guidance; shipped in PR #82 (squash 9f24aa8).
+**Context:** The Forge feedback loop was built but underfed — no production runner drove real Copilot SDK sessions through `ForgeClient`, so dogfood profiles needed seeding via `forge-seed-profile`.
+
+**Decisions:**
+- **Composition root** lives in `packages/skillsmith-runtime/src/forgeSessionRunner.ts` (`runForgeInstrumentedSession`), owning the SDK → `ForgeClient` → Cairn telemetry-sink wiring. `runtime-cli` stays thin and takes NO direct `@akubly/forge` dependency.
+- **Opt-in CLI** `forge-run-session` (runtime-cli) drives one real session. Exit codes: `0` samples written, `1` ran-but-no-samples, `2` bad input / auth / SDK-unavailable.
+- **Permission seam:** `onPermissionRequest` on `ForgeSessionConfig`. `ForgeClient` defaults to a DENY handler (secure-by-default at the library); the runner composition root opts into SDK `approveAll` for dogfood.
+- **Terminal-event drain is event-driven:** telemetry flush waits for the bridged `session_end` (observed as `session_end_observed`) with a timeout as a ceiling only — NOT a fixed wall-clock delay — so `outcome.succeeded` cannot become a false-negative when `session.shutdown` lands during/after `sdkSession.disconnect()`. The drain ceiling is an internal constant/test seam, not part of the public `ForgeSessionConfig`. Profile build uses `buildProfiles(db)` (not Cairn's `curate()`).
+- **Disconnect observability:** `RunForgeInstrumentedSessionResult` carries `disconnect: { ok: true } | { ok: false; error: string }` so a persistent disconnect failure is visible, not swallowed.
+- **Client ownership:** explicit `ownsSdkClient` (derived from `stopClientOnFinish ?? !injected`); injected SDK clients are not stopped unless requested.
+
+**Shutdown ordering (Roger):** keep SDK subscriptions live during `sdkSession.disconnect()` → drain terminal events → flush telemetry → `ForgeClient.stop()` → `closeDb()` last.
+
+**Deferred:** dogfood `SQLITE_BUSY` policy when a runner and an interactive session share `~/.cairn/knowledge.db` (Cairn sets no `busy_timeout`). Use an isolated `--db` for CI/dev.
+
+**Review:** 3 local persona-review cycles (11 → 5 advisory → 0); Copilot cloud review clean (only flagged a decisions-ledger archive that was removed from the PR).
+
+---
+
+
+
+
+ # Forge Runner — Slice 2 Decision (A+D)
+
+**Date:** 2026-06-22  
+**By:** Graham (Lead), Aaron approved; implemented by Alexander (SDK/Runtime, 2A) and Roger (Platform, 2D)  
+**Status:** APPROVED and SHIPPED
+
+---
+
+## Approved Scope: Slice 2 = **(A) DBOM in runner** + **(D) SQLITE_BUSY policy**
+
+Graham's proposal recommended A+D as the next increment. Aaron approved on 2026-06-22.
+
+---
+
+## Slice 2A — DBOM Generation in Runner
+
+**Implementer:** Alexander (SDK/Runtime)  
+**Status:** ✅ Shipped (tests green)
+
+### What Was Wired
+
+**File:** `packages/skillsmith-runtime/src/forgeSessionRunner.ts`
+
+After `buildProfiles(db)` and before `closeDb()`, the runner now executes best-effort DBOM generation and persistence:
+
+```
+dbomArtifact = generateDBOM(session.sessionId, [...session.getBridgeEvents()])
+dbomRootHash = dbomArtifact.rootHash  // Always set (sentinel for empty, or computed hash)
+if (dbomArtifact.stats.totalDecisions > 0):
+    upsertDBOM(db, dbomArtifact)  // May throw; caught below
+else:
+    // No certification events → sentinel hash is persisted result, artifact not upserted
+try:
+    // ... (upsertDBOM if needed)
+catch e:
+    dbomPersistError = e.message
+    // run still succeeds; rootHash retained
+```
+
+- `generateDBOM` is wrapped in try/catch: it CAN throw on malformed event payload, in which case `dbomRootHash` stays null and `dbomPersistError` is set.
+- On the normal path, `generateDBOM` succeeds and returns a well-formed artifact: sentinel empty-set hash (SHA-256 of empty string) when no certification events; sealed chain root hash otherwise. `dbomRootHash` is non-null in all success paths.
+- Persistence failure sets `dbomPersistError` but does not throw—run completes successfully with best-effort provenance.
+- `generateDBOM` imported from `@akubly/forge` (already in deps).
+- `upsertDBOM` and `loadDBOMArtifact` imported from `@akubly/cairn`.
+- `getBridgeEvents()` is the existing snapshot accessor on `ForgeSession`.
+
+### Result Fields
+
+`dbomRootHash: string | null` and `dbomPersistError: string | null` added to `RunForgeInstrumentedSessionResult`:
+- `dbomRootHash`: Non-null (64-char SHA-256 hex) in all cases where DBOM generation succeeded. When no certification-tier events exist, this is the deterministic empty-set sentinel hash. When at least one certification event was captured, this is the real chain root hash and the artifact was persisted to the database. Null only when DBOM generation itself threw.
+- `dbomPersistError`: Non-null when DBOM generation or persistence failed; the run result is still valid (best-effort provenance). Null when DBOM was generated successfully (whether or not any certification events existed).
+
+### Tests
+
+`packages/skillsmith-runtime/src/__tests__/forgeSessionRunner.test.ts`:
+1. **`persists a DBOM artifact and surfaces dbomRootHash when certification events exist`** — emits `permission.requested` + `permission.completed` SDK events (certification tier), asserts `result.dbomRootHash` matches SHA-256 pattern and `loadDBOMArtifact(db, sessionId)` returns artifact.
+2. **`dbomRootHash is the empty-set sentinel and run succeeds when no certification events exist`** — emits only internal-tier events, asserts `result.dbomRootHash` equals the sentinel hash `generateDBOM('', []).rootHash`, `result.dbomPersistError === null`, and normal signal samples written.
+3. **`surfaces dbomPersistError and does not throw when DBOM persistence fails`** — mocks `upsertDBOM` to throw, asserts run completes successfully with `result.dbomPersistError` set to error message and `result.dbomRootHash` non-null (computed hash retained).
+
+Result: 3 new DBOM tests passing; 68 skillsmith-runtime + 694 forge tests pass. TypeScript compiles cleanly.
+
+---
+
+## Slice 2D — SQLITE_BUSY Policy in Cairn
+
+**Implementer:** Roger (Platform)  
+**Status:** ✅ Shipped (5 new tests pass)
+
+### What Was Changed
+
+**File:** `packages/cairn/src/db/index.ts` — `getDb()` function
+
+Added `db.pragma('busy_timeout = 5000')` after WAL, before `foreign_keys`:
+
+```typescript
+db = new Database(resolvedPath);
+db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 5000');   // ← Slice 2D addition
+db.pragma('foreign_keys = ON');
+```
+
+WAL was already set. Not modified.
+
+### Concurrent-Access Contract
+
+Every connection opened through `getDb()` (sole Cairn DB-open path) inherits:
+
+| Pragma | Value | Effect |
+|--------|-------|--------|
+| `journal_mode` | `WAL` | Multiple readers never block writers; only one writer holds WAL write lock at a time. |
+| `busy_timeout` | `5000` (ms) | When a second writer contends for WAL write lock, SQLite retries internally for up to 5 seconds before throwing `SQLITE_BUSY`. |
+| `foreign_keys` | `ON` | Referential integrity enforced. |
+
+**Implication:** `forge-run-session` (writer) + interactive Copilot session (reader/occasional writer) sharing `knowledge.db` resolves write contention within 5 s safety margin. Sustained concurrent write load still possible to hit limit; typical CLI+runner usage is not expected to.
+
+### Test Coverage
+
+`packages/cairn/src/__tests__/busyTimeout.test.ts` (5 tests):
+- `getDb(filePath)` sets `busy_timeout = 5000`
+- `getDb(':memory:')` sets `busy_timeout = 5000`
+- WAL mode set (no regression)
+- Concurrent writer succeeds when locker releases within 300 ms (worker-thread integration)
+- Concurrent writer with `busy_timeout = 0` fails immediately with `SQLITE_BUSY` (negative control)
+
+### Docs Updated
+
+`docs/forge-dogfooding-guide.md` → "Operational Notes / Concurrency & shared database":
+- Removed SQLITE_BUSY deferral note.
+- Added policy description: WAL + 5 s busy_timeout, what it guarantees, caveat re: sustained load.
+
+---
+
+## Acceptance Criteria (Both Slices)
+
+- ✅ `forge-run-session` run produces DBOM artifact retrievable via `loadDBOMArtifact(db, sessionId)`.
+- ✅ `RunForgeInstrumentedSessionResult.dbomRootHash` non-null when certification-tier events exist.
+- ✅ Concurrent `forge-run-session` + interactive session vs. same `knowledge.db` does not produce `SQLITE_BUSY` within 5 s busy_timeout.
+- ✅ `npm test` passes (full suite).
+- ✅ No Phase 4.6/5 cloud scope pulled in.
+
+---
+
+## Slice 2A Refinement — DBOM Result Contract: Best-Effort + Sentinel
+
+**Date:** 2026-06-22  
+**Author:** Alexander (SDK/Runtime)  
+**Status:** FINAL — applied in `packages/skillsmith-runtime/src/forgeSessionRunner.ts`  
+**Approval:** Persona panel (Correctness, Skeptic, Craft, Compliance, Architect); Aaron disposed findings; shipped PR #84
+
+### Context
+
+Slice 2A shipped DBOM wiring in the runner with `dbomRootHash: string | null`
+where `null` meant "no certification events." A persona-review cycle identified
+two gaps: (1) `null` conflated "no events" with "generation failed," and (2) a
+thrown exception inside the DBOM block could break the slice-1 success/exit-code
+contract. Aaron approved best-effort + sentinel semantics.
+
+### `RunForgeInstrumentedSessionResult` DBOM Contract
+
+#### `dbomRootHash: string | null`
+
+| Value | Meaning |
+|---|---|
+| 64-char SHA-256 hex (non-null, non-sentinel) | At least one certification-tier event existed; artifact was persisted to the database via `upsertDBOM`. |
+| `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (sentinel) | `generateDBOM` succeeded but found zero certification-tier events; no artifact persisted. This is the SHA-256 of the empty string, returned deterministically by `generateDBOM(sessionId, [])`. |
+| `null` | DBOM generation or persistence threw (malformed event payload, storage error, etc.). See `dbomPersistError`. |
+
+**Key distinction:** `null` now means "could not generate" — NOT "no events." The
+empty-session case is now represented by the deterministic sentinel hash.
+
+#### `dbomPersistError: string | null`
+
+- **Non-null:** DBOM generation or persistence failed. Contains the error message
+  (`e.message` if `Error`, otherwise `String(e)`). The run result is still valid —
+  provenance is best-effort.
+- **Null:** DBOM block completed without exception (covers both "sentinel" and
+  "real hash" cases).
+
+### Best-Effort Contract
+
+The DBOM block (`generateDBOM` + conditional `upsertDBOM`) is wrapped in a
+`try/catch`. A failure:
+
+- Sets `dbomPersistError` to the error message.
+- Logs `console.warn('[skillsmith-runtime] DBOM generation/persistence failed; run result unaffected', e)`.
+- Does **not** throw out of `runForgeInstrumentedSession`.
+- Does **not** affect `signalSamplesWritten`, `disconnect`, exit code, or any
+  other field.
+
+This mirrors the existing `disconnect` best-effort pattern: failures are
+surfaced in the result type and logged, never propagated as unhandled exceptions.
+
+### Implementation Notes
+
+- `generateDBOM(sessionId, events)` — `@akubly/forge`. Filters to
+  `provenanceTier === 'certification'`; `stats.totalDecisions` is 1:1 with
+  certification-tier events. Returns well-formed artifact with sentinel rootHash
+  for empty event lists.
+- `upsertDBOM(db, artifact)` — `@akubly/cairn`. Idempotent (DELETE + INSERT in
+  transaction). Called only when `hasCertificationEvents` is true.
+- `bridgeEvents` captured once as `[...session.getBridgeEvents()]` (spread
+  converts readonly to mutable as required by the generator signature).
+- Ordering: after `buildProfiles(db)`, before `closeDb()` / `forgeClient.stop()`.
+
+### Test Coverage
+
+`packages/skillsmith-runtime/src/__tests__/forgeSessionRunner.test.ts`:
+
+1. **Certification events → persist**: asserts `dbomRootHash` matches
+   `/^[0-9a-f]{64}$/`, `loadDBOMArtifact` returns artifact, `artifact.rootHash ===
+   result.dbomRootHash`, `totalDecisions === 2`.
+2. **No certification events → sentinel**: asserts `dbomRootHash` equals
+   `generateDBOM(sessionId, []).rootHash` (sentinel), `dbomPersistError === null`,
+   no artifact persisted (`loadDBOMArtifact` returns null).
+3. **Persistence failure → best-effort**: spies `cairn.upsertDBOM` to throw
+   `'disk full'`; asserts run returns valid result, `dbomPersistError === 'disk
+   full'`, no exception thrown.
+
+---
+
+## Slice 2D Refinement — busy_timeout Documentation & Inline Polish
+
+**Date:** 2026-06-22  
+**Author:** Roger (Platform)  
+**Status:** Applied  
+**Approval:** Persona panel; Aaron disposed findings; shipped PR #84
+
+### F3 — Documentation Relocation (docs/forge-dogfooding-guide.md)
+
+The concurrency bullet describing `busy_timeout = 5000` + WAL was incorrectly placed inside
+the "Known Limitations / explicitly deferred" section. That section is reserved for future work;
+placing delivered behavior there misleads operators into believing it is not yet functional.
+
+**Fix applied:** Removed the bullet from the deferred list. Added a new `## Operational Notes`
+section with a `### Concurrency & shared database` subsection, positioned between the
+Troubleshooting and Known Limitations sections. Technical content of the bullet is preserved
+verbatim, including the accurate caveat that 5 s reduces but does not eliminate contention under
+sustained parallel write load.
+
+The deferred list now contains only genuine future work (stock-session wiring, GP-tournament,
+meta-optimization, Eureka FactStore, zsh support).
+
+### F4 — Inline Comment on busy_timeout Pragma (packages/cairn/src/db/index.ts)
+
+The module header already documented the concurrent-writer rationale for the 5 s timeout.
+The pragma line itself lacked a comment explaining that it applies **globally** — to every
+`getDb()` call including the migration runner.
+
+**Fix applied:** Added a 4-line inline comment above the `db.pragma('busy_timeout = 5000')`
+call explaining:
+- Applies to ALL opens, including migrations.
+- Acceptable because migrations are fast and idempotent.
+- 5 s covers typical interleaved forge-run-session / interactive CLI usage.
+- If startup hangs ~5 s, this global default is the first place to revisit.
+
+No behavior change. No configurable value introduced (deferred — see below).
+
+### Deferred Follow-up (for coordinator to file as GH issue if warranted)
+
+**"Make busy_timeout configurable + log lock waits"**
+
+Currently the 5 s value is a magic constant applied globally. Two improvements are deferred:
+
+1. **Configurable timeout:** Accept a `busyTimeoutMs` option in `getDb()` (or via an env var
+   `CAIRN_BUSY_TIMEOUT_MS`) so operators running multiple parallel `forge-run-session` instances
+   or CI jobs with aggressive parallelism can tune the value without patching source.
+
+2. **Lock-wait logging:** Emit a warning (stderr or a structured cairn event) when a connection
+   hits the busy-timeout retry path. Currently there is no observability into whether the 5 s
+   budget is ever being exercised in practice. A log line with timestamp, elapsed wait, and
+   caller context would make contention incidents diagnosable without reaching for SQLite
+   tracing.
+
+**Why defer now:** The 5 s global default covers the current dogfood workload (one
+`forge-run-session` + one interactive session). Making it configurable + observable is
+a quality-of-life improvement, not a correctness fix. Revisit once dogfood signal shows
+contention in practice.
+
+### Test Validation
+
+`npm test --workspace=@akubly/cairn` result:
+
+- `busyTimeout.test.ts`: **5/5 pass** ✅
+- Full suite: **749 pass, 3 fail**
+- The 3 failures are pre-existing curator failures tracked as issue #83 — unrelated to this change.
 
 
 ---

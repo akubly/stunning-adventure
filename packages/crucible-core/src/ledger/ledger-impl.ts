@@ -72,14 +72,19 @@ type SubscriberErrorHook = NonNullable<LedgerFactoryOptions['onSubscriberError']
 
 class LedgerImpl implements BootstrappableLedger {
   private readonly subscribers: LedgerSubscriber[] = [];
-  private hasBootstrapped = false;
+  private hasBootstrapped: boolean;
   private hasAppended     = false;
 
   constructor(
     private readonly hookBus: HookBusPort,
     private readonly walBackend: WalBackend,
     private readonly onSubscriberError?: SubscriberErrorHook,
-  ) {}
+    reopen?: boolean,
+  ) {
+    // reopen=true means the session WAL already contains committed rows —
+    // the caller will call append() directly without calling bootstrap().
+    this.hasBootstrapped = reopen === true;
+  }
 
   subscribe(subscriber: LedgerSubscriber): void {
     this.subscribers.push(subscriber);
@@ -106,8 +111,27 @@ class LedgerImpl implements BootstrappableLedger {
       throw new Error(`Append vetoed by hook: ${result.hookId}`);
     }
 
-    // (d) Non-VETO path — delegate to WAL backend
-    const offset = await this.walBackend.commitRow(input, result);
+    // (d) Non-VETO path — delegate to WAL backend.
+    // Strip ALL structural walFlags when caller provided walFlags; omit
+    // walFlags entirely when caller omitted it (preserves undefined shape).
+    // Callers must not spoof any structural bit (bootstrap, declaredWindow,
+    // syntheticOutput, taskBoundary, manifestRoot) via PrimitiveInput on the
+    // append path.  bootstrap() sets its own bits internally; append-path rows
+    // must carry no caller structural bits.
+    const sanitizedInput: PrimitiveInput = input.walFlags !== undefined
+      ? {
+          ...input,
+          walFlags: {
+            ...(input.walFlags ?? {}),
+            bootstrap:       false,
+            declaredWindow:  false,
+            syntheticOutput: false,
+            taskBoundary:    false,
+            manifestRoot:    false,
+          },
+        }
+      : input;
+    const offset = await this.walBackend.commitRow(sanitizedInput, result);
 
     // (e) Notify subscribers — fired after durable commit, before append resolves.
     // Each subscriber is isolated: a throwing subscriber MUST NOT affect the
@@ -116,8 +140,10 @@ class LedgerImpl implements BootstrappableLedger {
     // that would produce duplicate committed rows.
     // onSubscriberError (if injected) is called so callers can observe the fault
     // without polluting test output or risking a rethrow (#69).
+    // Use sanitizedInput (not input) so the subscriber view agrees with the
+    // persisted/replayed row — both see zero structural bits on the append path.
     if (this.subscribers.length > 0) {
-      const event: LedgerEvent = { ...input, offset };
+      const event: LedgerEvent = { ...sanitizedInput, offset };
       for (const sub of this.subscribers) {
         try {
           sub.onCommit(offset, event);
@@ -158,6 +184,14 @@ class LedgerImpl implements BootstrappableLedger {
    * Bypasses the hook bus — bootstrap rows are system-emitted context, not
    * subject to pre-commit policy hooks.  Each row uses verdict=COMMIT/hookId=null
    * which writes WAL hookVerdict byte 0xFF (no predicate matched, §3 seam §5).
+   * Each row is committed with walFlags.bootstrap=true (GAP-1 resolved, §3.8).
+   *
+   * Group-commit atomicity (GAP-2 resolved): all rows are staged via
+   * stageRow() (if the backend supports it) before a single flush() call,
+   * ensuring the entire batch commits in one fdatasync barrier regardless of
+   * the backend's batchSize setting ("either every offset-0 Observation durable
+   * or none" — §3.8).  Backends without stageRow fall back to commitRow();
+   * for synchronous in-memory backends this is still effectively atomic.
    *
    * Subscriber notifications follow the same isolation contract as append():
    * a throwing subscriber must never affect commit durability or skip peers.
@@ -165,13 +199,8 @@ class LedgerImpl implements BootstrappableLedger {
    * INVARIANT: must be called exactly once, before any append(), against an
    * empty ledger (offset-0 contract), with at least one row.
    * Throws if called a second time, after append(), with empty input, or
-   * against a non-empty WAL.
-   *
-   * Retry-safety: hasBootstrapped is only set to true after the FIRST row is
-   * durably committed.  A failure before any row is written allows a full retry.
-   * Once any row is durable, further bootstrap() calls are locked out because
-   * they would produce non-zero starting offsets and violate the offset-0
-   * contract.
+   * against a non-empty WAL.  When the ledger was created with reopen:true,
+   * this throws immediately (already-bootstrapped guard).
    */
   async bootstrap(rows: PrimitiveInput[]): Promise<number[]> {
     if (this.hasBootstrapped) {
@@ -184,10 +213,6 @@ class LedgerImpl implements BootstrappableLedger {
         'LedgerImpl.bootstrap() called after append() — bootstrap must precede all appends',
       );
     }
-    // Empty bootstrap is always a caller bug: bootstrap rows are the session's
-    // offset-0 batch. An empty call produces no rows, cannot satisfy the
-    // offset-0 contract, and leaves hasBootstrapped=false — a confusing no-op
-    // that would allow a second call with unpredictable offsets.
     if (rows.length === 0) {
       throw new Error(
         'LedgerImpl.bootstrap() called with an empty row array — at least one bootstrap row is required',
@@ -195,35 +220,64 @@ class LedgerImpl implements BootstrappableLedger {
     }
 
     // Verify the WAL is empty so offsets are guaranteed to start at 0.
-    // "Session reopen" (bootstrapping against an existing WAL) is a Phase-1
-    // feature; we refuse here to prevent silent offset corruption rather than
-    // building reopen support now.
     const probe = await this.walBackend.readRows({ range: [0, 0] });
     if (probe.length > 0) {
       throw new Error(
         'LedgerImpl.bootstrap() called against a non-empty WAL — bootstrap requires an ' +
-        'empty ledger to guarantee offset-0. Session-reopen support is deferred to Phase 1.',
+        'empty ledger to guarantee offset-0. Use createLedger({ reopen: true }) to ' +
+        'continue appending to an existing session.',
       );
     }
 
-    const offsets: number[] = [];
+    const bootstrapResult = { verdict: 'COMMIT' as const, hookId: null };
 
-    for (const row of rows) {
-      const offset = await this.walBackend.commitRow(row, {
-        verdict: 'COMMIT' as const,
-        hookId: null,
-      });
-      // Flip the guard only after the FIRST successful commit.  If the very
-      // first commitRow throws, hasBootstrapped stays false and the caller may
-      // legitimately retry bootstrap() from scratch (no rows are durable yet).
-      // After the first commit succeeds, any subsequent commitRow failure leaves
-      // hasBootstrapped=true, correctly locking out a retry that would produce
-      // non-zero starting offsets.
-      this.hasBootstrapped = true;
-      offsets.push(offset);
+    // Stage all rows with walFlags.bootstrap=true.
+    // Use stageRow() only when BOTH stageRow() AND flush() are present — both
+    // are required for atomic group-commit: stageRow() queues rows without
+    // auto-flush, and flush() commits the entire batch in one fsync barrier
+    // (BLOCKING-3).  A backend that has stageRow but no flush would hang at
+    // Promise.all below because staged rows never resolve without a flush().
+    // Fall back to commitRow() for backends without both (e.g.
+    // InMemoryWalBackend), where rows commit synchronously.
+    const rowInputs = rows.map(row => ({
+      ...row,
+      walFlags: { ...(row.walFlags ?? {}), bootstrap: true },
+    }));
+    const walBackend = this.walBackend;
+    const rowPromises = rowInputs.map(input =>
+      walBackend.stageRow && walBackend.flush
+        ? walBackend.stageRow(input, bootstrapResult)
+        : walBackend.commitRow(input, bootstrapResult),
+    );
 
-      if (this.subscribers.length > 0) {
-        const event: LedgerEvent = { ...row, offset };
+    // Flush atomically (GAP-2 / BLOCKING-3): all staged rows commit in one
+    // fsync barrier when stageRow() was used. With commitRow() fallback,
+    // rows were committed inline; flush() is a no-op.
+    // BLOCKING-1: if flush() rejects, rowPromises may also reject. Drain them
+    // with allSettled before re-throwing to prevent unhandled-rejection crashes.
+    try {
+      await (walBackend.flush?.() ?? Promise.resolve());
+    } catch (e) {
+      await Promise.allSettled(rowPromises);
+      throw e;
+    }
+
+    // Await all row offsets — throws if any row failed (atomic abort applies
+    // on group-commit backends that used stageRow()).  hasBootstrapped stays
+    // false on failure so the caller may retry bootstrap() from scratch.
+    // NOTE: retry is only viable when stageRow() was used — if the commitRow()
+    // fallback path ran, a partial commit may have already written rows, making
+    // the WAL non-empty and causing the next bootstrap() call to be rejected.
+    const offsets = await Promise.all(rowPromises);
+
+    // Mark as bootstrapped only after all rows are durable.
+    this.hasBootstrapped = true;
+
+    // Notify subscribers in offset order (same isolation as append()).
+    if (this.subscribers.length > 0) {
+      for (let i = 0; i < rowInputs.length; i++) {
+        const offset = offsets[i];
+        const event: LedgerEvent = { ...rowInputs[i], offset };
         for (const sub of this.subscribers) {
           try {
             sub.onCommit(offset, event);
@@ -256,5 +310,19 @@ class LedgerImpl implements BootstrappableLedger {
 export async function createLedger(opts?: LedgerFactoryOptions): Promise<BootstrappableLedger> {
   const walBackend = opts?.walBackend ?? new InMemoryWalBackend();
   const hookBus    = new PreCommitHookBus();
-  return new LedgerImpl(hookBus, walBackend, opts?.onSubscriberError);
+
+  // IMPORTANT: validate WAL is non-empty before honouring reopen:true.
+  // If the WAL is empty, reopen:true is nonsensical — honouring it would
+  // permanently block bootstrap() on a fresh session (the "SR-6 surprise").
+  // Treat an empty WAL the same as reopen:false so the caller can still
+  // bootstrap, regardless of the flag passed in.
+  let reopen = opts?.reopen;
+  if (reopen) {
+    const probe = await walBackend.readRows({ range: [0, 0] });
+    if (probe.length === 0) {
+      reopen = false;
+    }
+  }
+
+  return new LedgerImpl(hookBus, walBackend, opts?.onSubscriberError, reopen);
 }

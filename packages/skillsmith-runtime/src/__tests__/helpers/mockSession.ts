@@ -211,3 +211,23 @@ export function toolExecutionCompleteEvent(
     },
   };
 }
+
+export function permissionRequestedEvent(): SessionEvent {
+  return {
+    id: nextId(),
+    timestamp: now(),
+    parentId: null,
+    type: 'permission.requested' as SessionEventType,
+    data: { kind: 'shell', toolName: 'bash' },
+  };
+}
+
+export function permissionCompletedEvent(): SessionEvent {
+  return {
+    id: nextId(),
+    timestamp: now(),
+    parentId: null,
+    type: 'permission.completed' as SessionEventType,
+    data: { result: { kind: 'approved' } },
+  };
+}

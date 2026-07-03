@@ -267,3 +267,230 @@ The migration 002 defaults (`importance REAL NOT NULL DEFAULT 0`, `attention_tie
 **Test results:** 258/258 green (208 pre-existing + 50 imprint). `tsc --build` clean.
 
 **Decision drop:** `.squad/decisions/inbox/crispin-imprint-review-fixes.md`
+
+---
+
+## Learnings — 2026-06-23: Seam Map for `integrate(fact) → FactId`
+
+**Context:** Genesta is drafting the integrate scope/design brief. DEDUP is OPEN — Aaron decides. This map is investigation only; no production code.
+
+### 1. What `imprint` provides today (PR #81)
+
+- **Signature:** `imprint(options: ImprintOptions, deps: ImprintDeps): Promise<FactId>` (`src/activities/imprint.ts`).
+- **Input contract:** `content` (required, non-empty after trim), `sessionId` (required); optional `trust` ∈ [0,1] default 0.5, `importance` ∈ [0,1] default 0, `attentionTier` ∈ {hot,warm,cold} default 'warm'.
+- **Validation performed (synchronous, pre-await, throws `InvalidImprintError` with `code='INVALID_IMPRINT'`):** V1 non-empty content; V2 finite trust in [0,1]; V3 finite importance in [0,1]; V4 attentionTier in the literal set; plus the F5 guard rejecting empty/blank ids from `idProvider.next()`.
+- **Persistence seam:** `FactWriter.write({factId, sessionId, content, trust, importance, attentionTier, createdAt})` — London-style, injected. Two implementations: `SqliteFactWriter` and `InMemoryFactWriter` (the latter also implements `FactStore` to keep the in-memory write↔read view consistent for tests). Both share `epochMsToSqliteDateTime` for the SQLite TEXT-affinity datetime format.
+- **Id assignment:** `IdProvider.next() → FactId` (branded `string & {__brand:'FactId'}`). Production wires `crypto.randomUUID()`; tests inject deterministic ids. F5 guard ensures non-empty.
+- **Clock:** `ClockProvider.now()` returns Unix ms. Lives in neutral `src/activities/clock.ts` so the write path does not depend on the read path. `createdAt` is captured once and threaded through to the writer; `updated_at` mirrors `createdAt`; `last_accessed` is always NULL on insert.
+- **Dedup-suppression posture (F1):** `INSERT … ON CONFLICT(fact_id, session_id) DO NOTHING`. First-write-wins on the UNIQUE key; CHECK/NOT NULL violations still throw. The FTS5 `facts_ai` AFTER INSERT trigger does not fire on a skipped conflict, so FTS stays consistent. The in-memory writer mirrors this with a `Map.has(key)` early-return.
+- **What imprint deliberately does NOT do (per its own header):** "no contextual processing — that is integrate's job." It is the raw write path.
+
+### 2. What `integrate` adds vs reuses
+
+`integrate(fact: Fact) → FactId` per `docs/eureka/sections/10-activities-and-tiers.md §integrate` is the contextual front-door. Compared to `imprint`:
+
+**Additions integrate must own:**
+- **Richer input shape (`Fact`).** Spec calls for required `kind`, `verb`, `content` plus optional metadata. Imprint currently only models `content` + scalars. Either `Fact` must be normalized into the current writer args, OR we extend the persistence shape (see §3 and §5 — schema implications).
+- **Malformed-fact policy** (open question #2 in §10 doc) — `integrate` is the layer that decides throw vs coerce vs log+skip for missing required fields. Imprint just throws `InvalidImprintError`; integrate's policy needs to be explicit and may differ for non-required-yet-recommended fields.
+- **SessionId conditional semantics** (open question #9 in §10 doc) — FR-13 says `sessionId` is required for `kind=session` facts, optional otherwise. That conditional belongs in integrate; imprint requires `sessionId` unconditionally today.
+- **Session-association side effect** — spec says "If `sessionId` present, writes association to `fact_sessions` table." That table does not exist yet (see §5).
+- **Attention initialization** — spec says default `warm` and "Sets `lastAccessedAt`, `accessCount=1`". Today `accessCount` does not exist on the schema; `last_accessed` is set to NULL by imprint. Integrate's spec disagrees with imprint's current behavior — Aaron/Genesta need to reconcile (NULL = never-accessed-yet is what `compositeScore` is wired to assume; setting `accessCount=1` and `lastAccessedAt=now` would change recall scoring on the very first read).
+- **Optional dedup step** (open question #1; DEFERRED to Aaron).
+
+**Reusable from imprint:**
+- All four scalar validations (V1–V4), the F5 id guard, `ClockProvider`, `IdProvider`, the `FactWriter` seam, and the `InvalidImprintError` shape.
+- The ON CONFLICT idempotency posture on `(fact_id, session_id)`.
+- The TEXT-affinity datetime helper.
+
+**Reuse recommendation (option A: call imprint internally).** Integrate should normalize/validate the `Fact`, apply kind/verb-specific rules, then call `imprint()` for the actual persistence. Rationale: (a) keeps a single write path through the `FactWriter` seam — only one place performs the SQL INSERT and the ON CONFLICT idempotency contract; (b) keeps the layering honest (integrate is "imprint + context"); (c) avoids duplicating the V1–V5 validation and the id/clock plumbing; (d) the F2 (ClockProvider) and F1 (ON CONFLICT) review lessons stay enforced for free. Option B (share the FactWriter, skip imprint) bypasses imprint's validation and re-implements the id/clock plumbing — strictly more surface, no benefit. Option C (duplicate logic) is rejected outright.
+
+**Caveat for the call-imprint approach:** if integrate adds new persisted columns (kind, verb, association rows), `imprint`'s `FactWriter.write()` signature must grow to carry them, OR integrate writes the association rows itself in a transaction wrapping the imprint call. The latter is cleaner — imprint stays scoped to the `facts` row; integrate owns the cross-table choreography.
+
+### 3. Representation / persistence touch points
+
+- **Tables today:** `facts` (id PK, fact_id TEXT, session_id TEXT, content, trust nullable, importance, last_accessed, attention_tier CHECK, created_at, updated_at, UNIQUE(fact_id, session_id)); `facts_fts` virtual table + ai/au/ad triggers; `trust_history` (scaffolded; written by feedback path). No `kind`, no `verb`, no `fact_sessions`, no `access_count`.
+- **FactId contract:** branded UUID-v4 string; opaque; non-empty enforced; uniqueness scoped to `(fact_id, session_id)` — i.e. the same `fact_id` could in principle exist in two sessions today. v1 is agent-tier-only, so this is fine, but worth flagging because the spec's v1.5 conflict-resolution language ("unique constraint on `(kind, verb, content)`") implies a different uniqueness key may be introduced.
+- **Write→read contract symmetry (the known review lesson):** this is the gap I want flagged loudly. `imprint` returns `FactId`. `recall` returns `RecallResult[]` where `RecallResult` carries `{content, trust, attentionTier, importance, lastAccessed, relevance}` — **no `factId`.** A caller who integrates a fact today cannot find its returned `FactId` in a subsequent recall. For integrate to be useful (e.g. so `decide()` can store a decision via integrate and then cite it back), `RecallResult` must surface `factId` (F9 in the imprint review was rejected as out-of-scope for that slice, with an explicit note that "the `integrate` cycle, where the full fact lifecycle (write → read → mutate) will be unified," is the right moment). **This is that moment.** Recommended addition: `RecallResult.factId: FactId` (and `FactReader.read()` keyed by `FactId` already exists for the feedback path, so the branding extension is mostly cosmetic on the read side).
+- **Recallability path:** today, integrated content becomes recallable via the `facts_ai` trigger inserting into `facts_fts`. ON CONFLICT DO NOTHING preserves this. If integrate adds `kind`/`verb` columns, they are not text-searchable by BM25 unless added to the FTS5 virtual table — separate decision (likely keep them as filterable scalar predicates, not FTS terms).
+
+### 4. If dedup IS adopted (options only — Aaron decides)
+
+The existing UNIQUE `(fact_id, session_id)` only dedups re-issued ids. Content-level dedup needs a different key. Options for *where* the dedup key lives in the representation layer:
+
+- **Option D1 — Content-hash column.** Add `content_hash TEXT NOT NULL` (e.g. SHA-256 over normalized content) with a UNIQUE index scoped per session (`UNIQUE(session_id, content_hash)`) or per (session_id, kind, verb, content_hash) once kind/verb exist. Enforcement: `ON CONFLICT(session_id, content_hash) DO NOTHING` (returns the existing row's `fact_id` to the caller). Pros: cheap, deterministic, identical to the F1 mechanism we just adopted. Cons: requires a normalizer (whitespace, case, punctuation) — every normalization rule is a new contract surface.
+- **Option D2 — `(kind, verb, content)` tuple key per the §10 doc's v1.5 conflict-resolution language.** UNIQUE constraint on the tuple. Same ON CONFLICT enforcement. Requires `kind`/`verb` columns (§5). Aligned with FR-2 wording.
+- **Option D3 — Pre-INSERT SELECT.** Integrate looks up a matching row before calling imprint; on hit, returns the existing FactId without writing. Pros: lets us implement "refresh `lastAccessedAt` on duplicate" (open question #1, sub-bullet). Cons: TOCTOU window between SELECT and INSERT — needs a transaction; loses the single-statement atomicity of ON CONFLICT.
+- **Option D4 — Hybrid.** Use D1/D2 for the atomic dedup guarantee; if the caller wants "refresh on duplicate" semantics, integrate does a follow-up UPDATE on the conflict path. Combines D3's UX with D1's atomicity.
+
+For enforcement, all four reuse the same primitive — a UNIQUE constraint that the writer relies on through `ON CONFLICT (…) DO NOTHING`. The decision is really about (a) what columns participate in the key, and (b) whether a duplicate should be silently dropped vs touched (lastAccessedAt refresh) vs merged (trust averaging, per §10 v1.5 conflict text). I am not recommending one — that is Aaron's call.
+
+### 5. Schema / migration implications
+
+Whatever shape integrate lands in, the following are likely:
+
+- **Migration 003 territory.** Required if `Fact.kind` / `Fact.verb` become persisted columns. Both are small enumerations and want CHECK constraints (mirroring the `attention_tier` pattern from migration 002). If we adopt D2 dedup, those columns participate in a UNIQUE index.
+- **`fact_sessions` association table.** Required if we honor the §10 spec's "writes association to `fact_sessions` table" side effect. Current schema only has the inline `session_id` on `facts`. If we keep the inline column, that doc bullet is satisfied without a new table — worth flagging to Genesta as a schema-shape question rather than silently spinning up a new table.
+- **`access_count` column.** Required if integrate adopts the §10 spec's "Sets `accessCount=1`" behavior. Not present today; recall's tier-promotion logic per FR-2 ("cold → warm after 2 accesses") will need this column eventually regardless, so adding it now via migration 003 is cheap and forward-looking.
+- **Content-hash column + UNIQUE index.** Only if D1/D4 dedup is adopted. Best added in the same migration as kind/verb so we don't re-pay the migration tax.
+- **FTS5 sync.** If we add `kind`/`verb` as scalar columns (not in FTS), no FTS rebuild needed. If they become searchable text, the `facts_fts` virtual table needs columns added and a backfill — strictly more invasive. Recommendation: scalar predicates only, defer to a later slice.
+- **`RecallResult.factId` projection.** Pure read-side change; no migration. SqliteFactStore already SELECTs `f.id` for keyset; adding `f.fact_id` to the projection and surfacing it is mechanical.
+- **No representation/ or kinds/ directories exist yet.** Today's representation surface is `src/activities/imprint.ts` (FactId, FactWriter, AttentionTier) + `src/activities/recall.ts` (RecallResult, FactStore, FactReader) + `src/storage/`. When the kind taxonomy lands, `packages/eureka/src/kinds/` should host the literal-union + CHECK-constraint validators, and the broader `Fact` shape would naturally move into `packages/eureka/src/representation/`. This is the right cycle to establish those folders if Aaron wants them.
+
+### Net recommendation in one line
+
+Integrate normalizes `Fact` → calls `imprint()` for the row write → wraps in a transaction if it also writes association/dedup-helper rows. Keep one write path, propagate `FactId` to `RecallResult`, and decide kind/verb persistence (migration 003) before any dedup choice — because the dedup key likely sits on top of those columns.
+
+
+
+### 2026-06-24 — Integrate Substrate (Option B Wave 1) — TDD GREEN
+
+Aaron chose Option B (build the representation substrate now, mirroring the imprint slice's TDD discipline). Substrate-only deliverables — the `integrate` activity body itself is Wave 2.
+
+**Shipped:**
+- Migration 003 introducing `fact_relations` (CHECK on a 4-kind vocabulary `duplicate_of | supersedes | contradicts | supports`; UNIQUE `(session_id, from_fact_id, to_fact_id, relation_kind)`; two predicate indices for outgoing + incoming traversal). 7 new migration tests, ON CONFLICT DO NOTHING idempotency mirroring imprint F1.
+- New `representation/` directory with the `Relation` primitive, `RelationKind` literal union, and `validateRelation` (V-R1..V-R6, synchronous, mirrors imprint validation posture; rejects self-loops at the type boundary).
+- `RelationWriter` seam: in-memory + sqlite parity, shared contract suite RW-1..RW-14 (48 tests across the two wirings), production factory `createSqliteRelationWriter`.
+- `FactReader.listBySession(sessionId)` for integrate's pair-scan, returning the minimal `{factId, content, trust}` shape (deliberately no attention-tier — ranking belongs to recall, not pair-scanning). Both impls skip NaN/NULL trust so consolidation never sees corrupt rows. CL-6..CL-8 contract tests added.
+- `factId` on `RecallResult` — the F9 carry-over from the imprint review, now required. Wired through both FactStore impls, the contract reference impl, and all 28 fixtures in `recall.test.ts` (batch-patched via regex insertion).
+
+**Results:** 319 passing (baseline 258 + 61 new). Build and typecheck green. The two Laura RED files for `integrate*.contract.test.ts` still fail at module-load because `../integrate.js` does not exist yet — this is the expected Wave 2 cliff, unchanged from baseline.
+
+**Key learning — substrate naming reconciliation:** Aaron's brief explicitly named the column `relation_kind` and the method `listBySession`. Laura's pre-existing RED files use `edge_type` and `listEdges`. I followed Aaron's brief and left Laura's files untouched; reconciliation belongs to Wave 2 when integrate's body is implemented and the two pieces actually meet.
+
+**Key learning — append-only invariant locked at substrate level:** D-INT-9 confirms the facts table is never mutated for consolidation purposes. Reconciliation is expressed entirely via new `fact_relations` rows (loser → winner with `duplicate_of`), preserving audit history and keeping recall's read path free of mutation surprises. This shapes everything downstream: a "supersedes" edge in Wave 1.5+ will likewise leave both facts on disk.
+
+**Key learning — `factId` becoming required is a coordinated breaking change.** Every `RecallResult` construction site had to be updated in one pass before the type-checker would go green. The 28 fixtures in `recall.test.ts` were patched by regex (`{ content:` → `{ factId: 'rt-mock' as FactId, content:`) rather than per-fixture edits, because none of them assert on factId — the value is irrelevant to existing tests but required by the type. Worth remembering for the next "required field on a widely-constructed shape" change.
+
+
+
+### 2026-06-25 — Wave 2 GREEN: integrate() activity shipped
+
+Wave 2 delivers the integrate consolidation activity end-to-end on top of the Wave 1 substrate. Mirrored the imprint slice's TDD discipline — Laura's RED suite IT-1..IT-15 (Genesta's locked contract) goes green for both InMemory and SQLite wirings.
+
+**Substrate reshape (per locked contract):**
+- `FactReader.listBySession` rewritten to take `{ sessionId }` (object arg) and return `{ factId, content, createdAt }` (epoch ms, not trust). The trust field belonged to the previous-iteration shape; canonical-ordering needs createdAt.
+- `InMemoryFactWriter` is now the source of truth in shared-store mode: tracks `createdAtMs` internally and exposes `listBySession`. `InMemoryFactReader` accepts an optional writer in its constructor and delegates when provided — preserving its standalone seed/read API for the existing CL-1..CL-8 contract tests.
+- `sqliteDateTimeToEpochMs()` added to `storage/datetime.ts` for the reverse of the existing forward helper. Pairs cleanly with `epochMsToSqliteDateTime` so the schema TEXT format round-trips losslessly above second-precision.
+- Re-export shim `storage/fact-reader-inmemory.ts` lets Laura's test import path stay stable without forcing her to edit the activity test file.
+
+**RelationWriter gained the activity-facing seam:**
+- New `RelationEdge` type in `representation/relation.ts` (TS-side narrow vocabulary: `edgeType: 'duplicate_of'` only for v1, even though the DB CHECK allows four kinds).
+- `writeEdges(edges) → Promise<number>` added to the `RelationWriter` interface and both impls. SQLite version runs per-edge `INSERT … ON CONFLICT DO NOTHING` inside `db.transaction`, summing `RunResult.changes` — count = rows actually inserted, so an idempotent re-run returns 0 (locked behaviour for `IntegrationReport.edgesWritten`).
+- Validation runs synchronously for every edge BEFORE the transaction opens — same imprint F1 pre-await posture that prevents an invalid edge in position N from leaving 0..N-1 persisted.
+- `link()` preserved unchanged so the RW-1..RW-14 contract suite stays green without modification.
+
+**Integrate activity body:**
+- Pre-bucket by `.trim()`-equal content (O(n) after the O(n log n) canonical sort), then emit one edge per non-canonical occupant of each bucket. STAR-TO-CANONICAL by construction: every newer dup points to the SINGLE oldest matching fact, never to a chain of intermediates.
+- Edge orientation locked per contract: `from = newer dup`, `to = older canonical`. The report's `pairs` flips that for the consumer: `keptFactId = canonical`, `duplicateFactId = newer`.
+- `InvalidIntegrateError` thrown synchronously pre-await for missing/blank sessionId — so the IT-12 invariant "no seam touched on invalid input" holds without needing Promise-rejection unwrapping in callers.
+
+**Composition root:** `createSqliteIntegrateDeps(db)` added alongside the other Sqlite factories — wires SqliteFactReader + SqliteRelationWriter + systemClock. Public API surface gained `integrate` + its types + `InvalidIntegrateError` + `RelationEdge`.
+
+**Final status:** 349 passing / 1 failing of 350 tests. The single red is `integrate-sqlite.contract.test.ts` IT-S1 belt-and-suspenders direct SQL using `WHERE edge_type = 'duplicate_of'` — Aaron's brief locks the DB column name as `relation_kind`, so that SELECT is the one Laura-side fix that remains. The activity itself and all 30 IT-* contract tests are green.
+
+**Key learning — narrow seam interfaces over fat ones in `IntegrateDeps`.** `FactReaderListSession` and `RelationWriterBatch` are structural slices of FactReader/RelationWriter respectively. They let test doubles implement only `listBySession` / only `writeEdges` rather than the full surfaces. Sympathetic to London-school test design and keeps the activity from accidentally depending on `read()` or `link()` even though they're available.
+
+**Key learning — bucket-then-walk beats nested O(n²) loops for STAR-TO-CANONICAL.** A naive `for i; for j>i; if equal: emit` loop with breaks would produce the same topology but is fiddly to get right (off-by-one risks with the "earliest canonical" anchoring). Bucketing by `.trim()`-content after a canonical sort makes the topology emerge from the data shape — easier to reason about and trivially extensible when v1.5+ replaces `.trim()`-equal with embedding-distance similarity.
+
+**Key learning — typed pre-await validation is what makes IT-12 cheap.** The `validateOptions` helper throws synchronously before any seam touch, so the test asserts "deps were never called" without needing Promise.try/catch shenanigans. Same shape as imprint's `validateOptions`; replicating that pattern is now boilerplate.
+
+---
+
+## 2026-06-25T07:17:47Z: Eureka `integrate` v1 Slice COMPLETE — Laura reconciliation + full suite green
+
+**Status:** ✅ COMPLETE — Wave 2 GREEN fully shipped; all 350/350 eureka tests passing; full integration cycle closed
+
+**Laura's reconciliation (2026-06-25T07:17 UTC):** ✅ DONE  
+IT-S1 direct SQL query (lines 159, 168) updated from `WHERE edge_type = 'duplicate_of'` to `WHERE relation_kind = 'duplicate_of'` — schema naming aligned to Aaron's locked brief. No other changes to test contracts or assertions.
+
+**Full integration pipeline:**
+- **Wave 1 substrate** (2026-06-24T22:39): migration 003 + RelationWriter + FactReader.listBySession + factId on RecallResult. 319 passing (baseline 258 + 61 new).
+- **Wave 2 activity** (2026-06-25T00:17): integrate.ts + IntegrateDeps composition + InvalidIntegrateError. All 30 IT-* contract tests green (15 core × 2 wirings).
+- **Laura reconciliation** (2026-06-25T07:17): IT-S1 column name fix → **full suite 350/350 GREEN**.
+
+**Seam interfaces finalized:**
+- `FactReaderListSession = {listBySession(sessionId): Array<{factId, content, createdAt}>}` — narrow structural slice lets test doubles implement only what integrate needs.
+- `RelationWriterBatch = {writeEdges(edges): Promise<number>}` — batch method alongside the existing `link()` method; idempotency via UNIQUE constraint dedup.
+
+**Algorithm in production (pair-scan + STAR-TO-CANONICAL):**
+1. Canonical sort by createdAt (asc), tie-break on factId.
+2. Bucket by `.trim()`-equal content.
+3. For each bucket with size > 1: emit one edge per non-canonical (newer) fact → the canonical (oldest) fact.
+4. All 30 edges persist via `writeEdges` with atomic idempotency per imprint F1 pattern.
+
+**What this unblocks for Wave 1.5+:**
+- `sweep` can now call `integrate({sessionId})` for session-scoped consolidation, then later calls for cross-tier / cross-session (just change the scope argument to `integrate({sessionId, tier})` or `integrate({tiers: [...]})`).
+- The 4-kind relation vocabulary in the CHECK constraint is future-ready; v1.5 `meditate` can write `supersedes | contradicts | supports` edges without schema changes.
+- Append-only facts + soft reconciliation means recall can later filter out superseded facts WITHOUT fact deletion or content rewrite — audit history is preserved in the edge.
+- `createdAt` epoch-ms ordering basis is stable across sessions; later work can order cross-session duplicates by the same canonical (oldest) anchor.
+
+**Deliverables to durable .squad/:**
+- `.squad/decisions.md`: merged 3 inbox files (genesta-integrate-slice-scope, crispin-integrate-seam, laura-integrate-test-plan)
+- `.squad/agents/genesta/history.md`: appended 2026-06-25T07:17:47Z completion entry
+- `.squad/agents/crispin/history.md`: this entry
+- `.squad/agents/laura/history.md`: appended reconciliation note
+
+**Architecture outcome:** Eureka v1 now has a three-verb cognitive write stack: `imprint` (raw write), `integrate` (discover duplicates), `applyFeedback` (judge quality). Each verb is precisely scoped (imprint stays lossless; integrate marks relationships; feedback updates trust). The append-only facts representation is locked. The pair-scan algorithm composes naturally with v1.5 background machinery (sweep/meditate) without API change or schema rework. No architectural debt.
+
+
+
+
+---
+
+## 2026-06-26 — Fix Wave (persona review cycle 1, integrate-slice)
+
+Aaron triaged the persona review and routed nine source-side fixes to me on
+`eureka/integrate-slice`. Worked at CURRENT_DATETIME 2026-06-25T00:17:47-07:00
+(brief value) on real-time 2026-06-26.
+
+### Fixes applied
+1. **D-R1 split seam** — extracted `SessionFactLister` (the `listBySession` capability)
+   out of the publicly-exported `FactReader` interface in `activities/recall.ts`.
+   Concrete impls (`InMemoryFactReader`, `SqliteFactReader`) now `implements FactReader, SessionFactLister`.
+   Dropped the duplicate `FactReaderListSession` alias in integrate; `IntegrateDeps.factReader: SessionFactLister`
+   is the single canonical name. Exported from the package entrypoint.
+2. **D-R1 layering** — moved `FactId` from `activities/imprint` into the neutral
+   `@akubly/types` package. All representation/storage/integrate imports now read FactId
+   from `@akubly/types`. `activities/imprint` re-exports for back-compat so existing
+   imprint consumers (including Laura's integrate test files) keep working.
+3. **D-R2 guard** — added `MAX_SESSION_FACTS = 10_000` constant in `activities/integrate.ts`
+   plus new `IntegrateScopeError` (`code: 'INTEGRATE_SCOPE_EXCEEDED'`, carries `factsScanned` and `cap`).
+   Thrown BEFORE the sort. Documented the bound in the integrate header; `// v1.5+` note pointing
+   at the DB-side GROUP BY consolidation path.
+4. **A4 clock removal** — verified `integrate()` never reads `deps.clock`; removed
+   `clock` from `IntegrateDeps` and from `createSqliteIntegrateDeps`. Storage-layer
+   `created_at` stamping is owned by the writer factories. Laura's tests will need
+   to drop `clock: clock` from their `IntegrateDeps` literals.
+5. **C1 precision note** — header documents the sqlite second-precision `created_at`
+   round-trip vs in-memory ms precision; sub-second duplicates fall through to the
+   `factId` tie-breaker (deterministic per backend, may differ across backends).
+6. **F2 complexity** — rewrote the contradictory `O(n²)`/`O(n)` prose. Honest statement:
+   `O(n log n)` sort-dominated, `O(n)` bucketing pass.
+7. **F3 DRY** — extracted `edgeToRelation` helper in `representation/relation.ts`;
+   both `relation-writer.ts` and `relation-writer-sqlite.ts` import it (single
+   translation point for the activity↔storage field-name rename).
+8. **F5/S6 shim** — collapsed the `fact-reader.ts` + `fact-reader-inmemory.ts`
+   re-export indirection. `InMemoryFactReader` now lives in `fact-reader-inmemory.ts`
+   (name matches content). Deleted `fact-reader.ts`. Updated `storage/index.ts` and
+   `storage/__tests__/fact-reader.contract.test.ts` to import from the new path.
+9. **F6 seed guard** — `InMemoryFactReader.seed()` now throws when constructed with a
+   shared `InMemoryFactWriter`: in shared-store mode the writer is the single source
+   of truth and seeding the reader's private store would silently diverge.
+
+### Final shapes (for Laura's reconciliation)
+- `FactId`: `import type { FactId } from '@akubly/types';`
+- `SessionFactLister`: `activities/recall.ts`, signature unchanged
+  `listBySession(args: { sessionId: SessionId }): Promise<ReadonlyArray<{ factId: FactId; content: string; createdAt: number }>>`
+- `IntegrateDeps`: `{ factReader: SessionFactLister; relationWriter: RelationWriterBatch }` (no `clock`)
+- Back-compat re-exports on `activities/integrate.ts`: `FactReader` (alias of `SessionFactLister`)
+  and `RelationWriter` (alias of `RelationWriterBatch`) so Laura's helper imports stay valid.
+
+### Build/test/lint outcome
+- `npm run build --workspace @akubly/eureka` — GREEN (tsc clean).
+- `npm test --workspace @akubly/eureka` — **350 / 350** passing.
+- `npm run lint --workspace @akubly/eureka` — GREEN (3 pre-existing `no-explicit-any` warnings in `recall.test.ts`, no errors, untouched by this wave).
+- `npm run typecheck` — still red on three Laura-owned references to `clock` in her integrate
+  test files (excess-property check against the slimmed-down `IntegrateDeps`) plus pre-existing
+  `cleanup()` signature errors in several legacy sqlite contract tests. Reported to Laura.
+
+📌 **Team update (2026-06-26T19:29:13Z):** eureka/integrate-slice — Persona Review Cycle 1 & 2 COMPLETE (0 blocking across both cycles). Crispin fix-wave cycle 1 shipped (commit f9af698): SessionFactLister seam split, FactId → @akubly/types, MAX_SESSION_FACTS scope guard, removed clock dep, edgeToRelation DRY, shim collapse, seed() guard. Build+lint GREEN, 350/350 tests passing. Cycle-2 nits cleared (commit babe717). Durable team convention: Test files MUST be type-checked via dedicated CI gate. Next: Seam rename resolves cleanup() return-type typecheck mismatches (pre-existing, now visible via Gabriel's gate). — Scribe
