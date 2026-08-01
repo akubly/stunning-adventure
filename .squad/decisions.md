@@ -1,31 +1,3 @@
-# eureka-recall-collapse — Persona Review Cycle Log (3-Cycle)
-
-**Branch:** `squad/eureka-recall-collapse`  
-**Focus:** Recall consumes `duplicate_of` edges  
-**Author:** Scribe (Session Logger)  
-**Date:** 2026-06-28T23:09:58-07:00  
-**Status:** SHIP-READY (all 3 cycles complete, 377 tests green)  
-**Contributor:** Edgar
-
-### Cycle Outcome
-- **Cycle 1:** 2 BLOCKING | 4 IMPORTANT | 3 MINOR
-- **Cycle 2:** 0 BLOCKING — all prior issues fixed
-- **Cycle 3:** 0 BLOCKING — ship-ready, open advisory on per-page candidateIds test assertions
-
-### Fixes Applied
-✓ Default-on collapse behavior explicit  
-✓ K-tests restored for candidateIds narrowing  
-✓ Backfill loop bounded with cap (MAX_BACKFILL_PAGES = 10)  
-✓ CandidateIds query chunked (SQLITE_VARIABLE_CHUNK = 900)  
-✓ RelationReader port moved to src/storage/relation-reader.types.ts (symmetric with RelationWriter)  
-✓ Empty-array contract explicit with guards and tests  
-✓ Reader exports complete; all public functions in src/index.ts  
-✓ Error messages enhanced with context on candidateIds filtering
-
-**Advisory:** Add per-page candidateIds test assertions (future enhancement, does not block release)
-
----
-
 # Imprint Slice — Persona Review Cycle 1 Fix Dispositions
 
 **Author:** Crispin (Knowledge Representation Specialist)  
@@ -763,7 +735,7 @@ Aaron's reframe (2026-06-24T22:33): Integrate is a **post-imprint consolidation 
 **File:** packages/eureka/src/activities/integrate.ts
 
 **Signature:**
-`ts
+`	s
 export async function integrate(
   options: IntegrateOptions,
   deps: IntegrateDeps,
@@ -780,20 +752,20 @@ export async function integrate(
 **Algorithm (normative):**
 1. Validate options.sessionId (non-empty string after trim) — throw InvalidIntegrateError if bad (sync, before first await).
 2. Fetch facts via deps.factReader.listBySession({ sessionId }) (oldest→newest, returns {factId, content, createdAt}).
-3. Pair-scan O(n²): For each i,j where i < j, if facts[i].content.trim() === facts[j].content.trim(), record the pair with orientation newer→older.
+3. Pair-scan O(n²): For each i,j where i < j, if acts[i].content.trim() === facts[j].content.trim(), record the pair with orientation newer→older.
 4. **Topology: STAR-TO-CANONICAL** — all newer duplicates point to the single oldest (not a chain). Idempotent under late arrivals.
 5. Write edges via deps.relationWriter.writeEdges(edges) → returns count of newly inserted edges.
-6. Return report with edgesWritten = 0 on idempotent re-run (UNIQUE constraint dedupe).
+6. Return report with dgesWritten = 0 on idempotent re-run (UNIQUE constraint dedupe).
 
 **Error contract:**
-- InvalidIntegrateError (new, in activities/errors.ts): code: 'INVALID_INTEGRATE', field: 'sessionId'. Mirrors InvalidImprintError shape.
+- InvalidIntegrateError (new, in ctivities/errors.ts): code: 'INVALID_INTEGRATE', ield: 'sessionId'. Mirrors InvalidImprintError shape.
 - FactReader / RelationWriter errors propagate unwrapped.
 
 ### Representation Layer (Crispin — Wave 1 substrate shipped)
 
-**Migration 003 — fact_relations table:**
+**Migration 003 — act_relations table:**
 - Columns: (from_fact_id, to_fact_id, relation_kind, session_id, weight, confidence, created_at).
-- CHECK constraint: relation_kind IN ('duplicate_of', 'supersedes', 'contradicts', 'supports') (v1 writes ONLY duplicate_of; others reserved).
+- CHECK constraint: elation_kind IN ('duplicate_of', 'supersedes', 'contradicts', 'supports') (v1 writes ONLY duplicate_of; others reserved).
 - UNIQUE on (session_id, from_fact_id, to_fact_id, relation_kind) → idempotent ON CONFLICT DO NOTHING.
 - Two predicate indices: (session_id, from_fact_id, relation_kind) and (session_id, to_fact_id, relation_kind).
 
@@ -821,7 +793,7 @@ export async function integrate(
 **Key test decisions (Laura):**
 - TD-1: STAR-TO-CANONICAL topology for 3+ identical facts (two edges to oldest, never chain).
 - TD-2: Synchronous validation of sessionId before first await (no seam touched on error).
-- TD-3: Deterministic pair ordering by createdAt ASC, then factId ASC (byte-stable idempotency).
+- TD-3: Deterministic pair ordering by createdAt ASC, then actId ASC (byte-stable idempotency).
 - TD-4: Trim-only normalization ("hello" matches "  hello  "; no internal whitespace collapse).
 - TD-5: Imprint losslessness pinned by two independent tests (both dups still recallable; imprint yields 2 distinct FactIds).
 
@@ -829,16 +801,16 @@ export async function integrate(
 
 **Wave 1 (Crispin — Substrate):** ✅ SHIPPED 2026-06-24T22:39  
 - Migration 003 + 7 new migration tests (MIG-7..MIG-13).
-- representation/ directory with Relation, RelationKind, validateRelation, InvalidRelationError.
+- epresentation/ directory with Relation, RelationKind, alidateRelation, InvalidRelationError.
 - RelationWriter interface + SqliteRelationWriter + InMemoryRelationWriter + 48 contract tests (RW-1..RW-14 × 2 wirings).
 - FactReader.listBySession extension + 3 new contract tests (CL-6..CL-8).
-- factId on RecallResult (F9 carry-over from imprint review: write→read symmetry).
+- actId on RecallResult (F9 carry-over from imprint review: write→read symmetry).
 - Build: 
 pm run build ✓ • 
 pm test 319 passing (baseline 258 + 61 new).
 
 **Wave 2 (Crispin — Activity + Genesta/Laura coordination):** ✅ SHIPPED 2026-06-25T00:17  
-- activities/integrate.ts — the consolidation-pass algorithm (pair-scan, STAR-TO-CANONICAL edges, report).
+- ctivities/integrate.ts — the consolidation-pass algorithm (pair-scan, STAR-TO-CANONICAL edges, report).
 - IntegrateDeps injection + composition root createSqliteIntegrateDeps(db).
 - InvalidIntegrateError class (mirrors InvalidImprintError).
 - RelationWriter.writeEdges(batch) method added to support per-edge validation in txn.
@@ -846,7 +818,7 @@ pm test 319 passing (baseline 258 + 61 new).
 - Public API exports: imprint, integrate, IntegrateOptions, IntegrateDeps, IntegrationReport, RelationEdge, InvalidIntegrateError.
 - Build: 
 pm run build ✓ • 
-pm test 349 passing / 1 cosmetic (Laura's IT-S1 SQL column name mismatch — reconciled to locked schema relation_kind).
+pm test 349 passing / 1 cosmetic (Laura's IT-S1 SQL column name mismatch — reconciled to locked schema elation_kind).
 - **Full suite GREEN:** 350/350 after Laura's schema naming reconciliation on IT-S1.
 
 ### Surviving Prior Decisions (Option B disposition)
@@ -2473,290 +2445,20 @@ Line-oriented output, no animations or spinners, per §13.2.
 
 ---
 
-## Recall Duplicate_of Collapse — integrate→recall Loop Closure
+# eureka-recall-collapse — recall consumes duplicate_of edges (PR #90)
 
-
-
----
-
-## Recall Collapse Test Suite — RC-1..RC-7
-
-
-
-
----
-
-## Recall Duplicate_of Collapse — integrate→recall Loop Closure
-
-## Decision Drop: edgar-recall-collapse
-
-# Decision Drop: edgar-recall-collapse
-**Author:** Edgar (Learning Systems Specialist)  
-**Date:** 2026-06-28T21:43:58-07:00  
-**Status:** SHIPPED — build ✓, 351 tests ✓, typecheck ✓  
-**Scope:** `packages/eureka` only
-
----
-
-## Context
-
-`integrate` writes `duplicate_of` edges into `fact_relations` (each edge: `from=newerDup, to=canonical`). `recall` was ignoring them, surfacing both canonical and non-canonical duplicates. Aaron locked the decision: **collapse at the recall activity layer**, storage stays lossless.
-
----
-
-## Decisions Made
-
-### D-RC-1: RelationReader placed in `representation/relation.ts`
-
-**Options considered:**
-- (A) Define in `recall.ts` alongside other seam interfaces (`FactStore`, `TrustUpdater`)
-- (B) Define in `representation/relation.ts` alongside write-side types
-
-**Chose (B).** The write side (`RelationWriter`, `RelationEdge`, `edgeToRelation`) already lives in `representation/relation.ts`. Co-locating the read interface there keeps both sides of the same domain concept together, consistent with Crispin's representation-layer ownership. `recall.ts` imports and consumes but does not define.
-
----
-
-### D-RC-2: `relationReader` is OPTIONAL in `RecallDeps`
-
-**Rationale:** Zero breaking changes. Callers without an integrate pipeline do not need to wire a reader. Absence is treated as "no duplicate edges" — identical behavior to pre-this-change. If we made it required, all existing tests and production call sites would break.
-
----
-
-### D-RC-3: Overfetch = `k × (RANKER_OVERFETCH_FACTOR + 1)` when reader is present
-
-**Rationale:** Collapsing N dups from the fetched set can undersupply k results. Adding one extra `k` to the fetch limit compensates for expected dup losses. The bump is conditional on the presence of `relationReader` so callers without the dep keep the existing `k × 3` fetch. The exact factor (+1 factor unit = +k candidates) is a conservative heuristic; a session where >k of the top `k×4` results are all dups would still undersupply, but that pathological case means the session needs partitioning (same rationale as `MAX_SESSION_FACTS`).
-
----
-
-### D-RC-4: Collapse before ranker, not after
-
-**Rationale:** The ranker must never see non-canonical dups. If collapse happened after ranking, a non-canonical dup might displace a legitimate candidate in the top-k slice. Collapsing first ensures the ranker receives the clean candidate set and its output (or the inline sorted path) is then sliced to k.
-
----
-
-### D-RC-5: In-memory reader shares `InMemoryRelationWriter` store via constructor
-
-**Rationale:** Mirrors `InMemoryFactReader`'s shared-store pattern. An imprint→integrate→recall test pipeline needs one source of truth. `InMemoryRelationReader(writer)` delegates `listDuplicateOf` to `writer.listBySession()` filtered to `relation_kind='duplicate_of'`. No state copying, no divergence.
-
----
-
-## Files Changed
-
-| File | Change |
-|------|--------|
-| `src/representation/relation.ts` | Added `RelationReader` interface |
-| `src/storage/relation-reader-sqlite.ts` | NEW — SQLite reader |
-| `src/storage/relation-reader-inmemory.ts` | NEW — in-memory reader |
-| `src/storage/index.ts` | Export `InMemoryRelationReader` |
-| `src/representation/index.ts` | Export `RelationReader` |
-| `src/activities/recall.ts` | Import `RelationReader`; add to `RecallDeps`; collapse in `recallWithScores` |
-| `src/sqlite/deps.ts` | Import `SqliteRelationReader`; update `createSqliteRecallDeps`; add `createSqliteRelationReader` |
-| `src/index.ts` | Export `RelationReader` type |
-| `src/activities/__tests__/recall.test.ts` | 6 new RC-* tests |
-
-## Test outcomes
-
-- **Before:** 345 tests passing  
-- **After:** 351 tests passing (6 new RC-* collapse tests)  
-- **tsc --build:** clean  
-- **typecheck (tsconfig.typecheck.json):** clean
-
-
----
-
-## Inbox Drop: recall-collapse.test.ts — RC-1..RC-7 Complete
-
-# Inbox Drop: recall-collapse.test.ts — RC-1..RC-7 Complete
-**Author:** Laura (Tester)  
-**Date:** 2026-06-28T21:43:58-07:00  
-**Status:** ✅ COMPLETE — 7 tests GREEN, 358/358 eureka tests passing, tsc clean  
-**For:** Team (Edgar, Aaron)
-
----
-
-## Summary
-
-I was tasked with writing collapse tests for the `duplicate_of` / `RelationReader` seam.
-When I arrived, **Edgar had already implemented and shipped the seam** (see `edgar-recall-collapse.md`
-in this inbox). The seam shape matched the brief exactly:
-
-```ts
-// src/representation/relation.ts
-interface RelationReader {
-  listDuplicateOf(args: { sessionId: SessionId }): Promise<ReadonlyArray<{ from: FactId; to: FactId }>>;
-}
-// src/activities/recall.ts
-interface RecallDeps {
-  ...
-  relationReader?: RelationReader;  // optional — absent = no collapse
-}
-```
-
-All 7 tests in my new file went GREEN immediately against Edgar's implementation. No seam mismatch.
-
----
-
-## New file
-
-**`packages/eureka/src/activities/__tests__/recall-collapse.test.ts`**
-
-7 tests (RC-1 through RC-7):
-
-| ID | Scenario | Coverage angle |
-|----|----------|----------------|
-| RC-1 | canonical kept; duplicate suppressed | basic suppression + spy called |
-| RC-2 | N-way star (3 dups → 1 canonical survives) | multi-dup star topology |
-| RC-3 | empty edge list → pass-through; `listDuplicateOf` IS called | seam always consulted |
-| RC-4 | absent `relationReader` → no collapse (backward compat) | guard test; no cast needed |
-| RC-5 | k satisfied after collapse via overfetch budget | **NEW** — outcome guarantee |
-| RC-6 | dup below trust floor: doubly excluded; canonical NOT suppressed | **NEW** — trust+collapse interaction |
-| RC-7 | FR-2 composite ordering preserved among non-dup survivors | **NEW** — ordering invariant |
-
----
-
-## Relationship to Edgar's existing RC tests (recall.test.ts lines 575–700)
-
-Edgar added 6 RC-* tests inside the `describe('recall')` block:
-
-| Edgar | My file | Overlap |
-|-------|---------|---------|
-| RC-1 (no reader → both returned) | RC-4 | ✅ same invariant, belt-and-suspenders |
-| RC-2 (dup suppressed, canonical kept) | RC-1 | ✅ same invariant, different fixtures |
-| RC-3 (empty edges → no suppression) | RC-3 | ✅ same invariant, + spy assertion on mine |
-| RC-4 (overfetch limit = k×4) | — | **Only in Edgar's** — my RC-5 tests the OUTCOME |
-| RC-5 (star topology) | RC-2 | ✅ same invariant, slightly different assertion style |
-| RC-6 (sessionId routing spy) | RC-3 (partial) | ✅ both assert `toHaveBeenCalledWith({sessionId})` |
-
-**Additive coverage in my file (no overlap):**
-
-- **RC-5** — Verifies k=2 results are returned after 3 high-scoring dups are collapsed. Edgar tests the overfetch *limit* (`limit: k×4`); I test the overfetch *outcome* (k results filled from the expanded candidate pool). These are complementary, not redundant.
-- **RC-6** — A dup below the trust floor is doubly excluded. Verifies the canonical is NOT accidentally suppressed despite appearing in an edge's `to` field. Edgar has no trust-floor / collapse interaction test.
-- **RC-7** — FR-2 composite ordering is preserved among non-dup survivors. Edgar has no ordering-after-collapse test.
-
----
-
-## Implementation observations (no action needed — noting for Edgar's awareness)
-
-1. **`edges.length > 0` guard in `recallWithScores`:** The filter loop is gated on non-empty edges, but `listDuplicateOf` is ALWAYS called when `deps.relationReader` is present. This is correct — RC-3 pins this via spy. An implementation that skips the call on empty-edges would break RC-3.
-
-2. **Overfetch increase:** `k × (RANKER_OVERFETCH_FACTOR + 1)` when `relationReader` is present. Edgar's RC-4 documents this. The heuristic is sound for typical sessions; pathological all-duplicate sessions that exhaust even `k×4` candidates would undersupply, but those indicate sessions needing `integrate` more than `recall` tuning.
-
-3. **No action needed on test numbering conflict:** Edgar's RC-1..RC-6 are inside `describe('recall')` in `recall.test.ts`; mine are inside a separate top-level `describe('recall duplicate_of collapse')` in `recall-collapse.test.ts`. Test IDs are unique within their describe tree so no runner confusion, but if we ever consolidate these files the numbering scheme should be rationalized.
-
----
-
-## No seam mismatch — no blocking issue
-
-Closing this inbox entry as informational. Tests are in and green.
-
-
-
-
----
-
-# Recall duplicate_of Collapse — Persona-Review Fix Wave
-
-**Author:** Edgar (Learning Systems Specialist)
-**Date:** 2026-06-28T22:41-07:00
+**Author:** Squad (recorded by Coordinator)
+**Date:** 2026-08-01
 **Branch:** squad/eureka-recall-collapse
-**Commit:** 0ec1bed
-**Status:** APPLIED
+**Status:** Shipped for review (377 tests green, typecheck clean)
 
-## Findings Addressed
+## Decision
+recall now consumes integrate's duplicate_of edges, collapsing non-canonical duplicates at the recall activity layer. Storage stays lossless — no fact mutation, no FactStore.search SQL change.
 
-### BLOCKING
-
-#### B — RelationReader default-on in createSqliteRecallDeps
-- **Was:** includeRelationReader (default false, opt-in) → collapse never fired in production.
-- **Fix:** Renamed to omitRelationReader (default false, opt-out). SqliteRelationReader is always wired. Callers that never run integrate may pass omitRelationReader: true.
-
-#### A — k-validation tests restored
-- **Was:** k=0, k=-1/1.5/NaN/Infinity tests deleted from recall.test.ts during collapse refactor; production guard untested.
-- **Fix:** Restored in describe('k validation (C4)') block. k=0→[], k∈{-1,1.5,NaN,Infinity}→TypeError (4 parameterized cases). +5 tests.
-
-### IMPORTANT
-
-#### C — Backfill loop for high dup density
-- **Was:** Single overfetch page; could undersupply k when all candidates collapse.
-- **Fix:** do...while loop: fetches additional pages with cursor until collapsed.length >= k or no nextCursor. Loop only fires when relationReader present. +1 test (RC-HD).
-
-#### D — listDuplicateOf scoped to candidateIds (avoid O(E) scan)
-- **Was:** listDuplicateOf({ sessionId }) loaded all session edges per recall.
-- **Fix:** Interface gains candidateIds?: ReadonlyArray<FactId>. SqliteRelationReader builds WHERE from_fact_id IN (...) dynamically. InMemoryRelationReader filters post-query. recallWithScores passes per-page candidateIds. All toHaveBeenCalledWith assertions updated to objectContaining({ sessionId }).
-
-#### E — RelationReader moved to storage seam
-- **Was:** Port defined in representation/relation.ts; asymmetric with RelationWriter in storage/relation-writer.types.ts.
-- **Fix:** New file storage/relation-reader.types.ts holds the definition. representation/relation.ts re-exports for backward compat. storage/index.ts exports RelationReader.
-
-#### G — Export RANKER_OVERFETCH_FACTOR
-- **Was:** Magic number limit:20 in recall.test.ts RC-4.
-- **Fix:** RANKER_OVERFETCH_FACTOR exported from recall.ts and index.ts. RC-4 computes 5 * (RANKER_OVERFETCH_FACTOR + 1).
-
-### MINOR (applied)
-
-- Renamed deduped → collapsed throughout recallWithScores.
-- Dropped redundant if (edges.length > 0) empty-guard.
-- Fixed stale comment from "across all candidates" → "collapsed".
-
-## Rejected / Out of Scope
-
-- Zero-dep ArrayRelationReader test double: not added — existing makeReader(edges) helper in recall-collapse.test.ts is equivalent and already used across the suite.
-
-## Test Results
-
-- **Before:** 358 tests (19 files)
-- **After:** 364 tests (19 files) — +6 new (A:5 k-validation, C:1 RC-HD backfill)
-- **tsc --noEmit:** Clean
-
----
-
-
-
----
-
-# Recall duplicate_of Collapse — Persona-Review Cycle 2 Fix Wave
-
-**Author:** Edgar (Learning Systems Specialist)
-**Date:** 2026-06-28T23:00-07:00
-**Branch:** squad/eureka-recall-collapse
-**Commit:** 773cfb8
-**Status:** APPLIED
-
-## Findings Addressed
-
-### IMPORTANT
-
-#### 1 — candidateIds=[] contract bug fixed
-- **Was:** if (args.candidateIds && args.candidateIds.length > 0) fell through to full-session scan for empty array.
-- **Spec:** "when provided, restrict" — empty array → no candidates → return [].
-- **Fix:** Both SqliteRelationReader and InMemoryRelationReader now check if (args.candidateIds !== undefined) first; length === 0 short-circuits to [].
-
-#### 2 — API symmetry: export SqliteRelationReader + createSqliteRelationReader
-- @akubly/eureka/sqlite now exports SqliteRelationReader (class) and createSqliteRelationReader (factory), symmetric with the already-exported writer equivalents.
-
-#### 3 — SQLite bind-variable safety: IN(...) chunking
-- SqliteRelationReader splits candidateIds into chunks of SQLITE_VARIABLE_CHUNK=900 before building IN(?) statements. Prevents SQLITE_ERROR: too many SQL variables for large k×4 candidate sets.
-
-#### 4 — Tests added
-- storage/__tests__/relation-reader.contract.test.ts — RR-CIDS-1..5 (candidateIds=undefined/[]/[match]/[no-match]/session-isolation) for both InMemory and SQLite backends (+10 tests).
-- recall-collapse.test.ts RC-CIDS-1: listDuplicateOf receives page factIds as candidateIds (+1).
-- recall-collapse.test.ts RC-CIDS-2: empty trusted page → listDuplicateOf not called (+1).
-- recall-sqlite-smoke.test.ts SD-DEFAULT-ON: createSqliteRecallDeps() with no options suppresses dup via default-on reader (+1).
-
-### MINOR
-
-- MAX_BACKFILL_PAGES=10 safety cap in recallWithScores; emits logger.warn when exhausted.
-- Comment in collapse path noting edges assumed well-formed (V-R3 self-loop guard enforced at write time).
-
-## Rejected
-
-- "default-on is a perf regression" — intent of task. Opt-out via omitRelationReader: true exists.
-
-## Test Results
-
-- **Before:** 364 tests (19 files)
-- **After:** 377 tests (20 files) — +13 new
-- **tsc --noEmit:** Clean
-
----
-
+## Key points (as shipped)
+- New RelationReader seam (listDuplicateOf) in src/storage/relation-reader.types.ts, symmetric with RelationWriter; SQLite + in-memory backends.
+- Collapse is on by default via createSqliteRecallDeps (opt-out: omitRelationReader).
+- Backfill loop caps at MAX_BACKFILL_PAGES = 10 so high duplicate density does not undersupply k.
+- Edge query narrowed by candidateIds, chunked at SQLITE_VARIABLE_CHUNK = 900 to stay under SQLite's bind-variable limit.
+- Empty candidateIds array returns [] (contract-guarded and tested).
+- 3-cycle persona review: cycle 1 (2 blocking / 4 important / 3 minor) to cycle 3 (0 blocking, ship-ready). Open advisory: per-page candidateIds test assertions (non-blocking).
