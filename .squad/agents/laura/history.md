@@ -625,3 +625,59 @@ Full eureka suite: 350 tests passing. Build: `npm run build` ✓. Typecheck: `ts
 When a design reframe lands (Option A → Option B), discarding pre-written RED tests entirely is the right move. Editing them to bridge the reframe is error-prone (hidden assumptions). Fresh RED written against the locked contract is faster and cleaner, as evidenced by this cycle: one day of re-write vs days of bug-finding in edited tests.
 
 📌 **Team update (2026-06-26T19:29:13Z):** eureka/integrate-slice — Persona Review Cycle 1 & 2 COMPLETE. Laura test alignment shipped (commit 89988f9): Fixed phantom imports, aligned test files to locked seams. 350/350 tests passing (runtime). Gabriel's new type-check gate working as designed — catching previously-invisible test type errors. Test reconciliations remaining: drop clock from 3 IntegrateDeps test literals (Crispin's seam changes). Durable team convention: Test files MUST be type-checked in CI via dedicated gate. — Scribe
+
+---
+
+## 2026-06-28: recall-collapse — duplicate_of Collapse Tests (RC-1..RC-7)
+
+**Task:** Write tests for the RelationReader seam that collapses non-canonical duplicate facts from recall results.
+
+**Status:** ✅ COMPLETE — 7 tests GREEN, 358/358 eureka tests green, tsc clean.
+
+**File created:**
+- `packages/eureka/src/activities/__tests__/recall-collapse.test.ts`
+
+**Finding:** Edgar had already implemented the `RelationReader` seam before this session. `RecallDeps.relationReader?` is present in `recall.ts` and the collapse logic is wired into `recallWithScores`. The `RelationReader` interface lives in `src/representation/relation.ts` (imported by recall.ts). The seam shape matched the task brief exactly: `listDuplicateOf({ sessionId }) → ReadonlyArray<{ from: FactId; to: FactId }>`.
+
+**One implementation detail worth knowing:** When `relationReader` is present, recall increases the overfetch limit from `k * 3` to `k * (3 + 1) = k * 4` to compensate for candidates that will be collapsed. When edges is empty (`edges.length === 0`), the filter step is skipped as an optimisation, but `listDuplicateOf` IS still called.
+
+**Tests written (RC-1..RC-7):**
+
+| ID | Scenario | Assertion shape |
+|----|----------|-----------------|
+| RC-1 | canonical kept, 1 dup dropped | length=1, canonical present, dup absent, spy called once |
+| RC-2 | N-way star (3 dups → 1 canonical) | length=1, canonical present, all 3 dups absent |
+| RC-3 | no edges → pass-through | length=3, all facts present, listDuplicateOf called once (verifies seam IS consulted) |
+| RC-4 | absent dep → backward compat | length=2, both facts present (GREEN guard, no cast needed) |
+| RC-5 | k satisfied via overfetch | length=k=2, both canonicals; 3 high-scoring dups absorbed by overfetch |
+| RC-6 | dup below trust floor | canonical present, dup absent, spy called (trust-floor + collapse are independent layers) |
+| RC-7 | FR-2 ordering preserved | length=2, survivors in composite-score descending order after 2 dups removed |
+
+**Key learnings:**
+- **Seam-landed-early:** When Edgar's seam was already present, tests went immediately GREEN. This is correct — the tests now serve as regression protection rather than RED-phase design drivers. The behavior is still fully documented and bounded.
+- **RC-4 as GREEN guard:** The absent-dep test doesn't need a cast. It compiles cleanly against the locked `RecallDeps` type and verifies backward compat is preserved. Should stay GREEN in all future refactors.
+- **RC-5 scoring discipline:** For the overfetch test to be RED before the seam, one or more dups must outscore at least one canonical so that slice(0,k) in the absence of collapse would return a dup instead of a canonical. Intentional low trust/relevance on canonical2 (0.3/0.3) achieves this.
+- **`edges.length > 0` guard in implementation:** The filter loop is gated on non-empty edges, but `listDuplicateOf` is always called when the dep is present. RC-3's spy assertion catches implementations that skip the call entirely.
+- **Type imports:** `RelationReader` lives in `../../representation/relation.js` relative to `__tests__/`, not in `recall.js`. The `ReadonlyArray` return type (not `Array`) must be honoured in stubs — `vi.fn().mockResolvedValue([])` is fine since arrays satisfy both.
+
+— Laura (2026-06-28)
+
+---
+
+**2026-06-28T22:00:12Z — Recall Collapse Tests (RC-1..RC-7)**
+
+Completed test suite for recall duplicate_of collapse feature (Edgar-shipped RelationReader seam).
+
+- ✅ RC-1: canonical kept; duplicate suppressed
+- ✅ RC-2: N-way star topology (3 dups → 1 canonical)
+- ✅ RC-3: empty edge list → pass-through; seam always called (spy assertion)
+- ✅ RC-4: absent relationReader → no collapse (backward compat guard test)
+- ✅ RC-5: **NEW** k satisfied after collapse via overfetch budget (outcome guarantee)
+- ✅ RC-6: **NEW** dup below trust floor doubly excluded; canonical NOT suppressed (trust+collapse interaction)
+- ✅ RC-7: **NEW** FR-2 composite ordering preserved among non-dup survivors (ordering invariant)
+- ✅ 358/358 eureka tests passing
+- ✅ tsc clean
+
+**Learning:** Additive coverage vs Edgar's inline RC tests (recall.test.ts). Edgar's tests lock seam shape + overfetch mechanics; mine lock outcome guarantees and interaction invariants. Belt-and-suspenders strengthens regression guard.
+
+**Cross-agent:** Seam matched brief exactly — no mismatch, immediate GREEN. Documented overlap + additive pieces for future consolidation guidance.

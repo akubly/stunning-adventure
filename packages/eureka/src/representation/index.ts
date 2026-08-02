@@ -5,6 +5,6 @@
  * work (kind/verb taxonomy) will land here too.
  */
 
-export type { Relation, RelationKind } from './relation.js';
+export type { Relation, RelationKind, RelationReader } from './relation.js';
 export { RELATION_KINDS, validateRelation } from './relation.js';
 export { InvalidRelationError } from './errors.js';

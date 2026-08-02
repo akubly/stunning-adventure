@@ -127,6 +127,46 @@ describe('recall() — end-to-end smoke: real SQLite + FTS5 stack', () => {
 });
 
 // ---------------------------------------------------------------------------
+// SD-DEFAULT-ON: createSqliteRecallDeps wires SqliteRelationReader by default.
+// ---------------------------------------------------------------------------
+//
+// Verifies the B fix (persona-review cycle 2): calling createSqliteRecallDeps(db)
+// without options produces deps with a live relationReader so duplicate_of edges
+// written by integrate suppress non-canonical results without any explicit opt-in.
+
+describe('createSqliteRecallDeps() — default-on RelationReader collapses duplicates', () => {
+  let db: Database.Database;
+
+  beforeEach(() => { db = openDatabase(':memory:'); });
+  afterEach(() => { db.close(); });
+
+  it('SD-DEFAULT-ON: duplicate suppressed via default-on SqliteRelationReader — no opt-in required', async () => {
+    // Seed canonical and duplicate fact (identical content, different trust)
+    db.prepare('INSERT OR REPLACE INTO facts (fact_id, session_id, content, trust) VALUES (?, ?, ?, ?)')
+      .run('fact-canonical', SESSION as string, 'TypeScript compiles to JavaScript via tsc', 0.9);
+    db.prepare('INSERT OR REPLACE INTO facts (fact_id, session_id, content, trust) VALUES (?, ?, ?, ?)')
+      .run('fact-dup',       SESSION as string, 'TypeScript compiles to JavaScript via tsc', 0.8);
+
+    // Manually insert a duplicate_of edge (as integrate would write)
+    db.prepare(
+      "INSERT OR IGNORE INTO fact_relations (session_id, from_fact_id, to_fact_id, relation_kind) VALUES (?, ?, ?, 'duplicate_of')",
+    ).run(SESSION as string, 'fact-dup', 'fact-canonical');
+
+    // Use createSqliteRecallDeps with NO options — reader must be wired by default
+    const deps = createSqliteRecallDeps(db);
+
+    const results = await recall(
+      { query: 'TypeScript compiles JavaScript', sessionId: SESSION, k: 5 },
+      deps,
+    );
+
+    const ids = results.map(r => r.factId as string);
+    expect(ids).toContain('fact-canonical');  // canonical surfaces
+    expect(ids).not.toContain('fact-dup');    // dup suppressed without any opt-in
+  });
+});
+
+// ---------------------------------------------------------------------------
 // SD-3: createSqliteFeedbackDeps end-to-end — trust mutation via real SQLite.
 // ---------------------------------------------------------------------------
 

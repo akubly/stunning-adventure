@@ -23,6 +23,10 @@
 import type { SessionId, FactId } from '@akubly/types';
 import { InvalidRelationError } from './errors.js';
 
+// RelationReader primary definition lives in the storage seam (symmetric with
+// RelationWriter). Re-exported here for backward compatibility.
+export type { RelationReader } from '../storage/relation-reader.types.js';
+
 /** Relation kind literal union (matches migration 003 CHECK constraint). */
 export type RelationKind = 'duplicate_of' | 'supersedes' | 'contradicts' | 'supports';
 

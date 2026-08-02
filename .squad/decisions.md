@@ -2384,6 +2384,27 @@ Line-oriented output, no animations or spinners, per §13.2.
 1. **Aaron decision pending:** Q1 & Q2 above (integrate landing, dedupKey in schema)
 2. **Genesta & Crispin review:** Integration design memo — verify representation coverage
 3. **Follow-up slice:** `integrate` cognitive orchestration (after `imprint` ships)
+
+
+---
+
+# eureka-recall-collapse — recall consumes duplicate_of edges (PR #90)
+
+**Author:** Squad (recorded by Coordinator)
+**Date:** 2026-08-01
+**Branch:** squad/eureka-recall-collapse
+**Status:** Shipped for review (377 tests green, typecheck clean)
+
+## Decision
+recall now consumes integrate's duplicate_of edges, collapsing non-canonical duplicates at the recall activity layer. Storage stays lossless — no fact mutation, no FactStore.search SQL change.
+
+## Key points (as shipped)
+- New RelationReader seam (listDuplicateOf) in src/storage/relation-reader.types.ts, symmetric with RelationWriter; SQLite + in-memory backends.
+- Collapse is on by default via createSqliteRecallDeps (opt-out: omitRelationReader).
+- Backfill loop caps at MAX_BACKFILL_PAGES = 10 so high duplicate density does not undersupply k.
+- Edge query narrowed by candidateIds, chunked at SQLITE_VARIABLE_CHUNK = 900 to stay under SQLite's bind-variable limit.
+- Empty candidateIds array returns [] (contract-guarded and tested).
+- 3-cycle persona review: cycle 1 (2 blocking / 4 important / 3 minor) to cycle 3 (0 blocking, ship-ready). Open advisory: per-page candidateIds test assertions (non-blocking).
 # Crucible Slice 4 (S4) — Roger §3 WAL, Laura §11 Replay, Gabriel ADR-0024
 
 ## Status
